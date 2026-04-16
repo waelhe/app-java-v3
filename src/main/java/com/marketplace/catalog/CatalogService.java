@@ -122,7 +122,7 @@ public class CatalogService {
                 listing.getTitle(),
                 listing.getCategory(),
                 java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
-                providerNameResolver.resolveProviderName(listing.getProviderId())
+                providerNameResolver.resolve(listing.getProviderId())
         );
     }
 }
