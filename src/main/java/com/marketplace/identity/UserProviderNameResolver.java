@@ -16,7 +16,7 @@ public class UserProviderNameResolver implements ProviderNameResolver {
     }
 
     @Override
-    public String resolveProviderName(UUID providerId) {
+    public String resolve(UUID providerId) {
         return userRepository.findById(providerId)
                 .map(User::getDisplayName)
                 .filter(displayName -> displayName != null && !displayName.isBlank())
