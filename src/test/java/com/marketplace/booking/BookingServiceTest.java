@@ -1,11 +1,10 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -16,13 +15,13 @@ import static org.mockito.Mockito.*;
 class BookingServiceTest {
 
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
-    private final SecurityUtils securityUtils = mock(SecurityUtils.class);
+    private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final Authentication authentication = mock(Authentication.class);
     private BookingService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingService(bookingRepository, securityUtils);
+        service = new BookingService(bookingRepository, currentUserProvider);
     }
 
     @Test
@@ -48,8 +47,8 @@ class BookingServiceTest {
         Booking booking = Booking.create(UUID.randomUUID(), providerId,
                 UUID.randomUUID(), 5000L, "notes");
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(providerId);
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         Booking confirmed = service.confirm(id, authentication);
 
@@ -64,8 +63,8 @@ class BookingServiceTest {
                 UUID.randomUUID(), 5000L, "notes");
         booking.confirm();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(providerId);
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         Booking completed = service.complete(id, authentication);
 
@@ -80,8 +79,8 @@ class BookingServiceTest {
         Booking booking = Booking.create(consumerId, providerId,
                 UUID.randomUUID(), 5000L, "notes");
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(consumerId);
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         Booking cancelled = service.cancel(id, authentication);
 
@@ -103,8 +102,8 @@ class BookingServiceTest {
         Booking booking = Booking.create(UUID.randomUUID(), providerId,
                 UUID.randomUUID(), 5000L, "notes");
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         assertThrows(IllegalArgumentException.class, () -> service.confirm(id, authentication));
     }
@@ -115,8 +114,8 @@ class BookingServiceTest {
         Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(),
                 UUID.randomUUID(), 5000L, "notes");
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         assertThrows(IllegalArgumentException.class, () -> service.cancel(id, authentication));
     }

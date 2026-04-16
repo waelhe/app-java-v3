@@ -1,8 +1,9 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,22 +22,22 @@ import java.util.UUID;
 public class CatalogController {
 
     private final CatalogService catalogService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public CatalogController(CatalogService catalogService, SecurityUtils securityUtils) {
+    public CatalogController(CatalogService catalogService, CurrentUserProvider currentUserProvider) {
         this.catalogService = catalogService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping
     @RateLimiter(name = "catalog")
-    public ResponseEntity<PagedResponse<ProviderListing>> listActive(Pageable pageable) {
+    public ResponseEntity<PagedResponse<ListingSummary>> listActive(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listActive(pageable)));
     }
 
     @GetMapping("/category/{category}")
     @RateLimiter(name = "catalog")
-    public ResponseEntity<PagedResponse<ProviderListing>> listByCategory(
+    public ResponseEntity<PagedResponse<ListingSummary>> listByCategory(
             @PathVariable String category, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listByCategory(category, pageable)));
     }
@@ -57,7 +58,7 @@ public class CatalogController {
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ProviderListing> create(@Valid @RequestBody CreateListingRequest request,
                                                     Authentication authentication) {
-        UUID providerId = securityUtils.getCurrentUserId(authentication);
+        UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         ProviderListing listing = catalogService.create(
                 providerId, request.title(), request.description(),
                 request.category(), request.priceCents());
