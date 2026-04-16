@@ -63,12 +63,17 @@ public class BookingService {
 
     /**
      * Accepts a status string from the admin API, parses it to BookingStatus,
-     * and returns a page of BookingSummary.
+     * and returns a page of BookingSummary. Wraps IllegalArgumentException
+     * to prevent leaking internal enum/package details.
      */
     @Transactional(readOnly = true)
     public Page<BookingSummary> listByStatusSummary(String status, Pageable pageable) {
-        BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase());
-        return listByStatusSummary(bookingStatus, pageable);
+        try {
+            BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase());
+            return listByStatusSummary(bookingStatus, pageable);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid booking status: " + status);
+        }
     }
 
     @PreAuthorize("hasRole('CONSUMER')")

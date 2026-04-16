@@ -12,28 +12,25 @@
 
     <artifactId>marketplace-shared</artifactId>
     <name>marketplace-shared</name>
+    <description>Shared contracts only: DTOs, exceptions, interfaces, constants</description>
 
     <dependencies>
+        <!-- Spring Web for Page/PagedResponse mapping -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Validation for ErrorResponse field errors -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
+        <!-- Resilience4j for RequestNotPermitted in GlobalExceptionHandler -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-ratelimiter</artifactId>
         </dependency>
+        <!-- Modulith @NamedInterface support -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-api</artifactId>

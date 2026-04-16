@@ -12,59 +12,52 @@
 
     <artifactId>marketplace-app</artifactId>
     <name>marketplace-app</name>
+    <description>Runnable Spring Boot application — composition root</description>
 
     <dependencies>
+        <!-- Internal modules -->
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-shared</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-platform-infra</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-identity</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-catalog</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-booking</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-payments</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-pricing</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-reviews</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-messaging</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-search</artifactId>
-            <version>${project.version}</version>
         </dependency>
 
+        <!-- Boot starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -73,6 +66,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Database -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
@@ -86,6 +86,7 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
+        <!-- Spring Modulith -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-core</artifactId>
@@ -99,6 +100,7 @@
             <artifactId>spring-modulith-events-jpa</artifactId>
         </dependency>
 
+        <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -124,10 +126,10 @@
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- ArchUnit — Exception #4: test-only architectural guard -->
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
-            <version>1.4.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

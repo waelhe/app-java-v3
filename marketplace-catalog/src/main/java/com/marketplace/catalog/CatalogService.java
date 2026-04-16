@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -18,7 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
-public class CatalogService {
+public class CatalogService implements CatalogSearchPort {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -32,12 +33,14 @@ public class CatalogService {
         this.providerNameResolver = providerNameResolver;
     }
 
+    @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActive(Pageable pageable) {
         Page<ProviderListing> page = listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
         return toSummaryPage(page);
     }
 
+    @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
@@ -54,6 +57,7 @@ public class CatalogService {
         return listingRepository.findAll(pageable);
     }
 
+    @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
