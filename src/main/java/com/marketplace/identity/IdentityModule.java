@@ -1,10 +1,9 @@
 package com.marketplace.identity;
 
-/**
- * Marker type to ensure the identity module is detected by Spring Modulith.
- */
+import org.springframework.modulith.PackageInfo;
+
+@PackageInfo
 public final class IdentityModule {
     private IdentityModule() {
     }
 }
-
