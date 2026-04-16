@@ -25,13 +25,13 @@ public class CatalogService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ProviderListing> listActive(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> listActive(Pageable pageable) {
+        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable).map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
-    public Page<ProviderListing> listByCategory(String category, Pageable pageable) {
-        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
+        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable).map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
@@ -51,12 +51,12 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
-        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable).map(this::toSummary);
+        return listByCategory(category, pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActiveSummary(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable).map(this::toSummary);
+        return listActive(pageable);
     }
 
     @Transactional(readOnly = true)

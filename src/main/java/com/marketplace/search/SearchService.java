@@ -23,16 +23,16 @@ public class SearchService {
             return catalogService.searchFullText(tsQuery, pageable);
         }
         if (category != null && !category.isBlank()) {
-            return catalogService.listByCategorySummary(category, pageable);
+            return catalogService.listByCategory(category, pageable);
         }
-        return catalogService.listActiveSummary(pageable);
+        return catalogService.listActive(pageable);
     }
 
     public Page<ListingSummary> searchByCategory(String category, Pageable pageable) {
-        return catalogService.listByCategorySummary(category, pageable);
+        return catalogService.listByCategory(category, pageable);
     }
 
     public Page<ListingSummary> searchAll(Pageable pageable) {
-        return catalogService.listActiveSummary(pageable);
+        return catalogService.listActive(pageable);
     }
 }

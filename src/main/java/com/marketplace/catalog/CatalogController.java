@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
@@ -30,13 +31,13 @@ public class CatalogController {
 
     @GetMapping
     @RateLimiter(name = "catalog")
-    public ResponseEntity<PagedResponse<ProviderListing>> listActive(Pageable pageable) {
+    public ResponseEntity<PagedResponse<ListingSummary>> listActive(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listActive(pageable)));
     }
 
     @GetMapping("/category/{category}")
     @RateLimiter(name = "catalog")
-    public ResponseEntity<PagedResponse<ProviderListing>> listByCategory(
+    public ResponseEntity<PagedResponse<ListingSummary>> listByCategory(
             @PathVariable String category, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listByCategory(category, pageable)));
     }
