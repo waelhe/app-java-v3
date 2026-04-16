@@ -2,6 +2,8 @@ package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.security.SecurityUtils;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
@@ -9,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,9 +21,11 @@ import java.util.UUID;
 public class CatalogController {
 
     private final CatalogService catalogService;
+    private final SecurityUtils securityUtils;
 
-    public CatalogController(CatalogService catalogService) {
+    public CatalogController(CatalogService catalogService, SecurityUtils securityUtils) {
         this.catalogService = catalogService;
+        this.securityUtils = securityUtils;
     }
 
     @GetMapping
@@ -50,9 +55,11 @@ public class CatalogController {
 
     @PostMapping
     @PreAuthorize("hasRole('PROVIDER')")
-    public ResponseEntity<ProviderListing> create(@RequestBody CreateListingRequest request) {
+    public ResponseEntity<ProviderListing> create(@Valid @RequestBody CreateListingRequest request,
+                                                    Authentication authentication) {
+        UUID providerId = securityUtils.getCurrentUserId(authentication);
         ProviderListing listing = catalogService.create(
-                request.providerId(), request.title(), request.description(),
+                providerId, request.title(), request.description(),
                 request.category(), request.priceCents());
         return ResponseEntity.status(HttpStatus.CREATED).body(listing);
     }
@@ -60,32 +67,32 @@ public class CatalogController {
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ProviderListing> update(@PathVariable UUID id,
-                                                   @RequestBody UpdateListingRequest request) {
+                                                   @Valid @RequestBody UpdateListingRequest request,
+                                                   Authentication authentication) {
         return ResponseEntity.ok(catalogService.update(
                 id, request.title(), request.description(),
-                request.category(), request.priceCents()));
+                request.category(), request.priceCents(), authentication));
     }
 
     @PostMapping("/{id}/activate")
     @PreAuthorize("hasRole('PROVIDER')")
-    public ResponseEntity<ProviderListing> activate(@PathVariable UUID id) {
-        return ResponseEntity.ok(catalogService.activate(id));
+    public ResponseEntity<ProviderListing> activate(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.activate(id, authentication));
     }
 
     @PostMapping("/{id}/pause")
     @PreAuthorize("hasRole('PROVIDER')")
-    public ResponseEntity<ProviderListing> pause(@PathVariable UUID id) {
-        return ResponseEntity.ok(catalogService.pause(id));
+    public ResponseEntity<ProviderListing> pause(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.pause(id, authentication));
     }
 
     @PostMapping("/{id}/archive")
     @PreAuthorize("hasRole('PROVIDER')")
-    public ResponseEntity<ProviderListing> archive(@PathVariable UUID id) {
-        return ResponseEntity.ok(catalogService.archive(id));
+    public ResponseEntity<ProviderListing> archive(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.archive(id, authentication));
     }
 
     public record CreateListingRequest(
-            @NotNull UUID providerId,
             @NotBlank String title,
             String description,
             @NotBlank String category,

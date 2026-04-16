@@ -19,6 +19,11 @@ public class SearchService {
     }
 
     public Page<ProviderListing> search(String query, String category, Pageable pageable) {
+        if (query != null && !query.isBlank()) {
+            // Use PostgreSQL full-text search with GIN index
+            String tsQuery = query.trim().replaceAll("\\s+", " & ");
+            return listingRepository.searchFullText(tsQuery, pageable);
+        }
         if (category != null && !category.isBlank()) {
             return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
         }

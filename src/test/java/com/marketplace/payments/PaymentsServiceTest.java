@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -62,6 +63,6 @@ class PaymentsServiceTest {
         UUID id = UUID.randomUUID();
         when(intentRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.getIntent(id));
+        assertThrows(ResourceNotFoundException.class, () -> service.getIntent(id));
     }
 }

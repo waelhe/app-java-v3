@@ -1,8 +1,8 @@
 package com.marketplace.admin;
 
-import org.springframework.modulith.PackageInfo;
+import org.springframework.modulith.NamedInterface;
 
-@PackageInfo
+@NamedInterface("admin-api")
 public final class AdminModule {
     private AdminModule() {
     }

@@ -10,6 +10,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.Authentication;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -84,7 +85,7 @@ class ResilienceAnnotationTest {
         @Test
         @DisplayName("confirm should have @Retry")
         void confirm_hasRetry() throws NoSuchMethodException {
-            Method method = BookingService.class.getMethod("confirm", java.util.UUID.class);
+            Method method = BookingService.class.getMethod("confirm", java.util.UUID.class, Authentication.class);
 
             Retry retry = method.getAnnotation(Retry.class);
             assertNotNull(retry, "confirm should have @Retry");
@@ -94,7 +95,7 @@ class ResilienceAnnotationTest {
         @Test
         @DisplayName("complete should have @Retry")
         void complete_hasRetry() throws NoSuchMethodException {
-            Method method = BookingService.class.getMethod("complete", java.util.UUID.class);
+            Method method = BookingService.class.getMethod("complete", java.util.UUID.class, Authentication.class);
 
             Retry retry = method.getAnnotation(Retry.class);
             assertNotNull(retry, "complete should have @Retry");

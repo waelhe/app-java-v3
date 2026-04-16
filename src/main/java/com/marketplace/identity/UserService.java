@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +20,13 @@ public class UserService {
     @Transactional(readOnly = true)
     public User getById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
     }
 
     @Transactional(readOnly = true)
     public User getBySubject(String subject) {
         return userRepository.findBySubject(subject)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + subject));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + subject));
     }
 
     /**

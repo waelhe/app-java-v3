@@ -46,6 +46,11 @@ spring:
     problemdetails:
       enabled: true
 
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+
 
 server:
   port: ${SERVER_PORT:8080}
@@ -72,6 +77,12 @@ management:
       probability: 0.1
 
 logging:
+  structured:
+    format:
+      console: logstash
+      file: logstash
+  file:
+    name: ${LOG_FILE:/var/log/marketplace/application.log}
   pattern:
     correlation: "[${correlationId:-}]"
   level:

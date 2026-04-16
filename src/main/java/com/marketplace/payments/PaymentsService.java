@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,7 +25,7 @@ public class PaymentsService {
     @Transactional(readOnly = true)
     public PaymentIntent getIntent(UUID id) {
         return paymentIntentRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
@@ -58,9 +59,10 @@ public class PaymentsService {
      * Returns the intent in its current state without processing.
      * Called by Resilience4j via reflection at runtime.
      */
+    @SuppressWarnings("unused")
     private PaymentIntent processIntentFallback(UUID id, Throwable throwable) {
         return paymentIntentRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -85,7 +87,7 @@ public class PaymentsService {
     @Retry(name = "paymentProcessing")
     public Payment refundPayment(UUID paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         payment.markRefunded();
         return payment;
     }

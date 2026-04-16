@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -76,10 +77,28 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
+        pd.setInstance(URI.create(request.getRequestURI()));
+        pd.setProperty("timestamp", Instant.now());
+        return pd;
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
-    public ProblemDetail handleNotFound(NoResourceFoundException ex, HttpServletRequest request) {
+    public ProblemDetail handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Resource not found");
         pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
+        pd.setInstance(URI.create(request.getRequestURI()));
+        pd.setProperty("timestamp", Instant.now());
+        return pd;
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ProblemDetail handleRateLimited(RequestNotPermitted ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
+        pd.setType(URI.create(ERROR_TYPE_BASE + "rate-limited"));
         pd.setInstance(URI.create(request.getRequestURI()));
         pd.setProperty("timestamp", Instant.now());
         return pd;

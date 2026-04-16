@@ -1,5 +1,6 @@
 package com.marketplace.messaging;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -76,6 +77,6 @@ class MessagingServiceTest {
         UUID id = UUID.randomUUID();
         when(conversationRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.getConversation(id));
+        assertThrows(ResourceNotFoundException.class, () -> service.getConversation(id));
     }
 }

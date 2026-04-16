@@ -1,8 +1,8 @@
 package com.marketplace.search;
 
-import org.springframework.modulith.PackageInfo;
+import org.springframework.modulith.NamedInterface;
 
-@PackageInfo
+@NamedInterface("search-api")
 public final class SearchModule {
     private SearchModule() {
     }

@@ -1,5 +1,6 @@
 package com.marketplace.messaging;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,7 @@ public class MessagingService {
     @Transactional(readOnly = true)
     public Conversation getConversation(UUID id) {
         return conversationRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Conversation not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found: " + id));
     }
 
     @Transactional(readOnly = true)
@@ -60,9 +61,6 @@ public class MessagingService {
         if (!conversation.hasParticipant(userId)) {
             throw new IllegalArgumentException("User is not a participant in this conversation");
         }
-        messageRepository.findByConversationIdOrderByCreatedAtDesc(conversationId, Pageable.unpaged())
-                .stream()
-                .filter(m -> !m.isRead() && !m.getSenderId().equals(userId))
-                .forEach(Message::markRead);
+        messageRepository.markAsReadByConversationId(conversationId, userId);
     }
 }

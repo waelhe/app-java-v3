@@ -2,6 +2,8 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.security.SecurityUtils;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -9,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,9 +21,11 @@ import java.util.UUID;
 public class ReviewsController {
 
     private final ReviewsService reviewsService;
+    private final SecurityUtils securityUtils;
 
-    public ReviewsController(ReviewsService reviewsService) {
+    public ReviewsController(ReviewsService reviewsService, SecurityUtils securityUtils) {
         this.reviewsService = reviewsService;
+        this.securityUtils = securityUtils;
     }
 
     @GetMapping("/{id}")
@@ -42,9 +47,11 @@ public class ReviewsController {
 
     @PostMapping
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<Review> create(@RequestBody CreateReviewRequest request) {
+    public ResponseEntity<Review> create(@Valid @RequestBody CreateReviewRequest request,
+                                          Authentication authentication) {
+        UUID reviewerId = securityUtils.getCurrentUserId(authentication);
         Review review = reviewsService.create(
-                request.bookingId(), request.reviewerId(), request.providerId(),
+                request.bookingId(), reviewerId, request.providerId(),
                 request.rating(), request.comment());
         return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
@@ -52,13 +59,13 @@ public class ReviewsController {
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<Review> update(@PathVariable UUID id,
-                                          @RequestBody UpdateReviewRequest request) {
-        return ResponseEntity.ok(reviewsService.update(id, request.rating(), request.comment()));
+                                          @Valid @RequestBody UpdateReviewRequest request,
+                                          Authentication authentication) {
+        return ResponseEntity.ok(reviewsService.update(id, request.rating(), request.comment(), authentication));
     }
 
     public record CreateReviewRequest(
             @NotNull UUID bookingId,
-            @NotNull UUID reviewerId,
             @NotNull UUID providerId,
             @NotNull @Min(1) @Max(5) Integer rating,
             String comment
