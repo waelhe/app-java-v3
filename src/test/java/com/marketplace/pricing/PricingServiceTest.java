@@ -16,7 +16,7 @@ class PricingServiceTest {
     @Test
     void calculatePrice_withCategoryRule() {
         PricingRule rule = PricingRule.create("Services", "services",
-                new BigDecimal("15.0000"), new BigDecimal("5.0000"));
+                new BigDecimal("0.1500"), new BigDecimal("0.0500"));
         when(ruleRepository.findByCategoryAndActiveTrue("services"))
                 .thenReturn(Optional.of(rule));
 
@@ -47,7 +47,7 @@ class PricingServiceTest {
     @Test
     void calculatePrice_zeroDiscount() {
         PricingRule rule = PricingRule.create("No Discount", "test",
-                new BigDecimal("10.0000"), BigDecimal.ZERO);
+                new BigDecimal("0.1000"), BigDecimal.ZERO);
         when(ruleRepository.findByCategoryAndActiveTrue("test"))
                 .thenReturn(Optional.of(rule));
 

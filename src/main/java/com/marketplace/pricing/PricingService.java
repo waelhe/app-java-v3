@@ -10,7 +10,6 @@ import java.math.RoundingMode;
 @Transactional
 public class PricingService {
 
-    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private final PricingRuleRepository pricingRuleRepository;
 
     public PricingService(PricingRuleRepository pricingRuleRepository) {
@@ -32,17 +31,17 @@ public class PricingService {
 
         BigDecimal basePrice = BigDecimal.valueOf(basePriceCents);
 
-        // Discount
+        // Discount (discountPct is decimal 0→1, e.g. 0.05 = 5%)
         BigDecimal discountAmount = basePrice.multiply(rule.getDiscountPct())
-                .divide(HUNDRED, 0, RoundingMode.HALF_UP);
+                .setScale(0, RoundingMode.HALF_UP);
         long discountCents = discountAmount.longValue();
 
         // Subtotal after discount
         long subtotalCents = basePriceCents - discountCents;
 
-        // Tax on subtotal
+        // Tax on subtotal (taxRate is decimal 0→1, e.g. 0.15 = 15%)
         BigDecimal taxAmount = BigDecimal.valueOf(subtotalCents).multiply(rule.getTaxRate())
-                .divide(HUNDRED, 0, RoundingMode.HALF_UP);
+                .setScale(0, RoundingMode.HALF_UP);
         long taxCents = taxAmount.longValue();
 
         long totalCents = subtotalCents + taxCents;
@@ -53,7 +52,7 @@ public class PricingService {
 
     private PricingRule defaultRule() {
         return PricingRule.create("Default", null,
-                new BigDecimal("15.0000"), BigDecimal.ZERO);
+                new BigDecimal("0.1500"), BigDecimal.ZERO);
     }
 
     public record PriceBreakdown(

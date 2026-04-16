@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -22,9 +24,13 @@ public class PricingRule extends BaseEntity {
     @Column(name = "category", length = 100)
     private String category;
 
+    @DecimalMin(value = "0", inclusive = true, message = "Tax rate must be >= 0")
+    @DecimalMax(value = "1", inclusive = true, message = "Tax rate must be <= 1")
     @Column(name = "tax_rate", nullable = false, precision = 5, scale = 4)
     private BigDecimal taxRate;
 
+    @DecimalMin(value = "0", inclusive = true, message = "Discount percentage must be >= 0")
+    @DecimalMax(value = "1", inclusive = true, message = "Discount percentage must be <= 1")
     @Column(name = "discount_pct", nullable = false, precision = 5, scale = 4)
     private BigDecimal discountPct;
 

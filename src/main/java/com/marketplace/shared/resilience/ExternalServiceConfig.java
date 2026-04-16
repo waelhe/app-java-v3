@@ -9,7 +9,7 @@ import org.springframework.web.client.RestClient;
 /**
  * Configuration for external service communication using RestClient.
  * Resilience support (CircuitBreaker, RateLimiter) is provided by Resilience4j.
- * Retry support is provided by spring-retry via @EnableRetry.
+ * Retry support is provided by Resilience4j via @Retry.
  */
 @Configuration
 public class ExternalServiceConfig {

@@ -49,7 +49,7 @@ public class PaymentsController {
     @PostMapping("/intents/{id}/confirm")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentIntent> confirmIntent(@PathVariable UUID id,
-                                                        @RequestBody ConfirmIntentRequest request) {
+                                                        @Valid @RequestBody ConfirmIntentRequest request) {
         return ResponseEntity.ok(paymentsService.confirmIntent(id, request.externalId()));
     }
 
