@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -33,6 +34,16 @@ public class PaymentsService {
     @Transactional(readOnly = true)
     public Page<PaymentIntent> listIntents(Pageable pageable) {
         return paymentIntentRepository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PaymentSummary> listIntentsSummaries(Pageable pageable) {
+        return listIntents(pageable).map(this::toPaymentSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentSummary getIntentSummary(UUID id) {
+        return toPaymentSummary(getIntent(id));
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
@@ -97,5 +108,18 @@ public class PaymentsService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         payment.markRefunded();
         return payment;
+    }
+
+    private PaymentSummary toPaymentSummary(PaymentIntent paymentIntent) {
+        return new PaymentSummary(
+                paymentIntent.getId(),
+                paymentIntent.getBookingId(),
+                paymentIntent.getConsumerId(),
+                paymentIntent.getAmountCents(),
+                paymentIntent.getCurrency(),
+                paymentIntent.getStatus().name(),
+                paymentIntent.getCreatedAt(),
+                paymentIntent.getUpdatedAt()
+        );
     }
 }

@@ -1,7 +1,5 @@
 package com.marketplace.shared.api;
 
-import com.marketplace.payments.PaymentIntentStatus;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,7 +9,7 @@ public record PaymentSummary(
         UUID consumerId,
         Long amountCents,
         String currency,
-        PaymentIntentStatus status,
+        String status,
         Instant createdAt,
         Instant updatedAt
 ) {

@@ -1,9 +1,12 @@
 package com.marketplace.identity;
 
-import com.marketplace.catalog.ProviderNameResolver;
+import com.marketplace.shared.api.ProviderNameResolver;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 public class UserProviderNameResolver implements ProviderNameResolver {
@@ -16,10 +19,16 @@ public class UserProviderNameResolver implements ProviderNameResolver {
     }
 
     @Override
-    public String resolve(UUID providerId) {
-        return userRepository.findById(providerId)
-                .map(User::getDisplayName)
-                .filter(displayName -> displayName != null && !displayName.isBlank())
-                .orElse(UNKNOWN_PROVIDER_NAME);
+    public Map<UUID, String> resolveNames(Set<UUID> providerIds) {
+        if (providerIds == null || providerIds.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(providerIds).stream()
+                .collect(Collectors.toMap(
+                        User::getId,
+                        user -> user.getDisplayName() != null && !user.getDisplayName().isBlank()
+                                ? user.getDisplayName()
+                                : UNKNOWN_PROVIDER_NAME
+                ));
     }
 }

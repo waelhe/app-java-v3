@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.UserSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -36,6 +37,11 @@ public class UserService {
         return userRepository.findAll(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<UserSummary> findAllSummaries(Pageable pageable) {
+        return findAll(pageable).map(this::toUserSummary);
+    }
+
     /**
      * Syncs user from OIDC token — creates if new, updates if changed.
      */
@@ -61,5 +67,16 @@ public class UserService {
         if (roles != null && roles.contains("ADMIN")) return UserRole.ADMIN;
         if (roles != null && roles.contains("PROVIDER")) return UserRole.PROVIDER;
         return UserRole.CONSUMER;
+    }
+
+    private UserSummary toUserSummary(User user) {
+        return new UserSummary(
+                user.getId(),
+                user.getEmail(),
+                user.getDisplayName(),
+                user.getRole().name(),
+                user.getCreatedAt(),
+                user.getUpdatedAt()
+        );
     }
 }

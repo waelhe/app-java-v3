@@ -1,7 +1,5 @@
 package com.marketplace.shared.api;
 
-import com.marketplace.booking.BookingStatus;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -10,7 +8,7 @@ public record BookingSummary(
         UUID consumerId,
         UUID providerId,
         UUID listingId,
-        BookingStatus status,
+        String status,
         Long priceCents,
         String currency,
         Instant createdAt,

@@ -1,5 +1,6 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -50,6 +51,26 @@ public class BookingService {
         return bookingRepository.findAll(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<BookingSummary> listAllSummaries(Pageable pageable) {
+        return listAll(pageable).map(this::toBookingSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<BookingSummary> listByStatusSummary(BookingStatus status, Pageable pageable) {
+        return listByStatus(status, pageable).map(this::toBookingSummary);
+    }
+
+    /**
+     * Accepts a status string from the admin API, parses it to BookingStatus,
+     * and returns a page of BookingSummary.
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingSummary> listByStatusSummary(String status, Pageable pageable) {
+        BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase());
+        return listByStatusSummary(bookingStatus, pageable);
+    }
+
     @PreAuthorize("hasRole('CONSUMER')")
     public Booking create(UUID consumerId, UUID providerId, UUID listingId,
                            Long priceCents, String notes) {
@@ -97,5 +118,19 @@ public class BookingService {
                 && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You are not a participant in this booking");
         }
+    }
+
+    private BookingSummary toBookingSummary(Booking booking) {
+        return new BookingSummary(
+                booking.getId(),
+                booking.getConsumerId(),
+                booking.getProviderId(),
+                booking.getListingId(),
+                booking.getStatus().name(),
+                booking.getPriceCents(),
+                booking.getCurrency(),
+                booking.getCreatedAt(),
+                booking.getUpdatedAt()
+        );
     }
 }

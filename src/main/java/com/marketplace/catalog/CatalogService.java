@@ -2,6 +2,7 @@ package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,7 +11,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -30,12 +34,14 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActive(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable).map(this::toSummary);
+        Page<ProviderListing> page = listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+        return toSummaryPage(page);
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
-        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable).map(this::toSummary);
+        Page<ProviderListing> page = listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+        return toSummaryPage(page);
     }
 
     @Transactional(readOnly = true)
@@ -50,7 +56,8 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
-        return listingRepository.searchFullText(tsQuery, pageable).map(this::toSummary);
+        Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
+        return toSummaryPage(page);
     }
 
     @Transactional(readOnly = true)
@@ -116,13 +123,21 @@ public class CatalogService {
         }
     }
 
-    private ListingSummary toSummary(ProviderListing listing) {
-        return new ListingSummary(
+    /**
+     * Batch-resolve provider names for an entire page, then map to ListingSummary.
+     * Avoids N+1 queries by calling resolveNames once per page.
+     */
+    private Page<ListingSummary> toSummaryPage(Page<ProviderListing> page) {
+        Set<UUID> providerIds = page.getContent().stream()
+                .map(ProviderListing::getProviderId)
+                .collect(Collectors.toSet());
+        Map<UUID, String> providerNames = providerNameResolver.resolveNames(providerIds);
+        return page.map(listing -> new ListingSummary(
                 listing.getId(),
                 listing.getTitle(),
                 listing.getCategory(),
                 java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
-                providerNameResolver.resolve(listing.getProviderId())
-        );
+                providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")
+        ));
     }
 }
