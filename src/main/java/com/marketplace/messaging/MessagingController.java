@@ -2,7 +2,7 @@ package com.marketplace.messaging;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,11 +19,11 @@ import java.util.UUID;
 public class MessagingController {
 
     private final MessagingService messagingService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public MessagingController(MessagingService messagingService, SecurityUtils securityUtils) {
+    public MessagingController(MessagingService messagingService, CurrentUserProvider currentUserProvider) {
         this.messagingService = messagingService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/conversations/{id}")
@@ -45,7 +45,7 @@ public class MessagingController {
     @PostMapping("/conversations")
     public ResponseEntity<Conversation> createConversation(@Valid @RequestBody CreateConversationRequest request,
                                                             Authentication authentication) {
-        UUID participantA = securityUtils.getCurrentUserId(authentication);
+        UUID participantA = currentUserProvider.getCurrentUserId(authentication);
         Conversation conversation = messagingService.createConversation(
                 participantA, request.participantB(), request.bookingId());
         return ResponseEntity.status(HttpStatus.CREATED).body(conversation);
@@ -55,7 +55,7 @@ public class MessagingController {
     public ResponseEntity<Message> sendMessage(@PathVariable UUID conversationId,
                                                 @Valid @RequestBody SendMessageRequest request,
                                                 Authentication authentication) {
-        UUID senderId = securityUtils.getCurrentUserId(authentication);
+        UUID senderId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(messagingService.sendMessage(conversationId, senderId, request.content()));
     }
@@ -63,7 +63,7 @@ public class MessagingController {
     @PostMapping("/conversations/{conversationId}/read")
     public ResponseEntity<Void> markAsRead(@PathVariable UUID conversationId,
                                             Authentication authentication) {
-        UUID userId = securityUtils.getCurrentUserId(authentication);
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
         messagingService.markAsRead(conversationId, userId);
         return ResponseEntity.ok().build();
     }

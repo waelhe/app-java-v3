@@ -1,7 +1,7 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -17,11 +17,11 @@ import java.util.UUID;
 public class BookingService {
 
     private final BookingRepository bookingRepository;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public BookingService(BookingRepository bookingRepository, SecurityUtils securityUtils) {
+    public BookingService(BookingRepository bookingRepository, CurrentUserProvider currentUserProvider) {
         this.bookingRepository = bookingRepository;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -38,6 +38,16 @@ public class BookingService {
     @Transactional(readOnly = true)
     public Page<Booking> listByProvider(UUID providerId, Pageable pageable) {
         return bookingRepository.findByProviderId(providerId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Booking> listByStatus(BookingStatus status, Pageable pageable) {
+        return bookingRepository.findByStatus(status, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Booking> listAll(Pageable pageable) {
+        return bookingRepository.findAll(pageable);
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
@@ -74,17 +84,17 @@ public class BookingService {
     }
 
     private void verifyProviderOwnership(Booking booking, Authentication authentication) {
-        UUID currentUserId = securityUtils.getCurrentUserId(authentication);
-        if (!booking.getProviderId().equals(currentUserId) && !securityUtils.isAdmin(authentication)) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!booking.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You are not the provider for this booking");
         }
     }
 
     private void verifyParticipantOwnership(Booking booking, Authentication authentication) {
-        UUID currentUserId = securityUtils.getCurrentUserId(authentication);
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!booking.getConsumerId().equals(currentUserId)
                 && !booking.getProviderId().equals(currentUserId)
-                && !securityUtils.isAdmin(authentication)) {
+                && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You are not a participant in this booking");
         }
     }

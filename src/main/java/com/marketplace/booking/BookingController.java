@@ -2,7 +2,7 @@ package com.marketplace.booking;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
@@ -19,11 +19,11 @@ import java.util.UUID;
 public class BookingController {
 
     private final BookingService bookingService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public BookingController(BookingService bookingService, SecurityUtils securityUtils) {
+    public BookingController(BookingService bookingService, CurrentUserProvider currentUserProvider) {
         this.bookingService = bookingService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/{id}")
@@ -47,7 +47,7 @@ public class BookingController {
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<Booking> create(@Valid @RequestBody CreateBookingRequest request,
                                            Authentication authentication) {
-        UUID consumerId = securityUtils.getCurrentUserId(authentication);
+        UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         Booking booking = bookingService.create(
                 consumerId, request.providerId(), request.listingId(),
                 request.priceCents(), request.notes());
