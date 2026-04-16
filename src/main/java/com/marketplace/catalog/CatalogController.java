@@ -2,7 +2,7 @@ package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,11 +21,11 @@ import java.util.UUID;
 public class CatalogController {
 
     private final CatalogService catalogService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public CatalogController(CatalogService catalogService, SecurityUtils securityUtils) {
+    public CatalogController(CatalogService catalogService, CurrentUserProvider currentUserProvider) {
         this.catalogService = catalogService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping
@@ -57,7 +57,7 @@ public class CatalogController {
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ProviderListing> create(@Valid @RequestBody CreateListingRequest request,
                                                     Authentication authentication) {
-        UUID providerId = securityUtils.getCurrentUserId(authentication);
+        UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         ProviderListing listing = catalogService.create(
                 providerId, request.title(), request.description(),
                 request.category(), request.priceCents());

@@ -1,7 +1,8 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,11 +17,11 @@ import java.util.UUID;
 public class CatalogService {
 
     private final ProviderListingRepository listingRepository;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public CatalogService(ProviderListingRepository listingRepository, SecurityUtils securityUtils) {
+    public CatalogService(ProviderListingRepository listingRepository, CurrentUserProvider currentUserProvider) {
         this.listingRepository = listingRepository;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -36,6 +37,26 @@ public class CatalogService {
     @Transactional(readOnly = true)
     public Page<ProviderListing> listByProvider(UUID providerId, Pageable pageable) {
         return listingRepository.findByProviderId(providerId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ProviderListing> findAll(Pageable pageable) {
+        return listingRepository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
+        return listingRepository.searchFullText(tsQuery, pageable).map(this::toSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
+        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable).map(this::toSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> listActiveSummary(Pageable pageable) {
+        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable).map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +97,7 @@ public class CatalogService {
         return listing;
     }
 
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -85,9 +106,19 @@ public class CatalogService {
     }
 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
-        UUID currentUserId = securityUtils.getCurrentUserId(authentication);
-        if (!listing.getProviderId().equals(currentUserId) && !securityUtils.isAdmin(authentication)) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!listing.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You do not own this listing");
         }
+    }
+
+    private ListingSummary toSummary(ProviderListing listing) {
+        return new ListingSummary(
+                listing.getId(),
+                listing.getTitle(),
+                listing.getCategory(),
+                java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
+                null
+        );
     }
 }
