@@ -1,7 +1,7 @@
 package com.marketplace.search;
 
-import com.marketplace.catalog.ProviderListing;
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +20,7 @@ public class SearchController {
 
     @GetMapping
     @RateLimiter(name = "search")
-    public ResponseEntity<PagedResponse<ProviderListing>> search(
+    public ResponseEntity<PagedResponse<ListingSummary>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String category,
             Pageable pageable) {
@@ -29,7 +29,7 @@ public class SearchController {
 
     @GetMapping("/category/{category}")
     @RateLimiter(name = "search")
-    public ResponseEntity<PagedResponse<ProviderListing>> searchByCategory(
+    public ResponseEntity<PagedResponse<ListingSummary>> searchByCategory(
             @PathVariable String category, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(searchService.searchByCategory(category, pageable)));
     }

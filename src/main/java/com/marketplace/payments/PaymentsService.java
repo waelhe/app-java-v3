@@ -3,6 +3,8 @@ package com.marketplace.payments;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,11 @@ public class PaymentsService {
     public PaymentIntent getIntent(UUID id) {
         return paymentIntentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PaymentIntent> listIntents(Pageable pageable) {
+        return paymentIntentRepository.findAll(pageable);
     }
 
     @PreAuthorize("hasRole('CONSUMER')")

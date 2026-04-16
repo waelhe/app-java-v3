@@ -1,7 +1,9 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.ProviderNameResolver;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,32 +12,47 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class CatalogService {
 
     private final ProviderListingRepository listingRepository;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
+    private final ProviderNameResolver providerNameResolver;
 
-    public CatalogService(ProviderListingRepository listingRepository, SecurityUtils securityUtils) {
+    public CatalogService(ProviderListingRepository listingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ProviderNameResolver providerNameResolver) {
         this.listingRepository = listingRepository;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
+        this.providerNameResolver = providerNameResolver;
     }
 
     @Transactional(readOnly = true)
-    public Page<ProviderListing> listActive(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> listActive(Pageable pageable) {
+        return toSummaryPage(listingRepository.findByStatus(ListingStatus.ACTIVE, pageable));
     }
 
     @Transactional(readOnly = true)
-    public Page<ProviderListing> listByCategory(String category, Pageable pageable) {
-        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
+        return toSummaryPage(listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable));
     }
 
     @Transactional(readOnly = true)
     public Page<ProviderListing> listByProvider(UUID providerId, Pageable pageable) {
         return listingRepository.findByProviderId(providerId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ProviderListing> findAll(Pageable pageable) {
+        return listingRepository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
+        return toSummaryPage(listingRepository.searchFullText(tsQuery, pageable));
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +93,7 @@ public class CatalogService {
         return listing;
     }
 
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -85,9 +102,27 @@ public class CatalogService {
     }
 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
-        UUID currentUserId = securityUtils.getCurrentUserId(authentication);
-        if (!listing.getProviderId().equals(currentUserId) && !securityUtils.isAdmin(authentication)) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!listing.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You do not own this listing");
         }
+    }
+
+    private Page<ListingSummary> toSummaryPage(Page<ProviderListing> listings) {
+        var providerIds = listings.getContent().stream()
+                .map(ProviderListing::getProviderId)
+                .collect(Collectors.toSet());
+        var names = providerNameResolver.resolveNames(providerIds);
+        return listings.map(listing -> toSummary(listing, names.getOrDefault(listing.getProviderId(), null)));
+    }
+
+    private ListingSummary toSummary(ProviderListing listing, String providerName) {
+        return new ListingSummary(
+                listing.getId(),
+                listing.getTitle(),
+                listing.getCategory(),
+                java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
+                providerName
+        );
     }
 }
