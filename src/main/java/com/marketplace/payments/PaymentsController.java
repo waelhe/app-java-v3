@@ -1,7 +1,7 @@
 package com.marketplace.payments;
 
 import com.marketplace.shared.api.ApiConstants;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
@@ -17,11 +17,11 @@ import java.util.UUID;
 public class PaymentsController {
 
     private final PaymentsService paymentsService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public PaymentsController(PaymentsService paymentsService, SecurityUtils securityUtils) {
+    public PaymentsController(PaymentsService paymentsService, CurrentUserProvider currentUserProvider) {
         this.paymentsService = paymentsService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/intents/{id}")
@@ -33,7 +33,7 @@ public class PaymentsController {
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntent> createIntent(@Valid @RequestBody CreateIntentRequest request,
                                                        Authentication authentication) {
-        UUID consumerId = securityUtils.getCurrentUserId(authentication);
+        UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         PaymentIntent intent = paymentsService.createIntent(
                 request.bookingId(), consumerId,
                 request.amountCents(), request.idempotencyKey());
