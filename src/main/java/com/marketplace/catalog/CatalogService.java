@@ -18,10 +18,14 @@ public class CatalogService {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ProviderNameResolver providerNameResolver;
 
-    public CatalogService(ProviderListingRepository listingRepository, CurrentUserProvider currentUserProvider) {
+    public CatalogService(ProviderListingRepository listingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ProviderNameResolver providerNameResolver) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
+        this.providerNameResolver = providerNameResolver;
     }
 
     @Transactional(readOnly = true)
@@ -118,7 +122,7 @@ public class CatalogService {
                 listing.getTitle(),
                 listing.getCategory(),
                 java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
-                null
+                providerNameResolver.resolveProviderName(listing.getProviderId())
         );
     }
 }
