@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,11 +24,13 @@ public class CatalogController {
     }
 
     @GetMapping
+    @RateLimiter(name = "catalog")
     public ResponseEntity<PagedResponse<ProviderListing>> listActive(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listActive(pageable)));
     }
 
     @GetMapping("/category/{category}")
+    @RateLimiter(name = "catalog")
     public ResponseEntity<PagedResponse<ProviderListing>> listByCategory(
             @PathVariable String category, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listByCategory(category, pageable)));
@@ -40,6 +43,7 @@ public class CatalogController {
     }
 
     @GetMapping("/{id}")
+    @RateLimiter(name = "catalog")
     public ResponseEntity<ProviderListing> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(catalogService.getById(id));
     }

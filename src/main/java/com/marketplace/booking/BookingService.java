@@ -2,6 +2,7 @@ package com.marketplace.booking;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,7 @@ public class BookingService {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @Retry(name = "booking")
     public Booking confirm(UUID id) {
         Booking booking = getById(id);
         booking.confirm();
@@ -49,6 +51,7 @@ public class BookingService {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @Retry(name = "booking")
     public Booking complete(UUID id) {
         Booking booking = getById(id);
         booking.complete();

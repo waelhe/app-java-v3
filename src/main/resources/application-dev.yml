@@ -13,6 +13,12 @@ spring:
   flyway:
     clean-disabled: false
 
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+
 logging:
   level:
     org.hibernate.SQL: DEBUG

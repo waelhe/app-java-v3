@@ -46,6 +46,7 @@ spring:
     problemdetails:
       enabled: true
 
+
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
@@ -76,3 +77,44 @@ logging:
   level:
     org.springframework.modulith: INFO
     org.hibernate.SQL: WARN
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 5s
+        sliding-window-size: 10
+        sliding-window-type: COUNT_BASED
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      paymentProcessing:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+    instances:
+      paymentProcessing:
+        base-config: default
+        max-attempts: 3
+      booking:
+        base-config: default
+        max-attempts: 2
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 100
+        limit-refresh-period: 1m
+        timeout-duration: 5s
+    instances:
+      catalog:
+        base-config: default
+        limit-for-period: 50
+      search:
+        base-config: default
+        limit-for-period: 30

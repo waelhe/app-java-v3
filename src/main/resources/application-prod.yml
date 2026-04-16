@@ -10,6 +10,12 @@ spring:
   jpa:
     show-sql: false
 
+  devtools:
+    restart:
+      enabled: false
+    livereload:
+      enabled: false
+
   flyway:
     clean-disabled: true
 
