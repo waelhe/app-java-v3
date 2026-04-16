@@ -1,6 +1,8 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,11 @@ public class UserService {
     public User getBySubject(String subject) {
         return userRepository.findBySubject(subject)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + subject));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<User> findAll(Pageable pageable) {
+        return userRepository.findAll(pageable);
     }
 
     /**

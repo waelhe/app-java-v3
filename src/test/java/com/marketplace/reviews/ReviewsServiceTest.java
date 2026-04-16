@@ -1,6 +1,6 @@
 package com.marketplace.reviews;
 
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
@@ -14,13 +14,13 @@ import static org.mockito.Mockito.*;
 class ReviewsServiceTest {
 
     private final ReviewRepository reviewRepository = mock(ReviewRepository.class);
-    private final SecurityUtils securityUtils = mock(SecurityUtils.class);
+    private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final Authentication authentication = mock(Authentication.class);
     private ReviewsService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReviewsService(reviewRepository, securityUtils);
+        service = new ReviewsService(reviewRepository, currentUserProvider);
     }
 
     @Test
@@ -61,8 +61,8 @@ class ReviewsServiceTest {
         UUID reviewerId = UUID.randomUUID();
         Review review = Review.create(UUID.randomUUID(), reviewerId, UUID.randomUUID(), 3, "ok");
         when(reviewRepository.findById(id)).thenReturn(Optional.of(review));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(reviewerId);
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(reviewerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         Review updated = service.update(id, 5, "excellent", authentication);
 
@@ -75,8 +75,8 @@ class ReviewsServiceTest {
         UUID id = UUID.randomUUID();
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 3, "ok");
         when(reviewRepository.findById(id)).thenReturn(Optional.of(review));
-        when(securityUtils.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
-        when(securityUtils.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.update(id, 5, "excellent", authentication));

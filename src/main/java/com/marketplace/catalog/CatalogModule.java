@@ -1,8 +1,8 @@
 package com.marketplace.catalog;
 
-import org.springframework.modulith.PackageInfo;
+import org.springframework.modulith.NamedInterface;
 
-@PackageInfo
+@NamedInterface("catalog-api")
 public final class CatalogModule {
     private CatalogModule() {
     }

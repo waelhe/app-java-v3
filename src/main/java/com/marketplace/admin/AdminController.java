@@ -1,20 +1,21 @@
 package com.marketplace.admin;
 
 import com.marketplace.booking.Booking;
-import com.marketplace.booking.BookingRepository;
+import com.marketplace.booking.BookingService;
 import com.marketplace.booking.BookingStatus;
+import com.marketplace.catalog.CatalogService;
 import com.marketplace.catalog.ProviderListing;
-import com.marketplace.catalog.ProviderListingRepository;
+import com.marketplace.identity.UserService;
 import com.marketplace.identity.User;
-import com.marketplace.identity.UserRepository;
 import com.marketplace.payments.PaymentIntent;
-import com.marketplace.payments.PaymentIntentRepository;
+import com.marketplace.payments.PaymentsService;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -24,43 +25,38 @@ import java.util.UUID;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
-    private final UserRepository userRepository;
-    private final ProviderListingRepository listingRepository;
-    private final BookingRepository bookingRepository;
-    private final PaymentIntentRepository paymentIntentRepository;
+    private final UserService userService;
+    private final CatalogService catalogService;
+    private final BookingService bookingService;
+    private final PaymentsService paymentsService;
 
-    public AdminController(UserRepository userRepository,
-                           ProviderListingRepository listingRepository,
-                           BookingRepository bookingRepository,
-                           PaymentIntentRepository paymentIntentRepository) {
-        this.userRepository = userRepository;
-        this.listingRepository = listingRepository;
-        this.bookingRepository = bookingRepository;
-        this.paymentIntentRepository = paymentIntentRepository;
+    public AdminController(UserService userService,
+                           CatalogService catalogService,
+                           BookingService bookingService,
+                           PaymentsService paymentsService) {
+        this.userService = userService;
+        this.catalogService = catalogService;
+        this.bookingService = bookingService;
+        this.paymentsService = paymentsService;
     }
 
     // ── Users ──────────────────────────────────────────
 
     @GetMapping("/users")
     public ResponseEntity<PagedResponse<User>> listUsers(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(userRepository.findAll(pageable)));
+        return ResponseEntity.ok(PagedResponse.of(userService.findAll(pageable)));
     }
 
     // ── Listings ───────────────────────────────────────
 
     @GetMapping("/listings")
     public ResponseEntity<PagedResponse<ProviderListing>> listAllListings(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(listingRepository.findAll(pageable)));
+        return ResponseEntity.ok(PagedResponse.of(catalogService.findAll(pageable)));
     }
 
     @PostMapping("/listings/{id}/archive")
-    public ResponseEntity<ProviderListing> archiveListing(@PathVariable UUID id) {
-        return listingRepository.findById(id)
-                .map(listing -> {
-                    listing.archive();
-                    return ResponseEntity.ok(listing);
-                })
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<ProviderListing> archiveListing(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.archive(id, authentication));
     }
 
     // ── Bookings ───────────────────────────────────────
@@ -69,8 +65,8 @@ public class AdminController {
     public ResponseEntity<PagedResponse<Booking>> listBookings(
             @RequestParam(required = false) BookingStatus status, Pageable pageable) {
         Page<Booking> bookings = status != null
-                ? bookingRepository.findByStatus(status, pageable)
-                : bookingRepository.findAll(pageable);
+                ? bookingService.listByStatus(status, pageable)
+                : bookingService.listAll(pageable);
         return ResponseEntity.ok(PagedResponse.of(bookings));
     }
 
@@ -78,13 +74,11 @@ public class AdminController {
 
     @GetMapping("/payments")
     public ResponseEntity<PagedResponse<PaymentIntent>> listPaymentIntents(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(paymentIntentRepository.findAll(pageable)));
+        return ResponseEntity.ok(PagedResponse.of(paymentsService.listIntents(pageable)));
     }
 
     @GetMapping("/payments/{id}")
     public ResponseEntity<PaymentIntent> getPaymentIntent(@PathVariable UUID id) {
-        return paymentIntentRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(paymentsService.getIntent(id));
     }
 }

@@ -1,7 +1,7 @@
 package com.marketplace.reviews;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,11 +16,11 @@ import java.util.UUID;
 public class ReviewsService {
 
     private final ReviewRepository reviewRepository;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public ReviewsService(ReviewRepository reviewRepository, SecurityUtils securityUtils) {
+    public ReviewsService(ReviewRepository reviewRepository, CurrentUserProvider currentUserProvider) {
         this.reviewRepository = reviewRepository;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -57,8 +57,8 @@ public class ReviewsService {
     }
 
     private void verifyOwnership(Review review, Authentication authentication) {
-        UUID currentUserId = securityUtils.getCurrentUserId(authentication);
-        if (!review.getReviewerId().equals(currentUserId) && !securityUtils.isAdmin(authentication)) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!review.getReviewerId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new IllegalArgumentException("You did not write this review");
         }
     }

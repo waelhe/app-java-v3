@@ -2,7 +2,7 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.security.SecurityUtils;
+import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -21,11 +21,11 @@ import java.util.UUID;
 public class ReviewsController {
 
     private final ReviewsService reviewsService;
-    private final SecurityUtils securityUtils;
+    private final CurrentUserProvider currentUserProvider;
 
-    public ReviewsController(ReviewsService reviewsService, SecurityUtils securityUtils) {
+    public ReviewsController(ReviewsService reviewsService, CurrentUserProvider currentUserProvider) {
         this.reviewsService = reviewsService;
-        this.securityUtils = securityUtils;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/{id}")
@@ -49,7 +49,7 @@ public class ReviewsController {
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<Review> create(@Valid @RequestBody CreateReviewRequest request,
                                           Authentication authentication) {
-        UUID reviewerId = securityUtils.getCurrentUserId(authentication);
+        UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
         Review review = reviewsService.create(
                 request.bookingId(), reviewerId, request.providerId(),
                 request.rating(), request.comment());

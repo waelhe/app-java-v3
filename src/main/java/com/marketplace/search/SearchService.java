@@ -1,8 +1,7 @@
 package com.marketplace.search;
 
-import com.marketplace.catalog.ListingStatus;
-import com.marketplace.catalog.ProviderListing;
-import com.marketplace.catalog.ProviderListingRepository;
+import com.marketplace.catalog.CatalogService;
+import com.marketplace.shared.api.ListingSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -12,29 +11,28 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SearchService {
 
-    private final ProviderListingRepository listingRepository;
+    private final CatalogService catalogService;
 
-    public SearchService(ProviderListingRepository listingRepository) {
-        this.listingRepository = listingRepository;
+    public SearchService(CatalogService catalogService) {
+        this.catalogService = catalogService;
     }
 
-    public Page<ProviderListing> search(String query, String category, Pageable pageable) {
+    public Page<ListingSummary> search(String query, String category, Pageable pageable) {
         if (query != null && !query.isBlank()) {
-            // Use PostgreSQL full-text search with GIN index
             String tsQuery = query.trim().replaceAll("\\s+", " & ");
-            return listingRepository.searchFullText(tsQuery, pageable);
+            return catalogService.searchFullText(tsQuery, pageable);
         }
         if (category != null && !category.isBlank()) {
-            return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+            return catalogService.listByCategorySummary(category, pageable);
         }
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+        return catalogService.listActiveSummary(pageable);
     }
 
-    public Page<ProviderListing> searchByCategory(String category, Pageable pageable) {
-        return listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> searchByCategory(String category, Pageable pageable) {
+        return catalogService.listByCategorySummary(category, pageable);
     }
 
-    public Page<ProviderListing> searchAll(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+    public Page<ListingSummary> searchAll(Pageable pageable) {
+        return catalogService.listActiveSummary(pageable);
     }
 }
