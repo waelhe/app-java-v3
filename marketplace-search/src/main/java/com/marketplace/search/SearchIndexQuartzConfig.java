@@ -26,7 +26,7 @@ public class SearchIndexQuartzConfig {
         trigger.setName("searchIndexRefreshTrigger");
         trigger.setStartDelay(60_000L);
         trigger.setRepeatInterval(300_000L);
-        trigger.setRepeatCount(SimpleTriggerFactoryBean.REPEAT_INDEFINITELY);
+        trigger.setRepeatCount(org.quartz.SimpleTrigger.REPEAT_INDEFINITELY);
         trigger.setMisfireInstruction(org.quartz.SimpleTrigger.MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT);
         return trigger;
     }

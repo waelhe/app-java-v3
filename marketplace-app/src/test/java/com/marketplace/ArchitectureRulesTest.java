@@ -96,7 +96,7 @@ class ArchitectureRulesTest {
 
     private static JavaClasses importProductionClasses() {
         return new ClassFileImporter()
-                .withImportOption(ImportOption.DoNotIncludeTests.class)
+                .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages("com.marketplace");
     }
 

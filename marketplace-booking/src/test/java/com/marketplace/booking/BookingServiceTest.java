@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
@@ -16,12 +17,13 @@ class BookingServiceTest {
 
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final Authentication authentication = mock(Authentication.class);
     private BookingService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingService(bookingRepository, currentUserProvider);
+        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher);
     }
 
     @Test

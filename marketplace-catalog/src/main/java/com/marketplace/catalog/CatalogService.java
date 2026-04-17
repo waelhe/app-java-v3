@@ -1,10 +1,12 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -26,13 +28,16 @@ public class CatalogService implements CatalogSearchPort {
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ProviderNameResolver providerNameResolver;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
-                          ProviderNameResolver providerNameResolver) {
+                          ProviderNameResolver providerNameResolver,
+                          ApplicationEventPublisher eventPublisher) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -90,7 +95,9 @@ public class CatalogService implements CatalogSearchPort {
     public ProviderListing create(UUID providerId, String title, String description,
                                   String category, Long priceCents) {
         ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
-        return listingRepository.save(listing);
+        ProviderListing saved = listingRepository.save(listing);
+        eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
+        return saved;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")

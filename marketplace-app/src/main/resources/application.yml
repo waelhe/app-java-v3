@@ -42,6 +42,9 @@ spring:
     events:
       completion-mode: update
 
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
   mvc:
     problemdetails:
       enabled: true
@@ -59,7 +62,7 @@ spring:
   quartz:
     job-store-type: jdbc
     jdbc:
-      initialize-schema: never
+      initialize-schema: always
     properties:
       org:
         quartz:
@@ -75,8 +78,6 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
-
-spring.lifecycle.timeout: 30s
 
 management:
   endpoints:

@@ -1,11 +1,13 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.BookingSummary;
+import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -19,10 +21,14 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public BookingService(BookingRepository bookingRepository, CurrentUserProvider currentUserProvider) {
+    public BookingService(BookingRepository bookingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ApplicationEventPublisher eventPublisher) {
         this.bookingRepository = bookingRepository;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -80,7 +86,9 @@ public class BookingService {
     public Booking create(UUID consumerId, UUID providerId, UUID listingId,
                            Long priceCents, String notes) {
         Booking booking = Booking.create(consumerId, providerId, listingId, priceCents, notes);
-        return bookingRepository.save(booking);
+        Booking saved = bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
+        return saved;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")

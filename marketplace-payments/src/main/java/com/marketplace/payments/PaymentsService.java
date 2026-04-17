@@ -1,9 +1,11 @@
 package com.marketplace.payments;
 
 import com.marketplace.shared.api.PaymentSummary;
+import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,11 +20,14 @@ public class PaymentsService {
 
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
-                           PaymentRepository paymentRepository) {
+                           PaymentRepository paymentRepository,
+                           ApplicationEventPublisher eventPublisher) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -57,7 +62,9 @@ public class PaymentsService {
             }
         }
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, amountCents, idempotencyKey);
-        return paymentIntentRepository.save(intent);
+        PaymentIntent saved = paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
+        return saved;
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
@@ -91,6 +98,7 @@ public class PaymentsService {
         // Mark the payment as completed
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
         return intent;
     }
 
