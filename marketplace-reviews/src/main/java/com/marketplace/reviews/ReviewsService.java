@@ -1,7 +1,9 @@
 package com.marketplace.reviews;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,10 +19,14 @@ public class ReviewsService {
 
     private final ReviewRepository reviewRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ReviewsService(ReviewRepository reviewRepository, CurrentUserProvider currentUserProvider) {
+    public ReviewsService(ReviewRepository reviewRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ApplicationEventPublisher eventPublisher) {
         this.reviewRepository = reviewRepository;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -45,7 +51,9 @@ public class ReviewsService {
         if (reviewRepository.existsByBookingId(bookingId)) {
             throw new IllegalStateException("Review already exists for booking: " + bookingId);
         }
-        return reviewRepository.save(Review.create(bookingId, reviewerId, providerId, rating, comment));
+        Review saved = reviewRepository.save(Review.create(bookingId, reviewerId, providerId, rating, comment));
+        eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId()));
+        return saved;
     }
 
     @PreAuthorize("hasRole('CONSUMER')")

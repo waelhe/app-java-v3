@@ -3,6 +3,7 @@ package com.marketplace.reviews;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
@@ -15,12 +16,13 @@ class ReviewsServiceTest {
 
     private final ReviewRepository reviewRepository = mock(ReviewRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final Authentication authentication = mock(Authentication.class);
     private ReviewsService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReviewsService(reviewRepository, currentUserProvider);
+        service = new ReviewsService(reviewRepository, currentUserProvider, eventPublisher);
     }
 
     @Test

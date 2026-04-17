@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -13,7 +14,8 @@ class PaymentsServiceTest {
 
     private final PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
-    private final PaymentsService service = new PaymentsService(intentRepository, paymentRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final PaymentsService service = new PaymentsService(intentRepository, paymentRepository, eventPublisher);
 
     @Test
     void createIntent_savesNewIntent() {

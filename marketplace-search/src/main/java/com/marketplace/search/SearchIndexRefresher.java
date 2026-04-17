@@ -2,7 +2,6 @@ package com.marketplace.search;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.quartz.QuartzJobBean;
@@ -21,7 +20,7 @@ public class SearchIndexRefresher extends QuartzJobBean {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public SearchIndexRefresher(@Qualifier("jdbcTemplate") JdbcTemplate jdbcTemplate) {
+    public SearchIndexRefresher(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 

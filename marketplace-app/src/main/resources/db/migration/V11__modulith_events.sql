@@ -1,12 +1,14 @@
--- Spring Modulith event publication log table
-create table if not exists modulith_events (
-    id                  uuid primary key,
-    listener_id         varchar(200) not null,
-    event_type          varchar(200) not null,
-    event               bytea not null,
-    publication_date    timestamptz not null default now(),
-    completion_date     timestamptz
+-- Spring Modulith event publication registry (PostgreSQL)
+create table if not exists event_publication (
+    id               uuid not null primary key,
+    listener_id      text not null,
+    event_type       text not null,
+    serialized_event text not null,
+    publication_date timestamptz not null,
+    completion_date  timestamptz
 );
 
-create index idx_modulith_events_listener on modulith_events (listener_id) where completion_date is null;
-create index idx_modulith_events_type on modulith_events (event_type);
+create index if not exists event_publication_serialized_event_hash_idx
+    on event_publication using hash (serialized_event);
+create index if not exists event_publication_by_completion_date_idx
+    on event_publication (completion_date);

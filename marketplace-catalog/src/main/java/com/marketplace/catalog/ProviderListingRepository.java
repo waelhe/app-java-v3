@@ -31,6 +31,12 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                 to_tsquery('simple', :query)
             ) DESC
             """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ to_tsquery('simple', :query)
+                    """,
             nativeQuery = true)
     Page<ProviderListing> searchFullText(@Param("query") String query, Pageable pageable);
 }
