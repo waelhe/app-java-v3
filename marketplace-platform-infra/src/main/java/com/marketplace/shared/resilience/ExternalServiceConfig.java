@@ -2,12 +2,14 @@ package com.marketplace.shared.resilience;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestClient;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import io.netty.channel.ChannelOption;
+import reactor.netty.http.client.HttpClient;
 
 /**
- * Configuration for external service communication using RestClient.
+ * Configuration for external service communication using WebClient.
  * Resilience support (CircuitBreaker, RateLimiter) is provided by Resilience4j.
  * Retry support is provided by Resilience4j via @Retry.
  */
@@ -15,16 +17,13 @@ import org.springframework.web.client.RestClient;
 public class ExternalServiceConfig {
 
     @Bean
-    public RestClient restClient(RestClient.Builder builder) {
-        return builder
-                .requestFactory(clientHttpRequestFactory())
-                .build();
-    }
+    public WebClient webClient(WebClient.Builder builder) {
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5_000)
+                .responseTimeout(java.time.Duration.ofSeconds(10));
 
-    private ClientHttpRequestFactory clientHttpRequestFactory() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(5_000);
-        factory.setReadTimeout(10_000);
-        return factory;
+        return builder
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
     }
 }

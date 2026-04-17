@@ -2,6 +2,7 @@ package com.marketplace.search;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class SearchService {
         this.catalogSearchPort = catalogSearchPort;
     }
 
+    @Cacheable(cacheNames = "search-results", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> search(String query, String category, Pageable pageable) {
         if (query != null && !query.isBlank()) {
             String tsQuery = query.trim().replaceAll("\\s+", " & ");
