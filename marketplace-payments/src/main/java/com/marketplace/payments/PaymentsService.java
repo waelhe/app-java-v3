@@ -101,7 +101,7 @@ public class PaymentsService {
      * Called by Resilience4j via reflection at runtime.
      */
     @SuppressWarnings("unused")
-    private PaymentIntent processIntentFallback(UUID id, Throwable throwable) {
+    private PaymentIntent processIntentFallback(UUID id, Authentication authentication, Throwable throwable) {
         return paymentIntentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
     }
