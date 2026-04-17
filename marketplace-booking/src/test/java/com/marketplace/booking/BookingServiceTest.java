@@ -5,6 +5,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
@@ -107,7 +108,7 @@ class BookingServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
-        assertThrows(IllegalArgumentException.class, () -> service.confirm(id, authentication));
+        assertThrows(AccessDeniedException.class, () -> service.confirm(id, authentication));
     }
 
     @Test
@@ -119,6 +120,6 @@ class BookingServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
-        assertThrows(IllegalArgumentException.class, () -> service.cancel(id, authentication));
+        assertThrows(AccessDeniedException.class, () -> service.cancel(id, authentication));
     }
 }

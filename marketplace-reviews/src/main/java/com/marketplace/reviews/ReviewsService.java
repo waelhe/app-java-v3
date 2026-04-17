@@ -6,6 +6,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -67,7 +68,7 @@ public class ReviewsService {
     private void verifyOwnership(Review review, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!review.getReviewerId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
-            throw new IllegalArgumentException("You did not write this review");
+            throw new AccessDeniedException("You did not write this review");
         }
     }
 }

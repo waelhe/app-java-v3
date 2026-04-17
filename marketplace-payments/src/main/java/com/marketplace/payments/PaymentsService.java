@@ -3,12 +3,15 @@ package com.marketplace.payments;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,13 +24,16 @@ public class PaymentsService {
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final CurrentUserProvider currentUserProvider;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           CurrentUserProvider currentUserProvider) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.eventPublisher = eventPublisher;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -51,6 +57,13 @@ public class PaymentsService {
         return toPaymentSummary(getIntent(id));
     }
 
+    @Transactional(readOnly = true)
+    public PaymentIntent getIntentForUser(UUID id, Authentication authentication) {
+        PaymentIntent intent = getIntent(id);
+        verifyConsumerOwnership(intent, authentication);
+        return intent;
+    }
+
     @PreAuthorize("hasRole('CONSUMER')")
     public PaymentIntent createIntent(UUID bookingId, UUID consumerId,
                                       Long amountCents, String idempotencyKey) {
@@ -58,6 +71,9 @@ public class PaymentsService {
         if (idempotencyKey != null) {
             var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                if (!existing.get().getConsumerId().equals(consumerId)) {
+                    throw new AccessDeniedException("Idempotency key belongs to another consumer");
+                }
                 return existing.get();
             }
         }
@@ -70,8 +86,8 @@ public class PaymentsService {
     @PreAuthorize("hasRole('CONSUMER')")
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing", fallbackMethod = "processIntentFallback")
-    public PaymentIntent processIntent(UUID id) {
-        PaymentIntent intent = getIntent(id);
+    public PaymentIntent processIntent(UUID id, Authentication authentication) {
+        PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
         // In production: integrate with payment gateway here
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
@@ -103,8 +119,8 @@ public class PaymentsService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    public PaymentIntent cancelIntent(UUID id) {
-        PaymentIntent intent = getIntent(id);
+    public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
+        PaymentIntent intent = getIntentForUser(id, authentication);
         intent.cancel();
         return intent;
     }
@@ -129,5 +145,15 @@ public class PaymentsService {
                 paymentIntent.getCreatedAt(),
                 paymentIntent.getUpdatedAt()
         );
+    }
+
+    private void verifyConsumerOwnership(PaymentIntent intent, Authentication authentication) {
+        if (currentUserProvider.isAdmin(authentication)) {
+            return;
+        }
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!intent.getConsumerId().equals(currentUserId)) {
+            throw new AccessDeniedException("You do not own this payment intent");
+        }
     }
 }

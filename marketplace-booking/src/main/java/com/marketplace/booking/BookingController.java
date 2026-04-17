@@ -27,20 +27,20 @@ public class BookingController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Booking> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(bookingService.getById(id));
+    public ResponseEntity<Booking> getById(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(bookingService.getByIdForUser(id, authentication));
     }
 
     @GetMapping("/consumer/{consumerId}")
     public ResponseEntity<PagedResponse<Booking>> listByConsumer(
-            @PathVariable UUID consumerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(bookingService.listByConsumer(consumerId, pageable)));
+            @PathVariable UUID consumerId, Pageable pageable, Authentication authentication) {
+        return ResponseEntity.ok(PagedResponse.of(bookingService.listByConsumer(consumerId, pageable, authentication)));
     }
 
     @GetMapping("/provider/{providerId}")
     public ResponseEntity<PagedResponse<Booking>> listByProvider(
-            @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(bookingService.listByProvider(providerId, pageable)));
+            @PathVariable UUID providerId, Pageable pageable, Authentication authentication) {
+        return ResponseEntity.ok(PagedResponse.of(bookingService.listByProvider(providerId, pageable, authentication)));
     }
 
     @PostMapping

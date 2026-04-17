@@ -1,8 +1,10 @@
 package com.marketplace.payments;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -15,7 +17,9 @@ class PaymentsServiceTest {
     private final PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
-    private final PaymentsService service = new PaymentsService(intentRepository, paymentRepository, eventPublisher);
+    private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+    private final Authentication authentication = mock(Authentication.class);
+    private final PaymentsService service = new PaymentsService(intentRepository, paymentRepository, eventPublisher, currentUserProvider);
 
     @Test
     void createIntent_savesNewIntent() {
@@ -51,11 +55,14 @@ class PaymentsServiceTest {
     @Test
     void cancelIntent_succeedsForCreatedIntent() {
         UUID id = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID consumerId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 5000L, null);
         when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
 
-        PaymentIntent cancelled = service.cancelIntent(id);
+        PaymentIntent cancelled = service.cancelIntent(id, authentication);
 
         assertEquals(PaymentIntentStatus.CANCELLED, cancelled.getStatus());
     }
