@@ -8,6 +8,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
  * and Hibernate filters for soft delete.
  */
 @Configuration
-@EnableJpaAuditing(auditorAwareRef = "auditorAwareImpl")
+@EnableJpaAuditing
 public class JpaConfig {
 }

@@ -158,3 +158,8 @@ resilience4j:
       search:
         base-config: default
         limit-for-period: 30
+
+marketplace:
+  webclient:
+    connect-timeout: 5000
+    response-timeout: 10s
