@@ -5,6 +5,8 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -35,6 +37,7 @@ public class CatalogService implements CatalogSearchPort {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "catalog-active", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> listActive(Pageable pageable) {
         Page<ProviderListing> page = listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
         return toSummaryPage(page);
@@ -42,6 +45,7 @@ public class CatalogService implements CatalogSearchPort {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "catalog-by-category", key = "#category + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
         return toSummaryPage(page);
@@ -59,6 +63,7 @@ public class CatalogService implements CatalogSearchPort {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "catalog-search", key = "#tsQuery + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
         return toSummaryPage(page);
@@ -81,6 +86,7 @@ public class CatalogService implements CatalogSearchPort {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing create(UUID providerId, String title, String description,
                                   String category, Long priceCents) {
         ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
@@ -88,6 +94,7 @@ public class CatalogService implements CatalogSearchPort {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, Authentication authentication) {
         ProviderListing listing = getById(id);
@@ -97,6 +104,7 @@ public class CatalogService implements CatalogSearchPort {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing activate(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -105,6 +113,7 @@ public class CatalogService implements CatalogSearchPort {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing pause(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -113,6 +122,7 @@ public class CatalogService implements CatalogSearchPort {
     }
 
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);

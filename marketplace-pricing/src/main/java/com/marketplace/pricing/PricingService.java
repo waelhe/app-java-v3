@@ -2,6 +2,7 @@ package com.marketplace.pricing;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -24,6 +25,7 @@ public class PricingService {
      * @return PriceBreakdown with subtotal, tax, discount, and total
      */
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "pricing-calculations", key = "#basePriceCents + '-' + #category")
     public PriceBreakdown calculatePrice(long basePriceCents, String category) {
         PricingRule rule = pricingRuleRepository.findByCategoryAndActiveTrue(category)
                 .or(() -> pricingRuleRepository.findFirstByActiveTrueOrderByCreatedAtDesc())

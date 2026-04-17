@@ -1,4 +1,9 @@
 spring:
+  cache:
+    type: simple
+  quartz:
+    job-store-type: memory
+    auto-startup: false
   jpa:
     hibernate:
       ddl-auto: create-drop

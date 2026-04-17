@@ -2,31 +2,31 @@ package com.marketplace.search;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.quartz.QuartzJobBean;
+import org.quartz.DisallowConcurrentExecution;
+import org.quartz.JobExecutionContext;
 
 /**
  * Periodically refreshes the {@code mv_listing_search} materialized view
  * so that full-text search results stay up-to-date.
  */
 @Component
-public class SearchIndexRefresher {
+@DisallowConcurrentExecution
+public class SearchIndexRefresher extends QuartzJobBean {
 
     private static final Logger log = LoggerFactory.getLogger(SearchIndexRefresher.class);
 
     private final JdbcTemplate jdbcTemplate;
 
-    public SearchIndexRefresher(JdbcTemplate jdbcTemplate) {
+    public SearchIndexRefresher(@Qualifier("jdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * Refresh the materialized view every 5 minutes.
-     * {@code CONCURRENTLY} allows reads during refresh (requires unique index).
-     */
-    @Scheduled(fixedDelay = 5 * 60 * 1000, initialDelay = 60 * 1000)
-    public void refreshMaterializedView() {
+    @Override
+    protected void executeInternal(JobExecutionContext context) {
         try {
             jdbcTemplate.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_listing_search");
             log.debug("Refreshed mv_listing_search materialized view");

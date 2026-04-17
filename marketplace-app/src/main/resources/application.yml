@@ -47,9 +47,29 @@ spring:
       enabled: true
 
   data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
     web:
       pageable:
         max-page-size: 100
+  cache:
+    type: ${CACHE_TYPE:simple}
+    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: marketplaceScheduler
+            instanceId: AUTO
+          threadPool:
+            threadCount: 5
+          jobStore:
+            isClustered: true
 
 
 server:
@@ -64,9 +84,18 @@ management:
       exposure:
         include: health,info,metrics,prometheus
   endpoint:
+    conditions:
+      enabled: true
     health:
       show-details: when-authorized
       show-components: when-authorized
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,diskSpace
+        liveness:
+          include: ping
   observations:
     enabled: true
   metrics:
