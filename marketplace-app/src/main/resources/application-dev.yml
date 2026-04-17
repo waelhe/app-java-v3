@@ -26,3 +26,8 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
     com.marketplace: DEBUG
+
+marketplace:
+  webclient:
+    connect-timeout: 5000
+    response-timeout: 10s
