@@ -11,10 +11,11 @@ create table if not exists reviews (
     created_by      varchar(200),
     created_at      timestamptz not null default now(),
     updated_by      varchar(200),
-    updated_at      timestamptz not null default now(),
-    constraint uq_review_booking unique (booking_id) where is_deleted = false
+    updated_at      timestamptz not null default now()
 );
 
+create unique index if not exists uq_review_booking_active
+    on reviews (booking_id) where is_deleted = false;
 create index idx_reviews_provider on reviews (provider_id) where is_deleted = false;
 create index idx_reviews_reviewer on reviews (reviewer_id) where is_deleted = false;
 create index idx_reviews_rating on reviews (rating) where is_deleted = false;

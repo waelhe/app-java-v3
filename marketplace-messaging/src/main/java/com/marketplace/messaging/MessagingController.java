@@ -27,19 +27,22 @@ public class MessagingController {
     }
 
     @GetMapping("/conversations/{id}")
-    public ResponseEntity<Conversation> getConversation(@PathVariable UUID id) {
-        return ResponseEntity.ok(messagingService.getConversation(id));
+    public ResponseEntity<Conversation> getConversation(@PathVariable UUID id, Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(messagingService.getConversation(id, userId));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
     public ResponseEntity<PagedResponse<Message>> getMessages(
-            @PathVariable UUID conversationId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(messagingService.getMessages(conversationId, pageable)));
+            @PathVariable UUID conversationId, Pageable pageable, Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(PagedResponse.of(messagingService.getMessages(conversationId, userId, pageable)));
     }
 
     @GetMapping("/conversations/{conversationId}/unread")
-    public ResponseEntity<UnreadCountResponse> getUnreadCount(@PathVariable UUID conversationId) {
-        return ResponseEntity.ok(new UnreadCountResponse(messagingService.getUnreadCount(conversationId)));
+    public ResponseEntity<UnreadCountResponse> getUnreadCount(@PathVariable UUID conversationId, Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(new UnreadCountResponse(messagingService.getUnreadCount(conversationId, userId)));
     }
 
     @PostMapping("/conversations")

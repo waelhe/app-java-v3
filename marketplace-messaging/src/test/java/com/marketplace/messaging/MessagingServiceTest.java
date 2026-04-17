@@ -2,6 +2,7 @@ package com.marketplace.messaging;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -68,7 +69,7 @@ class MessagingServiceTest {
 
         when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(AccessDeniedException.class,
                 () -> service.sendMessage(conv.getId(), outsider, "hack"));
     }
 
@@ -77,6 +78,6 @@ class MessagingServiceTest {
         UUID id = UUID.randomUUID();
         when(conversationRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> service.getConversation(id));
+        assertThrows(ResourceNotFoundException.class, () -> service.getConversation(id, UUID.randomUUID()));
     }
 }

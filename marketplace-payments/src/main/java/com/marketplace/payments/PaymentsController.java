@@ -25,8 +25,8 @@ public class PaymentsController {
     }
 
     @GetMapping("/intents/{id}")
-    public ResponseEntity<PaymentIntent> getIntent(@PathVariable UUID id) {
-        return ResponseEntity.ok(paymentsService.getIntent(id));
+    public ResponseEntity<PaymentIntent> getIntent(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(paymentsService.getIntentForUser(id, authentication));
     }
 
     @PostMapping("/intents")
@@ -42,8 +42,8 @@ public class PaymentsController {
 
     @PostMapping("/intents/{id}/process")
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<PaymentIntent> processIntent(@PathVariable UUID id) {
-        return ResponseEntity.ok(paymentsService.processIntent(id));
+    public ResponseEntity<PaymentIntent> processIntent(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(paymentsService.processIntent(id, authentication));
     }
 
     @PostMapping("/intents/{id}/confirm")
@@ -55,8 +55,8 @@ public class PaymentsController {
 
     @PostMapping("/intents/{id}/cancel")
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<PaymentIntent> cancelIntent(@PathVariable UUID id) {
-        return ResponseEntity.ok(paymentsService.cancelIntent(id));
+    public ResponseEntity<PaymentIntent> cancelIntent(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(paymentsService.cancelIntent(id, authentication));
     }
 
     @PostMapping("/{paymentId}/refund")

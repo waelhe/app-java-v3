@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -38,12 +39,21 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Booking> listByConsumer(UUID consumerId, Pageable pageable) {
+    public Booking getByIdForUser(UUID id, Authentication authentication) {
+        Booking booking = getById(id);
+        verifyParticipantOwnership(booking, authentication);
+        return booking;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Booking> listByConsumer(UUID consumerId, Pageable pageable, Authentication authentication) {
+        verifyUserOrAdmin(consumerId, authentication);
         return bookingRepository.findByConsumerId(consumerId, pageable);
     }
 
     @Transactional(readOnly = true)
-    public Page<Booking> listByProvider(UUID providerId, Pageable pageable) {
+    public Page<Booking> listByProvider(UUID providerId, Pageable pageable, Authentication authentication) {
+        verifyUserOrAdmin(providerId, authentication);
         return bookingRepository.findByProviderId(providerId, pageable);
     }
 
@@ -85,6 +95,9 @@ public class BookingService {
     @PreAuthorize("hasRole('CONSUMER')")
     public Booking create(UUID consumerId, UUID providerId, UUID listingId,
                            Long priceCents, String notes) {
+        if (priceCents == null || priceCents <= 0) {
+            throw new IllegalArgumentException("priceCents must be greater than zero");
+        }
         Booking booking = Booking.create(consumerId, providerId, listingId, priceCents, notes);
         Booking saved = bookingRepository.save(booking);
         eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
@@ -120,7 +133,7 @@ public class BookingService {
     private void verifyProviderOwnership(Booking booking, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!booking.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
-            throw new IllegalArgumentException("You are not the provider for this booking");
+            throw new AccessDeniedException("You are not the provider for this booking");
         }
     }
 
@@ -129,7 +142,14 @@ public class BookingService {
         if (!booking.getConsumerId().equals(currentUserId)
                 && !booking.getProviderId().equals(currentUserId)
                 && !currentUserProvider.isAdmin(authentication)) {
-            throw new IllegalArgumentException("You are not a participant in this booking");
+            throw new AccessDeniedException("You are not a participant in this booking");
+        }
+    }
+
+    private void verifyUserOrAdmin(UUID userId, Authentication authentication) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!currentUserId.equals(userId) && !currentUserProvider.isAdmin(authentication)) {
+            throw new AccessDeniedException("You can only access your own bookings");
         }
     }
 

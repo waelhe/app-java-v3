@@ -18,6 +18,9 @@ spring:
 
   flyway:
     clean-disabled: true
+  quartz:
+    jdbc:
+      initialize-schema: never
 
 logging:
   level:
