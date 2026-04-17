@@ -31,7 +31,8 @@ class ResilienceAnnotationTest {
         @Test
         @DisplayName("processIntent should have @Retry and @CircuitBreaker")
         void processIntent_hasRetryAndCircuitBreaker() throws NoSuchMethodException {
-            Method method = PaymentsService.class.getMethod("processIntent", java.util.UUID.class);
+            Method method = PaymentsService.class.getMethod("processIntent",
+                    java.util.UUID.class, Authentication.class);
 
             Retry retry = method.getAnnotation(Retry.class);
             CircuitBreaker cb = method.getAnnotation(CircuitBreaker.class);

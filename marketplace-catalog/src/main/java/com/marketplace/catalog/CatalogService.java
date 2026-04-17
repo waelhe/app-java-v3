@@ -11,6 +11,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -140,7 +141,7 @@ public class CatalogService implements CatalogSearchPort {
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!listing.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
-            throw new IllegalArgumentException("You do not own this listing");
+            throw new AccessDeniedException("You do not own this listing");
         }
     }
 
