@@ -7,10 +7,14 @@ import org.springframework.stereotype.Component;
 import java.util.UUID;
 
 /**
- * Adapter that implements the BookingParticipantProvider port
+ * Adapter that implements the {@link BookingParticipantProvider} port
  * using the booking module's own repository.
- * This allows other modules (e.g., reviews) to look up booking
+ *
+ * <p>This allows other modules (e.g., reviews) to look up booking
  * participants without depending on the booking module directly.
+ * The port is a synchronous interface (not an event) because the
+ * caller needs the provider ID before persisting — see
+ * {@link BookingParticipantProvider} for the design rationale.</p>
  */
 @Component
 public class BookingParticipantProviderAdapter implements BookingParticipantProvider {

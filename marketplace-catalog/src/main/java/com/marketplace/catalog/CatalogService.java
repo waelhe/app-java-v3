@@ -25,6 +25,12 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
+/**
+ * Implements {@link ListingPriceProvider} so that the booking module can
+ * derive price and provider from a listing synchronously.
+ * See {@code ListingPriceProvider} Javadoc for the design rationale
+ * (synchronous interface vs. asynchronous event).
+ */
 public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
 
     private final ProviderListingRepository listingRepository;
