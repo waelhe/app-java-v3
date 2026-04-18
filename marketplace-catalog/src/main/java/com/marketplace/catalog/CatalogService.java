@@ -3,7 +3,6 @@ package com.marketplace.catalog;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
-import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
