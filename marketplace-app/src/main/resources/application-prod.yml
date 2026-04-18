@@ -18,13 +18,34 @@ spring:
 
   flyway:
     clean-disabled: true
+
   quartz:
     jdbc:
       initialize-schema: never
 
+  cache:
+    type: redis
+
+  modulith:
+    events:
+      completion-mode: archive
+      staleness:
+        publication-threshold: 6h
+        processing-threshold: 1h
+      republish-outstanding-events-on-restart: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+server:
+  shutdown: graceful
+
 logging:
   level:
     org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
     com.marketplace: INFO
 
 management:
@@ -32,7 +53,22 @@ management:
     health:
       show-details: never
       show-components: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,redis,diskSpace
+        liveness:
+          include: ping
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,modulith
+  observations:
+    enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 0.1
