@@ -24,7 +24,9 @@ COPY --from=extractor /app/application/ ./
 USER app
 EXPOSE 8080
 
-# Production JVM options: Generational ZGC + Container awareness
-ENV JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+# Production JVM options: Generational ZGC + container-aware heap
+# UseContainerSupport omitted — enabled by default since Java 10+
+# (same principle as @EnableWebSecurity being redundant in Boot)
+ENV JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]
