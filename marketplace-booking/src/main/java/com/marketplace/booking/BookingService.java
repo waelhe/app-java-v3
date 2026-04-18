@@ -2,6 +2,8 @@ package com.marketplace.booking;
 
 import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -23,13 +25,16 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final ListingPriceProvider listingPriceProvider;
 
     public BookingService(BookingRepository bookingRepository,
                           CurrentUserProvider currentUserProvider,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          ListingPriceProvider listingPriceProvider) {
         this.bookingRepository = bookingRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.listingPriceProvider = listingPriceProvider;
     }
 
     @Transactional(readOnly = true)
@@ -93,18 +98,15 @@ public class BookingService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    public Booking create(UUID consumerId, UUID providerId, UUID listingId,
-                           Long priceCents, String notes) {
-        if (priceCents == null || priceCents <= 0) {
-            throw new IllegalArgumentException("priceCents must be greater than zero");
-        }
-        Booking booking = Booking.create(consumerId, providerId, listingId, priceCents, notes);
+    public Booking create(UUID consumerId, UUID listingId, String notes) {
+        ListingInfo info = listingPriceProvider.getListingInfo(listingId);
+        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), notes);
         Booking saved = bookingRepository.save(booking);
         eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
         return saved;
     }
 
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     public Booking confirm(UUID id, Authentication authentication) {
         Booking booking = getById(id);
@@ -113,7 +115,7 @@ public class BookingService {
         return booking;
     }
 
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     public Booking complete(UUID id, Authentication authentication) {
         Booking booking = getById(id);

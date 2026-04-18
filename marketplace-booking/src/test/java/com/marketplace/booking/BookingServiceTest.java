@@ -1,5 +1,7 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,12 +21,13 @@ class BookingServiceTest {
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final ListingPriceProvider listingPriceProvider = mock(ListingPriceProvider.class);
     private final Authentication authentication = mock(Authentication.class);
     private BookingService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher);
+        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher, listingPriceProvider);
     }
 
     @Test
@@ -33,9 +36,11 @@ class BookingServiceTest {
         UUID providerId = UUID.randomUUID();
         UUID listingId = UUID.randomUUID();
 
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Booking booking = service.create(consumerId, providerId, listingId, 5000L, "test notes");
+        Booking booking = service.create(consumerId, listingId, "test notes");
 
         assertEquals(BookingStatus.PENDING, booking.getStatus());
         assertEquals(consumerId, booking.getConsumerId());

@@ -2,6 +2,8 @@ package com.marketplace.catalog;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingCreatedEvent;
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -24,7 +26,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
-public class CatalogService implements CatalogSearchPort {
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -89,6 +91,13 @@ public class CatalogService implements CatalogSearchPort {
     public ProviderListing getById(UUID id) {
         return listingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ListingInfo getListingInfo(UUID listingId) {
+        ProviderListing listing = getById(listingId);
+        return new ListingInfo(listing.getProviderId(), listing.getPriceCents());
     }
 
     @PreAuthorize("hasRole('PROVIDER')")

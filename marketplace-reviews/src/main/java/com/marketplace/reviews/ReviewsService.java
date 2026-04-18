@@ -1,5 +1,6 @@
 package com.marketplace.reviews;
 
+import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -21,13 +22,16 @@ public class ReviewsService {
     private final ReviewRepository reviewRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final BookingParticipantProvider bookingParticipantProvider;
 
     public ReviewsService(ReviewRepository reviewRepository,
                           CurrentUserProvider currentUserProvider,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          BookingParticipantProvider bookingParticipantProvider) {
         this.reviewRepository = reviewRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.bookingParticipantProvider = bookingParticipantProvider;
     }
 
     @Transactional(readOnly = true)
@@ -47,11 +51,12 @@ public class ReviewsService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    public Review create(UUID bookingId, UUID reviewerId, UUID providerId,
+    public Review create(UUID bookingId, UUID reviewerId,
                          Integer rating, String comment) {
         if (reviewRepository.existsByBookingId(bookingId)) {
             throw new IllegalStateException("Review already exists for booking: " + bookingId);
         }
+        UUID providerId = bookingParticipantProvider.getProviderId(bookingId);
         Review saved = reviewRepository.save(Review.create(bookingId, reviewerId, providerId, rating, comment));
         eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId()));
         return saved;
