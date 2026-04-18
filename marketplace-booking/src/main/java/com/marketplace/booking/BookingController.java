@@ -49,19 +49,18 @@ public class BookingController {
                                            Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         Booking booking = bookingService.create(
-                consumerId, request.providerId(), request.listingId(),
-                request.priceCents(), request.notes());
+                consumerId, request.listingId(), request.notes());
         return ResponseEntity.status(HttpStatus.CREATED).body(booking);
     }
 
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ResponseEntity<Booking> confirm(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingService.confirm(id, authentication));
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ResponseEntity<Booking> complete(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingService.complete(id, authentication));
     }
@@ -73,9 +72,7 @@ public class BookingController {
     }
 
     public record CreateBookingRequest(
-            @NotNull UUID providerId,
             @NotNull UUID listingId,
-            @NotNull Long priceCents,
             String notes
     ) {}
 }

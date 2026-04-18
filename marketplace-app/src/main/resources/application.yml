@@ -40,7 +40,7 @@ spring:
 
   modulith:
     events:
-      completion-mode: update
+      completion-mode: archive
 
   lifecycle:
     timeout-per-shutdown-phase: 30s
@@ -57,12 +57,12 @@ spring:
       pageable:
         max-page-size: 100
   cache:
-    type: ${CACHE_TYPE:simple}
+    type: ${CACHE_TYPE:redis}
     cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results
   quartz:
     job-store-type: jdbc
     jdbc:
-      initialize-schema: always
+      initialize-schema: never
     properties:
       org:
         quartz:

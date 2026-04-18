@@ -54,7 +54,7 @@ public class MessagingService {
     }
 
     public Message sendMessage(UUID conversationId, UUID senderId, String content) {
-        Conversation conversation = getConversation(conversationId, senderId);
+        getConversation(conversationId, senderId);
         return messageRepository.save(Message.create(conversationId, senderId, content));
     }
 

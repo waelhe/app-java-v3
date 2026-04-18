@@ -26,11 +26,7 @@ public class SearchIndexRefresher extends QuartzJobBean {
 
     @Override
     protected void executeInternal(JobExecutionContext context) {
-        try {
-            jdbcTemplate.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_listing_search");
-            log.debug("Refreshed mv_listing_search materialized view");
-        } catch (Exception e) {
-            log.warn("Failed to refresh mv_listing_search: {}", e.getMessage());
-        }
+        jdbcTemplate.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_listing_search");
+        log.debug("Refreshed mv_listing_search materialized view");
     }
 }

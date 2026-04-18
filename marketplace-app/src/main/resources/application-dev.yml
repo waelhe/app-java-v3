@@ -12,8 +12,16 @@ spring:
 
   flyway:
     clean-disabled: false
+
   quartz:
     job-store-type: memory
+
+  cache:
+    type: simple
+
+  modulith:
+    events:
+      completion-mode: delete
 
   devtools:
     restart:

@@ -51,7 +51,7 @@ public class ReviewsController {
                                           Authentication authentication) {
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
         Review review = reviewsService.create(
-                request.bookingId(), reviewerId, request.providerId(),
+                request.bookingId(), reviewerId,
                 request.rating(), request.comment());
         return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
@@ -66,7 +66,6 @@ public class ReviewsController {
 
     public record CreateReviewRequest(
             @NotNull UUID bookingId,
-            @NotNull UUID providerId,
             @NotNull @Min(1) @Max(5) Integer rating,
             String comment
     ) {}

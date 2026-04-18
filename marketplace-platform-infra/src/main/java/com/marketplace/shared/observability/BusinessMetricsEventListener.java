@@ -4,8 +4,9 @@ import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ReviewCreatedEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
 public class BusinessMetricsEventListener {
@@ -16,22 +17,22 @@ public class BusinessMetricsEventListener {
         this.businessMetrics = businessMetrics;
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onBookingCreated(BookingCreatedEvent event) {
         businessMetrics.bookingCreated();
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onListingCreated(ListingCreatedEvent event) {
         businessMetrics.listingCreated();
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onReviewCreated(ReviewCreatedEvent event) {
         businessMetrics.reviewCreated();
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentStateChanged(PaymentStateChangedEvent event) {
         if ("INITIATED".equals(event.state())) {
             businessMetrics.paymentInitiated();
