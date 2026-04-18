@@ -17,7 +17,7 @@ class MarketplaceApplicationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings("resource") // Lifecycle managed by @Testcontainers extension
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
             DockerImageName.parse("postgres:17-alpine"))
             .withDatabaseName("marketplace");
 
