@@ -1,7 +1,7 @@
 spring:
   docker:
     compose:
-      enabled: true
+      enabled: ${DOCKER_COMPOSE_ENABLED:false}
       file: ../docker-compose.yml
 
   datasource:
