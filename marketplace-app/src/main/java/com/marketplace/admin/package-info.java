@@ -1,7 +1,8 @@
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
-        "booking :: booking-spi",
-        "catalog :: catalog-spi",
+        "shared :: shared-api",
+        "booking",
+        "catalog",
         "identity",
         "payments"
     }
