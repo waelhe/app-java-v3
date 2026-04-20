@@ -6,6 +6,10 @@ spring:
     virtual:
       enabled: true
 
+  docker:
+    compose:
+      enabled: false
+
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
