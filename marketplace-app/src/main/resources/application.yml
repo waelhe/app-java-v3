@@ -75,8 +75,6 @@ spring:
             instanceId: AUTO
           threadPool:
             threadCount: 5
-          jobStore:
-            isClustered: true
 
 
 server:

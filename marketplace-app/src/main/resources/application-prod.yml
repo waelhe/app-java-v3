@@ -22,6 +22,11 @@ spring:
   quartz:
     jdbc:
       initialize-schema: never
+    properties:
+      org:
+        quartz:
+          jobStore:
+            isClustered: true
 
   cache:
     type: redis
