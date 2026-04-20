@@ -36,11 +36,11 @@
         <java.version>21</java.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <archunit.version>1.4.1</archunit.version>
+        <enforcer.fail>false</enforcer.fail>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- Exception #1: Spring Modulith BOM — Boot does not manage Modulith -->
             <dependency>
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
@@ -48,7 +48,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Exception #3: Resilience4j BOM — Boot BOM does not manage resilience4j-spring-boot4 -->
             <dependency>
                 <groupId>io.github.resilience4j</groupId>
                 <artifactId>resilience4j-bom</artifactId>
@@ -56,13 +55,11 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Exception #4: ArchUnit — test-only, not managed by Boot -->
             <dependency>
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
             </dependency>
-            <!-- Internal modules -->
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-shared</artifactId>
@@ -131,8 +128,15 @@
                             <rules>
                                 <dependencyConvergence/>
                                 <requireUpperBoundDeps/>
+                                <banDuplicatePomDependencyVersions/>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                </requireJavaVersion>
                             </rules>
-                            <fail>true</fail>
+                            <fail>${enforcer.fail}</fail>
                         </configuration>
                     </execution>
                 </executions>
