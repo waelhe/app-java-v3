@@ -1,11 +1,10 @@
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
         "shared :: shared-api",
-        "booking",
-        "catalog",
-        "identity",
-        "payments"
+        "booking :: booking-spi",
+        "catalog :: catalog-spi",
+        "identity :: identity-spi",
+        "payments :: payments-spi"
     }
 )
-@org.springframework.modulith.NamedInterface("admin-api")
 package com.marketplace.admin;
