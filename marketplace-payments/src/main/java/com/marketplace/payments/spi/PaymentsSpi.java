@@ -11,7 +11,7 @@ import java.util.UUID;
  */
 public interface PaymentsSpi {
 
-	Page<PaymentSummary> listIntentsSummaries(Pageable pageable);
+    Page<PaymentSummary> listIntentsSummaries(Pageable pageable);
 
-	PaymentSummary getIntentSummary(UUID id);
+    PaymentSummary getIntentSummary(UUID id);
 }

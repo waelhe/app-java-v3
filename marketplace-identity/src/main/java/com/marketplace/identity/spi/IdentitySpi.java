@@ -9,5 +9,5 @@ import org.springframework.data.domain.Pageable;
  */
 public interface IdentitySpi {
 
-	Page<UserSummary> findAllSummaries(Pageable pageable);
+    Page<UserSummary> findAllSummaries(Pageable pageable);
 }

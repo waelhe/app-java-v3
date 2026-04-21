@@ -9,15 +9,15 @@ import java.util.UUID;
  * Follows the same pattern as BookingSummary, UserSummary, PaymentSummary.
  */
 public record ProviderListingSummary(
-		UUID id,
-		UUID providerId,
-		String title,
-		String description,
-		String category,
-		Long priceCents,
-		String currency,
-		String status,
-		Instant createdAt,
-		Instant updatedAt
+        UUID id,
+        UUID providerId,
+        String title,
+        String description,
+        String category,
+        Long priceCents,
+        String currency,
+        String status,
+        Instant createdAt,
+        Instant updatedAt
 ) {
 }

@@ -13,7 +13,7 @@ import java.util.UUID;
  */
 public interface CatalogSpi {
 
-	Page<ProviderListingSummary> findAllSummaries(Pageable pageable);
+    Page<ProviderListingSummary> findAllSummaries(Pageable pageable);
 
-	ProviderListingSummary archiveListing(UUID id, Authentication authentication);
+    ProviderListingSummary archiveListing(UUID id, Authentication authentication);
 }

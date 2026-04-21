@@ -10,7 +10,7 @@ import org.springframework.data.domain.Pageable;
  */
 public interface BookingSpi {
 
-	Page<BookingSummary> listAllSummaries(Pageable pageable);
+    Page<BookingSummary> listAllSummaries(Pageable pageable);
 
-	Page<BookingSummary> listByStatusSummary(String status, Pageable pageable);
+    Page<BookingSummary> listByStatusSummary(String status, Pageable pageable);
 }
