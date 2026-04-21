@@ -47,7 +47,7 @@ spring:
             jwk-set-uri: ${GOOGLE_JWK_SET_URI:http://localhost:8080/oauth2/jwks}
       resourceserver:
         jwt:
-          jwk-set-uri: ${JWK_SET_URI:http://localhost:8080/oauth2/jwks}
+          public-key-location: classpath:keys/dev-rsa.pub
 
   devtools:
     restart:
@@ -62,6 +62,10 @@ logging:
     com.marketplace: DEBUG
 
 marketplace:
+  cors:
+    allowed-origins: http://localhost:3000
+  security:
+    oauth2-login-enabled: false
   webclient:
     connect-timeout: 5000
     response-timeout: 10s
