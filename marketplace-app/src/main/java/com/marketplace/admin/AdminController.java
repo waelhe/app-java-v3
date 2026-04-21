@@ -24,60 +24,60 @@ import java.util.UUID;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
-	private final IdentitySpi identitySpi;
-	private final CatalogSpi catalogSpi;
-	private final BookingSpi bookingSpi;
-	private final PaymentsSpi paymentsSpi;
+    private final IdentitySpi identitySpi;
+    private final CatalogSpi catalogSpi;
+    private final BookingSpi bookingSpi;
+    private final PaymentsSpi paymentsSpi;
 
-	public AdminController(IdentitySpi identitySpi,
-						   CatalogSpi catalogSpi,
-						   BookingSpi bookingSpi,
-						   PaymentsSpi paymentsSpi) {
-		this.identitySpi = identitySpi;
-		this.catalogSpi = catalogSpi;
-		this.bookingSpi = bookingSpi;
-		this.paymentsSpi = paymentsSpi;
-	}
+    public AdminController(IdentitySpi identitySpi,
+                           CatalogSpi catalogSpi,
+                           BookingSpi bookingSpi,
+                           PaymentsSpi paymentsSpi) {
+        this.identitySpi = identitySpi;
+        this.catalogSpi = catalogSpi;
+        this.bookingSpi = bookingSpi;
+        this.paymentsSpi = paymentsSpi;
+    }
 
-	// ── Users ──────────────────────────────────────────
+    // ── Users ──────────────────────────────────────────
 
-	@GetMapping("/users")
-	public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
-		return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
-	}
+    @GetMapping("/users")
+    public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
+        return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
+    }
 
-	// ── Listings ───────────────────────────────────────
+    // ── Listings ───────────────────────────────────────
 
-	@GetMapping("/listings")
-	public ResponseEntity<PagedResponse<ProviderListingSummary>> listAllListings(Pageable pageable) {
-		return ResponseEntity.ok(PagedResponse.of(catalogSpi.findAllSummaries(pageable)));
-	}
+    @GetMapping("/listings")
+    public ResponseEntity<PagedResponse<ProviderListingSummary>> listAllListings(Pageable pageable) {
+        return ResponseEntity.ok(PagedResponse.of(catalogSpi.findAllSummaries(pageable)));
+    }
 
-	@PostMapping("/listings/{id}/archive")
-	public ResponseEntity<ProviderListingSummary> archiveListing(@PathVariable UUID id, Authentication authentication) {
-		return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
-	}
+    @PostMapping("/listings/{id}/archive")
+    public ResponseEntity<ProviderListingSummary> archiveListing(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
+    }
 
-	// ── Bookings ───────────────────────────────────────
+    // ── Bookings ───────────────────────────────────────
 
-	@GetMapping("/bookings")
-	public ResponseEntity<PagedResponse<BookingSummary>> listBookings(
-			@RequestParam(required = false) String status, Pageable pageable) {
-		Page<BookingSummary> bookings = status != null && !status.isBlank()
-				? bookingSpi.listByStatusSummary(status, pageable)
-				: bookingSpi.listAllSummaries(pageable);
-		return ResponseEntity.ok(PagedResponse.of(bookings));
-	}
+    @GetMapping("/bookings")
+    public ResponseEntity<PagedResponse<BookingSummary>> listBookings(
+            @RequestParam(required = false) String status, Pageable pageable) {
+        Page<BookingSummary> bookings = status != null && !status.isBlank()
+                ? bookingSpi.listByStatusSummary(status, pageable)
+                : bookingSpi.listAllSummaries(pageable);
+        return ResponseEntity.ok(PagedResponse.of(bookings));
+    }
 
-	// ── Payments ──────────────────────────────────────
+    // ── Payments ──────────────────────────────────────
 
-	@GetMapping("/payments")
-	public ResponseEntity<PagedResponse<PaymentSummary>> listPaymentIntents(Pageable pageable) {
-		return ResponseEntity.ok(PagedResponse.of(paymentsSpi.listIntentsSummaries(pageable)));
-	}
+    @GetMapping("/payments")
+    public ResponseEntity<PagedResponse<PaymentSummary>> listPaymentIntents(Pageable pageable) {
+        return ResponseEntity.ok(PagedResponse.of(paymentsSpi.listIntentsSummaries(pageable)));
+    }
 
-	@GetMapping("/payments/{id}")
-	public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
-		return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
-	}
+    @GetMapping("/payments/{id}")
+    public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
+        return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
+    }
 }
