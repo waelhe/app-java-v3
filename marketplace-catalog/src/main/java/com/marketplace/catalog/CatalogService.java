@@ -1,10 +1,8 @@
 package com.marketplace.catalog;
 
-import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
-import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -33,7 +31,7 @@ import java.util.stream.Collectors;
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
  */
-public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -154,43 +152,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listing;
     }
 
-    // ── CatalogSpi implementation ────────────────────────
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<ProviderListingSummary> findAllSummaries(Pageable pageable) {
-        return findAll(pageable).map(this::toListingSummary);
-    }
-
-    @Override
-    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
-    public ProviderListingSummary archiveListing(UUID id, Authentication authentication) {
-        return toListingSummary(archive(id, authentication));
-    }
-
-    // ── Private helpers ──────────────────────────────────
-
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!listing.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new AccessDeniedException("You do not own this listing");
         }
-    }
-
-    private ProviderListingSummary toListingSummary(ProviderListing listing) {
-        return new ProviderListingSummary(
-                listing.getId(),
-                listing.getProviderId(),
-                listing.getTitle(),
-                listing.getDescription(),
-                listing.getCategory(),
-                listing.getPriceCents(),
-                listing.getCurrency(),
-                listing.getStatus().name(),
-                listing.getCreatedAt(),
-                listing.getUpdatedAt()
-        );
     }
 
     /**

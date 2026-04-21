@@ -1,6 +1,5 @@
 package com.marketplace.booking;
 
-import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
@@ -21,7 +20,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class BookingService implements BookingSpi {
+public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final CurrentUserProvider currentUserProvider;

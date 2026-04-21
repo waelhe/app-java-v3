@@ -1,6 +1,5 @@
 package com.marketplace.payments;
 
-import com.marketplace.payments.spi.PaymentsSpi;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -20,7 +19,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class PaymentsService implements PaymentsSpi {
+public class PaymentsService {
 
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;

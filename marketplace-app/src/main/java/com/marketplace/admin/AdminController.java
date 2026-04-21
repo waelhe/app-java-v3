@@ -1,14 +1,14 @@
 package com.marketplace.admin;
 
-import com.marketplace.booking.spi.BookingSpi;
-import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.identity.spi.IdentitySpi;
-import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.booking.BookingService;
+import com.marketplace.catalog.CatalogService;
+import com.marketplace.catalog.ProviderListing;
+import com.marketplace.identity.UserService;
+import com.marketplace.payments.PaymentsService;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PaymentSummary;
-import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.UserSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,38 +24,38 @@ import java.util.UUID;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
-    private final IdentitySpi identitySpi;
-    private final CatalogSpi catalogSpi;
-    private final BookingSpi bookingSpi;
-    private final PaymentsSpi paymentsSpi;
+    private final UserService userService;
+    private final CatalogService catalogService;
+    private final BookingService bookingService;
+    private final PaymentsService paymentsService;
 
-    public AdminController(IdentitySpi identitySpi,
-                           CatalogSpi catalogSpi,
-                           BookingSpi bookingSpi,
-                           PaymentsSpi paymentsSpi) {
-        this.identitySpi = identitySpi;
-        this.catalogSpi = catalogSpi;
-        this.bookingSpi = bookingSpi;
-        this.paymentsSpi = paymentsSpi;
+    public AdminController(UserService userService,
+                           CatalogService catalogService,
+                           BookingService bookingService,
+                           PaymentsService paymentsService) {
+        this.userService = userService;
+        this.catalogService = catalogService;
+        this.bookingService = bookingService;
+        this.paymentsService = paymentsService;
     }
 
     // ── Users ──────────────────────────────────────────
 
     @GetMapping("/users")
     public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
+        return ResponseEntity.ok(PagedResponse.of(userService.findAllSummaries(pageable)));
     }
 
     // ── Listings ───────────────────────────────────────
 
     @GetMapping("/listings")
-    public ResponseEntity<PagedResponse<ProviderListingSummary>> listAllListings(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(catalogSpi.findAllSummaries(pageable)));
+    public ResponseEntity<PagedResponse<ProviderListing>> listAllListings(Pageable pageable) {
+        return ResponseEntity.ok(PagedResponse.of(catalogService.findAll(pageable)));
     }
 
     @PostMapping("/listings/{id}/archive")
-    public ResponseEntity<ProviderListingSummary> archiveListing(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
+    public ResponseEntity<ProviderListing> archiveListing(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.archive(id, authentication));
     }
 
     // ── Bookings ───────────────────────────────────────
@@ -64,8 +64,8 @@ public class AdminController {
     public ResponseEntity<PagedResponse<BookingSummary>> listBookings(
             @RequestParam(required = false) String status, Pageable pageable) {
         Page<BookingSummary> bookings = status != null && !status.isBlank()
-                ? bookingSpi.listByStatusSummary(status, pageable)
-                : bookingSpi.listAllSummaries(pageable);
+                ? bookingService.listByStatusSummary(status, pageable)
+                : bookingService.listAllSummaries(pageable);
         return ResponseEntity.ok(PagedResponse.of(bookings));
     }
 
@@ -73,11 +73,11 @@ public class AdminController {
 
     @GetMapping("/payments")
     public ResponseEntity<PagedResponse<PaymentSummary>> listPaymentIntents(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(paymentsSpi.listIntentsSummaries(pageable)));
+        return ResponseEntity.ok(PagedResponse.of(paymentsService.listIntentsSummaries(pageable)));
     }
 
     @GetMapping("/payments/{id}")
     public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
-        return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
+        return ResponseEntity.ok(paymentsService.getIntentSummary(id));
     }
 }
