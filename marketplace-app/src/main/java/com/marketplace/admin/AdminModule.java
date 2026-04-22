@@ -1,8 +1,10 @@
 package com.marketplace.admin;
 
-import org.springframework.modulith.NamedInterface;
-
-@NamedInterface("admin-api")
+/**
+ * Marker type for the admin application module.
+ * Module metadata (allowed dependencies, named interface) is declared
+ * in {@code package-info.java} following the project convention.
+ */
 public final class AdminModule {
     private AdminModule() {
     }

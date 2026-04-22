@@ -1,4 +1,9 @@
 spring:
+  docker:
+    compose:
+      enabled: ${DOCKER_COMPOSE_ENABLED:false}
+      file: ../docker-compose.yml
+
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
@@ -23,6 +28,27 @@ spring:
     events:
       completion-mode: delete
 
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:dev-client}
+            client-secret: ${GOOGLE_CLIENT_SECRET:dev-secret}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+        provider:
+          google:
+            authorization-uri: ${GOOGLE_AUTH_URI:http://localhost:8080/oauth2/authorize}
+            token-uri: ${GOOGLE_TOKEN_URI:http://localhost:8080/oauth2/token}
+            user-info-uri: ${GOOGLE_USER_INFO_URI:http://localhost:8080/oauth2/userinfo}
+            user-name-attribute: sub
+            jwk-set-uri: ${GOOGLE_JWK_SET_URI:http://localhost:8080/oauth2/jwks}
+      resourceserver:
+        jwt:
+          public-key-location: classpath:keys/dev-rsa.pub
+
   devtools:
     restart:
       enabled: true
@@ -36,6 +62,7 @@ logging:
     com.marketplace: DEBUG
 
 marketplace:
-  webclient:
-    connect-timeout: 5000
-    response-timeout: 10s
+  cors:
+    allowed-origins: http://localhost:3000
+  security:
+    oauth2-login-enabled: false

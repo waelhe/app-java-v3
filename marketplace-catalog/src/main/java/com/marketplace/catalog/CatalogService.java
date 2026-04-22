@@ -1,8 +1,10 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -18,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -31,7 +34,7 @@ import java.util.stream.Collectors;
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
  */
-public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -143,6 +146,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
         return listing;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ProviderListingSummary> findAllSummaries(Pageable pageable) {
+        return findAll(pageable).map(this::toProviderListingSummary);
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    public ProviderListingSummary archiveListing(UUID id, Authentication authentication) {
+        ProviderListing listing = getById(id);
+        verifyOwnership(listing, authentication);
+        listing.archive();
+        return toProviderListingSummary(listing);
+    }
+
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing archive(UUID id, Authentication authentication) {
@@ -172,8 +191,21 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider {
                 listing.getId(),
                 listing.getTitle(),
                 listing.getCategory(),
-                java.math.BigDecimal.valueOf(listing.getPriceCents(), 2),
+                BigDecimal.valueOf(listing.getPriceCents(), 2),
                 providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")
         ));
+    }
+
+    private ProviderListingSummary toProviderListingSummary(ProviderListing listing) {
+        return new ProviderListingSummary(
+                listing.getId(),
+                listing.getTitle(),
+                listing.getCategory(),
+                BigDecimal.valueOf(listing.getPriceCents(), 2),
+                listing.getProviderId(),
+                listing.getStatus().name(),
+                listing.getCreatedAt(),
+                listing.getUpdatedAt()
+        );
     }
 }

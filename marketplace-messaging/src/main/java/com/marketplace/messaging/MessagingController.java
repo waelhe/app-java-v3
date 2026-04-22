@@ -27,16 +27,17 @@ public class MessagingController {
     }
 
     @GetMapping("/conversations/{id}")
-    public ResponseEntity<Conversation> getConversation(@PathVariable UUID id, Authentication authentication) {
+    public ResponseEntity<ConversationResponse> getConversation(@PathVariable UUID id, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.ok(messagingService.getConversation(id, userId));
+        return ResponseEntity.ok(ConversationResponse.from(messagingService.getConversation(id, userId)));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
-    public ResponseEntity<PagedResponse<Message>> getMessages(
+    public ResponseEntity<PagedResponse<MessageResponse>> getMessages(
             @PathVariable UUID conversationId, Pageable pageable, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.ok(PagedResponse.of(messagingService.getMessages(conversationId, userId, pageable)));
+        return ResponseEntity.ok(PagedResponse.of(
+                messagingService.getMessages(conversationId, userId, pageable).map(MessageResponse::from)));
     }
 
     @GetMapping("/conversations/{conversationId}/unread")
@@ -46,26 +47,26 @@ public class MessagingController {
     }
 
     @PostMapping("/conversations")
-    public ResponseEntity<Conversation> createConversation(@Valid @RequestBody CreateConversationRequest request,
-                                                            Authentication authentication) {
+    public ResponseEntity<ConversationResponse> createConversation(@Valid @RequestBody CreateConversationRequest request,
+                                                                   Authentication authentication) {
         UUID participantA = currentUserProvider.getCurrentUserId(authentication);
         Conversation conversation = messagingService.createConversation(
                 participantA, request.participantB(), request.bookingId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(conversation);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ConversationResponse.from(conversation));
     }
 
     @PostMapping("/conversations/{conversationId}/messages")
-    public ResponseEntity<Message> sendMessage(@PathVariable UUID conversationId,
-                                                @Valid @RequestBody SendMessageRequest request,
-                                                Authentication authentication) {
+    public ResponseEntity<MessageResponse> sendMessage(@PathVariable UUID conversationId,
+                                                       @Valid @RequestBody SendMessageRequest request,
+                                                       Authentication authentication) {
         UUID senderId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(messagingService.sendMessage(conversationId, senderId, request.content()));
+                .body(MessageResponse.from(messagingService.sendMessage(conversationId, senderId, request.content())));
     }
 
     @PostMapping("/conversations/{conversationId}/read")
     public ResponseEntity<Void> markAsRead(@PathVariable UUID conversationId,
-                                            Authentication authentication) {
+                                           Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         messagingService.markAsRead(conversationId, userId);
         return ResponseEntity.ok().build();
@@ -74,11 +75,14 @@ public class MessagingController {
     public record CreateConversationRequest(
             @NotNull UUID participantB,
             UUID bookingId
-    ) {}
+    ) {
+    }
 
     public record SendMessageRequest(
             @NotBlank String content
-    ) {}
+    ) {
+    }
 
-    public record UnreadCountResponse(long unreadCount) {}
+    public record UnreadCountResponse(long unreadCount) {
+    }
 }

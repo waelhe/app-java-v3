@@ -29,49 +29,51 @@ public class ReviewsController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Review> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(reviewsService.getById(id));
+    public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id) {
+        return ResponseEntity.ok(ReviewResponse.from(reviewsService.getById(id)));
     }
 
     @GetMapping("/provider/{providerId}")
-    public ResponseEntity<PagedResponse<Review>> listByProvider(
+    public ResponseEntity<PagedResponse<ReviewResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable).map(ReviewResponse::from)));
     }
 
     @GetMapping("/reviewer/{reviewerId}")
-    public ResponseEntity<PagedResponse<Review>> listByReviewer(
+    public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewer(
             @PathVariable UUID reviewerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable).map(ReviewResponse::from)));
     }
 
     @PostMapping
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<Review> create(@Valid @RequestBody CreateReviewRequest request,
-                                          Authentication authentication) {
+    public ResponseEntity<ReviewResponse> create(@Valid @RequestBody CreateReviewRequest request,
+                                                 Authentication authentication) {
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
         Review review = reviewsService.create(
                 request.bookingId(), reviewerId,
                 request.rating(), request.comment());
-        return ResponseEntity.status(HttpStatus.CREATED).body(review);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ReviewResponse.from(review));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<Review> update(@PathVariable UUID id,
-                                          @Valid @RequestBody UpdateReviewRequest request,
-                                          Authentication authentication) {
-        return ResponseEntity.ok(reviewsService.update(id, request.rating(), request.comment(), authentication));
+    public ResponseEntity<ReviewResponse> update(@PathVariable UUID id,
+                                                 @Valid @RequestBody UpdateReviewRequest request,
+                                                 Authentication authentication) {
+        return ResponseEntity.ok(ReviewResponse.from(reviewsService.update(id, request.rating(), request.comment(), authentication)));
     }
 
     public record CreateReviewRequest(
             @NotNull UUID bookingId,
             @NotNull @Min(1) @Max(5) Integer rating,
             String comment
-    ) {}
+    ) {
+    }
 
     public record UpdateReviewRequest(
             @NotNull @Min(1) @Max(5) Integer rating,
             String comment
-    ) {}
+    ) {
+    }
 }

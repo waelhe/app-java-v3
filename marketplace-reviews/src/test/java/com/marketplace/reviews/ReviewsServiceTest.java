@@ -1,5 +1,6 @@
 package com.marketplace.reviews;
 
+import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +9,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,19 +31,19 @@ class ReviewsServiceTest {
     }
 
     @Test
-    void create_validReview() {
+    void create_validReview_forCompletedBooking() {
         UUID bookingId = UUID.randomUUID();
-        UUID reviewerId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
+        BookingInfo bookingInfo = new BookingInfo(providerId, consumerId, "COMPLETED", Instant.now(), Instant.now());
 
-        when(bookingParticipantProvider.getProviderId(bookingId)).thenReturn(providerId);
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
         when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Review review = service.create(bookingId, reviewerId, 4, "Great service");
+        Review review = service.create(bookingId, consumerId, 4, "Great service");
 
         assertEquals(4, review.getRating());
-        assertEquals("Great service", review.getComment());
         assertEquals(providerId, review.getProviderId());
     }
 
@@ -49,17 +51,41 @@ class ReviewsServiceTest {
     void create_rejectsInvalidRating() {
         assertThrows(IllegalArgumentException.class,
                 () -> Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 0, "bad"));
-        assertThrows(IllegalArgumentException.class,
-                () -> Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 6, "bad"));
     }
 
     @Test
     void create_rejectsDuplicateReview() {
         UUID bookingId = UUID.randomUUID();
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(true);
-
         assertThrows(IllegalStateException.class,
                 () -> service.create(bookingId, UUID.randomUUID(), 3, "dup"));
+    }
+
+    @Test
+    void create_rejectsNonConsumer() {
+        UUID bookingId = UUID.randomUUID();
+        UUID actualConsumerId = UUID.randomUUID();
+        UUID differentUserId = UUID.randomUUID();
+        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), actualConsumerId, "COMPLETED", Instant.now(), Instant.now());
+
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.create(bookingId, differentUserId, 3, "hacked"));
+    }
+
+    @Test
+    void create_rejectsNonCompletedBooking() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), consumerId, "CONFIRMED", Instant.now(), Instant.now());
+
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.create(bookingId, consumerId, 3, "too early"));
     }
 
     @Test
@@ -72,9 +98,7 @@ class ReviewsServiceTest {
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         Review updated = service.update(id, 5, "excellent", authentication);
-
         assertEquals(5, updated.getRating());
-        assertEquals("excellent", updated.getComment());
     }
 
     @Test

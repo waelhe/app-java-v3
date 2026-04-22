@@ -39,10 +39,25 @@ class MessagingServiceTest {
 
         when(conversationRepository.findByBookingId(bookingId)).thenReturn(Optional.of(existing));
 
-        Conversation result = service.createConversation(UUID.randomUUID(), UUID.randomUUID(), bookingId);
+        Conversation result = service.createConversation(existing.getParticipantA(), UUID.randomUUID(), bookingId);
 
         assertEquals(existing.getId(), result.getId());
         verify(conversationRepository, never()).save(any());
+    }
+
+
+    @Test
+    void createConversation_rejectsExistingWhenNotParticipant() {
+        UUID bookingId = UUID.randomUUID();
+        UUID participantA = UUID.randomUUID();
+        UUID participantB = UUID.randomUUID();
+        Conversation existing = Conversation.create(participantA, participantB, bookingId);
+        UUID outsider = UUID.randomUUID();
+
+        when(conversationRepository.findByBookingId(bookingId)).thenReturn(Optional.of(existing));
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.createConversation(outsider, UUID.randomUUID(), bookingId));
     }
 
     @Test

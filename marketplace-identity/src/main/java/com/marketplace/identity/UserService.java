@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
 import org.springframework.data.domain.Page;
@@ -12,7 +13,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class UserService {
+public class UserService implements IdentitySpi {
 
     private final UserRepository userRepository;
 

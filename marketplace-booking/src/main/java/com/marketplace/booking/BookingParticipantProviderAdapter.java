@@ -1,5 +1,6 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.stereotype.Component;
@@ -13,7 +14,7 @@ import java.util.UUID;
  * <p>This allows other modules (e.g., reviews) to look up booking
  * participants without depending on the booking module directly.
  * The port is a synchronous interface (not an event) because the
- * caller needs the provider ID before persisting — see
+ * caller needs booking details before persisting — see
  * {@link BookingParticipantProvider} for the design rationale.</p>
  */
 @Component
@@ -26,9 +27,15 @@ public class BookingParticipantProviderAdapter implements BookingParticipantProv
     }
 
     @Override
-    public UUID getProviderId(UUID bookingId) {
+    public BookingInfo getBookingInfo(UUID bookingId) {
         return bookingRepository.findById(bookingId)
-                .map(Booking::getProviderId)
+                .map(booking -> new BookingInfo(
+                        booking.getProviderId(),
+                        booking.getConsumerId(),
+                        booking.getStatus().name(),
+                        booking.getCreatedAt(),
+                        booking.getUpdatedAt()
+                ))
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingId));
     }
 }

@@ -1,5 +1,6 @@
 package com.marketplace.reviews;
 
+import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
@@ -56,8 +57,19 @@ public class ReviewsService {
         if (reviewRepository.existsByBookingId(bookingId)) {
             throw new IllegalStateException("Review already exists for booking: " + bookingId);
         }
-        UUID providerId = bookingParticipantProvider.getProviderId(bookingId);
-        Review saved = reviewRepository.save(Review.create(bookingId, reviewerId, providerId, rating, comment));
+
+        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
+
+        if (!bookingInfo.consumerId().equals(reviewerId)) {
+            throw new AccessDeniedException("Only the booking consumer can submit a review");
+        }
+
+        if (!"COMPLETED".equals(bookingInfo.status())) {
+            throw new IllegalStateException("Cannot review a booking that is not COMPLETED");
+        }
+
+        Review saved = reviewRepository.save(
+                Review.create(bookingId, reviewerId, bookingInfo.providerId(), rating, comment));
         eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId()));
         return saved;
     }

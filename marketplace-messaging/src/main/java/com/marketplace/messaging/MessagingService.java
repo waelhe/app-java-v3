@@ -47,7 +47,9 @@ public class MessagingService {
         if (bookingId != null) {
             var existing = conversationRepository.findByBookingId(bookingId);
             if (existing.isPresent()) {
-                return existing.get();
+                Conversation conversation = existing.get();
+                verifyParticipant(conversation, participantA);
+                return conversation;
             }
         }
         return conversationRepository.save(Conversation.create(participantA, participantB, bookingId));

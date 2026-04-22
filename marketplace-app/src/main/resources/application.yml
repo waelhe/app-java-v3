@@ -6,6 +6,10 @@ spring:
     virtual:
       enabled: true
 
+  docker:
+    compose:
+      enabled: false
+
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
@@ -71,8 +75,6 @@ spring:
             instanceId: AUTO
           threadPool:
             threadCount: 5
-          jobStore:
-            isClustered: true
 
 
 server:
@@ -161,6 +163,3 @@ resilience4j:
         limit-for-period: 30
 
 marketplace:
-  webclient:
-    connect-timeout: 5000
-    response-timeout: 10s

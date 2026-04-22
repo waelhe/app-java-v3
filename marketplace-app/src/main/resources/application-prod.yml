@@ -22,6 +22,11 @@ spring:
   quartz:
     jdbc:
       initialize-schema: never
+    properties:
+      org:
+        quartz:
+          jobStore:
+            isClustered: true
 
   cache:
     type: redis
@@ -33,6 +38,13 @@ spring:
         publication-threshold: 6h
         processing-threshold: 1h
       republish-outstanding-events-on-restart: true
+
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
 
   data:
     redis:
