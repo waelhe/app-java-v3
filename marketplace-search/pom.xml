@@ -17,12 +17,10 @@
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-shared</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-platform-infra</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

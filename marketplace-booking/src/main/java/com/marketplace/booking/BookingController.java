@@ -27,52 +27,55 @@ public class BookingController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Booking> getById(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(bookingService.getByIdForUser(id, authentication));
+    public ResponseEntity<BookingResponse> getById(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.getByIdForUser(id, authentication)));
     }
 
     @GetMapping("/consumer/{consumerId}")
-    public ResponseEntity<PagedResponse<Booking>> listByConsumer(
+    public ResponseEntity<PagedResponse<BookingResponse>> listByConsumer(
             @PathVariable UUID consumerId, Pageable pageable, Authentication authentication) {
-        return ResponseEntity.ok(PagedResponse.of(bookingService.listByConsumer(consumerId, pageable, authentication)));
+        return ResponseEntity.ok(PagedResponse.of(
+                bookingService.listByConsumer(consumerId, pageable, authentication).map(BookingResponse::from)));
     }
 
     @GetMapping("/provider/{providerId}")
-    public ResponseEntity<PagedResponse<Booking>> listByProvider(
+    public ResponseEntity<PagedResponse<BookingResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable, Authentication authentication) {
-        return ResponseEntity.ok(PagedResponse.of(bookingService.listByProvider(providerId, pageable, authentication)));
+        return ResponseEntity.ok(PagedResponse.of(
+                bookingService.listByProvider(providerId, pageable, authentication).map(BookingResponse::from)));
     }
 
     @PostMapping
     @PreAuthorize("hasRole('CONSUMER')")
-    public ResponseEntity<Booking> create(@Valid @RequestBody CreateBookingRequest request,
-                                           Authentication authentication) {
+    public ResponseEntity<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request,
+                                                  Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         Booking booking = bookingService.create(
                 consumerId, request.listingId(), request.notes());
-        return ResponseEntity.status(HttpStatus.CREATED).body(booking);
+        return ResponseEntity.status(HttpStatus.CREATED).body(BookingResponse.from(booking));
     }
 
     @PostMapping("/{id}/confirm")
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    public ResponseEntity<Booking> confirm(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(bookingService.confirm(id, authentication));
+    public ResponseEntity<BookingResponse> confirm(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.confirm(id, authentication)));
     }
 
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    public ResponseEntity<Booking> complete(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(bookingService.complete(id, authentication));
+    public ResponseEntity<BookingResponse> complete(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.complete(id, authentication)));
     }
 
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
-    public ResponseEntity<Booking> cancel(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(bookingService.cancel(id, authentication));
+    public ResponseEntity<BookingResponse> cancel(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.cancel(id, authentication)));
     }
 
     public record CreateBookingRequest(
             @NotNull UUID listingId,
             String notes
-    ) {}
+    ) {
+    }
 }

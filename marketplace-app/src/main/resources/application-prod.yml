@@ -39,6 +39,13 @@ spring:
         processing-threshold: 1h
       republish-outstanding-events-on-restart: true
 
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
+
   data:
     redis:
       host: ${REDIS_HOST}

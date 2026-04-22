@@ -19,8 +19,8 @@ public class UserController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<User> getCurrentUser(@AuthenticationPrincipal JwtAuthenticationToken token) {
+    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal JwtAuthenticationToken token) {
         User user = userService.syncFromOidc(token);
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(UserResponse.from(user));
     }
 }

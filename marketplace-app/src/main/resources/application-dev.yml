@@ -66,6 +66,3 @@ marketplace:
     allowed-origins: http://localhost:3000
   security:
     oauth2-login-enabled: false
-  webclient:
-    connect-timeout: 5000
-    response-timeout: 10s
