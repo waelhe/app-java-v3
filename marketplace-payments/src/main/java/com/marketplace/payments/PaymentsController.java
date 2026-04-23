@@ -35,8 +35,7 @@ public class PaymentsController {
                                                               Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         PaymentIntent intent = paymentsService.createIntent(
-                request.bookingId(), consumerId,
-                request.amountCents(), request.idempotencyKey());
+                request.bookingId(), consumerId, request.idempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(PaymentIntentResponse.from(intent));
     }
 
@@ -67,7 +66,6 @@ public class PaymentsController {
 
     public record CreateIntentRequest(
             @NotNull UUID bookingId,
-            @NotNull Long amountCents,
             String idempotencyKey
     ) {
     }

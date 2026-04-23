@@ -1,8 +1,10 @@
 package com.marketplace.shared.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -17,7 +19,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import java.util.List;
 
 /**
- * Security configuration: OAuth2 Resource Server (JWT) + OAuth2 Login + CORS + Security Headers.
+ * Security configuration: OAuth2 Resource Server (JWT) + optional OAuth2 Login + CORS + Security Headers.
  */
 @Configuration
 public class SecurityConfig {
@@ -25,11 +27,9 @@ public class SecurityConfig {
     @Value("${marketplace.cors.allowed-origins:https://marketplace.com}")
     private List<String> allowedOrigins;
 
-    @Value("${marketplace.security.oauth2-login-enabled:true}")
-    private boolean oauth2LoginEnabled;
-
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
         http
                 .addFilterBefore(new CorrelationIdFilter(), UsernamePasswordAuthenticationFilter.class)
                 .csrf(AbstractHttpConfigurer::disable)
@@ -52,9 +52,7 @@ public class SecurityConfig {
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
-        if (oauth2LoginEnabled) {
-            http.oauth2Login(Customizer.withDefaults());
-        }
+
         return http.build();
     }
 
@@ -80,5 +78,21 @@ public class SecurityConfig {
             config.setMaxAge(3600L);
             return config;
         };
+    }
+
+    @Configuration
+    @ConditionalOnProperty(name = "marketplace.security.oauth2-login-enabled", havingValue = "true", matchIfMissing = false)
+    static class OAuth2LoginConfig {
+
+        @Bean
+        @Order(2)
+        SecurityFilterChain oauth2LoginFilterChain(HttpSecurity http) throws Exception {
+            http
+                    .securityMatcher("/login/**", "/oauth2/**")
+                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                    .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                    .oauth2Login(Customizer.withDefaults());
+            return http.build();
+        }
     }
 }

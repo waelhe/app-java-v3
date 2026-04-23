@@ -40,10 +40,14 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-orm</artifactId>
         </dependency>
-        <!-- Resilience4j for RequestNotPermitted in GlobalExceptionHandler -->
+        <!-- Resilience4j for RequestNotPermitted and CallNotPermittedException in GlobalExceptionHandler -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-ratelimiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
         </dependency>
         <!-- Modulith @NamedInterface support -->
         <dependency>
