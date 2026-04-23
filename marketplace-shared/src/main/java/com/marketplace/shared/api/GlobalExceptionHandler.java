@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -99,6 +100,17 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleRateLimited(RequestNotPermitted ex, HttpServletRequest request) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
         pd.setType(URI.create(ERROR_TYPE_BASE + "rate-limited"));
+        pd.setInstance(URI.create(request.getRequestURI()));
+        pd.setProperty("timestamp", Instant.now());
+        return pd;
+    }
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Service temporarily unavailable. Please try again later.");
+        pd.setType(URI.create(ERROR_TYPE_BASE + "circuit-breaker-open"));
         pd.setInstance(URI.create(request.getRequestURI()));
         pd.setProperty("timestamp", Instant.now());
         return pd;

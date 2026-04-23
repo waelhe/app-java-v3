@@ -1,6 +1,8 @@
 package com.marketplace.messaging;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.BookingParticipantProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -15,11 +17,14 @@ public class MessagingService {
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
+    private final BookingParticipantProvider bookingParticipantProvider;
 
     public MessagingService(ConversationRepository conversationRepository,
-                            MessageRepository messageRepository) {
+                            MessageRepository messageRepository,
+                            BookingParticipantProvider bookingParticipantProvider) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.bookingParticipantProvider = bookingParticipantProvider;
     }
 
     @Transactional(readOnly = true)
@@ -42,15 +47,20 @@ public class MessagingService {
         return messageRepository.countByConversationIdAndReadFalse(conversationId);
     }
 
-    public Conversation createConversation(UUID participantA, UUID participantB, UUID bookingId) {
+    public Conversation createConversation(UUID participantA, UUID bookingId) {
+        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
+        bookingInfo.requireParticipant(participantA);
+        bookingInfo.requireStatusNot("CANCELLED", "create conversation");
+
+        UUID participantB = bookingInfo.providerId().equals(participantA)
+                ? bookingInfo.consumerId()
+                : bookingInfo.providerId();
         // Reuse existing conversation for same booking
-        if (bookingId != null) {
-            var existing = conversationRepository.findByBookingId(bookingId);
-            if (existing.isPresent()) {
-                Conversation conversation = existing.get();
-                verifyParticipant(conversation, participantA);
-                return conversation;
-            }
+        var existing = conversationRepository.findByBookingId(bookingId);
+        if (existing.isPresent()) {
+            Conversation conversation = existing.get();
+            verifyParticipant(conversation, participantA);
+            return conversation;
         }
         return conversationRepository.save(Conversation.create(participantA, participantB, bookingId));
     }
