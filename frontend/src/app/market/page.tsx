@@ -10,6 +10,7 @@ import {
   Home, Landmark, Building2, Store, Warehouse, Smartphone, Sofa, Car, Laptop, Home as HomeIcon
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { catalogService, type Listing } from '@/lib/api';
 
 // ═══════════════════════════════════════════════════════════════
 // بيانات السوق
@@ -294,6 +295,38 @@ export default function MarketPage() {
   const { language } = useLanguage();
   const isArabic = language === 'ar';
   const [searchQuery, setSearchQuery] = useState('');
+  const [backendListings, setBackendListings] = useState<Listing[]>([]);
+  const [backendLoading, setBackendLoading] = useState(true);
+  const [backendError, setBackendError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+
+    const loadBackendListings = async () => {
+      try {
+        setBackendLoading(true);
+        setBackendError(null);
+        const response = await catalogService.list({ page: 0, size: 8 });
+        if (!active) return;
+        setBackendListings(response.content ?? []);
+      } catch (error) {
+        if (!active) return;
+        setBackendError(
+          isArabic
+            ? 'تعذر جلب بيانات الباك إند. قد تحتاج تسجيل دخول JWT.'
+            : 'Unable to load backend listings. JWT login may be required.',
+        );
+      } finally {
+        if (active) setBackendLoading(false);
+      }
+    };
+
+    loadBackendListings();
+
+    return () => {
+      active = false;
+    };
+  }, [isArabic]);
 
   const sections = [
     { id: 'jobs', name: 'وظائف وفرص', nameEn: 'Jobs & Opportunities' },
@@ -368,6 +401,58 @@ export default function MarketPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4">
+        {/* Backend Integration Preview */}
+        <section className="scroll-mt-32 py-6 border-b border-gray-100">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-indigo-500 rounded-xl">
+              <Store className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-black text-gray-900">
+                {isArabic ? '📡 من الباك إند (Listings API)' : '📡 From Backend (Listings API)'}
+              </h2>
+              <p className="text-xs text-gray-500">
+                {isArabic ? 'مصدر البيانات: /api/v1/listings' : 'Data source: /api/v1/listings'}
+              </p>
+            </div>
+          </div>
+
+          {backendLoading && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-700">
+              {isArabic ? 'جاري تحميل بيانات الباك إند...' : 'Loading backend data...'}
+            </div>
+          )}
+
+          {!backendLoading && backendError && (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-700">
+              {backendError}
+            </div>
+          )}
+
+          {!backendLoading && !backendError && backendListings.length === 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+              {isArabic ? 'لا توجد عناصر قادمة من الباك إند حالياً.' : 'No backend listings available yet.'}
+            </div>
+          )}
+
+          {!backendLoading && !backendError && backendListings.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {backendListings.map((listing) => (
+                <article key={listing.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+                  <h3 className="font-bold text-sm text-gray-900 line-clamp-2">{listing.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">{listing.description}</p>
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">{listing.category}</span>
+                    <span className="font-black text-emerald-700">
+                      {listing.price} {listing.currency}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* الوظائف */}
         <Section
           id="jobs"

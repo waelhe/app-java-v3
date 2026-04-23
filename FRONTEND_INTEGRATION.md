@@ -65,3 +65,19 @@ bun run dev
 راجع الوثيقة التالية للمواصفات المحدثة والمتوافقة مع الباك إند الحالي:
 
 - `frontend/SPECIFICATION_BACKEND_COMPAT.md`
+
+## 8) تنفيذ فعلي داخل واجهة السوق
+
+تمت إضافة جزء عملي في صفحة السوق:
+
+- `frontend/src/app/market/page.tsx`
+
+يعرض أول 8 عناصر مباشرة من:
+
+- `/api/v1/listings`
+
+مع حالات:
+
+- Loading
+- Error (مثل غياب JWT)
+- Empty state

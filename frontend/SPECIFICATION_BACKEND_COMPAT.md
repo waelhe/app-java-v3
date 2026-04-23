@@ -151,3 +151,9 @@ Payment Intent lifecycle حسب حالات الباك إند (`create/process/co
 `users, listings, bookings, reviews, messages, payments, search, admin, pricing`.
 
 أي نظام آخر يُعامل حالياً كـ **Planned/Mock** إلى حين توفر API رسمي له.
+
+### حالة التنفيذ الحالية في الكود
+
+- تم تنفيذ ربط فعلي داخل صفحة السوق `market/page.tsx` لجلب بيانات من `catalogService.list`.
+- المصدر الفعلي للبيانات: `/api/v1/listings`.
+- تمت إضافة واجهات حالة التحميل/الخطأ/عدم وجود بيانات.
