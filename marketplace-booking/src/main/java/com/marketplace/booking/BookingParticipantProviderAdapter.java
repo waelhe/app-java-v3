@@ -33,6 +33,8 @@ public class BookingParticipantProviderAdapter implements BookingParticipantProv
                         booking.getProviderId(),
                         booking.getConsumerId(),
                         booking.getStatus().name(),
+                        booking.getPriceCents(),
+                        booking.getCurrency(),
                         booking.getCreatedAt(),
                         booking.getUpdatedAt()
                 ))
