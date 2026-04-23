@@ -50,8 +50,7 @@ public class MessagingController {
     public ResponseEntity<ConversationResponse> createConversation(@Valid @RequestBody CreateConversationRequest request,
                                                                    Authentication authentication) {
         UUID participantA = currentUserProvider.getCurrentUserId(authentication);
-        Conversation conversation = messagingService.createConversation(
-                participantA, request.participantB(), request.bookingId());
+        Conversation conversation = messagingService.createConversation(participantA, request.bookingId());
         return ResponseEntity.status(HttpStatus.CREATED).body(ConversationResponse.from(conversation));
     }
 
@@ -73,8 +72,7 @@ public class MessagingController {
     }
 
     public record CreateConversationRequest(
-            @NotNull UUID participantB,
-            UUID bookingId
+            @NotNull UUID bookingId
     ) {
     }
 

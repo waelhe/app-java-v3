@@ -35,7 +35,7 @@ class ReviewsServiceTest {
         UUID bookingId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
-        BookingInfo bookingInfo = new BookingInfo(providerId, consumerId, "COMPLETED", Instant.now(), Instant.now());
+        BookingInfo bookingInfo = new BookingInfo(providerId, consumerId, "COMPLETED", 5000L, "SAR", Instant.now(), Instant.now());
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
@@ -66,7 +66,7 @@ class ReviewsServiceTest {
         UUID bookingId = UUID.randomUUID();
         UUID actualConsumerId = UUID.randomUUID();
         UUID differentUserId = UUID.randomUUID();
-        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), actualConsumerId, "COMPLETED", Instant.now(), Instant.now());
+        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), actualConsumerId, "COMPLETED", 5000L, "SAR", Instant.now(), Instant.now());
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
@@ -79,7 +79,7 @@ class ReviewsServiceTest {
     void create_rejectsNonCompletedBooking() {
         UUID bookingId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
-        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), consumerId, "CONFIRMED", Instant.now(), Instant.now());
+        BookingInfo bookingInfo = new BookingInfo(UUID.randomUUID(), consumerId, "CONFIRMED", 5000L, "SAR", Instant.now(), Instant.now());
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
