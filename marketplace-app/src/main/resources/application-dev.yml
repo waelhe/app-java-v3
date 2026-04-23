@@ -48,6 +48,8 @@ spring:
       resourceserver:
         jwt:
           public-key-location: classpath:keys/dev-rsa.pub
+          audiences:
+            - marketplace-api
 
   devtools:
     restart:
@@ -65,4 +67,4 @@ marketplace:
   cors:
     allowed-origins: http://localhost:3000
   security:
-    oauth2-login-enabled: false
+    oauth2-login-enabled: true

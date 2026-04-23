@@ -1,8 +1,10 @@
 package com.marketplace.payments;
 
 import com.marketplace.payments.spi.PaymentsSpi;
-import com.marketplace.shared.api.PaymentSummary;
+import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -26,15 +28,18 @@ public class PaymentsService implements PaymentsSpi {
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CurrentUserProvider currentUserProvider;
+    private final BookingParticipantProvider bookingParticipantProvider;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
                            ApplicationEventPublisher eventPublisher,
-                           CurrentUserProvider currentUserProvider) {
+                           CurrentUserProvider currentUserProvider,
+                           BookingParticipantProvider bookingParticipantProvider) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.eventPublisher = eventPublisher;
         this.currentUserProvider = currentUserProvider;
+        this.bookingParticipantProvider = bookingParticipantProvider;
     }
 
     @Transactional(readOnly = true)
@@ -66,9 +71,7 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    public PaymentIntent createIntent(UUID bookingId, UUID consumerId,
-                                      Long amountCents, String idempotencyKey) {
-        // Idempotency: return existing intent if same key
+    public PaymentIntent createIntent(UUID bookingId, UUID consumerId, String idempotencyKey) {
         if (idempotencyKey != null) {
             var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
@@ -78,7 +81,12 @@ public class PaymentsService implements PaymentsSpi {
                 return existing.get();
             }
         }
-        PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, amountCents, idempotencyKey);
+
+        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
+        bookingInfo.requireParticipant(consumerId);
+        bookingInfo.requireStatus("CONFIRMED", "create payment intent");
+
+        PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(), idempotencyKey);
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;
@@ -86,25 +94,13 @@ public class PaymentsService implements PaymentsSpi {
 
     @PreAuthorize("hasRole('CONSUMER')")
     @Retry(name = "paymentProcessing")
-    @CircuitBreaker(name = "paymentProcessing", fallbackMethod = "processIntentFallback")
+    @CircuitBreaker(name = "paymentProcessing")
     public PaymentIntent processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
-        // In production: integrate with payment gateway here
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
         paymentRepository.save(payment);
         return intent;
-    }
-
-    /**
-     * Fallback for processIntent when the circuit breaker is open.
-     * Returns the intent in its current state without processing.
-     * Called by Resilience4j via reflection at runtime.
-     */
-    @SuppressWarnings("unused")
-    private PaymentIntent processIntentFallback(UUID id, Authentication authentication, Throwable throwable) {
-        return paymentIntentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -112,7 +108,6 @@ public class PaymentsService implements PaymentsSpi {
     public PaymentIntent confirmIntent(UUID id, String externalId) {
         PaymentIntent intent = getIntent(id);
         intent.markSucceeded();
-        // Mark the payment as completed
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));

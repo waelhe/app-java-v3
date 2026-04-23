@@ -41,7 +41,7 @@ class ResilienceAnnotationTest {
             assertEquals("paymentProcessing", retry.name(), "Retry should use paymentProcessing instance");
             assertNotNull(cb, "processIntent should have @CircuitBreaker");
             assertEquals("paymentProcessing", cb.name(), "CircuitBreaker should use paymentProcessing instance");
-            assertFalse(cb.fallbackMethod().isEmpty(), "CircuitBreaker should have a fallback method");
+            assertTrue(cb.fallbackMethod().isEmpty(), "CircuitBreaker should not define a fallback method");
         }
 
         @Test
@@ -66,16 +66,13 @@ class ResilienceAnnotationTest {
         }
 
         @Test
-        @DisplayName("processIntentFallback should exist as private method")
-        void processIntentFallback_exists() {
+        @DisplayName("processIntentFallback should not exist")
+        void processIntentFallback_doesNotExist() {
             List<Method> fallbacks = Arrays.stream(PaymentsService.class.getDeclaredMethods())
                     .filter(m -> m.getName().equals("processIntentFallback"))
                     .toList();
 
-            assertFalse(fallbacks.isEmpty(), "processIntentFallback should exist");
-            assertTrue(Arrays.stream(fallbacks.getFirst().getParameterTypes())
-                    .anyMatch(t -> Throwable.class.isAssignableFrom(t)),
-                    "Fallback method should accept Throwable parameter");
+            assertTrue(fallbacks.isEmpty(), "processIntentFallback should not exist");
         }
     }
 

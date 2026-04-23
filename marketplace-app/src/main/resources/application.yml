@@ -163,3 +163,5 @@ resilience4j:
         limit-for-period: 30
 
 marketplace:
+  security:
+    oauth2-login-enabled: false

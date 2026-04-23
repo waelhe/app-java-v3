@@ -45,6 +45,11 @@
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-ratelimiter</artifactId>
         </dependency>
+        <!-- Resilience4j for CallNotPermittedException in GlobalExceptionHandler -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+        </dependency>
         <!-- Modulith @NamedInterface support -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
