@@ -163,5 +163,16 @@ resilience4j:
         limit-for-period: 30
 
 marketplace:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
   security:
     oauth2-login-enabled: false
+    webauthn-enabled: false # Explicitly out of scope for v1.1
+    auth-server:
+      issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:}
+        password: ${JWT_KEYSTORE_PASSWORD:}
+        alias: ${JWT_KEY_ALIAS:}
+        key-password: ${JWT_KEY_PASSWORD:}
