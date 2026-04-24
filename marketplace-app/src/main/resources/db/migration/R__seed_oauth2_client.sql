@@ -34,7 +34,7 @@ VALUES (
     'http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client',
     'http://127.0.0.1:8080/',
     'openid,profile',
-    '{"@class":"java.util.Collections$UnmodifiableMap","settings.client.require-proof-key":true,"settings.client.require-authorization-consent":true}',
+    '{"@class":"java.util.Collections$UnmodifiableMap","settings.client.require-authorization-consent":true}',
     '{"@class":"java.util.Collections$UnmodifiableMap","settings.token.reuse-refresh-tokens":false,"settings.token.access-token-time-to-live":["java.time.Duration",900],"settings.token.refresh-token-time-to-live":["java.time.Duration",604800],"settings.token.authorization-code-time-to-live":["java.time.Duration",300]}'
 )
 ON CONFLICT (id) DO NOTHING;
