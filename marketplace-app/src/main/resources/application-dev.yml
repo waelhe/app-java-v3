@@ -68,3 +68,12 @@ marketplace:
     allowed-origins: http://localhost:3000
   security:
     oauth2-login-enabled: true
+    webauthn-enabled: false
+    auth-server:
+      issuer: http://localhost:8080
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:./marketplace-app/local/dev-authserver.jks}
+        password: ${JWT_KEYSTORE_PASSWORD:changeit}
+        alias: ${JWT_KEY_ALIAS:marketplace-auth}
+        key-password: ${JWT_KEY_PASSWORD:changeit}
