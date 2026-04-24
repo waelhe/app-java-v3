@@ -67,4 +67,12 @@ marketplace:
   cors:
     allowed-origins: http://localhost:3000
   security:
-    oauth2-login-enabled: true
+    authorization-server-enabled: true
+    oauth2-login-enabled: false
+    webauthn-enabled: false
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:./secrets/dev-jwt-keystore.p12}
+        password: ${JWT_KEYSTORE_PASSWORD:changeit}
+        alias: ${JWT_KEYSTORE_ALIAS:marketplace-jwt}
+        key-password: ${JWT_KEYSTORE_KEY_PASSWORD:changeit}

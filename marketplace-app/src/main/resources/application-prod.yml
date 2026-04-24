@@ -89,4 +89,12 @@ management:
 
 marketplace:
   security:
+    authorization-server-enabled: ${AUTH_SERVER_ENABLED:false}
     oauth2-login-enabled: false
+    webauthn-enabled: false
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:}
+        password: ${JWT_KEYSTORE_PASSWORD:}
+        alias: ${JWT_KEYSTORE_ALIAS:}
+        key-password: ${JWT_KEYSTORE_KEY_PASSWORD:}

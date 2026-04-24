@@ -1,6 +1,7 @@
 package com.marketplace.shared.security;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -25,7 +26,7 @@ public class SecurityConfig {
 
     private final List<String> allowedOrigins;
 
-    public SecurityConfig(org.springframework.beans.factory.annotation.Value("${marketplace.cors.allowed-origins:https://marketplace.com}") List<String> allowedOrigins) {
+    public SecurityConfig(@Value("${marketplace.cors.allowed-origins:https://marketplace.com}") List<String> allowedOrigins) {
         this.allowedOrigins = allowedOrigins;
     }
 

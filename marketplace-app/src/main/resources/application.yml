@@ -164,4 +164,6 @@ resilience4j:
 
 marketplace:
   security:
+    authorization-server-enabled: false
+    webauthn-enabled: false
     oauth2-login-enabled: false

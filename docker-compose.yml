@@ -1,4 +1,29 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marketplace-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_USERNAME: marketplace
+      DB_PASSWORD: marketplace
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_KEYSTORE_PATH: /run/secrets/dev-jwt-keystore.p12
+      JWT_KEYSTORE_PASSWORD: changeit
+      JWT_KEYSTORE_ALIAS: marketplace-jwt
+      JWT_KEYSTORE_KEY_PASSWORD: changeit
+    volumes:
+      - ./secrets:/run/secrets:ro
+    ports:
+      - "8080:8080"
+
   postgres:
     image: postgres:17-alpine
     container_name: marketplace-db
