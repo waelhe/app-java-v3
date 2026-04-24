@@ -42,11 +42,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import javax.sql.DataSource;
 import java.io.InputStream;
 import java.security.Key;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 @Configuration
 public class SecurityConfig {
@@ -87,18 +90,6 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher("/login/**", "/oauth2/**", "/error")
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
-                .formLogin(Customizer.withDefaults())
-                .cors(Customizer.withDefaults());
-
-        return http.build();
-    }
-
-    @Bean
-    @Order(3)
     SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**")
@@ -113,6 +104,17 @@ public class SecurityConfig {
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+
+        return http.build();
+    }
+
+    @Bean
+    @Order(3)
+    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                .formLogin(Customizer.withDefaults())
+                .cors(Customizer.withDefaults());
 
         return http.build();
     }
@@ -188,11 +190,14 @@ public class SecurityConfig {
             ResourceLoader resourceLoader
     ) throws Exception {
         if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
-            throw new IllegalStateException("JWT keystore properties must be set: "
-                    + "marketplace.security.jwt.keystore.path, "
-                    + "marketplace.security.jwt.keystore.password, "
-                    + "marketplace.security.jwt.keystore.alias, "
-                    + "marketplace.security.jwt.keystore.key-password");
+            KeyPair keyPair = generateRsaKey();
+            RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+            RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+            RSAKey rsaKey = new RSAKey.Builder(publicKey)
+                    .privateKey(privateKey)
+                    .keyID(UUID.randomUUID().toString())
+                    .build();
+            return new ImmutableJWKSet<>(new JWKSet(rsaKey));
         }
 
         KeyStore keyStore = KeyStore.getInstance("JKS");
@@ -229,6 +234,16 @@ public class SecurityConfig {
         return AuthorizationServerSettings.builder()
                 .issuer(issuer)
                 .build();
+    }
+
+    private static KeyPair generateRsaKey() {
+        try {
+            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+            keyPairGenerator.initialize(2048);
+            return keyPairGenerator.generateKeyPair();
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private boolean isBlank(String value) {

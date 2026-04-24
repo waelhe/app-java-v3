@@ -27,7 +27,7 @@ VALUES (
     'a7bd8b0d-7d42-4a64-9e34-1ad3ab22e37e',
     'marketplace-web-client',
     CURRENT_TIMESTAMP,
-    '{noop}change-me-now',
+    '{bcrypt}$2a$10$EqKcp1WFKVQISheBxmXNOe9r6YkiVQupMBnMRPx0n5THQE8l7RLa6',
     'Marketplace Web Client',
     'client_secret_basic',
     'authorization_code,refresh_token,client_credentials',
