@@ -117,8 +117,6 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   security:
-    oauth2-login-enabled: false
-    webauthn-enabled: false
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER}
     jwt:

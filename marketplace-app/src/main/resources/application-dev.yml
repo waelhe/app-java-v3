@@ -76,8 +76,6 @@ marketplace:
   cors:
     allowed-origins: http://localhost:3000
   security:
-    oauth2-login-enabled: true
-    webauthn-enabled: false
     auth-server:
       issuer: http://localhost:8080
     jwt:

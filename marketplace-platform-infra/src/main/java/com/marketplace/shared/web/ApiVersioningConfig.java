@@ -14,6 +14,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * <p>Resolves API version from the {@code X-API-Version} request header
  * via {@link ApiVersionConfigurer#useRequestHeader(String)}.
  *
+ * <p>A default version of {@code "1.0"} is set via
+ * {@link ApiVersionConfigurer#setDefaultVersion(String)} so that requests
+ * without an {@code X-API-Version} header are routed to the current
+ * API version rather than being rejected with a 400. This preserves
+ * backward compatibility with existing clients during the transition
+ * to versioned APIs.
+ *
  * <p>Controllers can declare versioned mappings using the {@code version} attribute:
  * <pre>
  *   &#64;GetMapping(version = "1.0")
@@ -21,10 +28,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * </pre>
  *
  * <p>Supported version formats: semantic (major.minor.patch).
- * Missing version header results in a 400 response by default.
  * Deprecation hints are sent via RFC 9745 / RFC 8594 headers when configured.
  *
  * @see ApiVersionConfigurer#useRequestHeader(String)
+ * @see ApiVersionConfigurer#setDefaultVersion(String)
  * @see WebMvcConfigurer#configureApiVersioning(ApiVersionConfigurer)
  */
 @Configuration
@@ -32,6 +39,8 @@ public class ApiVersioningConfig implements WebMvcConfigurer {
 
     @Override
     public void configureApiVersioning(ApiVersionConfigurer<?> configurer) {
-        configurer.useRequestHeader("X-API-Version");
+        configurer
+                .useRequestHeader("X-API-Version")
+                .setDefaultVersion("1.0");
     }
 }

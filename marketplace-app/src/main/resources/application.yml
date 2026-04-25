@@ -189,8 +189,6 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
   security:
-    oauth2-login-enabled: false
-    webauthn-enabled: false # Explicitly out of scope for v1.1
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
     jwt:
