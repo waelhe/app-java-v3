@@ -9,7 +9,7 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping(ApiConstants.SEARCH)
+@RequestMapping(value = ApiConstants.SEARCH, version = "1.0")
 public class SearchController {
 
     private final SearchService searchService;

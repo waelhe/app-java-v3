@@ -11,6 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -109,6 +110,7 @@ public class BookingService implements BookingSpi {
 
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
+    @ConcurrencyLimit(10)
     public Booking confirm(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);
@@ -118,6 +120,7 @@ public class BookingService implements BookingSpi {
 
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
+    @ConcurrencyLimit(10)
     public Booking complete(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);

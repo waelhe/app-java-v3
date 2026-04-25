@@ -37,3 +37,14 @@ spring:
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          enabled: false

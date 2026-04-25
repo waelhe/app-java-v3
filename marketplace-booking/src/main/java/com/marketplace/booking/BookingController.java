@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.BOOKING)
+@RequestMapping(value = ApiConstants.BOOKING, version = "1.0")
 public class BookingController {
 
     private final BookingService bookingService;

@@ -124,7 +124,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "X-API-Version", "Idempotency-Key"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

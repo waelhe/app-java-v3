@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.MESSAGING)
+@RequestMapping(value = ApiConstants.MESSAGING, version = "1.0")
 public class MessagingController {
 
     private final MessagingService messagingService;

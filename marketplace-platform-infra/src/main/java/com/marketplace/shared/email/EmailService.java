@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
@@ -48,6 +49,7 @@ public class EmailService {
      * @param template Thymeleaf template path (e.g., "email/welcome")
      * @param variables template model variables
      */
+    @ConcurrencyLimit(3)
     public void send(String to, String subject, String template, Map<String, Object> variables) {
         try {
             Context ctx = new Context();

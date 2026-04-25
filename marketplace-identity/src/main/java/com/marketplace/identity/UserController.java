@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(ApiConstants.IDENTITY)
+@RequestMapping(value = ApiConstants.IDENTITY, version = "1.0")
 public class UserController {
 
     private final UserService userService;

@@ -97,7 +97,21 @@ management:
       application: ${spring.application.name}
   tracing:
     sampling:
-      probability: 0.1
+      probability: ${OTEL_TRACING_SAMPLING:0.1}
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_METRICS_EXPORT_URL}
+        step: ${OTEL_METRICS_EXPORT_STEP:1m}
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+      service.version: ${OTEL_SERVICE_VERSION:0.1.0}
+      deployment.environment: production
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_TRACES_EXPORT_URL}
 
 marketplace:
   cors:

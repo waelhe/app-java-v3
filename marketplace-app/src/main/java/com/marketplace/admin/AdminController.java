@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.ADMIN)
+@RequestMapping(value = ApiConstants.ADMIN, version = "1.0")
 @PreAuthorize("hasRole('ADMIN')")
 @NamedInterface("admin-api")
 public class AdminController {

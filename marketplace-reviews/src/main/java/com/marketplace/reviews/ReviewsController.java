@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.REVIEWS)
+@RequestMapping(value = ApiConstants.REVIEWS, version = "1.0")
 public class ReviewsController {
 
     private final ReviewsService reviewsService;

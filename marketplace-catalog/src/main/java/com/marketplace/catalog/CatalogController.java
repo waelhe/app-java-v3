@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.CATALOG)
+@RequestMapping(value = ApiConstants.CATALOG, version = "1.0")
 public class CatalogController {
 
     private final CatalogService catalogService;

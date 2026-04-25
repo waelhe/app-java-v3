@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.PAYMENTS)
+@RequestMapping(value = ApiConstants.PAYMENTS, version = "1.0")
 public class PaymentsController {
 
     private final PaymentsService paymentsService;

@@ -10,6 +10,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -96,6 +97,7 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('CONSUMER')")
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing")
+    @ConcurrencyLimit(5)
     public PaymentIntent processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();

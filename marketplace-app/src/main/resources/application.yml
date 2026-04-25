@@ -118,6 +118,18 @@ management:
   tracing:
     sampling:
       probability: 0.1
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_METRICS_EXPORT_URL:http://localhost:4318/v1/metrics}
+        step: 1m
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_TRACES_EXPORT_URL:http://localhost:4318/v1/traces}
 
 logging:
   structured:
