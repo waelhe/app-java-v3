@@ -43,8 +43,7 @@ management:
     metrics:
       export:
         enabled: false
-  opentelemetry:
-    tracing:
-      export:
-        otlp:
-          enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
