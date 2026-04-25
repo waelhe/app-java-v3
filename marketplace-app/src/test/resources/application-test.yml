@@ -9,6 +9,10 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+  mail:
+    host: localhost
+    port: 3025
+    test-connection: false
   security:
     oauth2:
       client:
