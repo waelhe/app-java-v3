@@ -1,0 +1,27 @@
+type Query {
+    service(id: ID!): Service
+    services: [Service!]!
+}
+
+type Mutation {
+    createService(input: ServiceInput!): Service!
+}
+
+type Service {
+    id: ID!
+    name: String!
+    description: String
+    price: Float!
+    status: ServiceStatus!
+}
+
+enum ServiceStatus {
+    ACTIVE
+    INACTIVE
+}
+
+input ServiceInput {
+    name: String!
+    description: String
+    price: Float!
+}
