@@ -133,15 +133,15 @@ jobs:
           done
 
       - name: Health Check
-        run: curl -sf http://localhost:8080/actuator/health | jq .
+        run: "curl -sf http://localhost:8080/actuator/health | jq ."
 
       - name: Data REST Endpoint Check
-        run: curl -sf http://localhost:8080/api | jq . || echo "Data REST: No repositories exposed yet"
+        run: "curl -sf http://localhost:8080/api | jq . || echo 'Data REST: No repositories exposed yet'"
 
       - name: GraphQL Endpoint Check
         run: |
           curl -sf -X POST http://localhost:8080/graphql \
-            -H "Content-Type: application/json" \
+            -H 'Content-Type: application/json' \
             -d '{"query":"{ __schema { queryType { name } } }"}' | jq .
 
       - name: Stop Application
