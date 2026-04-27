@@ -141,6 +141,13 @@ jobs:
             echo "Attempt $i/60..."
             sleep 5
           done
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
 
       - name: Health Check
         run: "curl -sf http://localhost:8080/actuator/health | jq ."
