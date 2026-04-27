@@ -148,6 +148,7 @@ jobs:
           SPRING_DATASOURCE_PASSWORD: test
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
+          SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
 
       - name: Health Check
         run: "curl -sf http://localhost:8080/actuator/health | jq ."
