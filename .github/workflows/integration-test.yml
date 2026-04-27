@@ -115,6 +115,16 @@ jobs:
             echo "All tests passed!"
           fi
 
+      - name: Install Modules
+        run: ./mvnw install -DskipTests --batch-mode
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+
       - name: Start Application
         run: |
           ./mvnw spring-boot:run -pl marketplace-app -Dspring-boot.run.profiles=test -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
