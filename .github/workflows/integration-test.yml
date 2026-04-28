@@ -150,6 +150,8 @@ jobs:
           SPRING_DATA_REDIS_PORT: 6379
           SPRING_QUARTZ_JOB_STORE_TYPE: memory
           MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: false
+          MANAGEMENT_HEALTH_MAIL_ENABLED: false
+          MANAGEMENT_TRACING_ENABLED: false
 
       - name: Health Check
         run: "curl -sf http://localhost:8080/actuator/health | jq ."
