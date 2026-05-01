@@ -9,4 +9,4 @@ healthcheckPath = "/actuator/health/liveness"
 healthcheckTimeout = 300
 
 [start]
-cmd = "java -jar marketplace-app/target/*.jar --server.port=$PORT"
+cmd = "sh -c 'if [ -n \"$PORT\" ] && [ -z \"$SERVER_PORT\" ]; then export SERVER_PORT=$PORT; fi; exec java -jar marketplace-app/target/*.jar'"
