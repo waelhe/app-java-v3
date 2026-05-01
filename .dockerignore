@@ -6,4 +6,3 @@ target/
 cp.txt
 *.md
 .github/
-.mvn/wrapper/maven-wrapper.jar
