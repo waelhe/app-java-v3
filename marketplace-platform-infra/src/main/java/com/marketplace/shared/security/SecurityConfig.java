@@ -11,7 +11,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
@@ -34,6 +36,7 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -62,10 +65,10 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain authorizationServerFilterChain(HttpSecurity http,
-                                                       OAuth2AuthorizationService authorizationService,
-                                                       OAuth2AuthorizationConsentService authorizationConsentService,
-                                                       RegisteredClientRepository registeredClientRepository) throws Exception {
+    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
+                                                               OAuth2AuthorizationService authorizationService,
+                                                               OAuth2AuthorizationConsentService authorizationConsentService,
+                                                               RegisteredClientRepository registeredClientRepository) throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = new OAuth2AuthorizationServerConfigurer();
 
         http
@@ -90,15 +93,35 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain publicApiSecurityFilterChain(HttpSecurity http,
+                                                     CorrelationIdFilter correlationIdFilter) throws Exception {
+        http
+                .securityMatcher(
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/listings/**"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/reviews/**"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/search/**"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/health/**"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/info")
+                )
+                .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
+                .cors(Customizer.withDefaults())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+
+        return http.build();
+    }
+
+    @Bean
+    @Order(3)
+    SecurityFilterChain protectedApiSecurityFilterChain(HttpSecurity http,
+                                                        CorrelationIdFilter correlationIdFilter) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**")
-                .addFilterBefore(new CorrelationIdFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -109,10 +132,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Order(3)
+    @Order(4)
     SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/assets/**", "/login").permitAll()
+                        .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 .cors(Customizer.withDefaults());
 
@@ -124,7 +149,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "X-API-Version", "Idempotency-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -234,6 +259,13 @@ public class SecurityConfig {
         return AuthorizationServerSettings.builder()
                 .issuer(issuer)
                 .build();
+    }
+
+    @Bean
+    FilterRegistrationBean<CorrelationIdFilter> correlationIdFilterRegistration(CorrelationIdFilter correlationIdFilter) {
+        FilterRegistrationBean<CorrelationIdFilter> registrationBean = new FilterRegistrationBean<>(correlationIdFilter);
+        registrationBean.setEnabled(false);
+        return registrationBean;
     }
 
     private static KeyPair generateRsaKey() {
