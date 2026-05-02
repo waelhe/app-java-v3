@@ -81,6 +81,7 @@ management:
       show-components: never
       probes:
         enabled: true
+      validate-group-membership: false
       group:
         readiness:
           include: db,redis,diskSpace
