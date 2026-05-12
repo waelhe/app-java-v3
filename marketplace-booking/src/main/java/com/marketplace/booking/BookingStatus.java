@@ -2,7 +2,12 @@ package com.marketplace.booking;
 
 public enum BookingStatus {
     PENDING,
+    PENDING_PAYMENT,
     CONFIRMED,
+    RESCHEDULE_REQUESTED,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    REJECTED,
+    NO_SHOW,
+    DISPUTED
 }

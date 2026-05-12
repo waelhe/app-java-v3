@@ -7,6 +7,8 @@ public record BookingResponse(
         UUID id,
         UUID listingId,
         String status,
+        Instant startsAt,
+        Instant endsAt,
         String notes,
         Instant createdAt,
         Instant updatedAt
@@ -16,6 +18,8 @@ public record BookingResponse(
                 booking.getId(),
                 booking.getListingId(),
                 booking.getStatus().name(),
+                booking.getStartsAt(),
+                booking.getEndsAt(),
                 booking.getNotes(),
                 booking.getCreatedAt(),
                 booking.getUpdatedAt()

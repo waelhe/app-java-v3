@@ -58,6 +58,12 @@ public class PaymentsController {
         return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.cancelIntent(id, authentication)));
     }
 
+    @PostMapping("/webhooks/{provider}")
+    public ResponseEntity<PaymentIntentResponse> webhook(@PathVariable String provider, @Valid @RequestBody WebhookRequest request) {
+        return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.handleWebhook(
+                provider, request.eventId(), request.paymentIntentId(), request.eventType(), request.payload())));
+    }
+
     @PostMapping("/{paymentId}/refund")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentResponse> refundPayment(@PathVariable UUID paymentId) {
@@ -71,5 +77,13 @@ public class PaymentsController {
     }
 
     public record ConfirmIntentRequest(String externalId) {
+    }
+
+    public record WebhookRequest(
+            @NotNull String eventId,
+            @NotNull UUID paymentIntentId,
+            @NotNull String eventType,
+            String payload
+    ) {
     }
 }
