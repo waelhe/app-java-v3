@@ -21,6 +21,7 @@ class PaymentsServiceTest {
 
     private final PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
+    private final PaymentWebhookEventRepository webhookEventRepository = mock(PaymentWebhookEventRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
@@ -28,6 +29,7 @@ class PaymentsServiceTest {
     private final PaymentsService service = new PaymentsService(
             intentRepository,
             paymentRepository,
+            webhookEventRepository,
             eventPublisher,
             currentUserProvider,
             bookingParticipantProvider

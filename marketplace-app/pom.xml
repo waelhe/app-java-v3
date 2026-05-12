@@ -56,6 +56,14 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-search</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-provider</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-availability</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>
