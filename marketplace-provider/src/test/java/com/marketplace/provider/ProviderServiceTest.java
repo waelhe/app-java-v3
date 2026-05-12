@@ -1,0 +1,33 @@
+package com.marketplace.provider;
+
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+class ProviderServiceTest {
+
+    @Test
+    void verifyChangesStatusToVerified() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        ProviderProfile profile = ProviderProfile.create("Provider A", "bio");
+        when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
+
+        ProviderService service = new ProviderService(repository);
+        ProviderProfile verified = service.verify(profile.getId());
+
+        assertThat(verified.getStatus()).isEqualTo(ProviderStatus.VERIFIED);
+    }
+
+    @Test
+    void suspendChangesStatusToSuspended() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        ProviderProfile profile = ProviderProfile.create("Provider B", "bio");
+        when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
+
+        ProviderService service = new ProviderService(repository);
+        ProviderProfile suspended = service.suspend(profile.getId());
+
+        assertThat(suspended.getStatus()).isEqualTo(ProviderStatus.SUSPENDED);
+    }
+}
