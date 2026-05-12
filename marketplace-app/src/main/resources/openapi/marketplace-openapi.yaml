@@ -1,0 +1,59 @@
+openapi: 3.1.0
+info:
+  title: Marketplace API
+  version: 0.1.0
+  description: |
+    Baseline OpenAPI document for module endpoints exposed by marketplace-app.
+servers:
+  - url: /
+paths:
+  /api/providers:
+    post:
+      summary: Create provider profile
+      tags: [Provider]
+      responses:
+        '200':
+          description: Provider created
+  /api/availability/slots:
+    post:
+      summary: Add provider availability slot
+      tags: [Availability]
+      responses:
+        '200':
+          description: Slot created
+  /api/payments/webhooks:
+    post:
+      summary: Receive payment provider webhook event
+      tags: [Payments]
+      responses:
+        '200':
+          description: Webhook accepted
+  /api/notifications:
+    get:
+      summary: List notifications for current user
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Notifications returned
+  /api/ledger/balance/{providerId}:
+    get:
+      summary: Get provider ledger balance (admin)
+      tags: [Ledger]
+      responses:
+        '200':
+          description: Balance returned
+  /api/disputes:
+    post:
+      summary: Open a dispute
+      tags: [Disputes]
+      responses:
+        '200':
+          description: Dispute created
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
