@@ -29,6 +29,10 @@
         <module>marketplace-reviews</module>
         <module>marketplace-messaging</module>
         <module>marketplace-search</module>
+        <module>marketplace-provider</module>
+        <module>marketplace-availability</module>
+        <module>marketplace-notifications</module>
+        <module>marketplace-ledger</module>
         <module>marketplace-app</module>
     </modules>
 
@@ -112,6 +116,26 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-search</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-provider</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-availability</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-notifications</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-ledger</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
