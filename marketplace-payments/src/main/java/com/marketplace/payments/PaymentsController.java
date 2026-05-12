@@ -64,6 +64,15 @@ public class PaymentsController {
         return ResponseEntity.ok(PaymentResponse.from(paymentsService.refundPayment(paymentId)));
     }
 
+    @PostMapping("/webhooks/{provider}")
+    public ResponseEntity<Void> webhook(@PathVariable String provider,
+                                        @RequestParam String eventId,
+                                        @RequestParam String eventType,
+                                        @RequestHeader(value = "X-Webhook-Signature", required = false) String signature) {
+        boolean created = paymentsService.processWebhookEvent(provider, eventId, eventType, signature);
+        return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();
+    }
+
     public record CreateIntentRequest(
             @NotNull UUID bookingId,
             String idempotencyKey

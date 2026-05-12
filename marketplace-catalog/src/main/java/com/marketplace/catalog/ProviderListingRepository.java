@@ -39,4 +39,26 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchFullText(@Param("query") String query, Pageable pageable);
+
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false
+              AND status = 'ACTIVE'
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false
+                      AND status = 'ACTIVE'
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchByCriteria(@Param("category") String category,
+                                           @Param("minPrice") Long minPrice,
+                                           @Param("maxPrice") Long maxPrice,
+                                           Pageable pageable);
 }
