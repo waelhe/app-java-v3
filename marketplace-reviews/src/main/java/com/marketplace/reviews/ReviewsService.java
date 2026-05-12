@@ -70,7 +70,7 @@ public class ReviewsService {
 
         Review saved = reviewRepository.save(
                 Review.create(bookingId, reviewerId, bookingInfo.providerId(), rating, comment));
-        eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId()));
+        eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId(), saved.getReviewerId(), saved.getProviderId()));
         return saved;
     }
 

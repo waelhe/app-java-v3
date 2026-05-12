@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -51,7 +52,7 @@ public class BookingController {
                                                   Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         Booking booking = bookingService.create(
-                consumerId, request.listingId(), request.notes());
+                consumerId, request.listingId(), request.startsAt(), request.endsAt(), request.notes());
         return ResponseEntity.status(HttpStatus.CREATED).body(BookingResponse.from(booking));
     }
 
@@ -59,6 +60,30 @@ public class BookingController {
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ResponseEntity<BookingResponse> confirm(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(BookingResponse.from(bookingService.confirm(id, authentication)));
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    public ResponseEntity<BookingResponse> reject(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.reject(id, authentication)));
+    }
+
+    @PostMapping("/{id}/reschedule")
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
+    public ResponseEntity<BookingResponse> requestReschedule(@PathVariable UUID id, @Valid @RequestBody RescheduleRequest request, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.requestReschedule(id, request.startsAt(), request.endsAt(), authentication)));
+    }
+
+    @PostMapping("/{id}/no-show")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    public ResponseEntity<BookingResponse> markNoShow(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.markNoShow(id, authentication)));
+    }
+
+    @PostMapping("/{id}/dispute")
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
+    public ResponseEntity<BookingResponse> openDispute(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(BookingResponse.from(bookingService.openDispute(id, authentication)));
     }
 
     @PostMapping("/{id}/complete")
@@ -75,7 +100,12 @@ public class BookingController {
 
     public record CreateBookingRequest(
             @NotNull UUID listingId,
+            Instant startsAt,
+            Instant endsAt,
             String notes
     ) {
+    }
+
+    public record RescheduleRequest(@NotNull Instant startsAt, @NotNull Instant endsAt) {
     }
 }

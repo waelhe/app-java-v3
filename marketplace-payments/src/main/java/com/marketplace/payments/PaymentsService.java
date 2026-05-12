@@ -30,17 +30,33 @@ public class PaymentsService implements PaymentsSpi {
     private final ApplicationEventPublisher eventPublisher;
     private final CurrentUserProvider currentUserProvider;
     private final BookingParticipantProvider bookingParticipantProvider;
+    private final PaymentGatewayClient paymentGatewayClient;
+    private final PaymentWebhookEventRepository webhookEventRepository;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
                            ApplicationEventPublisher eventPublisher,
                            CurrentUserProvider currentUserProvider,
                            BookingParticipantProvider bookingParticipantProvider) {
+        this(paymentIntentRepository, paymentRepository, eventPublisher, currentUserProvider, bookingParticipantProvider,
+                intent -> new PaymentGatewayClient.GatewayPaymentResult(true, "mock_" + intent.getId(), "Accepted by mock gateway"),
+                null);
+    }
+
+    public PaymentsService(PaymentIntentRepository paymentIntentRepository,
+                           PaymentRepository paymentRepository,
+                           ApplicationEventPublisher eventPublisher,
+                           CurrentUserProvider currentUserProvider,
+                           BookingParticipantProvider bookingParticipantProvider,
+                           PaymentGatewayClient paymentGatewayClient,
+                           PaymentWebhookEventRepository webhookEventRepository) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.eventPublisher = eventPublisher;
         this.currentUserProvider = currentUserProvider;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.paymentGatewayClient = paymentGatewayClient;
+        this.webhookEventRepository = webhookEventRepository;
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +106,7 @@ public class PaymentsService implements PaymentsSpi {
 
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(), idempotencyKey);
         PaymentIntent saved = paymentIntentRepository.save(intent);
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED", saved.getConsumerId()));
         return saved;
     }
 
@@ -101,7 +117,12 @@ public class PaymentsService implements PaymentsSpi {
     public PaymentIntent processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
-        // In production: integrate with payment gateway here
+        PaymentGatewayClient.GatewayPaymentResult result = paymentGatewayClient.process(intent);
+        if (!result.accepted()) {
+            intent.markFailed();
+            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED", intent.getConsumerId()));
+            return intent;
+        }
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
         paymentRepository.save(payment);
         return intent;
@@ -111,12 +132,42 @@ public class PaymentsService implements PaymentsSpi {
     @Retry(name = "paymentProcessing")
     public PaymentIntent confirmIntent(UUID id, String externalId) {
         PaymentIntent intent = getIntent(id);
-        intent.markSucceeded();
-        // Mark the payment as completed
-        paymentRepository.findByPaymentIntentId(id)
-                .ifPresent(p -> p.markCompleted(externalId));
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
+        markIntentSucceeded(intent, externalId);
         return intent;
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    public PaymentIntent handleWebhook(String provider, String eventId, UUID paymentIntentId, String eventType, String payload) {
+        if (webhookEventRepository == null) {
+            throw new IllegalStateException("Webhook processing requires a webhook event repository");
+        }
+        if (webhookEventRepository.existsByProviderAndExternalEventId(provider, eventId)) {
+            return getIntent(paymentIntentId);
+        }
+        webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, paymentIntentId, eventType, payload));
+        if ("payment.succeeded".equals(eventType)) {
+            PaymentIntent intent = getIntent(paymentIntentId);
+            if (intent.getStatus() == PaymentIntentStatus.PROCESSING) {
+                markIntentSucceeded(intent, eventId);
+            }
+            return intent;
+        }
+        if ("payment.failed".equals(eventType)) {
+            PaymentIntent intent = getIntent(paymentIntentId);
+            if (intent.getStatus() == PaymentIntentStatus.PROCESSING) {
+                intent.markFailed();
+                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED", intent.getConsumerId()));
+            }
+            return intent;
+        }
+        return getIntent(paymentIntentId);
+    }
+
+    private void markIntentSucceeded(PaymentIntent intent, String externalId) {
+        intent.markSucceeded();
+        paymentRepository.findByPaymentIntentId(intent.getId())
+                .ifPresent(p -> p.markCompleted(externalId));
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "SUCCEEDED", intent.getConsumerId()));
     }
 
     @PreAuthorize("hasRole('CONSUMER')")

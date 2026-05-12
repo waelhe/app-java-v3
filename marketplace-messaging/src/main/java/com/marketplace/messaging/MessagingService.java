@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,14 +18,23 @@ public class MessagingService {
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
+    private final SimpMessagingTemplate messagingTemplate;
     private final BookingParticipantProvider bookingParticipantProvider;
 
     public MessagingService(ConversationRepository conversationRepository,
                             MessageRepository messageRepository,
                             BookingParticipantProvider bookingParticipantProvider) {
+        this(conversationRepository, messageRepository, bookingParticipantProvider, null);
+    }
+
+    public MessagingService(ConversationRepository conversationRepository,
+                            MessageRepository messageRepository,
+                            BookingParticipantProvider bookingParticipantProvider,
+                            SimpMessagingTemplate messagingTemplate) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -68,7 +78,11 @@ public class MessagingService {
 
     public Message sendMessage(UUID conversationId, UUID senderId, String content) {
         getConversation(conversationId, senderId);
-        return messageRepository.save(Message.create(conversationId, senderId, content));
+        Message message = messageRepository.save(Message.create(conversationId, senderId, content));
+        if (messagingTemplate != null) {
+            messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, MessageResponse.from(message));
+        }
+        return message;
     }
 
     public void markAsRead(UUID conversationId, UUID userId) {

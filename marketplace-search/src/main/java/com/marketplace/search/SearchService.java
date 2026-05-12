@@ -2,6 +2,7 @@ package com.marketplace.search;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.SearchCriteria;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,16 +23,17 @@ public class SearchService {
         this.catalogSearchPort = catalogSearchPort;
     }
 
-    @Cacheable(cacheNames = "search-results", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    @Cacheable(cacheNames = "search-results", key = "(#criteria.query() == null ? '' : #criteria.query().trim()) + '|' + (#criteria.category() == null ? '' : #criteria.category().trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
+        SearchCriteria normalized = criteria.query() == null || criteria.query().isBlank()
+                ? criteria
+                : new SearchCriteria(criteria.query().trim().replaceAll("\\s+", " & "), criteria.category(), criteria.minPriceCents(),
+                        criteria.maxPriceCents(), criteria.minRating(), criteria.location(), criteria.availableFrom(), criteria.availableTo(), criteria.sort());
+        return catalogSearchPort.search(normalized, pageable);
+    }
+
     public Page<ListingSummary> search(String query, String category, Pageable pageable) {
-        if (query != null && !query.isBlank()) {
-            String tsQuery = query.trim().replaceAll("\\s+", " & ");
-            return catalogSearchPort.searchFullText(tsQuery, pageable);
-        }
-        if (category != null && !category.isBlank()) {
-            return catalogSearchPort.listByCategory(category, pageable);
-        }
-        return catalogSearchPort.listActive(pageable);
+        return search(new SearchCriteria(query, category, null, null, null, null, null, null, null), pageable);
     }
 
     public Page<ListingSummary> searchByCategory(String category, Pageable pageable) {
