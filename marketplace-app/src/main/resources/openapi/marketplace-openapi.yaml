@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: Marketplace API
+  version: 0.1.0
+  description: |
+    Baseline OpenAPI document for core marketplace domains.
+servers:
+  - url: /
+paths:
+  /api/providers:
+    post:
+      summary: Create provider profile
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Provider created }
+  /api/providers/{id}:
+    get:
+      summary: Get provider profile
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Provider found }
+  /api/availability/slots:
+    post:
+      summary: Add provider availability slot
+      tags: [Availability]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Slot created }
+  /api/search:
+    get:
+      summary: Search listings with optional filters
+      tags: [Search]
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: minPrice
+          schema: { type: number, format: double }
+        - in: query
+          name: maxPrice
+          schema: { type: number, format: double }
+      responses:
+        '200': { description: Search results returned }
+  /api/payments/webhooks:
+    post:
+      summary: Receive payment provider webhook event
+      tags: [Payments]
+      security: [{ webhookSignature: [] }]
+      responses:
+        '200': { description: Webhook accepted }
+  /api/notifications:
+    get:
+      summary: List notifications for current user
+      tags: [Notifications]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notifications returned }
+  /api/ledger/balance/{providerId}:
+    get:
+      summary: Get provider ledger balance
+      tags: [Ledger]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Balance returned }
+  /api/disputes:
+    post:
+      summary: Open a dispute
+      tags: [Disputes]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Dispute created }
+  /api/messages:
+    post:
+      summary: Send a message in conversation
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Message posted }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
