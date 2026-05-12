@@ -15,4 +15,6 @@ public interface CatalogSearchPort {
     Page<ListingSummary> listByCategory(String category, Pageable pageable);
 
     Page<ListingSummary> listActive(Pageable pageable);
+
+    Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable);
 }
