@@ -15,4 +15,14 @@ public interface CatalogSearchPort {
     Page<ListingSummary> listByCategory(String category, Pageable pageable);
 
     Page<ListingSummary> listActive(Pageable pageable);
+
+    default Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
+        if (criteria.category() != null && !criteria.category().isBlank()) {
+            return listByCategory(criteria.category(), pageable);
+        }
+        if (criteria.query() != null && !criteria.query().isBlank()) {
+            return searchFullText(criteria.query(), pageable);
+        }
+        return listActive(pageable);
+    }
 }
