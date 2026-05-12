@@ -2,6 +2,7 @@ package com.marketplace.booking;
 
 import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.shared.api.BookingSummary;
+import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
@@ -10,6 +11,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -28,15 +31,30 @@ public class BookingService implements BookingSpi {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final ListingPriceProvider listingPriceProvider;
+    private final ObjectProvider<AvailabilityPort> availabilityPort;
 
     public BookingService(BookingRepository bookingRepository,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher,
                           ListingPriceProvider listingPriceProvider) {
+        this(bookingRepository, currentUserProvider, eventPublisher, listingPriceProvider, new org.springframework.beans.factory.ObjectProvider<AvailabilityPort>() {
+            @Override public AvailabilityPort getObject(Object... args) { return null; }
+            @Override public AvailabilityPort getIfAvailable() { return null; }
+            @Override public AvailabilityPort getIfUnique() { return null; }
+            @Override public AvailabilityPort getObject() { return null; }
+        });
+    }
+
+    public BookingService(BookingRepository bookingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ApplicationEventPublisher eventPublisher,
+                          ListingPriceProvider listingPriceProvider,
+                          ObjectProvider<AvailabilityPort> availabilityPort) {
         this.bookingRepository = bookingRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.listingPriceProvider = listingPriceProvider;
+        this.availabilityPort = availabilityPort;
     }
 
     @Transactional(readOnly = true)
@@ -101,10 +119,16 @@ public class BookingService implements BookingSpi {
 
     @PreAuthorize("hasRole('CONSUMER')")
     public Booking create(UUID consumerId, UUID listingId, String notes) {
+        return create(consumerId, listingId, null, null, notes);
+    }
+
+    @PreAuthorize("hasRole('CONSUMER')")
+    public Booking create(UUID consumerId, UUID listingId, Instant startsAt, Instant endsAt, String notes) {
         ListingInfo info = listingPriceProvider.getListingInfo(listingId);
-        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), notes);
+        availabilityPort.ifAvailable(port -> port.requireAvailable(info.providerId(), listingId, startsAt, endsAt));
+        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), startsAt, endsAt, notes);
         Booking saved = bookingRepository.save(booking);
-        eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
+        eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId(), saved.getConsumerId(), saved.getProviderId()));
         return saved;
     }
 
@@ -115,6 +139,39 @@ public class BookingService implements BookingSpi {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);
         booking.confirm();
+        return booking;
+    }
+
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    public Booking reject(UUID id, Authentication authentication) {
+        Booking booking = getById(id);
+        verifyProviderOwnership(booking, authentication);
+        booking.reject();
+        return booking;
+    }
+
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
+    public Booking requestReschedule(UUID id, Instant startsAt, Instant endsAt, Authentication authentication) {
+        Booking booking = getById(id);
+        verifyParticipantOwnership(booking, authentication);
+        availabilityPort.ifAvailable(port -> port.requireAvailable(booking.getProviderId(), booking.getListingId(), startsAt, endsAt));
+        booking.requestReschedule(startsAt, endsAt);
+        return booking;
+    }
+
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    public Booking markNoShow(UUID id, Authentication authentication) {
+        Booking booking = getById(id);
+        verifyProviderOwnership(booking, authentication);
+        booking.markNoShow();
+        return booking;
+    }
+
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
+    public Booking openDispute(UUID id, Authentication authentication) {
+        Booking booking = getById(id);
+        verifyParticipantOwnership(booking, authentication);
+        booking.openDispute();
         return booking;
     }
 

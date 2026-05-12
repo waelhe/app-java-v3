@@ -34,6 +34,14 @@
         </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-provider</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-availability</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
             <artifactId>marketplace-booking</artifactId>
         </dependency>
         <dependency>
@@ -55,6 +63,18 @@
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-search</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-notifications</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-ledger</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-disputes</artifactId>
         </dependency>
 
         <!-- Boot starters -->
