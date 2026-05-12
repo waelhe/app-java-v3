@@ -5,6 +5,7 @@ import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.SearchCriteria;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -82,6 +83,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Cacheable(cacheNames = "catalog-search", key = "#tsQuery + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
+        return toSummaryPage(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
+        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
+        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Page<ProviderListing> page = listingRepository.searchByCriteria(criteria.category(), minPrice, maxPrice, pageable);
         return toSummaryPage(page);
     }
 
