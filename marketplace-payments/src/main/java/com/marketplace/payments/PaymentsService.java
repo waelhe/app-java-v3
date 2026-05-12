@@ -27,20 +27,35 @@ public class PaymentsService implements PaymentsSpi {
 
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentWebhookEventRepository webhookEventRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CurrentUserProvider currentUserProvider;
     private final BookingParticipantProvider bookingParticipantProvider;
+    private final PaymentWebhookSecurity paymentWebhookSecurity;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
+                           PaymentWebhookEventRepository webhookEventRepository,
                            ApplicationEventPublisher eventPublisher,
                            CurrentUserProvider currentUserProvider,
-                           BookingParticipantProvider bookingParticipantProvider) {
+                           BookingParticipantProvider bookingParticipantProvider,
+                           PaymentWebhookSecurity paymentWebhookSecurity) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
+        this.webhookEventRepository = webhookEventRepository;
         this.eventPublisher = eventPublisher;
         this.currentUserProvider = currentUserProvider;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.paymentWebhookSecurity = paymentWebhookSecurity;
+    }
+
+    public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
+        paymentWebhookSecurity.validateSignature(signature);
+        if (webhookEventRepository.findByEventId(eventId).isPresent()) {
+            return false;
+        }
+        webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, eventType));
+        return true;
     }
 
     @Transactional(readOnly = true)
