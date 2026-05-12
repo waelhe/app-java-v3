@@ -1,0 +1,28 @@
+package com.marketplace.docs;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+class OpenApiDocsControllerTest {
+
+    private final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new OpenApiDocsController()).build();
+
+    @Test
+    void shouldExposeLegacyOpenApiYamlPath() throws Exception {
+        mockMvc.perform(get("/openapi.yaml"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/yaml"));
+    }
+
+    @Test
+    void shouldExposeV3OpenApiYamlPath() throws Exception {
+        mockMvc.perform(get("/v3/api-docs.yaml"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/yaml"));
+    }
+}
