@@ -1,0 +1,231 @@
+spring:
+  application:
+    name: marketplace
+
+  threads:
+    virtual:
+      enabled: true
+
+  docker:
+    compose:
+      enabled: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/marketplace
+    username: ${DB_USERNAME:marketplace}
+    password: ${DB_PASSWORD:marketplace}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      leak-detection-threshold: 60000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        session:
+          events:
+            LOG: off
+        default_batch_fetch_size: 100
+        query:
+          fail_on_pagination_over_collection_fetch: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    out-of-order: false
+    clean-disabled: true
+
+  modulith:
+    events:
+      completion-mode: archive
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  mvc:
+    problemdetails:
+      enabled: true
+
+  graphql:
+    graphiql:
+      enabled: true
+    websocket:
+      path: /graphql/ws
+    schema:
+      introspection:
+        enabled: true
+      inspection:
+        enabled: true
+
+  session:
+    redis:
+      flush-mode: on_save
+      namespace: marketplace:session
+    timeout: 30m
+
+  http:
+    clients:
+      connect-timeout: 5s
+
+  websocket:
+    messaging:
+      preferred-json-mapper: jackson
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+    web:
+      pageable:
+        max-page-size: 100
+    rest:
+      base-path: /api
+      detection-strategy: DEFAULT
+      default-page-size: 20
+      max-page-size: 100
+      return-body-on-create: true
+      return-body-on-update: true
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 5000
+  cache:
+    type: ${CACHE_TYPE:redis}
+    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: marketplaceScheduler
+            instanceId: AUTO
+          threadPool:
+            threadCount: 5
+
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    conditions:
+      enabled: true
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,diskSpace
+        liveness:
+          include: ping
+  observations:
+    enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 0.1
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_METRICS_EXPORT_URL:http://localhost:4318/v1/metrics}
+        step: 1m
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_TRACES_EXPORT_URL:http://localhost:4318/v1/traces}
+
+logging:
+  structured:
+    format:
+      console: logstash
+      file: logstash
+  file:
+    name: ${LOG_FILE:/var/log/marketplace/application.log}
+  pattern:
+    correlation: "[${correlationId:-}]"
+  level:
+    org.springframework.modulith: INFO
+    org.hibernate.SQL: WARN
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 5s
+        sliding-window-size: 10
+        sliding-window-type: COUNT_BASED
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      paymentProcessing:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+    instances:
+      paymentProcessing:
+        base-config: default
+        max-attempts: 3
+      booking:
+        base-config: default
+        max-attempts: 2
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 100
+        limit-refresh-period: 1m
+        timeout-duration: 5s
+    instances:
+      catalog:
+        base-config: default
+        limit-for-period: 50
+      search:
+        base-config: default
+        limit-for-period: 30
+
+marketplace:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  security:
+    auth-server:
+      issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:}
+        password: ${JWT_KEYSTORE_PASSWORD:}
+        alias: ${JWT_KEY_ALIAS:}
+        key-password: ${JWT_KEY_PASSWORD:}

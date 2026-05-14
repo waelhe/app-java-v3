@@ -1,0 +1,127 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+
+  jpa:
+    show-sql: false
+
+  devtools:
+    restart:
+      enabled: false
+    livereload:
+      enabled: false
+
+  flyway:
+    clean-disabled: true
+
+  quartz:
+    jdbc:
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          jobStore:
+            isClustered: true
+
+  cache:
+    type: redis
+
+  modulith:
+    events:
+      completion-mode: archive
+      staleness:
+        publication-threshold: 6h
+        processing-threshold: 1h
+      republish-outstanding-events-on-restart: true
+
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
+          audiences:
+            - marketplace-api
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 5000
+
+server:
+  shutdown: graceful
+
+logging:
+  level:
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    com.marketplace: INFO
+
+management:
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,redis,diskSpace
+        liveness:
+          include: ping
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,modulith
+  observations:
+    enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACING_SAMPLING:0.1}
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_METRICS_EXPORT_URL}
+        step: ${OTEL_METRICS_EXPORT_STEP:1m}
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+      service.version: ${OTEL_SERVICE_VERSION:0.1.0}
+      deployment.environment: production
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_TRACES_EXPORT_URL}
+
+marketplace:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  security:
+    auth-server:
+      issuer: ${AUTH_SERVER_ISSUER}
+    jwt:
+      keystore:
+        path: ${JWT_KEYSTORE_PATH}
+        password: ${JWT_KEYSTORE_PASSWORD}
+        alias: ${JWT_KEY_ALIAS}
+        key-password: ${JWT_KEY_PASSWORD}

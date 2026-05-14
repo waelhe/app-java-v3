@@ -1,0 +1,178 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Full Integration Test (JDK 21)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: marketplace
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Verify Environment
+        run: |
+          echo "=== Java ==="
+          java -version 2>&1
+          echo ""
+          echo "=== Maven Wrapper ==="
+          ./mvnw --version 2>&1
+          echo ""
+          echo "=== Docker ==="
+          docker --version 2>&1
+          echo ""
+          echo "=== PostgreSQL ==="
+          pg_isready -h localhost -p 5432 -U test 2>&1 || echo "Checking via health check..."
+          echo ""
+          echo "=== Redis ==="
+          redis-cli -h localhost -p 6379 ping 2>&1 || echo "Checking via health check..."
+
+      - name: Build and Verify
+        run: ./mvnw clean verify --batch-mode
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+
+      - name: Analyze Test Results
+        if: always()
+        run: |
+          echo "=== Test Results Summary ==="
+          TOTAL=0
+          PASSED=0
+          FAILED=0
+          ERRORS=0
+          SKIPPED=0
+          for report in $(find . -path '*/surefire-reports/TEST-*.xml' 2>/dev/null); do
+            MODULE=$(echo "$report" | cut -d'/' -f2)
+            tests=$(grep -oP 'tests="\K[^"]+' "$report" 2>/dev/null || echo 0)
+            failures=$(grep -oP 'failures="\K[^"]+' "$report" 2>/dev/null || echo 0)
+            errors=$(grep -oP 'errors="\K[^"]+' "$report" 2>/dev/null || echo 0)
+            skipped=$(grep -oP 'skipped="\K[^"]+' "$report" 2>/dev/null || echo 0)
+            passed=$((tests - failures - errors - skipped))
+            TOTAL=$((TOTAL + tests))
+            PASSED=$((PASSED + passed))
+            FAILED=$((FAILED + failures))
+            ERRORS=$((ERRORS + errors))
+            SKIPPED=$((SKIPPED + skipped))
+            echo "  $MODULE: $passed/$tests passed, $failures failed, $errors errors, $skipped skipped"
+          done
+          echo ""
+          echo "=== Total: $PASSED/$TOTAL passed | $FAILED failed | $ERRORS errors | $SKIPPED skipped ==="
+          if [ "$FAILED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+            echo "FAILED TESTS:"
+            for report in $(find . -path '*/surefire-reports/TEST-*.xml' 2>/dev/null); do
+              failures=$(grep -oP 'failures="\K[^"]+' "$report" 2>/dev/null || echo 0)
+              errors=$(grep -oP 'errors="\K[^"]+' "$report" 2>/dev/null || echo 0)
+              if [ "$failures" -gt 0 ] || [ "$errors" -gt 0 ]; then
+                echo "  $report"
+              fi
+            done
+          else
+            echo "All tests passed!"
+          fi
+
+      - name: Install Modules
+        run: ./mvnw install -DskipTests --batch-mode
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+
+      - name: Start Application
+        run: |
+          ./mvnw spring-boot:run -pl marketplace-app -Dspring-boot.run.profiles=test -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
+          echo "Waiting for application to start..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "Application started successfully!"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "Application failed to start within 5 minutes"
+              exit 1
+            fi
+            echo "Attempt $i/60..."
+            sleep 5
+          done
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_QUARTZ_JOB_STORE_TYPE: memory
+          MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: false
+          MANAGEMENT_HEALTH_MAIL_ENABLED: false
+          MANAGEMENT_TRACING_ENABLED: false
+
+      - name: Health Check
+        run: "curl -sf http://localhost:8080/actuator/health | jq ."
+
+      - name: Data REST Endpoint Check
+        run: "curl -sf http://localhost:8080/api | jq . || echo 'Data REST: No repositories exposed yet'"
+
+      - name: GraphQL Endpoint Check
+        run: |
+          curl -sf -X POST http://localhost:8080/graphql \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ __schema { queryType { name } } }"}' | jq .
+
+      - name: Stop Application
+        if: always()
+        run: pkill -f "spring-boot:run" || true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: '**/target/surefire-reports/'
+          retention-days: 7

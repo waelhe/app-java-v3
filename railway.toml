@@ -1,0 +1,9 @@
+[build]
+builder = "NIXPACKS"
+
+[phases.build]
+cmd = "chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am"
+
+[deploy]
+healthcheckPath = "/actuator/health/liveness"
+healthcheckTimeout = 300

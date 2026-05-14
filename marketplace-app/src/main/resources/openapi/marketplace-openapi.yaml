@@ -1,0 +1,2139 @@
+openapi: 3.1.0
+info:
+  title: Marketplace API
+  version: 0.1.0
+  description: |
+    Complete OpenAPI documentation for the Marketplace backend.
+    All business endpoints are prefixed with /api/v1.
+    Security: endpoints require bearerAuth (JWT) unless noted otherwise.
+    Admin endpoints require the ADMIN role.
+servers:
+  - url: /
+
+paths:
+
+  # ─── Identity Module ─────────────────────────────────────────────
+  /api/v1/users/me:
+    get:
+      summary: Get current authenticated user profile
+      tags: [Identity]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthorized
+
+  # ─── Provider Module ────────────────────────────────────────────
+  /api/v1/providers:
+    post:
+      summary: Create provider profile
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderRequest'
+      responses:
+        '200':
+          description: Provider created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/providers/{id}:
+    get:
+      summary: Get provider profile by ID
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderResponse'
+        '404':
+          description: Provider not found
+    put:
+      summary: Update provider profile
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderRequest'
+      responses:
+        '200':
+          description: Provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderResponse'
+
+  /api/v1/admin/providers/{id}/verify:
+    post:
+      summary: Verify a provider profile (admin)
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderResponse'
+
+  /api/v1/admin/providers/{id}/suspend:
+    post:
+      summary: Suspend a provider profile (admin)
+      tags: [Provider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderResponse'
+
+  # ─── Catalog Module ─────────────────────────────────────────────
+  /api/v1/listings:
+    get:
+      summary: List all listings
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated list of listing summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ListingSummary'
+    post:
+      summary: Create a new listing
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateListingRequest'
+      responses:
+        '200':
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+
+  /api/v1/listings/{id}:
+    get:
+      summary: Get listing by ID
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+    put:
+      summary: Update listing
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateListingRequest'
+      responses:
+        '200':
+          description: Listing updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+
+  /api/v1/listings/category/{category}:
+    get:
+      summary: List listings by category
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated listing summaries by category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ListingSummary'
+
+  /api/v1/listings/provider/{providerId}:
+    get:
+      summary: List listings by provider
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated listing responses by provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ListingResponse'
+
+  /api/v1/listings/{id}/activate:
+    post:
+      summary: Activate a listing
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+
+  /api/v1/listings/{id}/pause:
+    post:
+      summary: Pause a listing
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+
+  /api/v1/listings/{id}/archive:
+    post:
+      summary: Archive a listing
+      tags: [Catalog]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+
+  # ─── Booking Module ─────────────────────────────────────────────
+  /api/v1/bookings:
+    post:
+      summary: Create a booking
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '200':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+
+  /api/v1/bookings/{id}:
+    get:
+      summary: Get booking by ID
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+
+  /api/v1/bookings/consumer/{consumerId}:
+    get:
+      summary: List bookings by consumer
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: consumerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated bookings by consumer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_BookingResponse'
+
+  /api/v1/bookings/provider/{providerId}:
+    get:
+      summary: List bookings by provider
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated bookings by provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_BookingResponse'
+
+  /api/v1/bookings/{id}/confirm:
+    post:
+      summary: Confirm a booking
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+
+  /api/v1/bookings/{id}/complete:
+    post:
+      summary: Complete a booking
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+
+  /api/v1/bookings/{id}/cancel:
+    post:
+      summary: Cancel a booking
+      tags: [Booking]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+
+  # ─── Payments Module ────────────────────────────────────────────
+  /api/v1/payments/intents:
+    post:
+      summary: Create a payment intent
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntentRequest'
+      responses:
+        '200':
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+
+  /api/v1/payments/intents/{id}:
+    get:
+      summary: Get payment intent by ID
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment intent found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+
+  /api/v1/payments/intents/{id}/process:
+    post:
+      summary: Process a payment intent
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment intent processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+
+  /api/v1/payments/intents/{id}/confirm:
+    post:
+      summary: Confirm a payment intent with external ID
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmIntentRequest'
+      responses:
+        '200':
+          description: Payment intent confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+
+  /api/v1/payments/intents/{id}/cancel:
+    post:
+      summary: Cancel a payment intent
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment intent cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+
+  /api/v1/payments/{paymentId}/refund:
+    post:
+      summary: Refund a payment
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+
+  /api/v1/payments/webhooks/{provider}:
+    post:
+      summary: Receive payment provider webhook event
+      tags: [Payments]
+      security: [{ webhookSignature: [] }]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Webhook accepted
+
+  # ─── Reviews Module ─────────────────────────────────────────────
+  /api/v1/reviews:
+    post:
+      summary: Create a review
+      tags: [Reviews]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '200':
+          description: Review created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+
+  /api/v1/reviews/{id}:
+    get:
+      summary: Get review by ID
+      tags: [Reviews]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Review found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+    put:
+      summary: Update a review
+      tags: [Reviews]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewRequest'
+      responses:
+        '200':
+          description: Review updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+
+  /api/v1/reviews/provider/{providerId}:
+    get:
+      summary: List reviews by provider
+      tags: [Reviews]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated reviews by provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ReviewResponse'
+
+  /api/v1/reviews/reviewer/{reviewerId}:
+    get:
+      summary: List reviews by reviewer
+      tags: [Reviews]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: reviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated reviews by reviewer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ReviewResponse'
+
+  # ─── Search Module ──────────────────────────────────────────────
+  /api/v1/search:
+    get:
+      summary: Search listings with optional filters
+      tags: [Search]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Full-text search query
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: minPrice
+          in: query
+          schema: { type: number, format: double }
+        - name: maxPrice
+          in: query
+          schema: { type: number, format: double }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ListingSummary'
+
+  /api/v1/search/category/{category}:
+    get:
+      summary: Search listings by category
+      tags: [Search]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Search results by category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ListingSummary'
+
+  # ─── Availability Module ────────────────────────────────────────
+  /api/v1/providers/{providerId}/availability:
+    get:
+      summary: Get provider availability slots
+      tags: [Availability]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of availability slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AvailabilitySlot'
+
+  /api/v1/providers/{providerId}/availability/slots:
+    post:
+      summary: Add availability slot for provider
+      tags: [Availability]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilitySlotRequest'
+      responses:
+        '200':
+          description: Slot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilitySlot'
+
+  /api/v1/providers/{providerId}/availability/rules:
+    post:
+      summary: Add availability rule for provider
+      tags: [Availability]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityRuleRequest'
+      responses:
+        '200':
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderAvailabilityRule'
+
+  /api/v1/providers/{providerId}/time-off:
+    post:
+      summary: Add time-off period for provider
+      tags: [Availability]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeOffRequest'
+      responses:
+        '200':
+          description: Time-off created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderTimeOff'
+
+  # ─── Notifications Module ───────────────────────────────────────
+  /api/v1/notifications:
+    get:
+      summary: List notifications for current user
+      tags: [Notifications]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+
+  /api/v1/notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      tags: [Notifications]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+
+  # ─── Ledger Module ──────────────────────────────────────────────
+  /api/v1/admin/ledger/providers/{providerId}/balance:
+    get:
+      summary: Get provider ledger balance (admin)
+      tags: [Ledger]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderBalance'
+
+  /api/v1/admin/ledger/providers/{providerId}/credit:
+    post:
+      summary: Credit a provider's balance (admin)
+      tags: [Ledger]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: amountCents
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sourceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Balance credited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderBalance'
+
+  # ─── Disputes Module ────────────────────────────────────────────
+  /api/v1/bookings/{bookingId}/disputes:
+    post:
+      summary: Open a dispute for a booking
+      tags: [Disputes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: reason
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dispute created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+    get:
+      summary: List disputes for a booking
+      tags: [Disputes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of disputes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Dispute'
+
+  /api/v1/admin/disputes/{id}/resolve:
+    post:
+      summary: Resolve a dispute (admin)
+      tags: [Disputes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dispute resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+
+  # ─── Messaging Module ───────────────────────────────────────────
+  /api/v1/messages/conversations:
+    post:
+      summary: Create a new conversation
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '200':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+
+  /api/v1/messages/conversations/{id}:
+    get:
+      summary: Get conversation by ID
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Conversation found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+
+  /api/v1/messages/conversations/{conversationId}/messages:
+    get:
+      summary: Get messages in a conversation
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_MessageResponse'
+    post:
+      summary: Send a message in a conversation
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/messages/conversations/{conversationId}/unread:
+    get:
+      summary: Get unread message count
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResponse'
+
+  /api/v1/messages/conversations/{conversationId}/read:
+    post:
+      summary: Mark conversation messages as read
+      tags: [Messaging]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Messages marked as read
+
+  # ─── Admin Module ───────────────────────────────────────────────
+  /api/v1/admin/users:
+    get:
+      summary: List all users (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated user summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_UserSummary'
+
+  /api/v1/admin/listings:
+    get:
+      summary: List all listings (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated listing summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_ProviderListingSummary'
+
+  /api/v1/admin/listings/{id}/archive:
+    post:
+      summary: Archive a listing (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Listing archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderListingSummary'
+
+  /api/v1/admin/bookings:
+    get:
+      summary: List all bookings (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated booking summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_BookingSummary'
+
+  /api/v1/admin/payments:
+    get:
+      summary: List all payment intents (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - $ref: '#/components/parameters/SortParam'
+      responses:
+        '200':
+          description: Paginated payment summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_PaymentSummary'
+
+  /api/v1/admin/payments/{id}:
+    get:
+      summary: Get payment intent by ID (admin)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSummary'
+
+components:
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 0
+      description: Zero-based page index
+    SizeParam:
+      name: size
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+      description: Page size
+    SortParam:
+      name: sort
+      in: query
+      schema:
+        type: string
+      description: Sort property, e.g. createdAt,desc
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+
+  schemas:
+    # ── Identity ──────────────────────────────────────────────────
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ── Provider ──────────────────────────────────────────────────
+    ProviderRequest:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+        bio:
+          type: string
+
+    ProviderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        bio:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProviderStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProviderStatus:
+      type: string
+      enum: [PENDING, VERIFIED, SUSPENDED]
+
+    ProviderSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        status:
+          type: string
+
+    # ── Catalog ───────────────────────────────────────────────────
+    CreateListingRequest:
+      type: object
+      required: [title, category, priceCents]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        priceCents:
+          type: integer
+          format: int64
+
+    UpdateListingRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        priceCents:
+          type: integer
+          format: int64
+
+    ListingResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+          format: double
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ListingSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+          format: double
+        providerName:
+          type: string
+
+    ProviderListingSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+          format: double
+        providerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ListingStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, PAUSED, ARCHIVED]
+
+    # ── Booking ───────────────────────────────────────────────────
+    CreateBookingRequest:
+      type: object
+      required: [listingId]
+      properties:
+        listingId:
+          type: string
+          format: uuid
+        notes:
+          type: string
+
+    BookingResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        consumerId:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        priceCents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingStatus:
+      type: string
+      enum: [PENDING, CONFIRMED, COMPLETED, CANCELLED]
+
+    # ── Payments ──────────────────────────────────────────────────
+    CreateIntentRequest:
+      type: object
+      required: [bookingId]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+
+    ConfirmIntentRequest:
+      type: object
+      required: [externalId]
+      properties:
+        externalId:
+          type: string
+
+    PaymentIntentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        amountCents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        amountCents:
+          type: integer
+          format: int64
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        consumerId:
+          type: string
+          format: uuid
+        amountCents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentStatus:
+      type: string
+      enum: [PENDING, COMPLETED, FAILED, REFUNDED]
+
+    PaymentIntentStatus:
+      type: string
+      enum: [CREATED, PROCESSING, SUCCEEDED, FAILED, CANCELLED]
+
+    # ── Reviews ───────────────────────────────────────────────────
+    CreateReviewRequest:
+      type: object
+      required: [bookingId, rating]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+
+    UpdateReviewRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+
+    ReviewResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ── Messaging ─────────────────────────────────────────────────
+    CreateConversationRequest:
+      type: object
+      required: [bookingId]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+
+    ConversationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SendMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        content:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UnreadCountResponse:
+      type: object
+      properties:
+        unreadCount:
+          type: integer
+          format: int64
+
+    # ── Availability ──────────────────────────────────────────────
+    AvailabilitySlotRequest:
+      type: object
+      required: [startsAt, endsAt]
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+
+    AvailabilitySlot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        booked:
+          type: boolean
+
+    AvailabilityRuleRequest:
+      type: object
+      required: [dayOfWeek, startTime, endTime]
+      properties:
+        dayOfWeek:
+          type: string
+          enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+
+    ProviderAvailabilityRule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        dayOfWeek:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+
+    TimeOffRequest:
+      type: object
+      required: [startsAt, endsAt]
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+
+    ProviderTimeOff:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+
+    # ── Notifications ─────────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        recipientId:
+          type: string
+          format: uuid
+        type:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+
+    # ── Ledger ────────────────────────────────────────────────────
+    LedgerEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        sourceId:
+          type: string
+          format: uuid
+        entryType:
+          $ref: '#/components/schemas/LedgerEntryType'
+        amountCents:
+          type: integer
+          format: int64
+
+    LedgerEntryType:
+      type: string
+      enum: [PAYMENT_CREDIT]
+
+    ProviderBalance:
+      type: object
+      properties:
+        providerId:
+          type: string
+          format: uuid
+        availableCents:
+          type: integer
+          format: int64
+
+    # ── Disputes ──────────────────────────────────────────────────
+    Dispute:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        openedBy:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/DisputeStatus'
+        reason:
+          type: string
+
+    DisputeCreateRequest:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+
+    DisputeStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+
+    # ── Common / Shared ───────────────────────────────────────────
+    PagedResponse_UserSummary:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_ListingSummary:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListingSummary'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_ListingResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListingResponse'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_BookingResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingResponse'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_BookingSummary:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSummary'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_PaymentSummary:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentSummary'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_ProviderListingSummary:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderListingSummary'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_ReviewResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewResponse'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    PagedResponse_MessageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageResponse'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          format: int32
+        error:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
