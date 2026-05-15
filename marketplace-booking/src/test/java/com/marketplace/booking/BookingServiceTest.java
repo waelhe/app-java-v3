@@ -302,7 +302,7 @@ class BookingServiceTest {
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         service.create(consumerId, listingId, "notes");
-        verify(eventPublisher).publishEvent(any());
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.BookingCreatedEvent.class));
     }
 
     @Test
