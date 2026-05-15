@@ -2,11 +2,13 @@ package com.marketplace.disputes;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "disputes")
+@Audited
 public class Dispute extends BaseEntity {
     @Id
     private UUID id;
@@ -40,5 +42,8 @@ public class Dispute extends BaseEntity {
 
     @Override public UUID getId() { return id; }
     public UUID getBookingId(){return bookingId;}
-    public void resolve(){this.status = DisputeStatus.RESOLVED;}
+    public void resolve(){
+        this.status.validateTransitionTo(DisputeStatus.RESOLVED);
+        this.status = DisputeStatus.RESOLVED;
+    }
 }

@@ -18,15 +18,20 @@ public class PaymentsController {
 
     private final PaymentsService paymentsService;
     private final CurrentUserProvider currentUserProvider;
+    private final PaymentMapper paymentMapper;
+    private final PaymentIntentMapper paymentIntentMapper;
 
-    public PaymentsController(PaymentsService paymentsService, CurrentUserProvider currentUserProvider) {
+    public PaymentsController(PaymentsService paymentsService, CurrentUserProvider currentUserProvider,
+                              PaymentMapper paymentMapper, PaymentIntentMapper paymentIntentMapper) {
         this.paymentsService = paymentsService;
         this.currentUserProvider = currentUserProvider;
+        this.paymentMapper = paymentMapper;
+        this.paymentIntentMapper = paymentIntentMapper;
     }
 
     @GetMapping("/intents/{id}")
     public ResponseEntity<PaymentIntentResponse> getIntent(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.getIntentForUser(id, authentication)));
+        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.getIntentForUser(id, authentication)));
     }
 
     @PostMapping("/intents")
@@ -36,32 +41,32 @@ public class PaymentsController {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         PaymentIntent intent = paymentsService.createIntent(
                 request.bookingId(), consumerId, request.idempotencyKey());
-        return ResponseEntity.status(HttpStatus.CREATED).body(PaymentIntentResponse.from(intent));
+        return ResponseEntity.status(HttpStatus.CREATED).body(paymentIntentMapper.toResponse(intent));
     }
 
     @PostMapping("/intents/{id}/process")
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntentResponse> processIntent(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.processIntent(id, authentication)));
+        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.processIntent(id, authentication)));
     }
 
     @PostMapping("/intents/{id}/confirm")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentIntentResponse> confirmIntent(@PathVariable UUID id,
                                                                @Valid @RequestBody ConfirmIntentRequest request) {
-        return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.confirmIntent(id, request.externalId())));
+        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.confirmIntent(id, request.externalId())));
     }
 
     @PostMapping("/intents/{id}/cancel")
     @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntentResponse> cancelIntent(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(PaymentIntentResponse.from(paymentsService.cancelIntent(id, authentication)));
+        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.cancelIntent(id, authentication)));
     }
 
     @PostMapping("/{paymentId}/refund")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentResponse> refundPayment(@PathVariable UUID paymentId) {
-        return ResponseEntity.ok(PaymentResponse.from(paymentsService.refundPayment(paymentId)));
+        return ResponseEntity.ok(paymentMapper.toResponse(paymentsService.refundPayment(paymentId)));
     }
 
     @PostMapping("/webhooks/{provider}")

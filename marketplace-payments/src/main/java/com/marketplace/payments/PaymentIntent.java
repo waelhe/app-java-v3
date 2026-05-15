@@ -7,11 +7,13 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "payment_intents")
+@Audited
 public class PaymentIntent extends BaseEntity {
 
     @Id
@@ -63,30 +65,22 @@ public class PaymentIntent extends BaseEntity {
     public String getIdempotencyKey() { return idempotencyKey; }
 
     public void markProcessing() {
-        if (this.status != PaymentIntentStatus.CREATED) {
-            throw new IllegalStateException("Can only process CREATED intents");
-        }
+        this.status.validateTransitionTo(PaymentIntentStatus.PROCESSING);
         this.status = PaymentIntentStatus.PROCESSING;
     }
 
     public void markSucceeded() {
-        if (this.status != PaymentIntentStatus.PROCESSING) {
-            throw new IllegalStateException("Can only succeed PROCESSING intents");
-        }
+        this.status.validateTransitionTo(PaymentIntentStatus.SUCCEEDED);
         this.status = PaymentIntentStatus.SUCCEEDED;
     }
 
     public void markFailed() {
-        if (this.status != PaymentIntentStatus.PROCESSING) {
-            throw new IllegalStateException("Can only fail PROCESSING intents");
-        }
+        this.status.validateTransitionTo(PaymentIntentStatus.FAILED);
         this.status = PaymentIntentStatus.FAILED;
     }
 
     public void cancel() {
-        if (this.status == PaymentIntentStatus.SUCCEEDED) {
-            throw new IllegalStateException("Cannot cancel SUCCEEDED intents");
-        }
+        this.status.validateTransitionTo(PaymentIntentStatus.CANCELLED);
         this.status = PaymentIntentStatus.CANCELLED;
     }
 }

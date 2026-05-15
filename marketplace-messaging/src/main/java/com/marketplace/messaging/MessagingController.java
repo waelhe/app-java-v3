@@ -20,16 +20,21 @@ public class MessagingController {
 
     private final MessagingService messagingService;
     private final CurrentUserProvider currentUserProvider;
+    private final MessageMapper messageMapper;
+    private final ConversationMapper conversationMapper;
 
-    public MessagingController(MessagingService messagingService, CurrentUserProvider currentUserProvider) {
+    public MessagingController(MessagingService messagingService, CurrentUserProvider currentUserProvider,
+                               MessageMapper messageMapper, ConversationMapper conversationMapper) {
         this.messagingService = messagingService;
         this.currentUserProvider = currentUserProvider;
+        this.messageMapper = messageMapper;
+        this.conversationMapper = conversationMapper;
     }
 
     @GetMapping("/conversations/{id}")
     public ResponseEntity<ConversationResponse> getConversation(@PathVariable UUID id, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.ok(ConversationResponse.from(messagingService.getConversation(id, userId)));
+        return ResponseEntity.ok(conversationMapper.toResponse(messagingService.getConversation(id, userId)));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
@@ -37,7 +42,7 @@ public class MessagingController {
             @PathVariable UUID conversationId, Pageable pageable, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(PagedResponse.of(
-                messagingService.getMessages(conversationId, userId, pageable).map(MessageResponse::from)));
+                messagingService.getMessages(conversationId, userId, pageable).map(messageMapper::toResponse)));
     }
 
     @GetMapping("/conversations/{conversationId}/unread")
@@ -51,7 +56,7 @@ public class MessagingController {
                                                                    Authentication authentication) {
         UUID participantA = currentUserProvider.getCurrentUserId(authentication);
         Conversation conversation = messagingService.createConversation(participantA, request.bookingId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(ConversationResponse.from(conversation));
+        return ResponseEntity.status(HttpStatus.CREATED).body(conversationMapper.toResponse(conversation));
     }
 
     @PostMapping("/conversations/{conversationId}/messages")
@@ -60,7 +65,7 @@ public class MessagingController {
                                                        Authentication authentication) {
         UUID senderId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(MessageResponse.from(messagingService.sendMessage(conversationId, senderId, request.content())));
+                .body(messageMapper.toResponse(messagingService.sendMessage(conversationId, senderId, request.content())));
     }
 
     @PostMapping("/conversations/{conversationId}/read")

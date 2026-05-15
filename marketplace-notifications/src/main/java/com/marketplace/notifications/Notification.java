@@ -2,11 +2,13 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "notifications")
+@Audited
 public class Notification extends BaseEntity {
     @Id
     private UUID id;

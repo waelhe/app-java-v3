@@ -10,8 +10,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
+import org.instancio.Instancio;
 import java.util.Optional;
 import java.util.UUID;
+
+import static org.instancio.Select.field;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -32,9 +35,9 @@ class BookingServiceTest {
 
     @Test
     void create_setsStatusToPending() {
-        UUID consumerId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        UUID listingId = UUID.randomUUID();
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
 
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
@@ -50,10 +53,14 @@ class BookingServiceTest {
 
     @Test
     void confirm_changesStatusFromPendingToConfirmed() {
-        UUID id = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        Booking booking = Booking.create(UUID.randomUUID(), providerId,
-                UUID.randomUUID(), 5000L, "notes");
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
@@ -65,10 +72,14 @@ class BookingServiceTest {
 
     @Test
     void complete_changesStatusFromConfirmedToCompleted() {
-        UUID id = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        Booking booking = Booking.create(UUID.randomUUID(), providerId,
-                UUID.randomUUID(), 5000L, "notes");
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .create();
         booking.confirm();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
@@ -81,11 +92,16 @@ class BookingServiceTest {
 
     @Test
     void cancel_changesStatusToCancelled() {
-        UUID id = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        Booking booking = Booking.create(consumerId, providerId,
-                UUID.randomUUID(), 5000L, "notes");
+        UUID id = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getConsumerId), consumerId)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
@@ -97,7 +113,7 @@ class BookingServiceTest {
 
     @Test
     void getById_throwsResourceNotFoundException() {
-        UUID id = UUID.randomUUID();
+        UUID id = Instancio.create(UUID.class);
         when(bookingRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.getById(id));
@@ -105,12 +121,16 @@ class BookingServiceTest {
 
     @Test
     void confirm_throwsWhenNotProvider() {
-        UUID id = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        Booking booking = Booking.create(UUID.randomUUID(), providerId,
-                UUID.randomUUID(), 5000L, "notes");
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         assertThrows(AccessDeniedException.class, () -> service.confirm(id, authentication));
@@ -118,11 +138,14 @@ class BookingServiceTest {
 
     @Test
     void cancel_throwsWhenNotParticipant() {
-        UUID id = UUID.randomUUID();
-        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 5000L, "notes");
+        UUID id = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
         assertThrows(AccessDeniedException.class, () -> service.cancel(id, authentication));

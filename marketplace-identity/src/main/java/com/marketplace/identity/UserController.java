@@ -13,14 +13,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserService userService;
+    private final UserMapper userMapper;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserMapper userMapper) {
         this.userService = userService;
+        this.userMapper = userMapper;
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal JwtAuthenticationToken token) {
         User user = userService.syncFromOidc(token);
-        return ResponseEntity.ok(UserResponse.from(user));
+        return ResponseEntity.ok(userMapper.toResponse(user));
     }
 }

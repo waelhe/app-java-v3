@@ -3,12 +3,13 @@ package com.marketplace.catalog;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.UUID;
 
-public interface ProviderListingRepository extends JpaRepository<ProviderListing, UUID> {
+public interface ProviderListingRepository extends JpaRepository<ProviderListing, UUID>, JpaSpecificationExecutor<ProviderListing> {
 
     Page<ProviderListing> findByProviderId(UUID providerId, Pageable pageable);
 

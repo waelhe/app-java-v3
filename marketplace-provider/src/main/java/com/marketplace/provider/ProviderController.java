@@ -12,33 +12,35 @@ import java.util.UUID;
 public class ProviderController {
 
     private final ProviderService providerService;
+    private final ProviderMapper providerMapper;
 
-    public ProviderController(ProviderService providerService) {
+    public ProviderController(ProviderService providerService, ProviderMapper providerMapper) {
         this.providerService = providerService;
+        this.providerMapper = providerMapper;
     }
 
     @PostMapping("/providers")
     public ResponseEntity<ProviderResponse> create(@Valid @RequestBody ProviderRequest request) {
-        return ResponseEntity.ok(ProviderResponse.from(providerService.create(request.displayName(), request.bio())));
+        return ResponseEntity.ok(providerMapper.toResponse(providerService.create(request.displayName(), request.bio())));
     }
 
     @GetMapping("/providers/{id}")
     public ResponseEntity<ProviderResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(ProviderResponse.from(providerService.getById(id)));
+        return ResponseEntity.ok(providerMapper.toResponse(providerService.getById(id)));
     }
 
     @PutMapping("/providers/{id}")
     public ResponseEntity<ProviderResponse> update(@PathVariable UUID id, @Valid @RequestBody ProviderRequest request) {
-        return ResponseEntity.ok(ProviderResponse.from(providerService.update(id, request.displayName(), request.bio())));
+        return ResponseEntity.ok(providerMapper.toResponse(providerService.update(id, request.displayName(), request.bio())));
     }
 
     @PostMapping("/admin/providers/{id}/verify")
     public ResponseEntity<ProviderResponse> verify(@PathVariable UUID id) {
-        return ResponseEntity.ok(ProviderResponse.from(providerService.verify(id)));
+        return ResponseEntity.ok(providerMapper.toResponse(providerService.verify(id)));
     }
 
     @PostMapping("/admin/providers/{id}/suspend")
     public ResponseEntity<ProviderResponse> suspend(@PathVariable UUID id) {
-        return ResponseEntity.ok(ProviderResponse.from(providerService.suspend(id)));
+        return ResponseEntity.ok(providerMapper.toResponse(providerService.suspend(id)));
     }
 }

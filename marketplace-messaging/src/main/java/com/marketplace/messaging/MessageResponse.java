@@ -11,14 +11,4 @@ public record MessageResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static MessageResponse from(Message message) {
-        return new MessageResponse(
-                message.getId(),
-                message.getConversationId(),
-                message.getContent(),
-                message.isRead(),
-                message.getCreatedAt(),
-                message.getUpdatedAt()
-        );
-    }
 }

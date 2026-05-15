@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.instancio.Instancio.*;
+import static org.instancio.Select.field;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -39,18 +41,15 @@ class PaymentsServiceTest {
 
     @Test
     void createIntent_savesNewIntentUsingBookingPrice() {
-        UUID bookingId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
         String idempotencyKey = "key-123";
-        BookingInfo bookingInfo = new BookingInfo(
-                UUID.randomUUID(),
-                consumerId,
-                "CONFIRMED",
-                5000L,
-                "SAR",
-                Instant.now(),
-                Instant.now()
-        );
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
 
         when(intentRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
@@ -65,10 +64,15 @@ class PaymentsServiceTest {
 
     @Test
     void createIntent_idempotencyReturnsExisting() {
-        UUID bookingId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
         String idempotencyKey = "key-123";
-        PaymentIntent existing = PaymentIntent.create(bookingId, consumerId, 5000L, idempotencyKey);
+        PaymentIntent existing = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getConsumerId), consumerId)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getIdempotencyKey), idempotencyKey)
+                .create();
 
         when(intentRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(existing));
 
@@ -81,17 +85,13 @@ class PaymentsServiceTest {
 
     @Test
     void createIntent_rejectsWhenUserIsNotBookingParticipant() {
-        UUID bookingId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        BookingInfo bookingInfo = new BookingInfo(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "CONFIRMED",
-                5000L,
-                "SAR",
-                Instant.now(),
-                Instant.now()
-        );
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
 
         assertThrows(AccessDeniedException.class, () -> service.createIntent(bookingId, consumerId, null));
@@ -99,17 +99,14 @@ class PaymentsServiceTest {
 
     @Test
     void createIntent_rejectsWhenBookingNotConfirmed() {
-        UUID bookingId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        BookingInfo bookingInfo = new BookingInfo(
-                UUID.randomUUID(),
-                consumerId,
-                "PENDING",
-                5000L,
-                "SAR",
-                Instant.now(),
-                Instant.now()
-        );
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "PENDING")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
 
         assertThrows(IllegalStateException.class, () -> service.createIntent(bookingId, consumerId, null));
@@ -117,7 +114,7 @@ class PaymentsServiceTest {
 
     @Test
     void processIntent_propagatesCircuitBreakerOpenWithoutFallback() {
-        UUID id = UUID.randomUUID();
+        UUID id = create(UUID.class);
         CallNotPermittedException circuitOpen = CallNotPermittedException.createCallNotPermittedException(
                 io.github.resilience4j.circuitbreaker.CircuitBreaker.ofDefaults("paymentProcessing")
         );
@@ -128,9 +125,13 @@ class PaymentsServiceTest {
 
     @Test
     void cancelIntent_succeedsForCreatedIntent() {
-        UUID id = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), consumerId, 5000L, null);
+        UUID id = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), consumerId)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
         when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
@@ -143,7 +144,7 @@ class PaymentsServiceTest {
 
     @Test
     void getIntent_throwsWhenNotFound() {
-        UUID id = UUID.randomUUID();
+        UUID id = create(UUID.class);
         when(intentRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.getIntent(id));

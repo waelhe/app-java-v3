@@ -2,6 +2,7 @@ package com.marketplace.availability;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -9,6 +10,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "provider_availability_rules")
+@Audited
 public class ProviderAvailabilityRule extends BaseEntity {
     @Id
     private UUID id;
