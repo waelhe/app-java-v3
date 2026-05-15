@@ -229,7 +229,7 @@
                         <exclude>**/shared/jpa/**</exclude>
                         <exclude>**/shared/events/**</exclude>
                         <exclude>**/*HealthIndicator.*</exclude>
-                        <exclude>**/*Mapper.*</exclude>
+                        <exclude>**/*Mapper*.*</exclude>
                         <exclude>**/*Provider.*</exclude>
                         <exclude>**/*Controller.*</exclude>
                         <exclude>**/*Repository.*</exclude>
