@@ -60,6 +60,15 @@ class ProviderProfileTest {
     }
 
     @Test
+    void shouldCreateViaStaticFactory() {
+        ProviderProfile profile = ProviderProfile.create("Factory Name", "Factory bio");
+        assertThat(profile.getDisplayName()).isEqualTo("Factory Name");
+        assertThat(profile.getBio()).isEqualTo("Factory bio");
+        assertThat(profile.getStatus()).isEqualTo(ProviderStatus.PENDING);
+        assertThat(profile.getId()).isNotNull();
+    }
+
+    @Test
     void shouldCreateWithRandomId() {
         ProviderProfile p1 = Instancio.of(ProviderProfile.class)
                 .set(field(ProviderProfile::getDisplayName), "A")
