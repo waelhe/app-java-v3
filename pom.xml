@@ -42,7 +42,7 @@
         <resilience4j.version>2.4.0</resilience4j.version>
         <archunit.version>1.4.2</archunit.version>
         <jacoco.version>0.8.14</jacoco.version>
-        <jacoco.coverage.threshold>0.40</jacoco.coverage.threshold>
+        <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
         <springdoc.version>3.0.3</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
