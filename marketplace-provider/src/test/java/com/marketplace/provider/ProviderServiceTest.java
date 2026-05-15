@@ -1,10 +1,14 @@
 package com.marketplace.provider;
 
+import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
 import com.marketplace.shared.api.ResourceNotFoundException;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.instancio.Select.field;
 import static org.mockito.Mockito.*;
 
 class ProviderServiceTest {
@@ -12,7 +16,11 @@ class ProviderServiceTest {
     @Test
     void verifyChangesStatusToVerified() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderProfile profile = ProviderProfile.create("Provider A", "bio");
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getDisplayName), "Provider A")
+                .set(field(ProviderProfile::getBio), "bio")
+                .set(field(ProviderProfile::getStatus), ProviderStatus.PENDING)
+                .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
         ProviderService service = new ProviderService(repository);
@@ -24,7 +32,11 @@ class ProviderServiceTest {
     @Test
     void suspendChangesStatusToSuspended() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderProfile profile = ProviderProfile.create("Provider B", "bio");
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getDisplayName), "Provider B")
+                .set(field(ProviderProfile::getBio), "bio")
+                .set(field(ProviderProfile::getStatus), ProviderStatus.PENDING)
+                .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
         ProviderService service = new ProviderService(repository);
@@ -37,7 +49,7 @@ class ProviderServiceTest {
     void getByIdThrowsWhenMissing() {
         ProviderRepository repository = mock(ProviderRepository.class);
         ProviderService service = new ProviderService(repository);
-        java.util.UUID unknownId = java.util.UUID.randomUUID();
+        UUID unknownId = Instancio.create(UUID.class);
         when(repository.findById(unknownId)).thenReturn(java.util.Optional.empty());
 
         assertThatThrownBy(() -> service.getById(unknownId))

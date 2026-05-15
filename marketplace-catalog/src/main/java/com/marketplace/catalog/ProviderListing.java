@@ -7,11 +7,13 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "provider_listings")
+@Audited
 public class ProviderListing extends BaseEntity {
 
     @Id
@@ -74,7 +76,16 @@ public class ProviderListing extends BaseEntity {
         this.priceCents = priceCents;
     }
 
-    public void activate() { this.status = ListingStatus.ACTIVE; }
-    public void pause() { this.status = ListingStatus.PAUSED; }
-    public void archive() { this.status = ListingStatus.ARCHIVED; }
+    public void activate() {
+        this.status.validateTransitionTo(ListingStatus.ACTIVE);
+        this.status = ListingStatus.ACTIVE;
+    }
+    public void pause() {
+        this.status.validateTransitionTo(ListingStatus.PAUSED);
+        this.status = ListingStatus.PAUSED;
+    }
+    public void archive() {
+        this.status.validateTransitionTo(ListingStatus.ARCHIVED);
+        this.status = ListingStatus.ARCHIVED;
+    }
 }

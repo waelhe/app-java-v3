@@ -7,11 +7,13 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "provider_profiles")
+@Audited
 public class ProviderProfile extends BaseEntity {
 
     @Id
@@ -63,10 +65,12 @@ public class ProviderProfile extends BaseEntity {
     }
 
     public void verify() {
+        this.status.validateTransitionTo(ProviderStatus.VERIFIED);
         this.status = ProviderStatus.VERIFIED;
     }
 
     public void suspend() {
+        this.status.validateTransitionTo(ProviderStatus.SUSPENDED);
         this.status = ProviderStatus.SUSPENDED;
     }
 }

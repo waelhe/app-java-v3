@@ -11,14 +11,4 @@ public record ReviewResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static ReviewResponse from(Review review) {
-        return new ReviewResponse(
-                review.getId(),
-                review.getBookingId(),
-                review.getRating(),
-                review.getComment(),
-                review.getCreatedAt(),
-                review.getUpdatedAt()
-        );
-    }
 }

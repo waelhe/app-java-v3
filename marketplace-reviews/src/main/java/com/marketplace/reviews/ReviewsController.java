@@ -22,27 +22,29 @@ public class ReviewsController {
 
     private final ReviewsService reviewsService;
     private final CurrentUserProvider currentUserProvider;
+    private final ReviewMapper reviewMapper;
 
-    public ReviewsController(ReviewsService reviewsService, CurrentUserProvider currentUserProvider) {
+    public ReviewsController(ReviewsService reviewsService, CurrentUserProvider currentUserProvider, ReviewMapper reviewMapper) {
         this.reviewsService = reviewsService;
         this.currentUserProvider = currentUserProvider;
+        this.reviewMapper = reviewMapper;
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(ReviewResponse.from(reviewsService.getById(id)));
+        return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.getById(id)));
     }
 
     @GetMapping("/provider/{providerId}")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable).map(ReviewResponse::from)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable).map(reviewMapper::toResponse)));
     }
 
     @GetMapping("/reviewer/{reviewerId}")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewer(
             @PathVariable UUID reviewerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable).map(ReviewResponse::from)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable).map(reviewMapper::toResponse)));
     }
 
     @PostMapping
@@ -53,7 +55,7 @@ public class ReviewsController {
         Review review = reviewsService.create(
                 request.bookingId(), reviewerId,
                 request.rating(), request.comment());
-        return ResponseEntity.status(HttpStatus.CREATED).body(ReviewResponse.from(review));
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewMapper.toResponse(review));
     }
 
     @PutMapping("/{id}")
@@ -61,7 +63,7 @@ public class ReviewsController {
     public ResponseEntity<ReviewResponse> update(@PathVariable UUID id,
                                                  @Valid @RequestBody UpdateReviewRequest request,
                                                  Authentication authentication) {
-        return ResponseEntity.ok(ReviewResponse.from(reviewsService.update(id, request.rating(), request.comment(), authentication)));
+        return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.update(id, request.rating(), request.comment(), authentication)));
     }
 
     public record CreateReviewRequest(

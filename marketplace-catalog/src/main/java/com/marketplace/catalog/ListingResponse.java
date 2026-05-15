@@ -14,16 +14,4 @@ public record ListingResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static ListingResponse from(ProviderListing listing) {
-        return new ListingResponse(
-                listing.getId(),
-                listing.getTitle(),
-                listing.getDescription(),
-                listing.getCategory(),
-                BigDecimal.valueOf(listing.getPriceCents(), 2),
-                listing.getCurrency(),
-                listing.getCreatedAt(),
-                listing.getUpdatedAt()
-        );
-    }
 }

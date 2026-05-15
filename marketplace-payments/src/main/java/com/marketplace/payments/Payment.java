@@ -7,11 +7,13 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "payments")
+@Audited
 public class Payment extends BaseEntity {
 
     @Id
@@ -51,24 +53,18 @@ public class Payment extends BaseEntity {
     public String getExternalId() { return externalId; }
 
     public void markCompleted(String externalId) {
-        if (this.status != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Can only complete PENDING payments");
-        }
+        this.status.validateTransitionTo(PaymentStatus.COMPLETED);
         this.status = PaymentStatus.COMPLETED;
         this.externalId = externalId;
     }
 
     public void markFailed() {
-        if (this.status != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Can only fail PENDING payments");
-        }
+        this.status.validateTransitionTo(PaymentStatus.FAILED);
         this.status = PaymentStatus.FAILED;
     }
 
     public void markRefunded() {
-        if (this.status != PaymentStatus.COMPLETED) {
-            throw new IllegalStateException("Can only refund COMPLETED payments");
-        }
+        this.status.validateTransitionTo(PaymentStatus.REFUNDED);
         this.status = PaymentStatus.REFUNDED;
     }
 }

@@ -23,10 +23,12 @@ public class CatalogController {
 
     private final CatalogService catalogService;
     private final CurrentUserProvider currentUserProvider;
+    private final ListingMapper listingMapper;
 
-    public CatalogController(CatalogService catalogService, CurrentUserProvider currentUserProvider) {
+    public CatalogController(CatalogService catalogService, CurrentUserProvider currentUserProvider, ListingMapper listingMapper) {
         this.catalogService = catalogService;
         this.currentUserProvider = currentUserProvider;
+        this.listingMapper = listingMapper;
     }
 
     @GetMapping
@@ -45,13 +47,13 @@ public class CatalogController {
     @GetMapping("/provider/{providerId}")
     public ResponseEntity<PagedResponse<ListingResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(catalogService.listByProvider(providerId, pageable).map(ListingResponse::from)));
+        return ResponseEntity.ok(PagedResponse.of(catalogService.listByProvider(providerId, pageable).map(listingMapper::toResponse)));
     }
 
     @GetMapping("/{id}")
     @RateLimiter(name = "catalog")
     public ResponseEntity<ListingResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(ListingResponse.from(catalogService.getById(id)));
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.getById(id)));
     }
 
     @PostMapping
@@ -62,7 +64,7 @@ public class CatalogController {
         ProviderListing listing = catalogService.create(
                 providerId, request.title(), request.description(),
                 request.category(), request.priceCents());
-        return ResponseEntity.status(HttpStatus.CREATED).body(ListingResponse.from(listing));
+        return ResponseEntity.status(HttpStatus.CREATED).body(listingMapper.toResponse(listing));
     }
 
     @PutMapping("/{id}")
@@ -70,7 +72,7 @@ public class CatalogController {
     public ResponseEntity<ListingResponse> update(@PathVariable UUID id,
                                                   @Valid @RequestBody UpdateListingRequest request,
                                                   Authentication authentication) {
-        return ResponseEntity.ok(ListingResponse.from(catalogService.update(
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.update(
                 id, request.title(), request.description(),
                 request.category(), request.priceCents(), authentication)));
     }
@@ -78,19 +80,19 @@ public class CatalogController {
     @PostMapping("/{id}/activate")
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> activate(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(ListingResponse.from(catalogService.activate(id, authentication)));
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.activate(id, authentication)));
     }
 
     @PostMapping("/{id}/pause")
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> pause(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(ListingResponse.from(catalogService.pause(id, authentication)));
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.pause(id, authentication)));
     }
 
     @PostMapping("/{id}/archive")
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> archive(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(ListingResponse.from(catalogService.archive(id, authentication)));
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.archive(id, authentication)));
     }
 
     public record CreateListingRequest(

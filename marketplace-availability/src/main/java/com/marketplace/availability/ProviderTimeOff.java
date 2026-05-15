@@ -2,12 +2,14 @@ package com.marketplace.availability;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "provider_time_off")
+@Audited
 public class ProviderTimeOff extends BaseEntity {
     @Id
     private UUID id;

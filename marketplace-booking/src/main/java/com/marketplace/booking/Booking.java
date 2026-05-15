@@ -7,11 +7,13 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "bookings")
+@Audited
 public class Booking extends BaseEntity {
 
     @Id
@@ -68,23 +70,17 @@ public class Booking extends BaseEntity {
     public String getNotes() { return notes; }
 
     public void confirm() {
-        if (this.status != BookingStatus.PENDING) {
-            throw new IllegalStateException("Can only confirm PENDING bookings");
-        }
+        this.status.validateTransitionTo(BookingStatus.CONFIRMED);
         this.status = BookingStatus.CONFIRMED;
     }
 
     public void complete() {
-        if (this.status != BookingStatus.CONFIRMED) {
-            throw new IllegalStateException("Can only complete CONFIRMED bookings");
-        }
+        this.status.validateTransitionTo(BookingStatus.COMPLETED);
         this.status = BookingStatus.COMPLETED;
     }
 
     public void cancel() {
-        if (this.status == BookingStatus.COMPLETED) {
-            throw new IllegalStateException("Cannot cancel COMPLETED bookings");
-        }
+        this.status.validateTransitionTo(BookingStatus.CANCELLED);
         this.status = BookingStatus.CANCELLED;
     }
 }

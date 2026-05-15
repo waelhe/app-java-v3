@@ -12,15 +12,4 @@ public record PaymentIntentResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static PaymentIntentResponse from(PaymentIntent intent) {
-        return new PaymentIntentResponse(
-                intent.getId(),
-                intent.getBookingId(),
-                intent.getAmountCents(),
-                intent.getCurrency(),
-                intent.getStatus().name(),
-                intent.getCreatedAt(),
-                intent.getUpdatedAt()
-        );
-    }
 }

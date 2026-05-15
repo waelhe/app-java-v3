@@ -8,6 +8,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.instancio.Instancio.*;
 import static org.mockito.Mockito.*;
 
 class PaymentWebhookEventServiceTest {
@@ -23,7 +24,7 @@ class PaymentWebhookEventServiceTest {
         PaymentWebhookSecurity webhookSecurity = mock(PaymentWebhookSecurity.class);
 
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity);
-        when(webhookRepository.findByEventId("evt_1")).thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
+        when(webhookRepository.findByEventId("evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
         boolean created = service.processWebhookEvent("mock", "evt_1", "payment.succeeded", "sig");
 

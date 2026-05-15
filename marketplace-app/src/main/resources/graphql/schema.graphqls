@@ -11,6 +11,7 @@ type Service {
     id: ID!
     name: String!
     description: String
+    category: String!
     price: Float!
     status: ServiceStatus!
 }
@@ -23,5 +24,6 @@ enum ServiceStatus {
 input ServiceInput {
     name: String!
     description: String
+    category: String!
     price: Float!
 }

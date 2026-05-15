@@ -2,11 +2,13 @@ package com.marketplace.ledger;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "provider_balances")
+@Audited
 public class ProviderBalance extends BaseEntity {
     @Id
     private UUID providerId;

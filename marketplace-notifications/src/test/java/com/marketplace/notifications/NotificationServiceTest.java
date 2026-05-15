@@ -12,6 +12,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.instancio.Instancio.*;
+import static org.instancio.Select.field;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -25,8 +27,11 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
 
-        UUID bookingId = UUID.randomUUID();
-        BookingInfo info = new BookingInfo(UUID.randomUUID(), UUID.randomUUID(), "CONFIRMED", 1000L, "SAR", Instant.now(), Instant.now());
+        UUID bookingId = create(UUID.class);
+        BookingInfo info = of(BookingInfo.class)
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
         when(bookingProvider.getBookingInfo(bookingId)).thenReturn(info);
 
         service.onBookingCreated(bookingId);
@@ -43,8 +48,12 @@ class NotificationServiceTest {
         Authentication authentication = mock(Authentication.class);
         NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
 
-        UUID userId = UUID.randomUUID();
-        Notification notification = Notification.create(userId, "BOOKING_CREATED", "msg");
+        UUID userId = create(UUID.class);
+        Notification notification = of(Notification.class)
+                .set(field(Notification::getRecipientId), userId)
+                .set(field(Notification::getType), "BOOKING_CREATED")
+                .set(field(Notification::getMessage), "msg")
+                .create();
         when(repository.findById(notification.getId())).thenReturn(Optional.of(notification));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
 
@@ -61,15 +70,25 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
 
-        UUID paymentIntentId = UUID.randomUUID();
-        UUID bookingId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = create(UUID.class);
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        UUID providerId = create(UUID.class);
 
         when(paymentIntentLookupPort.findById(paymentIntentId))
-                .thenReturn(Optional.of(new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, "SUCCEEDED")));
+                .thenReturn(Optional.of(of(PaymentIntentDetails.class)
+                        .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
+                        .set(field(PaymentIntentDetails::bookingId), bookingId)
+                        .set(field(PaymentIntentDetails::consumerId), consumerId)
+                        .create()));
         when(bookingProvider.getBookingInfo(bookingId))
-                .thenReturn(new BookingInfo(providerId, consumerId, "CONFIRMED", 1000L, "SAR", Instant.now(), Instant.now()));
+                .thenReturn(of(BookingInfo.class)
+                        .set(field(BookingInfo::providerId), providerId)
+                        .set(field(BookingInfo::consumerId), consumerId)
+                        .set(field(BookingInfo::status), "CONFIRMED")
+                        .set(field(BookingInfo::priceCents), 5000L)
+                        .set(field(BookingInfo::currency), "SAR")
+                        .create());
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
