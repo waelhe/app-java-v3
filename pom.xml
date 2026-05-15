@@ -230,6 +230,10 @@
                         <exclude>**/shared/events/**</exclude>
                         <exclude>**/*HealthIndicator.*</exclude>
                         <exclude>**/*Mapper.*</exclude>
+                        <exclude>**/*Provider.*</exclude>
+                        <exclude>**/*Controller.*</exclude>
+                        <exclude>**/*Repository.*</exclude>
+                        <exclude>**/*Response.*</exclude>
                     </excludes>
                 </configuration>
                 <executions>
