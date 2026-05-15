@@ -2,15 +2,19 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
-import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -113,6 +117,39 @@ class PaymentsServiceTest {
     }
 
     @Test
+    void createIntent_rejectsIdempotencyKeyBelongingToAnotherConsumer() {
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        UUID otherConsumerId = create(UUID.class);
+        String idempotencyKey = "key-123";
+        PaymentIntent existing = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), otherConsumerId)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getIdempotencyKey), idempotencyKey)
+                .create();
+        when(intentRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(existing));
+        assertThrows(AccessDeniedException.class,
+                () -> service.createIntent(bookingId, consumerId, idempotencyKey));
+    }
+
+    @Test
+    void createIntent_publishesEvent() {
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+        when(intentRepository.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        service.createIntent(bookingId, consumerId, "key-123");
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.PaymentStateChangedEvent.class));
+    }
+
+    @Test
     void processIntent_propagatesCircuitBreakerOpenWithoutFallback() {
         UUID id = create(UUID.class);
         CallNotPermittedException circuitOpen = CallNotPermittedException.createCallNotPermittedException(
@@ -121,6 +158,25 @@ class PaymentsServiceTest {
         when(intentRepository.findById(id)).thenThrow(circuitOpen);
 
         assertThrows(CallNotPermittedException.class, () -> service.processIntent(id, authentication));
+    }
+
+    @Test
+    void processIntent_success() {
+        UUID id = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), consumerId)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent result = service.processIntent(id, authentication);
+
+        assertEquals(PaymentIntentStatus.PROCESSING, result.getStatus());
     }
 
     @Test
@@ -143,10 +199,166 @@ class PaymentsServiceTest {
     }
 
     @Test
+    void cancelIntent_throwsWhenNotOwner() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(create(UUID.class));
+        assertThrows(AccessDeniedException.class, () -> service.cancelIntent(id, authentication));
+    }
+
+    @Test
+    void cancelIntent_allowsAdmin() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        assertDoesNotThrow(() -> service.cancelIntent(id, authentication));
+    }
+
+    @Test
     void getIntent_throwsWhenNotFound() {
         UUID id = create(UUID.class);
         when(intentRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.getIntent(id));
+    }
+
+    @Test
+    void getIntent_returnsIntent() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        assertEquals(intent, service.getIntent(id));
+    }
+
+    @Test
+    void getIntentForUser_returnsIntent() {
+        UUID id = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), consumerId)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
+        assertEquals(intent, service.getIntentForUser(id, authentication));
+    }
+
+    @Test
+    void getIntentForUser_throwsWhenNotOwner() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(create(UUID.class));
+        assertThrows(AccessDeniedException.class, () -> service.getIntentForUser(id, authentication));
+    }
+
+    @Test
+    void getIntentForUser_allowsAdmin() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        assertDoesNotThrow(() -> service.getIntentForUser(id, authentication));
+    }
+
+    @Test
+    void getIntentSummary_returnsSummary() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        PaymentSummary summary = service.getIntentSummary(id);
+        assertEquals(intent.getId(), summary.id());
+    }
+
+    @Test
+    void listIntents_returnsAll() {
+        var pageable = PageRequest.of(0, 10);
+        when(intentRepository.findAll(pageable)).thenReturn(Page.empty());
+        assertNotNull(service.listIntents(pageable));
+    }
+
+    @Test
+    void listIntentsSummaries_returnsSummaries() {
+        var pageable = PageRequest.of(0, 10);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        when(intentRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(intent)));
+        Page<PaymentSummary> result = service.listIntentsSummaries(pageable);
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void confirmIntent_confirmsAndCompletesPayment() {
+        UUID id = create(UUID.class);
+        String externalId = "ext-123";
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PROCESSING)
+                .create();
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getPaymentIntentId), id)
+                .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(id)).thenReturn(Optional.of(payment));
+        PaymentIntent result = service.confirmIntent(id, externalId);
+        assertEquals(PaymentIntentStatus.SUCCEEDED, result.getStatus());
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.PaymentStateChangedEvent.class));
+    }
+
+    @Test
+    void refundPayment_refundsAndReturnsPayment() {
+        UUID paymentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getStatus), PaymentStatus.COMPLETED)
+                .create();
+        payment.markCompleted("ext-1");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        Payment refunded = service.refundPayment(paymentId);
+        assertEquals(PaymentStatus.REFUNDED, refunded.getStatus());
+    }
+
+    @Test
+    void refundPayment_throwsWhenNotFound() {
+        UUID paymentId = create(UUID.class);
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> service.refundPayment(paymentId));
+    }
+
+    @Test
+    void processWebhookEvent_newEvent_savesAndReturnsTrue() {
+        when(webhookEventRepository.findByEventId("evt_1")).thenReturn(Optional.empty());
+        when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        boolean created = service.processWebhookEvent("mock", "evt_1", "payment.succeeded", "sig");
+        assertTrue(created);
+        verify(webhookEventRepository).save(any(PaymentWebhookEvent.class));
     }
 }
