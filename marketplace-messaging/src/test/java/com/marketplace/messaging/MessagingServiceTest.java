@@ -232,7 +232,7 @@ class MessagingServiceTest {
                 .set(field(Conversation::getParticipantA), participantA)
                 .set(field(Conversation::getParticipantB), Instancio.create(UUID.class))
                 .create();
-        MessageResponse response = new MessageResponse(Instancio.create(UUID.class), Instancio.create(UUID.class), "Hello!", false);
+        MessageResponse response = new MessageResponse(Instancio.create(UUID.class), Instancio.create(UUID.class), "Hello!", false, null, null);
         when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
         when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
         when(messageMapper.toResponse(any(Message.class))).thenReturn(response);
