@@ -234,6 +234,9 @@
                         <exclude>**/*Controller.*</exclude>
                         <exclude>**/*Repository.*</exclude>
                         <exclude>**/*Response.*</exclude>
+                        <exclude>**/*Status.*</exclude>
+                        <exclude>**/*Specifications.*</exclude>
+                        <exclude>**/moments/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>
