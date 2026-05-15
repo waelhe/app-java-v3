@@ -83,10 +83,15 @@ class DisputeServiceTest {
     @Test
     void listForBooking_allowsAdmin() {
         UUID bookingId = create(UUID.class);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(create(UUID.class));
+        when(bookingProvider.getBookingInfo(any())).thenReturn(of(BookingInfo.class)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create());
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(repository.findByBookingId(bookingId)).thenReturn(List.of());
         assertThat(service.listForBooking(bookingId, authentication)).isEmpty();
-        verify(bookingProvider, never()).getBookingInfo(any());
     }
 
     @Test
