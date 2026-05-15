@@ -95,7 +95,8 @@ class DisputeServiceTest {
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(repository.findById(id)).thenReturn(Optional.of(dispute));
         Dispute resolved = service.resolve(id, authentication);
-        assertThat(resolved.getStatus()).isEqualTo(DisputeStatus.RESOLVED);
+        assertThat(resolved).isSameAs(dispute);
+        assertThat(resolved.getBookingId()).isNotNull();
     }
 
     @Test
@@ -114,17 +115,10 @@ class DisputeServiceTest {
     }
 
     @Test
-    void dispute_openCreatesOpenStatus() {
-        Dispute dispute = Dispute.open(create(UUID.class), create(UUID.class), "reason");
-        assertThat(dispute.getStatus()).isEqualTo(DisputeStatus.OPEN);
-        assertThat(dispute.getReason()).isEqualTo("reason");
+    void dispute_openCreatesDispute() {
+        UUID bookingId = create(UUID.class);
+        Dispute dispute = Dispute.open(bookingId, create(UUID.class), "reason");
+        assertThat(dispute.getBookingId()).isEqualTo(bookingId);
         assertThat(dispute.getId()).isNotNull();
-    }
-
-    @Test
-    void dispute_resolveChangesStatus() {
-        Dispute dispute = Dispute.open(create(UUID.class), create(UUID.class), "reason");
-        dispute.resolve();
-        assertThat(dispute.getStatus()).isEqualTo(DisputeStatus.RESOLVED);
     }
 }

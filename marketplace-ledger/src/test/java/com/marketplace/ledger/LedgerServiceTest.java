@@ -38,7 +38,7 @@ class LedgerServiceTest {
         ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 1000);
 
         assertThat(result.getAvailableCents()).isZero();
-        assertThat(result.getProviderId()).isEqualTo(providerId);
+        assertThat(result.getId()).isEqualTo(providerId);
     }
 
     @Test
@@ -99,7 +99,7 @@ class LedgerServiceTest {
     void providerBalance_emptyCreatesZeroBalance() {
         UUID providerId = create(UUID.class);
         ProviderBalance balance = ProviderBalance.empty(providerId);
-        assertThat(balance.getProviderId()).isEqualTo(providerId);
+        assertThat(balance.getId()).isEqualTo(providerId);
         assertThat(balance.getAvailableCents()).isZero();
     }
 
