@@ -2,14 +2,19 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -135,5 +140,72 @@ class ReviewsServiceTest {
 
         assertThrows(AccessDeniedException.class,
                 () -> service.update(id, 5, "excellent", authentication));
+    }
+
+    @Test
+    void getById_returnsReview() {
+        UUID id = Instancio.create(UUID.class);
+        Review review = Instancio.of(Review.class)
+                .set(field(Review::getRating), 4)
+                .set(field(Review::getComment), "good")
+                .create();
+        when(reviewRepository.findById(id)).thenReturn(Optional.of(review));
+        assertEquals(review, service.getById(id));
+    }
+
+    @Test
+    void getById_throwsWhenNotFound() {
+        UUID id = Instancio.create(UUID.class);
+        when(reviewRepository.findById(id)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> service.getById(id));
+    }
+
+    @Test
+    void listByProvider_returnsReviews() {
+        UUID providerId = Instancio.create(UUID.class);
+        var pageable = PageRequest.of(0, 10);
+        when(reviewRepository.findByProviderId(providerId, pageable))
+                .thenReturn(Page.empty());
+        assertNotNull(service.listByProvider(providerId, pageable));
+    }
+
+    @Test
+    void listByReviewer_returnsReviews() {
+        UUID reviewerId = Instancio.create(UUID.class);
+        var pageable = PageRequest.of(0, 10);
+        when(reviewRepository.findByReviewerId(reviewerId, pageable))
+                .thenReturn(Page.empty());
+        assertNotNull(service.listByReviewer(reviewerId, pageable));
+    }
+
+    @Test
+    void create_publishesEvent() {
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        BookingInfo bookingInfo = Instancio.of(BookingInfo.class)
+                .set(field(BookingInfo::providerId), providerId)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "COMPLETED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
+        service.create(bookingId, consumerId, 4, "Great");
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.ReviewCreatedEvent.class));
+    }
+
+    @Test
+    void update_allowsAdmin() {
+        UUID id = Instancio.create(UUID.class);
+        Review review = Instancio.of(Review.class)
+                .set(field(Review::getRating), 3)
+                .set(field(Review::getComment), "ok")
+                .create();
+        when(reviewRepository.findById(id)).thenReturn(Optional.of(review));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        assertDoesNotThrow(() -> service.update(id, 5, "excellent", authentication));
     }
 }
