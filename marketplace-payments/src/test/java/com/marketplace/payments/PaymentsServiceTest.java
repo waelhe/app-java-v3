@@ -339,8 +339,8 @@ class PaymentsServiceTest {
         Payment payment = of(Payment.class)
                 .set(field(Payment::getAmountCents), 5000L)
                 .set(field(Payment::getStatus), PaymentStatus.COMPLETED)
+                .set(field(Payment::getExternalId), "ext-1")
                 .create();
-        payment.markCompleted("ext-1");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         Payment refunded = service.refundPayment(paymentId);
         assertEquals(PaymentStatus.REFUNDED, refunded.getStatus());
