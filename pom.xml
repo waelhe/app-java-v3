@@ -236,7 +236,8 @@
                         <exclude>**/*Response.*</exclude>
                         <exclude>**/*Status.*</exclude>
                         <exclude>**/*Specifications.*</exclude>
-                        <exclude>**/moments/**</exclude>
+                        <exclude>**/*ExpirationService.*</exclude>
+                        <exclude>**/*Adapter.*</exclude>
                     </excludes>
                 </configuration>
                 <executions>
