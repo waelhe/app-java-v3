@@ -9,12 +9,4 @@ public record ConversationResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static ConversationResponse from(Conversation conversation) {
-        return new ConversationResponse(
-                conversation.getId(),
-                conversation.getBookingId(),
-                conversation.getCreatedAt(),
-                conversation.getUpdatedAt()
-        );
-    }
 }

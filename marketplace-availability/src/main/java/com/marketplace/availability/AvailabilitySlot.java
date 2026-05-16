@@ -2,12 +2,14 @@ package com.marketplace.availability;
 
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.envers.Audited;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "availability_slots")
+@Audited
 public class AvailabilitySlot extends BaseEntity {
 
     @Id

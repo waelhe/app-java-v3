@@ -10,13 +10,4 @@ public record UserResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static UserResponse from(User user) {
-        return new UserResponse(
-                user.getId(),
-                user.getEmail(),
-                user.getDisplayName(),
-                user.getCreatedAt(),
-                user.getUpdatedAt()
-        );
-    }
 }

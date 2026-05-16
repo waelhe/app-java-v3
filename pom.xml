@@ -40,8 +40,13 @@
     <properties>
         <java.version>21</java.version>
         <resilience4j.version>2.4.0</resilience4j.version>
-        <archunit.version>1.4.1</archunit.version>
+        <archunit.version>1.4.2</archunit.version>
+        <jacoco.version>0.8.14</jacoco.version>
+        <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
+        <springdoc.version>3.0.3</springdoc.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <instancio.version>6.0.0-RC3</instancio.version>
     </properties>
 
     <dependencyManagement>
@@ -50,7 +55,7 @@
             <dependency>
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
-                <version>2.0.5</version>
+                <version>2.0.6</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -67,6 +72,40 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <!-- Exception #5: Spring REST Docs BOM — manages spring-restdocs-mockmvc -->
+            <dependency>
+                <groupId>org.springframework.restdocs</groupId>
+                <artifactId>spring-restdocs-bom</artifactId>
+                <version>4.0.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Exception #6: spring-graphql-test — not managed by Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.graphql</groupId>
+                <artifactId>spring-graphql-test</artifactId>
+                <version>2.0.3</version>
+                <scope>test</scope>
+            </dependency>
+            <!-- Exception #7: springdoc-openapi — community OpenAPI auto-generation -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <!-- Exception #8: MapStruct — compile-time code generation for Entity↔DTO mapping -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <!-- Exception #9: Instancio — test data generation -->
+            <dependency>
+                <groupId>org.instancio</groupId>
+                <artifactId>instancio-junit</artifactId>
+                <version>${instancio.version}</version>
+                <scope>test</scope>
             </dependency>
             <!-- Internal modules -->
             <dependency>
@@ -174,6 +213,82 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*Application.*</exclude>
+                        <exclude>**/*Config.*</exclude>
+                        <exclude>**/*Module.*</exclude>
+                        <exclude>**/*Entity.*</exclude>
+                        <exclude>**/*Spi.*</exclude>
+                        <exclude>**/*Port.*</exclude>
+                        <exclude>**/shared/jpa/**</exclude>
+                        <exclude>**/shared/events/**</exclude>
+                        <exclude>**/*HealthIndicator.*</exclude>
+                        <exclude>**/*Mapper*.*</exclude>
+                        <exclude>**/*Provider.*</exclude>
+                        <exclude>**/*Controller.*</exclude>
+                        <exclude>**/*Repository.*</exclude>
+                        <exclude>**/*Response.*</exclude>
+                        <exclude>**/*Status.*</exclude>
+                        <exclude>**/*Specifications.*</exclude>
+                        <exclude>**/*ExpirationService.*</exclude>
+                        <exclude>**/*Adapter.*</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${jacoco.coverage.threshold}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
         </plugins>
     </build>

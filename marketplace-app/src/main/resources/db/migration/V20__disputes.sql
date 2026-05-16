@@ -1,4 +1,4 @@
-CREATE TABLE disputes (
+CREATE TABLE IF NOT EXISTS disputes (
     id UUID PRIMARY KEY,
     booking_id UUID NOT NULL,
     opened_by UUID NOT NULL,

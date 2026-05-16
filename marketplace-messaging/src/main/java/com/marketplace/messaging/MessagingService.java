@@ -20,15 +20,18 @@ public class MessagingService {
     private final MessageRepository messageRepository;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final SimpMessagingTemplate messagingTemplate;
+    private final MessageMapper messageMapper;
 
     public MessagingService(ConversationRepository conversationRepository,
                             MessageRepository messageRepository,
                             BookingParticipantProvider bookingParticipantProvider,
-                            SimpMessagingTemplate messagingTemplate) {
+                            SimpMessagingTemplate messagingTemplate,
+                            MessageMapper messageMapper) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.messagingTemplate = messagingTemplate;
+        this.messageMapper = messageMapper;
     }
 
     @Transactional(readOnly = true)
@@ -73,7 +76,7 @@ public class MessagingService {
     public Message sendMessage(UUID conversationId, UUID senderId, String content) {
         getConversation(conversationId, senderId);
         Message saved = messageRepository.save(Message.create(conversationId, senderId, content));
-        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, MessageResponse.from(saved));
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, messageMapper.toResponse(saved));
         return saved;
     }
 

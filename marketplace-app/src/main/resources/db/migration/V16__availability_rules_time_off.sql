@@ -1,4 +1,4 @@
-CREATE TABLE provider_availability_rules (
+CREATE TABLE IF NOT EXISTS provider_availability_rules (
     id UUID PRIMARY KEY,
     provider_id UUID NOT NULL,
     day_of_week VARCHAR(20) NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE provider_availability_rules (
     CONSTRAINT chk_provider_availability_rule_time CHECK (start_time < end_time)
 );
 
-CREATE TABLE provider_time_off (
+CREATE TABLE IF NOT EXISTS provider_time_off (
     id UUID PRIMARY KEY,
     provider_id UUID NOT NULL,
     starts_at TIMESTAMPTZ NOT NULL,

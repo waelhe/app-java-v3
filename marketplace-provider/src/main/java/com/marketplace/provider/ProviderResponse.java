@@ -11,14 +11,4 @@ public record ProviderResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static ProviderResponse from(ProviderProfile provider) {
-        return new ProviderResponse(
-                provider.getId(),
-                provider.getDisplayName(),
-                provider.getBio(),
-                provider.getStatus(),
-                provider.getCreatedAt(),
-                provider.getUpdatedAt()
-        );
-    }
 }

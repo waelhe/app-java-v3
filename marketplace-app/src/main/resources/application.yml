@@ -41,6 +41,7 @@ spring:
     validate-on-migrate: true
     out-of-order: false
     clean-disabled: true
+    baseline-on-migrate: true
 
   modulith:
     events:

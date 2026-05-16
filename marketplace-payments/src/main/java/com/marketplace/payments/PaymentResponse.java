@@ -10,13 +10,4 @@ public record PaymentResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static PaymentResponse from(Payment payment) {
-        return new PaymentResponse(
-                payment.getId(),
-                payment.getAmountCents(),
-                payment.getStatus().name(),
-                payment.getCreatedAt(),
-                payment.getUpdatedAt()
-        );
-    }
 }

@@ -1,4 +1,4 @@
-CREATE TABLE provider_profiles (
+CREATE TABLE IF NOT EXISTS provider_profiles (
     id UUID PRIMARY KEY,
     display_name VARCHAR(200) NOT NULL,
     bio VARCHAR(1000),

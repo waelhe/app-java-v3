@@ -1,4 +1,4 @@
-CREATE TABLE availability_slots (
+CREATE TABLE IF NOT EXISTS availability_slots (
     id UUID PRIMARY KEY,
     provider_id UUID NOT NULL,
     starts_at TIMESTAMPTZ NOT NULL,
