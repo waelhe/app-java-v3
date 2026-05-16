@@ -1,4 +1,4 @@
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY,
     recipient_id UUID NOT NULL,
     type VARCHAR(100) NOT NULL,

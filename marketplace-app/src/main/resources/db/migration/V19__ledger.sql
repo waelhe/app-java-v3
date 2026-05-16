@@ -1,4 +1,4 @@
-CREATE TABLE ledger_entries (
+CREATE TABLE IF NOT EXISTS ledger_entries (
     id UUID PRIMARY KEY,
     provider_id UUID NOT NULL,
     source_id UUID NOT NULL UNIQUE,
@@ -9,7 +9,7 @@ CREATE TABLE ledger_entries (
     version BIGINT
 );
 
-CREATE TABLE provider_balances (
+CREATE TABLE IF NOT EXISTS provider_balances (
     provider_id UUID PRIMARY KEY,
     available_cents BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,

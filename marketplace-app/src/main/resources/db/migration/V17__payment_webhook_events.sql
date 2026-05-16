@@ -1,4 +1,4 @@
-CREATE TABLE payment_webhook_events (
+CREATE TABLE IF NOT EXISTS payment_webhook_events (
     id UUID PRIMARY KEY,
     provider VARCHAR(50) NOT NULL,
     event_id VARCHAR(200) NOT NULL UNIQUE,
