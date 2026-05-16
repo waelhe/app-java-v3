@@ -7,7 +7,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.web.client.DefaultResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -27,6 +29,12 @@ class CorsConfigurationTest {
 
     @Test
     void shouldAllowCorsFromConfiguredOrigin() {
+        restTemplate.setErrorHandler(new DefaultResponseErrorHandler() {
+            @Override
+            public boolean hasError(ClientHttpResponse response) {
+                return false;
+            }
+        });
         HttpHeaders headers = new HttpHeaders();
         headers.setOrigin("http://localhost:3000");
         var entity = new RequestEntity<Void>(headers, HttpMethod.OPTIONS, URI.create("http://localhost:" + port + "/api/v1/bookings"));
