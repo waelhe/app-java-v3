@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -148,5 +149,121 @@ class PaymentsServiceTest {
         when(intentRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.getIntent(id));
+    }
+
+    @Test
+    void getIntent_returnsIntent() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), id)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+
+        PaymentIntent result = service.getIntent(id);
+
+        assertEquals(id, result.getId());
+    }
+
+    @Test
+    void getIntentForUser_allowsConsumer() {
+        UUID id = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), id)
+                .set(field(PaymentIntent::getConsumerId), consumerId)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
+
+        PaymentIntent result = service.getIntentForUser(id, authentication);
+
+        assertEquals(id, result.getId());
+    }
+
+    @Test
+    void getIntentForUser_rejectsNonParticipant() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), id)
+                .set(field(PaymentIntent::getConsumerId), create(UUID.class))
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(create(UUID.class));
+
+        assertThrows(AccessDeniedException.class, () -> service.getIntentForUser(id, authentication));
+    }
+
+    @Test
+    void getIntentForUser_allowsAdmin() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), id)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+
+        PaymentIntent result = service.getIntentForUser(id, authentication);
+
+        assertEquals(id, result.getId());
+    }
+
+    @Test
+    void confirmIntent_marksSucceededAndPublishesEvent() {
+        UUID id = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), id)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PROCESSING)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+        when(intentRepository.findById(id)).thenReturn(Optional.of(intent));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent result = service.confirmIntent(id, "ext-1");
+
+        assertEquals(PaymentIntentStatus.SUCCEEDED, result.getStatus());
+        verify(eventPublisher).publishEvent(any(PaymentStateChangedEvent.class));
+    }
+
+    @Test
+    void refundPayment_marksRefunded() {
+        UUID paymentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .create();
+        payment.markCompleted("ext-1");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId);
+
+        assertEquals(PaymentStatus.REFUNDED, result.getStatus());
+    }
+
+    @Test
+    void webhookEvent_processesSuccessfully() {
+        String eventId = "evt_new";
+        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", "sig");
+
+        assertTrue(created);
+        verify(webhookSecurity).validateSignature("sig");
+    }
+
+    @Test
+    void webhookEvent_skipsValidationWhenSignatureNull() {
+        String eventId = "evt_no_sig";
+        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", null);
+
+        assertTrue(created);
+        verify(webhookSecurity).validateSignature(null);
     }
 }

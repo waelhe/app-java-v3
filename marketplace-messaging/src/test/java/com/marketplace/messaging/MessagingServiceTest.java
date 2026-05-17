@@ -157,4 +157,86 @@ class MessagingServiceTest {
 
         assertThrows(ResourceNotFoundException.class, () -> service.getConversation(id, Instancio.create(UUID.class)));
     }
+
+    @Test
+    void getConversation_returnsForParticipant() {
+        UUID id = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        when(conversationRepository.findById(id)).thenReturn(Optional.of(conv));
+
+        Conversation result = service.getConversation(id, userId);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void getConversation_rejectsNonParticipant() {
+        UUID id = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), Instancio.create(UUID.class))
+                .set(field(Conversation::getParticipantB), Instancio.create(UUID.class))
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        when(conversationRepository.findById(id)).thenReturn(Optional.of(conv));
+
+        assertThrows(AccessDeniedException.class, () -> service.getConversation(id, userId));
+    }
+
+    @Test
+    void getMessages_returnsPage() {
+        UUID conversationId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Message msg = Message.create(conversationId, userId, "Hi");
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
+        when(messageRepository.findByConversationIdOrderByCreatedAtDesc(conversationId, pageable))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(msg)));
+
+        var result = service.getMessages(conversationId, userId, pageable);
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void getUnreadCount_returnsCount() {
+        UUID conversationId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
+        when(messageRepository.countByConversationIdAndReadFalse(conversationId)).thenReturn(5L);
+
+        long count = service.getUnreadCount(conversationId, userId);
+
+        assertEquals(5L, count);
+    }
+
+    @Test
+    void markAsRead_delegatesToRepository() {
+        UUID conversationId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
+
+        service.markAsRead(conversationId, userId);
+
+        verify(messageRepository).markAsReadByConversationId(conversationId, userId);
+    }
 }

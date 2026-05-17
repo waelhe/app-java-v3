@@ -31,6 +31,29 @@ class LedgerServiceTest {
     }
 
     @Test
+    void creditFromPaymentCreatesEntryAndCreditsBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        long amountCents = 5000L;
+
+        when(entryRepository.findBySourceId(paymentIntentId)).thenReturn(Optional.empty());
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.empty());
+        ProviderBalance saved = ProviderBalance.empty(providerId);
+        saved.credit(amountCents);
+        when(balanceRepository.save(any())).thenReturn(saved);
+
+        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, amountCents);
+
+        assertThat(result.getAvailableCents()).isEqualTo(amountCents);
+        verify(entryRepository).save(any(LedgerEntry.class));
+        verify(balanceRepository).save(any(ProviderBalance.class));
+    }
+
+    @Test
     void getBalanceReturnsEmptyWhenMissing() {
         LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
         ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
@@ -41,5 +64,21 @@ class LedgerServiceTest {
         ProviderBalance result = service.getBalance(providerId);
 
         assertThat(result.getAvailableCents()).isZero();
+    }
+
+    @Test
+    void getBalanceReturnsExistingBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        ProviderBalance existing = ProviderBalance.empty(providerId);
+        existing.credit(3000L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
+
+        ProviderBalance result = service.getBalance(providerId);
+
+        assertThat(result.getAvailableCents()).isEqualTo(3000L);
     }
 }

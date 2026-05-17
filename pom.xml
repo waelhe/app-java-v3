@@ -73,20 +73,11 @@
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
             </dependency>
-            <!-- Exception #5: Spring REST Docs BOM — manages spring-restdocs-mockmvc -->
+            <!-- Exception: commons-lang3 — springdoc pulls 3.20.0, Boot BOM pins 3.19.0 -->
             <dependency>
-                <groupId>org.springframework.restdocs</groupId>
-                <artifactId>spring-restdocs-bom</artifactId>
-                <version>4.0.0</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <!-- Exception #6: spring-graphql-test — not managed by Spring Boot BOM -->
-            <dependency>
-                <groupId>org.springframework.graphql</groupId>
-                <artifactId>spring-graphql-test</artifactId>
-                <version>2.0.3</version>
-                <scope>test</scope>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.20.0</version>
             </dependency>
             <!-- Exception #7: springdoc-openapi — community OpenAPI auto-generation -->
             <dependency>

@@ -136,4 +136,59 @@ class ReviewsServiceTest {
         assertThrows(AccessDeniedException.class,
                 () -> service.update(id, 5, "excellent", authentication));
     }
+
+    @Test
+    void getById_returnsReview() {
+        UUID id = Instancio.create(UUID.class);
+        Review review = Instancio.of(Review.class)
+                .set(field(Review::getRating), 4)
+                .create();
+        when(reviewRepository.findById(id)).thenReturn(Optional.of(review));
+
+        Review result = service.getById(id);
+
+        assertNotNull(result);
+        assertEquals(4, result.getRating());
+    }
+
+    @Test
+    void getById_throwsWhenNotFound() {
+        UUID id = Instancio.create(UUID.class);
+        when(reviewRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(com.marketplace.shared.api.ResourceNotFoundException.class,
+                () -> service.getById(id));
+    }
+
+    @Test
+    void listByProvider_returnsPage() {
+        UUID providerId = Instancio.create(UUID.class);
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Review review = Instancio.of(Review.class)
+                .set(field(Review::getProviderId), providerId)
+                .set(field(Review::getRating), 4)
+                .create();
+        when(reviewRepository.findByProviderId(providerId, pageable))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
+
+        var result = service.listByProvider(providerId, pageable);
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void listByReviewer_returnsPage() {
+        UUID reviewerId = Instancio.create(UUID.class);
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Review review = Instancio.of(Review.class)
+                .set(field(Review::getReviewerId), reviewerId)
+                .set(field(Review::getRating), 4)
+                .create();
+        when(reviewRepository.findByReviewerId(reviewerId, pageable))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
+
+        var result = service.listByReviewer(reviewerId, pageable);
+
+        assertEquals(1, result.getTotalElements());
+    }
 }
