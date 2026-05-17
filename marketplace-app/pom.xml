@@ -168,6 +168,11 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- commons-lang3 excluded from springdoc above to avoid enforcer conflict (swagger-core wants 3.20.0, Boot BOM provides 3.19.0); added directly here for runtime (SwaggerUiConfigProperties.afterPropertiesSet needs StringUtils) -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
 
         <!-- Exception #8: MapStruct — compile-time code generation for Entity↔DTO mapping -->
         <dependency>
