@@ -37,7 +37,7 @@ class CorsConfigurationTest {
 
     @Test
     void shouldAllowCorsFromConfiguredOrigin() throws Exception {
-        mockMvc.perform(options("/api/v1/bookings")
+        mockMvc.perform(options("/api/v1/listings")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000"))
                 .andExpect(status().isOk());
     }
