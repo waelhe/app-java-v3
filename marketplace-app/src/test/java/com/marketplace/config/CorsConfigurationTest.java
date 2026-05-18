@@ -1,38 +1,44 @@
 package com.marketplace.config;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.RequestEntity;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.net.URI;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
 @ActiveProfiles("test")
+@WithMockUser
 @Testcontainers(disabledWithoutDocker = true)
 class CorsConfigurationTest {
 
-    @LocalServerPort
-    private int port;
+    @Autowired
+    private WebApplicationContext wac;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setup() {
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(wac)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
+    }
 
     @Test
-    void shouldAllowCorsFromConfiguredOrigin() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setOrigin("http://localhost:3000");
-        var entity = new RequestEntity<Void>(headers, HttpMethod.OPTIONS, URI.create("http://localhost:" + port + "/api/v1/bookings"));
-
-        ResponseEntity<Void> response = restTemplate.exchange(entity, Void.class);
-
-        assertThat(response.getStatusCode().value()).isLessThan(500);
+    void shouldAllowCorsFromConfiguredOrigin() throws Exception {
+        mockMvc.perform(options("/api/v1/bookings")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:3000"))
+                .andExpect(status().isOk());
     }
 }

@@ -205,6 +205,12 @@
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Exception #10: spring-security-test — @WithMockUser for integration tests -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Modulith Documentation Generation (PlantUML) -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
