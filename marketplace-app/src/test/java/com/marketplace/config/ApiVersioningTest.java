@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.web.client.NoOpResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -22,6 +23,7 @@ class ApiVersioningTest {
 
     @Test
     void shouldRespondToVersionedApiPath() {
+        restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
         ResponseEntity<String> response = restTemplate.getForEntity(
                 "http://localhost:" + port + "/api/v1/bookings", String.class);
 
