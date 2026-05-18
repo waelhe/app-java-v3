@@ -36,7 +36,7 @@ class ApiVersioningTest {
 
     @Test
     void shouldRespondToVersionedApiPath() throws Exception {
-        mockMvc.perform(get("/api/v1/bookings"))
+        mockMvc.perform(get("/api/v1/listings"))
                 .andExpect(status().isOk());
     }
 }
