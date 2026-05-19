@@ -127,18 +127,30 @@ jobs:
 
       - name: Start Application
         run: |
-          ./mvnw spring-boot:run -pl marketplace-app -Dspring-boot.run.profiles=test -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
+          ./mvnw spring-boot:run -pl marketplace-app --batch-mode \
+            -Dspring-boot.run.profiles=test \
+            -Dspring-boot.run.jvmArguments="-Dserver.port=8080 -Dspring.devtools.restart.enabled=false" \
+            > /tmp/spring-boot-run.log 2>&1 &
+          MVN_PID=$!
+          echo "Maven PID: $MVN_PID"
           echo "Waiting for application to start..."
-          for i in $(seq 1 60); do
+          for i in $(seq 1 72); do
+            if ! kill -0 $MVN_PID 2>/dev/null; then
+              echo "Maven process died! Checking log..."
+              cat /tmp/spring-boot-run.log
+              exit 1
+            fi
             if curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
               echo "Application started successfully!"
               break
             fi
-            if [ "$i" -eq 60 ]; then
-              echo "Application failed to start within 5 minutes"
+            if [ "$i" -eq 72 ]; then
+              echo "Application failed to start within 6 minutes"
+              echo "=== Maven log (last 50 lines) ==="
+              tail -50 /tmp/spring-boot-run.log
               exit 1
             fi
-            echo "Attempt $i/60..."
+            echo "Attempt $i/72..."
             sleep 5
           done
         env:
