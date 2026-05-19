@@ -127,7 +127,10 @@ jobs:
 
       - name: Start Application
         run: |
-          ./mvnw spring-boot:test-run -pl marketplace-app -Dspring-boot.run.profiles=test -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
+          ./mvnw spring-boot:test-run -pl marketplace-app --batch-mode \
+            -Dspring-boot.run.main-class=com.marketplace.MarketplaceApplication \
+            -Dspring-boot.run.profiles=test \
+            -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
           echo "Waiting for application to start..."
           for i in $(seq 1 60); do
             if curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
