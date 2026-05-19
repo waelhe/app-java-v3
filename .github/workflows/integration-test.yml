@@ -128,7 +128,6 @@ jobs:
       - name: Start Application
         run: |
           ./mvnw spring-boot:test-run -pl marketplace-app --batch-mode \
-            -Dspring-boot.run.main-class=com.marketplace.MarketplaceApplication \
             -Dspring-boot.run.profiles=test \
             -Dspring-boot.run.jvmArguments="-Dserver.port=8080" &
           echo "Waiting for application to start..."
@@ -170,7 +169,7 @@ jobs:
 
       - name: Stop Application
         if: always()
-        run: pkill -f "spring-boot:run" || true
+        run: pkill -f "spring-boot" || true
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
