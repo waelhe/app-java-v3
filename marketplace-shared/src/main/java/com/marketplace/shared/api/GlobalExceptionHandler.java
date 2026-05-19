@@ -31,114 +31,78 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "validation"));
-        pd.setInstance(URI.create(request.getRequestURI()));
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "validation", "Validation failed", request);
         List<ErrorResponse.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> new ErrorResponse.FieldError(fe.getField(), fe.getDefaultMessage()))
                 .toList();
         pd.setProperty("fieldErrors", fieldErrors);
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Constraint violation");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "constraint-violation"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.BAD_REQUEST, "constraint-violation", "Constraint violation", request);
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Resource was modified by another transaction. Please retry.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "optimistic-lock"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.CONFLICT, "optimistic-lock",
+                "Resource was modified by another transaction. Please retry.", request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "access-denied"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.FORBIDDEN, "access-denied", "Access denied", request);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ProblemDetail handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication required");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "unauthorized"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.UNAUTHORIZED, "unauthorized", "Authentication required", request);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.NOT_FOUND, "not-found", ex.getMessage(), request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ProblemDetail handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Resource not found");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.NOT_FOUND, "not-found", "Resource not found", request);
     }
 
     @ExceptionHandler(RequestNotPermitted.class)
     public ProblemDetail handleRateLimited(RequestNotPermitted ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "rate-limited"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.TOO_MANY_REQUESTS, "rate-limited",
+                "Rate limit exceeded. Please try again later.", request);
     }
 
 
     @ExceptionHandler(CallNotPermittedException.class)
     public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
-                "Service temporarily unavailable. Please try again later.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "circuit-breaker-open"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "circuit-breaker-open",
+                "Service temporarily unavailable. Please try again later.", request);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "conflict"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.CONFLICT, "conflict", ex.getMessage(), request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "bad-request"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
-        return pd;
+        return problem(HttpStatus.BAD_REQUEST, "bad-request", ex.getMessage(), request);
     }
 
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception for {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "internal-error"));
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "internal-error", "An unexpected error occurred", request);
+    }
+
+    private ProblemDetail problem(HttpStatus status, String typeSuffix, String detail, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, detail);
+        pd.setType(URI.create(ERROR_TYPE_BASE + typeSuffix));
+        pd.setTitle(status.getReasonPhrase());
         pd.setInstance(URI.create(request.getRequestURI()));
         pd.setProperty("timestamp", Instant.now());
         return pd;
