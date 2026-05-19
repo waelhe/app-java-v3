@@ -52,6 +52,9 @@ jobs:
       - name: Build & Verify
         env:
           SPRING_PROFILES_ACTIVE: test
+          DB_NAME: test
+          DB_USERNAME: test
+          DB_PASSWORD: test
         run: ./mvnw clean verify --batch-mode
 
       - name: Upload test results
