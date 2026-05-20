@@ -12,8 +12,11 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
@@ -34,6 +37,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -42,8 +47,11 @@ import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.Key;
 import java.security.KeyPair;
@@ -59,9 +67,12 @@ import java.util.UUID;
 public class SecurityConfig {
 
     private final List<String> allowedOrigins;
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfig(@Value("${marketplace.cors.allowed-origins:https://marketplace.com}") List<String> allowedOrigins) {
+    public SecurityConfig(@Value("${marketplace.cors.allowed-origins:https://marketplace.com}") List<String> allowedOrigins,
+                          ObjectMapper objectMapper) {
         this.allowedOrigins = allowedOrigins;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -127,6 +138,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(problemDetailAuthenticationEntryPoint())
+                        .accessDeniedHandler(problemDetailAccessDeniedHandler()))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
@@ -175,6 +189,49 @@ public class SecurityConfig {
     @Bean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    @Bean
+    AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
+        return (request, response, ex) -> writeProblemDetail(
+                response,
+                HttpStatus.UNAUTHORIZED,
+                "Unauthorized",
+                "Authentication required",
+                request,
+                objectMapper
+        );
+    }
+
+    @Bean
+    AccessDeniedHandler problemDetailAccessDeniedHandler() {
+        return (request, response, ex) -> writeProblemDetail(
+                response,
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                "Access denied",
+                request,
+                objectMapper
+        );
+    }
+
+    private static void writeProblemDetail(HttpServletResponse response,
+                                           HttpStatus status,
+                                           String title,
+                                           String detail,
+                                           HttpServletRequest request,
+                                           ObjectMapper objectMapper) throws IOException {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
+        problemDetail.setTitle(title);
+        problemDetail.setInstance(java.net.URI.create(request.getRequestURI()));
+        String traceId = response.getHeader(CorrelationIdFilter.HEADER_NAME);
+        if (traceId != null && !traceId.isBlank()) {
+            problemDetail.setProperty("traceId", traceId);
+        }
+
+        response.setStatus(status.value());
+        response.setContentType("application/problem+json");
+        objectMapper.writeValue(response.getOutputStream(), problemDetail);
     }
 
     @Bean
@@ -283,4 +340,5 @@ public class SecurityConfig {
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
+
 }
