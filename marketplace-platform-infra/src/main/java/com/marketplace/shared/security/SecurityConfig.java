@@ -217,7 +217,7 @@ public class SecurityConfig {
                                     HttpServletRequest request) throws IOException {
         String traceId = response.getHeader(CorrelationIdFilter.HEADER_NAME);
 
-        var problemDetail = ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, null, traceId);
+        var problemDetail = ApiProblemDetails.fromTaxonomy(taxonomy, detail, request.getRequestURI(), null, traceId);
 
         response.setStatus(taxonomy.statusCode().value());
         response.setContentType("application/problem+json");
