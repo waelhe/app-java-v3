@@ -69,3 +69,29 @@ Example:
 - `spring.mvc.problemdetails.enabled=true` is enabled in application configuration.
 - `ResourceNotFoundException` implements Spring `ErrorResponse` and provides a prebuilt RFC 7807 body.
 - `GlobalExceptionHandler` enriches `ProblemDetail` with `type`, `instance`, and validation `fieldErrors`.
+
+
+## REST (RFC 7807) vs GraphQL error envelope
+
+Marketplace intentionally uses **two different error envelopes** depending on protocol:
+
+- **REST (`/api/**`)** uses RFC 7807 `application/problem+json` (`type`, `title`, `status`, `detail`, `instance`).
+- **GraphQL (`/graphql`)** uses the GraphQL spec envelope: top-level `errors[]` entries with `message`, `path`, and `extensions`.
+
+### Why they differ
+
+- RFC 7807 is HTTP-centric and maps one request to one HTTP status/result body.
+- GraphQL can return partial data and multiple resolver errors in a single response, so errors are expressed per-entry inside `errors[]`.
+
+### Marketplace GraphQL `extensions` contract
+
+For domain/runtime failures resolved by the central GraphQL exception resolver, each error includes:
+
+- `errorCode`: stable machine-readable code (e.g. `NOT_FOUND`, `DOMAIN_CONFLICT`, `INTERNAL_ERROR`).
+- `category`: high-level class (`RESOURCE`, `DOMAIN`, `VALIDATION`, `INTERNAL`).
+- `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.
+
+### Security and leakage policy
+
+- Internal/unknown exceptions MUST return a generic message (`An unexpected error occurred`).
+- Stack traces and internal exception details MUST NOT be exposed in GraphQL error messages.
