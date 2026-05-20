@@ -216,7 +216,7 @@ public class SecurityConfig {
         response.setStatus(taxonomy.statusCode().value());
         response.setContentType("application/problem+json");
 
-        var problemDetail = ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, null, traceId);
+        var problemDetail = ApiProblemDetails.fromTaxonomy(taxonomy, detail, request.getRequestURI(), null, traceId);
         String json = String.format("{\"type\":\"%s\",\"title\":\"%s\",\"status\":%d,\"detail\":\"%s\",\"instance\":\"%s\",\"errorCode\":\"%s\",\"category\":\"%s\"%s}",
                 escapeJson(String.valueOf(problemDetail.getType())),
                 escapeJson(problemDetail.getTitle()),
