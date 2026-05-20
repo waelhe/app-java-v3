@@ -7,7 +7,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
-    password: ${DB_PASSWORD:marketplace}
+    password: ${DB_PASSWORD:}
 
   jpa:
     show-sql: true
@@ -42,8 +42,8 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:dev-client}
-            client-secret: ${GOOGLE_CLIENT_SECRET:dev-secret}
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             scope: openid,profile,email
@@ -81,6 +81,6 @@ marketplace:
     jwt:
       keystore:
         path: ${JWT_KEYSTORE_PATH:./marketplace-app/local/dev-authserver.jks}
-        password: ${JWT_KEYSTORE_PASSWORD:changeit}
+        password: ${JWT_KEYSTORE_PASSWORD:}
         alias: ${JWT_KEY_ALIAS:marketplace-auth}
-        key-password: ${JWT_KEY_PASSWORD:changeit}
+        key-password: ${JWT_KEY_PASSWORD:}
