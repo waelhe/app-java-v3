@@ -17,8 +17,13 @@ Errors follow RFC 7807 (`ProblemDetail`) with the following core fields:
 - `status` (integer): HTTP status code.
 - `detail` (string): human-readable explanation for this occurrence.
 - `instance` (URI): request path or request-specific identifier.
+- `errorCode` (string): stable machine-readable taxonomy code.
+- `category` (string): canonical taxonomy category.
+- `userMessage` (string, optional): user-facing safe message.
 
 ## Marketplace error type registry
+
+See also: [Error Taxonomy & Codes](./error-codes.md).
 
 | HTTP status | type URI | title |
 |---|---|---|

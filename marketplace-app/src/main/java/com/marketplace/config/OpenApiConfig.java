@@ -78,6 +78,10 @@ public class OpenApiConfig {
         schema.addProperty("status", new IntegerSchema().example(404));
         schema.addProperty("detail", new StringSchema().example("Resource not found"));
         schema.addProperty("instance", new StringSchema().example("/api/resource/123"));
+        schema.addProperty("errorCode", new StringSchema().example("NF-001"));
+        schema.addProperty("category", new StringSchema().example("not-found"));
+        schema.addProperty("userMessage", new StringSchema().example("The requested resource could not be found."));
+        schema.addExtension("x-error-taxonomy", "docs/api/error-codes.md");
         schema.additionalProperties(true);
         schema.addRequiredItem("title");
         schema.addRequiredItem("status");

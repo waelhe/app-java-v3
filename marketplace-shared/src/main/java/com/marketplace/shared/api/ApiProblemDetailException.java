@@ -14,12 +14,14 @@ public abstract class ApiProblemDetailException extends RuntimeException impleme
     private final HttpStatusCode statusCode;
     private final ProblemDetail body;
 
-    protected ApiProblemDetailException(HttpStatusCode statusCode, String typeUri, String title, String detail) {
+    protected ApiProblemDetailException(ApiErrorTaxonomy taxonomy, String detail) {
         super(detail);
-        this.statusCode = statusCode;
+        this.statusCode = taxonomy.statusCode();
         this.body = ProblemDetail.forStatusAndDetail(statusCode, detail);
-        this.body.setType(URI.create(typeUri));
-        this.body.setTitle(title);
+        this.body.setType(URI.create(taxonomy.typeUri()));
+        this.body.setTitle(taxonomy.title());
+        this.body.setProperty("errorCode", taxonomy.errorCode());
+        this.body.setProperty("category", taxonomy.category());
     }
 
     @Override

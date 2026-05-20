@@ -17,6 +17,8 @@ class ApiProblemDetailExceptionTest {
         assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/not-found"));
         assertThat(ex.getBody().getTitle()).isEqualTo("Not Found");
         assertThat(ex.getBody().getDetail()).isEqualTo("Listing not found: 42");
+        assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("NF-001");
+        assertThat(ex.getBody().getProperties().get("category")).isEqualTo("not-found");
     }
 
     @Test
@@ -24,9 +26,11 @@ class ApiProblemDetailExceptionTest {
         BadRequestException ex = new BadRequestException("Invalid booking status: x");
 
         assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/bad-request"));
+        assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
         assertThat(ex.getBody().getTitle()).isEqualTo("Bad Request");
         assertThat(ex.getBody().getDetail()).isEqualTo("Invalid booking status: x");
+        assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(ex.getBody().getProperties().get("category")).isEqualTo("validation");
     }
 
     @Test
@@ -37,5 +41,7 @@ class ApiProblemDetailExceptionTest {
         assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/conflict"));
         assertThat(ex.getBody().getTitle()).isEqualTo("Conflict");
         assertThat(ex.getBody().getDetail()).isEqualTo("Cannot transition from PENDING to COMPLETED");
+        assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("CONFLICT-001");
+        assertThat(ex.getBody().getProperties().get("category")).isEqualTo("conflict");
     }
 }

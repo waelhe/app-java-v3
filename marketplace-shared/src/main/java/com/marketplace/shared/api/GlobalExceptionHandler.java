@@ -26,13 +26,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-    private static final String ERROR_TYPE_BASE = "https://marketplace.com/errors/";
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "validation"));
-        pd.setInstance(URI.create(request.getRequestURI()));
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, "Validation failed", request, null);
         List<ApiErrorPayload.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> new ApiErrorPayload.FieldError(fe.getField(), fe.getDefaultMessage()))
                 .toList();
@@ -42,34 +39,22 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Constraint violation");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "constraint-violation"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.VALIDATION, "Constraint violation", request, null);
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Resource was modified by another transaction. Please retry.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "optimistic-lock"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.CONFLICT, "Resource was modified by another transaction. Please retry.", request, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "access-denied"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.AUTHZ, "Access denied", request, null);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ProblemDetail handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication required");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "unauthorized"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.AUTHN, "Authentication required", request, null);
     }
 
     @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class})
@@ -81,37 +66,36 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ProblemDetail handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Resource not found");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.NOT_FOUND, "Resource not found", request, null);
     }
 
     @ExceptionHandler(RequestNotPermitted.class)
     public ProblemDetail handleRateLimited(RequestNotPermitted ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "rate-limited"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.RATE_LIMIT, "Rate limit exceeded. Please try again later.", request, null);
     }
-
 
     @ExceptionHandler(CallNotPermittedException.class)
     public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
-                "Service temporarily unavailable. Please try again later.");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "circuit-breaker-open"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
+        return problem(ApiErrorTaxonomy.INTERNAL,
+                "Service temporarily unavailable. Please try again later.", request, "Service currently degraded");
     }
-
 
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception for {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
-        pd.setType(URI.create(ERROR_TYPE_BASE + "internal-error"));
+        return problem(ApiErrorTaxonomy.INTERNAL, "An unexpected error occurred", request, null);
+    }
+
+    private ProblemDetail problem(ApiErrorTaxonomy taxonomy, String detail, HttpServletRequest request, String userMessage) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(taxonomy.statusCode(), detail);
+        pd.setType(URI.create(taxonomy.typeUri()));
+        pd.setTitle(taxonomy.title());
         pd.setInstance(URI.create(request.getRequestURI()));
+        pd.setProperty("errorCode", taxonomy.errorCode());
+        pd.setProperty("category", taxonomy.category());
+        if (userMessage != null && !userMessage.isBlank()) {
+            pd.setProperty("userMessage", userMessage);
+        }
         return pd;
     }
 }
