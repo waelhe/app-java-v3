@@ -40,6 +40,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleValidation_includesTraceIdFromCorrelationIdHeader() throws NoSuchMethodException {
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "request");
+        bindingResult.addError(new FieldError("request", "email", "must be a well-formed email address"));
+
+        MethodParameter methodParameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(methodParameter, bindingResult);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/users", "trace-123");
+        var response = handler.handleValidation(ex, request);
+
+        assertThat(response.getProperties().get("traceId")).isEqualTo("trace-123");
+    }
+
+    @Test
     void handleApiProblemDetail_preservesDomainExceptionTaxonomy() {
         ResourceNotFoundException ex = new ResourceNotFoundException("Listing", 123L);
 
