@@ -6,7 +6,7 @@
   <dependencies>
     <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
     <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-platform-infra</artifactId></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
     <dependency><groupId>org.springframework.modulith</groupId><artifactId>spring-modulith-api</artifactId></dependency>
     <dependency><groupId>org.springframework.data</groupId><artifactId>spring-data-envers</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>

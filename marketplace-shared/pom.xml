@@ -18,7 +18,7 @@
         <!-- Spring Web for Page/PagedResponse mapping -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <!-- Validation for ErrorResponse field errors -->
         <dependency>
