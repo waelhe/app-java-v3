@@ -53,7 +53,7 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Build & Verify
+      - name: Run Maven verify (unit + integration tests)
         env:
           SPRING_PROFILES_ACTIVE: test
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
@@ -61,12 +61,14 @@ jobs:
           SPRING_DATASOURCE_PASSWORD: test
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
-        run: ./mvnw clean verify --batch-mode
+        run: ./mvnw verify --batch-mode
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-java-${{ matrix.java }}
-          path: '**/target/surefire-reports/'
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
           retention-days: 7
