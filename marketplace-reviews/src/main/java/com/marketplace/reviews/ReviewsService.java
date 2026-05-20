@@ -2,6 +2,8 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -55,7 +57,7 @@ public class ReviewsService {
     public Review create(UUID bookingId, UUID reviewerId,
                          Integer rating, String comment) {
         if (reviewRepository.existsByBookingId(bookingId)) {
-            throw new IllegalStateException("Review already exists for booking: " + bookingId);
+            throw new ConflictException("Review already exists for booking: " + bookingId);
         }
 
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
@@ -65,7 +67,7 @@ public class ReviewsService {
         }
 
         if (!"COMPLETED".equals(bookingInfo.status())) {
-            throw new IllegalStateException("Cannot review a booking that is not COMPLETED");
+            throw new BadRequestException("Cannot review a booking that is not COMPLETED");
         }
 
         Review saved = reviewRepository.save(

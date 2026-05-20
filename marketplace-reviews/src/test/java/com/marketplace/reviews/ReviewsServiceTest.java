@@ -1,7 +1,9 @@
 package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +66,7 @@ class ReviewsServiceTest {
     void create_rejectsDuplicateReview() {
         UUID bookingId = Instancio.create(UUID.class);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(true);
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> service.create(bookingId, Instancio.create(UUID.class), 3, "dup"));
     }
 
@@ -101,7 +103,7 @@ class ReviewsServiceTest {
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(BadRequestException.class,
                 () -> service.create(bookingId, consumerId, 3, "too early"));
     }
 

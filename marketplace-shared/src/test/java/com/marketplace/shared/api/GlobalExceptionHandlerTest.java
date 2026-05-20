@@ -54,6 +54,34 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("category")).isEqualTo("not-found");
     }
 
+    @Test
+    void handleApiProblemDetail_preservesConflictTaxonomy() {
+        ConflictException ex = new ConflictException("Cannot transition from OPEN to OPEN");
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/disputes/1/status");
+        var response = handler.handleApiProblemDetail(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/conflict"));
+        assertThat(response.getTitle()).isEqualTo("Conflict");
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("CONFLICT-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("conflict");
+    }
+
+    @Test
+    void handleApiProblemDetail_preservesBadRequestTaxonomy() {
+        BadRequestException ex = new BadRequestException("Cannot review a booking that is not COMPLETED");
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/reviews");
+        var response = handler.handleApiProblemDetail(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
+        assertThat(response.getTitle()).isEqualTo("Bad Request");
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+    }
+
     static class TestController {
         public void submit(String email) {
         }
