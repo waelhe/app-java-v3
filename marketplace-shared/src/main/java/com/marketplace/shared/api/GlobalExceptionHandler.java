@@ -1,7 +1,6 @@
 package com.marketplace.shared.api;
 
 import java.net.URI;
-import java.time.Instant;
 import java.util.List;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -38,7 +37,6 @@ public class GlobalExceptionHandler {
                 .map(fe -> new ErrorResponse.FieldError(fe.getField(), fe.getDefaultMessage()))
                 .toList();
         pd.setProperty("fieldErrors", fieldErrors);
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -47,7 +45,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Constraint violation");
         pd.setType(URI.create(ERROR_TYPE_BASE + "constraint-violation"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -56,7 +53,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Resource was modified by another transaction. Please retry.");
         pd.setType(URI.create(ERROR_TYPE_BASE + "optimistic-lock"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -65,7 +61,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
         pd.setType(URI.create(ERROR_TYPE_BASE + "access-denied"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -74,16 +69,13 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication required");
         pd.setType(URI.create(ERROR_TYPE_BASE + "unauthorized"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
+        ProblemDetail pd = ex.getBody();
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -92,7 +84,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Resource not found");
         pd.setType(URI.create(ERROR_TYPE_BASE + "not-found"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -101,7 +92,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
         pd.setType(URI.create(ERROR_TYPE_BASE + "rate-limited"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -112,7 +102,6 @@ public class GlobalExceptionHandler {
                 "Service temporarily unavailable. Please try again later.");
         pd.setType(URI.create(ERROR_TYPE_BASE + "circuit-breaker-open"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -121,7 +110,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         pd.setType(URI.create(ERROR_TYPE_BASE + "conflict"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -130,7 +118,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         pd.setType(URI.create(ERROR_TYPE_BASE + "bad-request"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
@@ -140,7 +127,6 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
         pd.setType(URI.create(ERROR_TYPE_BASE + "internal-error"));
         pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 }
