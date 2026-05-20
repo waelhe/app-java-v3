@@ -2,13 +2,13 @@ package com.marketplace.shared.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.ApiErrorTaxonomy;
+import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.api.ApiProblemDetails;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -66,12 +66,12 @@ import java.util.UUID;
 @Configuration
 public class SecurityConfig {
 
-    private final List<String> allowedOrigins;
+    private final MarketplaceProperties properties;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(@Value("${marketplace.cors.allowed-origins:https://marketplace.com}") List<String> allowedOrigins,
+    public SecurityConfig(MarketplaceProperties properties,
                           ObjectMapper objectMapper) {
-        this.allowedOrigins = allowedOrigins;
+        this.properties = properties;
         this.objectMapper = objectMapper;
     }
 
@@ -163,7 +163,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);
+        config.setAllowedOrigins(properties.cors().allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
@@ -257,12 +257,14 @@ public class SecurityConfig {
 
     @Bean
     JWKSource<SecurityContext> jwkSource(
-            @Value("${marketplace.security.jwt.keystore.path:}") String keyStorePath,
-            @Value("${marketplace.security.jwt.keystore.password:}") String keyStorePassword,
-            @Value("${marketplace.security.jwt.keystore.alias:}") String keyAlias,
-            @Value("${marketplace.security.jwt.keystore.key-password:}") String keyPassword,
+            MarketplaceProperties properties,
             ResourceLoader resourceLoader
     ) throws Exception {
+        var ks = properties.security().jwt().keystore();
+        String keyStorePath = ks.path();
+        String keyStorePassword = ks.password();
+        String keyAlias = ks.alias();
+        String keyPassword = ks.keyPassword();
         if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
             KeyPair keyPair = generateRsaKey();
             RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
@@ -303,10 +305,10 @@ public class SecurityConfig {
 
     @Bean
     AuthorizationServerSettings authorizationServerSettings(
-            @Value("${marketplace.security.auth-server.issuer:http://localhost:8080}") String issuer
+            MarketplaceProperties properties
     ) {
         return AuthorizationServerSettings.builder()
-                .issuer(issuer)
+                .issuer(properties.security().authServer().issuer())
                 .build();
     }
 
