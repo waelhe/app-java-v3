@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -25,6 +28,9 @@ class SecurityProblemDetailIntegrationTest {
 
     @Autowired
     private WebApplicationContext wac;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private MockMvc mockMvc;
 
@@ -61,5 +67,32 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.instance").value("/api/v1/admin/system"))
                 .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(header().exists("X-Correlation-ID"));
+    }
+
+    @Test
+    void unauthorizedProblemDetailPayload_conformsToOpenApiProblemDetailSchema() throws Exception {
+        String openApiDoc = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode openApiJson = objectMapper.readTree(openApiDoc);
+        JsonNode schema = openApiJson.path("components").path("schemas").path("ProblemDetail");
+
+        String body = mockMvc.perform(get("/api/v1/bookings"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentType("application/problem+json"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode payload = objectMapper.readTree(body);
+
+        assertThat(schema.path("properties").fieldNames()).toIterable().contains("type", "title", "status", "detail", "instance");
+        schema.path("required").forEach(requiredField -> assertThat(payload.hasNonNull(requiredField.asText())).isTrue());
+
+        payload.fieldNames().forEachRemaining(fieldName ->
+                assertThat(schema.path("properties").has(fieldName) || schema.path("additionalProperties").asBoolean())
+                        .as("Field %s must be declared or allowed by extensions", fieldName)
+                        .isTrue());
     }
 }
