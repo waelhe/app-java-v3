@@ -58,6 +58,13 @@ Deliver backend features through small PRs while enforcing compatibility with Sp
 4. ⏭ Expand operation request/response schemas for each controller DTO.
 5. ⏭ Add automated spec consistency checks in CI (contract lint or schema validation).
 
+
+## Weekly Capacity & Risk Management
+- Reserve **15-20% of weekly capacity** as a delivery buffer for unplanned incidents, CI recovery, and critical defects.
+- Shift a portion of **non-critical documentation tasks** to the **end of each week** to avoid phase-end batching and reduce documentation debt.
+- Maintain and review `docs/governance/risk-register.md` weekly during planning/status review.
+- **Priority Reordering Trigger:** if CI fails for **3 consecutive days**, pause non-critical feature work and re-prioritize the sprint backlog toward stabilization until CI is green.
+
 ## Definition of Done (for each new module)
 - Added to parent reactor and has independent `pom.xml`.
 - Uses BOM-managed versions correctly.
