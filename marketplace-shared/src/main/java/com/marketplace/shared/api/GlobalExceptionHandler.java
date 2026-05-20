@@ -26,6 +26,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
+    private static final String CORRELATION_ID_ATTRIBUTE = "correlationId";
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
@@ -87,6 +89,17 @@ public class GlobalExceptionHandler {
     }
 
     private ProblemDetail problem(ApiErrorTaxonomy taxonomy, String detail, HttpServletRequest request, String userMessage) {
-        return ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, userMessage, null);
+        String traceId = request.getHeader(CORRELATION_ID_HEADER);
+        if (traceId == null || traceId.isBlank()) {
+            Object correlationIdAttribute = request.getAttribute(CORRELATION_ID_HEADER);
+            if (!(correlationIdAttribute instanceof String correlationId) || correlationId.isBlank()) {
+                correlationIdAttribute = request.getAttribute(CORRELATION_ID_ATTRIBUTE);
+            }
+            if (correlationIdAttribute instanceof String correlationId && !correlationId.isBlank()) {
+                traceId = correlationId;
+            }
+        }
+
+        return ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, userMessage, traceId);
     }
 }
