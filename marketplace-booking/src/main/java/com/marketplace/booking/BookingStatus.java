@@ -1,4 +1,5 @@
 package com.marketplace.booking;
+import com.marketplace.shared.api.ConflictException;
 
 import java.util.Collections;
 import java.util.EnumSet;
@@ -21,7 +22,7 @@ public enum BookingStatus {
     public void validateTransitionTo(BookingStatus target) {
         Set<BookingStatus> allowed = TRANSITIONS.get(this);
         if (allowed == null || !allowed.contains(target)) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Cannot transition from " + this + " to " + target
             );
         }
