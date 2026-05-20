@@ -35,7 +35,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getInstance()).isEqualTo(URI.create("/api/users"));
         assertThat(response.getProperties()).doesNotContainKey("timestamp");
         assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
-                List.of(new ErrorResponse.FieldError("email", "must be a well-formed email address")));
+                List.of(new ApiErrorPayload.FieldError("email", "must be a well-formed email address")));
     }
 
 

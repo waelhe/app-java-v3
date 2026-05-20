@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Standard error response body for all REST API errors.
  */
-public record ErrorResponse(
+public record ApiErrorPayload(
         int status,
         String error,
         String message,
@@ -15,7 +15,7 @@ public record ErrorResponse(
         List<FieldError> fieldErrors
 ) {
 
-    public ErrorResponse(int status, String error, String message, String path) {
+    public ApiErrorPayload(int status, String error, String message, String path) {
         this(status, error, message, path, Instant.now(), List.of());
     }
 

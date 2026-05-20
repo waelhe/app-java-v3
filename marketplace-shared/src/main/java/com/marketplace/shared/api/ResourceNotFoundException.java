@@ -5,12 +5,13 @@ import java.net.URI;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.web.ErrorResponse;
 
 /**
  * Thrown when a requested resource is not found.
  * Produces HTTP 404 as RFC 7807 {@link ProblemDetail}.
  */
-public class ResourceNotFoundException extends RuntimeException implements org.springframework.web.ErrorResponse {
+public class ResourceNotFoundException extends RuntimeException implements ErrorResponse {
 
     private static final String ERROR_TYPE = "https://marketplace.com/errors/not-found";
     private final ProblemDetail body;

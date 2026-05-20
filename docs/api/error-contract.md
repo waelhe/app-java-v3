@@ -95,3 +95,8 @@ For domain/runtime failures resolved by the central GraphQL exception resolver, 
 
 - Internal/unknown exceptions MUST return a generic message (`An unexpected error occurred`).
 - Stack traces and internal exception details MUST NOT be exposed in GraphQL error messages.
+
+## Migration note (naming)
+
+- The local API DTO formerly named `ErrorResponse` has been renamed to `ApiErrorPayload` to avoid collisions with Spring's `org.springframework.web.ErrorResponse`.
+- Do not introduce new local types named `ErrorResponse`; use `ApiErrorPayload` for payload DTOs and Spring `ErrorResponse` for framework contracts.
