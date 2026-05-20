@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,7 +19,7 @@ class PaymentIntentStatusTest {
 
     @Test
     void created_rejectsSucceeded() {
-        assertThrows(IllegalStateException.class, () -> PaymentIntentStatus.CREATED.validateTransitionTo(PaymentIntentStatus.SUCCEEDED));
+        assertThrows(ConflictException.class, () -> PaymentIntentStatus.CREATED.validateTransitionTo(PaymentIntentStatus.SUCCEEDED));
     }
 
     @Test
@@ -33,11 +34,11 @@ class PaymentIntentStatusTest {
 
     @Test
     void succeeded_rejectsAnyTransition() {
-        assertThrows(IllegalStateException.class, () -> PaymentIntentStatus.SUCCEEDED.validateTransitionTo(PaymentIntentStatus.CANCELLED));
+        assertThrows(ConflictException.class, () -> PaymentIntentStatus.SUCCEEDED.validateTransitionTo(PaymentIntentStatus.CANCELLED));
     }
 
     @Test
     void cancelled_rejectsAnyTransition() {
-        assertThrows(IllegalStateException.class, () -> PaymentIntentStatus.CANCELLED.validateTransitionTo(PaymentIntentStatus.PROCESSING));
+        assertThrows(ConflictException.class, () -> PaymentIntentStatus.CANCELLED.validateTransitionTo(PaymentIntentStatus.PROCESSING));
     }
 }

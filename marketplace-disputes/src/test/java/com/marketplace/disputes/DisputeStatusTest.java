@@ -1,5 +1,6 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -14,19 +15,19 @@ class DisputeStatusTest {
 
     @Test
     void resolvedToOpen_invalid() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> DisputeStatus.RESOLVED.validateTransitionTo(DisputeStatus.OPEN));
     }
 
     @Test
     void openToOpen_invalid() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> DisputeStatus.OPEN.validateTransitionTo(DisputeStatus.OPEN));
     }
 
     @Test
     void resolvedToResolved_invalid() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> DisputeStatus.RESOLVED.validateTransitionTo(DisputeStatus.RESOLVED));
     }
 }

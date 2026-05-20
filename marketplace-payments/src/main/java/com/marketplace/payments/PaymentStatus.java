@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import com.marketplace.shared.api.ConflictException;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
@@ -21,7 +22,7 @@ public enum PaymentStatus {
     public void validateTransitionTo(PaymentStatus target) {
         Set<PaymentStatus> allowed = TRANSITIONS.get(this);
         if (allowed == null || !allowed.contains(target)) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Cannot transition from " + this + " to " + target
             );
         }
