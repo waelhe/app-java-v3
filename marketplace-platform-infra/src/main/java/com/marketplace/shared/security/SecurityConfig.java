@@ -12,6 +12,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
@@ -34,6 +35,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -42,8 +45,11 @@ import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.Key;
 import java.security.KeyPair;
@@ -127,6 +133,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(problemDetailAuthenticationEntryPoint())
+                        .accessDeniedHandler(problemDetailAccessDeniedHandler()))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
@@ -175,6 +184,46 @@ public class SecurityConfig {
     @Bean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    @Bean
+    AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
+        return (request, response, ex) -> writeProblemDetail(
+                response,
+                HttpStatus.UNAUTHORIZED,
+                "Unauthorized",
+                "Authentication required",
+                request
+        );
+    }
+
+    @Bean
+    AccessDeniedHandler problemDetailAccessDeniedHandler() {
+        return (request, response, ex) -> writeProblemDetail(
+                response,
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                "Access denied",
+                request
+        );
+    }
+
+    private static void writeProblemDetail(HttpServletResponse response,
+                                           HttpStatus status,
+                                           String title,
+                                           String detail,
+                                           HttpServletRequest request ) throws IOException {
+        String traceId = response.getHeader(CorrelationIdFilter.HEADER_NAME);
+
+        response.setStatus(status.value());
+        response.setContentType("application/problem+json");
+        String json = String.format("{\"type\":\"about:blank\",\"title\":\"%s\",\"status\":%d,\"detail\":\"%s\",\"instance\":\"%s\"%s}",
+                escapeJson(title),
+                status.value(),
+                escapeJson(detail),
+                escapeJson(request.getRequestURI()),
+                traceId != null && !traceId.isBlank() ? ",\"traceId\":\"" + escapeJson(traceId) + "\"" : "");
+        response.getWriter().write(json);
     }
 
     @Bean
@@ -282,5 +331,9 @@ public class SecurityConfig {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }
