@@ -30,13 +30,13 @@ public class OpenApiConfig {
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components()
                         .addSchemas("ProblemDetail", problemDetailSchema())
-                        .addResponses("BadRequestResponse", problemResponse("Bad request / validation error"))
-                        .addResponses("NotFoundResponse", problemResponse("Resource not found"))
-                        .addResponses("ConflictResponse", problemResponse("Conflict"))
-                        .addResponses("UnauthorizedResponse", problemResponse("Authentication required"))
-                        .addResponses("ForbiddenResponse", problemResponse("Access denied"))
-                        .addResponses("TooManyRequestsResponse", problemResponse("Rate limit exceeded"))
-                        .addResponses("InternalServerErrorResponse", problemResponse("Unexpected error"))
+                        .addResponses("BadRequest", problemResponse("Bad request / validation error"))
+                        .addResponses("Unauthorized", problemResponse("Authentication required"))
+                        .addResponses("Forbidden", problemResponse("Access denied"))
+                        .addResponses("NotFound", problemResponse("Resource not found"))
+                        .addResponses("Conflict", problemResponse("Conflict"))
+                        .addResponses("TooManyRequests", problemResponse("Rate limit exceeded"))
+                        .addResponses("InternalServerError", problemResponse("Unexpected error"))
                         .addSecuritySchemes("bearerAuth",
                                 new SecurityScheme()
                                         .type(SecurityScheme.Type.HTTP)
@@ -51,13 +51,13 @@ public class OpenApiConfig {
                 return;
             }
             openApi.getPaths().values().forEach(pathItem -> pathItem.readOperations().forEach(operation -> {
-                addResponseIfMissing(operation, "400", "#/components/responses/BadRequestResponse");
-                addResponseIfMissing(operation, "401", "#/components/responses/UnauthorizedResponse");
-                addResponseIfMissing(operation, "403", "#/components/responses/ForbiddenResponse");
-                addResponseIfMissing(operation, "404", "#/components/responses/NotFoundResponse");
-                addResponseIfMissing(operation, "409", "#/components/responses/ConflictResponse");
-                addResponseIfMissing(operation, "429", "#/components/responses/TooManyRequestsResponse");
-                addResponseIfMissing(operation, "500", "#/components/responses/InternalServerErrorResponse");
+                addResponseIfMissing(operation, "400", "#/components/responses/BadRequest");
+                addResponseIfMissing(operation, "401", "#/components/responses/Unauthorized");
+                addResponseIfMissing(operation, "403", "#/components/responses/Forbidden");
+                addResponseIfMissing(operation, "404", "#/components/responses/NotFound");
+                addResponseIfMissing(operation, "409", "#/components/responses/Conflict");
+                addResponseIfMissing(operation, "429", "#/components/responses/TooManyRequests");
+                addResponseIfMissing(operation, "500", "#/components/responses/InternalServerError");
             }));
         };
     }
@@ -78,6 +78,7 @@ public class OpenApiConfig {
         schema.addProperty("status", new IntegerSchema().example(404));
         schema.addProperty("detail", new StringSchema().example("Resource not found"));
         schema.addProperty("instance", new StringSchema().example("/api/resource/123"));
+        schema.additionalProperties(true);
         schema.addRequiredItem("title");
         schema.addRequiredItem("status");
         return schema;

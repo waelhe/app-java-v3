@@ -6,6 +6,7 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.media.ObjectSchema;
 import org.junit.jupiter.api.Test;
 
 class OpenApiConfigTest {
@@ -20,7 +21,7 @@ class OpenApiConfigTest {
 
         Operation operation = openAPI.getPaths().get("/api/items").getGet();
         assertThat(operation.getResponses()).containsKeys("400", "401", "403", "404", "409", "429", "500");
-        assertThat(operation.getResponses().get("404").get$ref()).isEqualTo("#/components/responses/NotFoundResponse");
+        assertThat(operation.getResponses().get("404").get$ref()).isEqualTo("#/components/responses/NotFound");
     }
 
     @Test
@@ -33,5 +34,17 @@ class OpenApiConfigTest {
         config.defaultProblemResponsesCustomizer().customise(openAPI);
 
         assertThat(operation.getResponses().get("404").getDescription()).isEqualTo("Custom");
+    }
+
+    @Test
+    void marketplaceOpenApi_registersProblemDetailSchemaAndReusableResponses() {
+        OpenAPI openApi = config.marketplaceOpenAPI();
+
+        assertThat(openApi.getComponents().getResponses()).containsKeys(
+                "BadRequest", "Unauthorized", "Forbidden", "NotFound", "Conflict", "TooManyRequests", "InternalServerError");
+
+        ObjectSchema schema = (ObjectSchema) openApi.getComponents().getSchemas().get("ProblemDetail");
+        assertThat(schema.getProperties()).containsKeys("type", "title", "status", "detail", "instance");
+        assertThat(schema.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
     }
 }
