@@ -38,7 +38,6 @@ public class GlobalExceptionHandler {
                 .map(fe -> new ErrorResponse.FieldError(fe.getField(), fe.getDefaultMessage()))
                 .toList();
         pd.setProperty("fieldErrors", fieldErrors);
-        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 
