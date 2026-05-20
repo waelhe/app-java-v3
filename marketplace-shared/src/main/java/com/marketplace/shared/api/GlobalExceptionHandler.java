@@ -100,6 +100,6 @@ public class GlobalExceptionHandler {
             }
         }
 
-        return ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, userMessage, traceId);
+        return ApiProblemDetails.fromTaxonomy(taxonomy, detail, request.getRequestURI(), userMessage, traceId);
     }
 }
