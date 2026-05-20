@@ -13,6 +13,7 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
@@ -45,6 +46,7 @@ import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -215,15 +217,16 @@ public class SecurityConfig {
                                            HttpServletRequest request ) throws IOException {
         String traceId = response.getHeader(CorrelationIdFilter.HEADER_NAME);
 
-        response.setStatus(status.value());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
+        problemDetail.setTitle(title);
+        problemDetail.setInstance(java.net.URI.create(request.getRequestURI()));
+        if (traceId != null && !traceId.isBlank()) {
+            problemDetail.setProperty("traceId", traceId);
+        }
+
         response.setContentType("application/problem+json");
-        String json = String.format("{\"type\":\"about:blank\",\"title\":\"%s\",\"status\":%d,\"detail\":\"%s\",\"instance\":\"%s\"%s}",
-                escapeJson(title),
-                status.value(),
-                escapeJson(detail),
-                escapeJson(request.getRequestURI()),
-                traceId != null && !traceId.isBlank() ? ",\"traceId\":\"" + escapeJson(traceId) + "\"" : "");
-        response.getWriter().write(json);
+        response.setStatus(status.value());
+        new ObjectMapper().writeValue(response.getOutputStream(), problemDetail);
     }
 
     @Bean
