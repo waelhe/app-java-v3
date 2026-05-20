@@ -257,7 +257,6 @@ public class SecurityConfig {
 
     @Bean
     JWKSource<SecurityContext> jwkSource(
-            MarketplaceProperties properties,
             ResourceLoader resourceLoader
     ) throws Exception {
         var ks = properties.security().jwt().keystore();
@@ -304,9 +303,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    AuthorizationServerSettings authorizationServerSettings(
-            MarketplaceProperties properties
-    ) {
+    AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder()
                 .issuer(properties.security().authServer().issuer())
                 .build();
