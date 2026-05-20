@@ -100,3 +100,16 @@ For domain/runtime failures resolved by the central GraphQL exception resolver, 
 
 - The local API DTO formerly named `ErrorResponse` has been renamed to `ApiErrorPayload` to avoid collisions with Spring's `org.springframework.web.ErrorResponse`.
 - Do not introduce new local types named `ErrorResponse`; use `ApiErrorPayload` for payload DTOs and Spring `ErrorResponse` for framework contracts.
+
+## Backward compatibility CI gate
+
+OpenAPI compatibility is enforced in CI by comparing the current branch spec against the latest release tag baseline (`/v3/api-docs`).
+
+Breaking changes fail CI, including:
+
+- endpoint/path removal,
+- request or response schema narrowing,
+- response status code removal/change,
+- media type removal/change.
+
+Temporary exceptions are only allowed when documented in `.ci/openapi-compat-allowlist.yml` with a ticket reference, reason, and expiry date.

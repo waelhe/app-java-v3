@@ -64,3 +64,14 @@ For urgent CVE/runtime fixes:
 - Platform maintainers own baseline decisions.
 - Module owners validate domain-specific impact.
 - Release owner confirms rollout/rollback readiness prior to production deployment.
+
+## 9) API compatibility policy
+
+- Every pull request must pass the OpenAPI backward compatibility gate in CI.
+- Baseline source: latest release tag unless `OPENAPI_BASELINE_TAG` is explicitly provided.
+- CI must fail for backward-incompatible changes (endpoint deletion, schema narrowing, status code changes, media type changes).
+- Exceptions are temporary and must be documented in `.ci/openapi-compat-allowlist.yml` with:
+  - linked ticket/approval,
+  - explicit rationale,
+  - expiry/removal date.
+- Non-expired exceptions must be reviewed during release readiness checks.

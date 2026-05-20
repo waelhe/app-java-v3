@@ -53,6 +53,12 @@ jobs:
           distribution: temurin
           cache: maven
 
+      - name: Fetch git tags for OpenAPI baseline
+        run: git fetch --force --tags
+
+      - name: OpenAPI backward compatibility gate
+        run: ./.ci/check-openapi-compat.sh
+
       - name: Run Maven verify (unit + integration tests)
         env:
           SPRING_PROFILES_ACTIVE: test
