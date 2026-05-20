@@ -51,6 +51,8 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.detail").value("Authentication required"))
                 .andExpect(jsonPath("$.instance").value("/api/v1/bookings"))
+                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(header().exists("X-Correlation-ID"));
     }
@@ -65,6 +67,8 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.detail").value("Access denied"))
                 .andExpect(jsonPath("$.instance").value("/api/v1/admin/system"))
+                .andExpect(jsonPath("$.errorCode").value("AUTHZ-001"))
+                .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(header().exists("X-Correlation-ID"));
     }

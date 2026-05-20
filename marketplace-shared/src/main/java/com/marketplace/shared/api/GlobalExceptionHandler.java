@@ -87,15 +87,6 @@ public class GlobalExceptionHandler {
     }
 
     private ProblemDetail problem(ApiErrorTaxonomy taxonomy, String detail, HttpServletRequest request, String userMessage) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(taxonomy.statusCode(), detail);
-        pd.setType(URI.create(taxonomy.typeUri()));
-        pd.setTitle(taxonomy.title());
-        pd.setInstance(URI.create(request.getRequestURI()));
-        pd.setProperty("errorCode", taxonomy.errorCode());
-        pd.setProperty("category", taxonomy.category());
-        if (userMessage != null && !userMessage.isBlank()) {
-            pd.setProperty("userMessage", userMessage);
-        }
-        return pd;
+        return ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, userMessage, null);
     }
 }
