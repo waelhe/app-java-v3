@@ -78,7 +78,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CallNotPermittedException.class)
     public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
-        return problem(ApiErrorTaxonomy.INTERNAL,
+        return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
                 "Service temporarily unavailable. Please try again later.", request, "Service currently degraded");
     }
 
