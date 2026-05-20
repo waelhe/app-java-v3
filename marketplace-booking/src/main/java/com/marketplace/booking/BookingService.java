@@ -5,6 +5,7 @@ import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -86,7 +87,7 @@ public class BookingService implements BookingSpi {
 
     /**
      * Accepts a status string from the admin API, parses it to BookingStatus,
-     * and returns a page of BookingSummary. Wraps IllegalArgumentException
+     * and returns a page of BookingSummary. Wraps BadRequestException
      * to prevent leaking internal enum/package details.
      */
     @Transactional(readOnly = true)
@@ -95,7 +96,7 @@ public class BookingService implements BookingSpi {
             BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase());
             return listByStatusSummary(bookingStatus, pageable);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid booking status: " + status);
+            throw new BadRequestException("Invalid booking status: " + status);
         }
     }
 

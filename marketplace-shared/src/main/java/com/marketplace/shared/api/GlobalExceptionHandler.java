@@ -72,8 +72,8 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
+    @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class})
+    public ProblemDetail handleApiProblemDetail(ApiProblemDetailException ex, HttpServletRequest request) {
         ProblemDetail pd = ex.getBody();
         pd.setInstance(URI.create(request.getRequestURI()));
         return pd;
@@ -105,21 +105,6 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "conflict"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
-        pd.setType(URI.create(ERROR_TYPE_BASE + "bad-request"));
-        pd.setInstance(URI.create(request.getRequestURI()));
-        return pd;
-    }
 
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
