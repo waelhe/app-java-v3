@@ -76,6 +76,21 @@ Deliver backend features through small PRs while enforcing compatibility with Sp
 - Adds/updates authorization rules if exposing endpoints.
 - Updates README/plan when run behavior changes.
 
+### DoD Thresholds
+- **Testing**
+  - Unit/integration pass rate = **100%**.
+  - Minimum coverage for critical units = **80%** (or team-approved policy threshold).
+- **API Contract**
+  - **0** contract drift failures.
+  - No breaking changes without documented approval.
+- **Security**
+  - **0** non-exempt Critical/High vulnerabilities.
+- **Build**
+  - Maven Enforcer pass.
+  - Dependency convergence pass.
+- **Operations**
+  - Readiness/liveness checks must pass in **staging** before release.
+
 ## Standard Verification Commands
 ```bash
 mvn clean verify
