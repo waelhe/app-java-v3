@@ -13,6 +13,7 @@ public enum ApiErrorTaxonomy {
     NOT_FOUND("NF-001", "not-found", HttpStatus.NOT_FOUND, "Not Found", "https://marketplace.com/errors/not-found"),
     CONFLICT("CONFLICT-001", "conflict", HttpStatus.CONFLICT, "Conflict", "https://marketplace.com/errors/conflict"),
     RATE_LIMIT("RL-001", "rate-limit", HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", "https://marketplace.com/errors/rate-limited"),
+    SERVICE_UNAVAILABLE("SU-001", "availability", HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable", "https://marketplace.com/errors/service-unavailable"),
     INTERNAL("INT-001", "internal", HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "https://marketplace.com/errors/internal-error");
 
     private final String errorCode;
