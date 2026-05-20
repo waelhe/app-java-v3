@@ -1,16 +1,43 @@
 package com.marketplace.shared.api;
 
+import java.net.URI;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.HttpStatusCode;
+
 /**
  * Thrown when a requested resource is not found.
- * Maps to HTTP 404 via {@link GlobalExceptionHandler}.
+ * Produces HTTP 404 as RFC 7807 {@link ProblemDetail}.
  */
-public class ResourceNotFoundException extends RuntimeException {
+public class ResourceNotFoundException extends RuntimeException implements org.springframework.web.ErrorResponse {
+
+    private static final String ERROR_TYPE = "https://marketplace.com/errors/not-found";
+    private final ProblemDetail body;
 
     public ResourceNotFoundException(String message) {
         super(message);
+        this.body = createBody(message);
     }
 
     public ResourceNotFoundException(String resourceType, Object id) {
-        super(resourceType + " not found: " + id);
+        this(resourceType + " not found: " + id);
+    }
+
+    @Override
+    public HttpStatusCode getStatusCode() {
+        return HttpStatus.NOT_FOUND;
+    }
+
+    @Override
+    public ProblemDetail getBody() {
+        return body;
+    }
+
+    private static ProblemDetail createBody(String detail) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, detail);
+        problemDetail.setType(URI.create(ERROR_TYPE));
+        problemDetail.setTitle("Not Found");
+        return problemDetail;
     }
 }
