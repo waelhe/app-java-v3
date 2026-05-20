@@ -46,6 +46,14 @@ Migration files:
 Details:
 - 
 
+
+## Secrets & config hardening (JIRA-SEC-02)
+- [ ] No secrets were added to git history or tracked files
+- [ ] Secret injection uses env vars or secret manager only
+- [ ] `application*.yml` reviewed for sensitive defaults
+- [ ] Production-safe config verified (actuator exposure, management port, log redaction)
+- [ ] CI secret scan (`gitleaks`) passes with high/critical fail policy
+
 ## Testing executed
 - [ ] `mvn clean verify`
 - [ ] `mvn -pl marketplace-app -am test`
