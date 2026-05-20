@@ -44,7 +44,8 @@ class OpenApiConfigTest {
                 "BadRequest", "Unauthorized", "Forbidden", "NotFound", "Conflict", "TooManyRequests", "InternalServerError");
 
         ObjectSchema schema = (ObjectSchema) openApi.getComponents().getSchemas().get("ProblemDetail");
-        assertThat(schema.getProperties()).containsKeys("type", "title", "status", "detail", "instance");
+        assertThat(schema.getProperties()).containsKeys("type", "title", "status", "detail", "instance", "errorCode", "category", "userMessage");
+        assertThat(schema.getExtensions()).containsEntry("x-error-taxonomy", "docs/api/error-codes.md");
         assertThat(schema.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
     }
 }

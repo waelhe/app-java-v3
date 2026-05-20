@@ -7,19 +7,18 @@ import java.util.List;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.core.MethodParameter;
 
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
     @Test
-    void handleValidation_returnsProblemDetailWithoutTimestampAndWithFieldErrors() throws NoSuchMethodException {
+    void handleValidation_returnsProblemDetailWithFieldErrorsAndTaxonomy() throws NoSuchMethodException {
         BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "request");
         bindingResult.addError(new FieldError("request", "email", "must be a well-formed email address"));
 
@@ -33,25 +32,26 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
         assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
         assertThat(response.getInstance()).isEqualTo(URI.create("/api/users"));
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
         assertThat(response.getProperties()).doesNotContainKey("timestamp");
         assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
                 List.of(new ApiErrorPayload.FieldError("email", "must be a well-formed email address")));
     }
 
-
-
     @Test
-    void handleResourceNotFound_usesExceptionProblemDetailContract() {
+    void handleApiProblemDetail_preservesDomainExceptionTaxonomy() {
         ResourceNotFoundException ex = new ResourceNotFoundException("Listing", 123L);
 
         HttpServletRequest request = new StubHttpServletRequest("/api/listings/123");
-        ProblemDetail response = handler.handleResourceNotFound(ex, request);
+        var response = handler.handleApiProblemDetail(ex, request);
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
         assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/not-found"));
         assertThat(response.getTitle()).isEqualTo("Not Found");
         assertThat(response.getInstance()).isEqualTo(URI.create("/api/listings/123"));
-        assertThat(response.getProperties()).isNullOrEmpty();
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("NF-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("not-found");
     }
 
     static class TestController {
