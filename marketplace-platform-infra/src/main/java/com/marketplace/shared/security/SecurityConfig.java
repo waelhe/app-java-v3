@@ -1,5 +1,7 @@
 package com.marketplace.shared.security;
 
+import com.marketplace.shared.api.ApiErrorTaxonomy;
+import com.marketplace.shared.api.ApiProblemDetails;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
@@ -12,7 +14,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
@@ -190,8 +191,7 @@ public class SecurityConfig {
     AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
         return (request, response, ex) -> writeProblemDetail(
                 response,
-                HttpStatus.UNAUTHORIZED,
-                "Unauthorized",
+                ApiErrorTaxonomy.AUTHN,
                 "Authentication required",
                 request
         );
@@ -201,27 +201,30 @@ public class SecurityConfig {
     AccessDeniedHandler problemDetailAccessDeniedHandler() {
         return (request, response, ex) -> writeProblemDetail(
                 response,
-                HttpStatus.FORBIDDEN,
-                "Forbidden",
+                ApiErrorTaxonomy.AUTHZ,
                 "Access denied",
                 request
         );
     }
 
     private static void writeProblemDetail(HttpServletResponse response,
-                                           HttpStatus status,
-                                           String title,
+                                           ApiErrorTaxonomy taxonomy,
                                            String detail,
                                            HttpServletRequest request ) throws IOException {
         String traceId = response.getHeader(CorrelationIdFilter.HEADER_NAME);
 
-        response.setStatus(status.value());
+        response.setStatus(taxonomy.statusCode().value());
         response.setContentType("application/problem+json");
-        String json = String.format("{\"type\":\"about:blank\",\"title\":\"%s\",\"status\":%d,\"detail\":\"%s\",\"instance\":\"%s\"%s}",
-                escapeJson(title),
-                status.value(),
-                escapeJson(detail),
-                escapeJson(request.getRequestURI()),
+
+        var problemDetail = ApiProblemDetails.fromTaxonomy(taxonomy, detail, request, null, traceId);
+        String json = String.format("{\"type\":\"%s\",\"title\":\"%s\",\"status\":%d,\"detail\":\"%s\",\"instance\":\"%s\",\"errorCode\":\"%s\",\"category\":\"%s\"%s}",
+                escapeJson(String.valueOf(problemDetail.getType())),
+                escapeJson(problemDetail.getTitle()),
+                problemDetail.getStatus(),
+                escapeJson(problemDetail.getDetail()),
+                escapeJson(String.valueOf(problemDetail.getInstance())),
+                escapeJson(String.valueOf(problemDetail.getProperties().get("errorCode"))),
+                escapeJson(String.valueOf(problemDetail.getProperties().get("category"))),
                 traceId != null && !traceId.isBlank() ? ",\"traceId\":\"" + escapeJson(traceId) + "\"" : "");
         response.getWriter().write(json);
     }
@@ -255,6 +258,16 @@ public class SecurityConfig {
     OAuth2AuthorizationConsentService authorizationConsentService(JdbcTemplate jdbcTemplate,
                                                                   RegisteredClientRepository registeredClientRepository) {
         return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
+    }
+
+
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 
     @Bean
@@ -333,7 +346,5 @@ public class SecurityConfig {
         return value == null || value.isBlank();
     }
 
-    private static String escapeJson(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
+
 }
