@@ -1,0 +1,3 @@
+# Documented temporary exceptions for backward-incompatible OpenAPI changes.
+# Each entry must include a ticket, reason, and expiry date (YYYY-MM-DD).
+exceptions: []
