@@ -34,13 +34,15 @@ spring:
             user-info-uri: http://localhost/oauth2/userinfo
             user-name-attribute: sub
             jwk-set-uri: http://localhost/oauth2/jwks
-      resourceserver:
-        jwt:
-          jwk-set-uri: http://localhost/oauth2/jwks
 
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+  security:
+    auth-server:
+      issuer: http://localhost:8080
+    jwt:
+      audience: marketplace-api
 
 management:
   otlp:

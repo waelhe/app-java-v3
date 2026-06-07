@@ -217,6 +217,7 @@ marketplace:
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
     jwt:
+      audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
         path: ${JWT_KEYSTORE_PATH:}
         password: ${JWT_KEYSTORE_PASSWORD:}

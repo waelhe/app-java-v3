@@ -40,14 +40,6 @@ spring:
       republish-outstanding-events-on-restart: true
 
 
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${JWT_ISSUER_URI}
-          audiences:
-            - marketplace-api
-
   data:
     redis:
       host: ${REDIS_HOST}
@@ -124,6 +116,7 @@ marketplace:
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER}
     jwt:
+      audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
         path: ${JWT_KEYSTORE_PATH}
         password: ${JWT_KEYSTORE_PASSWORD}
