@@ -8,6 +8,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 
 import org.instancio.Instancio;
 import java.security.Principal;
@@ -17,6 +19,7 @@ import java.util.UUID;
 import static org.instancio.Select.field;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -57,6 +60,37 @@ class MessagingWebSocketControllerTest {
 
         assertThat(response.id()).isEqualTo(msg.getId());
         assertThat(response.content()).isEqualTo("hello");
+    }
+
+
+    @Test
+    void rejectsMissingPrincipal() {
+        UUID conversationId = Instancio.create(UUID.class);
+
+        assertThatThrownBy(() -> controller.sendMessage(conversationId, Map.of("content", "hello"), null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Authenticated WebSocket principal");
+    }
+
+    @Test
+    void rejectsUnauthenticatedPrincipal() {
+        UUID conversationId = Instancio.create(UUID.class);
+        TestingAuthenticationToken unauthenticated = new TestingAuthenticationToken(UUID.randomUUID().toString(), "n/a");
+        unauthenticated.setAuthenticated(false);
+
+        assertThatThrownBy(() -> controller.sendMessage(conversationId, Map.of("content", "hello"), unauthenticated))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Authenticated WebSocket principal");
+    }
+
+    @Test
+    void rejectsPrincipalWithoutUuidName() {
+        UUID conversationId = Instancio.create(UUID.class);
+        when(principal.getName()).thenReturn("not-a-uuid");
+
+        assertThatThrownBy(() -> controller.sendMessage(conversationId, Map.of("content", "hello"), principal))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("UUID subject");
     }
 
     @Test

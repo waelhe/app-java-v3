@@ -9,17 +9,20 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.converter.RsaKeyConverters;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -32,6 +35,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -66,20 +70,25 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 @Configuration
+@EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
 public class SecurityConfig {
 
     private final MarketplaceProperties properties;
     private final ObjectMapper objectMapper;
+    private final OAuth2ResourceServerProperties resourceServerProperties;
 
     public SecurityConfig(MarketplaceProperties properties,
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper,
+                          OAuth2ResourceServerProperties resourceServerProperties) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.resourceServerProperties = resourceServerProperties;
     }
 
     @Bean
@@ -305,25 +314,89 @@ public class SecurityConfig {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-        NimbusJwtDecoder decoder = (NimbusJwtDecoder) OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
-        String issuer = properties.security().authServer().issuer();
-        String audience = properties.security().jwt().audience();
+    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) throws IOException {
+        OAuth2ResourceServerProperties.Jwt jwtProperties = resourceServerProperties.getJwt();
+        NimbusJwtDecoder decoder = buildResourceServerJwtDecoder(jwkSource, jwtProperties);
 
-        OAuth2TokenValidator<Jwt> issuerAndTimestampValidator = JwtValidators.createDefaultWithIssuer(issuer);
-        OAuth2TokenValidator<Jwt> audienceValidator = jwt -> jwt.getAudience().contains(audience)
+        List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
+        String issuer = firstNonBlank(jwtProperties.getIssuerUri(), properties.security().authServer().issuer());
+        validators.add(JwtValidators.createDefaultWithIssuer(issuer));
+
+        List<String> audiences = jwtProperties.getAudiences().isEmpty()
+                ? List.of(properties.security().jwt().audience())
+                : jwtProperties.getAudiences();
+        validators.add(requiredAudiencesValidator(audiences));
+
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
+        return decoder;
+    }
+
+    private NimbusJwtDecoder buildResourceServerJwtDecoder(JWKSource<SecurityContext> jwkSource,
+                                                           OAuth2ResourceServerProperties.Jwt jwtProperties) throws IOException {
+        if (jwtProperties.getPublicKeyLocation() != null) {
+            Resource publicKeyLocation = jwtProperties.getPublicKeyLocation();
+            try (InputStream inputStream = publicKeyLocation.getInputStream()) {
+                return withConfiguredAlgorithms(NimbusJwtDecoder.withPublicKey(RsaKeyConverters.x509().convert(inputStream)),
+                        jwtProperties.getJwsAlgorithms()).build();
+            }
+        }
+
+        if (!isBlank(jwtProperties.getJwkSetUri())) {
+            return withConfiguredAlgorithms(NimbusJwtDecoder.withJwkSetUri(jwtProperties.getJwkSetUri()),
+                    jwtProperties.getJwsAlgorithms()).build();
+        }
+
+        if (!isBlank(jwtProperties.getIssuerUri())) {
+            return withConfiguredAlgorithms(NimbusJwtDecoder.withIssuerLocation(jwtProperties.getIssuerUri()),
+                    jwtProperties.getJwsAlgorithms()).build();
+        }
+
+        return withConfiguredAlgorithms(NimbusJwtDecoder.withJwkSource(jwkSource), jwtProperties.getJwsAlgorithms()).build();
+    }
+
+    private static NimbusJwtDecoder.PublicKeyJwtDecoderBuilder withConfiguredAlgorithms(
+            NimbusJwtDecoder.PublicKeyJwtDecoderBuilder builder,
+            List<String> jwsAlgorithms) {
+        if (!jwsAlgorithms.isEmpty()) {
+            builder.signatureAlgorithm(SignatureAlgorithm.from(jwsAlgorithms.getFirst()));
+        }
+        return builder;
+    }
+
+    private static NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder withConfiguredAlgorithms(
+            NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder builder,
+            List<String> jwsAlgorithms) {
+        if (!jwsAlgorithms.isEmpty()) {
+            builder.jwsAlgorithms(algorithms -> jwsAlgorithms.stream()
+                    .map(SignatureAlgorithm::from)
+                    .forEach(algorithms::add));
+        }
+        return builder;
+    }
+
+    private static NimbusJwtDecoder.JwkSourceJwtDecoderBuilder withConfiguredAlgorithms(
+            NimbusJwtDecoder.JwkSourceJwtDecoderBuilder builder,
+            List<String> jwsAlgorithms) {
+        if (!jwsAlgorithms.isEmpty()) {
+            builder.jwsAlgorithms(algorithms -> jwsAlgorithms.stream()
+                    .map(SignatureAlgorithm::from)
+                    .forEach(algorithms::add));
+        }
+        return builder;
+    }
+
+    private static OAuth2TokenValidator<Jwt> requiredAudiencesValidator(List<String> audiences) {
+        return jwt -> jwt.getAudience() != null && jwt.getAudience().stream().anyMatch(audiences::contains)
                 ? OAuth2TokenValidatorResult.success()
                 : OAuth2TokenValidatorResult.failure(new OAuth2Error(
                 "invalid_token",
                 "The required audience is missing",
                 null
         ));
+    }
 
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuerAndTimestampValidator,
-                audienceValidator
-        ));
-        return decoder;
+    private static String firstNonBlank(String candidate, String fallback) {
+        return isBlank(candidate) ? fallback : candidate;
     }
 
     @Bean
@@ -350,7 +423,7 @@ public class SecurityConfig {
         }
     }
 
-    private boolean isBlank(String value) {
+    private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
