@@ -2,28 +2,38 @@ package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.CatalogService;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureHttpGraphQlTester;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.util.UUID;
 
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(properties = "marketplace.graphql.errors.include-trace-id=true")
-@AutoConfigureHttpGraphQlTester
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "marketplace.graphql.errors.include-trace-id=true")
 @ActiveProfiles("test")
 class GraphQlErrorIntegrationTest {
 
-    @Autowired
+    @LocalServerPort
+    private int port;
+
     private HttpGraphQlTester graphQlTester;
 
     @MockitoBean
     private CatalogService catalogService;
+
+    @BeforeEach
+    void setUpGraphQlTester() {
+        graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
+                        .baseUrl("http://localhost:" + port + "/graphql"))
+                .build();
+    }
 
     @Test
     void shouldMapNotFoundError() {

@@ -19,6 +19,15 @@ spring:
   flyway:
     clean-disabled: true
 
+  graphql:
+    graphiql:
+      enabled: false
+    schema:
+      introspection:
+        enabled: false
+      inspection:
+        enabled: false
+
   quartz:
     jdbc:
       initialize-schema: never
