@@ -5,6 +5,7 @@ import java.util.UUID;
 public record ProviderSummary(
         UUID id,
         String displayName,
-        String status
+        String status,
+        UUID userId
 ) {
 }

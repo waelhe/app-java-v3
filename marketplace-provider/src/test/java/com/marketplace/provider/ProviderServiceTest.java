@@ -1,8 +1,10 @@
 package com.marketplace.provider;
 
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.security.core.Authentication;
 
 import java.util.UUID;
 
@@ -23,7 +25,7 @@ class ProviderServiceTest {
                 .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
-        ProviderService service = new ProviderService(repository);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
         ProviderProfile verified = service.verify(profile.getId());
 
         assertThat(verified.getStatus()).isEqualTo(ProviderStatus.VERIFIED);
@@ -39,7 +41,7 @@ class ProviderServiceTest {
                 .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
-        ProviderService service = new ProviderService(repository);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
         ProviderProfile suspended = service.suspend(profile.getId());
 
         assertThat(suspended.getStatus()).isEqualTo(ProviderStatus.SUSPENDED);
@@ -48,7 +50,7 @@ class ProviderServiceTest {
     @Test
     void getByIdThrowsWhenMissing() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
         UUID unknownId = Instancio.create(UUID.class);
         when(repository.findById(unknownId)).thenReturn(java.util.Optional.empty());
 
@@ -59,20 +61,22 @@ class ProviderServiceTest {
     @Test
     void create_savesAndReturnsProfile() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        UUID userId = UUID.randomUUID();
         when(repository.save(any(ProviderProfile.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ProviderProfile result = service.create("New Provider", "desc");
+        ProviderProfile result = service.create("New Provider", "desc", userId);
 
         assertThat(result.getDisplayName()).isEqualTo("New Provider");
         assertThat(result.getBio()).isEqualTo("desc");
         assertThat(result.getStatus()).isEqualTo(ProviderStatus.PENDING);
+        assertThat(result.getUserId()).isEqualTo(userId);
     }
 
     @Test
     void getById_returnsProfileWhenFound() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
         UUID id = Instancio.create(UUID.class);
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
                 .set(field(ProviderProfile::getId), id)
@@ -88,16 +92,21 @@ class ProviderServiceTest {
     @Test
     void update_changesDisplayNameAndBio() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        Authentication authentication = mock(Authentication.class);
+        ProviderService service = new ProviderService(repository, currentUserProvider);
         UUID id = Instancio.create(UUID.class);
+        UUID userId = UUID.randomUUID();
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
                 .set(field(ProviderProfile::getId), id)
                 .set(field(ProviderProfile::getDisplayName), "Old")
                 .set(field(ProviderProfile::getBio), "old bio")
+                .set(field(ProviderProfile::getUserId), userId)
                 .create();
         when(repository.findById(id)).thenReturn(java.util.Optional.of(profile));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
 
-        ProviderProfile result = service.update(id, "New Name", "new bio");
+        ProviderProfile result = service.update(id, "New Name", "new bio", authentication);
 
         assertThat(result.getDisplayName()).isEqualTo("New Name");
         assertThat(result.getBio()).isEqualTo("new bio");

@@ -1,5 +1,6 @@
 package com.marketplace.provider;
 
+import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,11 +29,11 @@ class ProviderStatusTest {
 
     @Test
     void pending_rejectsSameStatus() {
-        assertThrows(IllegalStateException.class, () -> ProviderStatus.PENDING.validateTransitionTo(ProviderStatus.PENDING));
+        assertThrows(ConflictException.class, () -> ProviderStatus.PENDING.validateTransitionTo(ProviderStatus.PENDING));
     }
 
     @Test
     void verified_rejectsPending() {
-        assertThrows(IllegalStateException.class, () -> ProviderStatus.VERIFIED.validateTransitionTo(ProviderStatus.PENDING));
+        assertThrows(ConflictException.class, () -> ProviderStatus.VERIFIED.validateTransitionTo(ProviderStatus.PENDING));
     }
 }

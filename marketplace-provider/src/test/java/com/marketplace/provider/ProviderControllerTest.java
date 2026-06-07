@@ -1,5 +1,6 @@
 package com.marketplace.provider;
 
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -7,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 
 import java.util.UUID;
 
@@ -23,19 +25,25 @@ class ProviderControllerTest {
     @Mock
     private ProviderMapper providerMapper;
 
+    @Mock
+    private CurrentUserProvider currentUserProvider;
+
     @InjectMocks
     private ProviderController controller;
 
     @Test
     void create_returnsProvider() {
         var request = new ProviderRequest("John", "Bio");
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        Authentication authentication = mock(Authentication.class);
+        UUID userId = UUID.randomUUID();
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", userId);
         ProviderResponse response = new ProviderResponse(UUID.randomUUID(), "John", "Bio", ProviderStatus.PENDING, null, null);
 
-        when(providerService.create("John", "Bio")).thenReturn(profile);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(providerService.create("John", "Bio", userId)).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);
 
-        ResponseEntity<ProviderResponse> result = controller.create(request);
+        ResponseEntity<ProviderResponse> result = controller.create(request, authentication);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals("John", result.getBody().displayName());
@@ -44,7 +52,7 @@ class ProviderControllerTest {
     @Test
     void getById_returnsProvider() {
         UUID id = UUID.randomUUID();
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
         ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.PENDING, null, null);
 
         when(providerService.getById(id)).thenReturn(profile);
@@ -60,13 +68,14 @@ class ProviderControllerTest {
     void update_returnsUpdated() {
         UUID id = UUID.randomUUID();
         var request = new ProviderRequest("Jane", "Updated");
-        ProviderProfile profile = ProviderProfile.create("Jane", "Updated");
+        Authentication authentication = mock(Authentication.class);
+        ProviderProfile profile = ProviderProfile.create("Jane", "Updated", UUID.randomUUID());
         ProviderResponse response = new ProviderResponse(id, "Jane", "Updated", ProviderStatus.PENDING, null, null);
 
-        when(providerService.update(id, "Jane", "Updated")).thenReturn(profile);
+        when(providerService.update(eq(id), eq("Jane"), eq("Updated"), any(Authentication.class))).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);
 
-        ResponseEntity<ProviderResponse> result = controller.update(id, request);
+        ResponseEntity<ProviderResponse> result = controller.update(id, request, authentication);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals("Jane", result.getBody().displayName());
@@ -75,7 +84,7 @@ class ProviderControllerTest {
     @Test
     void verify_returnsVerified() {
         UUID id = UUID.randomUUID();
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
         profile.verify();
         ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.VERIFIED, null, null);
 
@@ -91,7 +100,7 @@ class ProviderControllerTest {
     @Test
     void suspend_returnsSuspended() {
         UUID id = UUID.randomUUID();
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
         profile.suspend();
         ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.SUSPENDED, null, null);
 

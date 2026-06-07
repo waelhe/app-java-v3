@@ -26,7 +26,8 @@ class ProviderLookupAdapterTest {
 
     @Test
     void findById_returnsSummary() {
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        UUID userId = UUID.randomUUID();
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", userId);
         UUID id = profile.getId();
         when(repository.findById(id)).thenReturn(Optional.of(profile));
 
@@ -36,6 +37,7 @@ class ProviderLookupAdapterTest {
         assertEquals(id, result.get().id());
         assertEquals("John", result.get().displayName());
         assertEquals("PENDING", result.get().status());
+        assertEquals(userId, result.get().userId());
     }
 
     @Test
