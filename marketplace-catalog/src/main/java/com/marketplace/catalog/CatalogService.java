@@ -8,6 +8,7 @@ import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.SearchCriteria;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.context.ApplicationEventPublisher;
@@ -41,15 +42,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final CurrentUserProvider currentUserProvider;
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProviderLookupPort providerLookupPort;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
                           ProviderNameResolver providerNameResolver,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          ProviderLookupPort providerLookupPort) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
+        this.providerLookupPort = providerLookupPort;
     }
 
     @Override
@@ -183,9 +187,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
-        if (!listing.getProviderId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
-            throw new AccessDeniedException("You do not own this listing");
-        }
+        if (currentUserProvider.isAdmin(authentication)) return;
+        providerLookupPort.findById(listing.getProviderId())
+                .filter(provider -> provider.userId() != null && provider.userId().equals(currentUserId))
+                .orElseThrow(() -> new AccessDeniedException("You do not own this listing"));
     }
 
     /**

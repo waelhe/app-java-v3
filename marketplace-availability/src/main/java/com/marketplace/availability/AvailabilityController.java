@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ApiConstants;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -23,6 +24,7 @@ public class AvailabilityController {
     }
 
     @PostMapping("/providers/{providerId}/availability/slots")
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public ResponseEntity<AvailabilitySlot> createSlot(@PathVariable UUID providerId,
                                                        @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startsAt,
                                                        @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endsAt) {
@@ -37,6 +39,7 @@ public class AvailabilityController {
     }
 
     @PostMapping("/providers/{providerId}/availability/rules")
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public ResponseEntity<ProviderAvailabilityRule> createRule(@PathVariable UUID providerId,
                                                                @RequestParam DayOfWeek dayOfWeek,
                                                                @RequestParam LocalTime startTime,
@@ -45,6 +48,7 @@ public class AvailabilityController {
     }
 
     @PostMapping("/providers/{providerId}/time-off")
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public ResponseEntity<ProviderTimeOff> createTimeOff(@PathVariable UUID providerId,
                                                          @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startsAt,
                                                          @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endsAt) {

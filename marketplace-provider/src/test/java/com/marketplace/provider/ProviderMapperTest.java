@@ -13,7 +13,7 @@ class ProviderMapperTest {
 
     @Test
     void toResponse_mapsAllFields() {
-        ProviderProfile profile = ProviderProfile.create("John", "Bio");
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
 
         ProviderResponse response = mapper.toResponse(profile);
 

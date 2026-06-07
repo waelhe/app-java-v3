@@ -29,17 +29,21 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "status", nullable = false, length = 30)
     private ProviderStatus status;
 
+    @Column(name = "user_id")
+    private UUID userId;
+
     protected ProviderProfile() {}
 
-    private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status) {
+    private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status, UUID userId) {
         this.id = id;
         this.displayName = displayName;
         this.bio = bio;
         this.status = status;
+        this.userId = userId;
     }
 
-    public static ProviderProfile create(String displayName, String bio) {
-        return new ProviderProfile(UUID.randomUUID(), displayName, bio, ProviderStatus.PENDING);
+    public static ProviderProfile create(String displayName, String bio, UUID userId) {
+        return new ProviderProfile(UUID.randomUUID(), displayName, bio, ProviderStatus.PENDING, userId);
     }
 
     @Override
@@ -57,6 +61,10 @@ public class ProviderProfile extends BaseEntity {
 
     public ProviderStatus getStatus() {
         return status;
+    }
+
+    public UUID getUserId() {
+        return userId;
     }
 
     public void update(String newDisplayName, String newBio) {
