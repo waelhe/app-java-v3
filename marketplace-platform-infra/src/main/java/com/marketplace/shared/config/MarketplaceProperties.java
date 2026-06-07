@@ -27,7 +27,10 @@ public record MarketplaceProperties(
         Jwt jwt,
         AuthServer authServer
     ) {
-        public record Jwt(KeyStore keystore) {
+        public record Jwt(
+            KeyStore keystore,
+            @DefaultValue("marketplace-api") String audience
+        ) {
             public record KeyStore(
                 @DefaultValue("") String path,
                 @DefaultValue("") String password,
