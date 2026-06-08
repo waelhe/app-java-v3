@@ -17,7 +17,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +41,9 @@ class AdminControllerTest {
 
     @Mock
     private PaymentsSpi paymentsSpi;
+
+    @Mock
+    private RevisionService revisionService;
 
     @InjectMocks
     private AdminController controller;
@@ -113,5 +119,42 @@ class AdminControllerTest {
         ResponseEntity<com.marketplace.shared.api.PaymentSummary> result = controller.getPaymentIntent(id);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void listAuditedEntities_returnsEntityNames() {
+        Set<String> expected = Set.of("User", "Booking");
+        try (var mockedStatic = mockStatic(RevisionService.class)) {
+            mockedStatic.when(RevisionService::getEntityNames).thenReturn(expected);
+
+            ResponseEntity<List<String>> result = controller.listAuditedEntities();
+
+            assertEquals(HttpStatus.OK, result.getStatusCode());
+            assertTrue(result.getBody().containsAll(expected));
+        }
+    }
+
+    @Test
+    void getRevisions_returnsRevisionList() {
+        UUID id = UUID.randomUUID();
+        var entry = new RevisionService.RevisionEntry(1, Instant.now(), "INSERT", Map.of("name", "test"));
+        when(revisionService.getRevisions("User", id)).thenReturn(List.of(entry));
+
+        ResponseEntity<List<RevisionService.RevisionEntry>> result = controller.getRevisions("User", id);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(1, result.getBody().size());
+        assertEquals("INSERT", result.getBody().getFirst().revisionType());
+    }
+
+    @Test
+    void getRevisions_returnsEmptyList() {
+        UUID id = UUID.randomUUID();
+        when(revisionService.getRevisions("User", id)).thenReturn(List.of());
+
+        ResponseEntity<List<RevisionService.RevisionEntry>> result = controller.getRevisions("User", id);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertTrue(result.getBody().isEmpty());
     }
 }

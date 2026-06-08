@@ -18,6 +18,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -30,15 +32,18 @@ public class AdminController {
     private final CatalogSpi catalogSpi;
     private final BookingSpi bookingSpi;
     private final PaymentsSpi paymentsSpi;
+    private final RevisionService revisionService;
 
     public AdminController(IdentitySpi identitySpi,
                            CatalogSpi catalogSpi,
                            BookingSpi bookingSpi,
-                           PaymentsSpi paymentsSpi) {
+                           PaymentsSpi paymentsSpi,
+                           RevisionService revisionService) {
         this.identitySpi = identitySpi;
         this.catalogSpi = catalogSpi;
         this.bookingSpi = bookingSpi;
         this.paymentsSpi = paymentsSpi;
+        this.revisionService = revisionService;
     }
 
     // -- Users ----------------------------------------------------------
@@ -81,5 +86,18 @@ public class AdminController {
     @GetMapping("/payments/{id}")
     public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
         return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
+    }
+
+    // -- Revisions / Audit history ---------------------------------------
+
+    @GetMapping("/revisions/entities")
+    public ResponseEntity<List<String>> listAuditedEntities() {
+        return ResponseEntity.ok(RevisionService.getEntityNames().stream().sorted().toList());
+    }
+
+    @GetMapping("/revisions/{entityName}/{id}")
+    public ResponseEntity<List<RevisionService.RevisionEntry>> getRevisions(
+            @PathVariable String entityName, @PathVariable UUID id) {
+        return ResponseEntity.ok(revisionService.getRevisions(entityName, id));
     }
 }
