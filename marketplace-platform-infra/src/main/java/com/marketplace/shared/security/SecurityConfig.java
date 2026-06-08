@@ -149,7 +149,7 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
