@@ -1,7 +1,7 @@
 package com.marketplace.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -93,10 +93,10 @@ class SecurityProblemDetailIntegrationTest {
                 .getContentAsString();
         JsonNode payload = objectMapper.readTree(body);
 
-        assertThat(schema.path("properties").fieldNames()).toIterable().contains("type", "title", "status", "detail", "instance");
+        assertThat(schema.path("properties").propertyNames()).contains("type", "title", "status", "detail", "instance");
         schema.path("required").forEach(requiredField -> assertThat(payload.hasNonNull(requiredField.asText())).isTrue());
 
-        payload.fieldNames().forEachRemaining(fieldName ->
+        payload.propertyNames().forEach(fieldName ->
                 assertThat(schema.path("properties").has(fieldName) || schema.path("additionalProperties").asBoolean())
                         .as("Field %s must be declared or allowed by extensions", fieldName)
                         .isTrue());

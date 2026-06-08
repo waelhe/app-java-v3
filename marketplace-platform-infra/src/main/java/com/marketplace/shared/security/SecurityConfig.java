@@ -1,6 +1,6 @@
 package com.marketplace.shared.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.api.ApiProblemDetails;
@@ -131,7 +131,8 @@ public class SecurityConfig {
                         PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/reviews/**"),
                         PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/search/**"),
                         PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/health/**"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/info")
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/info"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/v3/api-docs")
                 ))
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .cors(Customizer.withDefaults())
