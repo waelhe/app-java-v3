@@ -220,6 +220,18 @@
                         <exclude>**/shared/jpa/**</exclude>
                         <exclude>**/shared/events/**</exclude>
                         <exclude>**/*HealthIndicator.*</exclude>
+                        <!-- marketplace-shared: data-only records, constants, simple delegators -->
+                        <exclude>**/shared/api/*Summary.*</exclude>
+                        <exclude>**/shared/api/*Event.*</exclude>
+                        <exclude>**/shared/api/SearchCriteria.*</exclude>
+                        <exclude>**/shared/api/PaymentIntentDetails.*</exclude>
+                        <exclude>**/shared/api/ListingPriceProvider$*</exclude>
+                        <exclude>**/shared/api/ApiConstants.*</exclude>
+                        <exclude>**/shared/api/BadRequestException.*</exclude>
+                        <exclude>**/shared/api/ConflictException.*</exclude>
+                        <exclude>**/shared/api/ResourceNotFoundException.*</exclude>
+                        <exclude>**/shared/api/ProviderNameResolver.*</exclude>
+                        <exclude>**/shared/api/BookingParticipantProvider.*</exclude>
                     </excludes>
                 </configuration>
                 <executions>
