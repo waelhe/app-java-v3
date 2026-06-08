@@ -1,5 +1,6 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,7 +19,7 @@ class BookingStatusTest {
 
     @Test
     void pendingCannotTransitionToCompleted() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.PENDING.validateTransitionTo(BookingStatus.COMPLETED));
     }
 
@@ -34,21 +35,21 @@ class BookingStatusTest {
 
     @Test
     void completedCannotTransitionToAny() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.COMPLETED.validateTransitionTo(BookingStatus.PENDING));
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.COMPLETED.validateTransitionTo(BookingStatus.CONFIRMED));
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.COMPLETED.validateTransitionTo(BookingStatus.CANCELLED));
     }
 
     @Test
     void cancelledCannotTransitionToAny() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.CANCELLED.validateTransitionTo(BookingStatus.PENDING));
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.CANCELLED.validateTransitionTo(BookingStatus.CONFIRMED));
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> BookingStatus.CANCELLED.validateTransitionTo(BookingStatus.COMPLETED));
     }
 }
