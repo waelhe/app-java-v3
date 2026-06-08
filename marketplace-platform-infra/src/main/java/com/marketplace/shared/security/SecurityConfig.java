@@ -147,9 +147,9 @@ public class SecurityConfig {
     SecurityFilterChain protectedApiSecurityFilterChain(HttpSecurity http,
                                                         CorrelationIdFilter correlationIdFilter) throws Exception {
         http
-                .securityMatcher("/api/**", "/actuator/**")
+                .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth

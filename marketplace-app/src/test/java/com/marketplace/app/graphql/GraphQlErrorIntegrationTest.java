@@ -7,12 +7,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.graphql.test.tester.HttpGraphQlTester;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -28,10 +32,22 @@ class GraphQlErrorIntegrationTest {
     @MockitoBean
     private CatalogService catalogService;
 
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
+
     @BeforeEach
     void setUpGraphQlTester() {
+        Jwt testJwt = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .claim("sub", "test-user")
+                .claim("aud", List.of("marketplace-api"))
+                .claim("roles", List.of("PROVIDER"))
+                .build();
+        when(jwtDecoder.decode(anyString())).thenReturn(testJwt);
+
         graphQlTester = HttpGraphQlTester.builder(WebTestClient.bindToServer()
-                        .baseUrl("http://localhost:" + port + "/graphql"))
+                        .baseUrl("http://localhost:" + port + "/graphql")
+                        .defaultHeader("Authorization", "Bearer test-token"))
                 .build();
     }
 
