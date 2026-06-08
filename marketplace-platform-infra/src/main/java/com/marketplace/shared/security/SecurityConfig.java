@@ -1,6 +1,6 @@
 package com.marketplace.shared.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.api.ApiProblemDetails;
