@@ -1,11 +1,11 @@
 package com.marketplace.pricing;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -48,50 +48,50 @@ class PricingRuleControllerTest {
     void activateRule_returnsOk() {
         UUID id = UUID.randomUUID();
         var rule = PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO);
-        when(pricingService.findById(id)).thenReturn(Optional.of(rule));
+        rule.activate();
+        when(pricingService.activate(id)).thenReturn(rule);
 
         var result = controller.activateRule(id);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertTrue(result.getBody().isActive());
+        verify(pricingService).activate(id);
     }
 
     @Test
     void activateRule_notFound() {
         UUID id = UUID.randomUUID();
-        when(pricingService.findById(id)).thenReturn(Optional.empty());
+        when(pricingService.activate(id)).thenThrow(new ResourceNotFoundException("PricingRule", id));
 
-        var result = controller.activateRule(id);
-
-        assertEquals(HttpStatus.NOT_FOUND, result.getStatusCode());
+        assertThrows(ResourceNotFoundException.class, () -> controller.activateRule(id));
     }
 
     @Test
     void deactivateRule_returnsOk() {
         UUID id = UUID.randomUUID();
         var rule = PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO);
-        when(pricingService.findById(id)).thenReturn(Optional.of(rule));
+        rule.deactivate();
+        when(pricingService.deactivate(id)).thenReturn(rule);
 
         var result = controller.deactivateRule(id);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertFalse(result.getBody().isActive());
+        verify(pricingService).deactivate(id);
     }
 
     @Test
     void deactivateRule_notFound() {
         UUID id = UUID.randomUUID();
-        when(pricingService.findById(id)).thenReturn(Optional.empty());
+        when(pricingService.deactivate(id)).thenThrow(new ResourceNotFoundException("PricingRule", id));
 
-        var result = controller.deactivateRule(id);
-
-        assertEquals(HttpStatus.NOT_FOUND, result.getStatusCode());
+        assertThrows(ResourceNotFoundException.class, () -> controller.deactivateRule(id));
     }
 
     @Test
     void deleteRule_returnsNoContent() {
         UUID id = UUID.randomUUID();
-        when(pricingService.findById(id)).thenReturn(Optional.of(PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO)));
+        doNothing().when(pricingService).deleteById(id);
 
         var result = controller.deleteRule(id);
 
@@ -102,11 +102,8 @@ class PricingRuleControllerTest {
     @Test
     void deleteRule_notFound() {
         UUID id = UUID.randomUUID();
-        when(pricingService.findById(id)).thenReturn(Optional.empty());
+        doThrow(new ResourceNotFoundException("PricingRule", id)).when(pricingService).deleteById(id);
 
-        var result = controller.deleteRule(id);
-
-        assertEquals(HttpStatus.NOT_FOUND, result.getStatusCode());
-        verify(pricingService, never()).deleteById(any());
+        assertThrows(ResourceNotFoundException.class, () -> controller.deleteRule(id));
     }
 }

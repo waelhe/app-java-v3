@@ -1,5 +1,6 @@
 package com.marketplace.pricing;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.cache.annotation.Cacheable;
@@ -71,11 +72,32 @@ public class PricingService {
         return pricingRuleRepository.save(rule);
     }
 
+    @Transactional(readOnly = true)
     public Optional<PricingRule> findById(UUID id) {
         return pricingRuleRepository.findById(id);
     }
 
+    @Transactional
+    public PricingRule activate(UUID id) {
+        PricingRule rule = pricingRuleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
+        rule.activate();
+        return pricingRuleRepository.save(rule);
+    }
+
+    @Transactional
+    public PricingRule deactivate(UUID id) {
+        PricingRule rule = pricingRuleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
+        rule.deactivate();
+        return pricingRuleRepository.save(rule);
+    }
+
+    @Transactional
     public void deleteById(UUID id) {
+        if (!pricingRuleRepository.existsById(id)) {
+            throw new ResourceNotFoundException("PricingRule", id);
+        }
         pricingRuleRepository.deleteById(id);
     }
 

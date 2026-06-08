@@ -44,31 +44,18 @@ public class PricingRuleController {
 
     @PutMapping("/{id}/activate")
     public ResponseEntity<PricingRule> activateRule(@PathVariable UUID id) {
-        return pricingService.findById(id)
-                .map(rule -> {
-                    rule.activate();
-                    return ResponseEntity.ok(rule);
-                })
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(pricingService.activate(id));
     }
 
     @PutMapping("/{id}/deactivate")
     public ResponseEntity<PricingRule> deactivateRule(@PathVariable UUID id) {
-        return pricingService.findById(id)
-                .map(rule -> {
-                    rule.deactivate();
-                    return ResponseEntity.ok(rule);
-                })
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(pricingService.deactivate(id));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteRule(@PathVariable UUID id) {
-        if (pricingService.findById(id).isPresent()) {
-            pricingService.deleteById(id);
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.notFound().build();
+        pricingService.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     public record CreateRuleRequest(

@@ -92,7 +92,7 @@ public class AdminController {
 
     @GetMapping("/revisions/entities")
     public ResponseEntity<List<String>> listAuditedEntities() {
-        return ResponseEntity.ok(RevisionService.getEntityNames().stream().sorted().toList());
+        return ResponseEntity.ok(revisionService.getEntityNames().stream().sorted().toList());
     }
 
     @GetMapping("/revisions/{entityName}/{id}")

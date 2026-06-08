@@ -124,14 +124,12 @@ class AdminControllerTest {
     @Test
     void listAuditedEntities_returnsEntityNames() {
         Set<String> expected = Set.of("User", "Booking");
-        try (var mockedStatic = mockStatic(RevisionService.class)) {
-            mockedStatic.when(RevisionService::getEntityNames).thenReturn(expected);
+        when(revisionService.getEntityNames()).thenReturn(expected);
 
-            ResponseEntity<List<String>> result = controller.listAuditedEntities();
+        ResponseEntity<List<String>> result = controller.listAuditedEntities();
 
-            assertEquals(HttpStatus.OK, result.getStatusCode());
-            assertTrue(result.getBody().containsAll(expected));
-        }
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertTrue(result.getBody().containsAll(expected));
     }
 
     @Test
