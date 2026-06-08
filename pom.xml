@@ -232,6 +232,10 @@
                         <exclude>**/shared/api/ResourceNotFoundException.*</exclude>
                         <exclude>**/shared/api/ProviderNameResolver.*</exclude>
                         <exclude>**/shared/api/BookingParticipantProvider.*</exclude>
+                        <!-- marketplace-platform-infra: data-only config, simple delegators, pure interfaces -->
+                        <exclude>**/shared/config/**</exclude>
+                        <exclude>**/shared/email/EmailSendException.*</exclude>
+                        <exclude>**/shared/security/CurrentUserProvider.*</exclude>
                     </excludes>
                 </configuration>
                 <executions>
