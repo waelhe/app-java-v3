@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -76,6 +77,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Configuration
+@EnableMethodSecurity
 @EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
 public class SecurityConfig {
 
