@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.marketplace.shared.web.ApiVersioningConfig;
@@ -21,6 +22,9 @@ class CatalogModuleIntegrationTest {
 
     @MockitoBean
     ProviderNameResolver providerNameResolver;
+
+    @MockitoBean
+    ProviderLookupPort providerLookupPort;
 
     @TestConfiguration
     static class TestBeans {
