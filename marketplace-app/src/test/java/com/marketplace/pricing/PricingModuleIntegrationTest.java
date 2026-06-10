@@ -2,22 +2,36 @@ package com.marketplace.pricing;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@ApplicationModuleTest
+@ApplicationModuleTest(mode = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class PricingModuleIntegrationTest {
 
     @Autowired
     private PricingService pricingService;
+
+    @TestConfiguration
+    @EnableJpaAuditing
+    static class AuditingConfig {
+        @Bean
+        AuditorAware<String> auditorAware() {
+            return Optional::empty;
+        }
+    }
 
     @Test
     void contextLoads() {
