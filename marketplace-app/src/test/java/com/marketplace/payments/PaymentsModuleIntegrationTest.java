@@ -7,11 +7,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +32,15 @@ class PaymentsModuleIntegrationTest {
 
     @Autowired
     private PaymentsService paymentsService;
+
+    @TestConfiguration
+    @EnableJpaAuditing
+    static class AuditingConfig {
+        @Bean
+        AuditorAware<String> auditorAware() {
+            return Optional::empty;
+        }
+    }
 
     @TestConfiguration
     static class TestBeans {

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -17,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +48,15 @@ class MessagingModuleIntegrationTest {
         var bookingInfo = new BookingInfo(PROVIDER_ID, CONSUMER_ID, "CONFIRMED",
                 1000L, "USD", Instant.now(), Instant.now());
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(bookingInfo);
+    }
+
+    @TestConfiguration
+    @EnableJpaAuditing
+    static class AuditingConfig {
+        @Bean
+        AuditorAware<String> auditorAware() {
+            return Optional::empty;
+        }
     }
 
     @TestConfiguration

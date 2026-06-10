@@ -10,8 +10,11 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,6 +30,15 @@ class ProviderModuleIntegrationTest {
 
     @Autowired
     private ProviderService providerService;
+
+    @TestConfiguration
+    @EnableJpaAuditing
+    static class AuditingConfig {
+        @Bean
+        AuditorAware<String> auditorAware() {
+            return Optional::empty;
+        }
+    }
 
     @TestConfiguration
     static class TestBeans {
