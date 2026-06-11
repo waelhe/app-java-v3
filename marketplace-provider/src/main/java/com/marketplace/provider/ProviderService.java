@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -28,6 +29,7 @@ public class ProviderService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("providers")
     public ProviderProfile getById(UUID id) {
         return providerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Provider not found: " + id));

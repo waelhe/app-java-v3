@@ -42,6 +42,9 @@ public class Dispute extends BaseEntity {
 
     @Override public UUID getId() { return id; }
     public UUID getBookingId(){return bookingId;}
+    public UUID getOpenedBy() { return openedBy; }
+    public DisputeStatus getStatus() { return status; }
+    public String getReason() { return reason; }
     public void resolve(){
         this.status.validateTransitionTo(DisputeStatus.RESOLVED);
         this.status = DisputeStatus.RESOLVED;

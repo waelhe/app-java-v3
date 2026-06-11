@@ -14,23 +14,28 @@ import java.util.UUID;
 public class DisputeController {
 
     private final DisputeService service;
+    private final DisputeMapper disputeMapper;
 
-    public DisputeController(DisputeService service) {
+    public DisputeController(DisputeService service, DisputeMapper disputeMapper) {
         this.service = service;
+        this.disputeMapper = disputeMapper;
     }
 
     @PostMapping("/bookings/{bookingId}/disputes")
-    public ResponseEntity<Dispute> open(@PathVariable UUID bookingId, @RequestParam @NotBlank String reason, Authentication authentication) {
-        return ResponseEntity.ok(service.open(bookingId, reason, authentication));
+    public ResponseEntity<DisputeResponse> open(@PathVariable UUID bookingId, @RequestParam @NotBlank String reason, Authentication authentication) {
+        return ResponseEntity.ok(disputeMapper.toResponse(service.open(bookingId, reason, authentication)));
     }
 
     @GetMapping("/bookings/{bookingId}/disputes")
-    public ResponseEntity<List<Dispute>> list(@PathVariable UUID bookingId, Authentication authentication) {
-        return ResponseEntity.ok(service.listForBooking(bookingId, authentication));
+    public ResponseEntity<List<DisputeResponse>> list(@PathVariable UUID bookingId, Authentication authentication) {
+        List<DisputeResponse> disputes = service.listForBooking(bookingId, authentication).stream()
+                .map(disputeMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(disputes);
     }
 
     @PostMapping("/admin/disputes/{id}/resolve")
-    public ResponseEntity<Dispute> resolve(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(service.resolve(id, authentication));
+    public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, authentication)));
     }
 }

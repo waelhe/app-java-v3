@@ -11,6 +11,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.security.access.AccessDeniedException;
@@ -41,6 +42,7 @@ public class BookingService implements BookingSpi {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("bookings")
     public Booking getById(UUID id) {
         return bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", id));
@@ -130,6 +132,8 @@ public class BookingService implements BookingSpi {
     }
 
     @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
+    @Retry(name = "booking")
+    @ConcurrencyLimit(10)
     public Booking cancel(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyParticipantOwnership(booking, authentication);

@@ -22,6 +22,9 @@ class DisputeControllerTest {
     private DisputeService disputeService;
 
     @Mock
+    private DisputeMapper disputeMapper;
+
+    @Mock
     private Authentication authentication;
 
     @InjectMocks
@@ -32,35 +35,44 @@ class DisputeControllerTest {
         UUID bookingId = UUID.randomUUID();
         String reason = "late arrival";
         Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), reason);
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
         when(disputeService.open(bookingId, reason, authentication)).thenReturn(dispute);
+        when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
-        ResponseEntity<Dispute> response = disputeController.open(bookingId, reason, authentication);
+        ResponseEntity<DisputeResponse> result = disputeController.open(bookingId, reason, authentication);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isEqualTo(dispute);
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isEqualTo(response);
     }
 
     @Test
     void list_returnsOk() {
         UUID bookingId = UUID.randomUUID();
         Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
         when(disputeService.listForBooking(bookingId, authentication)).thenReturn(List.of(dispute));
+        when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
-        ResponseEntity<List<Dispute>> response = disputeController.list(bookingId, authentication);
+        ResponseEntity<List<DisputeResponse>> result = disputeController.list(bookingId, authentication);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsExactly(dispute);
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).containsExactly(response);
     }
 
     @Test
     void resolve_returnsOk() {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
         when(disputeService.resolve(disputeId, authentication)).thenReturn(dispute);
+        when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
-        ResponseEntity<Dispute> response = disputeController.resolve(disputeId, authentication);
+        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId, authentication);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isEqualTo(dispute);
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isEqualTo(response);
     }
 }

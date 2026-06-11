@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +39,7 @@ public class ReviewsService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("reviews")
     public Review getById(UUID id) {
         return reviewRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found: " + id));

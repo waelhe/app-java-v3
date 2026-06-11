@@ -1,6 +1,7 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ public class AvailabilityService implements AvailabilityPort {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable("availability")
     public boolean isAvailable(UUID providerId, Instant startsAt, Instant endsAt) {
         boolean slotAvailable = repository.existsByProviderIdAndBookedFalseAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);
         boolean hasTimeOffConflict = timeOffRepository.existsByProviderIdAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);

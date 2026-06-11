@@ -3,6 +3,8 @@ package com.marketplace.identity;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -22,12 +24,14 @@ public class UserService implements IdentitySpi {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("users")
     public User getById(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("userSubjects")
     public User getBySubject(String subject) {
         return userRepository.findBySubject(subject)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + subject));
@@ -46,6 +50,7 @@ public class UserService implements IdentitySpi {
     /**
      * Syncs user from OIDC token — creates if new, updates if changed.
      */
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");

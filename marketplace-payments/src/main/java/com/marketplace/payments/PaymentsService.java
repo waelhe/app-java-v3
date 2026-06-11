@@ -9,6 +9,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.data.domain.Page;
@@ -59,6 +60,7 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("paymentIntents")
     public PaymentIntent getIntent(UUID id) {
         return paymentIntentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + id));
