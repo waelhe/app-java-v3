@@ -23,6 +23,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.observation.annotation.Observed;
+
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Set;
@@ -124,6 +126,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents());
     }
 
+    @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
     @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing create(UUID providerId, String title, String description,

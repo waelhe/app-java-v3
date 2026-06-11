@@ -6,6 +6,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.observation.annotation.Observed;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -49,6 +51,7 @@ public class AvailabilityService implements AvailabilityPort {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
     }
 
+    @Observed(name = "availability.timeoff.create")
     @CacheEvict(cacheNames = "availability", allEntries = true)
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
         return timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));

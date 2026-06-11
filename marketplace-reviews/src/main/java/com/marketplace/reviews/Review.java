@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.hibernate.envers.Audited;
 
 import java.util.UUID;
@@ -26,6 +28,8 @@ public class Review extends BaseEntity {
     @Column(name = "provider_id", nullable = false)
     private UUID providerId;
 
+    @Min(1)
+    @Max(5)
     @Column(name = "rating", nullable = false)
     private Integer rating;
 

@@ -140,6 +140,8 @@ management:
           include: ping
   observations:
     enabled: true
+    annotations:
+      enabled: true
   metrics:
     tags:
       application: ${spring.application.name}

@@ -21,6 +21,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.observation.annotation.Observed;
+
 import java.util.UUID;
 
 @Service
@@ -74,7 +76,20 @@ public class PaymentsService implements PaymentsSpi {
 
     @Transactional(readOnly = true)
     public Page<PaymentSummary> listIntentsSummaries(Pageable pageable) {
-        return listIntents(pageable).map(this::toPaymentSummary);
+        return paymentIntentRepository.findAllProjectedBy(pageable).map(this::toPaymentSummaryFromView);
+    }
+
+    private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
+        return new PaymentSummary(
+                view.getId(),
+                view.getBookingId(),
+                view.getConsumerId(),
+                view.getAmountCents(),
+                view.getCurrency(),
+                view.getStatus().name(),
+                view.getCreatedAt(),
+                view.getUpdatedAt()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -112,6 +127,7 @@ public class PaymentsService implements PaymentsSpi {
         return saved;
     }
 
+    @Observed(name = "payment.process")
     @PreAuthorize("hasRole('CONSUMER')")
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing")
@@ -126,6 +142,7 @@ public class PaymentsService implements PaymentsSpi {
         return intent;
     }
 
+    @Observed(name = "payment.confirm")
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     @CacheEvict(cacheNames = "paymentIntents", key = "#id")
@@ -139,6 +156,7 @@ public class PaymentsService implements PaymentsSpi {
         return intent;
     }
 
+    @Observed(name = "payment.cancel")
     @PreAuthorize("hasRole('CONSUMER')")
     @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
