@@ -12,6 +12,8 @@ import org.springframework.modulith.NamedInterface;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.observation.annotation.Observed;
+
 import java.util.UUID;
 
 @NamedInterface("messaging-api")
@@ -77,6 +79,7 @@ public class MessagingService {
         return conversationRepository.save(Conversation.create(participantA, participantB, bookingId));
     }
 
+    @Observed(name = "messaging.send")
     public Message sendMessage(UUID conversationId, UUID senderId, String content) {
         getConversation(conversationId, senderId);
         Message saved = messageRepository.save(Message.create(conversationId, senderId, content));

@@ -21,6 +21,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.observation.annotation.Observed;
+
 import java.util.UUID;
 
 @Service
@@ -103,6 +105,7 @@ public class BookingService implements BookingSpi {
         }
     }
 
+    @Observed(name = "booking.create")
     @PreAuthorize("hasRole('CONSUMER')")
     public Booking create(UUID consumerId, UUID listingId, String notes) {
         ListingInfo info = listingPriceProvider.getListingInfo(listingId);
@@ -112,6 +115,7 @@ public class BookingService implements BookingSpi {
         return saved;
     }
 
+    @Observed(name = "booking.confirm")
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
@@ -123,6 +127,7 @@ public class BookingService implements BookingSpi {
         return booking;
     }
 
+    @Observed(name = "booking.complete")
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
@@ -134,6 +139,7 @@ public class BookingService implements BookingSpi {
         return booking;
     }
 
+    @Observed(name = "booking.cancel")
     @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)

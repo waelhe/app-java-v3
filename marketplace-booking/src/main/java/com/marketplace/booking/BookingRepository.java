@@ -16,4 +16,10 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     Page<Booking> findByListingId(UUID listingId, Pageable pageable);
 
     Page<Booking> findByStatus(BookingStatus status, Pageable pageable);
+
+    Page<BookingSummaryView> findAllByConsumerId(UUID consumerId, Pageable pageable);
+
+    Page<BookingSummaryView> findAllByProviderId(UUID providerId, Pageable pageable);
+
+    Page<BookingSummaryView> findAllByStatus(BookingStatus status, Pageable pageable);
 }

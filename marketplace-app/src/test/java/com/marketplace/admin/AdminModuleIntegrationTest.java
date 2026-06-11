@@ -9,6 +9,10 @@ import org.springframework.modulith.test.ApplicationModuleTest.BootstrapMode;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.marketplace.shared.web.ApiVersioningConfig;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest(mode = BootstrapMode.ALL_DEPENDENCIES)
@@ -21,6 +25,14 @@ class AdminModuleIntegrationTest {
 
     @Autowired
     private RevisionService revisionService;
+
+    @TestConfiguration
+    static class TestBeans {
+        @Bean
+        ApiVersioningConfig apiVersioningConfig() {
+            return new ApiVersioningConfig();
+        }
+    }
 
     @Test
     void contextLoads() {
