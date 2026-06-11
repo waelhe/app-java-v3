@@ -3,7 +3,6 @@ package com.marketplace.booking;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -19,7 +18,6 @@ public class BookingExpirationService {
     }
 
     @ApplicationModuleListener
-    @Transactional
     public void onDayHasPassed(DayHasPassed event) {
         Instant cutoff = Instant.now().minus(24, ChronoUnit.HOURS);
         List<Booking> stale = bookingRepository.findAll(
