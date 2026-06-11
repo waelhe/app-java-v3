@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import org.springframework.modulith.ApplicationModule;
 
-@ApplicationModule(displayName = "Notifications")
+@ApplicationModule(displayName = "Notifications",
+        allowedDependencies = {"shared :: shared-api", "shared :: shared-jpa", "shared :: shared-security"})
 public class NotificationsModule {
 }

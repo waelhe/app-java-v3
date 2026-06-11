@@ -34,6 +34,9 @@ spring:
         default_batch_fetch_size: 100
         query:
           fail_on_pagination_over_collection_fetch: true
+        envers:
+          store_data_at_delete: true
+          audit_table_suffix: _aud
 
   flyway:
     enabled: true

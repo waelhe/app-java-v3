@@ -1,11 +1,15 @@
 package com.marketplace.pricing;
 
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.cache.annotation.Cacheable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -55,6 +59,46 @@ public class PricingService {
     private PricingRule defaultRule() {
         return PricingRule.create("Default", null,
                 new BigDecimal("0.1500"), BigDecimal.ZERO);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PricingRule> listRules() {
+        return pricingRuleRepository.findAll();
+    }
+
+    public PricingRule createRule(String name, String category,
+                                  BigDecimal taxRate, BigDecimal discountPct) {
+        PricingRule rule = PricingRule.create(name, category, taxRate, discountPct);
+        return pricingRuleRepository.save(rule);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PricingRule> findById(UUID id) {
+        return pricingRuleRepository.findById(id);
+    }
+
+    @Transactional
+    public PricingRule activate(UUID id) {
+        PricingRule rule = pricingRuleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
+        rule.activate();
+        return pricingRuleRepository.save(rule);
+    }
+
+    @Transactional
+    public PricingRule deactivate(UUID id) {
+        PricingRule rule = pricingRuleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
+        rule.deactivate();
+        return pricingRuleRepository.save(rule);
+    }
+
+    @Transactional
+    public void deleteById(UUID id) {
+        if (!pricingRuleRepository.existsById(id)) {
+            throw new ResourceNotFoundException("PricingRule", id);
+        }
+        pricingRuleRepository.deleteById(id);
     }
 
     public record PriceBreakdown(
