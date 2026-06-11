@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ApiConstants;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping(value = ApiConstants.API_V1, version = "1.0")
+@Validated
 public class DisputeController {
 
     private final DisputeService service;

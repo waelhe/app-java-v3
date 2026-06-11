@@ -12,7 +12,6 @@ import java.util.UUID;
 @Entity
 @Table(name = "messages")
 @Audited
-@org.springframework.modulith.NamedInterface("messaging-api")
 public class Message extends BaseEntity {
 
     @Id

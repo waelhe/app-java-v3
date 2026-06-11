@@ -9,6 +9,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
@@ -115,6 +116,7 @@ public class PaymentsService implements PaymentsSpi {
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing")
     @ConcurrencyLimit(5)
+    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
@@ -126,6 +128,7 @@ public class PaymentsService implements PaymentsSpi {
 
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
+    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent confirmIntent(UUID id, String externalId) {
         PaymentIntent intent = getIntent(id);
         intent.markSucceeded();
@@ -137,6 +140,7 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
+    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.cancel();
