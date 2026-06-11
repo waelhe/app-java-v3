@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.marketplace.shared.web.ApiVersioningConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest(mode = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
@@ -30,6 +31,14 @@ class PricingModuleIntegrationTest {
         @Bean
         AuditorAware<String> auditorAware() {
             return Optional::empty;
+        }
+    }
+
+    @TestConfiguration
+    static class TestBeans {
+        @Bean
+        ApiVersioningConfig apiVersioningConfig() {
+            return new ApiVersioningConfig();
         }
     }
 

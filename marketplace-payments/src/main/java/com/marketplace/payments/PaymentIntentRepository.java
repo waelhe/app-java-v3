@@ -14,5 +14,5 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
 
     Optional<PaymentIntent> findByBookingId(UUID bookingId);
 
-    Page<PaymentIntentSummaryView> findAllProjectedBy(Pageable pageable);
+    Page<PaymentIntentSummaryView> findAllSummariesBy(Pageable pageable);
 }

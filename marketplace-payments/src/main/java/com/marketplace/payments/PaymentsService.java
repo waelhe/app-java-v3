@@ -76,7 +76,7 @@ public class PaymentsService implements PaymentsSpi {
 
     @Transactional(readOnly = true)
     public Page<PaymentSummary> listIntentsSummaries(Pageable pageable) {
-        return paymentIntentRepository.findAllProjectedBy(pageable).map(this::toPaymentSummaryFromView);
+        return paymentIntentRepository.findAllSummariesBy(pageable).map(this::toPaymentSummaryFromView);
     }
 
     private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
