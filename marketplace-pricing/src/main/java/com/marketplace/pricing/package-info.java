@@ -1,3 +1,4 @@
+@org.springframework.modulith.NamedInterface("pricing")
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {"shared :: shared-api", "shared :: shared-jpa"}
 )

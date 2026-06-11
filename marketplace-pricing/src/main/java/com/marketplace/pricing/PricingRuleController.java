@@ -21,35 +21,40 @@ import java.util.UUID;
 public class PricingRuleController {
 
     private final PricingService pricingService;
+    private final PricingRuleMapper pricingRuleMapper;
 
-    public PricingRuleController(PricingService pricingService) {
+    public PricingRuleController(PricingService pricingService, PricingRuleMapper pricingRuleMapper) {
         this.pricingService = pricingService;
+        this.pricingRuleMapper = pricingRuleMapper;
     }
 
     @GetMapping
-    public ResponseEntity<List<PricingRule>> listRules() {
-        return ResponseEntity.ok(pricingService.listRules());
+    public ResponseEntity<List<PricingRuleResponse>> listRules() {
+        List<PricingRuleResponse> rules = pricingService.listRules().stream()
+                .map(pricingRuleMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(rules);
     }
 
     @PostMapping
-    public ResponseEntity<PricingRule> createRule(@Valid @RequestBody CreateRuleRequest request) {
+    public ResponseEntity<PricingRuleResponse> createRule(@Valid @RequestBody CreateRuleRequest request) {
         PricingRule rule = pricingService.createRule(
                 request.name(),
                 request.category(),
                 request.taxRate(),
                 request.discountPct()
         );
-        return ResponseEntity.status(HttpStatus.CREATED).body(rule);
+        return ResponseEntity.status(HttpStatus.CREATED).body(pricingRuleMapper.toResponse(rule));
     }
 
     @PutMapping("/{id}/activate")
-    public ResponseEntity<PricingRule> activateRule(@PathVariable UUID id) {
-        return ResponseEntity.ok(pricingService.activate(id));
+    public ResponseEntity<PricingRuleResponse> activateRule(@PathVariable UUID id) {
+        return ResponseEntity.ok(pricingRuleMapper.toResponse(pricingService.activate(id)));
     }
 
     @PutMapping("/{id}/deactivate")
-    public ResponseEntity<PricingRule> deactivateRule(@PathVariable UUID id) {
-        return ResponseEntity.ok(pricingService.deactivate(id));
+    public ResponseEntity<PricingRuleResponse> deactivateRule(@PathVariable UUID id) {
+        return ResponseEntity.ok(pricingRuleMapper.toResponse(pricingService.deactivate(id)));
     }
 
     @DeleteMapping("/{id}")

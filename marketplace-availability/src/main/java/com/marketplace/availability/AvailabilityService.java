@@ -1,6 +1,8 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class AvailabilityService implements AvailabilityPort {
         this.timeOffRepository = timeOffRepository;
     }
 
+    @CacheEvict(cacheNames = "availability", allEntries = true)
     public AvailabilitySlot createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         return repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
     }
@@ -35,6 +38,7 @@ public class AvailabilityService implements AvailabilityPort {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable("availability")
     public boolean isAvailable(UUID providerId, Instant startsAt, Instant endsAt) {
         boolean slotAvailable = repository.existsByProviderIdAndBookedFalseAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);
         boolean hasTimeOffConflict = timeOffRepository.existsByProviderIdAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);
@@ -45,6 +49,7 @@ public class AvailabilityService implements AvailabilityPort {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
     }
 
+    @CacheEvict(cacheNames = "availability", allEntries = true)
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
         return timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
     }

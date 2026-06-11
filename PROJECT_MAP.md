@@ -52,5 +52,8 @@
 ## Completions
 
 - 42 Spring/Maven features used
-- 25 documented features identified as future backlog (not required now)
-- All verified violations from audit have been fixed in this session
+- All verified violations from audit have been fixed
+- All 13 modules have `@NamedInterface` on `package-info.java`
+- 8 read-heavy services have `@Cacheable` on entity lookups
+- Pricing + Disputes controllers use DTOs with MapStruct (entities no longer exposed)
+- `BookingService.cancel()` has `@Retry` + `@ConcurrencyLimit` (consistent with `confirm()`/`complete()`)

@@ -2,16 +2,19 @@ package com.marketplace.messaging;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import org.springframework.cache.annotation.Cacheable;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.modulith.NamedInterface;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+@NamedInterface("messaging-api")
 @Service
 @Transactional
 public class MessagingService {
@@ -35,6 +38,7 @@ public class MessagingService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable("conversations")
     public Conversation getConversation(UUID id, UUID userId) {
         Conversation conversation = conversationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Conversation not found: " + id));

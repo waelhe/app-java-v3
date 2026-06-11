@@ -14,17 +14,22 @@ import static org.mockito.Mockito.*;
 class PricingRuleControllerTest {
 
     private final PricingService pricingService = mock(PricingService.class);
-    private final PricingRuleController controller = new PricingRuleController(pricingService);
+    private final PricingRuleMapper pricingRuleMapper = mock(PricingRuleMapper.class);
+    private final PricingRuleController controller = new PricingRuleController(pricingService, pricingRuleMapper);
 
     @Test
     void listRules_returnsAll() {
         var rule = PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO);
+        var response = new PricingRuleResponse(rule.getId(), rule.getName(), rule.getCategory(),
+                rule.getTaxRate(), rule.getDiscountPct(), rule.isActive(), null, null);
         when(pricingService.listRules()).thenReturn(List.of(rule));
+        when(pricingRuleMapper.toResponse(rule)).thenReturn(response);
 
         var result = controller.listRules();
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(1, result.getBody().size());
+        assertEquals("Test", result.getBody().getFirst().name());
     }
 
     @Test
@@ -34,14 +39,17 @@ class PricingRuleControllerTest {
         );
         var saved = PricingRule.create("New Rule", "services",
                 new BigDecimal("0.1500"), new BigDecimal("0.0500"));
+        var response = new PricingRuleResponse(saved.getId(), saved.getName(), saved.getCategory(),
+                saved.getTaxRate(), saved.getDiscountPct(), saved.isActive(), null, null);
         when(pricingService.createRule("New Rule", "services",
                 new BigDecimal("0.1500"), new BigDecimal("0.0500"))).thenReturn(saved);
+        when(pricingRuleMapper.toResponse(saved)).thenReturn(response);
 
         var result = controller.createRule(request);
 
         assertEquals(HttpStatus.CREATED, result.getStatusCode());
-        assertNotNull(result.getBody().getId());
-        assertEquals("New Rule", result.getBody().getName());
+        assertNotNull(result.getBody().id());
+        assertEquals("New Rule", result.getBody().name());
     }
 
     @Test
@@ -49,12 +57,15 @@ class PricingRuleControllerTest {
         UUID id = UUID.randomUUID();
         var rule = PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO);
         rule.activate();
+        var response = new PricingRuleResponse(rule.getId(), rule.getName(), rule.getCategory(),
+                rule.getTaxRate(), rule.getDiscountPct(), rule.isActive(), null, null);
         when(pricingService.activate(id)).thenReturn(rule);
+        when(pricingRuleMapper.toResponse(rule)).thenReturn(response);
 
         var result = controller.activateRule(id);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
-        assertTrue(result.getBody().isActive());
+        assertTrue(result.getBody().active());
         verify(pricingService).activate(id);
     }
 
@@ -71,12 +82,15 @@ class PricingRuleControllerTest {
         UUID id = UUID.randomUUID();
         var rule = PricingRule.create("Test", null, BigDecimal.ZERO, BigDecimal.ZERO);
         rule.deactivate();
+        var response = new PricingRuleResponse(rule.getId(), rule.getName(), rule.getCategory(),
+                rule.getTaxRate(), rule.getDiscountPct(), rule.isActive(), null, null);
         when(pricingService.deactivate(id)).thenReturn(rule);
+        when(pricingRuleMapper.toResponse(rule)).thenReturn(response);
 
         var result = controller.deactivateRule(id);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
-        assertFalse(result.getBody().isActive());
+        assertFalse(result.getBody().active());
         verify(pricingService).deactivate(id);
     }
 
