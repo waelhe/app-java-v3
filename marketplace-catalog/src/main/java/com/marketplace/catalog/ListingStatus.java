@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
+@org.springframework.modulith.NamedInterface("catalog-api")
 public enum ListingStatus {
     DRAFT,
     ACTIVE,

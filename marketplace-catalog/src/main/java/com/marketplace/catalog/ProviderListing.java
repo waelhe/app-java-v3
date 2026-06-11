@@ -14,6 +14,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "provider_listings")
 @Audited
+@org.springframework.modulith.NamedInterface("catalog-api")
 public class ProviderListing extends BaseEntity {
 
     @Id

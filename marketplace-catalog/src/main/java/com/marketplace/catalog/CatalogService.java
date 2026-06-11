@@ -2,6 +2,7 @@ package com.marketplace.catalog;
 
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
+import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
  */
+@NamedInterface("catalog-api")
 public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
 
     private final ProviderListingRepository listingRepository;
