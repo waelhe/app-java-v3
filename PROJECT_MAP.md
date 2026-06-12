@@ -1,8 +1,8 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Current State (2026-06-11)
+## Current State (2026-06-12)
 
-**Branch:** `fix/jackson-3x-api-compat`
+**Branch:** `main`
 **Java:** 21 (CI), 26 (local)
 **Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14
 
@@ -57,3 +57,8 @@
 - 8 read-heavy services have `@Cacheable` on entity lookups
 - Pricing + Disputes controllers use DTOs with MapStruct (entities no longer exposed)
 - `BookingService.cancel()` has `@Retry` + `@ConcurrencyLimit` (consistent with `confirm()`/`complete()`)
+- 5 services annotated with `@Observed` (Observability metrics)
+- All 14 controllers have `@WebMvcTest` (44 tests, with OAuth2 auto-config exclusion)
+- Spring Data Projections used for read-only endpoints (ListingSimple, ReviewSummary, BookingSummary)
+- build-info (`META-INF/build-info.properties`) + git-commit-id (`git.properties`) — `/actuator/info` populated
+- Tomcat access log enabled with `%{ms}T` pattern (milliseconds) via `server.tomcat.accesslog.*`
