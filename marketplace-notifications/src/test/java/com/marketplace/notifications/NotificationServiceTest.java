@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
@@ -26,7 +27,7 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID bookingId = create(UUID.class);
         BookingInfo info = of(BookingInfo.class)
@@ -47,7 +48,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID userId = create(UUID.class);
         Notification notification = of(Notification.class)
@@ -69,7 +70,7 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID paymentIntentId = create(UUID.class);
         UUID bookingId = create(UUID.class);
@@ -103,7 +104,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.empty());
@@ -121,7 +122,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID ownerId = UUID.randomUUID();
         UUID differentUserId = UUID.randomUUID();
@@ -144,7 +145,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID ownerId = UUID.randomUUID();
         UUID differentUserId = UUID.randomUUID();
@@ -165,7 +166,7 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID paymentIntentId = UUID.randomUUID();
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.empty());
@@ -182,7 +183,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider);
+        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
 
         UUID userId = UUID.randomUUID();
         var notifications = List.of(mock(Notification.class));

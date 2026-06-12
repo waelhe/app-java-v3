@@ -1,6 +1,7 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.ConflictException;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -55,5 +56,22 @@ public class AvailabilityService implements AvailabilityPort {
     @CacheEvict(cacheNames = "availability", allEntries = true)
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
         return timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
+    }
+
+    @Override
+    @CacheEvict(cacheNames = "availability", allEntries = true)
+    public void bookSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+        AvailabilitySlot slot = repository
+                .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
+                .orElseThrow(() -> new ConflictException("No available slot for provider " + providerId));
+        slot.markBooked();
+    }
+
+    @Override
+    @CacheEvict(cacheNames = "availability", allEntries = true)
+    public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+        repository
+                .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt)
+                .ifPresent(AvailabilitySlot::markAvailable);
     }
 }

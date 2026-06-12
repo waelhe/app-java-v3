@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.SearchCriteria;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderLookupPort;
@@ -131,6 +132,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
     public ProviderListing create(UUID providerId, String title, String description,
                                   String category, Long priceCents) {
+        providerLookupPort.findById(providerId)
+                .filter(p -> "VERIFIED".equals(p.status()))
+                .orElseThrow(() -> new BadRequestException("Provider is not verified"));
         ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));

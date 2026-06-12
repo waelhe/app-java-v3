@@ -1,5 +1,6 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
 import org.instancio.Instancio;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,12 +27,13 @@ class BookingServiceTest {
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final ListingPriceProvider listingPriceProvider = mock(ListingPriceProvider.class);
+    private final AvailabilityPort availabilityPort = mock(AvailabilityPort.class);
     private final Authentication authentication = mock(Authentication.class);
     private BookingService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher, listingPriceProvider);
+        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher, listingPriceProvider, availabilityPort);
     }
 
     @Test
@@ -38,12 +41,14 @@ class BookingServiceTest {
         UUID consumerId = Instancio.create(UUID.class);
         UUID providerId = Instancio.create(UUID.class);
         UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
 
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Booking booking = service.create(consumerId, listingId, "test notes");
+        Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
 
         assertEquals(BookingStatus.PENDING, booking.getStatus());
         assertEquals(consumerId, booking.getConsumerId());
@@ -60,6 +65,8 @@ class BookingServiceTest {
                 .set(field(Booking::getPriceCents), 5000L)
                 .set(field(Booking::getNotes), "notes")
                 .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
                 .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
@@ -79,6 +86,8 @@ class BookingServiceTest {
                 .set(field(Booking::getPriceCents), 5000L)
                 .set(field(Booking::getNotes), "notes")
                 .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
                 .create();
         booking.confirm();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
@@ -101,6 +110,8 @@ class BookingServiceTest {
                 .set(field(Booking::getPriceCents), 5000L)
                 .set(field(Booking::getNotes), "notes")
                 .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
                 .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
@@ -128,6 +139,8 @@ class BookingServiceTest {
                 .set(field(Booking::getPriceCents), 5000L)
                 .set(field(Booking::getNotes), "notes")
                 .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
                 .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));
@@ -143,6 +156,8 @@ class BookingServiceTest {
                 .set(field(Booking::getPriceCents), 5000L)
                 .set(field(Booking::getNotes), "notes")
                 .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
                 .create();
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));

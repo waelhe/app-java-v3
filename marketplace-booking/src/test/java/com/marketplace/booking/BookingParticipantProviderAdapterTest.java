@@ -28,7 +28,7 @@ class BookingParticipantProviderAdapterTest {
         UUID id = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
-        Booking booking = new Booking(id, consumerId, providerId, UUID.randomUUID(), 5000L, "Notes");
+        Booking booking = new Booking(id, consumerId, providerId, UUID.randomUUID(), 5000L, null, null, "Notes");
 
         when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
 

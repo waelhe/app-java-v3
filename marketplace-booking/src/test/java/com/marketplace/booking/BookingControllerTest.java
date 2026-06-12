@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,8 +41,8 @@ class BookingControllerTest {
     void getById_returnsBookingResponse() {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
-        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 5000L, "Notes");
-        BookingResponse response = new BookingResponse(id, UUID.randomUUID(), "PENDING", "Notes", null, null);
+        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, "Notes");
+        BookingResponse response = new BookingResponse(id, UUID.randomUUID(), "PENDING", null, null, "Notes", null, null);
 
         when(bookingService.getByIdForUser(id, auth)).thenReturn(booking);
         when(bookingMapper.toResponse(booking)).thenReturn(response);
@@ -57,12 +58,13 @@ class BookingControllerTest {
         Authentication auth = mock(Authentication.class);
         UUID consumerId = UUID.randomUUID();
         UUID listingId = UUID.randomUUID();
-        var request = new BookingController.CreateBookingRequest(listingId, "Notes");
-        Booking booking = Booking.create(consumerId, UUID.randomUUID(), listingId, 5000L, "Notes");
-        BookingResponse response = new BookingResponse(UUID.randomUUID(), listingId, "PENDING", "Notes", null, null);
+        Instant now = Instant.now();
+        var request = new BookingController.CreateBookingRequest(listingId, now, now.plusSeconds(3600), "Notes");
+        Booking booking = Booking.create(consumerId, UUID.randomUUID(), listingId, 5000L, now, now.plusSeconds(3600), "Notes");
+        BookingResponse response = new BookingResponse(UUID.randomUUID(), listingId, "PENDING", now, now.plusSeconds(3600), "Notes", null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(consumerId);
-        when(bookingService.create(consumerId, listingId, "Notes")).thenReturn(booking);
+        when(bookingService.create(consumerId, listingId, now, now.plusSeconds(3600), "Notes")).thenReturn(booking);
         when(bookingMapper.toResponse(booking)).thenReturn(response);
 
         ResponseEntity<BookingResponse> result = bookingController.create(request, auth);
@@ -75,8 +77,8 @@ class BookingControllerTest {
     void confirm_returnsConfirmed() {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
-        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
-        BookingResponse response = new BookingResponse(id, UUID.randomUUID(), "CONFIRMED", null, null, null);
+        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
+        BookingResponse response = new BookingResponse(id, UUID.randomUUID(), "CONFIRMED", null, null, null, null, null);
 
         when(bookingService.confirm(id, auth)).thenReturn(booking);
         when(bookingMapper.toResponse(booking)).thenReturn(response);
@@ -92,7 +94,7 @@ class BookingControllerTest {
         UUID consumerId = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         PageRequest pageable = PageRequest.of(0, 10);
-        Booking booking = Booking.create(consumerId, UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        Booking booking = Booking.create(consumerId, UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
         Page<Booking> page = new PageImpl<>(List.of(booking));
         when(bookingService.listByConsumer(consumerId, pageable, auth)).thenReturn(page);
 
@@ -106,7 +108,7 @@ class BookingControllerTest {
         UUID providerId = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         PageRequest pageable = PageRequest.of(0, 10);
-        Booking booking = Booking.create(UUID.randomUUID(), providerId, UUID.randomUUID(), 5000L, null);
+        Booking booking = Booking.create(UUID.randomUUID(), providerId, UUID.randomUUID(), 5000L, null, null, null);
         Page<Booking> page = new PageImpl<>(List.of(booking));
         when(bookingService.listByProvider(providerId, pageable, auth)).thenReturn(page);
 
