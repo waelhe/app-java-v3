@@ -47,6 +47,7 @@
         <springdoc.version>3.0.3</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.0-RC3</instancio.version>
+        <git-commit-id.version>9.0.2</git-commit-id.version>
     </properties>
 
     <dependencyManagement>
