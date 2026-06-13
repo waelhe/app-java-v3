@@ -47,7 +47,7 @@ marketplace:
       audience: marketplace-api
   payments:
     webhook:
-      shared-secret: test-shared-secret
+      shared-secret: test-sig
 
 management:
   otlp:
