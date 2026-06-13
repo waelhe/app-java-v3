@@ -1,15 +1,15 @@
 package com.marketplace.catalog;
 
+import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
-import com.marketplace.shared.web.ApiVersioningConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(ModuleTestConfig.class)
+@WithMockUser
 class CatalogModuleIntegrationTest {
 
     @MockitoBean
@@ -32,14 +34,6 @@ class CatalogModuleIntegrationTest {
 
     @Autowired
     private CatalogService catalogService;
-
-    @TestConfiguration
-    static class TestBeans {
-        @Bean
-        ApiVersioningConfig apiVersioningConfig() {
-            return new ApiVersioningConfig();
-        }
-    }
 
     @Test
     void contextLoads() {

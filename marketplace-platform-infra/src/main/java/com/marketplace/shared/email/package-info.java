@@ -1,3 +1,4 @@
+@NamedInterface("shared-email")
 /**
  * Email infrastructure backed by Spring Boot auto-configured
  * {@link org.springframework.mail.javamail.JavaMailSender} and
@@ -7,3 +8,5 @@
  * (via {@link org.springframework.boot.autoconfigure.condition.ConditionalOnBean}).
  */
 package com.marketplace.shared.email;
+
+import org.springframework.modulith.NamedInterface;

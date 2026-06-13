@@ -1,16 +1,16 @@
 package com.marketplace.disputes;
 
+import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
-import com.marketplace.shared.web.ApiVersioningConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -26,6 +26,8 @@ import static org.mockito.Mockito.when;
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(ModuleTestConfig.class)
+@WithMockUser
 class DisputesModuleIntegrationTest {
 
     @MockitoBean
@@ -36,14 +38,6 @@ class DisputesModuleIntegrationTest {
 
     @Autowired
     private DisputeService disputeService;
-
-    @TestConfiguration
-    static class TestBeans {
-        @Bean
-        ApiVersioningConfig apiVersioningConfig() {
-            return new ApiVersioningConfig();
-        }
-    }
 
     @Test
     void contextLoads() {

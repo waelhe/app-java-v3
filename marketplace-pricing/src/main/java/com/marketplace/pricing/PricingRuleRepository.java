@@ -1,11 +1,12 @@
 package com.marketplace.pricing;
 
+import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
 import java.util.UUID;
 
-public interface PricingRuleRepository extends JpaRepository<PricingRule, UUID> {
+public interface PricingRuleRepository extends JpaRepository<PricingRule, UUID>, RevisionRepository<PricingRule, UUID, Integer> {
 
     Optional<PricingRule> findByCategoryAndActiveTrue(String category);
 

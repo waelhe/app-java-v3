@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -53,7 +54,7 @@ public class BookingController {
                                                   Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
         Booking booking = bookingService.create(
-                consumerId, request.listingId(), request.notes());
+                consumerId, request.listingId(), request.startsAt(), request.endsAt(), request.notes());
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingMapper.toResponse(booking));
     }
 
@@ -77,6 +78,8 @@ public class BookingController {
 
     public record CreateBookingRequest(
             @NotNull UUID listingId,
+            @NotNull Instant startsAt,
+            @NotNull Instant endsAt,
             String notes
     ) {
     }

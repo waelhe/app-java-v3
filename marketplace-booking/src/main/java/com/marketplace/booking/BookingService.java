@@ -1,7 +1,9 @@
 package com.marketplace.booking;
 
 import com.marketplace.booking.spi.BookingSpi;
+import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.BookingSummary;
+import com.marketplace.shared.api.BookingCancelledEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -33,15 +36,18 @@ public class BookingService implements BookingSpi {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final ListingPriceProvider listingPriceProvider;
+    private final AvailabilityPort availabilityPort;
 
     public BookingService(BookingRepository bookingRepository,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher,
-                          ListingPriceProvider listingPriceProvider) {
+                          ListingPriceProvider listingPriceProvider,
+                          AvailabilityPort availabilityPort) {
         this.bookingRepository = bookingRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.listingPriceProvider = listingPriceProvider;
+        this.availabilityPort = availabilityPort;
     }
 
     @Transactional(readOnly = true)
@@ -107,9 +113,12 @@ public class BookingService implements BookingSpi {
 
     @Observed(name = "booking.create")
     @PreAuthorize("hasRole('CONSUMER')")
-    public Booking create(UUID consumerId, UUID listingId, String notes) {
+    public Booking create(UUID consumerId, UUID listingId, Instant startsAt, Instant endsAt, String notes) {
         ListingInfo info = listingPriceProvider.getListingInfo(listingId);
-        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), notes);
+        if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {
+            throw new BadRequestException("The provider is not available at the requested time");
+        }
+        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), startsAt, endsAt, notes);
         Booking saved = bookingRepository.save(booking);
         eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
         return saved;
@@ -124,6 +133,9 @@ public class BookingService implements BookingSpi {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);
         booking.confirm();
+        if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+        }
         return booking;
     }
 
@@ -148,7 +160,34 @@ public class BookingService implements BookingSpi {
         Booking booking = getById(id);
         verifyParticipantOwnership(booking, authentication);
         booking.cancel();
+        if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+        }
+        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
         return booking;
+    }
+
+    public void autoCancel(UUID id) {
+        Booking booking = getById(id);
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            return;
+        }
+        booking.cancel();
+        if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+        }
+        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
+    }
+
+    public void autoConfirm(UUID id) {
+        Booking booking = getById(id);
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            return;
+        }
+        booking.confirm();
+        if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+        }
     }
 
     private void verifyProviderOwnership(Booking booking, Authentication authentication) {
@@ -183,6 +222,8 @@ public class BookingService implements BookingSpi {
                 booking.getStatus().name(),
                 booking.getPriceCents(),
                 booking.getCurrency(),
+                booking.getStartsAt(),
+                booking.getEndsAt(),
                 booking.getCreatedAt(),
                 booking.getUpdatedAt()
         );

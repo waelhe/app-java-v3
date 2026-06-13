@@ -8,6 +8,8 @@ import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -28,6 +30,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class PaymentsService implements PaymentsSpi {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentsService.class);
 
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
@@ -172,6 +176,20 @@ public class PaymentsService implements PaymentsSpi {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         payment.markRefunded();
         return payment;
+    }
+
+    @Retry(name = "paymentProcessing")
+    public void autoRefundByBooking(UUID bookingId) {
+        paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
+            paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
+                try {
+                    payment.markRefunded();
+                    eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+                } catch (Exception e) {
+                    log.warn("Cannot refund payment for booking {}: {}", bookingId, e.getMessage());
+                }
+            });
+        });
     }
 
     private PaymentSummary toPaymentSummary(PaymentIntent paymentIntent) {

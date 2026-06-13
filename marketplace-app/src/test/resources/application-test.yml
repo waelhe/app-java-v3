@@ -1,4 +1,6 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}

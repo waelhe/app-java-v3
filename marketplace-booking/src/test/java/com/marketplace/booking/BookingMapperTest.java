@@ -3,6 +3,7 @@ package com.marketplace.booking;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -15,7 +16,7 @@ class BookingMapperTest {
     void toResponse_mapsAllFields() {
         UUID id = UUID.randomUUID();
         UUID listingId = UUID.randomUUID();
-        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), listingId, 10000L, "Test notes");
+        Booking booking = Booking.create(UUID.randomUUID(), UUID.randomUUID(), listingId, 10000L, null, null, "Test notes");
 
         BookingResponse response = mapper.toResponse(booking);
 

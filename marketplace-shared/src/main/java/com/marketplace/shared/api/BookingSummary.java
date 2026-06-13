@@ -11,6 +11,8 @@ public record BookingSummary(
         String status,
         Long priceCents,
         String currency,
+        Instant startsAt,
+        Instant endsAt,
         Instant createdAt,
         Instant updatedAt
 ) {

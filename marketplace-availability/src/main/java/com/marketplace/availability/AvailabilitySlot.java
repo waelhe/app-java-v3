@@ -47,4 +47,7 @@ public class AvailabilitySlot extends BaseEntity {
     public Instant getStartsAt() { return startsAt; }
     public Instant getEndsAt() { return endsAt; }
     public boolean isBooked() { return booked; }
+
+    public void markBooked() { this.booked = true; }
+    public void markAvailable() { this.booked = false; }
 }
