@@ -8,9 +8,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class PaymentWebhookSecurityTest {
 
     @Test
-    void allowsWhenSecretIsBlank() {
+    void rejectsWhenSecretIsBlank() {
         PaymentWebhookSecurity sec = new PaymentWebhookSecurity("");
-        assertDoesNotThrow(() -> sec.validateSignature(null));
+        assertThrows(AccessDeniedException.class, () -> sec.validateSignature(null));
     }
 
     @Test

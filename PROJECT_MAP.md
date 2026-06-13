@@ -3,7 +3,7 @@
 ## Current State (2026-06-13)
 
 **Branch:** `feat/jacoco-70pct-coverage-v5`
-**Java:** 21 (CI), 26 (local)
+**Java:** 21
 **Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14 | **JaCoCo:** 0.8.14
 
 ---
