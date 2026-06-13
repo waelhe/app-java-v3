@@ -30,7 +30,7 @@ public class PaymentWebhookSecurity {
     void warnIfSecretNotConfigured() {
         if (sharedSecret == null || sharedSecret.isBlank()) {
             log.warn("marketplace.payments.webhook.shared-secret is not configured — " +
-                    "webhook signature validation is DISABLED. Set this property in production.");
+                    "webhook requests will be REJECTED. Set this property in production.");
         }
     }
 

@@ -256,7 +256,7 @@ class PaymentsServiceTest {
     }
 
     @Test
-    void webhookEvent_skipsValidationWhenSignatureNull() {
+    void webhookEvent_passesNullSignatureToValidator() {
         String eventId = "evt_no_sig";
         when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
