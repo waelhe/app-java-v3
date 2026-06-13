@@ -45,6 +45,9 @@ marketplace:
       issuer: http://localhost:8080
     jwt:
       audience: marketplace-api
+  payments:
+    webhook:
+      shared-secret: test-shared-secret
 
 management:
   otlp:
