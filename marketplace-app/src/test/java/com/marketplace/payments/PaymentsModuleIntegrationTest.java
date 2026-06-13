@@ -31,6 +31,9 @@ class PaymentsModuleIntegrationTest {
     @Autowired
     private PaymentsService paymentsService;
 
+    @Autowired
+    private PaymentWebhookSecurity paymentWebhookSecurity;
+
     @Test
     void contextLoads() {
     }
@@ -43,7 +46,8 @@ class PaymentsModuleIntegrationTest {
 
     @Test
     void processWebhookEvent_returnsTrue() {
-        var result = paymentsService.processWebhookEvent("stripe", "evt_test", "payment.intent.succeeded", "test-sig");
+        String signature = paymentWebhookSecurity.computeSignature("evt_testpayment.intent.succeeded");
+        var result = paymentsService.processWebhookEvent("stripe", "evt_test", "payment.intent.succeeded", signature);
         assertThat(result).isTrue();
     }
 }
