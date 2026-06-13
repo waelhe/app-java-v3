@@ -58,7 +58,7 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
-        paymentWebhookSecurity.validateSignature(signature);
+        paymentWebhookSecurity.validateSignature(eventId + eventType, signature);
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
@@ -182,12 +182,8 @@ public class PaymentsService implements PaymentsSpi {
     public void autoRefundByBooking(UUID bookingId) {
         paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
             paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
-                try {
-                    payment.markRefunded();
-                    eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
-                } catch (Exception e) {
-                    log.warn("Cannot refund payment for booking {}: {}", bookingId, e.getMessage());
-                }
+                payment.markRefunded();
+                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
             });
         });
     }

@@ -252,11 +252,11 @@ class PaymentsServiceTest {
         boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", "sig");
 
         assertTrue(created);
-        verify(webhookSecurity).validateSignature("sig");
+        verify(webhookSecurity).validateSignature("evt_newpayment.succeeded", "sig");
     }
 
     @Test
-    void webhookEvent_skipsValidationWhenSignatureNull() {
+    void webhookEvent_passesNullSignatureToValidator() {
         String eventId = "evt_no_sig";
         when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -264,6 +264,6 @@ class PaymentsServiceTest {
         boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", null);
 
         assertTrue(created);
-        verify(webhookSecurity).validateSignature(null);
+        verify(webhookSecurity).validateSignature("evt_no_sigpayment.succeeded", null);
     }
 }
