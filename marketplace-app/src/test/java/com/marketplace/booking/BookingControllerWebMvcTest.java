@@ -8,6 +8,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -49,14 +50,15 @@ class BookingControllerWebMvcTest {
         var response = mockResponse(bookingId);
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(UUID.randomUUID());
-        when(bookingService.create(any(), any(), any())).thenReturn(booking);
+        when(bookingService.create(any(), any(), any(), any(), any())).thenReturn(booking);
         when(bookingMapper.toResponse(booking)).thenReturn(response);
 
+        var now = Instant.now();
         mockMvc.perform(post("/api/v1/bookings")
                         .contentType("application/json")
                         .content("""
-                                {"listingId": "%s"}
-                                """.formatted(listingId)))
+                                {"listingId": "%s", "startsAt": "%s", "endsAt": "%s"}
+                                """.formatted(listingId, now, now.plusSeconds(3600))))
                 .andExpect(status().isCreated());
     }
 
@@ -123,6 +125,6 @@ class BookingControllerWebMvcTest {
     }
 
     private static BookingResponse mockResponse(UUID id) {
-        return new BookingResponse(id, null, null, null, null, null);
+        return new BookingResponse(id, null, null, null, null, null, null, null);
     }
 }

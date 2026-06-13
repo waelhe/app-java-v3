@@ -1,34 +1,36 @@
 package com.marketplace.messaging;
 
+import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.security.CurrentUserProvider;
-import com.marketplace.shared.web.ApiVersioningConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.data.domain.AuditorAware;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(ModuleTestConfig.class)
+@WithMockUser
 class MessagingModuleIntegrationTest {
 
     @MockitoBean
@@ -50,37 +52,6 @@ class MessagingModuleIntegrationTest {
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(bookingInfo);
     }
 
-    @TestConfiguration
-    @EnableJpaAuditing
-    static class AuditingConfig {
-        @Bean
-        AuditorAware<String> auditorAware() {
-            return Optional::empty;
-        }
-    }
-
-    @TestConfiguration
-    static class TestBeans {
-        @Bean
-        ApiVersioningConfig apiVersioningConfig() {
-            return new ApiVersioningConfig();
-        }
-
-        @Bean
-        MarketplaceProperties marketplaceProperties() {
-            return new MarketplaceProperties(
-                    new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
-                    new MarketplaceProperties.Security(
-                            new MarketplaceProperties.Security.Jwt(
-                                    new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
-                                    "marketplace-api"
-                            ),
-                            new MarketplaceProperties.Security.AuthServer("http://localhost:8080")
-                    )
-            );
-        }
-    }
-
     @Test
     void contextLoads() {
     }
@@ -89,5 +60,15 @@ class MessagingModuleIntegrationTest {
     void createConversation_saves() {
         var conversation = messagingService.createConversation(CONSUMER_ID, UUID.randomUUID());
         assertThat(conversation.getId()).isNotNull();
+    }
+
+    @TestConfiguration
+    static class MessagingTestConfig {
+        @Bean
+        MarketplaceProperties marketplaceProperties() {
+            var props = mock(MarketplaceProperties.class);
+            when(props.cors()).thenReturn(new MarketplaceProperties.Cors(List.of("http://localhost:3000")));
+            return props;
+        }
     }
 }

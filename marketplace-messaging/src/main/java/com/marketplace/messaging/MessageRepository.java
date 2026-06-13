@@ -2,6 +2,7 @@ package com.marketplace.messaging;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -9,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.UUID;
 
-public interface MessageRepository extends JpaRepository<Message, UUID> {
+public interface MessageRepository extends JpaRepository<Message, UUID>, RevisionRepository<Message, UUID, Integer> {
 
     Page<Message> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
 

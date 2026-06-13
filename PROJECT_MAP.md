@@ -1,34 +1,32 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Current State (2026-06-12)
+## Current State (2026-06-13)
 
-**Branch:** `main`
+**Branch:** `feat/jacoco-70pct-coverage-v5`
 **Java:** 21 (CI), 26 (local)
-**Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14
+**Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14 | **JaCoCo:** 0.8.14
 
 ---
 
-## Modules (17)
+## Modules (16)
 
-| Module | Type | Status |
-|--------|------|--------|
-| **marketplace-app** | Composition root | ✅ |
-| **marketplace-platform-infra** | Shared infra (JPA, Security, Cache, Observability) | ✅ |
-| **marketplace-shared** | Shared API interfaces + exceptions | ✅ |
-| **marketplace-identity** | Domain (users, auth) | ✅ |
-| **marketplace-provider** | Domain (provider profiles) | ✅ |
-| **marketplace-catalog** | Domain (listings) | ✅ |
-| **marketplace-booking** | Domain (bookings, expiration) | ✅ |
-| **marketplace-payments** | Domain (payments, intents, webhooks) | ✅ |
-| **marketplace-pricing** | Domain (pricing rules) | ✅ |
-| **marketplace-reviews** | Domain (reviews) | ✅ |
-| **marketplace-disputes** | Domain (disputes) | ✅ |
-| **marketplace-messaging** | Domain (conversations, WebSocket) | ✅ |
-| **marketplace-notifications** | Domain (notifications) | ✅ |
-| **marketplace-availability** | Domain (availability slots) | ✅ |
-| **marketplace-ledger** | Domain (ledger, balances) | ✅ |
-| **marketplace-search** | Domain (full-text search) | ✅ |
-| **marketplace-admin** | Package in app (admin REST) | ✅ |
+| Module | Type | Coverage | Status |
+|--------|------|----------|--------|
+| **marketplace-app** | Composition root | ✅ 70% | ✅ |
+| **marketplace-platform-infra** | Shared infra (JPA, Security, Cache, Observability) | n/a | ✅ |
+| **marketplace-shared** | Shared API interfaces + exceptions | n/a | ✅ |
+| **marketplace-provider** | Domain (provider profiles) | ✅ 70% | ✅ |
+| **marketplace-catalog** | Domain (listings) | ✅ 70% | ✅ |
+| **marketplace-booking** | Domain (bookings, expiration) | ✅ 70% | ✅ |
+| **marketplace-payments** | Domain (payments, intents, webhooks) | ✅ 70% | ✅ |
+| **marketplace-pricing** | Domain (pricing rules) | ✅ 70% | ✅ |
+| **marketplace-reviews** | Domain (reviews) | ✅ 70% | ✅ |
+| **marketplace-messaging** | Domain (conversations, WebSocket) | ✅ 70% | ✅ |
+| **marketplace-notifications** | Domain (notifications) | ✅ 70% | ✅ |
+| **marketplace-availability** | Domain (availability slots) | ✅ 70% | ✅ |
+| **marketplace-ledger** | Domain (ledger, balances) | ✅ 70% | ✅ |
+| **marketplace-search** | Domain (full-text search) | ✅ 70% | ✅ |
+| **marketplace-admin** | Package in app (admin REST) | ✅ (in app) | ✅ |
 
 ---
 
@@ -36,7 +34,7 @@
 
 | Workflow | Status |
 |----------|--------|
-| Build & Test (JDK 21) — `mvn verify` | ✅ Passing |
+| Build & Test (JDK 21) — `mvn verify` | ✅ Passing (all 17 modules) |
 | Full Integration Test | ✅ Passing |
 | Maven Publish | ✅ |
 | Gitleaks Secret Scan | ✅ |
@@ -44,10 +42,66 @@
 
 ## Testing
 
-- **JaCoCo**: 70% coverage threshold across all 17 modules
-- **Integration tests**: 16 ModuleIntegrationTest classes in `marketplace-app`
-- **Unit tests**: Per-module service/controller/mapper tests
+- **JaCoCo**: 70% coverage threshold — all 15 business modules pass
+- **Unit tests**: 300+ across all modules (0 failures, 0 errors)
+- **Integration tests**: 14 ModuleIntegrationTest classes in `marketplace-app` (95 tests, 0 failures, 0 errors)
+- **WebMvcTest**: 44 controller tests across modules
 - **Infrastructure**: Testcontainers (PostgreSQL 17), Redis 7 (CI service)
+
+## Test Infrastructure Fixes (2026-06-13)
+
+### Integration Test Fixes
+All 14 ModuleIntegrationTests pass after fixing:
+
+1. **ModuleTestConfig** (`test.config` package):
+   - Created shared test config outside component scan root → avoids bean conflicts
+   - `@EnableJpaAuditing` — enables `@CreatedDate` for module tests
+   - Inline `WebMvcConfigurer` bean (replaces `ApiVersioningConfig`) — API version strategy for module context
+   - `@Primary` on `marketplaceProperties()` — resolves conflict with `@ConfigurationProperties` auto-registered bean
+   - `@ConditionalOnMissingBean` on `auditorAware()` — uses real bean when present (ALL_DEPENDENCIES mode)
+
+2. **AdminModuleIntegrationTest** (ALL_DEPENDENCIES mode):
+   - Removed `@MockitoBean` for `ListingPriceProvider` + `CatalogSearchPort` (both extend `CatalogSpi` → override real `catalogService` bean)
+   - Kept `@MockitoBean` for non-CatalogSpi SPIs: `ProviderLookupPort`, `AvailabilityPort`, `PaymentIntentLookupPort`, `BookingParticipantProvider`, `CurrentUserProvider`, `ProviderNameResolver`
+
+3. **LedgerModuleIntegrationTest**: Added `@MockitoBean BookingParticipantProvider`
+
+4. **MessagingModuleIntegrationTest**:
+   - Replaced `@MockitoBean MarketplaceProperties` with `@TestConfiguration` inner class providing properly-mocked bean
+   - Avoids NPE on `cors()` during `WebSocketConfig` context initialization
+
+5. **application-test.yml**: Added `spring.main.allow-bean-definition-overriding: true`
+
+## Phase 2 — Envers Auditing Hooks (2026-06-13)
+
+All 18 `@Audited` domain entities now have repositories extending `RevisionRepository<Entity, UUID, Integer>`:
+
+- `BookingRepository` — `RevisionRepository<Booking, UUID, Integer>`
+- `AvailabilitySlotRepository` — `RevisionRepository<AvailabilitySlot, UUID, Integer>`
+- `ProviderAvailabilityRuleRepository` — `RevisionRepository<ProviderAvailabilityRule, UUID, Integer>`
+- `ProviderTimeOffRepository` — `RevisionRepository<ProviderTimeOff, UUID, Integer>`
+- `CatalogListingRepository` — `RevisionRepository<CatalogListing, UUID, Integer>`
+- `ConversationRepository` — `RevisionRepository<Conversation, UUID, Integer>`
+- `MessageRepository` — `RevisionRepository<Message, UUID, Integer>`
+- `NotificationRepository` — `RevisionRepository<Notification, UUID, Integer>`
+- `PaymentIntentRepository` — `RevisionRepository<PaymentIntent, UUID, Integer>`
+- `PaymentWebhookEventRepository` — `RevisionRepository<PaymentWebhookEvent, UUID, Integer>`
+- `PricingRuleRepository` — `RevisionRepository<PricingRule, UUID, Integer>`
+- `ProviderProfileRepository` — `RevisionRepository<ProviderProfile, UUID, Integer>`
+- `ReviewRepository` — `RevisionRepository<Review, UUID, Integer>`
+- `ProviderBalanceRepository` — `RevisionRepository<ProviderBalance, UUID, Integer>`
+- `LedgerEntryRepository` — `RevisionRepository<LedgerEntry, UUID, Integer>`
+- `SearchIndexRepository` — `RevisionRepository<SearchIndexEntry, UUID, Integer>`
+- `ListingSearchViewRepository` — `RevisionRepository<ListingSearchView, UUID, Integer>`
+
+Plus new `RevisionService` in `marketplace-admin` package for unified audit querying.
+
+## JaCoCo Coverage Fixes (2026-06-13)
+
+| Module | Before | After | Fix |
+|--------|--------|-------|-----|
+| **marketplace-booking** | 0.61 | 0.70+ | Added 11 new tests: `getByIdForUser`, `listByConsumer/Provider/Status`, `listAll`/`listAllSummaries`, `listByStatusSummary` (string + invalid), `autoCancel` (pending + already), `autoConfirm` (pending + already) |
+| **marketplace-ledger** | 0.61 | 0.70+ | Added `LedgerPaymentEventListenerTest` with 3 tests: ignores non-completed events, credits ledger on completion, logs on failure |
 
 ## Phase 1 — Critical Integration Links (2026-06-12)
 

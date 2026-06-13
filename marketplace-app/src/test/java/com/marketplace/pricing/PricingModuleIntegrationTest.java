@@ -1,46 +1,28 @@
 package com.marketplace.pricing;
 
+import test.config.ModuleTestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.data.domain.AuditorAware;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.util.Optional;
 import java.util.UUID;
 
-import com.marketplace.shared.web.ApiVersioningConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest(mode = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(ModuleTestConfig.class)
+@WithMockUser
 class PricingModuleIntegrationTest {
 
     @Autowired
     private PricingService pricingService;
-
-    @TestConfiguration
-    @EnableJpaAuditing
-    static class AuditingConfig {
-        @Bean
-        AuditorAware<String> auditorAware() {
-            return Optional::empty;
-        }
-    }
-
-    @TestConfiguration
-    static class TestBeans {
-        @Bean
-        ApiVersioningConfig apiVersioningConfig() {
-            return new ApiVersioningConfig();
-        }
-    }
 
     @Test
     void contextLoads() {
