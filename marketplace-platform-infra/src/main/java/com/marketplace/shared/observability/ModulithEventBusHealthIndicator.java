@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ModulithEventBusHealthIndicator extends AbstractHealthIndicator {
 
-    private static final long STALE_THRESHOLD_SECONDS = 3600;
+    private static final long STALE_THRESHOLD_SECONDS = 21600;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -24,7 +24,9 @@ public class ModulithEventBusHealthIndicator extends AbstractHealthIndicator {
                     Integer.class,
                     STALE_THRESHOLD_SECONDS);
             if (staleCount != null && staleCount > 0) {
-                builder.down(new RuntimeException(staleCount + " stale event publications > " + STALE_THRESHOLD_SECONDS + "s"));
+                builder.withDetail("staleEventCount", staleCount)
+                       .withDetail("thresholdSeconds", STALE_THRESHOLD_SECONDS)
+                       .down();
             } else {
                 builder.up();
             }
