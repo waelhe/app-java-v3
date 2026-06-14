@@ -101,7 +101,7 @@ spring:
       mail.smtp.writetimeout: 5000
   cache:
     type: ${CACHE_TYPE:redis}
-    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents
+    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
   quartz:
     job-store-type: jdbc
     jdbc:

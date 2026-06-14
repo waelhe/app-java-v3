@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +37,7 @@ public class ProviderService {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
+    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile update(UUID id, String displayName, String bio, Authentication authentication) {
         ProviderProfile provider = getById(id);
         verifyOwnership(provider, authentication);
@@ -44,6 +46,7 @@ public class ProviderService {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile verify(UUID id) {
         ProviderProfile provider = getById(id);
         provider.verify();
@@ -51,6 +54,7 @@ public class ProviderService {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile suspend(UUID id) {
         ProviderProfile provider = getById(id);
         provider.suspend();

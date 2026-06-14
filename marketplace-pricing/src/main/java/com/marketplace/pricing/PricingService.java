@@ -3,6 +3,7 @@ package com.marketplace.pricing;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 
 import java.math.BigDecimal;
@@ -66,6 +67,7 @@ public class PricingService {
         return pricingRuleRepository.findAll();
     }
 
+    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule createRule(String name, String category,
                                   BigDecimal taxRate, BigDecimal discountPct) {
         PricingRule rule = PricingRule.create(name, category, taxRate, discountPct);
@@ -78,6 +80,7 @@ public class PricingService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule activate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
@@ -86,6 +89,7 @@ public class PricingService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule deactivate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
@@ -94,6 +98,7 @@ public class PricingService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public void deleteById(UUID id) {
         if (!pricingRuleRepository.existsById(id)) {
             throw new ResourceNotFoundException("PricingRule", id);

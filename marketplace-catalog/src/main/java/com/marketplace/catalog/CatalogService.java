@@ -129,7 +129,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing create(UUID providerId, String title, String description,
                                   String category, Long priceCents) {
         providerLookupPort.findById(providerId)
@@ -142,7 +142,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, Authentication authentication) {
         ProviderListing listing = getById(id);
@@ -152,7 +152,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing activate(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -161,7 +161,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing pause(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -177,7 +177,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListingSummary archiveListing(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
@@ -186,7 +186,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search"}, allEntries = true)
+    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);

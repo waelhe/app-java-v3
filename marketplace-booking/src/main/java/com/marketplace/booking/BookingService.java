@@ -167,6 +167,7 @@ public class BookingService implements BookingSpi {
         return booking;
     }
 
+    @CacheEvict(cacheNames = "bookings", key = "#id")
     public void autoCancel(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CANCELLED) {
@@ -179,6 +180,7 @@ public class BookingService implements BookingSpi {
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
     }
 
+    @CacheEvict(cacheNames = "bookings", key = "#id")
     public void autoConfirm(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CONFIRMED) {
