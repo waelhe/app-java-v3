@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -56,6 +57,7 @@ public class ReviewsService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
+    @CacheEvict(cacheNames = "reviews", allEntries = true)
     public Review create(UUID bookingId, UUID reviewerId,
                          Integer rating, String comment) {
         if (reviewRepository.existsByBookingId(bookingId)) {
@@ -79,6 +81,7 @@ public class ReviewsService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
+    @CacheEvict(cacheNames = "reviews", key = "#id")
     public Review update(UUID id, Integer rating, String comment, Authentication authentication) {
         Review review = getById(id);
         verifyOwnership(review, authentication);
