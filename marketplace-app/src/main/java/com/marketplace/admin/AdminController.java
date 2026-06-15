@@ -18,6 +18,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,6 +53,14 @@ public class AdminController {
     @GetMapping("/users")
     public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
+    }
+
+    public record ChangeRoleRequest(@NotBlank String role) {}
+
+    @PutMapping("/users/{id}/role")
+    public ResponseEntity<Void> updateUserRole(@PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
+        identitySpi.updateUserRole(id, request.role());
+        return ResponseEntity.ok().build();
     }
 
     // -- Listings -------------------------------------------------------

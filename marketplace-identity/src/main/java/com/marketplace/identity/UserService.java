@@ -75,6 +75,12 @@ public class UserService implements IdentitySpi {
         return UserRole.CONSUMER;
     }
 
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
+    public void updateUserRole(UUID userId, String newRole) {
+        User user = getById(userId);
+        user.changeRole(UserRole.valueOf(newRole));
+    }
+
     private UserSummary toUserSummary(User user) {
         return new UserSummary(
                 user.getId(),

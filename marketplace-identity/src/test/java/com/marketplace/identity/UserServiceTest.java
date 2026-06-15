@@ -151,6 +151,26 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUserRole_changesRole() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("sub-1", "a@b.com", "Alice", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+
+        userService.updateUserRole(id, "ADMIN");
+
+        assertEquals(UserRole.ADMIN, user.getRole());
+        verify(userRepository).findById(id);
+    }
+
+    @Test
+    void updateUserRole_throwsWhenNotFound() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> userService.updateUserRole(id, "ADMIN"));
+    }
+
+    @Test
     void syncFromOidc_resolvesProviderRole() {
         Jwt jwt = mock(Jwt.class);
         JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);

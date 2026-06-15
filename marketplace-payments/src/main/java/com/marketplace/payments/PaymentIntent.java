@@ -35,6 +35,9 @@ public class PaymentIntent extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private PaymentIntentStatus status = PaymentIntentStatus.CREATED;
 
+    @Column(name = "refunded_amount_cents", nullable = false)
+    private Long refundedAmountCents = 0L;
+
     @Column(name = "idempotency_key", length = 64, unique = true)
     private String idempotencyKey;
 
@@ -62,6 +65,7 @@ public class PaymentIntent extends BaseEntity {
     public Long getAmountCents() { return amountCents; }
     public String getCurrency() { return currency; }
     public PaymentIntentStatus getStatus() { return status; }
+    public Long getRefundedAmountCents() { return refundedAmountCents; }
     public String getIdempotencyKey() { return idempotencyKey; }
 
     public void markProcessing() {
@@ -82,5 +86,17 @@ public class PaymentIntent extends BaseEntity {
     public void cancel() {
         this.status.validateTransitionTo(PaymentIntentStatus.CANCELLED);
         this.status = PaymentIntentStatus.CANCELLED;
+    }
+
+    public void markRefunded() {
+        this.status.validateTransitionTo(PaymentIntentStatus.REFUNDED);
+        this.status = PaymentIntentStatus.REFUNDED;
+        this.refundedAmountCents = this.amountCents;
+    }
+
+    public void markPartiallyRefunded(Long refundAmountCents) {
+        this.status.validateTransitionTo(PaymentIntentStatus.PARTIALLY_REFUNDED);
+        this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;
+        this.refundedAmountCents = refundAmountCents;
     }
 }

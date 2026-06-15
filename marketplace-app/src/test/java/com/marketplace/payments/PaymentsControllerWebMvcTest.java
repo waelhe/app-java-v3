@@ -110,11 +110,23 @@ class PaymentsControllerWebMvcTest {
 
     @Test
     void webhook_returnsAccepted() throws Exception {
-        when(paymentsService.processWebhookEvent(any(), any(), any(), any())).thenReturn(true);
+        when(paymentsService.processWebhookEvent(any(), any(), any(), any(), any(), any())).thenReturn(true);
 
         mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
                         .param("eventId", "evt_123")
-                        .param("eventType", "payment.succeeded"))
+                        .param("eventType", "payment_intent.succeeded"))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void webhook_withPaymentIntentIdReturnsAccepted() throws Exception {
+        when(paymentsService.processWebhookEvent(any(), any(), any(), any(), any(), any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
+                        .param("eventId", "evt_456")
+                        .param("eventType", "payment_intent.succeeded")
+                        .param("paymentIntentId", "00000000-0000-0000-0000-000000000001")
+                        .param("externalId", "pi_test_789"))
                 .andExpect(status().isAccepted());
     }
 

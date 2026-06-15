@@ -230,17 +230,109 @@ class PaymentsServiceTest {
     @Test
     void refundPayment_marksRefunded() {
         UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
         Payment payment = of(Payment.class)
                 .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
                 .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 5000L)
                 .create();
         payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Payment result = service.refundPayment(paymentId);
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
+        assertEquals(result.getAmountCents(), result.getRefundedAmountCents());
+    }
+
+    @Test
+    void refundPayment_withAmount_partialRefund() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId, 3000L);
+
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(3000L, result.getRefundedAmountCents());
+    }
+
+    @Test
+    void refundPayment_withNullAmount_fullRefund() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId, null);
+
+        assertEquals(PaymentStatus.REFUNDED, result.getStatus());
+        assertEquals(10000L, result.getRefundedAmountCents());
+    }
+
+    @Test
+    void refundPayment_withExcessAmount_fullRefund() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 5000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId, 99999L);
+
+        assertEquals(PaymentStatus.REFUNDED, result.getStatus());
+        assertEquals(5000L, result.getRefundedAmountCents());
     }
 
     @Test
@@ -249,10 +341,46 @@ class PaymentsServiceTest {
         when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", "sig");
+        boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig");
 
         assertTrue(created);
-        verify(webhookSecurity).validateSignature("evt_newpayment.succeeded", "sig");
+        verify(webhookSecurity).validateSignature("evt_newpayment_intent.succeeded", "sig");
+    }
+
+    @Test
+    void webhookEvent_succeededDispatchesConfirmIntent() {
+        String eventId = "evt_dispatch";
+        UUID intentId = create(UUID.class);
+        String externalId = "pi_test_123";
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PROCESSING)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+
+        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig", intentId, externalId);
+
+        assertTrue(created);
+        verify(intentRepository).findById(intentId);
+        verify(eventPublisher).publishEvent(any(PaymentStateChangedEvent.class));
+    }
+
+    @Test
+    void webhookEvent_succeededWithoutIntentIdLogsWarning() {
+        String eventId = "evt_no_intent";
+        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig");
+
+        assertTrue(created);
+        verifyNoInteractions(intentRepository);
     }
 
     @Test

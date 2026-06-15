@@ -2,20 +2,30 @@ package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.ConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 @Transactional
 public class AvailabilityService implements AvailabilityPort {
+
+    private static final Logger log = LoggerFactory.getLogger(AvailabilityService.class);
 
     private final AvailabilitySlotRepository repository;
     private final ProviderAvailabilityRuleRepository ruleRepository;
@@ -50,6 +60,29 @@ public class AvailabilityService implements AvailabilityPort {
 
     public ProviderAvailabilityRule createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
+    }
+
+    @ApplicationModuleListener
+    public void onDayHasPassed(DayHasPassed event) {
+        LocalDate today = LocalDate.now();
+        List<ProviderAvailabilityRule> rules = ruleRepository.findByDayOfWeek(today.getDayOfWeek());
+        if (rules.isEmpty()) {
+            log.info("No availability rules configured for {}", today.getDayOfWeek());
+            return;
+        }
+        for (ProviderAvailabilityRule rule : rules) {
+            try {
+                Instant startsAt = today.atTime(rule.getStartTime()).toInstant(ZoneOffset.UTC);
+                Instant endsAt = today.atTime(rule.getEndTime()).toInstant(ZoneOffset.UTC);
+                if (repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(
+                        rule.getProviderId(), startsAt, endsAt).isEmpty()) {
+                    createSlot(rule.getProviderId(), startsAt, endsAt);
+                    log.info("Generated slot for provider {}: {} - {}", rule.getProviderId(), startsAt, endsAt);
+                }
+            } catch (Exception e) {
+                log.error("Failed to generate slot from rule {}", rule.getId(), e);
+            }
+        }
     }
 
     @Observed(name = "availability.timeoff.create")

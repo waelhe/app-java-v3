@@ -155,4 +155,15 @@ class AdminControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertTrue(result.getBody().isEmpty());
     }
+
+    @Test
+    void updateUserRole_callsSpiAndReturnsOk() {
+        UUID userId = UUID.randomUUID();
+        var request = new AdminController.ChangeRoleRequest("ADMIN");
+
+        ResponseEntity<Void> result = controller.updateUserRole(userId, request);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        verify(identitySpi).updateUserRole(userId, "ADMIN");
+    }
 }

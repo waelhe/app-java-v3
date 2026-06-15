@@ -27,6 +27,17 @@ public class LedgerService {
         return balanceRepository.save(balance);
     }
 
+    public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId, long amountCents) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        }
+        entryRepository.save(LedgerEntry.commissionDebit(providerId, sourceId, amountCents));
+        ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
     @Transactional(readOnly = true)
     public ProviderBalance getBalance(UUID providerId) {
         return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));

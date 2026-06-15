@@ -4,9 +4,12 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.UserSummary;
 import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
@@ -21,24 +24,73 @@ import static org.mockito.Mockito.*;
 
 class NotificationServiceTest {
 
+    private static final UUID CONSUMER_ID = UUID.randomUUID();
+    private static final UUID PROVIDER_ID = UUID.randomUUID();
+    private static final String CONSUMER_EMAIL = "consumer@test.com";
+    private static final String PROVIDER_EMAIL = "provider@test.com";
+
+    private NotificationService createService(NotificationRepository repository,
+                                              BookingParticipantProvider bookingProvider,
+                                              PaymentIntentLookupPort paymentIntentLookupPort,
+                                              CurrentUserProvider currentUserProvider,
+                                              UserLookupPort userLookupPort,
+                                              Optional<SimpMessagingTemplate> messagingTemplate,
+                                              Optional<EmailService> emailService) {
+        return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, messagingTemplate, emailService);
+    }
+
+    private UserLookupPort mockUserLookup() {
+        UserLookupPort lookup = mock(UserLookupPort.class);
+        when(lookup.findById(any())).thenReturn(Optional.empty());
+        when(lookup.findById(CONSUMER_ID)).thenReturn(Optional.of(
+                new UserSummary(CONSUMER_ID, CONSUMER_EMAIL, "Consumer", "CONSUMER", Instant.now(), Instant.now())));
+        when(lookup.findById(PROVIDER_ID)).thenReturn(Optional.of(
+                new UserSummary(PROVIDER_ID, PROVIDER_EMAIL, "Provider", "PROVIDER", Instant.now(), Instant.now())));
+        return lookup;
+    }
+
+    private BookingInfo bookingInfo() {
+        return new BookingInfo(PROVIDER_ID, CONSUMER_ID, "CONFIRMED", 5000L, "SAR", Instant.now(), Instant.now());
+    }
+
     @Test
     void onBookingCreatedCreatesTwoNotifications() {
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        UserLookupPort userLookupPort = mockUserLookup();
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID bookingId = create(UUID.class);
-        BookingInfo info = of(BookingInfo.class)
-                .set(field(BookingInfo::priceCents), 5000L)
-                .set(field(BookingInfo::currency), "SAR")
-                .create();
-        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(info);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
 
         service.onBookingCreated(bookingId);
 
         verify(repository, times(2)).save(any(Notification.class));
+    }
+
+    @Test
+    void onBookingCreatedSendsEmailAndWebSocket() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        EmailService emailService = mock(EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingCreated(bookingId);
+
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 
     @Test
@@ -47,8 +99,10 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID userId = create(UUID.class);
         Notification notification = of(Notification.class)
@@ -70,27 +124,20 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        UserLookupPort userLookupPort = mockUserLookup();
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID paymentIntentId = create(UUID.class);
         UUID bookingId = create(UUID.class);
-        UUID consumerId = create(UUID.class);
-        UUID providerId = create(UUID.class);
 
         when(paymentIntentLookupPort.findById(paymentIntentId))
                 .thenReturn(Optional.of(of(PaymentIntentDetails.class)
                         .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
                         .set(field(PaymentIntentDetails::bookingId), bookingId)
-                        .set(field(PaymentIntentDetails::consumerId), consumerId)
+                        .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
                         .create()));
-        when(bookingProvider.getBookingInfo(bookingId))
-                .thenReturn(of(BookingInfo.class)
-                        .set(field(BookingInfo::providerId), providerId)
-                        .set(field(BookingInfo::consumerId), consumerId)
-                        .set(field(BookingInfo::status), "CONFIRMED")
-                        .set(field(BookingInfo::priceCents), 5000L)
-                        .set(field(BookingInfo::currency), "SAR")
-                        .create());
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
@@ -103,8 +150,10 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.empty());
@@ -121,8 +170,10 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID ownerId = UUID.randomUUID();
         UUID differentUserId = UUID.randomUUID();
@@ -144,8 +195,10 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID ownerId = UUID.randomUUID();
         UUID differentUserId = UUID.randomUUID();
@@ -166,7 +219,9 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID paymentIntentId = UUID.randomUUID();
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.empty());
@@ -182,8 +237,10 @@ class NotificationServiceTest {
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
         Authentication authentication = mock(Authentication.class);
-        NotificationService service = new NotificationService(repository, bookingProvider, paymentIntentLookupPort, currentUserProvider, Optional.empty());
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID userId = UUID.randomUUID();
         var notifications = List.of(mock(Notification.class));
@@ -193,5 +250,34 @@ class NotificationServiceTest {
         var result = service.getMyNotifications(authentication);
 
         assertThat(result).isSameAs(notifications);
+    }
+
+    @Test
+    void onPaymentStateChangedSendsEmailAndWebSocket() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        EmailService emailService = mock(EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID paymentIntentId = create(UUID.class);
+        UUID bookingId = create(UUID.class);
+
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(of(PaymentIntentDetails.class)
+                        .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
+                        .set(field(PaymentIntentDetails::bookingId), bookingId)
+                        .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .create()));
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 }

@@ -10,6 +10,7 @@ public record PaymentSummary(
         Long amountCents,
         String currency,
         String status,
+        Long refundedAmountCents,
         Instant createdAt,
         Instant updatedAt
 ) {

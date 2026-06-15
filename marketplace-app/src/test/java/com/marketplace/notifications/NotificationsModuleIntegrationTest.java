@@ -3,6 +3,7 @@ package com.marketplace.notifications;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,9 @@ class NotificationsModuleIntegrationTest {
 
     @MockitoBean
     PaymentIntentLookupPort paymentIntentLookupPort;
+
+    @MockitoBean
+    UserLookupPort userLookupPort;
 
     @Autowired
     private NotificationService notificationService;

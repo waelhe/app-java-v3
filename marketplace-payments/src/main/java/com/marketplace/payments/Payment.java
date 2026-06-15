@@ -29,6 +29,9 @@ public class Payment extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private PaymentStatus status = PaymentStatus.PENDING;
 
+    @Column(name = "refunded_amount_cents", nullable = false)
+    private Long refundedAmountCents = 0L;
+
     @Column(name = "external_id", length = 200)
     private String externalId;
 
@@ -50,6 +53,7 @@ public class Payment extends BaseEntity {
     public UUID getPaymentIntentId() { return paymentIntentId; }
     public Long getAmountCents() { return amountCents; }
     public PaymentStatus getStatus() { return status; }
+    public Long getRefundedAmountCents() { return refundedAmountCents; }
     public String getExternalId() { return externalId; }
 
     public void markCompleted(String externalId) {
@@ -66,5 +70,12 @@ public class Payment extends BaseEntity {
     public void markRefunded() {
         this.status.validateTransitionTo(PaymentStatus.REFUNDED);
         this.status = PaymentStatus.REFUNDED;
+        this.refundedAmountCents = this.amountCents;
+    }
+
+    public void markPartiallyRefunded(Long refundAmountCents) {
+        this.status.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED);
+        this.status = PaymentStatus.PARTIALLY_REFUNDED;
+        this.refundedAmountCents = refundAmountCents;
     }
 }

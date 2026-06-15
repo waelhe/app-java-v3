@@ -40,5 +40,9 @@ public class LedgerEntry extends BaseEntity {
         return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.PAYMENT_CREDIT, amountCents);
     }
 
+    public static LedgerEntry commissionDebit(UUID providerId, UUID sourceId, long amountCents) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.COMMISSION_DEBIT, amountCents);
+    }
+
     @Override public UUID getId(){return id;}
 }

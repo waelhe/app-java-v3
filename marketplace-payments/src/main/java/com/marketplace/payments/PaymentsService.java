@@ -58,12 +58,37 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
+        return processWebhookEvent(provider, eventId, eventType, signature, null, null);
+    }
+
+    public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature,
+                                       UUID paymentIntentId, String externalId) {
         paymentWebhookSecurity.validateSignature(eventId + eventType, signature);
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
         webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, eventType));
+        dispatchWebhookEvent(eventType, paymentIntentId, externalId);
         return true;
+    }
+
+    private void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId) {
+        switch (eventType) {
+            case "payment_intent.succeeded" -> {
+                if (paymentIntentId != null) {
+                    log.info("Webhook dispatch: payment_intent.succeeded for intent {}", paymentIntentId);
+                    confirmIntent(paymentIntentId, externalId);
+                } else {
+                    log.warn("Webhook payment_intent.succeeded missing paymentIntentId: eventType={}", eventType);
+                }
+            }
+            case "payment_intent.processing" ->
+                log.info("Webhook: payment intent processing confirmed by gateway: eventType={}", eventType);
+            case "payment_intent.payment_failed" ->
+                log.warn("Webhook: payment intent failed: eventType={}", eventType);
+            default ->
+                log.debug("Unhandled webhook event type: {}", eventType);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -91,6 +116,7 @@ public class PaymentsService implements PaymentsSpi {
                 view.getAmountCents(),
                 view.getCurrency(),
                 view.getStatus().name(),
+                view.getRefundedAmountCents(),
                 view.getCreatedAt(),
                 view.getUpdatedAt()
         );
@@ -172,19 +198,40 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public Payment refundPayment(UUID paymentId) {
+        return refundPayment(paymentId, null);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Retry(name = "paymentProcessing")
+    @CacheEvict(cacheNames = "paymentIntents", key = "#result.paymentIntentId")
+    public Payment refundPayment(UUID paymentId, Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
-        payment.markRefunded();
+        PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
+
+        boolean isFullRefund = (amountCents == null || amountCents >= payment.getAmountCents());
+        if (isFullRefund) {
+            payment.markRefunded();
+            intent.markRefunded();
+        } else {
+            payment.markPartiallyRefunded(amountCents);
+            intent.markPartiallyRefunded(amountCents);
+        }
+        paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
         return payment;
     }
 
     @Retry(name = "paymentProcessing")
     public void autoRefundByBooking(UUID bookingId) {
         paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
+            intent.markRefunded();
+            paymentIntentRepository.save(intent);
             paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
                 payment.markRefunded();
-                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
             });
+            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
         });
     }
 
@@ -196,6 +243,7 @@ public class PaymentsService implements PaymentsSpi {
                 paymentIntent.getAmountCents(),
                 paymentIntent.getCurrency(),
                 paymentIntent.getStatus().name(),
+                paymentIntent.getRefundedAmountCents(),
                 paymentIntent.getCreatedAt(),
                 paymentIntent.getUpdatedAt()
         );
