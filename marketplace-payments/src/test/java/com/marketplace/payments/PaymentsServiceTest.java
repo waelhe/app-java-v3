@@ -7,6 +7,7 @@ import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import jakarta.validation.constraints.Min;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -374,6 +375,14 @@ class PaymentsServiceTest {
     }
 
     @Test
+    void refundPayment_hasMinAnnotationOnAmountCents() throws Exception {
+        var method = PaymentsService.class.getMethod("refundPayment", UUID.class, Long.class);
+        var annotation = method.getParameters()[1].getAnnotation(Min.class);
+        assertNotNull(annotation, "@Min annotation required on amountCents parameter");
+        assertEquals(1, annotation.value());
+    }
+
+    @Test
     void refundPayment_overflow_throwsConflictException() {
         UUID paymentId = create(UUID.class);
         UUID intentId = create(UUID.class);
@@ -394,6 +403,32 @@ class PaymentsServiceTest {
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
 
         assertThrows(ConflictException.class, () -> service.refundPayment(paymentId, 5000L));
+    }
+
+    @Test
+    void refundPayment_intentOverflow_throwsConflictException() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 9000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThrows(ConflictException.class, () -> service.refundPayment(paymentId, 2000L));
     }
 
     @Test

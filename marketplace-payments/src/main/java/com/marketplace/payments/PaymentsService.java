@@ -224,6 +224,9 @@ public class PaymentsService implements PaymentsSpi {
             if (totalRefunded > payment.getAmountCents()) {
                 throw new ConflictException("Refund amount exceeds payment amount");
             }
+            if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds intent amount");
+            }
             payment.markPartiallyRefunded(amountCents);
             intent.markPartiallyRefunded(amountCents);
         }
