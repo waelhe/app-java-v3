@@ -44,4 +44,8 @@ public class ProviderAvailabilityRule extends BaseEntity {
 
     @Override
     public UUID getId() { return id; }
+    public UUID getProviderId() { return providerId; }
+    public DayOfWeek getDayOfWeek() { return dayOfWeek; }
+    public LocalTime getStartTime() { return startTime; }
+    public LocalTime getEndTime() { return endTime; }
 }

@@ -45,6 +45,18 @@
   - Sends `WebSocketNotification` to `/topic/notifications/{userId}` on booking creation and payment state change
 - **Test:** `NotificationServiceTest` — new test verifies `convertAndSend()` is invoked
 - **Tests:** 14/14 ✅
+
+### H5 — Slot auto-generation from ProviderAvailabilityRule (2026-06-15)
+- **Files:** `AvailabilityService.java`, `ProviderAvailabilityRule.java`, `ProviderAvailabilityRuleRepository.java`, `pom.xml`
+- **Changes:**
+  - Added `spring-modulith-moments` + `spring-modulith-events-api` dependencies to availability module
+  - Added getters (`getProviderId`, `getDayOfWeek`, `getStartTime`, `getEndTime`) to `ProviderAvailabilityRule`
+  - Added `findByDayOfWeek(DayOfWeek)` to repository
+  - Added `@ApplicationModuleListener onDayHasPassed(DayHasPassed)` that generates `AvailabilitySlot` for each matching rule, skips duplicates
+- **Tests:** 3 new (generates slots, skips existing, does nothing when no rules)
+- **Tests:** 18/18 ✅ (AvailabilityServiceTest: 10)
+- **Official docs:** Spring Modulith Moments (docs.spring.io/spring-modulith) — `DayHasPassed` event pattern
+
 **Java:** 21
 **Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14 | **JaCoCo:** 0.8.14
 
