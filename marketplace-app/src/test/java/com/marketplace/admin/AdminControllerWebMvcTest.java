@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration;
@@ -97,6 +98,16 @@ class AdminControllerWebMvcTest {
         when(revisionService.getEntityNames()).thenReturn(java.util.Set.of());
 
         mockMvc.perform(get("/api/v1/admin/revisions/entities"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUserRole_returnsOk() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/users/{id}/role", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "ADMIN"}
+                                """))
                 .andExpect(status().isOk());
     }
 }
