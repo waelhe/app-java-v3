@@ -9,14 +9,16 @@ public enum PaymentStatus {
     PENDING,
     COMPLETED,
     FAILED,
-    REFUNDED;
+    REFUNDED,
+    PARTIALLY_REFUNDED;
 
     public static final java.util.Map<PaymentStatus, Set<PaymentStatus>> TRANSITIONS =
             Collections.unmodifiableMap(java.util.Map.of(
                     PENDING, EnumSet.of(COMPLETED, FAILED),
-                    COMPLETED, EnumSet.of(REFUNDED),
+                    COMPLETED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),
                     FAILED, EnumSet.noneOf(PaymentStatus.class),
-                    REFUNDED, EnumSet.noneOf(PaymentStatus.class)
+                    REFUNDED, EnumSet.noneOf(PaymentStatus.class),
+                    PARTIALLY_REFUNDED, EnumSet.noneOf(PaymentStatus.class)
             ));
 
     public void validateTransitionTo(PaymentStatus target) {

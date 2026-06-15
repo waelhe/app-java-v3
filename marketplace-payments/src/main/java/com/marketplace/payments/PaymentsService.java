@@ -116,6 +116,7 @@ public class PaymentsService implements PaymentsSpi {
                 view.getAmountCents(),
                 view.getCurrency(),
                 view.getStatus().name(),
+                view.getRefundedAmountCents(),
                 view.getCreatedAt(),
                 view.getUpdatedAt()
         );
@@ -197,9 +198,28 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     public Payment refundPayment(UUID paymentId) {
+        return refundPayment(paymentId, null);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Retry(name = "paymentProcessing")
+    @CacheEvict(cacheNames = "paymentIntents", key = "#result.paymentIntentId")
+    public Payment refundPayment(UUID paymentId, Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
-        payment.markRefunded();
+        PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
+
+        boolean isFullRefund = (amountCents == null || amountCents >= payment.getAmountCents());
+        if (isFullRefund) {
+            payment.markRefunded();
+            intent.markRefunded();
+        } else {
+            payment.markPartiallyRefunded(amountCents);
+            intent.markPartiallyRefunded(amountCents);
+        }
+        paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
         return payment;
     }
 
@@ -223,6 +243,7 @@ public class PaymentsService implements PaymentsSpi {
                 paymentIntent.getAmountCents(),
                 paymentIntent.getCurrency(),
                 paymentIntent.getStatus().name(),
+                paymentIntent.getRefundedAmountCents(),
                 paymentIntent.getCreatedAt(),
                 paymentIntent.getUpdatedAt()
         );

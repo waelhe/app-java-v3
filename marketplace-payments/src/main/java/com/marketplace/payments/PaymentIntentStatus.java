@@ -11,16 +11,18 @@ public enum PaymentIntentStatus {
     SUCCEEDED,
     FAILED,
     CANCELLED,
-    REFUNDED;
+    REFUNDED,
+    PARTIALLY_REFUNDED;
 
     public static final java.util.Map<PaymentIntentStatus, Set<PaymentIntentStatus>> TRANSITIONS =
             Collections.unmodifiableMap(java.util.Map.of(
                     CREATED, EnumSet.of(PROCESSING, CANCELLED),
                     PROCESSING, EnumSet.of(SUCCEEDED, FAILED),
-                    SUCCEEDED, EnumSet.of(REFUNDED),
+                    SUCCEEDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),
                     FAILED, EnumSet.noneOf(PaymentIntentStatus.class),
                     CANCELLED, EnumSet.noneOf(PaymentIntentStatus.class),
-                    REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class)
+                    REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class),
+                    PARTIALLY_REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class)
             ));
 
     public void validateTransitionTo(PaymentIntentStatus target) {

@@ -21,6 +21,8 @@ public interface PaymentIntentSummaryView {
 
     PaymentIntentStatus getStatus();
 
+    Long getRefundedAmountCents();
+
     Instant getCreatedAt();
 
     Instant getUpdatedAt();
