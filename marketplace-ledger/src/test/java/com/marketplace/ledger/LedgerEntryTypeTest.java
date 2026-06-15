@@ -9,5 +9,6 @@ class LedgerEntryTypeTest {
     @Test
     void hasExpectedValues() {
         assertEquals("PAYMENT_CREDIT", LedgerEntryType.PAYMENT_CREDIT.name());
+        assertEquals("COMMISSION_DEBIT", LedgerEntryType.COMMISSION_DEBIT.name());
     }
 }

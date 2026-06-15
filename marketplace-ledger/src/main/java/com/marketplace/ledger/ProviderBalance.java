@@ -28,4 +28,6 @@ public class ProviderBalance extends BaseEntity {
     @Override public UUID getId(){return providerId;}
     public long getAvailableCents(){return availableCents;}
     public void credit(long amountCents){ this.availableCents += amountCents; }
+
+    public void debit(long amountCents){ this.availableCents -= amountCents; }
 }
