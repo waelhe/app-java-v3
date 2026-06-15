@@ -317,7 +317,7 @@ class PaymentsServiceTest {
     }
 
     @Test
-    void refundPayment_withExcessAmount_fullRefund() {
+    void refundPayment_withExactAmount_fullRefund() {
         UUID paymentId = create(UUID.class);
         UUID intentId = create(UUID.class);
         Payment payment = of(Payment.class)
