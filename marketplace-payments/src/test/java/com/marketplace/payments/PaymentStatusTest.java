@@ -43,7 +43,17 @@ class PaymentStatusTest {
     }
 
     @Test
-    void partiallyRefunded_rejectsAnyTransition() {
+    void partiallyRefunded_acceptsRefunded() {
+        assertDoesNotThrow(() -> PaymentStatus.PARTIALLY_REFUNDED.validateTransitionTo(PaymentStatus.REFUNDED));
+    }
+
+    @Test
+    void partiallyRefunded_acceptsPartiallyRefunded() {
+        assertDoesNotThrow(() -> PaymentStatus.PARTIALLY_REFUNDED.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED));
+    }
+
+    @Test
+    void partiallyRefunded_rejectsCompleted() {
         assertThrows(ConflictException.class, () -> PaymentStatus.PARTIALLY_REFUNDED.validateTransitionTo(PaymentStatus.COMPLETED));
     }
 }

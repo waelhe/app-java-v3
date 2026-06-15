@@ -22,7 +22,7 @@ public enum PaymentIntentStatus {
                     FAILED, EnumSet.noneOf(PaymentIntentStatus.class),
                     CANCELLED, EnumSet.noneOf(PaymentIntentStatus.class),
                     REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class),
-                    PARTIALLY_REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class)
+                    PARTIALLY_REFUNDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED)
             ));
 
     public void validateTransitionTo(PaymentIntentStatus target) {

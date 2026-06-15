@@ -220,6 +220,10 @@ resilience4j:
         base-config: default
         limit-for-period: 30
 
+app:
+  commission:
+    rate: 0.10
+
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}

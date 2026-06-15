@@ -22,6 +22,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
 
 import io.micrometer.observation.annotation.Observed;
 
@@ -29,6 +32,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
+@Validated
 public class PaymentsService implements PaymentsSpi {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentsService.class);
@@ -204,7 +208,7 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     @CacheEvict(cacheNames = "paymentIntents", key = "#result.paymentIntentId")
-    public Payment refundPayment(UUID paymentId, Long amountCents) {
+    public Payment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
