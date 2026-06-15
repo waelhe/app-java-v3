@@ -5,6 +5,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PaymentSummary;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -22,6 +23,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
 
 import io.micrometer.observation.annotation.Observed;
 
@@ -29,6 +33,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
+@Validated
 public class PaymentsService implements PaymentsSpi {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentsService.class);
@@ -204,13 +209,22 @@ public class PaymentsService implements PaymentsSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
     @CacheEvict(cacheNames = "paymentIntents", key = "#result.paymentIntentId")
-    public Payment refundPayment(UUID paymentId, Long amountCents) {
+    public Payment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
 
-        boolean isFullRefund = (amountCents == null || amountCents >= payment.getAmountCents());
+        long alreadyRefunded = payment.getRefundedAmountCents();
+        if (amountCents != null) {
+            if (alreadyRefunded + amountCents > payment.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds payment amount");
+            }
+            if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds intent amount");
+            }
+        }
+        boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());
         if (isFullRefund) {
             payment.markRefunded();
             intent.markRefunded();

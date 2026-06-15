@@ -18,7 +18,7 @@ public enum PaymentStatus {
                     COMPLETED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),
                     FAILED, EnumSet.noneOf(PaymentStatus.class),
                     REFUNDED, EnumSet.noneOf(PaymentStatus.class),
-                    PARTIALLY_REFUNDED, EnumSet.noneOf(PaymentStatus.class)
+                    PARTIALLY_REFUNDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED)
             ));
 
     public void validateTransitionTo(PaymentStatus target) {

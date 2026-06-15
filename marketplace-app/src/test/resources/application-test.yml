@@ -37,6 +37,10 @@ spring:
             user-name-attribute: sub
             jwk-set-uri: http://localhost/oauth2/jwks
 
+app:
+  commission:
+    rate: 0.10
+
 marketplace:
   cors:
     allowed-origins: http://localhost:3000

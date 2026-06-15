@@ -76,6 +76,6 @@ public class Payment extends BaseEntity {
     public void markPartiallyRefunded(Long refundAmountCents) {
         this.status.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED);
         this.status = PaymentStatus.PARTIALLY_REFUNDED;
-        this.refundedAmountCents = refundAmountCents;
+        this.refundedAmountCents += refundAmountCents;
     }
 }

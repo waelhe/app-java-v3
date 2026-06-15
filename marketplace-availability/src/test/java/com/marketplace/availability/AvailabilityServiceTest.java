@@ -140,49 +140,73 @@ class AvailabilityServiceTest {
 
     @Test
     void onDayHasPassed_generatesSlotsFromRules() {
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
+        LocalDate date = LocalDate.now();
         UUID providerId = create(UUID.class);
-        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, today, LocalTime.of(9, 0), LocalTime.of(17, 0));
-        DayHasPassed event = mock(DayHasPassed.class);
+        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(17, 0));
+        DayHasPassed event = DayHasPassed.of(date);
 
-        when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of(rule));
+        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
                 .thenReturn(Optional.empty());
         when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.onDayHasPassed(event);
 
-        verify(ruleRepository).findByDayOfWeek(today);
+        verify(ruleRepository, atLeastOnce()).findByDayOfWeek(date.getDayOfWeek());
+        verify(repository, atLeastOnce()).save(any(AvailabilitySlot.class));
+    }
+
+    @Test
+    void onDayHasPassed_generatesSlotsForSevenDays() {
+        LocalDate monday = LocalDate.of(2026, 6, 15);
+        UUID providerId = create(UUID.class);
+        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
+        DayHasPassed event = DayHasPassed.of(monday);
+
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.MONDAY)).thenReturn(List.of(rule));
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.TUESDAY)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.WEDNESDAY)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.THURSDAY)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.FRIDAY)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.SATURDAY)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(DayOfWeek.SUNDAY)).thenReturn(List.of());
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onDayHasPassed(event);
+
+        verify(ruleRepository, times(7)).findByDayOfWeek(any(DayOfWeek.class));
         verify(repository).save(any(AvailabilitySlot.class));
     }
 
     @Test
     void onDayHasPassed_skipsWhenSlotAlreadyExists() {
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
+        LocalDate date = LocalDate.now();
         UUID providerId = create(UUID.class);
-        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, today, LocalTime.of(9, 0), LocalTime.of(17, 0));
-        DayHasPassed event = mock(DayHasPassed.class);
+        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(17, 0));
+        DayHasPassed event = DayHasPassed.of(date);
 
-        when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of(rule));
+        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
                 .thenReturn(Optional.of(mock(AvailabilitySlot.class)));
 
         service.onDayHasPassed(event);
 
-        verify(ruleRepository).findByDayOfWeek(today);
+        verify(ruleRepository, atLeastOnce()).findByDayOfWeek(date.getDayOfWeek());
         verify(repository, never()).save(any(AvailabilitySlot.class));
     }
 
     @Test
     void onDayHasPassed_doesNothingWhenNoRules() {
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
-        DayHasPassed event = mock(DayHasPassed.class);
+        LocalDate date = LocalDate.now();
+        DayHasPassed event = DayHasPassed.of(date);
 
-        when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of());
+        when(ruleRepository.findByDayOfWeek(any(DayOfWeek.class))).thenReturn(List.of());
 
         service.onDayHasPassed(event);
 
-        verify(ruleRepository).findByDayOfWeek(today);
+        verify(ruleRepository, times(7)).findByDayOfWeek(any(DayOfWeek.class));
         verifyNoInteractions(repository);
     }
 }

@@ -7,6 +7,8 @@ import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,11 +17,13 @@ import static org.mockito.Mockito.*;
 
 class LedgerPaymentEventListenerTest {
 
+    private static final double COMMISSION_RATE = 0.10;
+
     private final LedgerService ledgerService = mock(LedgerService.class);
     private final PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
     private final LedgerPaymentEventListener listener = new LedgerPaymentEventListener(
-            ledgerService, paymentIntentLookupPort, bookingParticipantProvider);
+            ledgerService, paymentIntentLookupPort, bookingParticipantProvider, COMMISSION_RATE);
 
     @Test
     void ignoresNonCompletedEvents() {
@@ -45,6 +49,11 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents);
+        verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
+                BigDecimal.valueOf(priceCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue());
     }
 
     @Test
