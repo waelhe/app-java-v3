@@ -339,7 +339,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, 99999L);
+        Payment result = service.refundPayment(paymentId, 5000L);
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(5000L, result.getRefundedAmountCents());
@@ -375,6 +375,35 @@ class PaymentsServiceTest {
     }
 
     @Test
+    void refundPayment_accumulationToFull_refunds() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 8000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 8000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId, 2000L);
+
+        assertEquals(PaymentStatus.REFUNDED, result.getStatus());
+        assertEquals(10000L, result.getRefundedAmountCents());
+    }
+
+    @Test
     void refundPayment_hasMinAnnotationOnAmountCents() throws Exception {
         var method = PaymentsService.class.getMethod("refundPayment", UUID.class, Long.class);
         var annotation = method.getParameters()[1].getAnnotation(Min.class);
@@ -398,6 +427,7 @@ class PaymentsServiceTest {
                 .set(field(PaymentIntent::getId), intentId)
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
                 .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 8000L)
                 .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));

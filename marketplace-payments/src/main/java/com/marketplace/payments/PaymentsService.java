@@ -215,18 +215,20 @@ public class PaymentsService implements PaymentsSpi {
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found: " + payment.getPaymentIntentId()));
 
-        boolean isFullRefund = (amountCents == null || amountCents >= payment.getAmountCents());
-        if (isFullRefund) {
-            payment.markRefunded();
-            intent.markRefunded();
-        } else {
-            long totalRefunded = payment.getRefundedAmountCents() + amountCents;
-            if (totalRefunded > payment.getAmountCents()) {
+        long alreadyRefunded = payment.getRefundedAmountCents();
+        if (amountCents != null) {
+            if (alreadyRefunded + amountCents > payment.getAmountCents()) {
                 throw new ConflictException("Refund amount exceeds payment amount");
             }
             if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
                 throw new ConflictException("Refund amount exceeds intent amount");
             }
+        }
+        boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());
+        if (isFullRefund) {
+            payment.markRefunded();
+            intent.markRefunded();
+        } else {
             payment.markPartiallyRefunded(amountCents);
             intent.markPartiallyRefunded(amountCents);
         }

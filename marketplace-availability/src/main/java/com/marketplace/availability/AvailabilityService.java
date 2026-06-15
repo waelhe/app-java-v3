@@ -31,6 +31,8 @@ public class AvailabilityService implements AvailabilityPort {
     private final ProviderAvailabilityRuleRepository ruleRepository;
     private final ProviderTimeOffRepository timeOffRepository;
 
+    private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
+
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,
                                ProviderTimeOffRepository timeOffRepository) {
@@ -61,8 +63,6 @@ public class AvailabilityService implements AvailabilityPort {
     public ProviderAvailabilityRule createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
     }
-
-    private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
 
     @ApplicationModuleListener
     public void onDayHasPassed(DayHasPassed event) {
