@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -236,12 +237,14 @@ class PaymentsServiceTest {
                 .set(field(Payment::getPaymentIntentId), intentId)
                 .set(field(Payment::getStatus), PaymentStatus.PENDING)
                 .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
         payment.markCompleted("ext-1");
         PaymentIntent intent = of(PaymentIntent.class)
                 .set(field(PaymentIntent::getId), intentId)
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
                 .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 0L)
                 .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
@@ -263,12 +266,14 @@ class PaymentsServiceTest {
                 .set(field(Payment::getPaymentIntentId), intentId)
                 .set(field(Payment::getStatus), PaymentStatus.PENDING)
                 .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
         payment.markCompleted("ext-1");
         PaymentIntent intent = of(PaymentIntent.class)
                 .set(field(PaymentIntent::getId), intentId)
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
                 .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 0L)
                 .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
@@ -290,12 +295,14 @@ class PaymentsServiceTest {
                 .set(field(Payment::getPaymentIntentId), intentId)
                 .set(field(Payment::getStatus), PaymentStatus.PENDING)
                 .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
         payment.markCompleted("ext-1");
         PaymentIntent intent = of(PaymentIntent.class)
                 .set(field(PaymentIntent::getId), intentId)
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
                 .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 0L)
                 .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
@@ -317,12 +324,14 @@ class PaymentsServiceTest {
                 .set(field(Payment::getPaymentIntentId), intentId)
                 .set(field(Payment::getStatus), PaymentStatus.PENDING)
                 .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
         payment.markCompleted("ext-1");
         PaymentIntent intent = of(PaymentIntent.class)
                 .set(field(PaymentIntent::getId), intentId)
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
                 .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 0L)
                 .create();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
@@ -333,6 +342,58 @@ class PaymentsServiceTest {
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(5000L, result.getRefundedAmountCents());
+    }
+
+    @Test
+    void refundPayment_multiplePartials_accumulates() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 3000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 3000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service.refundPayment(paymentId, 2000L);
+
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(5000L, result.getRefundedAmountCents());
+    }
+
+    @Test
+    void refundPayment_overflow_throwsConflictException() {
+        UUID paymentId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), paymentId)
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 10000L)
+                .set(field(Payment::getRefundedAmountCents), 8000L)
+                .create();
+        payment.markCompleted("ext-1");
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
+                .set(field(PaymentIntent::getAmountCents), 10000L)
+                .create();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+
+        assertThrows(ConflictException.class, () -> service.refundPayment(paymentId, 5000L));
     }
 
     @Test

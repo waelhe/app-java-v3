@@ -145,6 +145,7 @@ class AvailabilityServiceTest {
         ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, today, LocalTime.of(9, 0), LocalTime.of(17, 0));
         DayHasPassed event = mock(DayHasPassed.class);
 
+        when(event.getDate()).thenReturn(LocalDate.now());
         when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of(rule));
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
                 .thenReturn(Optional.empty());
@@ -152,6 +153,7 @@ class AvailabilityServiceTest {
 
         service.onDayHasPassed(event);
 
+        verify(event).getDate();
         verify(ruleRepository).findByDayOfWeek(today);
         verify(repository).save(any(AvailabilitySlot.class));
     }
@@ -163,12 +165,14 @@ class AvailabilityServiceTest {
         ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, today, LocalTime.of(9, 0), LocalTime.of(17, 0));
         DayHasPassed event = mock(DayHasPassed.class);
 
+        when(event.getDate()).thenReturn(LocalDate.now());
         when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of(rule));
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
                 .thenReturn(Optional.of(mock(AvailabilitySlot.class)));
 
         service.onDayHasPassed(event);
 
+        verify(event).getDate();
         verify(ruleRepository).findByDayOfWeek(today);
         verify(repository, never()).save(any(AvailabilitySlot.class));
     }
@@ -178,10 +182,12 @@ class AvailabilityServiceTest {
         DayOfWeek today = LocalDate.now().getDayOfWeek();
         DayHasPassed event = mock(DayHasPassed.class);
 
+        when(event.getDate()).thenReturn(LocalDate.now());
         when(ruleRepository.findByDayOfWeek(today)).thenReturn(List.of());
 
         service.onDayHasPassed(event);
 
+        verify(event).getDate();
         verify(ruleRepository).findByDayOfWeek(today);
         verifyNoInteractions(repository);
     }

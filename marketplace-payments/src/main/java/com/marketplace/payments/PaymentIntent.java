@@ -97,6 +97,6 @@ public class PaymentIntent extends BaseEntity {
     public void markPartiallyRefunded(Long refundAmountCents) {
         this.status.validateTransitionTo(PaymentIntentStatus.PARTIALLY_REFUNDED);
         this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;
-        this.refundedAmountCents = refundAmountCents;
+        this.refundedAmountCents += refundAmountCents;
     }
 }

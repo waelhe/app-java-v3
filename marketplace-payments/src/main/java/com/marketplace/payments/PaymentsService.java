@@ -5,6 +5,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PaymentSummary;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -219,6 +220,10 @@ public class PaymentsService implements PaymentsSpi {
             payment.markRefunded();
             intent.markRefunded();
         } else {
+            long totalRefunded = payment.getRefundedAmountCents() + amountCents;
+            if (totalRefunded > payment.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds payment amount");
+            }
             payment.markPartiallyRefunded(amountCents);
             intent.markPartiallyRefunded(amountCents);
         }

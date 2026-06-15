@@ -7,6 +7,8 @@ import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,7 +49,11 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents);
-        verify(ledgerService).debitFromCommission(providerId, paymentIntentId, (long) (priceCents * COMMISSION_RATE));
+        verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
+                BigDecimal.valueOf(priceCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue());
     }
 
     @Test

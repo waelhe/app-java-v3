@@ -62,19 +62,20 @@ public class AvailabilityService implements AvailabilityPort {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
     }
 
-    static final int SLOT_GENERATION_DAYS_AHEAD = 7;
+    private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
 
     @ApplicationModuleListener
     public void onDayHasPassed(DayHasPassed event) {
-        LocalDate today = LocalDate.now();
+        LocalDate date = event.getDate();
         for (int i = 0; i < SLOT_GENERATION_DAYS_AHEAD; i++) {
-            generateSlotsForDate(today.plusDays(i));
+            generateSlotsForDate(date.plusDays(i));
         }
     }
 
     private void generateSlotsForDate(LocalDate date) {
         List<ProviderAvailabilityRule> rules = ruleRepository.findByDayOfWeek(date.getDayOfWeek());
         if (rules.isEmpty()) {
+            log.info("No availability rules configured for {}", date.getDayOfWeek());
             return;
         }
         for (ProviderAvailabilityRule rule : rules) {
