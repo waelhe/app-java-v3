@@ -73,8 +73,10 @@ public class PaymentsController {
     public ResponseEntity<Void> webhook(@PathVariable String provider,
                                         @RequestParam String eventId,
                                         @RequestParam String eventType,
+                                        @RequestParam(required = false) UUID paymentIntentId,
+                                        @RequestParam(required = false) String externalId,
                                         @RequestHeader(value = "X-Webhook-Signature", required = false) String signature) {
-        boolean created = paymentsService.processWebhookEvent(provider, eventId, eventType, signature);
+        boolean created = paymentsService.processWebhookEvent(provider, eventId, eventType, signature, paymentIntentId, externalId);
         return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();
     }
 

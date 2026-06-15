@@ -83,4 +83,9 @@ public class PaymentIntent extends BaseEntity {
         this.status.validateTransitionTo(PaymentIntentStatus.CANCELLED);
         this.status = PaymentIntentStatus.CANCELLED;
     }
+
+    public void markRefunded() {
+        this.status.validateTransitionTo(PaymentIntentStatus.REFUNDED);
+        this.status = PaymentIntentStatus.REFUNDED;
+    }
 }

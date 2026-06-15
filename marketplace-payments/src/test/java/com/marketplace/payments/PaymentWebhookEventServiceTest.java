@@ -26,7 +26,7 @@ class PaymentWebhookEventServiceTest {
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity);
         when(webhookRepository.findByEventId("evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
-        boolean created = service.processWebhookEvent("mock", "evt_1", "payment.succeeded", "sig");
+        boolean created = service.processWebhookEvent("mock", "evt_1", "payment_intent.succeeded", "sig");
 
         assertThat(created).isFalse();
         verify(webhookRepository, never()).save(any());

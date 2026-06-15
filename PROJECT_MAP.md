@@ -2,7 +2,49 @@
 
 ## Current State (2026-06-14)
 
-**Branch:** `feat/prod-readiness-gaps`
+**Branch:** `main` (local behind origin — run `git pull`)
+
+## Sprint 1 — H4+H9+H10 (2026-06-14)
+
+### H8 — Webhook eventType dispatch (2026-06-15)
+- **Files:** `PaymentsService.java`, `PaymentsController.java`
+- **Changes:**
+  - Added `processWebhookEvent(..., paymentIntentId, externalId)` overload with event dispatch
+  - Added `dispatchWebhookEvent()` — `payment_intent.succeeded` → `confirmIntent()`, logs for other types
+  - Added `paymentIntentId` and `externalId` query params to `POST /webhooks/{provider}` endpoint
+  - Event names aligned with Stripe convention (`payment_intent.succeeded`)
+- **Tests:** 3 new (succeeded dispatches confirmIntent, succeeded without intentId logs warning, controller with intentId)
+- **Tests:** 27/27 ✅ (PaymentsServiceTest: 17, PaymentsControllerTest: 9, PaymentWebhookEventServiceTest: 1)
+- **WebMvcTest:** 6/6 ✅ (new: webhook with paymentIntentId + externalId returns Accepted)
+- **Official docs:** Stripe event types (docs.stripe.com/api/events/types) — `payment_intent.succeeded`, `.processing`, `.payment_failed`
+
+
+### H4 — PaymentIntent REFUNDED transition
+- **Files:** `PaymentIntentStatus.java`, `PaymentIntent.java`, `PaymentsService.java`
+- **Changes:**
+  - Added `REFUNDED` enum value with transition `SUCCEEDED→REFUNDED`
+  - Added `PaymentIntent.markRefunded()` method
+  - Updated `PaymentsService.autoRefundByBooking()` to transition intent status
+- **Test:** `PaymentIntentStatusTest` — 2 new tests (succeeded_acceptsRefunded, refunded_rejectsAnyTransition)
+- **Tests:** 49/49 ✅
+
+### H9 — Email sending from NotificationService
+- **Files:** `UserLookupPort.java` (new), `UserLookupPortImpl.java` (new), `NotificationService.java`
+- **Changes:**
+  - Created `UserLookupPort` interface in `shared` module (`UserLookupPort.findById() → UserSummary`)
+  - Implemented `UserLookupPortImpl` in `identity` module
+  - `NotificationService.onBookingCreated()/onPaymentStateChanged()` now call `emailService.send()` with resolved user email
+- **Test:** `NotificationServiceTest` — new test verifies emailService.send() is invoked
+- **Tests:** 14/14 ✅
+
+### H10 — WebSocket notifications
+- **Files:** `WebSocketNotification.java` (new), `NotificationService.java`, `pom.xml`
+- **Changes:**
+  - Added `spring-boot-starter-websocket` dependency to notifications module
+  - `NotificationService` injects `Optional<SimpMessagingTemplate>`
+  - Sends `WebSocketNotification` to `/topic/notifications/{userId}` on booking creation and payment state change
+- **Test:** `NotificationServiceTest` — new test verifies `convertAndSend()` is invoked
+- **Tests:** 14/14 ✅
 **Java:** 21
 **Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14 | **JaCoCo:** 0.8.14
 

@@ -46,8 +46,8 @@ class PaymentsModuleIntegrationTest {
 
     @Test
     void processWebhookEvent_returnsTrue() {
-        String signature = paymentWebhookSecurity.computeSignature("evt_testpayment.intent.succeeded");
-        var result = paymentsService.processWebhookEvent("stripe", "evt_test", "payment.intent.succeeded", signature);
+        String signature = paymentWebhookSecurity.computeSignature("evt_testpayment_intent.succeeded");
+        var result = paymentsService.processWebhookEvent("stripe", "evt_test", "payment_intent.succeeded", signature);
         assertThat(result).isTrue();
     }
 }

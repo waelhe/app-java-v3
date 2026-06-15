@@ -58,12 +58,37 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
+        return processWebhookEvent(provider, eventId, eventType, signature, null, null);
+    }
+
+    public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature,
+                                       UUID paymentIntentId, String externalId) {
         paymentWebhookSecurity.validateSignature(eventId + eventType, signature);
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
         webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, eventType));
+        dispatchWebhookEvent(eventType, paymentIntentId, externalId);
         return true;
+    }
+
+    private void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId) {
+        switch (eventType) {
+            case "payment_intent.succeeded" -> {
+                if (paymentIntentId != null) {
+                    log.info("Webhook dispatch: payment_intent.succeeded for intent {}", paymentIntentId);
+                    confirmIntent(paymentIntentId, externalId);
+                } else {
+                    log.warn("Webhook payment_intent.succeeded missing paymentIntentId: eventType={}", eventType);
+                }
+            }
+            case "payment_intent.processing" ->
+                log.info("Webhook: payment intent processing confirmed by gateway: eventType={}", eventType);
+            case "payment_intent.payment_failed" ->
+                log.warn("Webhook: payment intent failed: eventType={}", eventType);
+            default ->
+                log.debug("Unhandled webhook event type: {}", eventType);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -181,10 +206,12 @@ public class PaymentsService implements PaymentsSpi {
     @Retry(name = "paymentProcessing")
     public void autoRefundByBooking(UUID bookingId) {
         paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
+            intent.markRefunded();
+            paymentIntentRepository.save(intent);
             paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
                 payment.markRefunded();
-                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
             });
+            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
         });
     }
 

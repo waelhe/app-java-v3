@@ -135,9 +135,9 @@ class PaymentsControllerTest {
     @Test
     void webhook_returnsOk() {
         boolean created = false;
-        when(paymentsService.processWebhookEvent("stripe", "evt_1", "payment.succeeded", "sig")).thenReturn(created);
+        when(paymentsService.processWebhookEvent("stripe", "evt_1", "payment_intent.succeeded", "sig", null, null)).thenReturn(created);
 
-        ResponseEntity<Void> result = controller.webhook("stripe", "evt_1", "payment.succeeded", "sig");
+        ResponseEntity<Void> result = controller.webhook("stripe", "evt_1", "payment_intent.succeeded", null, null, "sig");
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
@@ -145,9 +145,20 @@ class PaymentsControllerTest {
     @Test
     void webhook_returnsAcceptedWhenNew() {
         boolean created = true;
-        when(paymentsService.processWebhookEvent("stripe", "evt_2", "payment.succeeded", "sig")).thenReturn(created);
+        when(paymentsService.processWebhookEvent("stripe", "evt_2", "payment_intent.succeeded", "sig", null, null)).thenReturn(created);
 
-        ResponseEntity<Void> result = controller.webhook("stripe", "evt_2", "payment.succeeded", "sig");
+        ResponseEntity<Void> result = controller.webhook("stripe", "evt_2", "payment_intent.succeeded", null, null, "sig");
+
+        assertEquals(HttpStatus.ACCEPTED, result.getStatusCode());
+    }
+
+    @Test
+    void webhook_withPaymentIntentIdDispatches() {
+        UUID intentId = UUID.randomUUID();
+        boolean created = true;
+        when(paymentsService.processWebhookEvent("stripe", "evt_3", "payment_intent.succeeded", "sig", intentId, "pi_123")).thenReturn(created);
+
+        ResponseEntity<Void> result = controller.webhook("stripe", "evt_3", "payment_intent.succeeded", intentId, "pi_123", "sig");
 
         assertEquals(HttpStatus.ACCEPTED, result.getStatusCode());
     }
