@@ -39,21 +39,20 @@ public class LedgerPaymentEventListener {
         if (!"COMPLETED".equals(event.state())) {
             return;
         }
-        paymentIntentLookupPort.findById(event.paymentIntentId()).ifPresent(intent -> {
-            try {
-                BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
-                long priceCents = bookingInfo.priceCents();
-                ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents);
-                long commissionCents = BigDecimal.valueOf(priceCents)
-                        .multiply(BigDecimal.valueOf(commissionRate))
-                        .setScale(0, RoundingMode.HALF_UP)
-                        .longValue();
-                ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents);
-                log.info("Ledger processed: credited {} to provider {}, debited {} as commission",
-                        priceCents, bookingInfo.providerId(), commissionCents);
-            } catch (Exception e) {
-                log.error("Failed to process ledger (credit + commission debit) for intentId={}", intent.paymentIntentId(), e);
-            }
-        });
+        paymentIntentLookupPort.findById(event.paymentIntentId())
+                .ifPresent(this::processLedgerEntry);
+    }
+
+    private void processLedgerEntry(PaymentIntentDetails intent) {
+        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
+        long priceCents = bookingInfo.priceCents();
+        ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents);
+        long commissionCents = BigDecimal.valueOf(priceCents)
+                .multiply(BigDecimal.valueOf(commissionRate))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValue();
+        ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents);
+        log.info("Ledger processed: credited {} to provider {}, debited {} as commission",
+                priceCents, bookingInfo.providerId(), commissionCents);
     }
 }
