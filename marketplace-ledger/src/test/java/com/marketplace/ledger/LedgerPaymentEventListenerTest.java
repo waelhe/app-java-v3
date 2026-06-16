@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 class LedgerPaymentEventListenerTest {
@@ -57,7 +58,7 @@ class LedgerPaymentEventListenerTest {
     }
 
     @Test
-    void logsErrorWhenBookingLookupFails() {
+    void throwsWhenBookingLookupFails() {
         UUID paymentIntentId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
@@ -66,8 +67,30 @@ class LedgerPaymentEventListenerTest {
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenThrow(new RuntimeException("lookup failed"));
 
-        listener.onPaymentCompleted(event);
+        assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
 
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong());
+    }
+
+    @Test
+    void propagatesExceptionWhenDebitFailsAfterCredit() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        long priceCents = 5000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), "COMPLETED");
+        var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
+                priceCents, "USD", Instant.now(), Instant.now());
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        doThrow(new RuntimeException("DB connection lost"))
+                .when(ledgerService).debitFromCommission(any(), any(), anyLong());
+
+        assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
+
+        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents);
+        verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong());
     }
 }
