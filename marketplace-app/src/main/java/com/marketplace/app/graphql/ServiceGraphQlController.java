@@ -1,7 +1,7 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.CatalogService;
 import com.marketplace.catalog.ProviderListing;
+import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -18,26 +18,26 @@ import java.util.UUID;
 @Controller
 public class ServiceGraphQlController {
 
-    private final CatalogService catalogService;
+    private final CatalogSpi catalogSpi;
     private final CurrentUserProvider currentUserProvider;
     private final ServiceMapper serviceMapper;
 
-    public ServiceGraphQlController(CatalogService catalogService,
+    public ServiceGraphQlController(CatalogSpi catalogSpi,
                                     CurrentUserProvider currentUserProvider,
                                     ServiceMapper serviceMapper) {
-        this.catalogService = catalogService;
+        this.catalogSpi = catalogSpi;
         this.currentUserProvider = currentUserProvider;
         this.serviceMapper = serviceMapper;
     }
 
     @QueryMapping
     public ServiceResponse service(@Argument UUID id) {
-        return serviceMapper.toResponse(catalogService.getById(id));
+        return serviceMapper.toResponse(catalogSpi.getById(id));
     }
 
     @QueryMapping
     public List<ServiceResponse> services() {
-        return catalogService.findAll(Pageable.unpaged()).getContent().stream()
+        return catalogSpi.findAll(Pageable.unpaged()).getContent().stream()
                 .map(serviceMapper::toResponse)
                 .toList();
     }
@@ -47,7 +47,7 @@ public class ServiceGraphQlController {
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
                                          Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
-        ProviderListing listing = catalogService.create(
+        ProviderListing listing = catalogSpi.create(
                 providerId, input.name(), input.description(),
                 input.category(), input.priceCents());
         return serviceMapper.toResponse(listing);

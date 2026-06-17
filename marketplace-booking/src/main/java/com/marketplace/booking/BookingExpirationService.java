@@ -7,7 +7,7 @@ import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Component
@@ -25,18 +25,12 @@ public class BookingExpirationService {
 
     @ApplicationModuleListener
     public void onDayHasPassed(DayHasPassed event) {
-        Instant cutoff = Instant.now().minus(24, ChronoUnit.HOURS);
+        Instant cutoff = event.getDate().atStartOfDay(ZoneOffset.UTC).toInstant();
         List<Booking> stale = bookingRepository.findAll(
                 BookingSpecifications.hasStatus(BookingStatus.PENDING)
                         .and(BookingSpecifications.createdBefore(cutoff))
         );
-        stale.forEach(b -> {
-            try {
-                bookingService.autoCancel(b.getId());
-            } catch (Exception e) {
-                log.error("Failed to expire booking: {}", b.getId(), e);
-            }
-        });
+        stale.forEach(b -> bookingService.autoCancel(b.getId()));
     }
 
 }
