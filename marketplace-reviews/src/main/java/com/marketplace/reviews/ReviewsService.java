@@ -6,6 +6,7 @@ import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
+import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -86,6 +87,7 @@ public class ReviewsService {
         Review review = getById(id);
         verifyOwnership(review, authentication);
         review.update(rating, comment);
+        eventPublisher.publishEvent(new ReviewUpdatedEvent(id));
         return review;
     }
 

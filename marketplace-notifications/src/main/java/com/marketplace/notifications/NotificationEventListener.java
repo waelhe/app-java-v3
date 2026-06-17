@@ -20,24 +20,15 @@ public class NotificationEventListener {
 
     @ApplicationModuleListener
     public void onBookingCreated(BookingCreatedEvent event) {
-        try {
-            notificationService.onBookingCreated(event.bookingId());
-            log.info("Notification sent for booking created: {}", event.bookingId());
-        } catch (Exception e) {
-            log.error("Failed to send notification for booking created: {}", event.bookingId(), e);
-        }
+        notificationService.onBookingCreated(event.bookingId());
+        log.info("Notification sent for booking created: {}", event.bookingId());
     }
 
     @ApplicationModuleListener
     public void onPaymentStateChanged(PaymentStateChangedEvent event) {
-        try {
-            notificationService.onPaymentStateChanged(event.paymentIntentId(), event.state());
-            log.info("Notification sent for payment state change: intentId={}, state={}",
-                    event.paymentIntentId(), event.state());
-        } catch (Exception e) {
-            log.error("Failed to send notification for payment state change: intentId={}, state={}",
-                    event.paymentIntentId(), event.state(), e);
-        }
+        notificationService.onPaymentStateChanged(event.paymentIntentId(), event.state());
+        log.info("Notification sent for payment state change: intentId={}, state={}",
+                event.paymentIntentId(), event.state());
     }
 
 }

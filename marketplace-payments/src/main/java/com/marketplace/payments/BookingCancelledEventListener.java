@@ -19,11 +19,7 @@ public class BookingCancelledEventListener {
 
     @ApplicationModuleListener
     public void onBookingCancelled(BookingCancelledEvent event) {
-        try {
-            paymentsService.autoRefundByBooking(event.bookingId());
-            log.info("Auto-refund triggered for booking: {}", event.bookingId());
-        } catch (Exception e) {
-            log.error("Failed to auto-refund for booking: {}", event.bookingId(), e);
-        }
+        paymentsService.autoRefundByBooking(event.bookingId());
+        log.info("Auto-refund triggered for booking: {}", event.bookingId());
     }
 }

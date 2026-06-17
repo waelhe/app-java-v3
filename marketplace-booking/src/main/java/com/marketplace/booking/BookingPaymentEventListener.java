@@ -27,14 +27,9 @@ public class BookingPaymentEventListener {
             return;
         }
         paymentIntentLookupPort.findById(event.paymentIntentId()).ifPresent(intent -> {
-            try {
-                bookingService.autoConfirm(intent.bookingId());
-                log.info("Booking auto-confirmed from payment: bookingId={}, paymentIntentId={}",
-                        intent.bookingId(), intent.paymentIntentId());
-            } catch (Exception e) {
-                log.error("Failed to auto-confirm booking from payment: paymentIntentId={}",
-                        event.paymentIntentId(), e);
-            }
+            bookingService.autoConfirm(intent.bookingId());
+            log.info("Booking auto-confirmed from payment: bookingId={}, paymentIntentId={}",
+                    intent.bookingId(), intent.paymentIntentId());
         });
     }
 }

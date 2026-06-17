@@ -141,13 +141,13 @@ class ResilienceAnnotationTest {
     class SearchControllerRateLimiting {
 
         @Test
-        @DisplayName("search should have @RateLimiter")
-        void search_hasRateLimiter() throws NoSuchMethodException {
-            Method method = SearchController.class.getMethod("search",
-                    String.class, String.class, org.springframework.data.domain.Pageable.class);
+        @DisplayName("searchWithCriteria should have @RateLimiter")
+        void searchWithCriteria_hasRateLimiter() throws NoSuchMethodException {
+            Method method = SearchController.class.getMethod("searchWithCriteria",
+                    String.class, String.class, java.math.BigDecimal.class, java.math.BigDecimal.class, org.springframework.data.domain.Pageable.class);
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);
-            assertNotNull(rl, "search should have @RateLimiter");
+            assertNotNull(rl, "searchWithCriteria should have @RateLimiter");
             assertEquals("search", rl.name(), "RateLimiter should use search instance");
         }
 

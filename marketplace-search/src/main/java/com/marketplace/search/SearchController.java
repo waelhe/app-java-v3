@@ -31,14 +31,6 @@ public class SearchController {
         return ResponseEntity.ok(PagedResponse.of(searchService.search(criteria, pageable)));
     }
 
-    @RateLimiter(name = "search")
-    public ResponseEntity<PagedResponse<ListingSummary>> search(
-            String q,
-            String category,
-            Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(searchService.search(q, category, pageable)));
-    }
-
     @GetMapping("/category/{category}")
     @RateLimiter(name = "search")
     public ResponseEntity<PagedResponse<ListingSummary>> searchByCategory(

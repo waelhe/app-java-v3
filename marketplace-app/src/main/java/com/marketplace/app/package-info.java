@@ -3,6 +3,7 @@
         "shared :: shared-api",
         "shared :: shared-security",
         "catalog :: catalog-api",
+        "catalog :: catalog-spi",
         "messaging :: messaging-api"
     }
 )
