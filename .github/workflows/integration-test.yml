@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   integration:
-    name: Full Integration Test (JDK 21)
+    name: Full Integration Test (JDK 25)
     runs-on: ubuntu-latest
 
     services:
