@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
 RUN chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
@@ -11,7 +11,7 @@ COPY --from=build /app/marketplace-app/target/*.jar app.jar
 RUN java -Djarmode=layertools -jar app.jar extract
 
 # ── Runtime stage ─────────────────────────────────────
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
