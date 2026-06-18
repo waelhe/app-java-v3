@@ -36,17 +36,20 @@ public class MfaController {
     private final MfaService mfaService;
     private final UserService userService;
     private final CurrentUserProvider currentUserProvider;
+    private final QrCodeService qrCodeService;
     private final org.springframework.security.provisioning.UserDetailsManager userDetailsManager;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public MfaController(MfaService mfaService,
                           UserService userService,
                           CurrentUserProvider currentUserProvider,
+                          QrCodeService qrCodeService,
                           org.springframework.security.provisioning.UserDetailsManager userDetailsManager,
                           org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.mfaService = mfaService;
         this.userService = userService;
         this.currentUserProvider = currentUserProvider;
+        this.qrCodeService = qrCodeService;
         this.userDetailsManager = userDetailsManager;
         this.passwordEncoder = passwordEncoder;
     }
@@ -59,9 +62,11 @@ public class MfaController {
         java.util.UUID userId = currentUserProvider.getCurrentUserId(auth);
         User user = userService.getById(userId);
         MfaService.MfaSetupResponse response = mfaService.setupMfa(userId, user.getEmail());
+        Map<String, String> qrData = qrCodeService.generateQrCodeData(response.otpAuthUri());
         return ResponseEntity.ok(Map.of(
                 "secret", response.secret(),
-                "otpAuthUri", response.otpAuthUri()
+                "otpAuthUri", response.otpAuthUri(),
+                "qrCodeDataUri", qrData.get("qrCodeDataUri")
         ));
     }
 

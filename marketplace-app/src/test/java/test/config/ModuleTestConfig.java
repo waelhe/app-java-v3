@@ -72,9 +72,24 @@ public class ModuleTestConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+
+
     @Bean
     @ConditionalOnMissingBean
-    AuthAuditService authAuditService(AuthAuditLogRepository auditLogRepository) {
+    com.marketplace.identity.QrCodeService qrCodeService() {
+        return new com.marketplace.identity.QrCodeService();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    com.marketplace.identity.TwoStepLoginService twoStepLoginService(
+            org.springframework.security.provisioning.UserDetailsManager userDetailsManager,
+            org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
+            com.marketplace.identity.BruteForceProtectionService bruteForceService,
+            com.marketplace.identity.MfaService mfaService,
+            com.marketplace.identity.AuthAuditService auditService,
+            com.marketplace.identity.UserRepository userRepository) {
+        return new com.marketplace.identity.TwoStepLoginService(userDetailsManager, passwordEncoder, bruteForceService, mfaService, auditService, userRepository);
         return new AuthAuditService(auditLogRepository);
     }
 }

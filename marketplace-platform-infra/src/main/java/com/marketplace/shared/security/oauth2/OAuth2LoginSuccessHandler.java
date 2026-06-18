@@ -1,6 +1,7 @@
 package com.marketplace.shared.security.oauth2;
 
 import com.marketplace.shared.api.OAuth2UserProvisioningPort;
+import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.config.MarketplaceProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -42,13 +43,16 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
     private final OAuth2UserProvisioningPort provisioningPort;
     private final JwtEncoder jwtEncoder;
     private final MarketplaceProperties properties;
+    private final UserLookupPort userLookupPort;
 
     public OAuth2LoginSuccessHandler(OAuth2UserProvisioningPort provisioningPort,
                                       JwtEncoder jwtEncoder,
-                                      MarketplaceProperties properties) {
+                                      MarketplaceProperties properties,
+                                      UserLookupPort userLookupPort) {
         this.provisioningPort = provisioningPort;
         this.jwtEncoder = jwtEncoder;
         this.properties = properties;
+        this.userLookupPort = userLookupPort;
     }
 
     @Override
@@ -73,12 +77,18 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
         UUID userId = provisioningPort.provisionUser(provider, providerId, email, name);
 
+        // Roles from DB via UserLookupPort
+        var userOpt = userLookupPort.findById(userId);
+        List<String> roles = userOpt
+                .map(u -> List.of(u.role()))
+                .orElse(List.of("CONSUMER"));
+
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(provider + ":" + providerId)
                 .claim("userId", userId.toString())
                 .claim("email", email)
                 .claim("name", name)
-                .claim("roles", List.of("CONSUMER"))
+                .claim("roles", roles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
                 .issuer(properties.security().authServer().issuer())
