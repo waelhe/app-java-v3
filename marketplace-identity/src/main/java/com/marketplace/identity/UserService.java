@@ -68,6 +68,16 @@ public class UserService implements IdentitySpi {
                 });
     }
 
+    /**
+     * Updates a user's profile (email and display name).
+     */
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
+    public User updateProfile(UUID userId, String email, String displayName) {
+        User user = getById(userId);
+        user.updateProfile(email, displayName);
+        return user;
+    }
+
     private UserRole resolveRole(JwtAuthenticationToken token) {
         var roles = token.getToken().getClaimAsStringList("roles");
         if (roles != null && roles.contains("ADMIN")) return UserRole.ADMIN;

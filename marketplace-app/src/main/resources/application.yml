@@ -219,6 +219,9 @@ resilience4j:
       search:
         base-config: default
         limit-for-period: 30
+      auth:
+        base-config: default
+        limit-for-period: 5
 
 app:
   commission:
