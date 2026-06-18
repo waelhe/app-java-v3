@@ -119,6 +119,8 @@ management:
           endpoint: ${OTEL_TRACES_EXPORT_URL}
 
   security:
+    max-failed-attempts: 5
+    lock-duration-minutes: 15
     oauth2:
       client:
         registration:
@@ -140,6 +142,8 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   security:
+    max-failed-attempts: 5
+    lock-duration-minutes: 15
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER}
     jwt:

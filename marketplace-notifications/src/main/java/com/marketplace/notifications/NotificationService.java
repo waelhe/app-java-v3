@@ -2,13 +2,18 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+
+import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.UserRegisteredEvent;
+import com.marketplace.shared.api.UserVerifiedEvent;
 import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -33,6 +38,9 @@ public class NotificationService {
     private final UserLookupPort userLookupPort;
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final Optional<EmailService> emailService;
+
+    @Value("${marketplace.security.auth-server.issuer:http://localhost:8080}")
+    private String authServerIssuer;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -70,6 +78,44 @@ public class NotificationService {
             sendEmail(bookingInfo.providerId(), "Payment " + state, "email/notification", Map.of("message", message));
             sendWebSocket(intent.consumerId(), "PAYMENT_STATE", message);
             sendWebSocket(bookingInfo.providerId(), "PAYMENT_STATE", message);
+        });
+    }
+
+    public void onUserRegistered(UserRegisteredEvent event) {
+        String verificationLink = authServerIssuer + "/api/v1/auth/verify?token=" + event.verificationToken();
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Welcome to Marketplace — Verify Your Email",
+                        "email/verify-email",
+                        Map.of("name", event.displayName(), "verificationLink", verificationLink));
+            } catch (Exception e) {
+                log.error("Failed to send verification email to {}: {}", event.email(), e.getMessage());
+            }
+        });
+    }
+
+    public void onUserVerified(UserVerifiedEvent event) {
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Email Verified — Welcome to Marketplace",
+                        "email/email-verified",
+                        Map.of("name", event.email()));
+            } catch (Exception e) {
+                log.error("Failed to send verified email to {}: {}", event.email(), e.getMessage());
+            }
+        });
+    }
+
+    public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
+        String resetLink = authServerIssuer + "/reset-password?token=" + event.resetToken();
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Reset Your Password",
+                        "email/password-reset",
+                        Map.of("name", event.email(), "resetLink", resetLink, "expirationMinutes", 30));
+            } catch (Exception e) {
+                log.error("Failed to send password reset email to {}: {}", event.email(), e.getMessage());
+            }
         });
     }
 

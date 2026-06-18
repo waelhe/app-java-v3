@@ -24,29 +24,22 @@ public class RegistrationService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationTokenService tokenService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuthAuditService auditService;
 
     public RegistrationService(UserRepository userRepository,
                                 UserDetailsManager userDetailsManager,
                                 PasswordEncoder passwordEncoder,
                                 VerificationTokenService tokenService,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                AuthAuditService auditService) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.eventPublisher = eventPublisher;
+        this.auditService = auditService;
     }
 
-    /**
-     * Registers a new consumer user.
-     * <p>Flow:
-     * 1. Validate email uniqueness
-     * 2. Validate password strength (OWASP)
-     * 3. Create auth_users entry (disabled until email verification)
-     * 4. Create users entry (business entity)
-     * 5. Generate verification token
-     * 6. Publish event for notification
-     */
     @Transactional
     public User register(RegisterRequest request) {
         if (userRepository.existsBySubject(request.email())) {
@@ -68,6 +61,8 @@ public class RegistrationService {
         userRepository.save(user);
 
         VerificationToken token = tokenService.generateToken(user.getId(), VerificationTokenType.EMAIL_VERIFICATION);
+
+        auditService.log(request.email(), AuthEventType.REGISTRATION, "New user registered: " + user.getId());
 
         eventPublisher.publishEvent(new UserRegisteredEvent(
                 user.getId(),

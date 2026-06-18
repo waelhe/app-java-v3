@@ -9,8 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Handles email verification and password reset logic.
- * <p>Uses Spring Security's {@link UserDetailsManager} to update account status
- * and {@link VerificationTokenService} for token management.
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html">OWASP Forgot Password Cheat Sheet</a>
  */
@@ -21,21 +19,20 @@ public class VerificationService {
     private final UserDetailsManager userDetailsManager;
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuthAuditService auditService;
 
     public VerificationService(VerificationTokenService tokenService,
                                 UserDetailsManager userDetailsManager,
                                 UserRepository userRepository,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                AuthAuditService auditService) {
         this.tokenService = tokenService;
         this.userDetailsManager = userDetailsManager;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.auditService = auditService;
     }
 
-    /**
-     * Verifies a user's email address using the provided token.
-     * Enables the user account in auth_users.
-     */
     @Transactional
     public void verifyEmail(String tokenValue) {
         VerificationToken token = tokenService.validateToken(tokenValue, VerificationTokenType.EMAIL_VERIFICATION);
@@ -53,6 +50,8 @@ public class VerificationService {
         userDetailsManager.updateUser(updatedUser);
 
         tokenService.markAsUsed(token);
+
+        auditService.log(user.getEmail(), AuthEventType.EMAIL_VERIFIED, "Email verified successfully");
 
         eventPublisher.publishEvent(new UserVerifiedEvent(user.getId(), user.getEmail()));
     }

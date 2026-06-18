@@ -14,7 +14,7 @@ import java.util.Optional;
 
 /**
  * Handles password reset flow.
- * <p>Follows OWASP Forgot Password Cheat Sheet:
+ * <p>OWASP Forgot Password Cheat Sheet:
  * <ul>
  *   <li>Does not reveal if email exists (returns 204 silently)</li>
  *   <li>Uses time-bound, single-use tokens</li>
@@ -31,38 +31,37 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationTokenService tokenService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuthAuditService auditService;
 
     public PasswordResetService(UserRepository userRepository,
                                  UserDetailsManager userDetailsManager,
                                  PasswordEncoder passwordEncoder,
                                  VerificationTokenService tokenService,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 ApplicationEventPublisher eventPublisher,
+                                 AuthAuditService auditService) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.eventPublisher = eventPublisher;
+        this.auditService = auditService;
     }
 
-    /**
-     * Initiates password reset. Does not reveal if email exists.
-     */
     @Transactional
     public void initiateReset(String email) {
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
-            return; // Silent return for security
+            return; // Silent return for security (OWASP)
         }
 
         User user = userOpt.get();
         VerificationToken token = tokenService.generateToken(user.getId(), VerificationTokenType.PASSWORD_RESET);
 
+        auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
+
         eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
     }
 
-    /**
-     * Resets password using a valid token.
-     */
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
         VerificationToken token = tokenService.validateToken(request.token(), VerificationTokenType.PASSWORD_RESET);
@@ -83,5 +82,7 @@ public class PasswordResetService {
         userDetailsManager.updateUser(updatedUser);
 
         tokenService.markAsUsed(token);
+
+        auditService.log(user.getEmail(), AuthEventType.PASSWORD_RESET_COMPLETED, "Password reset completed");
     }
 }
