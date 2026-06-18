@@ -1,8 +1,11 @@
 package com.marketplace.identity;
 
+import com.marketplace.identity.spi.IdentityAdminSpi;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -15,7 +18,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a>
  */
 @Service
-public class AuthAuditService {
+@Transactional
+public class AuthAuditService implements IdentityAdminSpi {
 
     private static final Logger log = LoggerFactory.getLogger(AuthAuditService.class);
 
@@ -34,6 +38,36 @@ public class AuthAuditService {
         auditRepository.save(auditLog);
 
         log.info("Auth audit: username={}, event={}, ip={}", username, eventType, ipAddress);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<IdentityAdminSpi.AuditLogEntry> findAuditLogsByUsername(String username, Pageable pageable) {
+        return auditRepository.findByUsernameOrderByCreatedAtDesc(username, pageable)
+                .map(a -> new IdentityAdminSpi.AuditLogEntry(
+                        a.getUsername(), a.getEventType().name(),
+                        a.getIpAddress(), a.getDetails(), a.getCreatedAt()
+                ));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<IdentityAdminSpi.AuditLogEntry> findAuditLogsByEventType(AuthEventType eventType, Pageable pageable) {
+        return auditRepository.findByEventTypeOrderByCreatedAtDesc(eventType, pageable)
+                .map(a -> new IdentityAdminSpi.AuditLogEntry(
+                        a.getUsername(), a.getEventType().name(),
+                        a.getIpAddress(), a.getDetails(), a.getCreatedAt()
+                ));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<IdentityAdminSpi.AuditLogEntry> findAllAuditLogs(Pageable pageable) {
+        return auditRepository.findAll(pageable)
+                .map(a -> new IdentityAdminSpi.AuditLogEntry(
+                        a.getUsername(), a.getEventType().name(),
+                        a.getIpAddress(), a.getDetails(), a.getCreatedAt()
+                ));
     }
 
     private String extractIpAddress() {

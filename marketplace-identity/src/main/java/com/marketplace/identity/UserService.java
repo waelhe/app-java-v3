@@ -8,7 +8,9 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +21,15 @@ import java.util.UUID;
 public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
 
     private final UserRepository userRepository;
+    private final UserDetailsManager userDetailsManager;
+    private final AuthAuditService auditService;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository,
+                        UserDetailsManager userDetailsManager,
+                        AuthAuditService auditService) {
         this.userRepository = userRepository;
+        this.userDetailsManager = userDetailsManager;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -48,9 +56,6 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
         return findAll(pageable).map(this::toUserSummary);
     }
 
-    /**
-     * Syncs user from OIDC token — creates if new, updates if changed.
-     */
     @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
@@ -69,9 +74,6 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
                 });
     }
 
-    /**
-     * Updates a user's profile (email and display name).
-     */
     @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User updateProfile(UUID userId, String email, String displayName) {
         User user = getById(userId);
@@ -79,13 +81,6 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
         return user;
     }
 
-    /**
-     * Provisions a user from an external OAuth2 provider (Google, GitHub, Apple).
-     * <p>Creates a new user if not exists, updates if exists.
-     * The subject is formatted as "{provider}:{providerId}" for uniqueness.
-     *
-     * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/login/overview.html">Spring Security OAuth2 Login</a>
-     */
     @Override
     @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public UUID provisionUser(String provider, String providerId, String email, String displayName) {
@@ -113,6 +108,54 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
     public void updateUserRole(UUID userId, String newRole) {
         User user = getById(userId);
         user.changeRole(UserRole.valueOf(newRole));
+
+        // Update Spring Security authorities
+        UserDetails userDetails = userDetailsManager.loadUserByUsername(user.getEmail());
+        org.springframework.security.core.userdetails.UserDetails updatedUser =
+                org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
+                        .password(userDetails.getPassword())
+                        .roles(newRole)
+                        .disabled(!userDetails.isEnabled())
+                        .build();
+        userDetailsManager.updateUser(updatedUser);
+
+        auditService.log(user.getEmail(), AuthEventType.ACCOUNT_LOCKED, "Role changed to " + newRole);
+    }
+
+    /**
+     * Suspends a user account — disables login.
+     */
+    @Override
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
+    public void suspendUser(UUID userId) {
+        User user = getById(userId);
+        UserDetails userDetails = userDetailsManager.loadUserByUsername(user.getEmail());
+        org.springframework.security.core.userdetails.UserDetails updatedUser =
+                org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
+                        .password(userDetails.getPassword())
+                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .disabled(true)
+                        .build();
+        userDetailsManager.updateUser(updatedUser);
+        auditService.log(user.getEmail(), AuthEventType.ACCOUNT_DISABLED, "Account suspended by admin");
+    }
+
+    /**
+     * Reactivates a suspended user account.
+     */
+    @Override
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
+    public void reactivateUser(UUID userId) {
+        User user = getById(userId);
+        UserDetails userDetails = userDetailsManager.loadUserByUsername(user.getEmail());
+        org.springframework.security.core.userdetails.UserDetails updatedUser =
+                org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
+                        .password(userDetails.getPassword())
+                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .disabled(false)
+                        .build();
+        userDetailsManager.updateUser(updatedUser);
+        auditService.log(user.getEmail(), AuthEventType.ACCOUNT_ENABLED, "Account reactivated by admin");
     }
 
     private UserSummary toUserSummary(User user) {

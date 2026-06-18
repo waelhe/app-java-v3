@@ -16,4 +16,16 @@ public interface IdentitySpi {
     Page<UserSummary> findAllSummaries(Pageable pageable);
 
     void updateUserRole(UUID userId, String newRole);
+
+    /**
+     * Suspends a user account (disables login).
+     * @param userId the user to suspend
+     */
+    void suspendUser(UUID userId);
+
+    /**
+     * Reactivates a suspended user account.
+     * @param userId the user to reactivate
+     */
+    void reactivateUser(UUID userId);
 }

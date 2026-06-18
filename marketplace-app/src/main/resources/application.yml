@@ -13,6 +13,8 @@ spring:
   security:
     max-failed-attempts: 5
     lock-duration-minutes: 15
+    mfa:
+      issuer: Marketplace
     oauth2:
       client:
         registration:
@@ -243,5 +245,7 @@ marketplace:
   security:
     max-failed-attempts: 5
     lock-duration-minutes: 15
+    mfa:
+      issuer: Marketplace
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
