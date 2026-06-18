@@ -1,8 +1,36 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Current State (2026-06-14)
+## Current State (2026-06-18)
 
 **Branch:** `main` (local behind origin — run `git pull`)
+
+## Sprint 2 — Retry Semantics, Architecture & Final Polish (2026-06-18)
+
+### P0 — Retry Semantics (catch(Exception) removal)
+- **Files:** `BookingPaymentEventListener.java`, `BookingCancelledEventListener.java`, `BookingExpirationService.java`, `NotificationEventListener.java` (×2), `PaymentsService.java`
+- **Changes:**
+  - Removed 5× `catch(Exception)` from `@ApplicationModuleListener`s — let exceptions propagate for proper retry
+  - `BookingExpirationService`: `Instant.now()` → `event.getDate().atStartOfDay(ZoneOffset.UTC).toInstant()`
+  - `PaymentsService.autoRefundByBooking()`: added `@Transactional(propagation = REQUIRES_NEW)` to prevent `UnexpectedRollbackException`
+- **Tests:** `BookingPaymentEventListenerTest`, `BookingCancelledEventListenerTest`, `BookingExpirationServiceTest`
+
+### P1 — Architecture & Security
+- **Files:** `ProviderController.java`, `ServiceGraphQlController.java`, `ReviewsService.java`, `SearchController.java`, `ReviewUpdatedEvent.java`, `CatalogSpi.java`, `package-info.java`
+- **Changes:**
+  - `@PreAuthorize` on `ProviderController.create()` (CONSUMER), `verify()`/`suspend()` (ADMIN)
+  - `ServiceGraphQlController` → `CatalogSpi` instead of `CatalogService`
+  - `ReviewUpdatedEvent` created + published from `ReviewsService.update()`
+  - Dead `search()` method removed from `SearchController`
+  - `CatalogSpi` expanded: `getById()`, `findAll()`, `create()`
+  - `app` module `package-info.java`: added `"catalog :: catalog-spi"` to `allowedDependencies`
+- **Tests:** `ResilienceAnnotationTest` fixed for renamed search method
+
+### P2 — Final Consistency (PR #148)
+- **Files:** `BookingConfirmedEvent.java` (new), `BookingService.java`, `PaymentsService.java`
+- **Changes:**
+  - `PaymentRepository.save(payment)` added after `payment.markRefunded()` in `autoRefundByBooking()`
+  - `BookingConfirmedEvent` record created in `marketplace-shared/api/` (same pattern as `BookingCancelledEvent`)
+  - Published from `BookingService.confirm()` and `autoConfirm()`
 
 ## Sprint 1 — H4+H9+H10 (2026-06-14)
 
@@ -57,8 +85,8 @@
 - **Tests:** 18/18 ✅ (AvailabilityServiceTest: 10)
 - **Official docs:** Spring Modulith Moments (docs.spring.io/spring-modulith) — `DayHasPassed` event pattern
 
-**Java:** 21
-**Spring Boot:** 4.0.6 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.14 | **JaCoCo:** 0.8.14
+**Java:** 25 (target `--release 25`)
+**Spring Boot:** 4.1.0 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.16 | **JaCoCo:** 0.8.15
 
 ---
 
@@ -88,7 +116,7 @@
 
 | Workflow | Status |
 |----------|--------|
-| Build & Test (JDK 21) — `mvn verify` | ✅ Passing (all 17 modules) |
+| Build & Test (JDK 25) — `mvn verify` | ✅ Passing (all 17 modules) |
 | Full Integration Test | ✅ Passing |
 | Maven Publish | ✅ |
 | Gitleaks Secret Scan | ✅ |
@@ -199,18 +227,22 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 ### New/Modified Event Records
 - `BookingCreatedEvent` — unchanged
 - `BookingCancelledEvent` — new (shared)
+- `BookingConfirmedEvent` — new (shared, Sprint 2 P2)
+- `ReviewUpdatedEvent` — new (shared, Sprint 2 P1)
 - `PaymentStateChangedEvent` — unchanged (used by 1.2, 1.3)
 - `BookingSummary` — extended with `startsAt`/`endsAt`
 
 ## Completions
 
-- 52 Spring/Maven features used
-- All 6 Phase 1 integration links implemented and tested
+- **Sprint 2 — All items complete**: Retry semantics (5× `catch(Exception)` removed), `@PreAuthorize` on ProviderController, `CatalogSpi` in GraphQL, `ReviewUpdatedEvent`, `BookingConfirmedEvent`, `save()` consistency
+- Upgraded to **Spring Boot 4.1.0**, **Maven 3.9.16**, **JaCoCo 0.8.15**
+- **Java 25** target (`--release 25`)
+- 6 cross-module integration links implemented and tested
 - All verified violations from audit have been fixed
-- All 13 modules have `@NamedInterface` on `package-info.java`
+- All 15 business modules have `@NamedInterface` on `package-info.java`
 - 8 read-heavy services have `@Cacheable` on entity lookups
 - Pricing + Disputes controllers use DTOs with MapStruct (entities no longer exposed)
-- `BookingService.cancel()` has `@Retry` + `@ConcurrencyLimit` (consistent with `confirm()`/`complete()`)
+- `BookingService.cancel()`/`confirm()`/`complete()` have `@Retry` + `@ConcurrencyLimit`
 - 5 services annotated with `@Observed` (Observability metrics)
 - All 14 controllers have `@WebMvcTest` (44 tests, with OAuth2 auto-config exclusion)
 - Spring Data Projections used for read-only endpoints (ListingSimple, ReviewSummary, BookingSummary)

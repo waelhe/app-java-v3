@@ -246,6 +246,7 @@ public class PaymentsService implements PaymentsSpi {
             paymentIntentRepository.save(intent);
             paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
                 payment.markRefunded();
+                paymentRepository.save(payment);
             });
             eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
         });
