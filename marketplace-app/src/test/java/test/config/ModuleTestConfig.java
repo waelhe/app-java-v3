@@ -2,24 +2,63 @@ package test.config;
 
 import com.marketplace.identity.AuthAuditService;
 import com.marketplace.identity.AuthAuditLogRepository;
+import com.marketplace.shared.config.MarketplaceProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.web.servlet.config.annotation.ApiVersionConfigurer;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import javax.sql.DataSource;
+import java.util.List;
+import java.util.Optional;
 
-/**
- * Test configuration for @ApplicationModuleTest slice tests.
- * Provides beans that are normally created by SecurityConfig (which is not loaded
- * in module slice tests).
- */
 @Configuration
+@EnableJpaAuditing
 public class ModuleTestConfig {
 
     @Bean
+    WebMvcConfigurer apiVersioningConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void configureApiVersioning(ApiVersionConfigurer configurer) {
+                configurer
+                        .useRequestHeader("X-API-Version")
+                        .setDefaultVersion("1.0");
+            }
+        };
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AuditorAware<String> auditorAware() {
+        return Optional::empty;
+    }
+
+    @Bean
+    @Primary
+    MarketplaceProperties marketplaceProperties() {
+        return new MarketplaceProperties(
+                new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
+                new MarketplaceProperties.Security(
+                        new MarketplaceProperties.Security.Jwt(
+                                new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
+                                "marketplace-api"
+                        ),
+                        new MarketplaceProperties.Security.AuthServer("http://localhost:8080")
+                )
+        );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     UserDetailsManager userDetailsManager(DataSource dataSource) {
         JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
         manager.setUsersByUsernameQuery("select username, password, enabled from auth_users where username = ?");
@@ -28,11 +67,13 @@ public class ModuleTestConfig {
     }
 
     @Bean
+    @ConditionalOnMissingBean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     @Bean
+    @ConditionalOnMissingBean
     AuthAuditService authAuditService(AuthAuditLogRepository auditLogRepository) {
         return new AuthAuditService(auditLogRepository);
     }
