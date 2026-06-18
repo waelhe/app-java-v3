@@ -36,13 +36,19 @@ public class MfaController {
     private final MfaService mfaService;
     private final UserService userService;
     private final CurrentUserProvider currentUserProvider;
+    private final org.springframework.security.provisioning.UserDetailsManager userDetailsManager;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public MfaController(MfaService mfaService,
                           UserService userService,
-                          CurrentUserProvider currentUserProvider) {
+                          CurrentUserProvider currentUserProvider,
+                          org.springframework.security.provisioning.UserDetailsManager userDetailsManager,
+                          org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.mfaService = mfaService;
         this.userService = userService;
         this.currentUserProvider = currentUserProvider;
+        this.userDetailsManager = userDetailsManager;
+        this.passwordEncoder = passwordEncoder;
     }
 
     /**
@@ -82,11 +88,24 @@ public class MfaController {
      * Disables MFA.
      */
     @DeleteMapping
-    public ResponseEntity<Void> disableMfa(Authentication auth) {
+    public ResponseEntity<Void> disableMfa(
+            @org.springframework.web.bind.annotation.RequestBody DisableMfaRequest request,
+            Authentication auth) {
         java.util.UUID userId = currentUserProvider.getCurrentUserId(auth);
         User user = userService.getById(userId);
+
+        // OWASP MFA Cheat Sheet: verify password before MFA changes
+        org.springframework.security.core.userdetails.UserDetails userDetails =
+                userDetailsManager.loadUserByUsername(user.getEmail());
+        if (!passwordEncoder.matches(request.password(), userDetails.getPassword())) {
+            throw new com.marketplace.shared.api.BadRequestException("Current password is incorrect");
+        }
+
         mfaService.disableMfa(userId, user.getEmail());
         return ResponseEntity.noContent().build();
+    }
+
+    public record DisableMfaRequest(@jakarta.validation.constraints.NotBlank String password) {
     }
 
     /**

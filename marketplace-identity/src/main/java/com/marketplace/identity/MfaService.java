@@ -1,8 +1,6 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.BadRequestException;
-import com.marketplace.shared.api.ResourceNotFoundException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,17 +35,18 @@ public class MfaService {
     private final PasswordEncoder passwordEncoder;
     private final AuthAuditService auditService;
 
-    @Value("${marketplace.security.mfa.issuer:Marketplace}")
-    private String issuer;
+    private final String issuer;
 
     public MfaService(MfaSecretRepository mfaSecretRepository,
                        RecoveryCodeRepository recoveryCodeRepository,
                        PasswordEncoder passwordEncoder,
-                       AuthAuditService auditService) {
+                       AuthAuditService auditService,
+                       @org.springframework.beans.factory.annotation.Value("${marketplace.security.mfa.issuer:Marketplace}") String issuer) {
         this.mfaSecretRepository = mfaSecretRepository;
         this.recoveryCodeRepository = recoveryCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
+        this.issuer = issuer;
     }
 
     /**
@@ -95,7 +94,7 @@ public class MfaService {
 
         List<String> codes = generateRecoveryCodes(userId);
 
-        auditService.log(username, AuthEventType.PASSWORD_CHANGED, "MFA enabled");
+        auditService.log(username, AuthEventType.MFA_ENABLED, "MFA enabled");
 
         return codes;
     }
@@ -106,6 +105,8 @@ public class MfaService {
     public void disableMfa(UUID userId, String username) {
         MfaSecret mfaSecret = mfaSecretRepository.findByUserId(userId)
                 .orElseThrow(() -> new BadRequestException("MFA is not enabled"));
+        // Note: Password verification should be done by caller before calling this method.
+        // This follows OWASP MFA Cheat Sheet: require re-authentication before MFA changes.
 
         mfaSecret.disable();
         mfaSecretRepository.delete(mfaSecret);
@@ -114,7 +115,7 @@ public class MfaService {
         List<RecoveryCode> codes = recoveryCodeRepository.findByUserIdAndUsedFalse(userId);
         recoveryCodeRepository.deleteAll(codes);
 
-        auditService.log(username, AuthEventType.PASSWORD_CHANGED, "MFA disabled");
+        auditService.log(username, AuthEventType.MFA_DISABLED, "MFA disabled");
     }
 
     /**

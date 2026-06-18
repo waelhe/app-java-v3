@@ -1,6 +1,7 @@
 package com.marketplace.shared.security.oauth2;
 
 import com.marketplace.shared.api.OAuth2UserProvisioningPort;
+import com.marketplace.shared.config.MarketplaceProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -17,8 +18,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Handles successful OAuth2 login from external providers (Google, GitHub, Apple).
@@ -40,11 +41,14 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
     private final OAuth2UserProvisioningPort provisioningPort;
     private final JwtEncoder jwtEncoder;
+    private final MarketplaceProperties properties;
 
     public OAuth2LoginSuccessHandler(OAuth2UserProvisioningPort provisioningPort,
-                                      JwtEncoder jwtEncoder) {
+                                      JwtEncoder jwtEncoder,
+                                      MarketplaceProperties properties) {
         this.provisioningPort = provisioningPort;
         this.jwtEncoder = jwtEncoder;
+        this.properties = properties;
     }
 
     @Override
@@ -77,7 +81,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
                 .claim("roles", List.of("CONSUMER"))
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
-                .issuer("marketplace")
+                .issuer(properties.security().authServer().issuer())
                 .build();
 
         String jwt = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();

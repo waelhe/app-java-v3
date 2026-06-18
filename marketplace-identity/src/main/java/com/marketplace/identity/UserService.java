@@ -107,7 +107,13 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
     @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public void updateUserRole(UUID userId, String newRole) {
         User user = getById(userId);
-        user.changeRole(UserRole.valueOf(newRole));
+        UserRole role;
+        try {
+            role = UserRole.valueOf(newRole);
+        } catch (IllegalArgumentException e) {
+            throw new com.marketplace.shared.api.BadRequestException("Invalid role: " + newRole);
+        }
+        user.changeRole(role);
 
         // Update Spring Security authorities
         UserDetails userDetails = userDetailsManager.loadUserByUsername(user.getEmail());
@@ -119,7 +125,7 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
                         .build();
         userDetailsManager.updateUser(updatedUser);
 
-        auditService.log(user.getEmail(), AuthEventType.ACCOUNT_LOCKED, "Role changed to " + newRole);
+        auditService.log(user.getEmail(), AuthEventType.ROLE_CHANGED, "Role changed to " + newRole);
     }
 
     /**

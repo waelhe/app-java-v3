@@ -92,7 +92,7 @@ public class IdentityAdminController {
      * Updates a user's role.
      */
     @PostMapping("/{id}/role")
-    public ResponseEntity<Void> updateRole(@PathVariable UUID id, @RequestParam String role) {
+    public ResponseEntity<Void> updateRole(@PathVariable UUID id, @RequestParam @jakarta.validation.constraints.Pattern(regexp = "CONSUMER|PROVIDER|ADMIN") String role) {
         identitySpi.updateUserRole(id, role);
         return ResponseEntity.noContent().build();
     }

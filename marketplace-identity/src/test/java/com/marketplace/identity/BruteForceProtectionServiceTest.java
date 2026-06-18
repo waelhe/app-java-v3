@@ -6,7 +6,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.jupiter.api.BeforeEach;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
@@ -22,12 +21,11 @@ class BruteForceProtectionServiceTest {
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private AuthAuditService auditService;
 
-    @InjectMocks private BruteForceProtectionService bruteForceService;
+    private BruteForceProtectionService bruteForceService;
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(bruteForceService, "maxFailedAttempts", 5);
-        ReflectionTestUtils.setField(bruteForceService, "lockDurationMinutes", 15);
+        bruteForceService = new BruteForceProtectionService(jdbcTemplate, auditService, 5, 15);
     }
 
     @Test

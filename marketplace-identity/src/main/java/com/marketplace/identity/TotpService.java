@@ -21,6 +21,8 @@ public final class TotpService {
     private static final String HMAC_ALGORITHM = "HmacSHA1";
     private static final int SECRET_BYTES = 20; // 160-bit secret (RFC 4226 §4)
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private TotpService() {
     }
 
@@ -31,7 +33,7 @@ public final class TotpService {
      */
     public static String generateSecret() {
         byte[] bytes = new byte[SECRET_BYTES];
-        new SecureRandom().nextBytes(bytes);
+        SECURE_RANDOM.nextBytes(bytes);
         return Base64.getEncoder().encodeToString(bytes);
     }
 

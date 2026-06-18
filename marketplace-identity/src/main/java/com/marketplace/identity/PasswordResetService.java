@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.identity.dto.ResetPasswordRequest;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.springframework.context.ApplicationEventPublisher;

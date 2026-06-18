@@ -7,7 +7,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.hibernate.envers.Audited;
 
 import java.util.UUID;
 
@@ -19,7 +18,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "auth_audit_log")
-@Audited
+
 public class AuthAuditLog extends BaseEntity {
 
     @Id

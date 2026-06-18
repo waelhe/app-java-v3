@@ -13,7 +13,6 @@ import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -39,8 +38,7 @@ public class NotificationService {
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final Optional<EmailService> emailService;
 
-    @Value("${marketplace.security.auth-server.issuer:http://localhost:8080}")
-    private String authServerIssuer;
+    private final String authServerIssuer;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -48,7 +46,8 @@ public class NotificationService {
                                CurrentUserProvider currentUserProvider,
                                UserLookupPort userLookupPort,
                                Optional<SimpMessagingTemplate> messagingTemplate,
-                               Optional<EmailService> emailService) {
+                               Optional<EmailService> emailService,
+                               @org.springframework.beans.factory.annotation.Value("${marketplace.security.auth-server.issuer:http://localhost:8080}") String authServerIssuer) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -56,6 +55,7 @@ public class NotificationService {
         this.userLookupPort = userLookupPort;
         this.messagingTemplate = messagingTemplate;
         this.emailService = emailService;
+        this.authServerIssuer = authServerIssuer;
     }
 
     public void onBookingCreated(UUID bookingId) {
