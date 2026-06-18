@@ -37,7 +37,7 @@ class NotificationServiceTest {
                                               Optional<SimpMessagingTemplate> messagingTemplate,
                                               Optional<EmailService> emailService) {
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                currentUserProvider, userLookupPort, messagingTemplate, emailService);
+                currentUserProvider, userLookupPort, messagingTemplate, emailService, "http://localhost:8080");
     }
 
     private UserLookupPort mockUserLookup() {
