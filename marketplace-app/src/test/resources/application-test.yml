@@ -49,6 +49,11 @@ marketplace:
       issuer: http://localhost:8080
     jwt:
       audience: marketplace-api
+      keystore:
+        path: ""
+        password: ""
+        alias: ""
+        key-password: ""
   payments:
     webhook:
       shared-secret: test-sig
