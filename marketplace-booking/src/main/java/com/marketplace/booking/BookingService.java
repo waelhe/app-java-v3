@@ -4,6 +4,7 @@ import com.marketplace.booking.spi.BookingSpi;
 import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.BookingCancelledEvent;
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
@@ -136,6 +137,7 @@ public class BookingService implements BookingSpi {
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
             availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
+        eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
         return booking;
     }
 
@@ -190,6 +192,7 @@ public class BookingService implements BookingSpi {
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
             availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
+        eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
     }
 
     private void verifyProviderOwnership(Booking booking, Authentication authentication) {
