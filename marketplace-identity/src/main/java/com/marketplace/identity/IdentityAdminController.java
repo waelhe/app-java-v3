@@ -33,7 +33,7 @@ import java.util.UUID;
  * @see <a href="https://docs.spring.io/spring-security/reference/servlet/authorization/method-security.html">Spring Security Method Security</a>
  */
 @RestController
-@RequestMapping(value = ApiConstants.API_V1 + "/admin/users", version = "1.0")
+@RequestMapping(value = ApiConstants.API_V1 + "/admin/identity", version = "1.0")
 @PreAuthorize("hasRole('ADMIN')")
 public class IdentityAdminController {
 
