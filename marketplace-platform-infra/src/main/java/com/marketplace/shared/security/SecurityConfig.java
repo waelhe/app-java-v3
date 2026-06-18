@@ -36,6 +36,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
@@ -51,6 +53,8 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import com.marketplace.shared.security.oauth2.OAuth2LoginSuccessHandler;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -168,12 +172,15 @@ public class SecurityConfig {
 
     @Bean
     @Order(4)
-    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
+                                                    OAuth2LoginSuccessHandler oauth2LoginSuccessHandler) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/assets/**", "/login").permitAll()
+                        .requestMatchers("/assets/**", "/login", "/oauth2/redirect").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(oauth2LoginSuccessHandler))
                 .cors(Customizer.withDefaults());
 
         return http.build();
@@ -316,6 +323,10 @@ public class SecurityConfig {
         return new ImmutableJWKSet<>(new JWKSet(rsaKey));
     }
 
+    @Bean
+    JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        return new NimbusJwtEncoder(jwkSource);
+    }
     @Bean
     JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) throws IOException {
         OAuth2ResourceServerProperties.Jwt jwtProperties = resourceServerProperties.getJwt();

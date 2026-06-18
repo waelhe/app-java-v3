@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.OAuth2UserProvisioningPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
 import org.springframework.cache.annotation.CacheEvict;
@@ -15,7 +16,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class UserService implements IdentitySpi {
+public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
 
     private final UserRepository userRepository;
 
@@ -76,6 +77,29 @@ public class UserService implements IdentitySpi {
         User user = getById(userId);
         user.updateProfile(email, displayName);
         return user;
+    }
+
+    /**
+     * Provisions a user from an external OAuth2 provider (Google, GitHub, Apple).
+     * <p>Creates a new user if not exists, updates if exists.
+     * The subject is formatted as "{provider}:{providerId}" for uniqueness.
+     *
+     * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/login/overview.html">Spring Security OAuth2 Login</a>
+     */
+    @Override
+    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
+    public UUID provisionUser(String provider, String providerId, String email, String displayName) {
+        String subject = provider + ":" + providerId;
+        User user = userRepository.findBySubject(subject)
+                .map(existing -> {
+                    existing.updateProfile(email, displayName);
+                    return existing;
+                })
+                .orElseGet(() -> {
+                    User newUser = User.create(subject, email, displayName, UserRole.CONSUMER);
+                    return userRepository.save(newUser);
+                });
+        return user.getId();
     }
 
     private UserRole resolveRole(JwtAuthenticationToken token) {
