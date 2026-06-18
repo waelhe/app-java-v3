@@ -90,6 +90,5 @@ public class ModuleTestConfig {
             com.marketplace.identity.AuthAuditService auditService,
             com.marketplace.identity.UserRepository userRepository) {
         return new com.marketplace.identity.TwoStepLoginService(userDetailsManager, passwordEncoder, bruteForceService, mfaService, auditService, userRepository);
-        return new AuthAuditService(auditLogRepository);
     }
 }
