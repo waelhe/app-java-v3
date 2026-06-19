@@ -123,11 +123,18 @@ public final class TotpService {
         String base32Secret = new org.apache.commons.codec.binary.Base32().encodeAsString(rawKey)
                 .replace("=", ""); // authenticators tolerate stripped padding
 
+        // URL-encode the label components per the Google Authenticator Key URI Format spec:
+        // "It contains an account name, which is a URI-encoded string, optionally prefixed
+        // by an issuer string identifying the provider or service."
+        // Reference: https://github.com/google/google-authenticator/wiki/Key-Uri-Format
+        String encodedIssuer = java.net.URLEncoder.encode(issuer, java.nio.charset.StandardCharsets.UTF_8);
+        String encodedAccount = java.net.URLEncoder.encode(account, java.nio.charset.StandardCharsets.UTF_8);
+
         return String.format(
                 "otpauth://totp/%s:%s?secret=%s&issuer=%s&digits=%d&period=%d",
-                issuer, account,
+                encodedIssuer, encodedAccount,
                 base32Secret,
-                issuer, CODE_DIGITS, TIME_STEP_SECONDS
+                encodedIssuer, CODE_DIGITS, TIME_STEP_SECONDS
         );
     }
 

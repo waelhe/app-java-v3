@@ -51,7 +51,10 @@ class TotpServiceTest {
 
         assertNotNull(uri);
         assertTrue(uri.startsWith("otpauth://totp/"));
-        assertTrue(uri.contains("Marketplace:user@test.com"));
+        // After URL encoding: "user@test.com" → "user%40test.com", "Marketplace" stays as-is (no special chars)
+        // Reference: Google Authenticator Key URI Format — account name is URI-encoded
+        assertTrue(uri.contains("Marketplace:user%40test.com"),
+                "Label must be URL-encoded: " + uri);
         assertTrue(uri.contains("digits=6"));
         assertTrue(uri.contains("period=30"));
     }

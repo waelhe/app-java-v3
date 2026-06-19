@@ -77,7 +77,29 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
     @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User updateProfile(UUID userId, String email, String displayName) {
         User user = getById(userId);
-        user.updateProfile(email, displayName);
+
+        // Reject email changes via this endpoint. The auth_users.username column
+        // (used by UserDetailsManager) is keyed to the original email and cannot be
+        // updated via updateUser() — JdbcUserDetailsManager's updateUserSql only
+        // updates password + enabled, NOT username. Changing users.email without
+        // syncing auth_users.username would orphan the account: subsequent
+        // suspend/reactivate/role-change/password-change operations call
+        // loadUserByUsername(newEmail) which throws UsernameNotFoundException.
+        //
+        // A proper email-change flow (with re-verification) should be a separate
+        // endpoint that: (1) verifies the new email, (2) deletes the old auth_users
+        // row, (3) creates a new auth_users row with the new username, (4) updates
+        // users.email. Until that exists, email is immutable via updateProfile.
+        //
+        // Reference: UserDetailsManager Javadoc — updateUser does not support
+        // username changes; the SQL is "update auth_users set password = ?,
+        // enabled = ? where username = ?" (no username in SET clause).
+        if (email != null && !email.equals(user.getEmail())) {
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "Email cannot be changed via this endpoint. Email changes require a verified email-change flow.");
+        }
+
+        user.updateProfile(user.getEmail(), displayName);
         return user;
     }
 
@@ -136,10 +158,12 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
     public void suspendUser(UUID userId) {
         User user = getById(userId);
         UserDetails userDetails = userDetailsManager.loadUserByUsername(user.getEmail());
+        // User.Builder.roles() automatically prefixes "ROLE_" — no manual replace needed.
+        // Reference: User.UserBuilder.roles() Javadoc: "automatically prefixes each entry with ROLE_"
         org.springframework.security.core.userdetails.UserDetails updatedUser =
                 org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
                         .password(userDetails.getPassword())
-                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .roles(user.getRole().name())
                         .disabled(true)
                         .build();
         userDetailsManager.updateUser(updatedUser);
@@ -157,7 +181,7 @@ public class UserService implements IdentitySpi, OAuth2UserProvisioningPort {
         org.springframework.security.core.userdetails.UserDetails updatedUser =
                 org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
                         .password(userDetails.getPassword())
-                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .roles(user.getRole().name())
                         .disabled(false)
                         .build();
         userDetailsManager.updateUser(updatedUser);

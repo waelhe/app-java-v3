@@ -87,7 +87,7 @@ public class UserController {
         org.springframework.security.core.userdetails.UserDetails updatedUser =
                 org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
                         .password(newEncodedPassword)
-                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .roles(user.getRole().name())
                         .disabled(!userDetails.isEnabled())
                         .build();
         userDetailsManager.updateUser(updatedUser);
