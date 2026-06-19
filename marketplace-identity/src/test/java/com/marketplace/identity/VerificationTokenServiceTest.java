@@ -104,14 +104,32 @@ class VerificationTokenServiceTest {
     }
 
     @Test
-    void markAsUsed_savesToken() {
+    void markAsUsed_claimsTokenAtomically() {
         VerificationToken token = VerificationToken.create(UUID.randomUUID(), "t",
                 VerificationTokenType.EMAIL_VERIFICATION,
                 Instant.now().plus(1, ChronoUnit.HOURS));
 
+        // claimIfUnused returns 1 — token successfully claimed (single-use enforced).
+        when(tokenRepository.claimIfUnused(token.getId())).thenReturn(1);
+
         tokenService.markAsUsed(token);
 
-        assertTrue(token.isUsed());
-        verify(tokenRepository).save(token);
+        // Verify the atomic claim was called — NOT markUsed() + save() (which had a TOCTOU race).
+        verify(tokenRepository).claimIfUnused(token.getId());
+        verify(tokenRepository, never()).save(any());
+    }
+
+    @Test
+    void markAsUsed_throwsWhenAlreadyClaimed() {
+        VerificationToken token = VerificationToken.create(UUID.randomUUID(), "t",
+                VerificationTokenType.EMAIL_VERIFICATION,
+                Instant.now().plus(1, ChronoUnit.HOURS));
+
+        // claimIfUnused returns 0 — a concurrent request already claimed the token.
+        when(tokenRepository.claimIfUnused(token.getId())).thenReturn(0);
+
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> tokenService.markAsUsed(token),
+                "Concurrent claim must be rejected (single-use enforced)");
     }
 }

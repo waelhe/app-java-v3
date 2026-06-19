@@ -12,19 +12,28 @@ import java.util.UUID;
  *
  * <p>Handles two JWT issuance paths:
  * <ul>
- *   <li><b>Password grant</b> (Spring Authorization Server): {@code sub} = email,
- *       no {@code userId} claim. Resolved via {@code findBySubject(sub)}.</li>
- *   <li><b>OAuth2 social login</b> (OAuth2LoginSuccessHandler): {@code sub} = userId UUID,
+ *   <li><b>Direct login</b> (TwoStepLoginService): {@code sub} = userId UUID,
  *       {@code userId} claim = userId UUID. Resolved via {@code findById(userId)}.</li>
+ *   <li><b>OAuth2 social login</b> (OAuth2LoginSuccessHandler): {@code sub} = userId UUID,
+ *       {@code userId} claim = userId UUID. Same resolution path.</li>
+ *   <li><b>Legacy/password-grant JWTs</b> (if any): {@code sub} = email,
+ *       no {@code userId} claim. Resolved via {@code findBySubject(sub)}.</li>
  * </ul>
  *
- * <p>The {@code userId} claim is preferred when present (social-login path) because it
- * avoids a DB lookup by subject (which would fail — the social-login user's subject is
- * "provider:providerId", not the UUID in {@code sub}). For password-grant JWTs without
- * the {@code userId} claim, the fallback to {@code findBySubject(sub)} handles the
- * email-as-subject case.
+ * <p>The {@code userId} claim is preferred when present because it avoids a DB lookup
+ * by subject. For JWTs without the {@code userId} claim, the fallback to
+ * {@code findBySubject(sub)} handles the email-as-subject case.
+ *
+ * <p><b>Exception handling</b>: {@code UUID.fromString()} throws
+ * {@code IllegalArgumentException} for malformed strings (format error). The user
+ * lookup uses {@code orElseThrow} which also throws — but a <em>different</em>
+ * exception type ({@code ResourceNotFoundException}) so the format-error catch
+ * does NOT accidentally swallow the lookup failure. See {@link UUID#fromString}
+ * Javadoc: "Throws: IllegalArgumentException - If name does not conform to the
+ * string representation."
  *
  * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html">Spring Security JWT Resource Server</a>
+ * @see <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/UUID.html#fromString(java.lang.String)">UUID.fromString Javadoc</a>
  */
 @Component
 public class IdentityUserProvider implements CurrentUserProvider {
@@ -38,25 +47,39 @@ public class IdentityUserProvider implements CurrentUserProvider {
     @Override
     public UUID getCurrentUserId(Authentication authentication) {
         if (authentication instanceof JwtAuthenticationToken jwtToken) {
-            // Social-login JWTs carry an explicit "userId" claim — use it directly.
+            // Social-login and direct-login JWTs carry an explicit "userId" claim.
             Object userIdClaim = jwtToken.getToken().getClaim("userId");
             if (userIdClaim instanceof String userIdStr) {
+                // Parse the UUID — catch ONLY the format error (IllegalArgumentException
+                // from UUID.fromString). The lookup error below uses a different exception
+                // type so it is NOT caught here.
+                UUID parsedUserId = null;
                 try {
-                    UUID userId = UUID.fromString(userIdStr);
+                    parsedUserId = UUID.fromString(userIdStr);
+                } catch (IllegalArgumentException e) {
+                    // Not a valid UUID format — fall through to subject-based lookup.
+                    // This is expected for legacy JWTs that don't have a userId claim
+                    // but have a non-UUID subject.
+                }
+
+                if (parsedUserId != null) {
+                    final UUID userId = parsedUserId;
+                    // Lookup the user by ID. If the user was deleted from the DB,
+                    // ResourceNotFoundException propagates (NOT caught by the catch above)
+                    // → HTTP 404, not 500.
                     return userRepository.findById(userId)
                             .map(User::getId)
-                            .orElseThrow(() -> new IllegalArgumentException(
+                            .orElseThrow(() -> new com.marketplace.shared.api.ResourceNotFoundException(
                                     "User not found for userId claim: " + userId));
-                } catch (IllegalArgumentException e) {
-                    // Not a valid UUID — fall through to subject-based lookup.
                 }
             }
 
-            // Password-grant JWTs: sub = email, no userId claim.
+            // Fallback: JWTs without userId claim (legacy/password-grant) — sub = email.
             String subject = jwtToken.getToken().getSubject();
             return userRepository.findBySubject(subject)
                     .map(User::getId)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found for subject: " + subject));
+                    .orElseThrow(() -> new com.marketplace.shared.api.ResourceNotFoundException(
+                            "User not found for subject: " + subject));
         }
         throw new IllegalArgumentException("Unsupported authentication type");
     }

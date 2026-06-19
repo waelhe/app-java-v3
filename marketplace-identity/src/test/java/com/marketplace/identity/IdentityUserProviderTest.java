@@ -50,7 +50,7 @@ class IdentityUserProviderTest {
         when(jwt.getSubject()).thenReturn("missing-sub");
         when(userRepository.findBySubject("missing-sub")).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> userProvider.getCurrentUserId(token));
+        assertThrows(com.marketplace.shared.api.ResourceNotFoundException.class, () -> userProvider.getCurrentUserId(token));
     }
 
     @Test

@@ -158,7 +158,7 @@ class OAuth2LoginSuccessHandlerTest {
         when(oAuth2User.getAttribute("name")).thenReturn("Attacker");
         when(oAuth2User.getAttribute("email_verified")).thenReturn(false);
 
-        assertThrows(BadRequestException.class,
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
                 () -> handler.onAuthenticationSuccess(mock(HttpServletRequest.class), mock(HttpServletResponse.class), authToken),
                 "OAuth2 login with unverified email must be refused (OIDC Core §5.1)");
 
@@ -181,7 +181,7 @@ class OAuth2LoginSuccessHandlerTest {
         when(provisioningPort.provisionUser(any(), any(), any(), any())).thenReturn(userId);
         when(userLookupPort.findById(userId)).thenReturn(Optional.empty());
 
-        assertThrows(BadRequestException.class,
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
                 () -> handler.onAuthenticationSuccess(mock(HttpServletRequest.class), mock(HttpServletResponse.class), authToken),
                 "OAuth2 login must fail when user provisioning did not produce a DB row");
 

@@ -104,8 +104,15 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         // unless the user has explicitly verified via /user/emails — left as a future enhancement).
         Boolean emailVerified = oauth2User.getAttribute("email_verified");
         if (email != null && emailVerified != null && !emailVerified) {
-            log.warn("OAuth2 login refused: provider={} email={} email_verified=false", provider, email);
-            throw new BadRequestException("OAuth2 provider email is not verified");
+            log.warn("OAuth2 login refused: provider={} email_verified=false", provider);
+            // Throw OAuth2AuthenticationException (not BadRequestException) so Spring Security's
+            // AuthenticationFailureHandler processes it correctly — redirects to failure URL
+            // instead of propagating to GlobalExceptionHandler as HTTP 500.
+            // Reference: Spring Security OAuth2 Login — AuthenticationFailureHandler handles
+            // AuthenticationException subclasses.
+            throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException(
+                    new org.springframework.security.oauth2.core.OAuth2Error("email_not_verified",
+                            "OAuth2 provider email is not verified", null));
         }
 
         // Log without PII — userId only, not email (OWASP Logging Cheat Sheet).
@@ -118,7 +125,9 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         List<String> roles = userOpt
                 .map(UserSummary::role)
                 .map(List::of)
-                .orElseThrow(() -> new BadRequestException("User record not found for OAuth2 login"));
+                .orElseThrow(() -> new org.springframework.security.oauth2.core.OAuth2AuthenticationException(
+                        new org.springframework.security.oauth2.core.OAuth2Error("user_not_found",
+                                "User record not found for OAuth2 login", null)));
 
         String issuer = properties.security().authServer().issuer();
         String audience = properties.security().jwt().audience();
