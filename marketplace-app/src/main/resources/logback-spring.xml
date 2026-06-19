@@ -36,17 +36,19 @@
               value="(password|passwd|secret|token|api[-_]?key|authorization|bearer|refresh[-_]?token)\s*[=:]\s*[^\s,;'\"]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\{bcrypt\}\$2[abxy]\$\d{2}\$[A-Za-z0-9./]{53}"/>
     <property name="SECRET_REDACTION_REPLACEMENT" value="$1=****"/>
 
-    <!-- Console pattern for prod: redacted, semi-structured (key=value pairs) -->
+    <!-- Console pattern for prod: redacted, semi-structured (key=value pairs).
+         IMPORTANT: %replace wraps BOTH %msg AND %ex (exception stack trace) —
+         secrets in stack traces (e.g. JDBC URLs with passwords) are also redacted. -->
     <property name="CONSOLE_PATTERN_PROD"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
 
     <!-- Console pattern for dev: readable, no redaction (faster, better DX) -->
     <property name="CONSOLE_PATTERN_DEV"
               value="%d{HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L : %msg%n%ex"/>
 
-    <!-- File pattern for prod: redacted, same as console -->
+    <!-- File pattern for prod: redacted, same as console (covers msg + stack trace) -->
     <property name="FILE_PATTERN_PROD"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
 
     <!-- Console appender (prod profile) -->
     <appender name="CONSOLE_PROD" class="ch.qos.logback.core.ConsoleAppender">

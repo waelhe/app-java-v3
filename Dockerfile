@@ -30,11 +30,12 @@ EXPOSE 8080
 ENV JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
 
 # OCI image best practice — HEALTHCHECK instruction so the image is self-describing.
-# Uses the liveness probe endpoint (separate from readiness) per Spring Boot Actuator docs.
-# start-period: 40s grace period for JVM warmup before failed health checks count.
-# Reference: https://docs.spring.io/spring-boot/reference/actuator/endpoints.html#actuator.endpoints.health
+# Uses the liveness probe endpoint on the management port (8081 in prod, per
+# application-prod.yml management.server.port). When a separate management port is
+# configured, actuator endpoints are NOT served on the main server port (8080).
+# Reference: https://docs.spring.io/spring-boot/reference/actuator/enabling.html#actuator.enabling.separate-management-port
 # Reference: https://docs.docker.com/reference/dockerfile/#healthcheck
 HEALTHCHECK --start-period=40s --interval=10s --timeout=3s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${SERVER_PORT:-8080}/actuator/health/liveness" | grep -q '"status":"UP"' || exit 1
+  CMD wget -qO- "http://127.0.0.1:${MANAGEMENT_SERVER_PORT:-8081}/actuator/health/liveness" | grep -q '"status":"UP"' || exit 1
 
 ENTRYPOINT ["sh", "-c", "if [ -n \"$PORT\" ] && [ -z \"$SERVER_PORT\" ]; then export SERVER_PORT=$PORT; fi && exec java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

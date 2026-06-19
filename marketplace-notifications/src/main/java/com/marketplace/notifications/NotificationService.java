@@ -133,10 +133,16 @@ public class NotificationService {
     }
 
     private void sendWebSocket(UUID userId, String type, String message) {
-        messagingTemplate.ifPresent(template ->
-            template.convertAndSend("/topic/notifications/" + userId,
-                    new WebSocketNotification(type, message))
-        );
+        messagingTemplate.ifPresent(template -> {
+            try {
+                template.convertAndSend("/topic/notifications/" + userId,
+                        new WebSocketNotification(type, message));
+            } catch (Exception e) {
+                // WebSocket is best-effort — notification persistence must not roll back
+                // if the STOMP broker is unreachable. Same pattern as sendEmail above.
+                log.error("Failed to send WebSocket notification to user {}", userId, e);
+            }
+        });
     }
 
     @Transactional(readOnly = true)

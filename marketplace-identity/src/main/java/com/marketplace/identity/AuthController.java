@@ -7,7 +7,7 @@ import com.marketplace.identity.dto.RecoveryCodeLoginRequest;
 import com.marketplace.identity.dto.RegisterRequest;
 import com.marketplace.identity.dto.ResetPasswordRequest;
 import com.marketplace.shared.api.ApiConstants;
-import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +22,7 @@ import java.util.Map;
 
 /**
  * REST Controller for authentication operations.
+ *
  * <p>Provides endpoints for:
  * <ul>
  *   <li>User registration + email verification</li>
@@ -29,9 +30,13 @@ import java.util.Map;
  *   <li>Two-step login with MFA support</li>
  * </ul>
  *
- * <p>Rate-limited to prevent brute-force attacks (OWASP recommendation).
+ * <p><b>Rate limiting</b>: uses {@link DistributedRateLimiter} (Redis-backed, per-IP +
+ * per-username) per OWASP Authentication Cheat Sheet — rate limiting must be per-attacker,
+ * not per-instance. The prior Resilience4j {@code @RateLimiter} was per-JVM: with N replicas
+ * an attacker got N× the limit. The distributed limiter is the primary control;
+ * Resilience4j is kept as a secondary defense-in-depth (it still applies per-instance).
  *
- * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a>
+ * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Authentication Cheat Sheet — Rate Limiting</a>
  * @see <a href="https://docs.spring.io/spring-security/reference/servlet/authentication/index.html">Spring Security Authentication</a>
  */
 @RestController
@@ -42,22 +47,27 @@ public class AuthController {
     private final VerificationService verificationService;
     private final PasswordResetService passwordResetService;
     private final TwoStepLoginService loginService;
+    private final DistributedRateLimiter rateLimiter;
 
     public AuthController(RegistrationService registrationService,
                            VerificationService verificationService,
                            PasswordResetService passwordResetService,
-                           TwoStepLoginService loginService) {
+                           TwoStepLoginService loginService,
+                           DistributedRateLimiter rateLimiter) {
         this.registrationService = registrationService;
         this.verificationService = verificationService;
         this.passwordResetService = passwordResetService;
         this.loginService = loginService;
+        this.rateLimiter = rateLimiter;
     }
 
     // === Registration ===
 
     @PostMapping("/register")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Map<String, String>> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<Map<String, String>> register(
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletRequest httpRequest) {
+        checkRateLimit(httpRequest, "register:" + request.email());
         var user = registrationService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "userId", user.getId().toString(),
@@ -66,8 +76,8 @@ public class AuthController {
     }
 
     @GetMapping("/verify")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Void> verifyEmail(@RequestParam String token) {
+    public ResponseEntity<Void> verifyEmail(@RequestParam String token, HttpServletRequest httpRequest) {
+        checkRateLimit(httpRequest, "verify");
         verificationService.verifyEmail(token);
         return ResponseEntity.ok().build();
     }
@@ -75,15 +85,19 @@ public class AuthController {
     // === Password Reset ===
 
     @PostMapping("/forgot-password")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    public ResponseEntity<Void> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request,
+            HttpServletRequest httpRequest) {
+        checkRateLimit(httpRequest, "forgot:" + request.email());
         passwordResetService.initiateReset(request.email());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/reset-password")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<Void> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request,
+            HttpServletRequest httpRequest) {
+        checkRateLimit(httpRequest, "reset");
         passwordResetService.resetPassword(request);
         return ResponseEntity.noContent().build();
     }
@@ -103,8 +117,11 @@ public class AuthController {
      * Spring Authorization Server's {@code POST /oauth2/token} to get a JWT.
      */
     @PostMapping("/login")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<Map<String, Object>> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest) {
+        // Rate limit by IP + username — prevents credential stuffing per-attacker.
+        checkRateLimit(httpRequest, "login:" + request.username());
         TwoStepLoginService.LoginResult result = loginService.login(request.username(), request.password());
 
         if ("MFA_REQUIRED".equals(result.status())) {
@@ -129,8 +146,11 @@ public class AuthController {
      * (OWASP MFA Cheat Sheet — MFA must be bound to the authenticated session).
      */
     @PostMapping("/login/mfa")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Map<String, Object>> verifyMfaLogin(@Valid @RequestBody MfaLoginRequest request) {
+    public ResponseEntity<Map<String, Object>> verifyMfaLogin(
+            @Valid @RequestBody MfaLoginRequest request,
+            HttpServletRequest httpRequest) {
+        // Rate limit by IP + userId — prevents TOTP brute-force per-attacker.
+        checkRateLimit(httpRequest, "mfa:" + request.userId());
         TwoStepLoginService.LoginResult result = loginService.verifyMfa(request.userId(), request.mfaToken(), request.code());
 
         return ResponseEntity.ok(Map.of(
@@ -145,8 +165,10 @@ public class AuthController {
      * <p>Requires the {@code mfaToken} returned by step 1 (same binding as MFA).
      */
     @PostMapping("/login/recovery-code")
-    @RateLimiter(name = "auth")
-    public ResponseEntity<Map<String, Object>> verifyRecoveryCodeLogin(@Valid @RequestBody RecoveryCodeLoginRequest request) {
+    public ResponseEntity<Map<String, Object>> verifyRecoveryCodeLogin(
+            @Valid @RequestBody RecoveryCodeLoginRequest request,
+            HttpServletRequest httpRequest) {
+        checkRateLimit(httpRequest, "recovery:" + request.userId());
         TwoStepLoginService.LoginResult result = loginService.verifyRecoveryCode(request.userId(), request.mfaToken(), request.recoveryCode());
 
         return ResponseEntity.ok(Map.of(
@@ -154,5 +176,39 @@ public class AuthController {
                 "userId", result.userId().toString(),
                 "message", "Recovery code verified. Exchange credentials via POST /oauth2/token for JWT."
         ));
+    }
+
+    // === Rate limit helper ===
+
+    /**
+     * Checks the distributed rate limit for the given bucket key (IP + action/username).
+     * Throws 429 Too Many Requests if the limit has been exceeded.
+     *
+     * <p>The bucket key combines the client IP (resolved by Spring's ForwardedHeaderFilter
+     * when {@code server.forward-headers-strategy=framework} is active) with the action
+     * identifier, so limits are enforced per-attacker, not globally.
+     *
+     * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Rate Limiting</a>
+     */
+    private void checkRateLimit(HttpServletRequest request, String actionKey) {
+        String clientIp = resolveClientIp(request);
+        String bucketKey = "auth:ip:" + clientIp + ":" + actionKey;
+        if (!rateLimiter.tryAcquire(bucketKey)) {
+            // 429 Too Many Requests per RFC 6585 §4 — standard for rate limiting.
+            throw new org.springframework.web.server.ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Rate limit exceeded. Please try again later.");
+        }
+    }
+
+    /**
+     * Resolves the client IP from the request.
+     * When {@code server.forward-headers-strategy=framework} is active (prod),
+     * {@code getRemoteAddr()} returns the IP resolved by Spring's ForwardedHeaderFilter
+     * from the trusted-proxy X-Forwarded-For chain — not the spoofable raw header.
+     */
+    private static String resolveClientIp(HttpServletRequest request) {
+        String ip = request.getRemoteAddr();
+        return ip != null ? ip : "unknown";
     }
 }

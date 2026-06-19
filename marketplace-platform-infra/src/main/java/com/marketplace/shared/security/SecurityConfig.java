@@ -150,7 +150,8 @@ public class SecurityConfig {
     @Bean
     @Order(3)
     SecurityFilterChain protectedApiSecurityFilterChain(HttpSecurity http,
-                                                        CorrelationIdFilter correlationIdFilter) throws Exception {
+                                                        CorrelationIdFilter correlationIdFilter,
+                                                        com.marketplace.shared.security.oauth2.CookieAndHeaderBearerTokenResolver bearerTokenResolver) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
@@ -192,7 +193,8 @@ public class SecurityConfig {
                         .authenticationEntryPoint(problemDetailAuthenticationEntryPoint())
                         .accessDeniedHandler(problemDetailAccessDeniedHandler()))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                        .bearerTokenResolver(bearerTokenResolver));
 
         return http.build();
     }
