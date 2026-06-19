@@ -42,10 +42,14 @@ public class DistributedRateLimiter {
      * Lua script: atomically increment the counter and set TTL on first increment.
      * Returns the new counter value. The caller compares it against the limit.
      *
+     * <p>Uses ARGV[1] for TTL (no dummy ARGV[2]). Reference: Redis Lua scripting —
+     * "KEYS[] and ARGV[] are accessed by index" (1-based).
+     * https://redis.io/docs/latest/develop/use/patterns/distributed-locks/
+     *
      * <pre>
      * local current = redis.call('INCR', KEYS[1])
      * if current == 1 then
-     *   redis.call('EXPIRE', KEYS[1], ARGV[2])
+     *   redis.call('EXPIRE', KEYS[1], ARGV[1])
      * end
      * return current
      * </pre>
@@ -53,7 +57,7 @@ public class DistributedRateLimiter {
     private static final String RATE_LIMIT_SCRIPT =
             "local current = redis.call('INCR', KEYS[1]) " +
             "if current == 1 then " +
-            "  redis.call('EXPIRE', KEYS[1], ARGV[2]) " +
+            "  redis.call('EXPIRE', KEYS[1], ARGV[1]) " +
             "end " +
             "return current";
 
@@ -88,8 +92,7 @@ public class DistributedRateLimiter {
             Long current = redisTemplate.execute(
                     SCRIPT,
                     List.of(redisKey),
-                    "1", // dummy value (script INCRs, doesn't use ARGV[1])
-                    String.valueOf(authWindow.getSeconds()));
+                    String.valueOf(authWindow.getSeconds())); // ARGV[1] = TTL in seconds
             if (current == null) {
                 // Redis returned null — fail open (allow) to avoid blocking legitimate users
                 // when Redis is temporarily unavailable. Log the degradation.

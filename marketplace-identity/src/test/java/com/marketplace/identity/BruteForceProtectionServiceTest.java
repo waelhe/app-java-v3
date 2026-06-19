@@ -40,9 +40,14 @@ class BruteForceProtectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Cannot use @InjectMocks — the constructor takes @Value int primitives
-        // which Mockito cannot resolve. Construct manually with explicit test values.
-        bruteForceService = new BruteForceProtectionService(jdbcTemplate, auditService, 5, 15);
+        // Construct with self=null first, then set self via reflection (or use a spy).
+        // For unit tests, self.isLocked() calls the real method directly (no proxy),
+        // which is fine — jdbcTemplate is mocked so the query works.
+        bruteForceService = new BruteForceProtectionService(jdbcTemplate, auditService, null, 5, 15);
+        // Use Mockito spy to inject self — the spy wraps the real object so self.isLocked()
+        // delegates to the real method (which uses the mocked jdbcTemplate).
+        BruteForceProtectionService spy = spy(bruteForceService);
+        org.springframework.test.util.ReflectionTestUtils.setField(bruteForceService, "self", spy);
     }
 
     @Test

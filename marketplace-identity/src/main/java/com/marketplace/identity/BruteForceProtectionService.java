@@ -59,12 +59,25 @@ public class BruteForceProtectionService {
     private final int maxFailedAttempts;
     private final int lockDurationMinutes;
 
+    /**
+     * Self-reference for proxy-based @Transactional to work on self-invocation.
+     * Spring Framework Reference: "Only external method calls coming in through the
+     * proxy are intercepted. Self-invocation does not lead to an actual transaction
+     * at runtime even if the invoked method is marked with @Transactional."
+     * By calling self.isLocked() instead of this.isLocked(), the call goes through
+     * the Spring proxy and the @Transactional(readOnly = true) annotation is honored.
+     * The @Lazy annotation prevents circular dependency during bean creation.
+     */
+    private final BruteForceProtectionService self;
+
     public BruteForceProtectionService(JdbcTemplate jdbcTemplate,
                                        AuthAuditService auditService,
+                                       @org.springframework.context.annotation.Lazy BruteForceProtectionService self,
                                        @org.springframework.beans.factory.annotation.Value("${marketplace.security.max-failed-attempts:5}") int maxFailedAttempts,
                                        @org.springframework.beans.factory.annotation.Value("${marketplace.security.lock-duration-minutes:15}") int lockDurationMinutes) {
         this.jdbcTemplate = jdbcTemplate;
         this.auditService = auditService;
+        this.self = self;
         this.maxFailedAttempts = maxFailedAttempts;
         this.lockDurationMinutes = lockDurationMinutes;
     }
@@ -86,7 +99,7 @@ public class BruteForceProtectionService {
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void recordFailedAttempt(String username) {
-        if (isLocked(username)) {
+        if (self.isLocked(username)) {
             return;
         }
 
