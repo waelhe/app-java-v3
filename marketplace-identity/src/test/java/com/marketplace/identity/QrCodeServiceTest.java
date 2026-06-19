@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.Base64;
 import java.util.Map;
 
@@ -90,13 +89,5 @@ class QrCodeServiceTest {
         // ZXing has a maximum capacity; an absurdly long string should fail predictably.
         String tooLong = "x".repeat(10_000);
         assertThrows(IllegalStateException.class, () -> qrCodeService.generateQrCodePng(tooLong));
-    }
-
-    /**
-     * Helper for tests that need to decode a BufferedImage without throwing checked IOException.
-     */
-    @SuppressWarnings("unused")
-    private static byte[] readAllBytes(java.io.InputStream in) throws IOException {
-        return in.readAllBytes();
     }
 }

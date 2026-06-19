@@ -4,15 +4,14 @@ import com.marketplace.shared.api.BadRequestException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.Map;
+import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Two-step login flow with MFA and brute force protection integrated.
@@ -34,7 +33,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * token. This prevents an attacker who knows the user's UUID from skipping
  * the password and brute-forcing the TOTP directly.
  *
- * <p>Brute force protection is integrated:
+ * <p><b>Distributed storage</b>: pending MFA tokens are stored in Redis
+ * (via {@link StringRedisTemplate}) — not in-process memory. This ensures
+ * the token issued on instance A can be validated/consumed on instance B
+ * in multi-instance deployments (Kubernetes pods, Railway replicas, etc.).
+ * Redis also provides atomic single-use enforcement via {@code DELETE}
+ * (returns true only if the key existed at the moment of deletion —
+ * concurrent requests cannot both succeed).
+ *
+ * <p><b>Brute force protection</b> is integrated:
  * <ul>
  *   <li>Checks {@code isLocked()} before attempting login</li>
  *   <li>Records failed attempts on step-1 authentication failure</li>
@@ -46,7 +53,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet — "MFA must be bound to the authenticated session"</a></li>
  *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a></li>
- *   <li><a href="https://docs.spring.io/spring-security/reference/servlet/authentication/index.html">Spring Security Authentication</a></li>
+ *   <li><a href="https://docs.spring.io/spring-boot/reference/data/redis.html">Spring Boot — Redis</a></li>
+ *   <li><a href="https://docs.spring.io/spring-data/redis/reference/">Spring Data Redis Reference</a></li>
  *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238#section-5.2">RFC 6238 §5.2 — TOTP Replay Protection</a></li>
  * </ul>
  */
@@ -57,7 +65,10 @@ public class TwoStepLoginService {
     private static final Logger log = LoggerFactory.getLogger(TwoStepLoginService.class);
 
     /** MFA token validity window — 5 minutes per OWASP MFA Cheat Sheet. */
-    private static final long MFA_TOKEN_TTL_SECONDS = 300;
+    private static final Duration MFA_TOKEN_TTL = Duration.ofMinutes(5);
+
+    /** Redis key prefix for pending MFA tokens. */
+    private static final String MFA_TOKEN_KEY_PREFIX = "marketplace:mfa:pending:";
 
     private final UserDetailsManager userDetailsManager;
     private final PasswordEncoder passwordEncoder;
@@ -65,15 +76,7 @@ public class TwoStepLoginService {
     private final MfaService mfaService;
     private final AuthAuditService auditService;
     private final UserRepository userRepository;
-
-    /**
-     * In-memory store of pending MFA tokens: {@code mfaToken -> {userId, expiresAt}}.
-     * <p>For multi-instance deployments this should be replaced with a shared
-     * store (Redis). For single-instance dev/stage this in-memory store is
-     * sufficient and avoids a new infrastructure dependency for the security fix.
-     * <p>Token entries are removed on first use (single-use) or on expiry.
-     */
-    private final Map<String, PendingMfa> pendingMfaTokens = new ConcurrentHashMap<>();
+    private final StringRedisTemplate redisTemplate;
 
     @Autowired
     public TwoStepLoginService(UserDetailsManager userDetailsManager,
@@ -81,13 +84,15 @@ public class TwoStepLoginService {
                                 BruteForceProtectionService bruteForceService,
                                 MfaService mfaService,
                                 AuthAuditService auditService,
-                                UserRepository userRepository) {
+                                UserRepository userRepository,
+                                StringRedisTemplate redisTemplate) {
         this.userDetailsManager = userDetailsManager;
         this.passwordEncoder = passwordEncoder;
         this.bruteForceService = bruteForceService;
         this.mfaService = mfaService;
         this.auditService = auditService;
         this.userRepository = userRepository;
+        this.redisTemplate = redisTemplate;
     }
 
     /**
@@ -134,8 +139,9 @@ public class TwoStepLoginService {
 
         if (mfaService.isMfaEnabled(user.getId())) {
             String mfaToken = UUID.randomUUID().toString();
-            pendingMfaTokens.put(mfaToken, new PendingMfa(user.getId(), Instant.now().plusSeconds(MFA_TOKEN_TTL_SECONDS)));
-            log.debug("Issued MFA token for user={} (TTL={}s)", user.getId(), MFA_TOKEN_TTL_SECONDS);
+            // Store in Redis with TTL — atomic, distributed, auto-expiring.
+            redisTemplate.opsForValue().set(redisKey(mfaToken), user.getId().toString(), MFA_TOKEN_TTL);
+            log.debug("Issued MFA token for user={} (TTL={}s)", user.getId(), MFA_TOKEN_TTL.getSeconds());
             return new LoginResult("MFA_REQUIRED", mfaToken, user.getId(), null);
         }
 
@@ -158,7 +164,13 @@ public class TwoStepLoginService {
             throw new BadRequestException("Invalid MFA code");
         }
 
-        consumeMfaToken(mfaToken);
+        // Atomic single-use: Redis DELETE returns true only if the key existed at
+        // the moment of deletion. A concurrent request that already consumed the
+        // token will cause this DELETE to return false → we reject.
+        if (!consumeMfaToken(mfaToken)) {
+            log.warn("MFA token already consumed by a concurrent request: user={}", userId);
+            throw new BadRequestException("MFA token already used");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found"));
@@ -181,7 +193,10 @@ public class TwoStepLoginService {
             throw new BadRequestException("Invalid recovery code");
         }
 
-        consumeMfaToken(mfaToken);
+        if (!consumeMfaToken(mfaToken)) {
+            log.warn("MFA token already consumed by a concurrent request: user={}", userId);
+            throw new BadRequestException("MFA token already used");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found"));
@@ -191,7 +206,7 @@ public class TwoStepLoginService {
     }
 
     /**
-     * Validates the single-use MFA token against the in-memory pending store.
+     * Validates the single-use MFA token against the Redis store.
      * Does NOT consume the token — call {@link #consumeMfaToken(String)} only
      * after the TOTP/recovery-code verification succeeds, so that a wrong TOTP
      * does not consume the token (letting the user retry within the 5-min window).
@@ -200,24 +215,26 @@ public class TwoStepLoginService {
         if (mfaToken == null || mfaToken.isBlank()) {
             throw new BadRequestException("Missing MFA token — complete step 1 first");
         }
-        PendingMfa pending = pendingMfaTokens.get(mfaToken);
-        if (pending == null) {
-            throw new BadRequestException("Invalid or already-used MFA token");
+        String storedUserId = redisTemplate.opsForValue().get(redisKey(mfaToken));
+        if (storedUserId == null) {
+            // Key doesn't exist OR has expired (Redis handles TTL automatically).
+            throw new BadRequestException("Invalid, already-used, or expired MFA token");
         }
-        if (Instant.now().isAfter(pending.expiresAt())) {
-            pendingMfaTokens.remove(mfaToken);
-            throw new BadRequestException("MFA token expired — restart login");
-        }
-        if (!pending.userId().equals(expectedUserId)) {
+        if (!storedUserId.equals(expectedUserId.toString())) {
             // Possible token-theft attempt — log and reject.
-            log.warn("MFA token userId mismatch: token_user={} but request_user={}", pending.userId(), expectedUserId);
+            log.warn("MFA token userId mismatch: stored_user={} but request_user={}", storedUserId, expectedUserId);
             throw new BadRequestException("MFA token does not match user");
         }
     }
 
-    /** Removes the MFA token from the pending store — single-use enforcement. */
-    private void consumeMfaToken(String mfaToken) {
-        pendingMfaTokens.remove(mfaToken);
+    /**
+     * Atomically consumes the MFA token — single-use enforcement.
+     * @return true if the token was successfully consumed (existed and deleted),
+     *         false if it was already consumed by a concurrent request.
+     */
+    private boolean consumeMfaToken(String mfaToken) {
+        Boolean deleted = redisTemplate.delete(redisKey(mfaToken));
+        return Boolean.TRUE.equals(deleted);
     }
 
     /** Records a failed MFA/recovery attempt against the user (for brute-force lockout). */
@@ -229,8 +246,9 @@ public class TwoStepLoginService {
         }
     }
 
-    /** Pending MFA token entry. */
-    private record PendingMfa(UUID userId, Instant expiresAt) {
+    /** Builds the Redis key for a pending MFA token. */
+    private static String redisKey(String mfaToken) {
+        return MFA_TOKEN_KEY_PREFIX + mfaToken;
     }
 
     public record LoginResult(String status, String mfaToken, UUID userId, String jwt) {
