@@ -125,8 +125,11 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             // Provider doesn't return email_verified (GitHub) — verify via /user/emails API.
             emailVerified = verifyEmailViaProviderApi(oauth2Token, request, email);
         }
-        if (email != null && !emailVerified) {
-            log.warn("OAuth2 login refused: provider={} email_verified=false", provider);
+        if (email == null || !emailVerified) {
+            // Refuse provisioning if email is null (no verifiable contact) OR if
+            // email_verified is false. OIDC Core §5.1 + OWASP Account Provisioning:
+            // "Verify the user's identity before provisioning."
+            log.warn("OAuth2 login refused: provider={} email={} emailVerified={}", provider, email, emailVerified);
             // Throw OAuth2AuthenticationException (not BadRequestException) so Spring Security's
             // AuthenticationFailureHandler processes it correctly — redirects to failure URL
             // instead of propagating to GlobalExceptionHandler as HTTP 500.

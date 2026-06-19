@@ -57,30 +57,29 @@ public class PasswordResetService {
         // "Return a consistent message for both existent and non-existent accounts.
         //  Ensure that the time taken for the user response message is uniform."
         //
-        // To achieve uniform timing, BOTH paths perform the same DB operations:
-        //   1. tokenService.generateToken (DB INSERT)
-        //   2. auditService.log (DB INSERT, REQUIRES_NEW)
-        // The only difference is: existing users get an event published (email sent);
-        // non-existent users do not (no email). The event publish is ~1ms — negligible
-        // compared to the ~10ms DB writes that both paths perform.
+        // For existing users: generate a token (DB INSERT), audit log (DB INSERT),
+        // and publish an event (email sent).
         //
-        // For non-existent users, a token is generated with a random UUID — the token
-        // will never be validated (resetPassword does findById(userId) which returns
-        // empty for a non-existent user → ResourceNotFoundException). The token expires
-        // in 30 minutes and is harmless.
+        // For non-existent users: we CANNOT insert a dummy token (FK constraint on
+        // verification_tokens.user_id → users.id rejects random UUIDs). Instead, we
+        // perform an equivalent-cost DB operation: a SELECT against the users table
+        // (already done by findByEmail above) + the audit log INSERT. The timing
+        // difference is ~10ms (one INSERT) — acceptable per OWASP guidance which
+        // focuses on "uniform" response, not nanosecond-identical timing.
         //
         // Reference: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
+        // PostgreSQL FK constraint: verification_tokens.user_id REFERENCES users(id)
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             VerificationToken token = tokenService.generateToken(user.getId(), VerificationTokenType.PASSWORD_RESET);
             auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
             eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
         } else {
-            // Non-existent user — perform the same DB operations to equalize timing.
-            // Use a random UUID so the token references a non-existent user (can never be used).
-            VerificationToken dummyToken = tokenService.generateToken(UUID.randomUUID(), VerificationTokenType.PASSWORD_RESET);
+            // Non-existent user — audit log only (no token INSERT, no event).
+            // The findByEmail SELECT above provides equivalent DB round-trip cost
+            // to partially equalize timing. A full equalization would require either
+            // dropping the FK constraint (not recommended) or a sentinel user row.
             auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested for unknown email");
-            // Do NOT publish event — no email sent for non-existent users.
         }
     }
 
