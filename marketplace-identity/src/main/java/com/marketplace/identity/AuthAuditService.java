@@ -87,25 +87,18 @@ public class AuthAuditService implements IdentityAdminSpi {
             if (attrs != null) {
                 HttpServletRequest request = attrs.getRequest();
                 // When forward-headers-strategy=framework is active (set in application-prod.yml),
-                // Spring already resolves X-Forwarded-For into request.getRemoteAddr().
-                // We no longer trust the raw X-Forwarded-For header directly — that was spoofable
-                // because without forward-headers-strategy the header is client-controlled.
-                // Spring's ForwardedHeaderFilter validates the trusted-proxy chain before
-                // setting the resolved IP. Reference:
-                // https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
+                // Spring's ForwardedHeaderFilter resolves X-Forwarded-For from the trusted proxy
+                // chain into request.getRemoteAddr(). We trust ONLY this resolved value — never
+                // the raw X-Forwarded-For header, which is client-controllable and spoofable.
+                // Reference: https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
                 String remoteAddr = request.getRemoteAddr();
                 if (remoteAddr != null && !remoteAddr.isBlank()) {
                     return remoteAddr;
                 }
-                String xff = request.getHeader("X-Forwarded-For");
-                if (xff != null && !xff.isBlank()) {
-                    // Fallback only — should rarely trigger when forward-headers-strategy is active.
-                    return xff.split(",")[0].trim();
-                }
-                return null;
+                return "unknown";
             }
         } catch (Exception e) {
-            // ignore — not in request context
+            // ignore — not in request context (e.g. scheduled task)
         }
         return null;
     }

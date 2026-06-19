@@ -116,12 +116,25 @@ public final class TotpService {
      * @param issuer application name
      * @return otpauth URI with Base32-encoded secret
      */
+    /**
+     * Converts the internal Base64-encoded secret to Base32 (RFC 4648) — the format
+     * expected by authenticator apps (Google Authenticator, Microsoft Authenticator, etc.).
+     *
+     * <p>Use this when returning the secret to the user (e.g. for manual entry) — never
+     * expose the Base64 internal format. The {@code otpauth} URI already contains the
+     * Base32 secret via {@link #buildOtpAuthUri}.
+     *
+     * @param base64Secret Base64-encoded secret (internal storage format)
+     * @return Base32-encoded secret (authenticator-compatible, padding stripped)
+     */
+    public static String toBase32Secret(String base64Secret) {
+        byte[] rawKey = Base64.getDecoder().decode(base64Secret);
+        return new org.apache.commons.codec.binary.Base32().encodeAsString(rawKey)
+                .replace("=", "");
+    }
+
     public static String buildOtpAuthUri(String secret, String account, String issuer) {
-        // Decode the internal Base64 secret back to raw key bytes, then re-encode
-        // as Base32 (RFC 4648) — the format expected by authenticator apps.
-        byte[] rawKey = Base64.getDecoder().decode(secret);
-        String base32Secret = new org.apache.commons.codec.binary.Base32().encodeAsString(rawKey)
-                .replace("=", ""); // authenticators tolerate stripped padding
+        String base32Secret = toBase32Secret(secret);
 
         // URL-encode the label components per the Google Authenticator Key URI Format spec:
         // "It contains an account name, which is a URI-encoded string, optionally prefixed

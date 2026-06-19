@@ -155,7 +155,25 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql"))
+                // CSRF protection enabled with CookieCsrfTokenRepository for SPA compatibility.
+                // Per Spring Security Reference: "CookieCsrfTokenRepository.withHttpOnlyFalse()"
+                // allows JavaScript (SPA) to read the XSRF-TOKEN cookie and send it as X-XSRF-TOKEN header.
+                //
+                // Why CSRF is needed: CookieAndHeaderBearerTokenResolver accepts the session_token
+                // cookie as a bearer token. Without CSRF, a cross-site request from evil.com would
+                // automatically include the cookie. SameSite=Strict mitigates this in modern browsers,
+                // but OWASP recommends defense-in-depth (SameSite AND CSRF tokens).
+                //
+                // Webhooks are excluded because they are third-party callbacks (no cookie/session).
+                // Actuator health endpoints are excluded because they are machine-to-machine.
+                // Reference: https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(org.springframework.security.web.csrf.CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .ignoringRequestMatchers(
+                                "/api/v1/payments/webhooks/**",
+                                "/actuator/health/**",
+                                "/actuator/info"
+                        ))
                 .cors(Customizer.withDefaults())
                 // OWASP Secure Headers Cheat Sheet — explicit hardening (do not rely solely
                 // on Spring Security defaults). HSTS is critical behind a TLS-terminating
