@@ -1,0 +1,19 @@
+[Unit]
+Description=Marketplace Backend
+After=syslog.target network.target postgresql.service redis.service
+
+[Service]
+User=app
+Group=app
+Type=exec
+ExecStart=/usr/bin/java -XX:+UseZGC -XX:+ZGenerational -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -jar /opt/marketplace/app.jar
+WorkingDirectory=/opt/marketplace
+Environment=SPRING_PROFILES_ACTIVE=prod
+Environment=DB_URL=jdbc:postgresql://localhost:5432/marketplace
+Environment=REDIS_HOST=localhost
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

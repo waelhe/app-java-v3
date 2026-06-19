@@ -266,6 +266,13 @@
                 </executions>
                 <configuration>
                     <mainClass>com.marketplace.MarketplaceApplication</mainClass>
+                    <!-- OCI image build support via spring-boot:build-image.
+                         Reference: Spring Boot Maven Plugin, Packaging OCI Images:
+                         spring-boot:build-image goal.
+                         https://docs.spring.io/spring-boot/maven-plugin/build-image.html -->
+                    <image>
+                        <name>marketplace:${project.version}</name>
+                    </image>
                 </configuration>
             </plugin>
             <plugin>
