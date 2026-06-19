@@ -11,10 +11,9 @@ spring:
       enabled: false
 
   security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 15
-    mfa:
-      issuer: Marketplace
+    # Only standard Spring Security properties go here (oauth2.client.*).
+    # max-failed-attempts, lock-duration-minutes, and mfa.issuer are NOT Spring
+    # Security properties — they are under marketplace.security.* below.
     oauth2:
       client:
         registration:

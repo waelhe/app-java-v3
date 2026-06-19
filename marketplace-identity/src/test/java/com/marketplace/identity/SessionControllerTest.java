@@ -93,7 +93,9 @@ class SessionControllerTest {
         User user = User.create("sub", "user@test.com", "User", UserRole.CONSUMER);
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
         when(userService.getById(userId)).thenReturn(user);
-        when(jdbcTemplate.queryForObject(eq("SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ?"),
+        when(jdbcTemplate.queryForObject(eq(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ? " +
+                "AND (access_token_expires_at > now() OR refresh_token_expires_at > now())"),
                 eq(Integer.class), eq("user@test.com"))).thenReturn(2);
 
         var result = sessionController.sessionStatus(auth);

@@ -138,8 +138,8 @@ management:
           endpoint: ${OTEL_TRACES_EXPORT_URL}
 
   security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 15
+    # Only standard Spring Security properties go here (oauth2.client.*).
+    # max-failed-attempts and lock-duration-minutes are under marketplace.security.* below.
     oauth2:
       client:
         registration:

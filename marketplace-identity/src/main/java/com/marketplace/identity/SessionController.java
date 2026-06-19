@@ -112,8 +112,11 @@ public class SessionController {
         UUID userId = currentUserProvider.getCurrentUserId(auth);
         User user = userService.getById(userId);
 
+        // Count only truly-active authorizations (access OR refresh token not expired).
+        // Without this filter, expired-but-not-yet-purged rows inflate the count.
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ?",
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE principal_name = ? " +
+                "AND (access_token_expires_at > now() OR refresh_token_expires_at > now())",
                 Integer.class, user.getEmail()
         );
 
