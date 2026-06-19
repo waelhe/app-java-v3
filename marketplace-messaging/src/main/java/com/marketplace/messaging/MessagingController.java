@@ -9,13 +9,25 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
+/**
+ * REST Controller for messaging.
+ *
+ * <p>Class-level {@code @PreAuthorize("isAuthenticated()")} ensures all endpoints
+ * require authentication.
+ *
+ * <p>Reference: Spring Security Reference -- Method Security:
+ * "If it is at the class level... then all methods inherit the class-level behavior."
+ * https://docs.spring.io/spring-security/reference/servlet/authorization/method-security.html
+ */
 @RestController
 @RequestMapping(value = ApiConstants.MESSAGING, version = "1.0")
+@PreAuthorize("isAuthenticated()")
 public class MessagingController {
 
     private final MessagingService messagingService;
