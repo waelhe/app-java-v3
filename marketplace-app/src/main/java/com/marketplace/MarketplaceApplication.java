@@ -14,7 +14,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @Modulithic
-@EnableConfigurationProperties(MarketplaceProperties.class)
+@EnableConfigurationProperties({MarketplaceProperties.class, com.marketplace.shared.storage.StorageProperties.class})
 @EnableScheduling
 public class MarketplaceApplication {
 

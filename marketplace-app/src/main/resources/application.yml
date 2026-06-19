@@ -102,6 +102,13 @@ spring:
     messaging:
       preferred-json-mapper: jackson
 
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${STORAGE_MAX_FILE_SIZE:10MB}
+      max-request-size: ${STORAGE_MAX_REQUEST_SIZE:20MB}
+      file-size-threshold: 2KB
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
