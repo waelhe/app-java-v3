@@ -3,6 +3,7 @@ package com.marketplace.identity;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -41,25 +42,51 @@ public final class TotpService {
      * Validates a TOTP code against the secret.
      * Allows a window of ±1 time step (±30 seconds) for clock drift.
      *
+     * <p><b>Constant-time comparison</b>: uses {@link MessageDigest#isEqual(byte[], byte[])}
+     * instead of {@link String#equals(Object)} to prevent timing attacks. RFC 6238 §5.2
+     * and RFC 4226 §5.3 both require constant-time comparison of OTP values.
+     *
      * @param secret Base64-encoded secret
      * @param code   6-digit code from authenticator app
      * @return true if valid
      */
     public static boolean validateCode(String secret, String code) {
+        return validateCodeWithTimestep(secret, code).isPresent();
+    }
+
+    /**
+     * Validates a TOTP code and returns the matched timestep.
+     *
+     * <p>Returns the timestep that matched the code (within the ±1 window),
+     * or {@link java.util.Optional#empty()} if no match. The caller should
+     * use the returned timestep for replay protection — RFC 6238 §5.2 step 4:
+     * "The verifier MUST NOT accept the second attempt of the OTP after the
+     * successful validation has been issued."
+     *
+     * @param secret Base64-encoded secret
+     * @param code   6-digit code from authenticator app
+     * @return the matched timestep, or empty if no match
+     */
+    public static java.util.Optional<Long> validateCodeWithTimestep(String secret, String code) {
         if (code == null || code.length() != CODE_DIGITS) {
-            return false;
+            return java.util.Optional.empty();
         }
         long currentTime = System.currentTimeMillis() / 1000;
         long currentStep = currentTime / TIME_STEP_SECONDS;
 
-        // Check current, previous, and next time step (±30s window)
+        byte[] codeBytes = code.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+
+        // Check current, previous, and next time step (±30s window).
+        // Use constant-time comparison (MessageDigest.isEqual) per RFC 6238 §5.2.
         for (int i = -1; i <= 1; i++) {
-            String expectedCode = generateCode(secret, currentStep + i);
-            if (expectedCode.equals(code)) {
-                return true;
+            long timestep = currentStep + i;
+            String expectedCode = generateCode(secret, timestep);
+            byte[] expectedBytes = expectedCode.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            if (MessageDigest.isEqual(expectedBytes, codeBytes)) {
+                return java.util.Optional.of(timestep);
             }
         }
-        return false;
+        return java.util.Optional.empty();
     }
 
     /**

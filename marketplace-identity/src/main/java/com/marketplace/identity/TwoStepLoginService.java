@@ -174,7 +174,7 @@ public class TwoStepLoginService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found"));
-        auditService.log(user.getEmail(), AuthEventType.LOGIN_SUCCESS, "MFA verified");
+        auditService.log(user.getEmail(), AuthEventType.LOGIN_SUCCESS, "MFA verified (step 2)");
 
         return new LoginResult("SUCCESS", null, user.getId(), null);
     }
@@ -200,7 +200,7 @@ public class TwoStepLoginService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found"));
-        auditService.log(user.getEmail(), AuthEventType.LOGIN_SUCCESS, "Recovery code used");
+        auditService.log(user.getEmail(), AuthEventType.RECOVERY_CODE_USED, "Recovery code used (step 2)");
 
         return new LoginResult("SUCCESS", null, user.getId(), null);
     }
@@ -242,7 +242,7 @@ public class TwoStepLoginService {
         User user = userRepository.findById(userId).orElse(null);
         if (user != null) {
             bruteForceService.recordFailedAttempt(user.getEmail());
-            auditService.log(user.getEmail(), AuthEventType.LOGIN_FAILURE, "Failed MFA/recovery attempt");
+            auditService.log(user.getEmail(), AuthEventType.MFA_FAILURE, "Failed MFA/recovery attempt");
         }
     }
 

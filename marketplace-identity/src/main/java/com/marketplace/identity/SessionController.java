@@ -61,7 +61,7 @@ public class SessionController {
                 user.getEmail()
         );
 
-        auditService.log(user.getEmail(), AuthEventType.PASSWORD_CHANGED,
+        auditService.log(user.getEmail(), AuthEventType.SESSION_REVOKED,
                 "All sessions revoked (" + deleted + " sessions removed)");
 
         return ResponseEntity.noContent().build();
