@@ -38,7 +38,8 @@ class DistributedRateLimiterTest {
 
     @BeforeEach
     void setUp() {
-        rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60);
+        // Default: fail-open=false (fail-closed per OWASP Fail Securely).
+        rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, false);
         // Default: allow all (counter = 1L). Individual tests override with specific return values.
         // Type-safe: RedisScript<? extends Object> matcher — no unchecked warning.
         lenient().when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
@@ -70,34 +71,48 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    void tryAcquire_failsOpenOnRedisNull() {
+    void tryAcquire_failsClosedOnRedisNullByDefault() {
+        // Default: fail-closed (return false = deny) per OWASP "Fail Securely".
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(null);
+
+        assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
+                "Must fail closed (deny) when Redis returns null — never allow auth when rate-limit status is unknown");
+    }
+
+    @Test
+    void tryAcquire_failsOpenOnRedisNullWhenConfigured() {
+        // When fail-open=true is configured, Redis null → allow (availability priority).
+        rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, true);
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(null);
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail open when Redis returns null — never block auth on infra degradation");
+                "Must fail open when explicitly configured — never block auth on infra failure");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void tryAcquire_failsOpenOnRedisConnectionFailure() {
+    void tryAcquire_failsClosedOnRedisConnectionFailureByDefault() {
+        // Default: fail-closed per OWASP "Fail Securely".
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new org.springframework.data.redis.RedisConnectionFailureException(
                         "Redis connection refused"));
 
-        assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail open on RedisConnectionFailureException — never block auth on infra failure");
+        assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
+                "Must fail closed on RedisConnectionFailureException by default — deny when rate-limit status is unknown");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void tryAcquire_failsOpenOnRedisSystemException() {
+    void tryAcquire_failsClosedOnRedisSystemExceptionByDefault() {
+        // Default: fail-closed per OWASP "Fail Securely".
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new org.springframework.data.redis.RedisSystemException(
                         "Redis system error", new RuntimeException()));
 
-        assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail open on RedisSystemException — never block auth on infra failure");
+        assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
+                "Must fail closed on RedisSystemException by default — deny when rate-limit status is unknown");
     }
 
     @Test

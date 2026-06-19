@@ -67,14 +67,17 @@ public class DistributedRateLimiter {
 
     private final int authLimit;
     private final Duration authWindow;
+    private final boolean failOpen;
 
     public DistributedRateLimiter(
             StringRedisTemplate redisTemplate,
             @Value("${marketplace.security.rate-limit.auth.limit:5}") int authLimit,
-            @Value("${marketplace.security.rate-limit.auth.window-seconds:60}") int authWindowSeconds) {
+            @Value("${marketplace.security.rate-limit.auth.window-seconds:60}") int authWindowSeconds,
+            @Value("${marketplace.security.rate-limit.fail-open:false}") boolean failOpen) {
         this.redisTemplate = redisTemplate;
         this.authLimit = authLimit;
         this.authWindow = Duration.ofSeconds(authWindowSeconds);
+        this.failOpen = failOpen;
     }
 
     /**
@@ -94,10 +97,12 @@ public class DistributedRateLimiter {
                     List.of(redisKey),
                     String.valueOf(authWindow.getSeconds())); // ARGV[1] = TTL in seconds
             if (current == null) {
-                // Redis returned null — fail open (allow) to avoid blocking legitimate users
-                // when Redis is temporarily unavailable. Log the degradation.
-                log.warn("Rate limiter returned null for key={} — failing open (Redis degraded?)", bucketKey);
-                return true;
+                // Redis returned null — fail based on configured policy.
+                // Default: fail-closed (return false = deny) per OWASP "Fail Securely".
+                // Operators can set marketplace.security.rate-limit.fail-open=true for
+                // availability-priority deployments.
+                log.warn("Rate limiter returned null for key={} — failing {}", bucketKey, failOpen ? "open" : "closed");
+                return failOpen;
             }
             return current <= authLimit;
         } catch (org.springframework.data.redis.RedisConnectionFailureException
@@ -111,8 +116,8 @@ public class DistributedRateLimiter {
             // Redis exception hierarchy:
             //   RedisConnectionFailureException extends DataAccessResourceFailureException
             //   RedisSystemException extends UncategorizedDataAccessException
-            log.warn("Rate limiter Redis error for key={} — failing open", bucketKey, e);
-            return true;
+            log.warn("Rate limiter Redis error for key={} — failing {}", bucketKey, failOpen ? "open" : "closed", e);
+            return failOpen;
         }
     }
 
