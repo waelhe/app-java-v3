@@ -254,9 +254,14 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
             // Primary email not found or doesn't match — fail-closed.
             return false;
-        } catch (Exception e) {
-            log.warn("Failed to verify email via provider API: {}", e.getMessage(), e);
-            return false; // fail-closed on API errors
+        } catch (org.springframework.web.client.RestClientException e) {
+            // Catch only RestClientException (network/HTTP errors — connection refused,
+            // timeout, 4xx/5xx from GitHub). Programming errors (ClassCastException, NPE)
+            // propagate so they're visible in logs and monitoring — not masked as "API errors".
+            // Reference: Spring Web — RestClientException extends NestedRuntimeException;
+            // ResourceAccessException (network I/O) extends RestClientException.
+            log.warn("Failed to verify email via provider API — failing closed", e);
+            return false;
         }
     }
 }

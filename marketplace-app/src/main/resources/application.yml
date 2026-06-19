@@ -121,7 +121,7 @@ spring:
       mail.smtp.writetimeout: 5000
   cache:
     type: ${CACHE_TYPE:redis}
-    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
+    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,userIdByJwt
     # TTL for all Redis cache entries — prevents stale data from persisting indefinitely
     # if a @CacheEvict is missed (e.g. direct DB update by a DBA).
     # Reference: Spring Boot Reference — IO Caching / Redis:

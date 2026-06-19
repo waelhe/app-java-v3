@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
@@ -64,13 +65,13 @@ public class IdentityUserProvider implements CurrentUserProvider {
 
                 if (parsedUserId != null) {
                     final UUID userId = parsedUserId;
-                    // Lookup the user by ID. If the user was deleted from the DB,
-                    // ResourceNotFoundException propagates (NOT caught by the catch above)
-                    // → HTTP 404, not 500.
-                    return userRepository.findById(userId)
-                            .map(User::getId)
-                            .orElseThrow(() -> new com.marketplace.shared.api.ResourceNotFoundException(
-                                    "User not found for userId claim: " + userId));
+                    // Delegate to cached lookup — avoids a DB round-trip on every API call.
+                    // The JWT was already signature/issuer/audience/expiry-validated by Spring Security;
+                    // the only purpose of this lookup is to catch the rare "user deleted after JWT issuance"
+                    // case. A 30-minute cache TTL (configured in application.yml) is sufficient.
+                    // Reference: Spring Boot Reference — @Cacheable: "demonstrates the use of caching
+                    // on a potentially costly operation."
+                    return resolveUserIdFromDb(userId);
                 }
             }
 
@@ -82,6 +83,26 @@ public class IdentityUserProvider implements CurrentUserProvider {
                             "User not found for subject: " + subject));
         }
         throw new IllegalArgumentException("Unsupported authentication type");
+    }
+
+    /**
+     * Cached lookup of user ID by UUID. Avoids a DB round-trip on every authenticated
+     * API call. The cache TTL is set globally via {@code spring.cache.redis.time-to-live}
+     * in application.yml (currently 30 minutes).
+     *
+     * <p>If the user was deleted from the DB, {@code ResourceNotFoundException} propagates
+     * (NOT cached — exceptions are not cached by default in Spring Cache).
+     *
+     * @param userId the user UUID from the JWT claim
+     * @return the same UUID (verified to exist in the DB)
+     * @throws com.marketplace.shared.api.ResourceNotFoundException if the user was deleted
+     */
+    @Cacheable("userIdByJwt")
+    public UUID resolveUserIdFromDb(UUID userId) {
+        return userRepository.findById(userId)
+                .map(User::getId)
+                .orElseThrow(() -> new com.marketplace.shared.api.ResourceNotFoundException(
+                        "User not found for userId claim: " + userId));
     }
 
     @Override

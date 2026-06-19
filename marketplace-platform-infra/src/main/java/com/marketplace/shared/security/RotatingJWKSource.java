@@ -94,10 +94,14 @@ public class RotatingJWKSource implements JWKSource<SecurityContext> {
         // Keep the old key for validation overlap; drop any older "previous" key.
         // JWKSet takes a List<JWK> — we provide [newActive, oldActive].
         JWKSet newSet = new JWKSet(List.of(newActive, oldActive));
-        currentSet.compareAndSet(old, newSet);
-
-        log.info("JWK rotation completed: new active kid={}, previous kid={}",
-                newActive.getKeyID(), oldActive.getKeyID());
+        // Thread-safe: compareAndSet returns false if a concurrent caller already rotated.
+        // Only log success when the CAS actually swapped the key set.
+        if (currentSet.compareAndSet(old, newSet)) {
+            log.info("JWK rotation completed: new active kid={}, previous kid={}",
+                    newActive.getKeyID(), oldActive.getKeyID());
+        } else {
+            log.info("JWK rotation skipped — already rotated by concurrent caller");
+        }
     }
 
     /** Generates a fresh 2048-bit RSA key pair for JWT signing. */

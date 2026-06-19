@@ -64,7 +64,7 @@ public class UserController {
             @Valid @RequestBody UpdateProfileRequest request,
             @AuthenticationPrincipal JwtAuthenticationToken token) {
         UUID userId = currentUserProvider.getCurrentUserId(token);
-        User updated = userService.updateProfile(userId, request.email(), request.displayName());
+        User updated = userService.updateProfile(userId, null, request.displayName());
         return ResponseEntity.ok(userMapper.toResponse(updated));
     }
 
