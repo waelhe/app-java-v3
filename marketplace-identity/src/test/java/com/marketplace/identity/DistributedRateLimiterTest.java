@@ -10,8 +10,6 @@ import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -26,6 +24,9 @@ import static org.mockito.Mockito.*;
  *   <li>Requests over the limit are blocked</li>
  *   <li>Redis failures fail open (never block auth on infra failure)</li>
  * </ul>
+ *
+ * <p>Type-safe approach: uses {@code RedisScript<Long>} matcher instead of raw
+ * {@code RedisScript.class} — eliminates the need for {@code @SuppressWarnings("unchecked")}.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -38,13 +39,13 @@ class DistributedRateLimiterTest {
     @BeforeEach
     void setUp() {
         rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60);
-        // Default: allow all (counter = 1). Individual tests override.
+        // Default: allow all (counter = 1L). Individual tests override with specific return values.
+        // Type-safe: RedisScript<? extends Object> matcher — no unchecked warning.
         lenient().when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(1L);
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_allowsRequestsUnderLimit() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(1L);
@@ -53,7 +54,6 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_allowsRequestsAtLimit() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(5L); // exactly at the limit
@@ -62,7 +62,6 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_blocksRequestsOverLimit() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(6L); // over the limit
@@ -71,7 +70,6 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_failsOpenOnRedisNull() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(null);
@@ -81,7 +79,6 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_failsOpenOnRedisException() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new RuntimeException("Redis connection refused"));

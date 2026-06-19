@@ -134,8 +134,17 @@ public final class TotpService {
     /**
      * Generates a TOTP code for the given secret and time step.
      * Implements RFC 4226 HOTP algorithm.
+     *
+     * <p>Package-private (not {@code private}) so that tests in the same package
+     * can call it directly without reflection — reflection is a code smell and
+     * breaks IDE refactoring tools. The method is not part of the public API
+     * because callers should use {@link #validateCode(String, String)} instead.
+     *
+     * @param secret   Base64-encoded secret
+     * @param timeStep the time step (seconds since epoch / 30)
+     * @return 6-digit TOTP code
      */
-    private static String generateCode(String secret, long timeStep) {
+    static String generateCode(String secret, long timeStep) {
         try {
             byte[] key = Base64.getDecoder().decode(secret);
             byte[] timeBytes = ByteBuffer.allocate(8).putLong(timeStep).array();

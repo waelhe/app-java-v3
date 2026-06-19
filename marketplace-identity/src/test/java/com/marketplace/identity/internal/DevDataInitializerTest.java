@@ -47,18 +47,17 @@ class DevDataInitializerTest {
 
     @BeforeEach
     void setUp() {
-        initializer = new DevDataInitializer();
-        // The initializer reads config via @Value fields — set them directly for unit tests
-        // (in production Spring picks these up from env vars / application.yml).
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "adminPassword", "test-admin-pass");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "clientSecret", "test-client-secret");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "redirectUri", "https://example.com/login/oauth2/code/marketplace-web-client");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "postLogoutUri", "https://example.com/");
+        // Constructor injection — no reflection needed. Pass test config values directly.
+        initializer = new DevDataInitializer(
+                "test-admin-pass",
+                "test-client-secret",
+                "https://example.com/login/oauth2/code/marketplace-web-client",
+                "https://example.com/");
     }
 
     @AfterEach
     void tearDown() {
-        // No system properties set anymore — @Value fields are set via reflection.
+        // No system properties set anymore — constructor injection is clean.
     }
 
     @Test

@@ -52,6 +52,7 @@ public class MfaService {
     private final PasswordEncoder passwordEncoder;
     private final AuthAuditService auditService;
     private final StringRedisTemplate redisTemplate;
+    private final UserRepository userRepository;
 
     private final String issuer;
 
@@ -60,12 +61,14 @@ public class MfaService {
                        PasswordEncoder passwordEncoder,
                        AuthAuditService auditService,
                        StringRedisTemplate redisTemplate,
+                       UserRepository userRepository,
                        @org.springframework.beans.factory.annotation.Value("${marketplace.security.mfa.issuer:Marketplace}") String issuer) {
         this.mfaSecretRepository = mfaSecretRepository;
         this.recoveryCodeRepository = recoveryCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
         this.redisTemplate = redisTemplate;
+        this.userRepository = userRepository;
         this.issuer = issuer;
     }
 
@@ -173,9 +176,13 @@ public class MfaService {
         // false if it already existed (replay attempt).
         Boolean claimed = redisTemplate.opsForValue().setIfAbsent(key, "1", USED_TIMESTEP_TTL);
         if (!Boolean.TRUE.equals(claimed)) {
+            // Resolve the username for the audit log — never log null username.
+            String username = userRepository.findById(userId)
+                    .map(User::getEmail)
+                    .orElse("unknown-user-" + userId);
             log.warn("TOTP replay detected: user={}, timestep={}", userId, timestep);
-            auditService.log(null, AuthEventType.MFA_FAILURE,
-                    "TOTP replay rejected for user " + userId);
+            auditService.log(username, AuthEventType.MFA_FAILURE,
+                    "TOTP replay rejected for timestep " + timestep);
             return false;
         }
 

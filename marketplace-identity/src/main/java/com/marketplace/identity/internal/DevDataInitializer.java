@@ -77,18 +77,22 @@ public class DevDataInitializer {
     private static final String CLIENT_ID = "marketplace-web-client";
     private static final String ADMIN_USERNAME = "admin";
 
-    /** Read via Spring's @Value — picks up env vars, system properties, or application.yml. */
-    @org.springframework.beans.factory.annotation.Value("${DEV_ADMIN_PASSWORD:admin-password-change-me}")
-    private String adminPassword;
+    /** Configuration values — injected via constructor (not field injection) for testability. */
+    private final String adminPassword;
+    private final String clientSecret;
+    private final String redirectUri;
+    private final String postLogoutUri;
 
-    @org.springframework.beans.factory.annotation.Value("${DEV_CLIENT_SECRET:client-secret-change-me}")
-    private String clientSecret;
-
-    @org.springframework.beans.factory.annotation.Value("${OAUTH2_REDIRECT_URI:http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client}")
-    private String redirectUri;
-
-    @org.springframework.beans.factory.annotation.Value("${OAUTH2_POST_LOGOUT_URI:http://127.0.0.1:8080/}")
-    private String postLogoutUri;
+    public DevDataInitializer(
+            @org.springframework.beans.factory.annotation.Value("${DEV_ADMIN_PASSWORD:admin-password-change-me}") String adminPassword,
+            @org.springframework.beans.factory.annotation.Value("${DEV_CLIENT_SECRET:client-secret-change-me}") String clientSecret,
+            @org.springframework.beans.factory.annotation.Value("${OAUTH2_REDIRECT_URI:http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client}") String redirectUri,
+            @org.springframework.beans.factory.annotation.Value("${OAUTH2_POST_LOGOUT_URI:http://127.0.0.1:8080/}") String postLogoutUri) {
+        this.adminPassword = adminPassword;
+        this.clientSecret = clientSecret;
+        this.redirectUri = redirectUri;
+        this.postLogoutUri = postLogoutUri;
+    }
 
     @Bean
     @Transactional

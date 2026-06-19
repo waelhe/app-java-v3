@@ -37,6 +37,7 @@ class MfaServiceTest {
     @Mock private AuthAuditService auditService;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
+    @Mock private UserRepository userRepository;
 
     private MfaService mfaService;
 
@@ -45,7 +46,7 @@ class MfaServiceTest {
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         // Cannot use @InjectMocks — constructor has @Value String parameter that Mockito can't resolve.
         mfaService = new MfaService(mfaSecretRepository, recoveryCodeRepository,
-                passwordEncoder, auditService, redisTemplate, "Marketplace");
+                passwordEncoder, auditService, redisTemplate, userRepository, "Marketplace");
     }
 
     @Test
@@ -185,20 +186,13 @@ class MfaServiceTest {
 
     /**
      * Helper: generate a valid TOTP code for the given secret at the current timestep.
-     * Uses reflection to call the private generateCode method, or we can compute
-     * a known-valid code by calling validateCodeWithTimestep and extracting the timestep.
+     * Uses the package-private {@link TotpService#generateCode(String, long)} method
+     * (same package) instead of reflection — cleaner and IDE-refactoring-safe.
      */
     private String generateValidTotpCode(String base64Secret) {
-        // Compute the current TOTP code using the same algorithm as TotpService.
         long currentTime = System.currentTimeMillis() / 1000;
         long currentStep = currentTime / 30;
-        try {
-            java.lang.reflect.Method m = TotpService.class.getDeclaredMethod("generateCode", String.class, long.class);
-            m.setAccessible(true);
-            return (String) m.invoke(null, base64Secret, currentStep);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return TotpService.generateCode(base64Secret, currentStep);
     }
 
     @Test
