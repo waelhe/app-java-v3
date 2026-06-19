@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
@@ -197,12 +198,18 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
      * {@code user:email} scope (already configured in application.yml).
      * <a href="https://docs.github.com/en/rest/users/emails">GitHub Emails API</a>
      *
+     * <p><b>Type-safe deserialization</b>: uses Spring's {@link ParameterizedTypeReference}
+     * to deserialize the response into a type-safe {@code List<Map<String, Object>>}.
+     * This is the documented Spring RestClient pattern for generic response types and avoids
+     * the unchecked-conversion warning that {@code .body(List.class)} (raw) would produce.
+     * Reference: Spring Framework Reference -> Integration -> RestClient ->
+     * "Type Information" (ParameterizedTypeReference).
+     *
      * @param oauth2Token the OAuth2 authentication token
      * @param request the HTTP request (needed to load the authorized client)
      * @param email the email to verify
      * @return true if the email is verified, false otherwise (fail-closed on API errors)
      */
-    @SuppressWarnings("unchecked")
     private boolean verifyEmailViaProviderApi(OAuth2AuthenticationToken oauth2Token,
                                                HttpServletRequest request,
                                                String email) {
@@ -231,12 +238,14 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
                 return false; // fail-closed for unknown providers
             }
 
+            // Type-safe deserialization via ParameterizedTypeReference (Spring documented pattern
+            // for generic response types). Avoids the raw List.class unchecked-conversion warning.
             List<Map<String, Object>> emails = restClient.get()
                     .uri(apiUrl)
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Accept", "application/vnd.github+json")
                     .retrieve()
-                    .body(List.class);
+                    .body(new ParameterizedTypeReference<>() {});
 
             if (emails == null) {
                 return false;
