@@ -8,3 +8,12 @@ target/
 .DS_Store
 
 cp.txt
+
+# Private keys — never commit. Reference: GitHub Removing sensitive data
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+!marketplace-app/src/main/resources/keys/README.md
