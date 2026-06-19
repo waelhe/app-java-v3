@@ -36,11 +36,11 @@
          alternatives 2 (JWT) and 3 (BCrypt) have no capture group, which made
          $1 expand to empty and produced misleading '=****' output.
          Using plain '****' is simpler and also redacts the key name (e.g.
-         'password=secret' → '****'), which is more secure (less info leaked).
+         'password=secret' -> '****'), which is more secure (less info leaked).
          Reference: Logback %replace — 'replaces all occurrences of r with t'
          https://logback.qos.ch/manual/layouts.html#replace -->
     <property name="SECRET_REDACTION_REGEX"
-              value="(password|passwd|secret|token|api[-_]?key|authorization|bearer|refresh[-_]?token)\s*[=:]\s*[^\s,;'\"]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\{bcrypt\}\$2[abxy]\$\d{2}\$[A-Za-z0-9./]{53}"/>
+              value="(password|passwd|secret|token|api[-_]?key|authorization|bearer|refresh[-_]?token)\s*[=:]\s*[^\s,;'&quot;]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\{bcrypt\}\$2[abxy]\$\d{2}\$[A-Za-z0-9./]{53}"/>
     <property name="SECRET_REDACTION_REPLACEMENT" value="****"/>
 
     <!-- Console pattern for prod: redacted, semi-structured (key=value pairs).

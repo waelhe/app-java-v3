@@ -20,8 +20,8 @@ import java.util.Map;
 /**
  * Generates QR codes as Base64-encoded PNG images from otpauth URIs.
  *
- * <p>Uses <strong>ZXing</strong> ("zebra crossing") — the de-facto standard
- * open-source QR code library — to produce <em>scannable</em> QR codes that
+ * <p>Uses <strong>ZXing</strong> ("zebra crossing") -- the de-facto standard
+ * open-source QR code library -- to produce <em>scannable</em> QR codes that
  * Google Authenticator, Microsoft Authenticator, Authy, and 1Password can decode.
  *
  * <p>This replaces the earlier placeholder hash-pattern implementation, which

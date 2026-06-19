@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
  * </ul>
  *
  * <p>Type-safe approach: uses {@code RedisScript<Long>} matcher instead of raw
- * {@code RedisScript.class} — eliminates the need for {@code @SuppressWarnings("unchecked")}.
+ * {@code RedisScript.class} -- eliminates the need for {@code @SuppressWarnings("unchecked")}.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -41,7 +41,7 @@ class DistributedRateLimiterTest {
         // Default: fail-open=false (fail-closed per OWASP Fail Securely).
         rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, false);
         // Default: allow all (counter = 1L). Individual tests override with specific return values.
-        // Type-safe: RedisScript<? extends Object> matcher — no unchecked warning.
+        // Type-safe: RedisScript<? extends Object> matcher -- no unchecked warning.
         lenient().when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(1L);
     }
@@ -77,18 +77,18 @@ class DistributedRateLimiterTest {
                 .thenReturn(null);
 
         assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail closed (deny) when Redis returns null — never allow auth when rate-limit status is unknown");
+                "Must fail closed (deny) when Redis returns null -- never allow auth when rate-limit status is unknown");
     }
 
     @Test
     void tryAcquire_failsOpenOnRedisNullWhenConfigured() {
-        // When fail-open=true is configured, Redis null → allow (availability priority).
+        // When fail-open=true is configured, Redis null -> allow (availability priority).
         rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, true);
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(null);
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail open when explicitly configured — never block auth on infra failure");
+                "Must fail open when explicitly configured -- never block auth on infra failure");
     }
 
     @Test
@@ -100,7 +100,7 @@ class DistributedRateLimiterTest {
                         "Redis connection refused"));
 
         assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail closed on RedisConnectionFailureException by default — deny when rate-limit status is unknown");
+                "Must fail closed on RedisConnectionFailureException by default -- deny when rate-limit status is unknown");
     }
 
     @Test
@@ -112,13 +112,13 @@ class DistributedRateLimiterTest {
                         "Redis system error", new RuntimeException()));
 
         assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail closed on RedisSystemException by default — deny when rate-limit status is unknown");
+                "Must fail closed on RedisSystemException by default -- deny when rate-limit status is unknown");
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void tryAcquire_propagatesNonRedisExceptions() {
-        // Non-Redis exceptions (e.g. ClassCastException, NPE) must propagate — fail closed
+        // Non-Redis exceptions (e.g. ClassCastException, NPE) must propagate -- fail closed
         // per OWASP "Fail Securely" principle.
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new ClassCastException("Unexpected type mismatch"));

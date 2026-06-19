@@ -9,7 +9,7 @@ import java.util.Base64;
 
 /**
  * TOTP (Time-Based One-Time Password) implementation.
- * <p>Pure Java implementation of RFC 6238 — no external dependencies.
+ * <p>Pure Java implementation of RFC 6238 -- no external dependencies.
  * Uses HMAC-SHA1 (compatible with Google Authenticator, Microsoft Authenticator, etc.)
  *
  * @see <a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238</a>
@@ -20,7 +20,7 @@ public final class TotpService {
     private static final int TIME_STEP_SECONDS = 30;
     private static final int CODE_DIGITS = 6;
     private static final String HMAC_ALGORITHM = "HmacSHA1";
-    private static final int SECRET_BYTES = 20; // 160-bit secret (RFC 4226 §4)
+    private static final int SECRET_BYTES = 20; // 160-bit secret (RFC 4226 section4)
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -40,11 +40,11 @@ public final class TotpService {
 
     /**
      * Validates a TOTP code against the secret.
-     * Allows a window of ±1 time step (±30 seconds) for clock drift.
+     * Allows a window of +/-1 time step (?30 seconds) for clock drift.
      *
      * <p><b>Constant-time comparison</b>: uses {@link MessageDigest#isEqual(byte[], byte[])}
-     * instead of {@link String#equals(Object)} to prevent timing attacks. RFC 6238 §5.2
-     * and RFC 4226 §5.3 both require constant-time comparison of OTP values.
+     * instead of {@link String#equals(Object)} to prevent timing attacks. RFC 6238 section5.2
+     * and RFC 4226 section5.3 both require constant-time comparison of OTP values.
      *
      * @param secret Base64-encoded secret
      * @param code   6-digit code from authenticator app
@@ -57,9 +57,9 @@ public final class TotpService {
     /**
      * Validates a TOTP code and returns the matched timestep.
      *
-     * <p>Returns the timestep that matched the code (within the ±1 window),
+     * <p>Returns the timestep that matched the code (within the +/-1 window),
      * or {@link java.util.Optional#empty()} if no match. The caller should
-     * use the returned timestep for replay protection — RFC 6238 §5.2 step 4:
+     * use the returned timestep for replay protection -- RFC 6238 section5.2 step 4:
      * "The verifier MUST NOT accept the second attempt of the OTP after the
      * successful validation has been issued."
      *
@@ -76,8 +76,8 @@ public final class TotpService {
 
         byte[] codeBytes = code.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
-        // Check current, previous, and next time step (±30s window).
-        // Use constant-time comparison (MessageDigest.isEqual) per RFC 6238 §5.2.
+        // Check current, previous, and next time step (+/-30s window).
+        // Use constant-time comparison (MessageDigest.isEqual) per RFC 6238 section5.2.
         for (int i = -1; i <= 1; i++) {
             long timestep = currentStep + i;
             String expectedCode = generateCode(secret, timestep);
@@ -90,37 +90,10 @@ public final class TotpService {
     }
 
     /**
-     * Builds the otpauth:// URI for QR code generation.
-     * Format: otpauth://totp/Label?secret=SECRET&issuer=ISSUER&digits=6&period=30
-     *
-     * <p>The {@code secret} parameter is <strong>Base32-encoded (RFC 4648)</strong>
-     * because Google Authenticator, Microsoft Authenticator, and other compliant
-     * authenticator apps decode the secret as Base32, not Base64. The internal
-     * storage uses Base64 (for efficient DB encoding); we convert here to the
-     * authenticator-compatible Base32 representation.
-     *
-     * <p>The previous implementation called {@code Base64.getEncoder().encodeToString(secret.getBytes())}
-     * which both (a) re-encoded the Base64 string as if it were raw bytes — yielding a
-     * different secret than the one stored — and (b) used Base64 instead of Base32,
-     * so no authenticator app could decode it.
-     *
-     * <p><b>References</b>
-     * <ul>
-     *   <li><a href="https://github.com/google/google-authenticator/wiki/Key-Uri-Format">Google Authenticator Key URI Format</a> — "Base32 encoded according to RFC 3548"</li>
-     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc4648">RFC 4648 — Base16/32/64 Encodings</a></li>
-     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238 — TOTP</a></li>
-     * </ul>
-     *
-     * @param secret Base64-encoded secret (internal storage format from {@link #generateSecret()})
-     * @param account user account identifier (e.g., email)
-     * @param issuer application name
-     * @return otpauth URI with Base32-encoded secret
-     */
-    /**
-     * Converts the internal Base64-encoded secret to Base32 (RFC 4648) — the format
+     * Converts the internal Base64-encoded secret to Base32 (RFC 4648) -- the format
      * expected by authenticator apps (Google Authenticator, Microsoft Authenticator, etc.).
      *
-     * <p>Use this when returning the secret to the user (e.g. for manual entry) — never
+     * <p>Use this when returning the secret to the user (e.g. for manual entry) -- never
      * expose the Base64 internal format. The {@code otpauth} URI already contains the
      * Base32 secret via {@link #buildOtpAuthUri}.
      *
@@ -133,6 +106,28 @@ public final class TotpService {
                 .replace("=", "");
     }
 
+    /**
+     * Builds the otpauth:// URI for QR code generation.
+     * Format: otpauth://totp/Label?secret=SECRET&issuer=ISSUER&digits=6&period=30
+     *
+     * <p>The {@code secret} parameter is <strong>Base32-encoded (RFC 4648)</strong>
+     * because Google Authenticator, Microsoft Authenticator, and other compliant
+     * authenticator apps decode the secret as Base32, not Base64. The internal
+     * storage uses Base64 (for efficient DB encoding); we convert here to the
+     * authenticator-compatible Base32 representation.
+     *
+     * <p><b>References</b>
+     * <ul>
+     *   <li><a href="https://github.com/google/google-authenticator/wiki/Key-Uri-Format">Google Authenticator Key URI Format</a> -- "Base32 encoded according to RFC 3548"</li>
+     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc4648">RFC 4648 -- Base16/32/64 Encodings</a></li>
+     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238 -- TOTP</a></li>
+     * </ul>
+     *
+     * @param secret Base64-encoded secret (internal storage format from {@link #generateSecret()})
+     * @param account user account identifier (e.g., email)
+     * @param issuer application name
+     * @return otpauth URI with Base32-encoded secret
+     */
     public static String buildOtpAuthUri(String secret, String account, String issuer) {
         String base32Secret = toBase32Secret(secret);
 
@@ -156,7 +151,7 @@ public final class TotpService {
      * Implements RFC 4226 HOTP algorithm.
      *
      * <p>Package-private (not {@code private}) so that tests in the same package
-     * can call it directly without reflection — reflection is a code smell and
+     * can call it directly without reflection -- reflection is a code smell and
      * breaks IDE refactoring tools. The method is not part of the public API
      * because callers should use {@link #validateCode(String, String)} instead.
      *
@@ -165,7 +160,7 @@ public final class TotpService {
      * @return 6-digit TOTP code
      */
     static String generateCode(String secret, long timeStep) {
-        // Decode Base64 secret — IllegalArgumentException on malformed input.
+        // Decode Base64 secret -- IllegalArgumentException on malformed input.
         byte[] key;
         try {
             key = Base64.getDecoder().decode(secret);
@@ -174,7 +169,7 @@ public final class TotpService {
         }
         byte[] timeBytes = ByteBuffer.allocate(8).putLong(timeStep).array();
 
-        // HMAC-SHA1 computation — NoSuchAlgorithmException/InvalidKeyException only
+        // HMAC-SHA1 computation -- NoSuchAlgorithmException/InvalidKeyException only
         // happen if JCE is misconfigured (should never happen for HmacSHA1, which is
         // a mandatory JCA algorithm per the JDK spec).
         Mac mac;
@@ -182,11 +177,11 @@ public final class TotpService {
             mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(key, HMAC_ALGORITHM));
         } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
-            throw new IllegalStateException("JCE misconfiguration — HmacSHA1 unavailable", e);
+            throw new IllegalStateException("JCE misconfiguration -- HmacSHA1 unavailable", e);
         }
         byte[] hash = mac.doFinal(timeBytes);
 
-        // Dynamic truncation (RFC 4226 §5.3)
+        // Dynamic truncation (RFC 4226 section5.3)
         int offset = hash[hash.length - 1] & 0xF;
         int binary = ((hash[offset] & 0x7F) << 24)
                 | ((hash[offset + 1] & 0xFF) << 16)

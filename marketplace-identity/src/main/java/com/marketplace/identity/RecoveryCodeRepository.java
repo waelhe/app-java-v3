@@ -24,9 +24,9 @@ public interface RecoveryCodeRepository extends JpaRepository<RecoveryCode, UUID
      *
      * <p><b>References</b>
      * <ul>
-     *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet — recovery codes must be single-use</a></li>
-     *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE — row-level locking</a></li>
-     *   <li><a href="https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html#jpa.query-methods.modifying-queries">Spring Data JPA — Modifying queries</a></li>
+     *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet -- recovery codes must be single-use</a></li>
+     *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE -- row-level locking</a></li>
+     *   <li><a href="https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html#jpa.query-methods.modifying-queries">Spring Data JPA -- Modifying queries</a></li>
      * </ul>
      *
      * @param id the recovery-code ID to claim

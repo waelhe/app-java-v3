@@ -34,16 +34,16 @@ import java.util.concurrent.atomic.AtomicReference;
  * </ul>
  *
  * <p><b>Why not ImmutableJWKSet?</b> The prior implementation used
- * {@code ImmutableJWKSet} with a single key — rotating the key required
+ * {@code ImmutableJWKSet} with a single key -- rotating the key required
  * replacing the keystore file and restarting all instances. During the restart
  * window, previously-issued tokens could not be validated. This implementation
  * supports hot rotation without restart.
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc7517#section-4.5">RFC 7517 §4.5 — Key Rotation</a></li>
- *   <li><a href="https://nvd.nist.gov/800-57">NIST SP 800-57 §8 — Key Rotation</a></li>
- *   <li><a href="https://connect2id.com/products/nimbus-jose-jwt/examples/jwk-generation">Nimbus JOSE+JWT — JWK Generation</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc7517#section-4.5">RFC 7517 section4.5 -- Key Rotation</a></li>
+ *   <li><a href="https://nvd.nist.gov/800-57">NIST SP 800-57 section8 -- Key Rotation</a></li>
+ *   <li><a href="https://connect2id.com/products/nimbus-jose-jwt/examples/jwk-generation">Nimbus JOSE+JWT -- JWK Generation</a></li>
  * </ul>
  */
 public class RotatingJWKSource implements JWKSource<SecurityContext> {
@@ -92,7 +92,7 @@ public class RotatingJWKSource implements JWKSource<SecurityContext> {
 
         RSAKey newActive = generateRsaKey();
         // Keep the old key for validation overlap; drop any older "previous" key.
-        // JWKSet takes a List<JWK> — we provide [newActive, oldActive].
+        // JWKSet takes a List<JWK> -- we provide [newActive, oldActive].
         JWKSet newSet = new JWKSet(List.of(newActive, oldActive));
         // Thread-safe: compareAndSet returns false if a concurrent caller already rotated.
         // Only log success when the CAS actually swapped the key set.
@@ -100,7 +100,7 @@ public class RotatingJWKSource implements JWKSource<SecurityContext> {
             log.info("JWK rotation completed: new active kid={}, previous kid={}",
                     newActive.getKeyID(), oldActive.getKeyID());
         } else {
-            log.info("JWK rotation skipped — already rotated by concurrent caller");
+            log.info("JWK rotation skipped -- already rotated by concurrent caller");
         }
     }
 

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for {@link PasswordValidator} — OWASP password strength policy.
+ * Tests for {@link PasswordValidator} -- OWASP password strength policy.
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication</a>
  */
 class PasswordValidatorTest {
@@ -51,7 +51,7 @@ class PasswordValidatorTest {
 
     @Test
     void validate_rejectsTooLongPassword() {
-        // 65 chars — exceeds OWASP/NIST max of 64.
+        // 65 chars -- exceeds OWASP/NIST max of 64.
         String tooLong = "Aa1" + "x".repeat(62);
         assertEquals(65, tooLong.length());
         BadRequestException ex = assertThrows(BadRequestException.class,
@@ -62,7 +62,7 @@ class PasswordValidatorTest {
 
     @Test
     void validate_acceptsExactly64CharPassword() {
-        // Exactly 64 chars — boundary check (must pass).
+        // Exactly 64 chars -- boundary check (must pass).
         String exact = "Aa1" + "x".repeat(61);
         assertEquals(64, exact.length());
         assertDoesNotThrow(() -> PasswordValidator.validate(exact));

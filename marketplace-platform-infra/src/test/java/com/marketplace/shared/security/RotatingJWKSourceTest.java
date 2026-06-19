@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Thread-safe rotation via AtomicReference</li>
  * </ul>
  *
- * @see <a href="https://datatracker.ietf.org/doc/html/rfc7517#section-4.5">RFC 7517 §4.5 — Key Rotation</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc7517#section-4.5">RFC 7517 section4.5 -- Key Rotation</a>
  */
 class RotatingJWKSourceTest {
 
@@ -64,7 +64,7 @@ class RotatingJWKSourceTest {
         source.rotate(); // now: [key2_active, key1_previous]
         RSAKey key2 = (RSAKey) source.getJWKSet().getKeys().getFirst();
 
-        source.rotate(); // now: [key3_active, key2_previous] — key1 dropped
+        source.rotate(); // now: [key3_active, key2_previous] -- key1 dropped
 
         assertEquals(2, source.getJWKSet().getKeys().size(),
                 "After two rotations, must still have exactly 2 keys (max overlap window)");

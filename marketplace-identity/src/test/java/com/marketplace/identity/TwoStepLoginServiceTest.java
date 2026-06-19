@@ -22,7 +22,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for {@link TwoStepLoginService} — MFA + BruteForce in login flow.
+ * Tests for {@link TwoStepLoginService} - MFA + BruteForce in login flow.
  *
  * <p>Verifies the critical MFA-token binding (OWASP MFA Cheat Sheet):
  * <ul>
@@ -34,7 +34,7 @@ import static org.mockito.Mockito.*;
  *   <li>Failed MFA/recovery attempts trigger brute-force protection</li>
  * </ul>
  *
- * <p>Uses mocked {@link StringRedisTemplate} — no real Redis connection needed for unit tests.
+ * <p>Uses mocked {@link StringRedisTemplate} - no real Redis connection needed for unit tests.
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet</a>
  * @see <a href="https://docs.spring.io/spring-data/redis/reference/">Spring Data Redis Reference</a>
@@ -168,7 +168,7 @@ class TwoStepLoginServiceTest {
         assertThrows(BadRequestException.class, () -> loginService.login("user@test.com", "password"));
     }
 
-    // ===== Step 2 MFA verification — mfaToken binding tests =====
+    // ===== Step 2 MFA verification - mfaToken binding tests =====
 
     @Test
     void verifyMfa_success_consumesToken() {
@@ -176,13 +176,13 @@ class TwoStepLoginServiceTest {
         String mfaToken = issueMfaToken(userId);
         when(mfaService.verifyTotp(userId, "123456")).thenReturn(true);
         when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
-        // Redis DELETE returns true — token successfully consumed.
+        // Redis DELETE returns true - token successfully consumed.
         when(redisTemplate.delete("marketplace:mfa:pending:" + mfaToken)).thenReturn(true);
 
         TwoStepLoginService.LoginResult result = loginService.verifyMfa(userId, mfaToken, "123456");
 
         assertEquals("SUCCESS", result.status());
-        // Second attempt: Redis GET now returns null (token was deleted) → rejected.
+        // Second attempt: Redis GET now returns null (token was deleted) -> rejected.
         when(valueOperations.get("marketplace:mfa:pending:" + mfaToken)).thenReturn(null);
         BadRequestException ex = assertThrows(BadRequestException.class,
                 () -> loginService.verifyMfa(userId, mfaToken, "123456"));
@@ -245,9 +245,9 @@ class TwoStepLoginServiceTest {
         UUID userId = testUser.getId();
         String mfaToken = issueMfaToken(userId);
         when(mfaService.verifyTotp(userId, "123456")).thenReturn(true);
-        // Redis DELETE returns false — a concurrent request already consumed the token.
+        // Redis DELETE returns false - a concurrent request already consumed the token.
         // Note: userRepository.findById is NOT stubbed because the consume check fails
-        // before we reach the user lookup — keeping the test honest about the flow.
+        // before we reach the user lookup - keeping the test honest about the flow.
         when(redisTemplate.delete("marketplace:mfa:pending:" + mfaToken)).thenReturn(false);
 
         BadRequestException ex = assertThrows(BadRequestException.class,
@@ -256,7 +256,7 @@ class TwoStepLoginServiceTest {
                 "Concurrent consume must be rejected: " + ex.getMessage());
     }
 
-    // ===== Step 2 recovery-code verification — mfaToken binding tests =====
+    // ===== Step 2 recovery-code verification - mfaToken binding tests =====
 
     @Test
     void verifyRecoveryCode_success_consumesToken() {
@@ -269,7 +269,7 @@ class TwoStepLoginServiceTest {
         TwoStepLoginService.LoginResult result = loginService.verifyRecoveryCode(userId, mfaToken, "ABCD1234EFGH5678");
 
         assertEquals("SUCCESS", result.status());
-        // Re-use must fail — Redis GET returns null after DELETE.
+        // Re-use must fail - Redis GET returns null after DELETE.
         when(valueOperations.get("marketplace:mfa:pending:" + mfaToken)).thenReturn(null);
         assertThrows(BadRequestException.class,
                 () -> loginService.verifyRecoveryCode(userId, mfaToken, "ABCD1234EFGH5678"));
@@ -308,7 +308,7 @@ class TwoStepLoginServiceTest {
 
         TwoStepLoginService.LoginResult r = loginService.login("user@test.com", "password");
         assertEquals("MFA_REQUIRED", r.status());
-        // Stub the Redis GET for subsequent step-2 calls — returns the user's UUID string.
+        // Stub the Redis GET for subsequent step-2 calls - returns the user's UUID string.
         when(valueOperations.get("marketplace:mfa:pending:" + r.mfaToken()))
                 .thenReturn(userId.toString());
         return r.mfaToken();

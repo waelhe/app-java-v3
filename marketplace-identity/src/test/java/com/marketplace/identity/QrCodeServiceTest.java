@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests for {@link QrCodeService}.
  *
  * <p>Verifies that the generated QR code is a real, scannable QR code by
- * decoding it back with ZXing's {@link QRCodeReader} — a round-trip test
+ * decoding it back with ZXing's {@link QRCodeReader} -- a round-trip test
  * that no authenticator app would accept a fake hash-pattern image.
  *
  * @see <a href="https://github.com/zxing/zxing">ZXing</a>
@@ -33,7 +33,7 @@ class QrCodeServiceTest {
         String result = qrCodeService.generateQrCodePng("otpauth://totp/test");
         assertNotNull(result);
         assertTrue(result.startsWith("data:image/png;base64,"));
-        // Decode the Base64 payload — the first 8 bytes must be the PNG signature.
+        // Decode the Base64 payload -- the first 8 bytes must be the PNG signature.
         String b64 = result.substring("data:image/png;base64,".length());
         byte[] bytes = Base64.getDecoder().decode(b64);
         // PNG signature: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A

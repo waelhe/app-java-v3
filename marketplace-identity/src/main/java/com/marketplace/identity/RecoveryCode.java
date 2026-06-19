@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * Single-use recovery code for MFA.
- * <p>Follows OWASP MFA Cheat Sheet — recovery codes are:
+ * <p>Follows OWASP MFA Cheat Sheet -- recovery codes are:
  * <ul>
  *   <li>Cryptographically random</li>
  *   <li>Stored as hashes (never plaintext)</li>

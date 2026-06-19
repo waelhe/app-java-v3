@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /**
  * Manages creation, validation, and consumption of verification tokens.
- * <p>Follows OWASP Authentication Cheat Sheet — tokens are:
+ * <p>Follows OWASP Authentication Cheat Sheet -- tokens are:
  * <ul>
  *   <li>Cryptographically random (32 bytes via {@link SecureRandom})</li>
  *   <li>Single-use (throws if already used)</li>
@@ -71,7 +71,7 @@ public class VerificationTokenService {
     /**
      * Atomically marks a verification token as used.
      *
-     * <p>Uses {@link VerificationTokenRepository#claimIfUnused(UUID)} — a single
+     * <p>Uses {@link VerificationTokenRepository#claimIfUnused(UUID)} -- a single
      * conditional UPDATE that returns 1 only if the token was previously unused.
      * This prevents the TOCTOU race where two concurrent requests with the same
      * valid token both pass {@code validateToken} (read-only) and both proceed

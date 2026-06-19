@@ -25,12 +25,12 @@ import java.util.UUID;
  *
  * <p>Flow:
  * <ol>
- *   <li>Step 1: {@code POST /api/v1/auth/login} → validate credentials →
+ *   <li>Step 1: {@code POST /api/v1/auth/login} -> validate credentials ->
  *       return {@code {status: "MFA_REQUIRED", mfaToken, userId}} OR
  *       {@code {status: "SUCCESS", userId}}</li>
- *   <li>Step 2: {@code POST /api/v1/auth/login/mfa} → validate TOTP AND
- *       the single-use {@code mfaToken} from step 1 → return SUCCESS</li>
- *   <li>Step 2 alternative: {@code POST /api/v1/auth/login/recovery-code} →
+ *   <li>Step 2: {@code POST /api/v1/auth/login/mfa} -> validate TOTP AND
+ *       the single-use {@code mfaToken} from step 1 -> return SUCCESS</li>
+ *   <li>Step 2 alternative: {@code POST /api/v1/auth/login/recovery-code} ->
  *       validate a recovery code AND the {@code mfaToken}</li>
  * </ol>
  *
@@ -41,11 +41,11 @@ import java.util.UUID;
  * the password and brute-forcing the TOTP directly.
  *
  * <p><b>Distributed storage</b>: pending MFA tokens are stored in Redis
- * (via {@link StringRedisTemplate}) — not in-process memory. This ensures
+ * (via {@link StringRedisTemplate}) -- not in-process memory. This ensures
  * the token issued on instance A can be validated/consumed on instance B
  * in multi-instance deployments (Kubernetes pods, Railway replicas, etc.).
  * Redis also provides atomic single-use enforcement via {@code DELETE}
- * (returns true only if the key existed at the moment of deletion —
+ * (returns true only if the key existed at the moment of deletion --
  * concurrent requests cannot both succeed).
  *
  * <p><b>Brute force protection</b> is integrated:
@@ -58,11 +58,11 @@ import java.util.UUID;
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet — "MFA must be bound to the authenticated session"</a></li>
+ *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet -- "MFA must be bound to the authenticated session"</a></li>
  *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a></li>
- *   <li><a href="https://docs.spring.io/spring-boot/reference/data/redis.html">Spring Boot — Redis</a></li>
+ *   <li><a href="https://docs.spring.io/spring-boot/reference/data/redis.html">Spring Boot -- Redis</a></li>
  *   <li><a href="https://docs.spring.io/spring-data/redis/reference/">Spring Data Redis Reference</a></li>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238#section-5.2">RFC 6238 §5.2 — TOTP Replay Protection</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238#section-5.2">RFC 6238 section5.2 -- TOTP Replay Protection</a></li>
  * </ul>
  */
 @Service
@@ -71,7 +71,7 @@ public class TwoStepLoginService {
 
     private static final Logger log = LoggerFactory.getLogger(TwoStepLoginService.class);
 
-    /** MFA token validity window — 5 minutes per OWASP MFA Cheat Sheet. */
+    /** MFA token validity window -- 5 minutes per OWASP MFA Cheat Sheet. */
     private static final Duration MFA_TOKEN_TTL = Duration.ofMinutes(5);
 
     /** Redis key prefix for pending MFA tokens. */
@@ -126,13 +126,13 @@ public class TwoStepLoginService {
         try {
             userDetails = userDetailsManager.loadUserByUsername(username);
         } catch (org.springframework.security.core.userdetails.UsernameNotFoundException e) {
-            // Expected case — user does not exist. Record failed attempt and return
+            // Expected case -- user does not exist. Record failed attempt and return
             // generic "Invalid credentials" (do not leak whether the user exists).
             bruteForceService.recordFailedAttempt(username);
             auditService.log(username, AuthEventType.LOGIN_FAILURE, "User not found");
             throw new BadRequestException("Invalid credentials");
         }
-        // Note: DataAccessException (DB failure) is intentionally NOT caught here —
+        // Note: DataAccessException (DB failure) is intentionally NOT caught here --
         // it propagates so the caller knows login could not be completed, rather than
         // silently treating a DB outage as "user not found" (which would both confuse
         // legitimate users and mask infrastructure problems from monitoring).
@@ -158,13 +158,13 @@ public class TwoStepLoginService {
 
         if (mfaService.isMfaEnabled(user.getId())) {
             String mfaToken = UUID.randomUUID().toString();
-            // Store in Redis with TTL — atomic, distributed, auto-expiring.
+            // Store in Redis with TTL -- atomic, distributed, auto-expiring.
             redisTemplate.opsForValue().set(redisKey(mfaToken), user.getId().toString(), MFA_TOKEN_TTL);
             log.debug("Issued MFA token for user={} (TTL={}s)", user.getId(), MFA_TOKEN_TTL.getSeconds());
             return new LoginResult("MFA_REQUIRED", mfaToken, user.getId(), null);
         }
 
-        // No MFA — issue JWT directly. OAuth 2.1 (RFC 9700) removes the password grant;
+        // No MFA -- issue JWT directly. OAuth 2.1 (RFC 9700) removes the password grant;
         // issuing the JWT directly here is the recommended pattern. The JWT includes
         // the same claims as OAuth2LoginSuccessHandler (sub, userId, email, roles, aud, iss).
         // Reference: https://datatracker.ietf.org/doc/html/rfc9700 (OAuth 2.1 removes password grant)
@@ -190,7 +190,7 @@ public class TwoStepLoginService {
 
         // Atomic single-use: Redis DELETE returns true only if the key existed at
         // the moment of deletion. A concurrent request that already consumed the
-        // token will cause this DELETE to return false → we reject.
+        // token will cause this DELETE to return false -> we reject.
         if (!consumeMfaToken(mfaToken)) {
             log.warn("MFA token already consumed by a concurrent request: user={}", userId);
             throw new BadRequestException("MFA token already used");
@@ -231,13 +231,13 @@ public class TwoStepLoginService {
 
     /**
      * Validates the single-use MFA token against the Redis store.
-     * Does NOT consume the token — call {@link #consumeMfaToken(String)} only
+     * Does NOT consume the token -- call {@link #consumeMfaToken(String)} only
      * after the TOTP/recovery-code verification succeeds, so that a wrong TOTP
      * does not consume the token (letting the user retry within the 5-min window).
      */
     private void validateMfaToken(String mfaToken, UUID expectedUserId) {
         if (mfaToken == null || mfaToken.isBlank()) {
-            throw new BadRequestException("Missing MFA token — complete step 1 first");
+            throw new BadRequestException("Missing MFA token -- complete step 1 first");
         }
         String storedUserId = redisTemplate.opsForValue().get(redisKey(mfaToken));
         if (storedUserId == null) {
@@ -245,14 +245,14 @@ public class TwoStepLoginService {
             throw new BadRequestException("Invalid, already-used, or expired MFA token");
         }
         if (!storedUserId.equals(expectedUserId.toString())) {
-            // Possible token-theft attempt — log and reject.
+            // Possible token-theft attempt -- log and reject.
             log.warn("MFA token userId mismatch: stored_user={} but request_user={}", storedUserId, expectedUserId);
             throw new BadRequestException("MFA token does not match user");
         }
     }
 
     /**
-     * Atomically consumes the MFA token — single-use enforcement.
+     * Atomically consumes the MFA token -- single-use enforcement.
      * @return true if the token was successfully consumed (existed and deleted),
      *         false if it was already consumed by a concurrent request.
      */
@@ -276,18 +276,18 @@ public class TwoStepLoginService {
     }
 
     /**
-     * Issues a JWT for the given user — same claim structure as
+     * Issues a JWT for the given user -- same claim structure as
      * {@link com.marketplace.shared.security.oauth2.OAuth2LoginSuccessHandler}:
      * {@code sub} = userId, {@code userId} claim, {@code email}, {@code roles},
-     * {@code aud} (RFC 9068 §2.2), {@code iss}, {@code iat}, {@code exp}.
+     * {@code aud} (RFC 9068 section2.2), {@code iss}, {@code iat}, {@code exp}.
      *
      * <p>OAuth 2.1 (RFC 9700) removes the password grant type. Instead of telling the
      * client to exchange credentials via {@code POST /oauth2/token}, we issue the JWT
      * directly after successful credential verification. This avoids the need for a
      * PASSWORD grant client and an {@code OAuth2TokenCustomizer}.
      *
-     * <p>Reference: RFC 9700 (OAuth 2.1) — password grant removed;
-     * RFC 9068 §2.2 — JWT aud REQUIRED.
+     * <p>Reference: RFC 9700 (OAuth 2.1) -- password grant removed;
+     * RFC 9068 section2.2 -- JWT aud REQUIRED.
      */
     private String issueJwt(User user) {
         String issuer = properties.security().authServer().issuer();

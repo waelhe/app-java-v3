@@ -29,7 +29,7 @@ public class PaymentWebhookSecurity {
     @PostConstruct
     void warnIfSecretNotConfigured() {
         if (sharedSecret == null || sharedSecret.isBlank()) {
-            log.warn("marketplace.payments.webhook.shared-secret is not configured — " +
+            log.warn("marketplace.payments.webhook.shared-secret is not configured -- " +
                     "webhook requests will be REJECTED. Set this property in production.");
         }
     }

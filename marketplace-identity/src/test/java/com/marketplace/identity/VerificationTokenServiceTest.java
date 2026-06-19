@@ -109,12 +109,12 @@ class VerificationTokenServiceTest {
                 VerificationTokenType.EMAIL_VERIFICATION,
                 Instant.now().plus(1, ChronoUnit.HOURS));
 
-        // claimIfUnused returns 1 — token successfully claimed (single-use enforced).
+        // claimIfUnused returns 1 -- token successfully claimed (single-use enforced).
         when(tokenRepository.claimIfUnused(token.getId())).thenReturn(1);
 
         tokenService.markAsUsed(token);
 
-        // Verify the atomic claim was called — NOT markUsed() + save() (which had a TOCTOU race).
+        // Verify the atomic claim was called -- NOT markUsed() + save() (which had a TOCTOU race).
         verify(tokenRepository).claimIfUnused(token.getId());
         verify(tokenRepository, never()).save(any());
     }
@@ -125,7 +125,7 @@ class VerificationTokenServiceTest {
                 VerificationTokenType.EMAIL_VERIFICATION,
                 Instant.now().plus(1, ChronoUnit.HOURS));
 
-        // claimIfUnused returns 0 — a concurrent request already claimed the token.
+        // claimIfUnused returns 0 -- a concurrent request already claimed the token.
         when(tokenRepository.claimIfUnused(token.getId())).thenReturn(0);
 
         assertThrows(com.marketplace.shared.api.ConflictException.class,

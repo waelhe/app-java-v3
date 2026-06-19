@@ -12,7 +12,7 @@ import java.util.List;
  * configuration properties class, following Spring Boot best practices.
  *
  * @see <a href="https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties">
- *      Spring Boot — Type-safe Configuration Properties</a>
+ *      Spring Boot -- Type-safe Configuration Properties</a>
  */
 @ConfigurationProperties(prefix = "marketplace")
 public record MarketplaceProperties(

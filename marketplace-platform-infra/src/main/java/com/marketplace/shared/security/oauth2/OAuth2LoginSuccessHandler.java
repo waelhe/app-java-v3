@@ -32,27 +32,27 @@ import java.util.UUID;
 /**
  * Handles successful OAuth2 login from external providers (Google, GitHub, Apple).
  *
- * <p>Flow (revised per RFC 6749 §10.6 + RFC 9068 §2.2):
+ * <p>Flow (revised per RFC 6749 section10.6 + RFC 9068 section2.2):
  * <ol>
  *   <li>Extracts user info from OAuth2 provider</li>
- *   <li>Verifies the provider {@code email_verified} claim (OIDC Core §5.1) —
+ *   <li>Verifies the provider {@code email_verified} claim (OIDC Core section5.1) --
  *       refuses to provision a user from an unverified email to prevent account pre-hijacking</li>
  *   <li>Provisions user in local DB via {@link OAuth2UserProvisioningPort}</li>
  *   <li>Loads roles from DB via {@link UserLookupPort} (no hardcoded "CONSUMER" fallback)</li>
  *   <li>Issues a JWT using the same {@link JwtEncoder} as Spring Authorization Server,
- *       with the required {@code aud} claim (RFC 9068 §2.2) and stable {@code sub} = userId</li>
+ *       with the required {@code aud} claim (RFC 9068 section2.2) and stable {@code sub} = userId</li>
  *   <li>Sets the JWT as an <strong>HttpOnly, Secure, SameSite=Strict cookie</strong>
- *       instead of a URL query parameter — preventing token leakage via browser history,
- *       proxy logs, and Referer headers (RFC 6749 §10.6)</li>
+ *       instead of a URL query parameter -- preventing token leakage via browser history,
+ *       proxy logs, and Referer headers (RFC 6749 section10.6)</li>
  *   <li>Redirects to frontend without any token in the URL</li>
  * </ol>
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6749#section-10.6">RFC 6749 §10.6 — Bearer Token Leakage</a></li>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc9068#section-2.2">RFC 9068 §2.2 — JWT `aud` REQUIRED</a></li>
- *   <li><a href="https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims">OIDC Core §5.1 — `email_verified` claim</a></li>
- *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#cookies">OWASP Session Management — Cookies</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6749#section-10.6">RFC 6749 section10.6 -- Bearer Token Leakage</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc9068#section-2.2">RFC 9068 section2.2 -- JWT `aud` REQUIRED</a></li>
+ *   <li><a href="https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims">OIDC Core section5.1 -- `email_verified` claim</a></li>
+ *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#cookies">OWASP Session Management -- Cookies</a></li>
  *   <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/login/advanced.html">Spring Security OAuth2 Login Advanced</a></li>
  * </ul>
  */
@@ -109,43 +109,43 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             name = oauth2User.getAttribute("login");
         }
 
-        // OIDC Core §5.1 + OWASP Account Provisioning: refuse to provision a user
+        // OIDC Core section5.1 + OWASP Account Provisioning: refuse to provision a user
         // from an unverified email to prevent account pre-hijacking.
         //
         // Google returns `email_verified` (boolean) in the userinfo response.
-        // GitHub does NOT return `email_verified` — the claim is null. For GitHub,
+        // GitHub does NOT return `email_verified` -- the claim is null. For GitHub,
         // we call the /user/emails API (requires `user:email` scope, already configured)
         // to check if the primary email is verified.
         //
-        // Reference: OIDC Core §5.1 — email_verified claim;
-        // https://docs.github.com/en/rest/users/emails — "List email addresses for the
+        // Reference: OIDC Core section5.1 -- email_verified claim;
+        // https://docs.github.com/en/rest/users/emails -- "List email addresses for the
         // authenticated user" returns [{email, primary, verified, visibility}].
         Boolean emailVerified = oauth2User.getAttribute("email_verified");
         if (emailVerified == null) {
-            // Provider doesn't return email_verified (GitHub) — verify via /user/emails API.
+            // Provider doesn't return email_verified (GitHub) -- verify via /user/emails API.
             emailVerified = verifyEmailViaProviderApi(oauth2Token, request, email);
         }
         if (email == null || !emailVerified) {
             // Refuse provisioning if email is null (no verifiable contact) OR if
-            // email_verified is false. OIDC Core §5.1 + OWASP Account Provisioning:
+            // email_verified is false. OIDC Core section5.1 + OWASP Account Provisioning:
             // "Verify the user's identity before provisioning."
             log.warn("OAuth2 login refused: provider={} email={} emailVerified={}", provider, email, emailVerified);
             // Throw OAuth2AuthenticationException (not BadRequestException) so Spring Security's
-            // AuthenticationFailureHandler processes it correctly — redirects to failure URL
+            // AuthenticationFailureHandler processes it correctly -- redirects to failure URL
             // instead of propagating to GlobalExceptionHandler as HTTP 500.
-            // Reference: Spring Security OAuth2 Login — AuthenticationFailureHandler handles
+            // Reference: Spring Security OAuth2 Login -- AuthenticationFailureHandler handles
             // AuthenticationException subclasses.
             throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException(
                     new org.springframework.security.oauth2.core.OAuth2Error("email_not_verified",
                             "OAuth2 provider email is not verified", null));
         }
 
-        // Log without PII — userId only, not email (OWASP Logging Cheat Sheet).
+        // Log without PII -- userId only, not email (OWASP Logging Cheat Sheet).
         log.info("OAuth2 login success: provider={}, providerId={}", provider, providerId);
 
         UUID userId = provisioningPort.provisionUser(provider, providerId, email, name);
 
-        // Load roles from DB — no hardcoded fallback if user exists.
+        // Load roles from DB -- no hardcoded fallback if user exists.
         var userOpt = userLookupPort.findById(userId);
         List<String> roles = userOpt
                 .map(UserSummary::role)
@@ -157,14 +157,14 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         String issuer = properties.security().authServer().issuer();
         String audience = properties.security().jwt().audience();
 
-        // Build JWT per RFC 9068 §2.2 — `aud` REQUIRED, `sub` stable.
+        // Build JWT per RFC 9068 section2.2 -- `aud` REQUIRED, `sub` stable.
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(userId.toString())          // stable internal user UUID
                 .claim("userId", userId.toString())
                 .claim("email", email)
                 .claim("name", name)
                 .claim("roles", roles)
-                .audience(List.of(audience))         // RFC 9068 §2.2 — REQUIRED
+                .audience(List.of(audience))         // RFC 9068 section2.2 -- REQUIRED
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
                 .issuer(issuer)
@@ -172,7 +172,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
         String jwt = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
 
-        // RFC 6749 §10.6 / OWASP Session Management: do NOT put JWT in URL.
+        // RFC 6749 section10.6 / OWASP Session Management: do NOT put JWT in URL.
         // Set HttpOnly + Secure + SameSite=Strict cookie instead.
         Cookie sessionCookie = new Cookie(SESSION_COOKIE_NAME, jwt);
         sessionCookie.setHttpOnly(true);
@@ -192,7 +192,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
      * response (e.g., GitHub). Calls {@code GET /user/emails} with the OAuth2 access
      * token and checks if the primary email is verified.
      *
-     * <p><b>Reference</b>: GitHub REST API — "List email addresses for the authenticated
+     * <p><b>Reference</b>: GitHub REST API -- "List email addresses for the authenticated
      * user" returns {@code [{email, primary, verified, visibility}]}. Requires
      * {@code user:email} scope (already configured in application.yml).
      * <a href="https://docs.github.com/en/rest/users/emails">GitHub Emails API</a>
@@ -252,15 +252,15 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
                 }
             }
 
-            // Primary email not found or doesn't match — fail-closed.
+            // Primary email not found or doesn't match -- fail-closed.
             return false;
         } catch (org.springframework.web.client.RestClientException e) {
-            // Catch only RestClientException (network/HTTP errors — connection refused,
+            // Catch only RestClientException (network/HTTP errors -- connection refused,
             // timeout, 4xx/5xx from GitHub). Programming errors (ClassCastException, NPE)
-            // propagate so they're visible in logs and monitoring — not masked as "API errors".
-            // Reference: Spring Web — RestClientException extends NestedRuntimeException;
+            // propagate so they're visible in logs and monitoring -- not masked as "API errors".
+            // Reference: Spring Web -- RestClientException extends NestedRuntimeException;
             // ResourceAccessException (network I/O) extends RestClientException.
-            log.warn("Failed to verify email via provider API — failing closed", e);
+            log.warn("Failed to verify email via provider API -- failing closed", e);
             return false;
         }
     }

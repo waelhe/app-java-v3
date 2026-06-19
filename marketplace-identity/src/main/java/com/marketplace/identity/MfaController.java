@@ -65,7 +65,7 @@ public class MfaController {
         Map<String, String> qrData = qrCodeService.generateQrCodeData(response.otpAuthUri());
         // Return the Base32-encoded secret (not the internal Base64) so users who manually
         // enter the secret into their authenticator app get the correct key.
-        // Reference: Google Authenticator Key URI Format — "Base32 encoded according to RFC 3548"
+        // Reference: Google Authenticator Key URI Format -- "Base32 encoded according to RFC 3548"
         String base32Secret = TotpService.toBase32Secret(response.secret());
         return ResponseEntity.ok(Map.of(
                 "secret", base32Secret,

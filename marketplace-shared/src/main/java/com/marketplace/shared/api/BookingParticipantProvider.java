@@ -6,7 +6,7 @@ import java.util.UUID;
  * Port that allows other modules to look up booking participant information
  * without depending on the booking module directly.
  *
- * <p><b>Design decision — synchronous interface vs. event:</b>
+ * <p><b>Design decision -- synchronous interface vs. event:</b>
  * Spring Modulith's primary recommendation for cross-module interaction is
  * event publication/consumption. However, this port uses a synchronous
  * interface call because the caller ({@code ReviewsService.create()}) needs

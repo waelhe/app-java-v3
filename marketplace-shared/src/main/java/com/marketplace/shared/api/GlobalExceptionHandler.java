@@ -88,7 +88,7 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
         // Map the ResponseStatusException's status code to the closest ApiErrorTaxonomy.
         // This prevents the catch-all @ExceptionHandler(Exception.class) from returning 500.
-        // Reference: Spring Framework Reference — Web MVC Exception Handling;
+        // Reference: Spring Framework Reference -- Web MVC Exception Handling;
         // https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-rest-exceptions.html
         HttpStatusCode statusCode = ex.getStatusCode();
         ApiErrorTaxonomy taxonomy;

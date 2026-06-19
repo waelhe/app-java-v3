@@ -20,10 +20,10 @@ import java.util.regex.Pattern;
  * <p><b>Input sanitization</b>: the correlation ID is validated against a strict
  * charset (alphanumeric + dash, max 128 chars) before being placed in MDC or
  * reflected in the response header. This prevents log injection / log forging
- * via CRLF-injected X-Correlation-ID values (OWASP Logging Cheat Sheet — Log
+ * via CRLF-injected X-Correlation-ID values (OWASP Logging Cheat Sheet -- Log
  * Injection).
  *
- * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#log-injection">OWASP Logging Cheat Sheet — Log Injection</a>
+ * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#log-injection">OWASP Logging Cheat Sheet -- Log Injection</a>
  */
 @Component
 public class CorrelationIdFilter extends OncePerRequestFilter {
@@ -42,7 +42,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String correlationId = request.getHeader(HEADER_NAME);
         if (correlationId == null || !VALID_PATTERN.matcher(correlationId).matches()) {
-            // Reject invalid/missing correlation IDs — generate a fresh UUID.
+            // Reject invalid/missing correlation IDs -- generate a fresh UUID.
             correlationId = UUID.randomUUID().toString();
         }
         MDC.put(MDC_KEY, correlationId);

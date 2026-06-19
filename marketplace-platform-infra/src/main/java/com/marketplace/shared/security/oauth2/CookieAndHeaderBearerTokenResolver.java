@@ -17,17 +17,17 @@ import org.springframework.stereotype.Component;
  * <p>This resolver enables both patterns:
  * <ul>
  *   <li><b>API clients</b> (mobile apps, SPAs with token in memory): send
- *       {@code Authorization: Bearer <jwt>} — standard OAuth2 pattern</li>
+ *       {@code Authorization: Bearer <jwt>} -- standard OAuth2 pattern</li>
  *   <li><b>Browser after social login</b>: browser sends the {@code session_token}
- *       cookie automatically — no JS access needed (HttpOnly protects against XSS)</li>
+ *       cookie automatically -- no JS access needed (HttpOnly protects against XSS)</li>
  * </ul>
  *
  * <p><b>Security</b>: the cookie is {@code HttpOnly + Secure + SameSite=Strict} (set by
  * {@link OAuth2LoginSuccessHandler}), so it is not vulnerable to XSS theft or CSRF
  * submission. The Bearer header is the standard OAuth2 token carrier.
  *
- * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/bearer-tokens.html">Spring Security — Bearer Token Resolution</a>
- * @see <a href="https://datatracker.ietf.org/doc/html/rfc6750">RFC 6750 — Bearer Token Usage</a>
+ * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/bearer-tokens.html">Spring Security -- Bearer Token Resolution</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc6750">RFC 6750 -- Bearer Token Usage</a>
  */
 @Component
 public class CookieAndHeaderBearerTokenResolver implements BearerTokenResolver {

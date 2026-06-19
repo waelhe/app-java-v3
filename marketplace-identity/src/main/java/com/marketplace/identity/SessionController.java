@@ -33,8 +33,8 @@ import java.util.UUID;
  * (RFC 7009) endpoints reflect the change immediately.
  *
  * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/server-authorization/core-model.html">Spring Authorization Server Core Model</a>
- * @see <a href="https://datatracker.ietf.org/doc/html/rfc7009">RFC 7009 — Token Revocation</a>
- * @see <a href="https://datatracker.ietf.org/doc/html/rfc7662">RFC 7662 — Token Introspection</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc7009">RFC 7009 -- Token Revocation</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc7662">RFC 7662 -- Token Introspection</a>
  */
 @RestController
 @RequestMapping("/api/v1/users/me/sessions")
@@ -66,7 +66,7 @@ public class SessionController {
      *
      * <p>Loads all OAuth2 authorization IDs for this principal from the JDBC store,
      * then removes each one via {@link OAuth2AuthorizationService#remove}. This is
-     * the documented way to revoke tokens in Spring Authorization Server — raw
+     * the documented way to revoke tokens in Spring Authorization Server -- raw
      * JDBC DELETE would bypass the service's internal bookkeeping and the
      * introspection (RFC 7662) / revocation (RFC 7009) endpoint logic.
      */
@@ -85,7 +85,7 @@ public class SessionController {
         for (String authId : authorizationIds) {
             try {
                 // findById loads the full authorization, then remove() deletes it
-                // through the service — the documented revocation path.
+                // through the service -- the documented revocation path.
                 OAuth2Authorization authorization = authorizationService.findById(authId);
                 if (authorization != null) {
                     authorizationService.remove(authorization);

@@ -36,9 +36,9 @@ import static org.mockito.Mockito.*;
  * <p>Verifies the post-fix behavior:
  * <ul>
  *   <li>JWT is set as an HttpOnly + Secure + SameSite=Strict cookie, NOT in the URL</li>
- *   <li>{@code aud} claim is present (RFC 9068 §2.2)</li>
+ *   <li>{@code aud} claim is present (RFC 9068 section2.2)</li>
  *   <li>{@code sub} claim is the stable user UUID, not "provider:providerId"</li>
- *   <li>Unverified OAuth2 emails are refused (OIDC Core §5.1)</li>
+ *   <li>Unverified OAuth2 emails are refused (OIDC Core section5.1)</li>
  *   <li>Redirect URL contains NO token</li>
  * </ul>
  */
@@ -114,7 +114,7 @@ class OAuth2LoginSuccessHandlerTest {
         verify(response).sendRedirect(redirectCaptor.capture());
         String redirectUrl = redirectCaptor.getValue();
         assertEquals("/oauth2/redirect", redirectUrl, "Redirect URL must NOT contain the token");
-        assertFalse(redirectUrl.contains("token="), "No JWT in URL (RFC 6749 §10.6)");
+        assertFalse(redirectUrl.contains("token="), "No JWT in URL (RFC 6749 section10.6)");
 
         ArgumentCaptor<Cookie> cookieCaptor = ArgumentCaptor.forClass(Cookie.class);
         verify(response).addCookie(cookieCaptor.capture());
@@ -152,10 +152,10 @@ class OAuth2LoginSuccessHandlerTest {
         handler.onAuthenticationSuccess(mock(HttpServletRequest.class), response, authToken);
 
         JwtClaimsSet claims = paramsCaptor.getValue().getClaims();
-        assertNotNull(claims.getAudience(), "JWT must have an `aud` claim (RFC 9068 §2.2)");
+        assertNotNull(claims.getAudience(), "JWT must have an `aud` claim (RFC 9068 section2.2)");
         assertTrue(claims.getAudience().contains("marketplace-api"));
         assertEquals(userId.toString(), claims.getSubject().toString(),
-                "sub must be the stable user UUID (OIDC Core §5.7)");
+                "sub must be the stable user UUID (OIDC Core section5.7)");
     }
 
     @Test
@@ -172,7 +172,7 @@ class OAuth2LoginSuccessHandlerTest {
 
         assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
                 () -> handler.onAuthenticationSuccess(mock(HttpServletRequest.class), mock(HttpServletResponse.class), authToken),
-                "OAuth2 login with unverified email must be refused (OIDC Core §5.1)");
+                "OAuth2 login with unverified email must be refused (OIDC Core section5.1)");
 
         verifyNoInteractions(provisioningPort);
         verifyNoInteractions(jwtEncoder);

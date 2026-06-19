@@ -175,7 +175,7 @@ public class SecurityConfig {
                                 "/actuator/info"
                         ))
                 .cors(Customizer.withDefaults())
-                // OWASP Secure Headers Cheat Sheet — explicit hardening (do not rely solely
+                // OWASP Secure Headers Cheat Sheet -- explicit hardening (do not rely solely
                 // on Spring Security defaults). HSTS is critical behind a TLS-terminating
                 // proxy: the proxy terminates HTTPS but the app sees HTTP, so the default
                 // HSTS writer (which fires only for HTTPS requests) never activates.
@@ -185,7 +185,7 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .includeSubDomains(true)
-                                .maxAgeInSeconds(31536000)) // 1 year — RFC 6797 recommended minimum
+                                .maxAgeInSeconds(31536000)) // 1 year -- RFC 6797 recommended minimum
                         .frameOptions(frame -> frame.deny())
                         .contentTypeOptions(contentType -> {}) // X-Content-Type-Options: nosniff
                         .referrerPolicy(referrer -> referrer
@@ -229,7 +229,7 @@ public class SecurityConfig {
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oauth2LoginSuccessHandler))
                 .cors(Customizer.withDefaults())
-                // OWASP Session Management Cheat Sheet — session fixation protection.
+                // OWASP Session Management Cheat Sheet -- session fixation protection.
                 // Spring Security's default is migrateSession, but we set it explicitly
                 // so the behavior is documented and survives future default changes.
                 // Reference: https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html
@@ -257,9 +257,9 @@ public class SecurityConfig {
 
     /**
      * Exposes a global {@link AuthenticationManager} bean built from
-     * {@link DaoAuthenticationProvider} — the standard Spring Security pattern per
+     * {@link DaoAuthenticationProvider} -- the standard Spring Security pattern per
      * <a href="https://docs.spring.io/spring-security/reference/servlet/authentication/architecture.html">
-     * Spring Security Reference — Authentication Architecture</a>.
+     * Spring Security Reference -- Authentication Architecture</a>.
      *
      * <p>This allows components (e.g. future programmatic authentication flows,
      * tests) to inject {@code AuthenticationManager} directly instead of
@@ -388,7 +388,7 @@ public class SecurityConfig {
 
         RSAKey initialKey;
         if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
-            // No keystore configured — generate a random key for dev/test.
+            // No keystore configured -- generate a random key for dev/test.
             KeyPair keyPair = generateRsaKey();
             initialKey = new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
                     .privateKey((RSAPrivateKey) keyPair.getPrivate())
@@ -416,8 +416,8 @@ public class SecurityConfig {
                     .build();
         }
 
-        // Use RotatingJWKSource instead of ImmutableJWKSet — supports hot key rotation
-        // (active + previous key overlap) without restart. Reference: RFC 7517 §4.5.
+        // Use RotatingJWKSource instead of ImmutableJWKSet -- supports hot key rotation
+        // (active + previous key overlap) without restart. Reference: RFC 7517 section4.5.
         return new RotatingJWKSource(initialKey);
     }
 
@@ -427,7 +427,7 @@ public class SecurityConfig {
     }
 
     /**
-     * Scheduled JWK rotation — rotates the signing key every 90 days per NIST SP 800-57
+     * Scheduled JWK rotation -- rotates the signing key every 90 days per NIST SP 800-57
      * recommendation for asymmetric keys used for authentication. The old key is kept
      * as "previous" for token-validation overlap until the next rotation.
      *
@@ -435,10 +435,10 @@ public class SecurityConfig {
      * {@code @SpringBootApplication} which imports {@code @EnableScheduling} by default
      * in Spring Boot 4.x when a {@code @Scheduled} bean is detected).
      *
-     * <p>Reference: NIST SP 800-57 §8 — key rotation period for 2048-bit RSA.
+     * <p>Reference: NIST SP 800-57 section8 -- key rotation period for 2048-bit RSA.
      */
     @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${marketplace.security.jwk.rotation-interval-ms:7776000000}")
-    // 90 days = 90 × 24 × 60 × 60 × 1000 = 7,776,000,000 ms
+    // 90 days = 90 x 24 x 60 x 60 x 1000 = 7,776,000,000 ms
     public void rotateJwk(JWKSource<SecurityContext> jwkSource) {
         if (jwkSource instanceof RotatingJWKSource rotating) {
             rotating.rotate();

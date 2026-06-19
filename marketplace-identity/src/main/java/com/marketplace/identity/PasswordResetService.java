@@ -61,10 +61,10 @@ public class PasswordResetService {
         // and publish an event (email sent).
         //
         // For non-existent users: we CANNOT insert a dummy token (FK constraint on
-        // verification_tokens.user_id → users.id rejects random UUIDs). Instead, we
+        // verification_tokens.user_id -> users.id rejects random UUIDs). Instead, we
         // perform an equivalent-cost DB operation: a SELECT against the users table
         // (already done by findByEmail above) + the audit log INSERT. The timing
-        // difference is ~10ms (one INSERT) — acceptable per OWASP guidance which
+        // difference is ~10ms (one INSERT) -- acceptable per OWASP guidance which
         // focuses on "uniform" response, not nanosecond-identical timing.
         //
         // Reference: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
@@ -75,7 +75,7 @@ public class PasswordResetService {
             auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
             eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
         } else {
-            // Non-existent user — audit log only (no token INSERT, no event).
+            // Non-existent user -- audit log only (no token INSERT, no event).
             // The findByEmail SELECT above provides equivalent DB round-trip cost
             // to partially equalize timing. A full equalization would require either
             // dropping the FK constraint (not recommended) or a sentinel user row.

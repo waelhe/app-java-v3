@@ -31,12 +31,12 @@ import java.util.Map;
  * </ul>
  *
  * <p><b>Rate limiting</b>: uses {@link DistributedRateLimiter} (Redis-backed, per-IP +
- * per-username) per OWASP Authentication Cheat Sheet — rate limiting must be per-attacker,
+ * per-username) per OWASP Authentication Cheat Sheet -- rate limiting must be per-attacker,
  * not per-instance. The prior Resilience4j {@code @RateLimiter} was per-JVM: with N replicas
- * an attacker got N× the limit. The distributed limiter is the primary control;
+ * an attacker got N x the limit. The distributed limiter is the primary control;
  * Resilience4j is kept as a secondary defense-in-depth (it still applies per-instance).
  *
- * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Authentication Cheat Sheet — Rate Limiting</a>
+ * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Authentication Cheat Sheet -- Rate Limiting</a>
  * @see <a href="https://docs.spring.io/spring-security/reference/servlet/authentication/index.html">Spring Security Authentication</a>
  */
 @RestController
@@ -120,7 +120,7 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> login(
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest) {
-        // Rate limit by IP + username — prevents credential stuffing per-attacker.
+        // Rate limit by IP + username -- prevents credential stuffing per-attacker.
         checkRateLimit(httpRequest, "login:" + request.username());
         TwoStepLoginService.LoginResult result = loginService.login(request.username(), request.password());
 
@@ -146,13 +146,13 @@ public class AuthController {
     /**
      * Step 2: Validates TOTP code for MFA-enabled users.
      * <p>Requires the {@code mfaToken} returned by step 1 to prevent MFA bypass
-     * (OWASP MFA Cheat Sheet — MFA must be bound to the authenticated session).
+     * (OWASP MFA Cheat Sheet -- MFA must be bound to the authenticated session).
      */
     @PostMapping("/login/mfa")
     public ResponseEntity<Map<String, Object>> verifyMfaLogin(
             @Valid @RequestBody MfaLoginRequest request,
             HttpServletRequest httpRequest) {
-        // Rate limit by IP + userId — prevents TOTP brute-force per-attacker.
+        // Rate limit by IP + userId -- prevents TOTP brute-force per-attacker.
         checkRateLimit(httpRequest, "mfa:" + request.userId());
         TwoStepLoginService.LoginResult result = loginService.verifyMfa(request.userId(), request.mfaToken(), request.code());
 
@@ -203,7 +203,7 @@ public class AuthController {
         String clientIp = resolveClientIp(request);
         String bucketKey = "auth:ip:" + clientIp + ":" + actionKey;
         if (!rateLimiter.tryAcquire(bucketKey)) {
-            // 429 Too Many Requests per RFC 6585 §4 — standard for rate limiting.
+            // 429 Too Many Requests per RFC 6585 section4 -- standard for rate limiting.
             throw new org.springframework.web.server.ResponseStatusException(
                     HttpStatus.TOO_MANY_REQUESTS,
                     "Rate limit exceeded. Please try again later.");
@@ -214,7 +214,7 @@ public class AuthController {
      * Resolves the client IP from the request.
      * When {@code server.forward-headers-strategy=framework} is active (prod),
      * {@code getRemoteAddr()} returns the IP resolved by Spring's ForwardedHeaderFilter
-     * from the trusted-proxy X-Forwarded-For chain — not the spoofable raw header.
+     * from the trusted-proxy X-Forwarded-For chain -- not the spoofable raw header.
      */
     private static String resolveClientIp(HttpServletRequest request) {
         String ip = request.getRemoteAddr();

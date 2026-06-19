@@ -77,7 +77,7 @@ class SessionControllerTest {
         when(jdbcTemplate.queryForList(anyString(), eq(String.class), any()))
                 .thenReturn(List.of("auth-1"));
 
-        // findById returns null — authorization already removed (race or re-call).
+        // findById returns null -- authorization already removed (race or re-call).
         when(authorizationService.findById("auth-1")).thenReturn(null);
 
         sessionController.revokeAllSessions(auth);

@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
  *
  * <p>The {@code mfaToken} binds this step to a successful step-1 password
  * verification. Without it, an attacker who only knows the user's UUID could
- * skip the password and brute-force the 6-digit TOTP directly — a critical
+ * skip the password and brute-force the 6-digit TOTP directly -- a critical
  * MFA bypass (OWASP MFA Cheat Sheet: "MFA must be bound to the authenticated session").
  *
  * @param userId   the user identifier returned by step 1

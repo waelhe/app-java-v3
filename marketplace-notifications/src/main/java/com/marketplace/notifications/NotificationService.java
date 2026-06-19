@@ -85,7 +85,7 @@ public class NotificationService {
         String verificationLink = authServerIssuer + "/api/v1/auth/verify?token=" + event.verificationToken();
         emailService.ifPresent(es -> {
             try {
-                es.send(event.email(), "Welcome to Marketplace — Verify Your Email",
+                es.send(event.email(), "Welcome to Marketplace -- Verify Your Email",
                         "email/verify-email",
                         Map.of("name", event.displayName(), "verificationLink", verificationLink));
             } catch (Exception e) {
@@ -98,7 +98,7 @@ public class NotificationService {
     public void onUserVerified(UserVerifiedEvent event) {
         emailService.ifPresent(es -> {
             try {
-                es.send(event.email(), "Email Verified — Welcome to Marketplace",
+                es.send(event.email(), "Email Verified -- Welcome to Marketplace",
                         "email/email-verified",
                         Map.of("name", event.email()));
             } catch (Exception e) {
@@ -138,7 +138,7 @@ public class NotificationService {
                 template.convertAndSend("/topic/notifications/" + userId,
                         new WebSocketNotification(type, message));
             } catch (Exception e) {
-                // WebSocket is best-effort — notification persistence must not roll back
+                // WebSocket is best-effort -- notification persistence must not roll back
                 // if the STOMP broker is unreachable. Same pattern as sendEmail above.
                 log.error("Failed to send WebSocket notification to user {}", userId, e);
             }

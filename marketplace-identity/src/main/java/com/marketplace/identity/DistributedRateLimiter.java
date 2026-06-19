@@ -15,10 +15,10 @@ import java.util.List;
  *
  * <p>Uses the <strong>fixed-window counter</strong> pattern documented by Redis:
  * a Lua script atomically INCRs a counter and sets the TTL on the first request.
- * This is fully distributed — works across all application instances sharing the
- * same Redis — replacing the prior in-process Resilience4j {@code @RateLimiter}
- * which was per-instance (N instances = N× the effective limit for an attacker,
- * but still 1× for a legitimate user hitting a single instance).
+ * This is fully distributed -- works across all application instances sharing the
+ * same Redis -- replacing the prior in-process Resilience4j {@code @RateLimiter}
+ * which was per-instance (N instances = N x the effective limit for an attacker,
+ * but still 1 x for a legitimate user hitting a single instance).
  *
  * <p>The Lua script ensures atomicity: INCR + conditional EXPIRE happen in a
  * single Redis round-trip with no race window.
@@ -28,8 +28,8 @@ import java.util.List;
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://redis.io/docs/latest/develop/use/patterns/distributed-locks/">Redis — Distributed Patterns</a></li>
- *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Authentication Cheat Sheet — Rate Limiting</a></li>
+ *   <li><a href="https://redis.io/docs/latest/develop/use/patterns/distributed-locks/">Redis -- Distributed Patterns</a></li>
+ *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#rate-limiting">OWASP Authentication Cheat Sheet -- Rate Limiting</a></li>
  *   <li><a href="https://docs.spring.io/spring-data/redis/reference/">Spring Data Redis Reference</a></li>
  * </ul>
  */
@@ -42,7 +42,7 @@ public class DistributedRateLimiter {
      * Lua script: atomically increment the counter and set TTL on first increment.
      * Returns the new counter value. The caller compares it against the limit.
      *
-     * <p>Uses ARGV[1] for TTL (no dummy ARGV[2]). Reference: Redis Lua scripting —
+     * <p>Uses ARGV[1] for TTL (no dummy ARGV[2]). Reference: Redis Lua scripting --
      * "KEYS[] and ARGV[] are accessed by index" (1-based).
      * https://redis.io/docs/latest/develop/use/patterns/distributed-locks/
      *
@@ -97,26 +97,26 @@ public class DistributedRateLimiter {
                     List.of(redisKey),
                     String.valueOf(authWindow.getSeconds())); // ARGV[1] = TTL in seconds
             if (current == null) {
-                // Redis returned null — fail based on configured policy.
+                // Redis returned null -- fail based on configured policy.
                 // Default: fail-closed (return false = deny) per OWASP "Fail Securely".
                 // Operators can set marketplace.security.rate-limit.fail-open=true for
                 // availability-priority deployments.
-                log.warn("Rate limiter returned null for key={} — failing {}", bucketKey, failOpen ? "open" : "closed");
+                log.warn("Rate limiter returned null for key={} -- failing {}", bucketKey, failOpen ? "open" : "closed");
                 return failOpen;
             }
             return current <= authLimit;
         } catch (org.springframework.data.redis.RedisConnectionFailureException
                 | org.springframework.data.redis.RedisSystemException e) {
             // Fail open ONLY on Redis infrastructure errors (connection refused, timeout,
-            // Redis system error) — never block legitimate users when Redis is temporarily
+            // Redis system error) -- never block legitimate users when Redis is temporarily
             // unavailable. Other RuntimeExceptions (ClassCastException, NPE, etc.) propagate
             // to fail closed per OWASP "Fail Securely" principle.
-            // Reference: OWASP Secure Coding Practices — "Fail Securely: handle exceptions
+            // Reference: OWASP Secure Coding Practices -- "Fail Securely: handle exceptions
             // in a way that an attacker can't exploit."
             // Redis exception hierarchy:
             //   RedisConnectionFailureException extends DataAccessResourceFailureException
             //   RedisSystemException extends UncategorizedDataAccessException
-            log.warn("Rate limiter Redis error for key={} — failing {}", bucketKey, failOpen ? "open" : "closed", e);
+            log.warn("Rate limiter Redis error for key={} -- failing {}", bucketKey, failOpen ? "open" : "closed", e);
             return failOpen;
         }
     }

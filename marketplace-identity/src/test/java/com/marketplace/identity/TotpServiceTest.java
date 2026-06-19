@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for {@link TotpService} — RFC 6238 TOTP implementation.
+ * Tests for {@link TotpService} -- RFC 6238 TOTP implementation.
  * @see <a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238</a>
  */
 class TotpServiceTest {
@@ -51,8 +51,8 @@ class TotpServiceTest {
 
         assertNotNull(uri);
         assertTrue(uri.startsWith("otpauth://totp/"));
-        // After URL encoding: "user@test.com" → "user%40test.com", "Marketplace" stays as-is (no special chars)
-        // Reference: Google Authenticator Key URI Format — account name is URI-encoded
+        // After URL encoding: "user@test.com" -> "user%40test.com", "Marketplace" stays as-is (no special chars)
+        // Reference: Google Authenticator Key URI Format -- account name is URI-encoded
         assertTrue(uri.contains("Marketplace:user%40test.com"),
                 "Label must be URL-encoded: " + uri);
         assertTrue(uri.contains("digits=6"));
@@ -86,8 +86,8 @@ class TotpServiceTest {
 
     /**
      * The otpauth URI must encode the *same* key material as the internal Base64 secret.
-     * A round-trip: generate secret → build URI → extract Base32 secret →
-     * derive the same TOTP code → validate against the original secret.
+     * A round-trip: generate secret -> build URI -> extract Base32 secret ->
+     * derive the same TOTP code -> validate against the original secret.
      */
     @Test
     void buildOtpAuthUri_roundTripsToSameSecret() {

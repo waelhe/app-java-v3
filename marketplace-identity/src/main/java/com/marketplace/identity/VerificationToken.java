@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /**
  * Entity for email verification and password reset tokens.
- * <p>Follows OWASP Authentication Cheat Sheet — tokens are:
+ * <p>Follows OWASP Authentication Cheat Sheet -- tokens are:
  * <ul>
  *   <li>Cryptographically random (UUID-based)</li>
  *   <li>Single-use ({@code used} flag)</li>

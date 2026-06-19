@@ -14,7 +14,7 @@ import java.util.UUID;
  * <p>This allows other modules (e.g., reviews) to look up booking
  * participants without depending on the booking module directly.
  * The port is a synchronous interface (not an event) because the
- * caller needs booking details before persisting — see
+ * caller needs booking details before persisting -- see
  * {@link BookingParticipantProvider} for the design rationale.</p>
  */
 @Component

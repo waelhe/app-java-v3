@@ -41,8 +41,8 @@ public class MfaService {
     private static final String USED_TIMESTEP_KEY_PREFIX = "marketplace:mfa:used-timestep:";
 
     /**
-     * TTL for used-timestep markers: 3 timesteps × 30s = 90 seconds.
-     * This covers the full ±1 validation window — after 90s the timestep can
+     * TTL for used-timestep markers: 3 timesteps x 30s = 90 seconds.
+     * This covers the full +/-1 validation window -- after 90s the timestep can
      * never match again (it's outside the window), so the marker is safe to expire.
      */
     private static final Duration USED_TIMESTEP_TTL = Duration.ofSeconds(90);
@@ -73,7 +73,7 @@ public class MfaService {
     }
 
     /**
-     * Initiates MFA setup — generates a new TOTP secret.
+     * Initiates MFA setup -- generates a new TOTP secret.
      * Returns the secret + otpauth URI for QR code display.
      * MFA is NOT enabled until verified.
      */
@@ -144,12 +144,12 @@ public class MfaService {
     /**
      * Verifies a TOTP code for login (called during authentication).
      *
-     * <p>Uses {@code @Transactional(readOnly = true)} — the method only reads from JPA
+     * <p>Uses {@code @Transactional(readOnly = true)} -- the method only reads from JPA
      * (mfaSecretRepository.findByUserId, userRepository.findById) and writes to Redis
      * (setIfAbsent). Redis operations are NOT transactional with JPA, so a read-write
      * JPA transaction adds overhead (connection acquisition, commit) with no benefit.
      *
-     * <p><b>Replay protection</b> (RFC 6238 §5.2 step 4): "The verifier MUST NOT
+     * <p><b>Replay protection</b> (RFC 6238 section5.2 step 4): "The verifier MUST NOT
      * accept the second attempt of the OTP after the successful validation has
      * been issued." After a successful validation, the matched timestep is
      * atomically claimed in Redis (SETNX with TTL). Any subsequent attempt
@@ -178,7 +178,7 @@ public class MfaService {
         // false if it already existed (replay attempt).
         Boolean claimed = redisTemplate.opsForValue().setIfAbsent(key, "1", USED_TIMESTEP_TTL);
         if (!Boolean.TRUE.equals(claimed)) {
-            // Resolve the username for the audit log — never log null username.
+            // Resolve the username for the audit log -- never log null username.
             String username = userRepository.findById(userId)
                     .map(User::getEmail)
                     .orElse("unknown-user-" + userId);
@@ -202,8 +202,8 @@ public class MfaService {
      *
      * <p><b>References</b>
      * <ul>
-     *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet — recovery codes must be single-use</a></li>
-     *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE — row-level locking</a></li>
+     *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet -- recovery codes must be single-use</a></li>
+     *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE -- row-level locking</a></li>
      * </ul>
      *
      * @return true if the code was valid and successfully claimed (single-use enforced)
@@ -212,7 +212,7 @@ public class MfaService {
         List<RecoveryCode> codes = recoveryCodeRepository.findByUserIdAndUsedFalse(userId);
         for (RecoveryCode rc : codes) {
             if (passwordEncoder.matches(code, rc.getCodeHash())) {
-                // Atomic single-use claim — returns 0 if a concurrent request already claimed it.
+                // Atomic single-use claim -- returns 0 if a concurrent request already claimed it.
                 int rowsAffected = recoveryCodeRepository.claimIfUnused(rc.getId());
                 return rowsAffected == 1;
             }

@@ -1,0 +1,5 @@
+{
+  "rootCauseHypothesis": "invalid character '→' (U+2192) (<string>, line 255)",
+  "recommendedFixTarget": null,
+  "evidence": []
+}

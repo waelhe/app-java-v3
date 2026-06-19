@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * Brute force attack protection.
  *
- * <p><b>OWASP Authentication Cheat Sheet — Account Lockout</b>
+ * <p><b>OWASP Authentication Cheat Sheet -- Account Lockout</b>
  * <ul>
  *   <li>Lock account after {@code maxFailedAttempts} (default: 5)</li>
  *   <li>Lock duration: {@code lockDurationMinutes} (default: 15)</li>
@@ -24,15 +24,15 @@ import java.util.List;
  * used {@code SELECT failed_attempts} followed by {@code UPDATE failed_attempts = ?}.
  * Under PostgreSQL's default READ_COMMITTED isolation, two concurrent transactions
  * could both read the same counter value and both write the same incremented value
- * — defeating the lockout. The fix uses a single atomic statement:
+ * -- defeating the lockout. The fix uses a single atomic statement:
  * {@code UPDATE auth_users SET failed_attempts = failed_attempts + 1 ... RETURNING failed_attempts}
  * (PostgreSQL documented feature). The counter increment is now an atomic database
  * operation; the SELECT-then-UPDATE race is eliminated.
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#account-lockout">OWASP Authentication Cheat Sheet — Account Lockout</a></li>
- *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE — RETURNING clause</a></li>
+ *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#account-lockout">OWASP Authentication Cheat Sheet -- Account Lockout</a></li>
+ *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE -- RETURNING clause</a></li>
  * </ul>
  */
 @Service
@@ -89,12 +89,12 @@ public class BruteForceProtectionService {
      * <strong>separate</strong> transaction that survives the caller's rollback. Without
      * this, the {@code @Transactional} on {@code TwoStepLoginService.login} would roll
      * back the {@code failed_attempts} increment when {@code BadRequestException} is thrown
-     * — the counter would never reach the lockout threshold and accounts would never be
-     * locked. Reference: Spring Framework Reference — Transaction Propagation.
+     * -- the counter would never reach the lockout threshold and accounts would never be
+     * locked. Reference: Spring Framework Reference -- Transaction Propagation.
      *
      * <p>If the new counter reaches {@code maxFailedAttempts}, the account is locked
      * for {@code lockDurationMinutes}. Both the counter increment and the lock
-     * happen in the same atomic UPDATE statement — concurrent calls cannot bypass
+     * happen in the same atomic UPDATE statement -- concurrent calls cannot bypass
      * the lockout threshold.
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -103,7 +103,7 @@ public class BruteForceProtectionService {
             return;
         }
 
-        // Atomic increment — RETURNING gives us the new value without a separate SELECT.
+        // Atomic increment -- RETURNING gives us the new value without a separate SELECT.
         List<Integer> newAttemptsList = jdbcTemplate.query(
                 INCREMENT_AND_RETURN_SQL,
                 (rs, rowNum) -> rs.getInt("failed_attempts"),
@@ -119,7 +119,7 @@ public class BruteForceProtectionService {
         int newAttempts = newAttemptsList.getFirst();
 
         if (newAttempts >= maxFailedAttempts) {
-            // Lock the account in a separate UPDATE — atomicity of the increment is
+            // Lock the account in a separate UPDATE -- atomicity of the increment is
             // already guaranteed; this lock activation is independent.
             Instant lockUntil = Instant.now().plus(lockDurationMinutes, ChronoUnit.MINUTES);
             jdbcTemplate.update(
@@ -144,10 +144,10 @@ public class BruteForceProtectionService {
 
     @Transactional(readOnly = true)
     public boolean isLocked(String username) {
-        // Catch only EmptyResultDataAccessException (user not found) — this is the only
+        // Catch only EmptyResultDataAccessException (user not found) -- this is the only
         // expected case where queryForObject throws. Other exceptions (DB connection
         // failure, etc.) MUST propagate so the caller knows the lockout status is
-        // indeterminate — never silently return "not locked" which would be a security
+        // indeterminate -- never silently return "not locked" which would be a security
         // bypass (attacker exploits DB outage to bypass lockout).
         try {
             Instant lockedUntil = jdbcTemplate.queryForObject(
@@ -156,7 +156,7 @@ public class BruteForceProtectionService {
             );
             return lockedUntil != null && Instant.now().isBefore(lockedUntil);
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
-            // User does not exist — not locked (nothing to lock).
+            // User does not exist -- not locked (nothing to lock).
             return false;
         }
     }

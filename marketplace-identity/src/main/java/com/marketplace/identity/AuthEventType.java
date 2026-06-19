@@ -7,7 +7,7 @@ package com.marketplace.identity;
  * distinct, queryable event types so security monitoring can reliably
  * distinguish them. The prior taxonomy conflated MFA failures, recovery-code
  * usage, and session revocation under generic LOGIN_FAILURE / LOGIN_SUCCESS /
- * PASSWORD_CHANGED — making reliable alerting impossible.
+ * PASSWORD_CHANGED -- making reliable alerting impossible.
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">OWASP Logging Cheat Sheet</a>
  */

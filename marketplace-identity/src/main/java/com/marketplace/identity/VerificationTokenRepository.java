@@ -22,7 +22,7 @@ public interface VerificationTokenRepository extends JpaRepository<VerificationT
      * read-only transaction) and both proceed to reset the password. The conditional
      * UPDATE is atomic at the row level.
      *
-     * <p>Reference: Spring Data JPA Reference — Modifying Queries:
+     * <p>Reference: Spring Data JPA Reference -- Modifying Queries:
      * "@Modifying @Query("update User u set u.firstname = ?1 where u.lastname = ?2")"
      * https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html#jpa.query-methods.modifying-queries
      *

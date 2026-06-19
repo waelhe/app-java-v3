@@ -44,7 +44,7 @@ class MfaServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        // Cannot use @InjectMocks — constructor has @Value String parameter that Mockito can't resolve.
+        // Cannot use @InjectMocks -- constructor has @Value String parameter that Mockito can't resolve.
         mfaService = new MfaService(mfaSecretRepository, recoveryCodeRepository,
                 passwordEncoder, auditService, redisTemplate, userRepository, "Marketplace");
     }
@@ -154,7 +154,7 @@ class MfaServiceTest {
         when(rc.getCodeHash()).thenReturn("hashed-code");
         when(recoveryCodeRepository.findByUserIdAndUsedFalse(userId)).thenReturn(List.of(rc));
         when(passwordEncoder.matches("PLAIN", "hashed-code")).thenReturn(true);
-        // Atomic claim returns 1 row updated — single-use successfully enforced.
+        // Atomic claim returns 1 row updated -- single-use successfully enforced.
         when(recoveryCodeRepository.claimIfUnused(codeId)).thenReturn(1);
 
         assertTrue(mfaService.verifyRecoveryCode(userId, "PLAIN"));
@@ -174,7 +174,7 @@ class MfaServiceTest {
         when(rc.getCodeHash()).thenReturn("hashed-code");
         when(recoveryCodeRepository.findByUserIdAndUsedFalse(userId)).thenReturn(List.of(rc));
         when(passwordEncoder.matches("PLAIN", "hashed-code")).thenReturn(true);
-        // Atomic claim returns 0 rows — another concurrent request already claimed it.
+        // Atomic claim returns 0 rows -- another concurrent request already claimed it.
         when(recoveryCodeRepository.claimIfUnused(codeId)).thenReturn(0);
 
         assertFalse(mfaService.verifyRecoveryCode(userId, "PLAIN"),
@@ -182,12 +182,12 @@ class MfaServiceTest {
         verify(recoveryCodeRepository).claimIfUnused(codeId);
     }
 
-    // ===== TOTP replay protection tests (RFC 6238 §5.2) =====
+    // ===== TOTP replay protection tests (RFC 6238 section5.2) =====
 
     /**
      * Helper: generate a valid TOTP code for the given secret at the current timestep.
      * Uses the package-private {@link TotpService#generateCode(String, long)} method
-     * (same package) instead of reflection — cleaner and IDE-refactoring-safe.
+     * (same package) instead of reflection -- cleaner and IDE-refactoring-safe.
      */
     private String generateValidTotpCode(String base64Secret) {
         long currentTime = System.currentTimeMillis() / 1000;
@@ -205,15 +205,15 @@ class MfaServiceTest {
 
         String validCode = generateValidTotpCode(secret);
 
-        // First use: Redis SETNX returns true (key was absent) → accepted.
+        // First use: Redis SETNX returns true (key was absent) -> accepted.
         when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(true);
         assertTrue(mfaService.verifyTotp(userId, validCode),
                 "First use of a valid TOTP code must succeed");
 
-        // Replay: Redis SETNX returns false (key already exists) → rejected.
+        // Replay: Redis SETNX returns false (key already exists) -> rejected.
         when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(false);
         assertFalse(mfaService.verifyTotp(userId, validCode),
-                "Replay of the same TOTP code within the window must be rejected (RFC 6238 §5.2)");
+                "Replay of the same TOTP code within the window must be rejected (RFC 6238 section5.2)");
     }
 
     @Test

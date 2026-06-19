@@ -35,9 +35,9 @@ public class AuthAuditService implements IdentityAdminSpi {
      * <p>Uses {@code Propagation.REQUIRES_NEW} so the audit log entry commits in a
      * <strong>separate</strong> transaction that survives the caller's rollback. Without
      * this, {@code LOGIN_FAILURE}, {@code MFA_FAILURE}, and {@code ACCOUNT_LOCKED} events
-     * would be rolled back when the caller throws {@code BadRequestException} — the most
+     * would be rolled back when the caller throws {@code BadRequestException} -- the most
      * critical security events would never be persisted. Reference: Spring Framework
-     * Reference — Transaction Propagation; OWASP Logging Cheat Sheet — "Log all
+     * Reference -- Transaction Propagation; OWASP Logging Cheat Sheet -- "Log all
      * authentication events (success and failure)".
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -88,7 +88,7 @@ public class AuthAuditService implements IdentityAdminSpi {
                 HttpServletRequest request = attrs.getRequest();
                 // When forward-headers-strategy=framework is active (set in application-prod.yml),
                 // Spring's ForwardedHeaderFilter resolves X-Forwarded-For from the trusted proxy
-                // chain into request.getRemoteAddr(). We trust ONLY this resolved value — never
+                // chain into request.getRemoteAddr(). We trust ONLY this resolved value -- never
                 // the raw X-Forwarded-For header, which is client-controllable and spoofable.
                 // Reference: https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
                 String remoteAddr = request.getRemoteAddr();
@@ -98,7 +98,7 @@ public class AuthAuditService implements IdentityAdminSpi {
                 return "unknown";
             }
         } catch (Exception e) {
-            // ignore — not in request context (e.g. scheduled task)
+            // ignore -- not in request context (e.g. scheduled task)
         }
         return null;
     }

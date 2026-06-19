@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
  * </ul>
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#account-lockout">OWASP Account Lockout</a>
- * @see <a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE — RETURNING clause</a>
+ * @see <a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE -- RETURNING clause</a>
  */
 @ExtendWith(MockitoExtension.class)
 class BruteForceProtectionServiceTest {
@@ -42,9 +42,9 @@ class BruteForceProtectionServiceTest {
     void setUp() {
         // Construct with self=null first, then set self via reflection (or use a spy).
         // For unit tests, self.isLocked() calls the real method directly (no proxy),
-        // which is fine — jdbcTemplate is mocked so the query works.
+        // which is fine -- jdbcTemplate is mocked so the query works.
         bruteForceService = new BruteForceProtectionService(jdbcTemplate, auditService, null, 5, 15);
-        // Use Mockito spy to inject self — the spy wraps the real object so self.isLocked()
+        // Use Mockito spy to inject self -- the spy wraps the real object so self.isLocked()
         // delegates to the real method (which uses the mocked jdbcTemplate).
         BruteForceProtectionService spy = spy(bruteForceService);
         org.springframework.test.util.ReflectionTestUtils.setField(bruteForceService, "self", spy);
@@ -64,7 +64,7 @@ class BruteForceProtectionServiceTest {
 
         bruteForceService.recordFailedAttempt("user@test.com");
 
-        // Below threshold — no lock activation UPDATE should run.
+        // Below threshold -- no lock activation UPDATE should run.
         verify(jdbcTemplate, never()).update(
                 eq("UPDATE auth_users SET locked_until = ? WHERE username = ? AND locked_until IS NULL"),
                 any(), any());
@@ -92,7 +92,7 @@ class BruteForceProtectionServiceTest {
 
     @Test
     void recordFailedAttempt_skipsWhenAlreadyLocked() {
-        // isLocked returns true — service must short-circuit before any SQL runs.
+        // isLocked returns true -- service must short-circuit before any SQL runs.
         Instant future = Instant.now().plus(10, ChronoUnit.MINUTES);
         when(jdbcTemplate.queryForObject(eq("SELECT locked_until FROM auth_users WHERE username = ?"),
                 eq(Instant.class), eq("user@test.com"))).thenReturn(future);
@@ -109,7 +109,7 @@ class BruteForceProtectionServiceTest {
                 eq(Instant.class), eq("unknown@user.com")))
                 .thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
 
-        // Should not throw — service must handle unknown user gracefully.
+        // Should not throw -- service must handle unknown user gracefully.
         assertDoesNotThrow(() -> bruteForceService.recordFailedAttempt("unknown@user.com"));
 
         // EmptyResultDataAccessException from isLocked short-circuits to "false",

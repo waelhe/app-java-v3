@@ -96,6 +96,7 @@ spring:
   http:
     clients:
       connect-timeout: 5s
+      read-timeout: 10s
 
   websocket:
     messaging:
@@ -150,7 +151,7 @@ server:
     accesslog:
       enabled: true
       directory: logs
-      pattern: "%h %l %u %t &quot;%r&quot; %s %b %{ms}T"
+      pattern: '%h %l %u %t "%r" %s %b %{ms}T'
 
 management:
   endpoints:
