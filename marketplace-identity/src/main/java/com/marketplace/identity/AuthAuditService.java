@@ -29,7 +29,18 @@ public class AuthAuditService implements IdentityAdminSpi {
         this.auditRepository = auditRepository;
     }
 
-    @Transactional
+    /**
+     * Logs an authentication event.
+     *
+     * <p>Uses {@code Propagation.REQUIRES_NEW} so the audit log entry commits in a
+     * <strong>separate</strong> transaction that survives the caller's rollback. Without
+     * this, {@code LOGIN_FAILURE}, {@code MFA_FAILURE}, and {@code ACCOUNT_LOCKED} events
+     * would be rolled back when the caller throws {@code BadRequestException} — the most
+     * critical security events would never be persisted. Reference: Spring Framework
+     * Reference — Transaction Propagation; OWASP Logging Cheat Sheet — "Log all
+     * authentication events (success and failure)".
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void log(String username, AuthEventType eventType, String details) {
         String ipAddress = extractIpAddress();
         String userAgent = extractUserAgent();

@@ -72,12 +72,19 @@ public class BruteForceProtectionService {
     /**
      * Records a failed login attempt atomically.
      *
+     * <p>Uses {@code Propagation.REQUIRES_NEW} so the counter increment commits in a
+     * <strong>separate</strong> transaction that survives the caller's rollback. Without
+     * this, the {@code @Transactional} on {@code TwoStepLoginService.login} would roll
+     * back the {@code failed_attempts} increment when {@code BadRequestException} is thrown
+     * — the counter would never reach the lockout threshold and accounts would never be
+     * locked. Reference: Spring Framework Reference — Transaction Propagation.
+     *
      * <p>If the new counter reaches {@code maxFailedAttempts}, the account is locked
      * for {@code lockDurationMinutes}. Both the counter increment and the lock
      * happen in the same atomic UPDATE statement — concurrent calls cannot bypass
      * the lockout threshold.
      */
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void recordFailedAttempt(String username) {
         if (isLocked(username)) {
             return;
