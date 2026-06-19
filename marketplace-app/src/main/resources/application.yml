@@ -179,10 +179,10 @@ management:
           endpoint: ${OTEL_TRACES_EXPORT_URL:http://localhost:4318/v1/traces}
 
 logging:
-  structured:
-    format:
-      console: logstash
-      file: logstash
+  # Structured format (logstash) is now disabled — logback-spring.xml defines
+  # the appenders directly with secret redaction via %replace. If structured
+  # JSON logging is needed for log aggregation, a custom StructuredLogFormatter
+  # with built-in redaction should be implemented (see logback-spring.xml comments).
   file:
     name: ${LOG_FILE:/var/log/marketplace/application.log}
   pattern:

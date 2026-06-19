@@ -171,6 +171,15 @@ public class SecurityConfig {
                         .contentTypeOptions(contentType -> {}) // X-Content-Type-Options: nosniff
                         .referrerPolicy(referrer -> referrer
                                 .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // Content-Security-Policy: restrict to same-origin only (API server
+                        // has no legitimate reason to load external scripts/styles/images).
+                        // Reference: https://owasp.org/www-project-secure-headers/#content-security-policy
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"))
+                        // Permissions-Policy: disable browser features the API does not need.
+                        // Reference: https://owasp.org/www-project-secure-headers/#permissions-policy
+                        .permissionsPolicyHeader(pp -> pp
+                                .policy("camera=(), microphone=(), geolocation=(), payment=()"))
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
@@ -207,7 +216,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionFixation(fixation -> fixation.migrateSession()))
                 // Same explicit security headers as the protected API chain (HSTS, frameOptions,
-                // contentTypeOptions, referrerPolicy). Reference:
+                // contentTypeOptions, referrerPolicy, CSP, Permissions-Policy). Reference:
                 // https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html
                 .headers(headers -> headers
                         .httpStrictTransportSecurity(hsts -> hsts
@@ -217,6 +226,10 @@ public class SecurityConfig {
                         .contentTypeOptions(contentType -> {})
                         .referrerPolicy(referrer -> referrer
                                 .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"))
+                        .permissionsPolicyHeader(pp -> pp
+                                .policy("camera=(), microphone=(), geolocation=(), payment=()"))
                 );
 
         return http.build();
@@ -352,42 +365,64 @@ public class SecurityConfig {
         String keyStorePassword = ks.password();
         String keyAlias = ks.alias();
         String keyPassword = ks.keyPassword();
+
+        RSAKey initialKey;
         if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
+            // No keystore configured — generate a random key for dev/test.
             KeyPair keyPair = generateRsaKey();
-            RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-            RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-            RSAKey rsaKey = new RSAKey.Builder(publicKey)
-                    .privateKey(privateKey)
+            initialKey = new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
+                    .privateKey((RSAPrivateKey) keyPair.getPrivate())
                     .keyID(UUID.randomUUID().toString())
                     .build();
-            return new ImmutableJWKSet<>(new JWKSet(rsaKey));
+        } else {
+            // Load from keystore (prod).
+            KeyStore keyStore = KeyStore.getInstance("JKS");
+            String resolvedLocation = keyStorePath.startsWith("classpath:") || keyStorePath.startsWith("file:")
+                    ? keyStorePath
+                    : "file:" + keyStorePath;
+
+            try (InputStream inputStream = resourceLoader.getResource(resolvedLocation).getInputStream()) {
+                keyStore.load(inputStream, keyStorePassword.toCharArray());
+            }
+
+            RSAPublicKey publicKey = (RSAPublicKey) keyStore.getCertificate(keyAlias).getPublicKey();
+            Key privateKeyCandidate = keyStore.getKey(keyAlias, keyPassword.toCharArray());
+            RSAPrivateKey privateKey = (RSAPrivateKey) Objects.requireNonNull(privateKeyCandidate,
+                    () -> "No private key found in keystore for alias " + keyAlias);
+
+            initialKey = new RSAKey.Builder(publicKey)
+                    .privateKey(privateKey)
+                    .keyID(keyAlias)
+                    .build();
         }
 
-        KeyStore keyStore = KeyStore.getInstance("JKS");
-        String resolvedLocation = keyStorePath.startsWith("classpath:") || keyStorePath.startsWith("file:")
-                ? keyStorePath
-                : "file:" + keyStorePath;
-
-        try (InputStream inputStream = resourceLoader.getResource(resolvedLocation).getInputStream()) {
-            keyStore.load(inputStream, keyStorePassword.toCharArray());
-        }
-
-        RSAPublicKey publicKey = (RSAPublicKey) keyStore.getCertificate(keyAlias).getPublicKey();
-        Key privateKeyCandidate = keyStore.getKey(keyAlias, keyPassword.toCharArray());
-        RSAPrivateKey privateKey = (RSAPrivateKey) Objects.requireNonNull(privateKeyCandidate,
-                () -> "No private key found in keystore for alias " + keyAlias);
-
-        RSAKey rsaKey = new RSAKey.Builder(publicKey)
-                .privateKey(privateKey)
-                .keyID(keyAlias)
-                .build();
-
-        return new ImmutableJWKSet<>(new JWKSet(rsaKey));
+        // Use RotatingJWKSource instead of ImmutableJWKSet — supports hot key rotation
+        // (active + previous key overlap) without restart. Reference: RFC 7517 §4.5.
+        return new RotatingJWKSource(initialKey);
     }
 
     @Bean
     JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
         return new NimbusJwtEncoder(jwkSource);
+    }
+
+    /**
+     * Scheduled JWK rotation — rotates the signing key every 90 days per NIST SP 800-57
+     * recommendation for asymmetric keys used for authentication. The old key is kept
+     * as "previous" for token-validation overlap until the next rotation.
+     *
+     * <p>Requires {@code @EnableScheduling} on the application (enabled via
+     * {@code @SpringBootApplication} which imports {@code @EnableScheduling} by default
+     * in Spring Boot 4.x when a {@code @Scheduled} bean is detected).
+     *
+     * <p>Reference: NIST SP 800-57 §8 — key rotation period for 2048-bit RSA.
+     */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${marketplace.security.jwk.rotation-interval-ms:7776000000}")
+    // 90 days = 90 × 24 × 60 × 60 × 1000 = 7,776,000,000 ms
+    public void rotateJwk(JWKSource<SecurityContext> jwkSource) {
+        if (jwkSource instanceof RotatingJWKSource rotating) {
+            rotating.rotate();
+        }
     }
     @Bean
     JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) throws IOException {
