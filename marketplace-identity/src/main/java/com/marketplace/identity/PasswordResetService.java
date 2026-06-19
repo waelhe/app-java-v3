@@ -75,10 +75,13 @@ public class PasswordResetService {
             auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
             eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
         } else {
-            // Non-existent user -- audit log only (no token INSERT, no event).
-            // The findByEmail SELECT above provides equivalent DB round-trip cost
-            // to partially equalize timing. A full equalization would require either
-            // dropping the FK constraint (not recommended) or a sentinel user row.
+            // Non-existent user -- perform an equivalent-cost BCrypt hash to equalize
+            // timing with the existing-user path (which does generateToken INSERT + audit log).
+            // BCrypt with cost 10 takes ~50ms, matching the DB INSERT cost.
+            // This prevents timing-based email enumeration per OWASP Forgot Password Cheat Sheet:
+            // "Ensure that the time taken for the user response message is uniform."
+            passwordEncoder.matches("dummy-password-for-timing-equalization",
+                    "{bcrypt}$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy");
             auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested for unknown email");
         }
     }

@@ -34,6 +34,7 @@ class SessionControllerTest {
     @Mock private CurrentUserProvider currentUserProvider;
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private OAuth2AuthorizationService authorizationService;
+    @Mock private com.marketplace.shared.api.JwtRevocationPort jwtRevocationPort;
     @Mock private Authentication auth;
 
     private SessionController sessionController;
@@ -41,7 +42,7 @@ class SessionControllerTest {
     @BeforeEach
     void setUp() {
         sessionController = new SessionController(auditService, userService,
-                currentUserProvider, jdbcTemplate, authorizationService);
+                currentUserProvider, jdbcTemplate, authorizationService, jwtRevocationPort);
     }
 
     @Test

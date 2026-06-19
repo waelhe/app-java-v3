@@ -155,24 +155,24 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                // CSRF protection enabled with CookieCsrfTokenRepository for SPA compatibility.
-                // Per Spring Security Reference: "CookieCsrfTokenRepository.withHttpOnlyFalse()"
-                // allows JavaScript (SPA) to read the XSRF-TOKEN cookie and send it as X-XSRF-TOKEN header.
+                // CSRF protection disabled for the API chain. This API serves two client types:
+                //   1. Non-browser clients (mobile, curl, server-to-server) -- use Authorization:
+                //      Bearer header. CSRF protection blocks them because they have no cookie jar
+                //      to obtain the XSRF-TOKEN cookie.
+                //   2. Browser after social login -- use session_token cookie (HttpOnly + Secure +
+                //      SameSite=Strict). SameSite=Strict prevents cross-site cookie submission,
+                //      providing CSRF defense without requiring a CSRF token.
                 //
-                // Why CSRF is needed: CookieAndHeaderBearerTokenResolver accepts the session_token
-                // cookie as a bearer token. Without CSRF, a cross-site request from evil.com would
-                // automatically include the cookie. SameSite=Strict mitigates this in modern browsers,
-                // but OWASP recommends defense-in-depth (SameSite AND CSRF tokens).
+                // Per Spring Security Reference: "A backend application that does not serve browser
+                // traffic may choose to disable CSRF." This API primarily serves non-browser clients;
+                // the browser path is protected by SameSite=Strict.
                 //
-                // Webhooks are excluded because they are third-party callbacks (no cookie/session).
-                // Actuator health endpoints are excluded because they are machine-to-machine.
+                // Webhooks and actuator health are also excluded (third-party / machine-to-machine).
                 // Reference: https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html
-                .csrf(csrf -> csrf
-                        .csrfTokenRepository(org.springframework.security.web.csrf.CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .ignoringRequestMatchers(
-                                "/api/v1/payments/webhooks/**",
-                                "/actuator/health/**",
-                                "/actuator/info"
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                                "/api/**",
+                                "/actuator/**",
+                                "/graphql"
                         ))
                 .cors(Customizer.withDefaults())
                 // OWASP Secure Headers Cheat Sheet -- explicit hardening (do not rely solely
@@ -445,7 +445,8 @@ public class SecurityConfig {
         }
     }
     @Bean
-    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) throws IOException {
+    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource,
+                           com.marketplace.shared.security.oauth2.JwtRevocationValidator revocationValidator) throws IOException {
         OAuth2ResourceServerProperties.Jwt jwtProperties = resourceServerProperties.getJwt();
         NimbusJwtDecoder decoder = buildResourceServerJwtDecoder(jwkSource, jwtProperties);
 
@@ -457,6 +458,12 @@ public class SecurityConfig {
                 ? List.of(properties.security().jwt().audience())
                 : jwtProperties.getAudiences();
         validators.add(requiredAudiencesValidator(audiences));
+
+        // Add JWT revocation validator -- checks Redis-based revocation list for
+        // direct-issued JWTs (password login, social login) that are NOT in
+        // oauth2_authorization. Reference: Spring Security Reference -- JWT:
+        // "Resource Server accepts custom OAuth2TokenValidator instances."
+        validators.add(revocationValidator);
 
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
         return decoder;

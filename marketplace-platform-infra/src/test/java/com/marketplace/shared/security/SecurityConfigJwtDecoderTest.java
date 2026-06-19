@@ -30,6 +30,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.any;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -45,7 +49,7 @@ class SecurityConfigJwtDecoderTest {
     void setUp() throws Exception {
         rsaKey = generateRsaKey();
         JWKSource<SecurityContext> jwkSource = new ImmutableJWKSet<>(new JWKSet(rsaKey));
-        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties(null, List.of())).jwtDecoder(jwkSource);
+        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties(null, List.of())).jwtDecoder(jwkSource, revocationValidator());
     }
 
     @Test
@@ -75,7 +79,7 @@ class SecurityConfigJwtDecoderTest {
         );
         resourceServerProperties.getJwt().setPublicKeyLocation(publicKeyResource());
         jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties).jwtDecoder(
-                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())));
+                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())), revocationValidator());
         String token = signedJwt("https://boot-issuer.marketplace.test", List.of("marketplace-api", "mobile-api"));
 
         var jwt = jwtDecoder.decode(token);
@@ -92,7 +96,7 @@ class SecurityConfigJwtDecoderTest {
         );
         resourceServerProperties.getJwt().setPublicKeyLocation(publicKeyResource());
         jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties).jwtDecoder(
-                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())));
+                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())), revocationValidator());
         String token = signedJwt(ISSUER, "marketplace-api");
 
         var jwt = jwtDecoder.decode(token);
@@ -172,5 +176,12 @@ class SecurityConfigJwtDecoderTest {
                         new MarketplaceProperties.Security.AuthServer(ISSUER)
                 )
         );
+    }
+
+
+    private com.marketplace.shared.security.oauth2.JwtRevocationValidator revocationValidator() {
+        com.marketplace.shared.security.oauth2.JwtRevocationValidator mock = mock(com.marketplace.shared.security.oauth2.JwtRevocationValidator.class);
+        lenient().when(mock.validate(any())).thenReturn(OAuth2TokenValidatorResult.success());
+        return mock;
     }
 }

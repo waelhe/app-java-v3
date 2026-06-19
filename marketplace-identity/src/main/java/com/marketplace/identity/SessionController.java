@@ -48,17 +48,20 @@ public class SessionController {
     private final CurrentUserProvider currentUserProvider;
     private final JdbcTemplate jdbcTemplate;
     private final OAuth2AuthorizationService authorizationService;
+    private final com.marketplace.shared.api.JwtRevocationPort jwtRevocationPort;
 
     public SessionController(AuthAuditService auditService,
                               UserService userService,
                               CurrentUserProvider currentUserProvider,
                               JdbcTemplate jdbcTemplate,
-                              OAuth2AuthorizationService authorizationService) {
+                              OAuth2AuthorizationService authorizationService,
+                              com.marketplace.shared.api.JwtRevocationPort jwtRevocationPort) {
         this.auditService = auditService;
         this.userService = userService;
         this.currentUserProvider = currentUserProvider;
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
+        this.jwtRevocationPort = jwtRevocationPort;
     }
 
     /**
@@ -91,10 +94,26 @@ public class SessionController {
                     authorizationService.remove(authorization);
                     revoked++;
                 }
-            } catch (Exception e) {
-                // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
+            } catch (org.springframework.dao.DataAccessException e) {
+                // Catch only DataAccessException (DB errors -- connection failure, constraint
+                // violation, etc.). Programming errors (NPE, ClassCastException) propagate
+                // so they're visible in logs and monitoring, not masked as "failed to revoke".
+                // Reference: Spring Framework -- DataAccessException extends NestedRuntimeException;
+                // it is the base class for all data-access exceptions in Spring.
                 log.warn("Failed to revoke authorization id={} for principal={}",
                         authId, principalName, e);
+            }
+        }
+
+        // Also revoke the current direct-issued JWT (password login / social login).
+        // These JWTs are NOT in oauth2_authorization -- they need a Redis-based
+        // revocation list checked by JwtRevocationValidator on every request.
+        if (auth instanceof org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwtAuth) {
+            String jti = jwtAuth.getToken().getId();
+            java.time.Instant expiresAt = jwtAuth.getToken().getExpiresAt();
+            if (jti != null && expiresAt != null) {
+                jwtRevocationPort.revoke(jti, expiresAt);
+                revoked++;
             }
         }
 
