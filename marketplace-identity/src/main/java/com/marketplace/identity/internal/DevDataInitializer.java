@@ -143,14 +143,14 @@ public class DevDataInitializer {
                                    String clientSecret,
                                    String redirectUri,
                                    String postLogoutUri) {
-        try {
-            if (clientRepository.findByClientId(CLIENT_ID) != null) {
-                log.info("OAuth2 client '{}' already exists — skipping seed.", CLIENT_ID);
-                return;
-            }
-        } catch (Exception e) {
-            // Likely first run — client doesn't exist yet. Pass 'e' for stack trace.
-            log.debug("Client lookup failed (likely first run)", e);
+        // findByClientId returns null for missing clients — it does NOT throw.
+        // No try/catch needed. If the DB is down, the exception propagates so the
+        // operator sees the real error at startup, not a misleading "likely first run".
+        // Reference: Spring Authorization Server Javadoc — RegisteredClientRepository.findByClientId
+        // returns null if the client is not found.
+        if (clientRepository.findByClientId(CLIENT_ID) != null) {
+            log.info("OAuth2 client '{}' already exists — skipping seed.", CLIENT_ID);
+            return;
         }
 
         RegisteredClient client = RegisteredClient.withId(SEEDED_CLIENT_ID.toString())

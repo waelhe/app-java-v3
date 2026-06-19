@@ -122,6 +122,13 @@ spring:
   cache:
     type: ${CACHE_TYPE:redis}
     cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
+    # TTL for all Redis cache entries — prevents stale data from persisting indefinitely
+    # if a @CacheEvict is missed (e.g. direct DB update by a DBA).
+    # Reference: Spring Boot Reference — IO Caching / Redis:
+    # "spring.cache.redis.time-to-live" sets the default time-to-live for cache entries.
+    # https://docs.spring.io/spring-boot/reference/io/caching.html#io.caching.provider.redis
+    redis:
+      time-to-live: 30m
   quartz:
     job-store-type: jdbc
     jdbc:

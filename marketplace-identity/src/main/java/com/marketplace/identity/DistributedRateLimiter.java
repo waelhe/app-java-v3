@@ -97,10 +97,18 @@ public class DistributedRateLimiter {
                 return true;
             }
             return current <= authLimit;
-        } catch (Exception e) {
-            // Fail open on Redis errors — never block authentication on infrastructure failure.
-            // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
-            log.warn("Rate limiter error for key={} — failing open", bucketKey, e);
+        } catch (org.springframework.data.redis.RedisConnectionFailureException
+                | org.springframework.data.redis.RedisSystemException e) {
+            // Fail open ONLY on Redis infrastructure errors (connection refused, timeout,
+            // Redis system error) — never block legitimate users when Redis is temporarily
+            // unavailable. Other RuntimeExceptions (ClassCastException, NPE, etc.) propagate
+            // to fail closed per OWASP "Fail Securely" principle.
+            // Reference: OWASP Secure Coding Practices — "Fail Securely: handle exceptions
+            // in a way that an attacker can't exploit."
+            // Redis exception hierarchy:
+            //   RedisConnectionFailureException extends DataAccessResourceFailureException
+            //   RedisSystemException extends UncategorizedDataAccessException
+            log.warn("Rate limiter Redis error for key={} — failing open", bucketKey, e);
             return true;
         }
     }

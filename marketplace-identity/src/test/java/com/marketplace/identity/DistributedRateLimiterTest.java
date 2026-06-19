@@ -79,11 +79,37 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    void tryAcquire_failsOpenOnRedisException() {
+    @SuppressWarnings("unchecked")
+    void tryAcquire_failsOpenOnRedisConnectionFailure() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
-                .thenThrow(new RuntimeException("Redis connection refused"));
+                .thenThrow(new org.springframework.data.redis.RedisConnectionFailureException(
+                        "Redis connection refused"));
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
-                "Must fail open when Redis throws — never block auth on infra failure");
+                "Must fail open on RedisConnectionFailureException — never block auth on infra failure");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void tryAcquire_failsOpenOnRedisSystemException() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenThrow(new org.springframework.data.redis.RedisSystemException(
+                        "Redis system error", new RuntimeException()));
+
+        assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
+                "Must fail open on RedisSystemException — never block auth on infra failure");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void tryAcquire_propagatesNonRedisExceptions() {
+        // Non-Redis exceptions (e.g. ClassCastException, NPE) must propagate — fail closed
+        // per OWASP "Fail Securely" principle.
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenThrow(new ClassCastException("Unexpected type mismatch"));
+
+        assertThrows(ClassCastException.class,
+                () -> rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
+                "Non-Redis exceptions must propagate (fail closed)");
     }
 }

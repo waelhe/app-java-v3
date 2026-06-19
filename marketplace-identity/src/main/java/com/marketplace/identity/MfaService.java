@@ -144,18 +144,20 @@ public class MfaService {
     /**
      * Verifies a TOTP code for login (called during authentication).
      *
+     * <p>Uses {@code @Transactional(readOnly = true)} — the method only reads from JPA
+     * (mfaSecretRepository.findByUserId, userRepository.findById) and writes to Redis
+     * (setIfAbsent). Redis operations are NOT transactional with JPA, so a read-write
+     * JPA transaction adds overhead (connection acquisition, commit) with no benefit.
+     *
      * <p><b>Replay protection</b> (RFC 6238 §5.2 step 4): "The verifier MUST NOT
      * accept the second attempt of the OTP after the successful validation has
      * been issued." After a successful validation, the matched timestep is
      * atomically claimed in Redis (SETNX with TTL). Any subsequent attempt
      * using the same timestep is rejected.
      *
-     * <p>The TTL is 90 seconds (3 timesteps × 30s) — covering the full ±1
-     * validation window. After that, the timestep can never match again
-     * (it's outside the window), so the marker is safe to expire.
-     *
      * @return true if the code is valid AND has not been replayed
      */
+    @Transactional(readOnly = true)
     public boolean verifyTotp(UUID userId, String code) {
         Optional<String> secretOpt = mfaSecretRepository.findByUserId(userId)
                 .filter(MfaSecret::isEnabled)
