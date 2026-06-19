@@ -50,6 +50,8 @@ class TwoStepLoginServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
+    @Mock private org.springframework.security.oauth2.jwt.JwtEncoder jwtEncoder;
+    @Mock private com.marketplace.shared.config.MarketplaceProperties properties;
 
     private TwoStepLoginService loginService;
 
@@ -62,9 +64,34 @@ class TwoStepLoginServiceTest {
         // Construct manually for clarity.
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
+        // Stub MarketplaceProperties for JWT issuance.
+        com.marketplace.shared.config.MarketplaceProperties.Security.AuthServer authServer =
+                mock(com.marketplace.shared.config.MarketplaceProperties.Security.AuthServer.class);
+        com.marketplace.shared.config.MarketplaceProperties.Security security =
+                mock(com.marketplace.shared.config.MarketplaceProperties.Security.class);
+        com.marketplace.shared.config.MarketplaceProperties.Security.Jwt jwt =
+                mock(com.marketplace.shared.config.MarketplaceProperties.Security.Jwt.class);
+        lenient().when(properties.security()).thenReturn(security);
+        lenient().when(security.authServer()).thenReturn(authServer);
+        lenient().when(authServer.issuer()).thenReturn("http://localhost:8080");
+        lenient().when(security.jwt()).thenReturn(jwt);
+        lenient().when(jwt.audience()).thenReturn("marketplace-api");
+
+        // Stub JwtEncoder to return a dummy JWT.
+        org.springframework.security.oauth2.jwt.Jwt mockJwt = org.springframework.security.oauth2.jwt.Jwt
+                .withTokenValue("mock-jwt-token")
+                .header("alg", "RS256")
+                .claim("sub", "ignored")
+                .issuedAt(java.time.Instant.now())
+                .expiresAt(java.time.Instant.now().plusSeconds(3600))
+                .issuer("http://localhost:8080")
+                .audience(java.util.List.of("marketplace-api"))
+                .build();
+        lenient().when(jwtEncoder.encode(any())).thenReturn(mockJwt);
+
         loginService = new TwoStepLoginService(
                 userDetailsManager, passwordEncoder, bruteForceService,
-                mfaService, auditService, userRepository, redisTemplate);
+                mfaService, auditService, userRepository, redisTemplate, jwtEncoder, properties);
 
         testUser = User.create("sub-1", "user@test.com", "User", UserRole.CONSUMER);
         testUserDetails = org.springframework.security.core.userdetails.User.withUsername("user@test.com")

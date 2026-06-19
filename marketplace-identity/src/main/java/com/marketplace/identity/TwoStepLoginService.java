@@ -1,16 +1,23 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.config.MarketplaceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -77,6 +84,8 @@ public class TwoStepLoginService {
     private final AuthAuditService auditService;
     private final UserRepository userRepository;
     private final StringRedisTemplate redisTemplate;
+    private final JwtEncoder jwtEncoder;
+    private final MarketplaceProperties properties;
 
     @Autowired
     public TwoStepLoginService(UserDetailsManager userDetailsManager,
@@ -85,7 +94,9 @@ public class TwoStepLoginService {
                                 MfaService mfaService,
                                 AuthAuditService auditService,
                                 UserRepository userRepository,
-                                StringRedisTemplate redisTemplate) {
+                                StringRedisTemplate redisTemplate,
+                                JwtEncoder jwtEncoder,
+                                MarketplaceProperties properties) {
         this.userDetailsManager = userDetailsManager;
         this.passwordEncoder = passwordEncoder;
         this.bruteForceService = bruteForceService;
@@ -93,6 +104,8 @@ public class TwoStepLoginService {
         this.auditService = auditService;
         this.userRepository = userRepository;
         this.redisTemplate = redisTemplate;
+        this.jwtEncoder = jwtEncoder;
+        this.properties = properties;
     }
 
     /**
@@ -151,7 +164,12 @@ public class TwoStepLoginService {
             return new LoginResult("MFA_REQUIRED", mfaToken, user.getId(), null);
         }
 
-        return new LoginResult("SUCCESS", null, user.getId(), null);
+        // No MFA — issue JWT directly. OAuth 2.1 (RFC 9700) removes the password grant;
+        // issuing the JWT directly here is the recommended pattern. The JWT includes
+        // the same claims as OAuth2LoginSuccessHandler (sub, userId, email, roles, aud, iss).
+        // Reference: https://datatracker.ietf.org/doc/html/rfc9700 (OAuth 2.1 removes password grant)
+        String jwt = issueJwt(user);
+        return new LoginResult("SUCCESS", null, user.getId(), jwt);
     }
 
     /**
@@ -182,7 +200,7 @@ public class TwoStepLoginService {
                 .orElseThrow(() -> new BadRequestException("User not found"));
         auditService.log(user.getEmail(), AuthEventType.LOGIN_SUCCESS, "MFA verified (step 2)");
 
-        return new LoginResult("SUCCESS", null, user.getId(), null);
+        return new LoginResult("SUCCESS", null, user.getId(), issueJwt(user));
     }
 
     /**
@@ -208,7 +226,7 @@ public class TwoStepLoginService {
                 .orElseThrow(() -> new BadRequestException("User not found"));
         auditService.log(user.getEmail(), AuthEventType.RECOVERY_CODE_USED, "Recovery code used (step 2)");
 
-        return new LoginResult("SUCCESS", null, user.getId(), null);
+        return new LoginResult("SUCCESS", null, user.getId(), issueJwt(user));
     }
 
     /**
@@ -255,6 +273,40 @@ public class TwoStepLoginService {
     /** Builds the Redis key for a pending MFA token. */
     private static String redisKey(String mfaToken) {
         return MFA_TOKEN_KEY_PREFIX + mfaToken;
+    }
+
+    /**
+     * Issues a JWT for the given user — same claim structure as
+     * {@link com.marketplace.shared.security.oauth2.OAuth2LoginSuccessHandler}:
+     * {@code sub} = userId, {@code userId} claim, {@code email}, {@code roles},
+     * {@code aud} (RFC 9068 §2.2), {@code iss}, {@code iat}, {@code exp}.
+     *
+     * <p>OAuth 2.1 (RFC 9700) removes the password grant type. Instead of telling the
+     * client to exchange credentials via {@code POST /oauth2/token}, we issue the JWT
+     * directly after successful credential verification. This avoids the need for a
+     * PASSWORD grant client and an {@code OAuth2TokenCustomizer}.
+     *
+     * <p>Reference: RFC 9700 (OAuth 2.1) — password grant removed;
+     * RFC 9068 §2.2 — JWT aud REQUIRED.
+     */
+    private String issueJwt(User user) {
+        String issuer = properties.security().authServer().issuer();
+        String audience = properties.security().jwt().audience();
+        List<String> roles = List.of(user.getRole().name());
+
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .subject(user.getId().toString())
+                .claim("userId", user.getId().toString())
+                .claim("email", user.getEmail())
+                .claim("name", user.getDisplayName())
+                .claim("roles", roles)
+                .audience(List.of(audience))
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
+                .issuer(issuer)
+                .build();
+
+        return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 
     public record LoginResult(String status, String mfaToken, UUID userId, String jwt) {

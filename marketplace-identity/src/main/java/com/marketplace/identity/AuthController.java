@@ -136,7 +136,10 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",
                 "userId", result.userId().toString(),
-                "message", "Login successful. Exchange credentials via POST /oauth2/token for JWT."
+                "accessToken", result.jwt(),
+                "tokenType", "Bearer",
+                "expiresIn", 3600,
+                "message", "Login successful. Use the accessToken as Bearer token in Authorization header."
         ));
     }
 
@@ -156,7 +159,10 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",
                 "userId", result.userId().toString(),
-                "message", "MFA verified. Exchange credentials via POST /oauth2/token for JWT."
+                "accessToken", result.jwt(),
+                "tokenType", "Bearer",
+                "expiresIn", 3600,
+                "message", "MFA verified. Use the accessToken as Bearer token in Authorization header."
         ));
     }
 
@@ -174,7 +180,10 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",
                 "userId", result.userId().toString(),
-                "message", "Recovery code verified. Exchange credentials via POST /oauth2/token for JWT."
+                "accessToken", result.jwt(),
+                "tokenType", "Bearer",
+                "expiresIn", 3600,
+                "message", "Recovery code verified. Use the accessToken as Bearer token in Authorization header."
         ));
     }
 
