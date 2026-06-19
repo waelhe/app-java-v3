@@ -15,8 +15,6 @@ import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -72,6 +70,33 @@ public class AvailabilityService implements AvailabilityPort {
         }
     }
 
+    /**
+     * Generates availability slots for a given date based on configured rules.
+     *
+     * <p><b>Exception handling policy (Spring Modulith event publication log)</b>:
+     * The prior implementation used {@code catch (Exception e)} which swallowed
+     * <em>all</em> exceptions -- including programming errors (NPE, ClassCastException)
+     * and data-access failures. Per Spring Modulith Reference ("The Event Publication
+     * Registry"):
+     * <blockquote>
+     * "Each transactional event listener is wrapped into an aspect that marks that log
+     * entry as completed if the execution of the listener succeeds. In case the listener
+     * fails, the log entry stays untouched so that retry mechanisms can be deployed."
+     * </blockquote>
+     * A {@code catch (Exception)} that returns normally makes the aspect see "success"
+     * and marks the log entry COMPLETED -- silently losing the event and defeating
+     * the retry mechanism.
+     *
+     * <p><b>Fix</b>: narrow the catch to {@link org.springframework.dao.DataAccessException}
+     * only. This preserves the "best-effort per rule" behavior (a single bad rule does
+     * not abort the whole batch) while letting programming errors propagate to the
+     * event publication log for retry. DataAccessException is the Spring Data root
+     * exception for all data-access failures (constraint violations, deadlocks, etc.).
+     *
+     * <p>Reference:
+     * <a href="https://docs.spring.io/spring-modulith/reference/events.html">Spring Modulith Reference -- Event Publication Registry</a>
+     * <a href="https://docs.spring.io/spring-framework/reference/data-access/dao.html">Spring Framework Reference -- Data Access</a>
+     */
     private void generateSlotsForDate(LocalDate date) {
         List<ProviderAvailabilityRule> rules = ruleRepository.findByDayOfWeek(date.getDayOfWeek());
         if (rules.isEmpty()) {
@@ -87,8 +112,11 @@ public class AvailabilityService implements AvailabilityPort {
                     createSlot(rule.getProviderId(), startsAt, endsAt);
                     log.info("Generated slot for provider {}: {} - {}", rule.getProviderId(), startsAt, endsAt);
                 }
-            } catch (Exception e) {
-                log.error("Failed to generate slot from rule {}", rule.getId(), e);
+            } catch (org.springframework.dao.DataAccessException e) {
+                // Best-effort per rule: log data-access failures but continue the batch.
+                // Programming errors (NPE, etc.) MUST propagate to the event publication
+                // log so Spring Modulith can retry them.
+                log.error("Failed to generate slot from rule {} (data error)", rule.getId(), e);
             }
         }
     }
