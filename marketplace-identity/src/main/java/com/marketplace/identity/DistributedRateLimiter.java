@@ -99,7 +99,8 @@ public class DistributedRateLimiter {
             return current <= authLimit;
         } catch (Exception e) {
             // Fail open on Redis errors — never block authentication on infrastructure failure.
-            log.warn("Rate limiter error for key={}: {} — failing open", bucketKey, e.getMessage());
+            // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
+            log.warn("Rate limiter error for key={} — failing open", bucketKey, e);
             return true;
         }
     }

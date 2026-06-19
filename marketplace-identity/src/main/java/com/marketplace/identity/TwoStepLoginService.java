@@ -112,11 +112,17 @@ public class TwoStepLoginService {
         org.springframework.security.core.userdetails.UserDetails userDetails;
         try {
             userDetails = userDetailsManager.loadUserByUsername(username);
-        } catch (Exception e) {
+        } catch (org.springframework.security.core.userdetails.UsernameNotFoundException e) {
+            // Expected case — user does not exist. Record failed attempt and return
+            // generic "Invalid credentials" (do not leak whether the user exists).
             bruteForceService.recordFailedAttempt(username);
             auditService.log(username, AuthEventType.LOGIN_FAILURE, "User not found");
             throw new BadRequestException("Invalid credentials");
         }
+        // Note: DataAccessException (DB failure) is intentionally NOT caught here —
+        // it propagates so the caller knows login could not be completed, rather than
+        // silently treating a DB outage as "user not found" (which would both confuse
+        // legitimate users and mask infrastructure problems from monitoring).
 
         if (!userDetails.isEnabled()) {
             auditService.log(username, AuthEventType.LOGIN_FAILURE, "Account disabled");

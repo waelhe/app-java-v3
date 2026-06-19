@@ -92,8 +92,9 @@ public class SessionController {
                     revoked++;
                 }
             } catch (Exception e) {
-                log.warn("Failed to revoke authorization id={} for principal={}: {}",
-                        authId, principalName, e.getMessage());
+                // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
+                log.warn("Failed to revoke authorization id={} for principal={}",
+                        authId, principalName, e);
             }
         }
 

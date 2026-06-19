@@ -145,25 +145,35 @@ public final class TotpService {
      * @return 6-digit TOTP code
      */
     static String generateCode(String secret, long timeStep) {
+        // Decode Base64 secret — IllegalArgumentException on malformed input.
+        byte[] key;
         try {
-            byte[] key = Base64.getDecoder().decode(secret);
-            byte[] timeBytes = ByteBuffer.allocate(8).putLong(timeStep).array();
-
-            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-            mac.init(new SecretKeySpec(key, HMAC_ALGORITHM));
-            byte[] hash = mac.doFinal(timeBytes);
-
-            // Dynamic truncation (RFC 4226 §5.3)
-            int offset = hash[hash.length - 1] & 0xF;
-            int binary = ((hash[offset] & 0x7F) << 24)
-                    | ((hash[offset + 1] & 0xFF) << 16)
-                    | ((hash[offset + 2] & 0xFF) << 8)
-                    | (hash[offset + 3] & 0xFF);
-
-            int code = binary % (int) Math.pow(10, CODE_DIGITS);
-            return String.format("%0" + CODE_DIGITS + "d", code);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate TOTP code", e);
+            key = Base64.getDecoder().decode(secret);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Invalid Base64-encoded TOTP secret", e);
         }
+        byte[] timeBytes = ByteBuffer.allocate(8).putLong(timeStep).array();
+
+        // HMAC-SHA1 computation — NoSuchAlgorithmException/InvalidKeyException only
+        // happen if JCE is misconfigured (should never happen for HmacSHA1, which is
+        // a mandatory JCA algorithm per the JDK spec).
+        Mac mac;
+        try {
+            mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(new SecretKeySpec(key, HMAC_ALGORITHM));
+        } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
+            throw new IllegalStateException("JCE misconfiguration — HmacSHA1 unavailable", e);
+        }
+        byte[] hash = mac.doFinal(timeBytes);
+
+        // Dynamic truncation (RFC 4226 §5.3)
+        int offset = hash[hash.length - 1] & 0xF;
+        int binary = ((hash[offset] & 0x7F) << 24)
+                | ((hash[offset + 1] & 0xFF) << 16)
+                | ((hash[offset + 2] & 0xFF) << 8)
+                | (hash[offset + 3] & 0xFF);
+
+        int code = binary % (int) Math.pow(10, CODE_DIGITS);
+        return String.format("%0" + CODE_DIGITS + "d", code);
     }
 }

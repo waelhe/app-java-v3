@@ -89,7 +89,8 @@ public class NotificationService {
                         "email/verify-email",
                         Map.of("name", event.displayName(), "verificationLink", verificationLink));
             } catch (Exception e) {
-                log.error("Failed to send verification email to {}: {}", event.email(), e.getMessage());
+                // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
+                log.error("Failed to send verification email to {}", event.email(), e);
             }
         });
     }
@@ -101,7 +102,7 @@ public class NotificationService {
                         "email/email-verified",
                         Map.of("name", event.email()));
             } catch (Exception e) {
-                log.error("Failed to send verified email to {}: {}", event.email(), e.getMessage());
+                log.error("Failed to send verified email to {}", event.email(), e);
             }
         });
     }
@@ -114,7 +115,7 @@ public class NotificationService {
                         "email/password-reset",
                         Map.of("name", event.email(), "resetLink", resetLink, "expirationMinutes", 30));
             } catch (Exception e) {
-                log.error("Failed to send password reset email to {}: {}", event.email(), e.getMessage());
+                log.error("Failed to send password reset email to {}", event.email(), e);
             }
         });
     }
@@ -125,7 +126,7 @@ public class NotificationService {
                 try {
                     es.send(user.email(), subject, template, variables);
                 } catch (Exception e) {
-                    log.error("Failed to send email to user {}: {}", userId, e.getMessage());
+                    log.error("Failed to send email to user {}", userId, e);
                 }
             })
         );

@@ -6,8 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
@@ -18,6 +16,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -28,7 +27,6 @@ import static org.mockito.Mockito.*;
  * (the documented revocation path) instead of raw JDBC DELETE.
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class SessionControllerTest {
 
     @Mock private AuthAuditService auditService;
@@ -57,14 +55,14 @@ class SessionControllerTest {
                 eq(String.class), eq("user@test.com")))
                 .thenReturn(List.of("auth-1", "auth-2", "auth-3"));
 
-        OAuth2Authorization mockAuth = mock(OAuth2Authorization.class);
-        when(authorizationService.findById(anyString())).thenReturn(mockAuth);
+        OAuth2Authorization mockAuthz = mock(OAuth2Authorization.class);
+        when(authorizationService.findById(anyString())).thenReturn(mockAuthz);
 
         sessionController.revokeAllSessions(auth);
 
         // Verify each authorization is removed via the service (not raw JDBC DELETE).
         verify(authorizationService, times(3)).findById(anyString());
-        verify(authorizationService, times(3)).remove(mockAuth);
+        verify(authorizationService, times(3)).remove(mockAuthz);
         // Verify raw JDBC DELETE is NOT used.
         verify(jdbcTemplate, never()).update(eq("DELETE FROM oauth2_authorization WHERE principal_name = ?"), eq("user@test.com"));
         verify(auditService).log(eq("user@test.com"), eq(AuthEventType.SESSION_REVOKED), any());
@@ -102,9 +100,5 @@ class SessionControllerTest {
 
         assertNotNull(result);
         assertEquals(2L, result.getBody().get("activeSessions"));
-    }
-
-    private static String anyString() {
-        return org.mockito.ArgumentMatchers.anyString();
     }
 }

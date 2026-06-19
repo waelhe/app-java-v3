@@ -149,7 +149,8 @@ public class DevDataInitializer {
                 return;
             }
         } catch (Exception e) {
-            log.debug("Client lookup failed (likely first run): {}", e.getMessage());
+            // Likely first run — client doesn't exist yet. Pass 'e' for stack trace.
+            log.debug("Client lookup failed (likely first run)", e);
         }
 
         RegisteredClient client = RegisteredClient.withId(SEEDED_CLIENT_ID.toString())

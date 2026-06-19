@@ -124,13 +124,19 @@ public class BruteForceProtectionService {
 
     @Transactional(readOnly = true)
     public boolean isLocked(String username) {
+        // Catch only EmptyResultDataAccessException (user not found) — this is the only
+        // expected case where queryForObject throws. Other exceptions (DB connection
+        // failure, etc.) MUST propagate so the caller knows the lockout status is
+        // indeterminate — never silently return "not locked" which would be a security
+        // bypass (attacker exploits DB outage to bypass lockout).
         try {
             Instant lockedUntil = jdbcTemplate.queryForObject(
                     "SELECT locked_until FROM auth_users WHERE username = ?",
                     Instant.class, username
             );
             return lockedUntil != null && Instant.now().isBefore(lockedUntil);
-        } catch (Exception e) {
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            // User does not exist — not locked (nothing to lock).
             return false;
         }
     }
