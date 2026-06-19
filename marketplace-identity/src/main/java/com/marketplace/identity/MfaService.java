@@ -131,14 +131,28 @@ public class MfaService {
 
     /**
      * Verifies a recovery code and marks it as used.
+     *
+     * <p><b>Atomicity</b>: the claim is performed via
+     * {@link RecoveryCodeRepository#claimIfUnused(UUID)}, a single conditional
+     * UPDATE that returns 1 only if the row was previously unused. This closes
+     * the race where two concurrent requests with the same valid code both
+     * pass the in-memory check and both consume the code (single-use violation).
+     *
+     * <p><b>References</b>
+     * <ul>
+     *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP MFA Cheat Sheet — recovery codes must be single-use</a></li>
+     *   <li><a href="https://www.postgresql.org/docs/current/sql-update.html">PostgreSQL UPDATE — row-level locking</a></li>
+     * </ul>
+     *
+     * @return true if the code was valid and successfully claimed (single-use enforced)
      */
     public boolean verifyRecoveryCode(UUID userId, String code) {
         List<RecoveryCode> codes = recoveryCodeRepository.findByUserIdAndUsedFalse(userId);
         for (RecoveryCode rc : codes) {
             if (passwordEncoder.matches(code, rc.getCodeHash())) {
-                rc.markUsed();
-                recoveryCodeRepository.save(rc);
-                return true;
+                // Atomic single-use claim — returns 0 if a concurrent request already claimed it.
+                int rowsAffected = recoveryCodeRepository.claimIfUnused(rc.getId());
+                return rowsAffected == 1;
             }
         }
         return false;

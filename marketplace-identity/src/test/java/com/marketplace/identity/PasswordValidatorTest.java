@@ -48,4 +48,23 @@ class PasswordValidatorTest {
     void validate_rejectsNullPassword() {
         assertThrows(BadRequestException.class, () -> PasswordValidator.validate(null));
     }
+
+    @Test
+    void validate_rejectsTooLongPassword() {
+        // 65 chars — exceeds OWASP/NIST max of 64.
+        String tooLong = "Aa1" + "x".repeat(62);
+        assertEquals(65, tooLong.length());
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> PasswordValidator.validate(tooLong));
+        assertTrue(ex.getMessage().contains("at most 64 characters"),
+                "Must reject passwords > 64 chars (OWASP / NIST SP 800-63B): " + ex.getMessage());
+    }
+
+    @Test
+    void validate_acceptsExactly64CharPassword() {
+        // Exactly 64 chars — boundary check (must pass).
+        String exact = "Aa1" + "x".repeat(61);
+        assertEquals(64, exact.length());
+        assertDoesNotThrow(() -> PasswordValidator.validate(exact));
+    }
 }

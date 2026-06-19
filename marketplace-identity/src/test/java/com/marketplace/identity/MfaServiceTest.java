@@ -132,4 +132,41 @@ class MfaServiceTest {
 
         assertFalse(mfaService.verifyRecoveryCode(userId, "CODE1234"));
     }
+
+    @Test
+    void verifyRecoveryCode_returnsTrueWhenAtomicClaimSucceeds() {
+        UUID userId = UUID.randomUUID();
+        UUID codeId = UUID.randomUUID();
+        RecoveryCode rc = mock(RecoveryCode.class);
+        when(rc.getId()).thenReturn(codeId);
+        when(rc.getCodeHash()).thenReturn("hashed-code");
+        when(recoveryCodeRepository.findByUserIdAndUsedFalse(userId)).thenReturn(List.of(rc));
+        when(passwordEncoder.matches("PLAIN", "hashed-code")).thenReturn(true);
+        // Atomic claim returns 1 row updated — single-use successfully enforced.
+        when(recoveryCodeRepository.claimIfUnused(codeId)).thenReturn(1);
+
+        assertTrue(mfaService.verifyRecoveryCode(userId, "PLAIN"));
+        verify(recoveryCodeRepository).claimIfUnused(codeId);
+        // The old markUsed() + save() pattern must NOT be called.
+        verify(rc, never()).markUsed();
+        verify(recoveryCodeRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyRecoveryCode_returnsFalseWhenConcurrentClaimWins() {
+        // Simulate a concurrent request that already claimed the same code.
+        UUID userId = UUID.randomUUID();
+        UUID codeId = UUID.randomUUID();
+        RecoveryCode rc = mock(RecoveryCode.class);
+        when(rc.getId()).thenReturn(codeId);
+        when(rc.getCodeHash()).thenReturn("hashed-code");
+        when(recoveryCodeRepository.findByUserIdAndUsedFalse(userId)).thenReturn(List.of(rc));
+        when(passwordEncoder.matches("PLAIN", "hashed-code")).thenReturn(true);
+        // Atomic claim returns 0 rows — another concurrent request already claimed it.
+        when(recoveryCodeRepository.claimIfUnused(codeId)).thenReturn(0);
+
+        assertFalse(mfaService.verifyRecoveryCode(userId, "PLAIN"),
+                "If a concurrent request already claimed the code, this call must fail (single-use)");
+        verify(recoveryCodeRepository).claimIfUnused(codeId);
+    }
 }
