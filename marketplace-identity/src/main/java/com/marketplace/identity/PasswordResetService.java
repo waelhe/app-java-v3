@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Handles password reset flow.
@@ -51,16 +52,36 @@ public class PasswordResetService {
     @Transactional
     public void initiateReset(String email) {
         Optional<User> userOpt = userRepository.findByEmail(email);
-        if (userOpt.isEmpty()) {
-            return; // Silent return for security (OWASP)
+
+        // OWASP Forgot Password Cheat Sheet:
+        // "Return a consistent message for both existent and non-existent accounts.
+        //  Ensure that the time taken for the user response message is uniform."
+        //
+        // To achieve uniform timing, BOTH paths perform the same DB operations:
+        //   1. tokenService.generateToken (DB INSERT)
+        //   2. auditService.log (DB INSERT, REQUIRES_NEW)
+        // The only difference is: existing users get an event published (email sent);
+        // non-existent users do not (no email). The event publish is ~1ms — negligible
+        // compared to the ~10ms DB writes that both paths perform.
+        //
+        // For non-existent users, a token is generated with a random UUID — the token
+        // will never be validated (resetPassword does findById(userId) which returns
+        // empty for a non-existent user → ResourceNotFoundException). The token expires
+        // in 30 minutes and is harmless.
+        //
+        // Reference: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            VerificationToken token = tokenService.generateToken(user.getId(), VerificationTokenType.PASSWORD_RESET);
+            auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
+            eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
+        } else {
+            // Non-existent user — perform the same DB operations to equalize timing.
+            // Use a random UUID so the token references a non-existent user (can never be used).
+            VerificationToken dummyToken = tokenService.generateToken(UUID.randomUUID(), VerificationTokenType.PASSWORD_RESET);
+            auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested for unknown email");
+            // Do NOT publish event — no email sent for non-existent users.
         }
-
-        User user = userOpt.get();
-        VerificationToken token = tokenService.generateToken(user.getId(), VerificationTokenType.PASSWORD_RESET);
-
-        auditService.log(email, AuthEventType.PASSWORD_RESET_REQUESTED, "Password reset requested");
-
-        eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getEmail(), token.getToken()));
     }
 
     @Transactional

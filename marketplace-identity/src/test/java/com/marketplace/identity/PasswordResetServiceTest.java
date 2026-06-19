@@ -35,10 +35,18 @@ class PasswordResetServiceTest {
     @InjectMocks private PasswordResetService passwordResetService;
 
     @Test
-    void initiateReset_silentWhenEmailNotFound() {
+    void initiateReset_performsSameWorkWhenEmailNotFound() {
+        // OWASP: "Ensure that the time taken for the user response message is uniform."
+        // For non-existent users, the service should still generate a token and audit log
+        // (to equalize timing) but NOT publish an event (no email sent).
         when(userRepository.findByEmail("unknown@test.com")).thenReturn(Optional.empty());
         assertDoesNotThrow(() -> passwordResetService.initiateReset("unknown@test.com"));
-        verify(tokenService, never()).generateToken(any(), any());
+        // Token IS generated (with a random UUID) — same DB work as the existing-user path.
+        verify(tokenService).generateToken(any(UUID.class), eq(VerificationTokenType.PASSWORD_RESET));
+        // Audit log IS written — same DB work.
+        verify(auditService).log(eq("unknown@test.com"), eq(AuthEventType.PASSWORD_RESET_REQUESTED), anyString());
+        // Event is NOT published — no email sent for non-existent users.
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

@@ -11,6 +11,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -18,11 +20,13 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -70,15 +74,21 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
     private final JwtEncoder jwtEncoder;
     private final MarketplaceProperties properties;
     private final UserLookupPort userLookupPort;
+    private final OAuth2AuthorizedClientRepository authorizedClientRepository;
+    private final RestClient restClient;
 
     public OAuth2LoginSuccessHandler(OAuth2UserProvisioningPort provisioningPort,
                                       JwtEncoder jwtEncoder,
                                       MarketplaceProperties properties,
-                                      UserLookupPort userLookupPort) {
+                                      UserLookupPort userLookupPort,
+                                      OAuth2AuthorizedClientRepository authorizedClientRepository,
+                                      RestClient.Builder restClientBuilder) {
         this.provisioningPort = provisioningPort;
         this.jwtEncoder = jwtEncoder;
         this.properties = properties;
         this.userLookupPort = userLookupPort;
+        this.authorizedClientRepository = authorizedClientRepository;
+        this.restClient = restClientBuilder.build();
     }
 
     @Override
@@ -99,11 +109,23 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             name = oauth2User.getAttribute("login");
         }
 
-        // OIDC Core §5.1: refuse to provision a user from an unverified email.
-        // Google returns `email_verified` (boolean); GitHub does not (treat as unverified
-        // unless the user has explicitly verified via /user/emails — left as a future enhancement).
+        // OIDC Core §5.1 + OWASP Account Provisioning: refuse to provision a user
+        // from an unverified email to prevent account pre-hijacking.
+        //
+        // Google returns `email_verified` (boolean) in the userinfo response.
+        // GitHub does NOT return `email_verified` — the claim is null. For GitHub,
+        // we call the /user/emails API (requires `user:email` scope, already configured)
+        // to check if the primary email is verified.
+        //
+        // Reference: OIDC Core §5.1 — email_verified claim;
+        // https://docs.github.com/en/rest/users/emails — "List email addresses for the
+        // authenticated user" returns [{email, primary, verified, visibility}].
         Boolean emailVerified = oauth2User.getAttribute("email_verified");
-        if (email != null && emailVerified != null && !emailVerified) {
+        if (emailVerified == null) {
+            // Provider doesn't return email_verified (GitHub) — verify via /user/emails API.
+            emailVerified = verifyEmailViaProviderApi(oauth2Token, request, email);
+        }
+        if (email != null && !emailVerified) {
             log.warn("OAuth2 login refused: provider={} email_verified=false", provider);
             // Throw OAuth2AuthenticationException (not BadRequestException) so Spring Security's
             // AuthenticationFailureHandler processes it correctly — redirects to failure URL
@@ -158,5 +180,80 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         response.addCookie(sessionCookie);
 
         response.sendRedirect(FRONTEND_REDIRECT_PATH);
+    }
+
+    /**
+     * Verifies the user's primary email via the provider's email API.
+     *
+     * <p>Used for providers that don't return {@code email_verified} in the userinfo
+     * response (e.g., GitHub). Calls {@code GET /user/emails} with the OAuth2 access
+     * token and checks if the primary email is verified.
+     *
+     * <p><b>Reference</b>: GitHub REST API — "List email addresses for the authenticated
+     * user" returns {@code [{email, primary, verified, visibility}]}. Requires
+     * {@code user:email} scope (already configured in application.yml).
+     * <a href="https://docs.github.com/en/rest/users/emails">GitHub Emails API</a>
+     *
+     * @param oauth2Token the OAuth2 authentication token
+     * @param request the HTTP request (needed to load the authorized client)
+     * @param email the email to verify
+     * @return true if the email is verified, false otherwise (fail-closed on API errors)
+     */
+    @SuppressWarnings("unchecked")
+    private boolean verifyEmailViaProviderApi(OAuth2AuthenticationToken oauth2Token,
+                                               HttpServletRequest request,
+                                               String email) {
+        try {
+            OAuth2AuthorizedClient authorizedClient = authorizedClientRepository.loadAuthorizedClient(
+                    oauth2Token.getAuthorizedClientRegistrationId(),
+                    oauth2Token,
+                    request);
+            if (authorizedClient == null || authorizedClient.getAccessToken() == null) {
+                log.warn("Cannot verify email: no OAuth2 access token for provider={}",
+                        oauth2Token.getAuthorizedClientRegistrationId());
+                return false; // fail-closed
+            }
+
+            String accessToken = authorizedClient.getAccessToken().getTokenValue();
+            String provider = oauth2Token.getAuthorizedClientRegistrationId();
+
+            // GitHub API: GET https://api.github.com/user/emails
+            // Returns: [{"email":"...","primary":true,"verified":true,"visibility":"public"}]
+            String apiUrl = "github".equals(provider)
+                    ? "https://api.github.com/user/emails"
+                    : null; // Future: add other providers here
+
+            if (apiUrl == null) {
+                log.warn("Email verification via API not supported for provider={}", provider);
+                return false; // fail-closed for unknown providers
+            }
+
+            List<Map<String, Object>> emails = restClient.get()
+                    .uri(apiUrl)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Accept", "application/vnd.github+json")
+                    .retrieve()
+                    .body(List.class);
+
+            if (emails == null) {
+                return false;
+            }
+
+            // Find the primary email and check if it's verified.
+            for (Map<String, Object> entry : emails) {
+                Boolean primary = (Boolean) entry.get("primary");
+                Boolean verified = (Boolean) entry.get("verified");
+                String entryEmail = (String) entry.get("email");
+                if (Boolean.TRUE.equals(primary) && entryEmail != null && entryEmail.equalsIgnoreCase(email)) {
+                    return Boolean.TRUE.equals(verified);
+                }
+            }
+
+            // Primary email not found or doesn't match — fail-closed.
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to verify email via provider API: {}", e.getMessage(), e);
+            return false; // fail-closed on API errors
+        }
     }
 }

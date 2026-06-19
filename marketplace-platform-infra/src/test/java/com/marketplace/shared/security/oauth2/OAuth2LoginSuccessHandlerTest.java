@@ -8,6 +8,7 @@ import com.marketplace.shared.config.MarketplaceProperties;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -48,8 +49,19 @@ class OAuth2LoginSuccessHandlerTest {
     @Mock private JwtEncoder jwtEncoder;
     @Mock private UserLookupPort userLookupPort;
     @Mock private MarketplaceProperties properties;
+    @Mock private org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository authorizedClientRepository;
+    @Mock private org.springframework.web.client.RestClient.Builder restClientBuilder;
+    @Mock private org.springframework.web.client.RestClient restClient;
 
-    @InjectMocks private OAuth2LoginSuccessHandler handler;
+    private OAuth2LoginSuccessHandler handler;
+
+    @BeforeEach
+    void setUp() {
+        // RestClient.Builder.build() returns the RestClient mock.
+        lenient().when(restClientBuilder.build()).thenReturn(restClient);
+        handler = new OAuth2LoginSuccessHandler(provisioningPort, jwtEncoder, properties,
+                userLookupPort, authorizedClientRepository, restClientBuilder);
+    }
 
     private void stubProperties(String issuer, String audience) {
         MarketplaceProperties.Security.AuthServer authServer = mock(MarketplaceProperties.Security.AuthServer.class);
