@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Security &amp; Authentication Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #243447;
+    padding: 40px;
+  }
+  .canvas { width: 1400px; margin: 0 auto; }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid #E2E8F0;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 6px;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: #64748B;
+  }
+
+  /* Section */
+  .section {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #E2E8F0;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #F1F5F9;
+  }
+  .section-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #FFFFFF;
+    font-weight: 700;
+  }
+  .section-icon.auth { background: #7C3AED; }
+  .section-icon.headers { background: #DC2626; }
+  .section-icon.audit { background: #0891B2; }
+  .section-icon.keys { background: #059669; }
+  .section-title { font-size: 17px; font-weight: 700; color: #0F172A; }
+  .section-desc { font-size: 12px; color: #64748B; margin-left: auto; }
+
+  /* Grid */
+  .grid { display: grid; gap: 14px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+  /* Card */
+  .card {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #CBD5E1;
+  }
+  .card-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0F172A;
+  }
+  .card-badge {
+    margin-left: auto;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-rfc { background: #EDE9FE; color: #5B21B6; }
+  .badge-owasp { background: #FEE2E2; color: #991B1B; }
+  .badge-nist { background: #DBEAFE; color: #1E40AF; }
+  .badge-spring { background: #D1FAE5; color: #065F46; }
+
+  .card-body {
+    font-size: 11px;
+    color: #475569;
+    line-height: 1.6;
+  }
+  .card-body strong { color: #0F172A; font-weight: 600; }
+  .card-body code {
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 10px;
+    background: #F1F5F9;
+    padding: 1px 4px;
+    border-radius: 2px;
+    color: #BE123C;
+  }
+  .card-ref {
+    font-size: 10px;
+    color: #64748B;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #E2E8F0;
+    font-family: 'SF Mono', monospace;
+  }
+  .card-ref a { color: #2563EB; text-decoration: none; }
+
+  /* Login flow */
+  .login-flow {
+    background: #FFFFFF;
+    border: 2px solid #7C3AED;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .login-flow-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #5B21B6;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  .flow-steps {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .flow-step {
+    flex: 1;
+    min-width: 150px;
+    background: #F5F3FF;
+    border: 1px solid #DDD6FE;
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+    position: relative;
+  }
+  .flow-step-num {
+    display: inline-block;
+    width: 20px; height: 20px;
+    background: #7C3AED;
+    color: #FFFFFF;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    margin-bottom: 6px;
+  }
+  .flow-step-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 3px;
+  }
+  .flow-step-detail {
+    font-size: 10px;
+    color: #475569;
+    line-height: 1.4;
+  }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    color: #7C3AED;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 0 2px;
+  }
+
+  .footnote {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #94A3B8;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="header">
+    <h1>Security &amp; Authentication Architecture</h1>
+    <div class="subtitle">PRs #152–#155 • 26 fixes • Verified against RFC 6238/4648/6749/8252/9068 • OWASP • NIST SP 800-63B/800-57</div>
+  </div>
+
+  <!-- Login flow -->
+  <div class="login-flow">
+    <div class="login-flow-title">🔐 Two-Step Login Flow (with MFA) — RFC 6238 TOTP</div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <span class="flow-step-num">1</span>
+        <div class="flow-step-title">POST /login/step1</div>
+        <div class="flow-step-detail">username + password<br>→ verify via DaoAuthenticationProvider<br>→ issue mfaToken (Redis, TTL 5min)</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="flow-step-num">2</span>
+        <div class="flow-step-title">POST /login/step2</div>
+        <div class="flow-step-detail">mfaToken + TOTP code<br>OR recovery code<br>(mfaToken bound to userId)</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="flow-step-num">3</span>
+        <div class="flow-step-title">verifyTotp()</div>
+        <div class="flow-step-detail">MessageDigest.isEqual (constant-time)<br>Redis SETNX replay guard (90s = 3 timesteps)<br>RFC 6238 §5.2</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="flow-step-num">4</span>
+        <div class="flow-step-title">Issue JWT</div>
+        <div class="flow-step-detail">RotatingJWKSource (90d rotation)<br>claims: sub, aud, iss, exp<br>RFC 9068 §2.2</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="flow-step-num">5</span>
+        <div class="flow-step-title">Audit log</div>
+        <div class="flow-step-detail">AuthAuditService.log()<br>LOGIN_SUCCESS / MFA_FAILURE<br>ip + userAgent</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auth mechanisms -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon auth">🔑</div>
+      <div class="section-title">Authentication Mechanisms</div>
+      <div class="section-desc">4 login paths • All converge on JWT issuance</div>
+    </div>
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Password + MFA</div>
+          <div class="card-badge badge-rfc">RFC 6238</div>
+        </div>
+        <div class="card-body">
+          Two-step login with <strong>mfaToken</strong> binding (Redis, TTL 5min, single-use).<br>
+          <strong>TOTP:</strong> ZXing QR code (Base32 secret per RFC 4648).<br>
+          <strong>Recovery codes:</strong> 10 single-use, atomic claim via <code>UPDATE ... WHERE used=false</code>.
+        </div>
+        <div class="card-ref">TotpService, MfaService, TwoStepLoginService</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">OAuth2 Social Login</div>
+          <div class="card-badge badge-rfc">RFC 6749/8252</div>
+        </div>
+        <div class="card-body">
+          GitHub + Google OIDC.<br>
+          <strong>PKCE required:</strong> <code>require-proof-key=true</code> (RFC 8252 §7.1).<br>
+          <strong>JWT in cookie:</strong> HttpOnly + Secure + SameSite=Strict (not URL query).<br>
+          <strong>email_verified:</strong> checked via provider API for GitHub (fails closed).
+        </div>
+        <div class="card-ref">OAuth2LoginSuccessHandler, DevDataInitializer</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">JWT Resource Server</div>
+          <div class="card-badge badge-spring">Spring 7</div>
+        </div>
+        <div class="card-body">
+          <strong>Decoder:</strong> NimbusJwtDecoder with RotatingJWKSource.<br>
+          <strong>Validator:</strong> JwtRevocationValidator (checks Redis for revoked jti).<br>
+          <strong>Authority mapper:</strong> roles from DB → ROLE_CONSUMER/PROVIDER/ADMIN.
+        </div>
+        <div class="card-ref">SecurityConfig, JwtRevocationValidator</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Brute-Force Protection</div>
+          <div class="card-badge badge-owasp">OWASP</div>
+        </div>
+        <div class="card-body">
+          Atomic counter: <code>UPDATE ... SET failed_attempts = failed_attempts + 1 ... RETURNING</code>.<br>
+          <strong>Threshold:</strong> 5 attempts → lock 15min.<br>
+          <strong>DistributedRateLimiter:</strong> Redis Lua script (INCR+EXPIRE), fails closed by default.
+        </div>
+        <div class="card-ref">BruteForceProtectionService, DistributedRateLimiter</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security headers -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon headers">🛡️</div>
+      <div class="section-title">Security HTTP Headers (Spring Security 7)</div>
+      <div class="section-desc">Applied to both SecurityFilterChain (order 3 + 4)</div>
+    </div>
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">HSTS</div>
+          <div class="card-badge badge-rfc">RFC 6797</div>
+        </div>
+        <div class="card-body">
+          <code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code><br>
+          Forces HTTPS for 1 year.
+        </div>
+        <div class="card-ref">.httpStrictTransportSecurity(hsts → hsts.includeSubDomains(true).maxAgeInSeconds(31536000))</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">CSP</div>
+          <div class="card-badge badge-owasp">OWASP</div>
+        </div>
+        <div class="card-body">
+          <code>default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'</code><br>
+          Prevents XSS, clickjacking, MIME sniffing.
+        </div>
+        <div class="card-ref">.contentSecurityPolicy(csp → csp.policyDirectives("..."))</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Permissions-Policy</div>
+          <div class="card-badge badge-owasp">OWASP</div>
+        </div>
+        <div class="card-body">
+          <code>camera=(), microphone=(), geolocation=(), payment=()</code><br>
+          Disables sensitive browser APIs.
+        </div>
+        <div class="card-ref">.permissionsPolicyHeader(p → p.policy("..."))</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">X-Frame-Options + X-Content-Type-Options + Referrer-Policy</div>
+          <div class="card-badge badge-spring">Spring 7</div>
+        </div>
+        <div class="card-body">
+          <strong>X-Frame-Options:</strong> DENY<br>
+          <strong>X-Content-Type-Options:</strong> nosniff<br>
+          <strong>Referrer-Policy:</strong> strict-origin-when-cross-origin
+        </div>
+        <div class="card-ref">.frameOptions(f → f.deny()).contentTypeOptions(...).referrerPolicy(...)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key management -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon keys">🗝️</div>
+      <div class="section-title">Key Management &amp; Rotation</div>
+      <div class="section-desc">NIST SP 800-57 compliant • Automatic rotation</div>
+    </div>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">RotatingJWKSource</div>
+          <div class="card-badge badge-nist">NIST 800-57</div>
+        </div>
+        <div class="card-body">
+          Maintains <strong>active + previous</strong> RSA-2048 keys with overlap window.<br>
+          <strong>Rotation:</strong> @Scheduled every 90 days (configurable).<br>
+          During overlap, tokens signed by previous key remain valid until expiry.
+        </div>
+        <div class="card-ref">RotatingJWKSource (marketplace-platform-infra)</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">JWT Keystore</div>
+          <div class="card-badge badge-spring">Spring</div>
+        </div>
+        <div class="card-body">
+          <strong>Algorithm:</strong> RSA-2048 (asymmetric).<br>
+          <strong>Storage:</strong> JKS file (<code>$JWT_KEYSTORE_PATH</code>).<br>
+          <strong>Generated via:</strong> keytool (see docs/external-services.md §6).
+        </div>
+        <div class="card-ref">MarketplaceProperties.Security.Jwt.KeyStore</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Token Revocation</div>
+          <div class="card-badge badge-rfc">RFC 7009/7662</div>
+        </div>
+        <div class="card-body">
+          <strong>Revocation list:</strong> Redis SET with TTL = JWT remaining lifetime.<br>
+          <strong>Logout:</strong> OAuth2AuthorizationService.findById() + remove().<br>
+          <strong>Validator:</strong> JwtRevocationValidator checks jti on every request.
+        </div>
+        <div class="card-ref">SessionController, JwtRevocationValidator</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit + observability -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon audit">📊</div>
+      <div class="section-title">Audit Log &amp; Security Observability</div>
+      <div class="section-desc">All auth events recorded • Log redaction • Trusted proxy handling</div>
+    </div>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">AuthAuditService</div>
+          <div class="card-badge badge-owasp">OWASP</div>
+        </div>
+        <div class="card-body">
+          <strong>Events:</strong> LOGIN_SUCCESS/FAILURE, MFA_FAILURE, RECOVERY_CODE_USED, ACCOUNT_LOCKED/UNLOCKED, LOGOUT, SESSION_REVOKED, TOKEN_REVOKED, OAUTH2_LOGIN_SUCCESS.<br>
+          <strong>Storage:</strong> auth_audit_log table (JPA).<br>
+          <strong>IP extraction:</strong> instanceof pattern matching (no broad catch).
+        </div>
+        <div class="card-ref">AuthAuditService, AuthEventType enum</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Log Redaction</div>
+          <div class="card-badge badge-owasp">OWASP</div>
+        </div>
+        <div class="card-body">
+          <strong>logback-spring.xml:</strong> %replace filter strips passwords, tokens, JWTs (eyJ...), BCrypt hashes from all log output (console + file).<br>
+          <strong>CorrelationIdFilter:</strong> validates charset (alphanumeric + dash, max 128) to prevent log injection.
+        </div>
+        <div class="card-ref">logback-spring.xml, CorrelationIdFilter</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-name">Trusted Proxy Handling</div>
+          <div class="card-badge badge-spring">Spring</div>
+        </div>
+        <div class="card-body">
+          <strong>server.forward-headers-strategy=framework</strong> → ForwardedHeaderFilter resolves X-Forwarded-For from trusted proxy chain.<br>
+          <strong>Rule:</strong> trust only <code>request.getRemoteAddr()</code> (resolved), never raw X-Forwarded-For header (spoofable).
+        </div>
+        <div class="card-ref">application-prod.yml, AuthAuditService.extractIpAddress()</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    All fixes verified against official docs: docs.spring.io/spring-security • RFC 6238 §5.2 (TOTP) • RFC 4648 (Base32) • RFC 6749 §10.6 (token leakage) • RFC 8252 §7.1 (PKCE) • RFC 9068 §2.2 (JWT aud) • RFC 6797 (HSTS) • RFC 7009 (revocation) • NIST SP 800-57 (key rotation) • NIST SP 800-63B §5.1.1 (password max 64) • OWASP Cheat Sheets
+  </div>
+
+</div>
+</body>
+</html>

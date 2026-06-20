@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Marketplace System Architecture Overview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #243447;
+    padding: 40px;
+    direction: ltr;
+  }
+  .canvas {
+    width: 1400px;
+    margin: 0 auto;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #E2E8F0;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .header .subtitle {
+    font-size: 14px;
+    color: #64748B;
+    font-weight: 400;
+  }
+
+  /* Phase card */
+  .phase-group {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .phase-group.tier-client  { border-left: 4px solid #3B82F6; }
+  .phase-group.tier-edge    { border-left: 4px solid #8B5CF6; }
+  .phase-group.tier-app     { border-left: 4px solid #10B981; }
+  .phase-group.tier-data    { border-left: 4px solid #F59E0B; }
+  .phase-group.tier-monitor { border-left: 4px solid #EF4444; }
+
+  .phase-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFFFFF;
+  }
+  .tier-client  .phase-badge { background: #3B82F6; }
+  .tier-edge    .phase-badge { background: #8B5CF6; }
+  .tier-app     .phase-badge { background: #10B981; }
+  .tier-data    .phase-badge { background: #F59E0B; }
+  .tier-monitor .phase-badge { background: #EF4444; }
+  .phase-title h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0F172A;
+  }
+  .phase-title .phase-desc {
+    font-size: 12px;
+    color: #64748B;
+    font-weight: 400;
+    margin-left: auto;
+  }
+
+  /* Node grid inside phase */
+  .node-row {
+    display: grid;
+    gap: 14px;
+  }
+  .row-2 { grid-template-columns: repeat(2, 1fr); }
+  .row-3 { grid-template-columns: repeat(3, 1fr); }
+  .row-4 { grid-template-columns: repeat(4, 1fr); }
+  .row-5 { grid-template-columns: repeat(5, 1fr); }
+
+  .node {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 16px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .node:hover { border-color: #94A3B8; }
+  .node .node-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E293B;
+    margin-bottom: 4px;
+  }
+  .node .node-tech {
+    font-size: 11px;
+    color: #64748B;
+    font-family: 'SF Mono', Consolas, monospace;
+  }
+  .node .node-role {
+    font-size: 10px;
+    color: #94A3B8;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tier-client  .node { background: #EFF6FF; border-color: #DBEAFE; }
+  .tier-edge    .node { background: #F5F3FF; border-color: #EDE9FE; }
+  .tier-app     .node { background: #F0FDF4; border-color: #D1FAE5; }
+  .tier-data    .node { background: #FFF7ED; border-color: #FEF3C7; }
+  .tier-monitor .node { background: #FEF2F2; border-color: #FEE2E2; }
+
+  /* Container box for app tier (Spring Boot) */
+  .container-box {
+    background: #FFFFFF;
+    border: 2px dashed #10B981;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 12px;
+  }
+  .container-box-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #10B981;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  /* Arrow between phases */
+  .phase-arrow {
+    text-align: center;
+    margin: -8px 0 8px 0;
+    color: #94A3B8;
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #E2E8F0;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #475569;
+  }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 3px;
+  }
+  .legend-dot.client  { background: #3B82F6; }
+  .legend-dot.edge    { background: #8B5CF6; }
+  .legend-dot.app     { background: #10B981; }
+  .legend-dot.data    { background: #F59E0B; }
+  .legend-dot.monitor { background: #EF4444; }
+
+  .footnote {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 11px;
+    color: #94A3B8;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="header">
+    <h1>Marketplace Backend — System Architecture Overview</h1>
+    <div class="subtitle">Cloudflare-first deployment • Spring Boot 4.1 + Java 25 • Spring Modulith 2.1 • 16 modules</div>
+  </div>
+
+  <!-- Tier 1: Client -->
+  <div class="phase-group tier-client">
+    <div class="phase-title">
+      <span class="phase-badge">1</span>
+      <h2>Client Tier</h2>
+      <span class="phase-desc">End-user devices consuming the marketplace APIs</span>
+    </div>
+    <div class="node-row row-3">
+      <div class="node">
+        <div class="node-title">Web Frontend</div>
+        <div class="node-tech">React / Next.js</div>
+        <div class="node-role">Consumer + Provider UI</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Admin Console</div>
+        <div class="node-tech">React SPA</div>
+        <div class="node-role">Admin / Moderator</div>
+      </div>
+      <div class="node">
+        <div class="node-title">OAuth2 Providers</div>
+        <div class="node-tech">GitHub / Google</div>
+        <div class="node-role">Social Login</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-arrow">▼</div>
+
+  <!-- Tier 2: Edge (Cloudflare) -->
+  <div class="phase-group tier-edge">
+    <div class="phase-title">
+      <span class="phase-badge">2</span>
+      <h2>Edge Tier — Cloudflare Global Network</h2>
+      <span class="phase-desc">300+ POP locations • Sub-50ms latency worldwide</span>
+    </div>
+    <div class="node-row row-4">
+      <div class="node">
+        <div class="node-title">Worker (Proxy)</div>
+        <div class="node-tech">app-java-v3.wael-he.workers.dev</div>
+        <div class="node-role">Routing + CORS + Rate Limit</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Hyperdrive</div>
+        <div class="node-tech">Connection Pooler</div>
+        <div class="node-role">PostgreSQL Edge Cache</div>
+      </div>
+      <div class="node">
+        <div class="node-title">R2 Storage</div>
+        <div class="node-tech">S3-compatible</div>
+        <div class="node-role">File uploads (avatars, docs)</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Pages / Static Assets</div>
+        <div class="node-tech">CDN + cache</div>
+        <div class="node-role">Frontend hosting</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-arrow">▼</div>
+
+  <!-- Tier 3: Application (Spring Boot Container) -->
+  <div class="phase-group tier-app">
+    <div class="phase-title">
+      <span class="phase-badge">3</span>
+      <h2>Application Tier — Spring Boot Container</h2>
+      <span class="phase-desc">Cloudflare Container • eclipse-temurin:25-jre-alpine • Generational ZGC</span>
+    </div>
+    <div class="container-box">
+      <div class="container-box-label">⚡ Container (linux/amd64 • standard-1: ½ vCPU / 4 GiB • sleepAfter=30m)</div>
+      <div class="node-row row-4">
+        <div class="node">
+          <div class="node-title">REST Controllers</div>
+          <div class="node-tech">Spring MVC 7</div>
+          <div class="node-role">/api/v1/*</div>
+        </div>
+        <div class="node">
+          <div class="node-title">GraphQL Endpoint</div>
+          <div class="node-tech">Spring for GraphQL</div>
+          <div class="node-role">/graphql (catalog)</div>
+        </div>
+        <div class="node">
+          <div class="node-title">WebSocket STOMP</div>
+          <div class="node-tech">spring-boot-starter-websocket</div>
+          <div class="node-role">/topic/notifications</div>
+        </div>
+        <div class="node">
+          <div class="node-title">Spring Authorization Server</div>
+          <div class="node-tech">OAuth2 + OIDC + JWT</div>
+          <div class="node-role">RotatingJWKSource (90d)</div>
+        </div>
+      </div>
+      <div style="margin-top: 14px;">
+        <div class="node-row row-5">
+          <div class="node">
+            <div class="node-title">16 Domain Modules</div>
+            <div class="node-tech">Spring Modulith 2.1</div>
+            <div class="node-role">Verified boundaries</div>
+          </div>
+          <div class="node">
+            <div class="node-title">Event Publication Log</div>
+            <div class="node-tech">JDBC + retry</div>
+            <div class="node-role">Transactional events</div>
+          </div>
+          <div class="node">
+            <div class="node-title">Spring Security 7</div>
+            <div class="node-tech">JWT + MFA/2FA (RFC 6238)</div>
+            <div class="node-role">Brute-force protection</div>
+          </div>
+          <div class="node">
+            <div class="node-title">Flyway Migrations</div>
+            <div class="node-tech">V1–V30 • PostgreSQL</div>
+            <div class="node-role">Auto on startup</div>
+          </div>
+          <div class="node">
+            <div class="node-title">Actuator</div>
+            <div class="node-tech">health + prometheus</div>
+            <div class="node-role">/actuator/*</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-arrow">▼</div>
+
+  <!-- Tier 4: Data -->
+  <div class="phase-group tier-data">
+    <div class="phase-title">
+      <span class="phase-badge">4</span>
+      <h2>Data Tier — Managed Services (External)</h2>
+      <span class="phase-desc">Cloudflare has no managed Postgres/Redis — use Neon + Upstash (connected via Hyperdrive + REST)</span>
+    </div>
+    <div class="node-row row-4">
+      <div class="node">
+        <div class="node-title">PostgreSQL 17</div>
+        <div class="node-tech">Neon (managed)</div>
+        <div class="node-role">Primary OLTP database</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Redis 7</div>
+        <div class="node-tech">Upstash (serverless REST)</div>
+        <div class="node-role">Cache + Sessions + Rate-limit</div>
+      </div>
+      <div class="node">
+        <div class="node-title">SMTP Relay</div>
+        <div class="node-tech">Amazon SES / SendGrid</div>
+        <div class="node-role">Transactional email</div>
+      </div>
+      <div class="node">
+        <div class="node-title">OAuth2 IdPs</div>
+        <div class="node-tech">GitHub + Google APIs</div>
+        <div class="node-role">Social login verification</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase-arrow">▼</div>
+
+  <!-- Tier 5: Observability -->
+  <div class="phase-group tier-monitor">
+    <div class="phase-title">
+      <span class="phase-badge">5</span>
+      <h2>Observability &amp; Operations Tier</h2>
+      <span class="phase-desc">Cross-cutting concerns spanning all tiers</span>
+    </div>
+    <div class="node-row row-4">
+      <div class="node">
+        <div class="node-title">Cloudflare Analytics</div>
+        <div class="node-tech">Worker metrics + logs</div>
+        <div class="node-role">Edge observability</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Prometheus + Grafana</div>
+        <div class="node-tech">/actuator/prometheus</div>
+        <div class="node-role">App metrics</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Audit Log (DB)</div>
+        <div class="node-tech">auth_audit_log table</div>
+        <div class="node-role">Security events</div>
+      </div>
+      <div class="node">
+        <div class="node-title">Logback (file + console)</div>
+        <div class="node-tech">redaction filter</div>
+        <div class="node-role">Structured logs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot client"></span> Client Tier</div>
+    <div class="legend-item"><span class="legend-dot edge"></span> Edge (Cloudflare)</div>
+    <div class="legend-item"><span class="legend-dot app"></span> Application (Container)</div>
+    <div class="legend-item"><span class="legend-dot data"></span> Data (Managed)</div>
+    <div class="legend-item"><span class="legend-dot monitor"></span> Observability</div>
+  </div>
+
+  <div class="footnote">
+    Generated from PROJECT_MAP.md • Spring Boot 4.1.0 GA • Java 25 LTS • Spring Modulith 2.1.0 • Maven 3.9.16
+  </div>
+
+</div>
+</body>
+</html>

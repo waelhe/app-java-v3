@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Event-Driven Data Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #243447;
+    padding: 40px;
+  }
+  .canvas { width: 1400px; margin: 0 auto; }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid #E2E8F0;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 6px;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: #64748B;
+  }
+
+  /* Flow container */
+  .flow-section {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 1px solid #E2E8F0;
+  }
+  .flow-section h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #F1F5F9;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .flow-section h2 .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFFFFF;
+  }
+  .flow-booking .badge { background: #3B82F6; }
+  .flow-payment .badge { background: #10B981; }
+  .flow-availability .badge { background: #F59E0B; }
+  .flow-auth .badge { background: #8B5CF6; }
+
+  /* Horizontal flow */
+  .flow-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    flex: 1;
+    min-width: 140px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 12px 10px;
+    text-align: center;
+    position: relative;
+  }
+  .flow-booking .flow-step { background: #EFF6FF; border-color: #BFDBFE; }
+  .flow-payment .flow-step { background: #ECFDF5; border-color: #A7F3D0; }
+  .flow-availability .flow-step { background: #FFF7ED; border-color: #FED7AA; }
+  .flow-auth .flow-step { background: #F5F3FF; border-color: #DDD6FE; }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    color: #94A3B8;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .flow-arrow.event {
+    color: #EC4899;
+    font-size: 11px;
+    font-weight: 600;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 90px;
+  }
+  .flow-arrow.event .arrow-symbol { font-size: 18px; }
+  .flow-arrow.event .event-label {
+    background: #FCE7F3;
+    color: #9D174D;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-family: 'SF Mono', monospace;
+  }
+
+  .step-num {
+    display: inline-block;
+    width: 18px; height: 18px;
+    background: #475569;
+    color: #FFFFFF;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 18px;
+    margin-bottom: 6px;
+  }
+  .flow-booking .step-num { background: #1E40AF; }
+  .flow-payment .step-num { background: #047857; }
+  .flow-availability .step-num { background: #B45309; }
+  .flow-auth .step-num { background: #6D28D9; }
+
+  .step-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 4px;
+  }
+  .step-module {
+    font-size: 10px;
+    color: #64748B;
+    font-family: 'SF Mono', monospace;
+    margin-bottom: 4px;
+  }
+  .step-action {
+    font-size: 10px;
+    color: #475569;
+    line-height: 1.4;
+  }
+
+  /* Event publication log */
+  .event-log {
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 14px;
+    font-size: 11px;
+    color: #92400E;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .event-log-icon { font-size: 16px; }
+  .event-log strong { color: #78350F; }
+
+  /* Retry box */
+  .retry-box {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: #991B1B;
+  }
+  .retry-box strong { color: #7F1D1D; }
+
+  .footnote {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #94A3B8;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="header">
+    <h1>Event-Driven Data Flow</h1>
+    <div class="subtitle">Spring Modulith Event Publication Log (JDBC) • Transactional + retryable • @ApplicationModuleListener</div>
+  </div>
+
+  <!-- Flow 1: Booking lifecycle -->
+  <div class="flow-section flow-booking">
+    <h2><span class="badge">1</span> Booking Lifecycle — Consumer books a provider service</h2>
+    <div class="flow-row">
+      <div class="flow-step">
+        <span class="step-num">1</span>
+        <div class="step-title">POST /api/v1/bookings</div>
+        <div class="step-module">marketplace-app</div>
+        <div class="step-action">Consumer submits booking request</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">2</span>
+        <div class="step-title">createBooking()</div>
+        <div class="step-module">marketplace-booking</div>
+        <div class="step-action">Validate + persist Booking (PENDING)</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">BookingCreated</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">3</span>
+        <div class="step-title">onBookingCreated()</div>
+        <div class="step-module">marketplace-notifications</div>
+        <div class="step-action">@TransactionalEventListener<br>Send email + WS push</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">BookingCreated</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">4</span>
+        <div class="step-title">reserveSlot()</div>
+        <div class="step-module">marketplace-availability</div>
+        <div class="step-action">Mark slot as BOOKED</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">PaymentSucceeded</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">5</span>
+        <div class="step-title">confirm()</div>
+        <div class="step-module">marketplace-booking</div>
+        <div class="step-action">Booking → CONFIRMED<br>+ BookingConfirmedEvent</div>
+      </div>
+    </div>
+    <div class="event-log">
+      <span class="event-log-icon">📚</span>
+      <span><strong>Event Publication Log (JDBC):</strong> All events persisted in the same business transaction. If a listener fails (throws), the log entry stays UNCOMPLETED → retry mechanism republishes on restart (spring.modulith.events.republish-outstanding-events-on-restart=true).</span>
+    </div>
+  </div>
+
+  <!-- Flow 2: Payment + auto-refund -->
+  <div class="flow-section flow-payment">
+    <h2><span class="badge">2</span> Payment + Auto-Refund — Webhook-driven state machine</h2>
+    <div class="flow-row">
+      <div class="flow-step">
+        <span class="step-num">1</span>
+        <div class="step-title">Stripe webhook</div>
+        <div class="step-module">marketplace-payments</div>
+        <div class="step-action">POST /webhooks/stripe<br>payment_intent.succeeded</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">2</span>
+        <div class="step-title">confirmIntent()</div>
+        <div class="step-module">marketplace-payments</div>
+        <div class="step-action">PaymentIntent → SUCCEEDED</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">PaymentStateChanged</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">3</span>
+        <div class="step-title">onPaymentState()</div>
+        <div class="step-module">marketplace-notifications</div>
+        <div class="step-action">Notify consumer + provider</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">BookingCancelled</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">4</span>
+        <div class="step-title">autoRefundByBooking()</div>
+        <div class="step-module">marketplace-payments</div>
+        <div class="step-action">@Transactional(REQUIRES_NEW)<br>markRefunded() + save()</div>
+      </div>
+    </div>
+    <div class="retry-box">
+      <strong>Retry safety:</strong> autoRefundByBooking() uses <code>Propagation.REQUIRES_NEW</code> so the refund commits in a separate transaction — survives caller rollback. PaymentRepository.save(payment) added after markRefunded() to persist the REFUNDED transition (PR #148).
+    </div>
+  </div>
+
+  <!-- Flow 3: Availability slot generation -->
+  <div class="flow-section flow-availability">
+    <h2><span class="badge">3</span> Availability Slot Generation — Time-driven (Spring Modulith Moments)</h2>
+    <div class="flow-row">
+      <div class="flow-step">
+        <span class="step-num">1</span>
+        <div class="step-title">Daily trigger</div>
+        <div class="step-module">spring-modulith-moments</div>
+        <div class="step-action">Scheduled DayHasPassed event</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">DayHasPassed</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">2</span>
+        <div class="step-title">onDayHasPassed()</div>
+        <div class="step-module">marketplace-availability</div>
+        <div class="step-action">@ApplicationModuleListener<br>Loop 7 days ahead</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">3</span>
+        <div class="step-title">generateSlotsForDate()</div>
+        <div class="step-module">marketplace-availability</div>
+        <div class="step-action">For each rule: try createSlot<br>catch DataAccessException only</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">4</span>
+        <div class="step-title">Skip duplicates</div>
+        <div class="step-module">marketplace-availability</div>
+        <div class="step-action">findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse → skip if exists</div>
+      </div>
+    </div>
+    <div class="retry-box">
+      <strong>Exception policy (PR #157):</strong> catch narrowed from <code>Exception</code> → <code>DataAccessException</code>. Programming errors (NPE, CCE) propagate to the event publication log → Spring Modulith marks the entry UNCOMPLETED → retry on next restart. Data-access failures (constraint violations) are logged but do not abort the batch.
+    </div>
+  </div>
+
+  <!-- Flow 4: Authentication (MFA) -->
+  <div class="flow-section flow-auth">
+    <h2><span class="badge">4</span> Two-Step Login with MFA — RFC 6238 TOTP</h2>
+    <div class="flow-row">
+      <div class="flow-step">
+        <span class="step-num">1</span>
+        <div class="step-title">POST /login/step1</div>
+        <div class="step-module">marketplace-identity</div>
+        <div class="step-action">Username + password<br>→ mfaToken (TTL 5min, Redis)</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">2</span>
+        <div class="step-title">POST /login/step2</div>
+        <div class="step-module">marketplace-identity</div>
+        <div class="step-action">mfaToken + TOTP code<br>or recovery code</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <span class="step-num">3</span>
+        <div class="step-title">verifyTotp()</div>
+        <div class="step-module">marketplace-identity</div>
+        <div class="step-action">MessageDigest.isEqual (constant-time)<br>+ Redis SETNX replay guard (90s)</div>
+      </div>
+      <div class="flow-arrow event">
+        <span class="arrow-symbol">⚡</span>
+        <span class="event-label">LOGIN_SUCCESS</span>
+      </div>
+      <div class="flow-step">
+        <span class="step-num">4</span>
+        <div class="step-title">Audit log + JWT</div>
+        <div class="step-module">marketplace-identity</div>
+        <div class="step-action">AuthAuditService.log()<br>Issue JWT (RotatingJWKSource)</div>
+      </div>
+    </div>
+    <div class="retry-box">
+      <strong>Brute-force protection:</strong> BruteForceProtectionService uses atomic <code>UPDATE ... SET failed_attempts = failed_attempts + 1 ... RETURNING failed_attempts</code> (PostgreSQL) — defeats the SELECT-then-UPDATE race. Account locked after 5 failed attempts for 15 minutes.
+    </div>
+  </div>
+
+  <div class="footnote">
+    @TransactionalEventListener = async, transactional, retryable • @ApplicationModuleListener = same + module-scoped • Event Publication Log = JDBC table (spring_modulith_event_publications)
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Module Architecture — Spring Modulith</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #243447;
+    padding: 40px;
+  }
+  .canvas { width: 1400px; margin: 0 auto; }
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #E2E8F0;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 6px;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: #64748B;
+  }
+
+  /* Layer card */
+  .layer {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    border: 1px solid #E2E8F0;
+  }
+  .layer-composition { border-left: 4px solid #1E40AF; }
+  .layer-infra { border-left: 4px solid #6366F1; }
+  .layer-domain-core { border-left: 4px solid #059669; }
+  .layer-domain-support { border-left: 4px solid #0891B2; }
+  .layer-shared { border-left: 4px solid #64748B; }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .layer-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .layer-composition .layer-label { background: #1E40AF; }
+  .layer-infra .layer-label { background: #6366F1; }
+  .layer-domain-core .layer-label { background: #059669; }
+  .layer-domain-support .layer-label { background: #0891B2; }
+  .layer-shared .layer-label { background: #64748B; }
+
+  .layer-title { font-size: 16px; font-weight: 700; color: #0F172A; }
+  .layer-desc { font-size: 11px; color: #64748B; margin-left: auto; }
+
+  /* Module grid */
+  .module-grid {
+    display: grid;
+    gap: 12px;
+  }
+  .grid-1 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-5 { grid-template-columns: repeat(5, 1fr); }
+  .grid-6 { grid-template-columns: repeat(6, 1fr); }
+
+  .module {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .module:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.06); }
+
+  .layer-composition .module { background: #EFF6FF; border-color: #BFDBFE; }
+  .layer-infra .module { background: #EEF2FF; border-color: #C7D2FE; }
+  .layer-domain-core .module { background: #ECFDF5; border-color: #A7F3D0; }
+  .layer-domain-support .module { background: #ECFEFF; border-color: #A5F3FC; }
+  .layer-shared .module { background: #F1F5F9; border-color: #CBD5E1; }
+
+  .module-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 3px;
+  }
+  .module-role {
+    font-size: 10px;
+    color: #64748B;
+    margin-bottom: 6px;
+    min-height: 24px;
+  }
+  .module-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .tag-spi { background: #FEF3C7; color: #92400E; }
+  .tag-event { background: #FCE7F3; color: #9D174D; }
+  .tag-jpa { background: #DBEAFE; color: #1E40AF; }
+  .tag-web { background: #D1FAE5; color: #065F46; }
+  .tag-admin { background: #EDE9FE; color: #5B21B6; }
+  .tag-search { background: #FEE2E2; color: #991B1B; }
+
+  /* Dependency arrows section */
+  .dependency-section {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 20px;
+    border: 1px solid #E2E8F0;
+  }
+  .dependency-section h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 12px;
+  }
+  .dep-rule {
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11px;
+    color: #475569;
+    padding: 6px 10px;
+    background: #F1F5F9;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    border-left: 3px solid #94A3B8;
+  }
+  .dep-rule strong { color: #1E40AF; font-weight: 600; }
+  .dep-rule em { color: #059669; font-style: normal; font-weight: 600; }
+
+  .footnote {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #94A3B8;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="header">
+    <h1>Module Architecture — Spring Modulith 2.1</h1>
+    <div class="subtitle">16 modules • Verified boundaries via ApplicationModules.of(...).verify() • JaCoCo ≥ 70%</div>
+  </div>
+
+  <!-- Layer: Composition Root -->
+  <div class="layer layer-composition">
+    <div class="layer-header">
+      <span class="layer-label">L4</span>
+      <span class="layer-title">Composition Root</span>
+      <span class="layer-desc">Application bootstrap, wiring, admin REST</span>
+    </div>
+    <div class="module-grid grid-1">
+      <div class="module">
+        <div class="module-name">marketplace-app</div>
+        <div class="module-role">Spring Boot main, @SpringBootApplication, MarketplaceApplication, Admin REST endpoints</div>
+        <div class="module-meta">
+          <span class="tag tag-admin">@PreAuthorize ADMIN</span>
+          <span class="tag tag-web">REST Controllers</span>
+          <span class="tag tag-spi">CatalogSpi</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer: Platform Infrastructure -->
+  <div class="layer layer-infra">
+    <div class="layer-header">
+      <span class="layer-label">L3</span>
+      <span class="layer-title">Platform Infrastructure</span>
+      <span class="layer-desc">Cross-cutting concerns shared by all domain modules</span>
+    </div>
+    <div class="module-grid grid-1">
+      <div class="module">
+        <div class="module-name">marketplace-platform-infra</div>
+        <div class="module-role">JPA base config, Spring Security 7 (JWT + OAuth2 + MFA), Cache (Redis), Observability, EmailService, RotatingJWKSource, DistributedRateLimiter, Storage adapters</div>
+        <div class="module-meta">
+          <span class="tag tag-jpa">JPA Auditing</span>
+          <span class="tag tag-web">SecurityFilterChain</span>
+          <span class="tag tag-spi">OAuth2AuthorizedClient</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer: Shared API Contracts -->
+  <div class="layer layer-shared">
+    <div class="layer-header">
+      <span class="layer-label">L2</span>
+      <span class="layer-title">Shared API Contracts (SPI)</span>
+      <span class="layer-desc">Interfaces, events, exceptions, DTOs — no implementation</span>
+    </div>
+    <div class="module-grid grid-1">
+      <div class="module">
+        <div class="module-name">marketplace-shared</div>
+        <div class="module-role">Named interfaces: shared-api, shared-security, shared-jpa, shared-config • Event records (BookingCreated, BookingConfirmed, BookingCancelled, etc.) • Port interfaces (AvailabilityPort, CatalogSpi, UserLookupPort, BookingParticipantProvider) • Exceptions (BadRequest, Conflict, ResourceNotFound)</div>
+        <div class="module-meta">
+          <span class="tag tag-spi">4 named interfaces</span>
+          <span class="tag tag-event">Event records</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer: Domain Core (transactional) -->
+  <div class="layer layer-domain-core">
+    <div class="layer-header">
+      <span class="layer-label">L1</span>
+      <span class="layer-title">Domain Core — Transactional Bounded Contexts</span>
+      <span class="layer-desc">Each module owns its JPA entities, repositories, services, and controllers</span>
+    </div>
+    <div class="module-grid grid-5">
+      <div class="module">
+        <div class="module-name">marketplace-identity</div>
+        <div class="module-role">Users, auth, MFA/2FA, OAuth2, sessions, brute-force</div>
+        <div class="module-meta"><span class="tag tag-jpa">V1–V10</span><span class="tag tag-web">JWT</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-catalog</div>
+        <div class="module-role">Listings, services, GraphQL endpoint, CatalogSpi</div>
+        <div class="module-meta"><span class="tag tag-web">GraphQL</span><span class="tag tag-spi">CatalogSpi</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-booking</div>
+        <div class="module-role">Bookings, expiration, BookingConfirmedEvent</div>
+        <div class="module-meta"><span class="tag tag-event">3 events</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-payments</div>
+        <div class="module-role">Payment intents, refunds, Stripe-style webhooks</div>
+        <div class="module-meta"><span class="tag tag-web">webhooks</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-provider</div>
+        <div class="module-role">Provider profiles, verification, availability rules</div>
+        <div class="module-meta"><span class="tag tag-admin">@PreAuthorize</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-ledger</div>
+        <div class="module-role">Double-entry ledger, balances, financial audit</div>
+        <div class="module-meta"><span class="tag tag-jpa">JPA</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-pricing</div>
+        <div class="module-role">Pricing rules, ListingPriceProvider</div>
+        <div class="module-meta"><span class="tag tag-spi">PricingSpi</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-reviews</div>
+        <div class="module-role">Reviews, ratings, ReviewUpdatedEvent</div>
+        <div class="module-meta"><span class="tag tag-event">ReviewUpdated</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-disputes</div>
+        <div class="module-role">Disputes, resolution workflow</div>
+        <div class="module-meta"><span class="tag tag-admin">Admin</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-availability</div>
+        <div class="module-role">Slots, rules, @ApplicationModuleListener DayHasPassed</div>
+        <div class="module-meta"><span class="tag tag-event">Moments</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Layer: Domain Support -->
+  <div class="layer layer-domain-support">
+    <div class="layer-header">
+      <span class="layer-label">L1</span>
+      <span class="layer-title">Domain Support — Communication &amp; Search</span>
+      <span class="layer-desc">Cross-domain notification and search infrastructure</span>
+    </div>
+    <div class="module-grid grid-3">
+      <div class="module">
+        <div class="module-name">marketplace-messaging</div>
+        <div class="module-role">Conversations, WebSocket STOMP /topic/notifications</div>
+        <div class="module-meta"><span class="tag tag-web">WebSocket</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-notifications</div>
+        <div class="module-role">Email + WebSocket dispatch, NotificationEventListener</div>
+        <div class="module-meta"><span class="tag tag-event">@ApplicationModuleListener</span></div>
+      </div>
+      <div class="module">
+        <div class="module-name">marketplace-search</div>
+        <div class="module-role">Full-text search, SearchController</div>
+        <div class="module-meta"><span class="tag tag-search">Full-text</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dependency rules -->
+  <div class="dependency-section">
+    <h3>📌 Spring Modulith Dependency Rules (verified by ModulithVerificationTest)</h3>
+    <div class="dep-rule"><strong>Domain modules</strong> → may depend on: <em>shared :: shared-api</em>, <em>shared :: shared-security</em>, <em>shared :: shared-jpa</em></div>
+    <div class="dep-rule"><strong>marketplace-app</strong> → may depend on: <em>shared :: shared-api</em>, <em>shared :: shared-security</em>, <em>catalog :: catalog-spi</em>, <em>messaging :: messaging-api</em></div>
+    <div class="dep-rule"><strong>No domain module</strong> → may depend on another domain module directly (must go through SPI in <em>shared</em>)</div>
+    <div class="dep-rule"><strong>NotificationEventListener</strong> → listens to BookingCreated / BookingConfirmed / BookingCancelled / PaymentStateChanged events (async, transactional)</div>
+    <div class="dep-rule"><strong>AvailabilityService</strong> → @ApplicationModuleListener onDayHasPassed (from Spring Modulith Moments) — catches only DataAccessException, lets programming errors propagate for retry</div>
+  </div>
+
+  <div class="footnote">
+    @ApplicationModule(allowedDependencies = {...}) declared in each package-info.java • ApplicationModules.of(MarketplaceApplication.class).verify() runs in CI
+  </div>
+
+</div>
+</body>
+</html>
