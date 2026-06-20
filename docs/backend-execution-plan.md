@@ -79,7 +79,8 @@ Deliver backend features through small PRs while enforcing compatibility with Sp
 ### DoD Thresholds
 - **Testing**
   - Unit/integration pass rate = **100%**.
-  - Minimum coverage for critical units = **80%** (or team-approved policy threshold).
+  - Minimum coverage for all modules = **70%** (enforced via JaCoCo `jacoco.coverage.threshold=0.70` in `pom.xml`).
+  - Critical units (identity, payments, booking) may enforce higher local thresholds per module decision.
 - **API Contract**
   - **0** contract drift failures.
   - No breaking changes without documented approval.
