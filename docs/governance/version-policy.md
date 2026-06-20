@@ -4,20 +4,26 @@ This document defines official version governance for the Marketplace backend.
 
 ## 1) Supported baseline
 
-- Java: `21` (LTS)
-- Spring Boot: `4.x` stable line
-- Maven: `3.9+`
+- Java: `25` (LTS) — upgraded from Java 21 in PR #144 (Spring Boot 4.1.0 GA)
+- Spring Boot: `4.1.0` GA stable line — upgraded from 4.0.6 in PR #144
+- Spring Modulith: `2.1.0` GA — upgraded from 2.0.6 in PR #144
+- Maven: `3.9.16+` (wrapper: 3.3.4)
+- JaCoCo coverage threshold: `0.70` (70%) — enforced on all domain modules
 
-These baselines must remain aligned with project build enforcement rules.
+These baselines must remain aligned with project build enforcement rules
+(`pom.xml` properties: `java.version`, `jacoco.coverage.threshold`).
 
 ## 2) Source of truth
 
 Before any upgrade decision, confirm compatibility against official references:
 
-- Spring Boot reference docs
-- Spring Boot system requirements
-- Spring Framework reference docs
-- Apache Maven official guides
+- [Spring Boot reference docs](https://docs.spring.io/spring-boot/)
+- [Spring Boot system requirements](https://docs.spring.io/spring-boot/system-requirements.html)
+- [Spring Framework reference docs](https://docs.spring.io/spring-framework/)
+- [Apache Maven official guides](https://maven.apache.org/guides/index.html)
+- [Spring Modulith reference](https://docs.spring.io/spring-modulith/)
+- [Spring Security reference](https://docs.spring.io/spring-security/reference/)
+- [Spring Security — What's New](https://docs.spring.io/spring-security/reference/whats-new.html)
 
 ## 3) Upgrade cadence
 

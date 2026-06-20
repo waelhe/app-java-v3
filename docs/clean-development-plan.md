@@ -1,8 +1,10 @@
 # خطة تطوير نظيفة — Clean Development Plan
-> Based on Spring Boot 4.0.6, Spring Modulith, Spring Framework 7,
+> Based on Spring Boot 4.1.0 GA, Spring Modulith 2.1.0, Spring Framework 7, Java 25 LTS,
 > Official Sources: https://docs.spring.io/spring-boot/reference, https://spring.io/guides, https://maven.apache.org/guides
 >
-> استثناءات المجتمع: springdoc-openapi 3.0.3 (Exception #7), MapStruct 1.6.3 (Exception #8), Instancio (Exception #9)
+> استثناءات المجتمع: springdoc-openapi 3.0.3 (Exception #7), MapStruct 1.6.3 (Exception #8), Instancio 6.0.0-RC3 (Exception #9)
+>
+> **آخر تحديث:** 2026-06-20 — مزامنة مع PR #144 (ترقية Boot 4.0.6 → 4.1.0، Modulith 2.0.6 → 2.1.0، Java 21 → 25)
 
 ---
 
@@ -25,7 +27,7 @@
 
 | # | المكتبة | الإصدار | النوع | السبب | المصدر |
 |---|---------|---------|-------|-------|--------|
-| 1 | Spring Modulith BOM | 2.0.6 | رسمي | Boot لا يدير Modulith | https://docs.spring.io/spring-modulith |
+| 1 | Spring Modulith BOM | 2.1.0 | رسمي | Boot لا يدير Modulith (تمت الترقية من 2.0.6 في PR #144) | https://docs.spring.io/spring-modulith |
 | 3 | Resilience4j BOM | 2.4.0 | رسمي | Boot لا يدير resilience4j-spring-boot4 | https://resilience4j.readme.io |
 | 4 | ArchUnit | 1.4.2 | رسمي | اختباري فقط، ليس في Boot BOM | https://www.archunit.org |
 | 5 | Spring REST Docs BOM | 4.0.0 | رسمي | يدير spring-restdocs-mockmvc | https://docs.spring.io/spring-restdocs |
@@ -274,6 +276,12 @@ mvnw clean compile -Djacoco.skip=true
 |---------|-----|-----|-------|
 | `archunit.version` | 1.4.1 | **1.4.2** | إصلاحات أخطاء + توافق Modulith |
 | Modulith BOM | 2.0.5 | **2.0.6** | إصلاح فقدان أحداث JDBC (#1653) |
+| Spring Boot | 4.0.6 | **4.1.0** | PR #144 — ترقية رئيسية |
+| Spring Modulith | 2.0.6 | **2.1.0** | PR #144 — متوافق مع Boot 4.1.0 |
+| Java | 21 | **25** | PR #144 — Java 25 LTS (class file major 69) |
+| Maven | 3.9.14 | **3.9.16** | PR #144 — تحديث wrapper |
+| git-commit-id | 9.0.2 | **10.0.0** | PR #144 |
+| JaCoCo | 0.8.14 | **0.8.15** | PR #144 |
 
 **إضافة استثناء #7 — springdoc-openapi:**
 ```xml
@@ -484,7 +492,7 @@ public class ServiceGraphQlController {
 - `ServiceResponse.java` — يحوّل `ProviderListing` إلى GraphQL type
 - `ServiceInput.java` — record لمدخلات mutation
 
-#### 4.4 — إنشاء POJO Tests (لأن `@GraphQlTest` غير متوفر في Boot 4.0.6)
+#### 4.4 — إنشاء POJO Tests (لأن `@GraphQlTest` غير متوفر في Boot 4.0.6 — أصبح متوفراً في 4.1.0 لكن الاختبارات الحالية تعمل بشكل صحيح)
 - `ServiceGraphQlControllerTest.java` — 5 اختبارات POJO مع mock
 - ملفات query: `graphql-test/service.graphql`, `services.graphql`, `createService.graphql`
 - اختبار إضافي للتحقق من وجود `@PreAuthorize` (annotation presence test) — 1 test

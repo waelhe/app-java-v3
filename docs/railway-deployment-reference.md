@@ -1,10 +1,29 @@
 # Railway Deployment Reference — app-java-v3
 
-> **⚠️ هذا التوثيق للمرجعية فقط — لا يُنفذ شيء بدون نقاش وموافقة ومرجع رسمي**
-> 
-> تاريخ التوثيق: 2026-05-01
-> نقطة الاستعادة: `ed57d15` (2026-04-28 03:06:45)
-> حالة الباك اند الحالية: نظيفة — مطابقة لـ `ed57d15`
+> **⚠️ هذه الوثيقة تاريخية — Railway لم يعد منصة النشر المعتمدة**
+>
+> **الحالة:** غير نشط (kept for historical reference only)
+> **تاريخ التوثيق الأصلي:** 2026-05-01
+> **نقطة الاستعادة:** `ed57d15` (2026-04-28 03:06:45)
+> **حالة الباك اند الحالية:** نظيفة — مطابقة لـ `ed57d15`
+>
+> ---
+>
+> **المنصة المعتمدة الحالية:** Cloudflare Containers + Workers + Neon (PostgreSQL) + Upstash (Redis)
+>
+> للنشر الحالي، راجع:
+> - [docs/architecture/ARCHITECTURE.md §5 — Cloudflare-First Deployment](architecture/ARCHITECTURE.md#5-cloudflare-first-deployment)
+> - [docs/architecture/diagrams/04-cloudflare-deployment.png](architecture/diagrams/04-cloudflare-deployment.png)
+> - [docs/external-services.md](external-services.md) (إعداد الخدمات الخارجية)
+> - [docs/deployment/README.md](deployment/README.md) (خيارات النشر الحالية)
+> - [docs/deployment/aot-cache.md](deployment/aot-cache.md) (تحسين cold start)
+>
+> **السبب في ترك Railway:** Cloudflare يوفر شبكة عالمية (300+ POP) + تكامل أعمق
+> مع Workers + R2 + Hyperdrive. Railway كان بديلاً مؤقتاً قبل اعتماد Cloudflare.
+>
+> ---
+>
+> **ما يلي هو التوثيق الأصلي التاريخي (للمرجعية فقط — لا يُنفذ):**
 
 ---
 
