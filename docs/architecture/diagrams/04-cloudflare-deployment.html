@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>Cloudflare-First Deployment Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #F8FAFC;
+    color: #243447;
+    padding: 40px;
+  }
+  .canvas { width: 1400px; margin: 0 auto; }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid #E2E8F0;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 6px;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: #64748B;
+  }
+
+  /* Region: Cloudflare edge */
+  .region {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #E2E8F0;
+    position: relative;
+  }
+  .region-cf { border: 2px solid #F6821F; background: linear-gradient(135deg, #FFFFFF 0%, #FFF7ED 100%); }
+  .region-external { border: 2px dashed #64748B; background: #F8FAFC; }
+
+  .region-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #E2E8F0;
+  }
+  .region-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    color: #FFFFFF;
+  }
+  .region-cf .region-icon { background: #F6821F; }
+  .region-external .region-icon { background: #64748B; }
+  .region-title { font-size: 17px; font-weight: 700; color: #0F172A; }
+  .region-desc { font-size: 12px; color: #64748B; margin-left: auto; }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+  /* Component card */
+  .component {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .region-cf .component { border-color: #FED7AA; }
+  .region-external .component { border-color: #CBD5E1; }
+
+  .component-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .component-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0F172A;
+  }
+  .component-status {
+    margin-left: auto;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .status-ready { background: #D1FAE5; color: #065F46; }
+  .status-beta { background: #FEF3C7; color: #92400E; }
+  .status-external { background: #E0E7FF; color: #3730A3; }
+  .status-required { background: #FEE2E2; color: #991B1B; }
+
+  .component-meta {
+    font-size: 11px;
+    color: #475569;
+    line-height: 1.5;
+  }
+  .component-meta strong { color: #0F172A; font-weight: 600; }
+  .component-tech {
+    font-size: 10px;
+    color: #64748B;
+    font-family: 'SF Mono', monospace;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed #E2E8F0;
+  }
+
+  /* Connection diagram (topology) */
+  .topology {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #E2E8F0;
+  }
+  .topology h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 16px;
+  }
+  .topo-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 20px 0;
+  }
+  .topo-node {
+    background: #F1F5F9;
+    border: 2px solid #475569;
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: center;
+    min-width: 130px;
+  }
+  .topo-node.user { background: #DBEAFE; border-color: #1E40AF; }
+  .topo-node.worker { background: #FED7AA; border-color: #F6821F; }
+  .topo-node.container { background: #D1FAE5; border-color: #047857; }
+  .topo-node.db { background: #FEF3C7; border-color: #B45309; }
+  .topo-node.cache { background: #FCE7F3; border-color: #BE185D; }
+  .topo-name { font-size: 12px; font-weight: 700; color: #0F172A; }
+  .topo-sub { font-size: 10px; color: #475569; margin-top: 2px; }
+  .topo-arrow {
+    color: #475569;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 0 4px;
+  }
+  .topo-label {
+    font-size: 9px;
+    color: #64748B;
+    text-align: center;
+    margin-top: 2px;
+    font-family: 'SF Mono', monospace;
+  }
+
+  /* Plan phases */
+  .plan-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .plan-phase {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .plan-phase .phase-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: #F6821F;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .plan-phase .phase-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 4px;
+  }
+  .plan-phase .phase-detail {
+    font-size: 10px;
+    color: #64748B;
+    line-height: 1.4;
+  }
+
+  .footnote {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #94A3B8;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="header">
+    <h1>Cloudflare-First Deployment Architecture</h1>
+    <div class="subtitle">Target state • Cloudflare global network as primary hosting platform • External managed services where CF has no equivalent</div>
+  </div>
+
+  <!-- Topology: Request flow -->
+  <div class="topology">
+    <h2>🌐 Request Flow — User → Edge → Container → Data</h2>
+    <div class="topo-flow">
+      <div class="topo-node user">
+        <div class="topo-name">User Browser</div>
+        <div class="topo-sub">React SPA</div>
+      </div>
+      <div>
+        <div class="topo-arrow">→</div>
+        <div class="topo-label">HTTPS</div>
+      </div>
+      <div class="topo-node worker">
+        <div class="topo-name">CF Worker</div>
+        <div class="topo-sub">Proxy + CORS</div>
+      </div>
+      <div>
+        <div class="topo-arrow">→</div>
+        <div class="topo-label">HTTP (internal)</div>
+      </div>
+      <div class="topo-node container">
+        <div class="topo-name">CF Container</div>
+        <div class="topo-sub">Spring Boot 4.1</div>
+      </div>
+      <div>
+        <div class="topo-arrow">→</div>
+        <div class="topo-label">JDBC</div>
+      </div>
+      <div class="topo-node db">
+        <div class="topo-name">Neon</div>
+        <div class="topo-sub">PostgreSQL 17</div>
+      </div>
+    </div>
+    <div class="topo-flow" style="margin-top: -10px;">
+      <div style="width: 130px;"></div>
+      <div></div>
+      <div class="topo-node worker" style="background: #F5F3FF; border-color: #6D28D9;">
+        <div class="topo-name">Hyperdrive</div>
+        <div class="topo-sub">PG Pooler</div>
+      </div>
+      <div></div>
+      <div class="topo-node cache" style="margin-left: auto; margin-right: auto;">
+        <div class="topo-name">Upstash</div>
+        <div class="topo-sub">Redis (REST)</div>
+      </div>
+      <div></div>
+      <div></div>
+    </div>
+  </div>
+
+  <!-- Region: Cloudflare -->
+  <div class="region region-cf">
+    <div class="region-header">
+      <div class="region-icon">☁️</div>
+      <div class="region-title">Cloudflare Global Network (300+ POPs)</div>
+      <div class="region-desc">Edge compute + storage • Sub-50ms latency worldwide</div>
+    </div>
+    <div class="grid grid-4">
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Worker (Proxy)</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          JS/TS Worker routes all <code>/api/*</code> to the Spring Boot container.<br>
+          <strong>Bindings:</strong> Container (JAVA_BACKEND), KV (rate-limit counters)
+        </div>
+        <div class="component-tech">app-java-v3.wael-he.workers.dev • Wrangler deploy</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Container (Spring Boot)</div>
+          <div class="component-status status-required">Workers Paid</div>
+        </div>
+        <div class="component-meta">
+          Runs <code>eclipse-temurin:25-jre-alpine</code> Docker image.<br>
+          <strong>Config:</strong> standard-1 (½ vCPU / 4 GiB) • sleepAfter=30m • No autoscale yet
+        </div>
+        <div class="component-tech">registry.cloudflare.com • linux/amd64</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Hyperdrive</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          Connection pooler + edge cache for external PostgreSQL (Neon).<br>
+          <strong>Benefit:</strong> Reuses connections across Worker instances • Caches prepared statements
+        </div>
+        <div class="component-tech">Binding: HYPERDRIVE (Neon connection string)</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">R2 Storage</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          S3-compatible object storage for file uploads (avatars, documents).<br>
+          <strong>Benefit:</strong> Zero egress fees between CF services
+        </div>
+        <div class="component-tech">Binding: R2_BUCKET (marketplace-assets)</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Pages</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          Static frontend hosting (React build) + Pages Functions (edge JS/TS).<br>
+          <strong>Use:</strong> Consumer SPA + Admin Console
+        </div>
+        <div class="component-tech">marketplace.pages.dev • Auto CDN</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">KV Namespace</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          Eventually-consistent key-value store for edge rate-limiting counters.<br>
+          <strong>Note:</strong> Application-level rate-limit uses Upstash Redis (strong consistency)
+        </div>
+        <div class="component-tech">Binding: RATE_LIMIT_KV</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Durable Objects</div>
+          <div class="component-status status-required">Workers Paid</div>
+        </div>
+        <div class="component-meta">
+          Required for Container binding (the <code>Container</code> class extends <code>DurableObject</code>).<br>
+          <strong>Use:</strong> Container lifecycle management + routing
+        </div>
+        <div class="component-tech">class_name: JavaBackend</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Workers Analytics</div>
+          <div class="component-status status-ready">READY</div>
+        </div>
+        <div class="component-meta">
+          Built-in metrics for Worker requests, CPU time, errors.<br>
+          <strong>Free:</strong> Included with Workers plan
+        </div>
+        <div class="component-tech">dash.cloudflare.com → Workers → Analytics</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Region: External managed -->
+  <div class="region region-external">
+    <div class="region-header">
+      <div class="region-icon">🔌</div>
+      <div class="region-title">External Managed Services</div>
+      <div class="region-desc">Cloudflare has no managed Postgres/Redis — use best-in-class serverless providers</div>
+    </div>
+    <div class="grid grid-4">
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Neon (PostgreSQL 17)</div>
+          <div class="component-status status-external">EXTERNAL</div>
+        </div>
+        <div class="component-meta">
+          Serverless PostgreSQL with branching, autoscaling, point-in-time restore.<br>
+          <strong>Free tier:</strong> 0.5 GiB storage • Connection via Hyperdrive
+        </div>
+        <div class="component-tech">neon.tech • JDBC: jdbc:postgresql://...</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Upstash (Redis 7)</div>
+          <div class="component-status status-external">EXTERNAL</div>
+        </div>
+        <div class="component-meta">
+          Serverless Redis over HTTP/REST API (no persistent connections).<br>
+          <strong>Use:</strong> Sessions, cache, rate-limit, TOTP replay guard, mfaToken store
+        </div>
+        <div class="component-tech">upstash.com • spring.data.redis.url</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">Amazon SES</div>
+          <div class="component-status status-external">EXTERNAL</div>
+        </div>
+        <div class="component-meta">
+          Transactional email relay (welcome, password reset, booking confirmations).<br>
+          <strong>Alternative:</strong> SendGrid, Mailtrap (staging)
+        </div>
+        <div class="component-tech">spring.mail.host=email-smtp.*.amazonaws.com</div>
+      </div>
+
+      <div class="component">
+        <div class="component-header">
+          <div class="component-name">GitHub + Google OAuth</div>
+          <div class="component-status status-external">EXTERNAL</div>
+        </div>
+        <div class="component-meta">
+          Social login providers (already configured in application.yml).<br>
+          <strong>Callback:</strong> https://&lt;host&gt;/login/oauth2/code/{registrationId}
+        </div>
+        <div class="component-tech">spring.security.oauth2.client.*</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Implementation plan -->
+  <div class="region" style="border: 1px solid #E2E8F0;">
+    <div class="region-header">
+      <div class="region-icon" style="background: #0F172A;">📋</div>
+      <div class="region-title">Implementation Plan — 5 Phases</div>
+      <div class="region-desc">Ordered • Each phase is independently deployable</div>
+    </div>
+    <div class="plan-grid">
+      <div class="plan-phase">
+        <div class="phase-num">0</div>
+        <div class="phase-name">Fix Dockerfile</div>
+        <div class="phase-detail">layertools → tools (Spring Boot 4.1) on main<br>✅ BLOCKER for any container deploy</div>
+      </div>
+      <div class="plan-phase">
+        <div class="phase-num">1</div>
+        <div class="phase-name">CF Workers Paid</div>
+        <div class="phase-detail">Upgrade account → $5/mo<br>Unlocks Containers + Durable Objects</div>
+      </div>
+      <div class="plan-phase">
+        <div class="phase-num">2</div>
+        <div class="phase-name">Neon + Upstash</div>
+        <div class="phase-detail">Provision managed Postgres + Redis<br>Run Flyway migrations</div>
+      </div>
+      <div class="plan-phase">
+        <div class="phase-num">3</div>
+        <div class="phase-name">Container + Worker</div>
+        <div class="phase-detail">wrangler.jsonc (containers + DO bindings)<br>Deploy Spring Boot image</div>
+      </div>
+      <div class="plan-phase">
+        <div class="phase-num">4</div>
+        <div class="phase-name">Pages + R2</div>
+        <div class="phase-detail">Frontend SPA deploy<br>Wire R2 for file uploads</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    ☁️ Cloudflare-first = app + worker + storage on CF • 🔌 External = only where CF has no managed equivalent (Postgres, Redis, SMTP) • All connected via Hyperdrive (PG) and REST (Redis)
+  </div>
+
+</div>
+</body>
+</html>
