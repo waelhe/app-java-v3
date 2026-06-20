@@ -8,3 +8,24 @@ target/
 .DS_Store
 
 cp.txt
+
+# Private keys — never commit. Reference: GitHub Removing sensitive data
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Environment files with real secrets — never commit.
+# .env.example is the committed template; .env holds real values.
+.env
+.env.*
+!.env.example
+
+# TestSprite agent artifacts (local run logs, failure traces, generated code).
+# These are local-only outputs from the TestSprite AI testing agent and must
+# never be committed -- they contain environment-specific paths and may leak
+# internal test data. See https://www.testsprite.com/
+.testsprite/
+.testsprite
