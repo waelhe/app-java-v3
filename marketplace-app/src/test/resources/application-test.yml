@@ -1,4 +1,15 @@
 spring:
+  main:
+    # TODO [DEBT]: allow-bean-definition-overriding is needed because multiple
+    # test configs (ModuleTestConfig, JpaConfig, @EnableConfigurationProperties)
+    # register beans with the same name. Each conflict should be resolved in a
+    # separate focused PR by renaming beans or removing duplicate @Enable* annotations.
+    # Tracked conflicts:
+    #   - jpaAuditingHandler (ModuleTestConfig @EnableJpaAuditing vs JpaConfig)
+    #   - marketplaceProperties (ModuleTestConfig @Bean vs @EnableConfigurationProperties)
+    #   - beans in Provider/Payments/Messaging module tests (TBD)
+    # See: https://docs.spring.io/spring-boot/reference/features/external-config.html
+    allow-bean-definition-overriding: true
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
