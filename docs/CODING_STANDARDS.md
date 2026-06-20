@@ -26,6 +26,9 @@
 14. [Naming Conventions](#14-naming-conventions)
 15. [Null Handling](#15-null-handling)
 16. [Maven & Build](#16-maven--build)
+17. [Deployment](#17-deployment)
+18. [Spring Security 7.x Compliance](#18-spring-security-7x-compliance)
+19. [Spring Cloud Gateway (when to use)](#19-spring-cloud-gateway-when-to-use)
 
 ---
 
@@ -768,14 +771,244 @@ if (booking != null) { ... }  // ❌ use Optional.map/filter/ifPresent
 
 ---
 
+## 17. Deployment
+
+### 17.1 Spring Boot Deployment Principles
+
+> **Official doc** — [Spring Boot — Deploying Spring Boot Applications](https://docs.spring.io/spring-boot/how-to/deployment/index.html):
+> "Spring Boot's flexible packaging options provide a great deal of choice when it comes to deploying your application. You can deploy Spring Boot applications to a variety of cloud platforms and to virtual or real machines."
+
+The deployment options are:
+- **AOT Cache** (Java 25+) — for faster startup on the JVM
+- **Traditional Deployment** — WAR on servlet containers
+- **Container Images** — Dockerfile-based (project uses this)
+
+### 17.2 Dockerfile Conventions
+
+✅ **DO:**
+```dockerfile
+# Multi-stage build (build → extract layers → runtime)
+FROM eclipse-temurin:25-jdk-alpine AS build
+WORKDIR /app
+COPY . .
+RUN chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
+
+# Extract layers (Spring Boot 4.1 — use jarmode=tools, NOT layertools)
+FROM build AS extractor
+WORKDIR /app
+COPY --from=build /app/marketplace-app/target/*.jar app.jar
+RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted
+
+# Runtime (JRE only, non-root user)
+FROM eclipse-temurin:25-jre-alpine
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+COPY --from=extractor /app/dependencies/ ./
+COPY --from=extractor /app/spring-boot-loader/ ./
+COPY --from=extractor /app/snapshot-dependencies/ ./
+COPY --from=extractor /app/application/ ./
+USER app
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "application.jar"]
+```
+
+❌ **DON'T:**
+```dockerfile
+# ❌ layertools was REMOVED in Spring Boot 4.1 (issue #48568)
+RUN java -Djarmode=layertools -jar app.jar extract
+```
+
+### 17.3 Rules
+
+| Rule | Rationale | Reference |
+|------|-----------|-----------|
+| Use `jarmode=tools` (not `layertools`) | `layertools` removed in Spring Boot 4.1 (M1, issue #48568) | [Spring Boot 4.1 — Container Images](https://docs.spring.io/spring-boot/reference/packaging/container-images/dockerfiles.html) |
+| Multi-stage build (build → extract → runtime) | Smaller final image (JRE only) | [Spring Boot — Efficient Images](https://docs.spring.io/spring-boot/reference/packaging/container-images/efficient-images.html) |
+| Copy layers in order: dependencies → loader → snapshot-deps → application | Maximizes Docker layer cache hits | Spring Boot docs |
+| Run as non-root user (`USER app`) | Container security | OWASP Docker Security |
+| Use `eclipse-temurin:25-jre-alpine` for runtime | Smallest JRE base, Java 25 LTS | [Adoptium](https://adoptium.net/) |
+| Set `server.forward-headers-strategy=framework` behind reverse proxy | Trusted proxy handling | [Spring Boot — Forwarded Headers](https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers) |
+| Set `spring.lifecycle.timeout-per-shutdown-phase=30s` | Graceful shutdown | [Spring Boot — Graceful Shutdown](https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.graceful-shutdown) |
+| Optional: AOT Cache for Java 25+ | Faster startup (~30-50%) | [Spring Boot — AOT Cache](https://docs.spring.io/spring-boot/reference/packaging/aot-cache.html) |
+| Kubernetes: set `terminationGracePeriodSeconds` > `timeout-per-shutdown-phase` | Allow graceful drain | Spring Boot deployment docs |
+
+### 17.4 Health Checks
+
+```dockerfile
+# Dockerfile HEALTHCHECK
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD wget -qO- http://localhost:8080/actuator/health/liveness || exit 1
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/actuator/health/liveness` | Liveness probe (is the app running?) |
+| `/actuator/health/readiness` | Readiness probe (is it ready to serve?) |
+| `/actuator/info` | Build info + git commit |
+| `/actuator/prometheus` | Prometheus metrics |
+
+**Reference:** [Spring Boot Actuator — Endpoints](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)
+
+---
+
+## 18. Spring Security 7.x Compliance
+
+### 18.1 Breaking Changes (Spring Security 7.0)
+
+> **Official doc** — [Spring Security — What's New in 7.0](https://docs.spring.io/spring-security/reference/7.0/whats-new.html):
+> "Being a major release, there are a number of deprecated APIs that are removed in Spring Security 7."
+
+**Removed APIs (must not use):**
+
+| Removed | Replacement | Reference |
+|---------|-------------|-----------|
+| `and()` in `HttpSecurity` DSL | Lambda methods | Spring Security 7.0 whats-new |
+| `authorizeRequests` | `authorizeHttpRequests` | Spring Security 7.0 whats-new |
+| `MvcRequestMatcher` / `AntPathRequestMatcher` | `PathPatternRequestMatcher` | Spring Security 7.0 whats-new |
+| OAuth2 password grant | (removed — use authorization code + PKCE) | Spring Security 7.0 whats-new |
+| `ApacheDsContainer` (LDAP) | UnboundID | Spring Security 7.0 whats-new |
+| Open SAML 4 | Open SAML 5 | Spring Security 7.0 whats-new |
+| `AuthorizationManager#check` | `AuthorizationManager#authorize` | Spring Security 7.0 whats-new |
+
+**New defaults (must adopt):**
+
+| Feature | Default | Reference |
+|---------|---------|-----------|
+| PKCE in OAuth2 Authorization Server | **Enabled by default** | Spring Security 7.0 whats-new |
+| SPA-based CSRF | `http.csrf(csrf → csrf.spa())` | Spring Security 7.0 whats-new |
+| Multi-Factor Authentication | `@EnableMultiFactorAuthentication` | Spring Security 7.0 whats-new |
+| Jackson 3 (was Jackson 2) | `JsonMapper.Builder` + `SecurityJacksonModules` | [Migration to 7.0](https://docs.spring.io/spring-security/reference/migration/index.html) |
+
+### 18.2 DaoAuthenticationProvider (Spring Security 7.x)
+
+✅ **DO:**
+```java
+@Bean
+public AuthenticationManager authenticationManager(UserDetailsService userDetailsService,
+                                                    PasswordEncoder passwordEncoder) {
+    DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
+    provider.setPasswordEncoder(passwordEncoder);
+    return new ProviderManager(provider);
+}
+```
+
+❌ **DON'T:**
+```java
+DaoAuthenticationProvider provider = new DaoAuthenticationProvider();  // ❌ no-arg constructor removed
+provider.setUserDetailsService(userDetailsService);                    // ❌ setter removed
+```
+
+> **Reference:** Spring Security 7.x Javadoc — `DaoAuthenticationProvider(UserDetailsService)` is the only public constructor. The no-arg constructor and `setUserDetailsService()` method were removed in 7.0.
+
+### 18.3 Security Filter Chain Pattern (Spring Security 7.x)
+
+✅ **DO:**
+```java
+@Bean
+@Order(3)
+public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())  // lambda — no .and()
+        .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(auth -> auth  // authorizeHttpRequests — not authorizeRequests
+            .requestMatchers("/api/v1/**").authenticated()
+            .anyRequest().permitAll()
+        )
+        .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+    return http.build();
+}
+```
+
+❌ **DON'T:**
+```java
+http.csrf().disable()                  // ❌ no .and() in 7.x
+    .authorizeRequests()                // ❌ removed — use authorizeHttpRequests
+        .antMatchers("/api/**").authenticated()  // ❌ AntPathRequestMatcher removed
+        .and()                          // ❌ .and() removed
+    .oauth2ResourceServer();
+```
+
+### 18.4 What's New in Spring Security 7.1
+
+> **Official doc** — [Spring Security — What's New in 7.1](https://docs.spring.io/spring-security/reference/whats-new.html):
+> - Added `InetAddressMatcher`
+> - Added `ConditionalAuthorizationManager`
+> - Added `PreFlightRequestFilter` support
+> - Added `RestClientOpaqueTokenIntrospector`
+> - Added Programmatic MFA (`when` / `withWhen` conditions)
+> - WebAuthn Authentication Events
+
+### 18.5 Rules
+
+| Rule | Rationale | Reference |
+|------|-----------|-----------|
+| Use lambda DSL (no `.and()`) | Removed in 7.0 | [Spring Security 7.0 whats-new](https://docs.spring.io/spring-security/reference/7.0/whats-new.html) |
+| `authorizeHttpRequests` (not `authorizeRequests`) | Removed in 7.0 | Spring Security 7.0 whats-new |
+| `PathPatternRequestMatcher` (not `AntPathRequestMatcher`) | Removed in 7.0 | Spring Security 7.0 whats-new |
+| `DaoAuthenticationProvider(userDetailsService)` constructor | Only constructor in 7.x | Spring Security Javadoc |
+| PKCE enabled by default (don't disable) | Security best practice | Spring Security 7.0 whats-new |
+| Jackson 3 (not Jackson 2) | Migration in 7.0 | [Migration to 7.0](https://docs.spring.io/spring-security/reference/migration/index.html) |
+| `@EnableMultiFactorAuthentication` for MFA | New in 7.0 | Spring Security 7.0 whats-new |
+| HSTS, CSP, Permissions-Policy via `.headers()` | Secure defaults | [Spring Security — Headers](https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html) |
+
+---
+
+## 19. Spring Cloud Gateway (when to use)
+
+### 19.1 SCG vs Spring Security Filter Chain
+
+> **Official doc** — [Spring Cloud Gateway](https://spring.io/projects/spring-cloud-gateway):
+> "This project provides a library for building an API Gateway on top of Spring. Spring Cloud Gateway aims to provide a simple, yet effective way to route to APIs and provide cross-cutting concerns to them such as: security, monitoring/metrics, and resiliency."
+
+**They are complementary, not alternatives:**
+
+| Concern | Layer | Tool |
+|---------|-------|------|
+| Edge routing, rate limiting, request transformation | Edge / API Gateway | Spring Cloud Gateway |
+| Authentication, authorization, CSRF, security headers | Application | Spring Security filter chain |
+
+### 19.2 Two Flavors (WebFlux vs WebMVC)
+
+> **Official doc** — [Spring Cloud Gateway — Reference](https://docs.spring.io/spring-cloud-gateway/reference/):
+> "This project provides an API Gateway built on top of the Spring Ecosystem, including: Spring Framework 7, Spring Boot 4, and Project Reactor. There are two distinct flavors of Spring Cloud Gateway: Server and Proxy Exchange. Each flavor offers WebFlux and Web MVC compatibility."
+
+| Flavor | Starter | Use Case |
+|--------|---------|----------|
+| Server WebFlux | `spring-cloud-starter-gateway-server-webflux` | Reactive, non-blocking gateway |
+| Server WebMVC | `spring-cloud-starter-gateway-server-webmvc` | Servlet-based gateway (simpler) |
+
+**This project:** Spring MVC (blocking) — if a gateway is needed, use Server WebMVC flavor.
+
+### 19.3 Rules
+
+| Rule | Rationale | Reference |
+|------|-----------|-----------|
+| Use SCG for **edge concerns** (routing, rate limit, transform) | Separation of concerns | [SCG project page](https://spring.io/projects/spring-cloud-gateway) |
+| Use Spring Security for **app concerns** (auth, CSRF) | Separation of concerns | [Spring Security reference](https://docs.spring.io/spring-security/reference/) |
+| Choose WebMVC flavor for Spring MVC apps | Stack consistency | SCG reference |
+| SCG supports `RequestRateLimiter` with Redis backend | Distributed rate limiting | [SCG — RequestRateLimiter](https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-webmvc.html) |
+| Don't replicate security rules in both SCG and Security filter chain | Single source of truth | Architecture principle |
+
+---
+
 ## Appendix: References
 
-### Spring Framework
+### Spring Framework (mandatory)
 - [Spring Boot Reference](https://docs.spring.io/spring-boot/)
+- [Spring Boot — How to Deploy](https://docs.spring.io/spring-boot/how-to/deployment/index.html) ⭐ mandatory
+- [Spring Boot — Container Images](https://docs.spring.io/spring-boot/reference/packaging/container-images/dockerfiles.html)
+- [Spring Boot — AOT Cache](https://docs.spring.io/spring-boot/reference/packaging/aot-cache.html)
 - [Spring Framework Reference](https://docs.spring.io/spring-framework/)
 - [Spring Security Reference](https://docs.spring.io/spring-security/reference/)
+- [Spring Security — What's New (7.1)](https://docs.spring.io/spring-security/reference/whats-new.html) ⭐ mandatory
+- [Spring Security — What's New (7.0)](https://docs.spring.io/spring-security/reference/7.0/whats-new.html)
+- [Spring Security — Migration to 7.0](https://docs.spring.io/spring-security/reference/migration/index.html)
+- [Spring Security — Headers](https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html)
 - [Spring Data JPA Reference](https://docs.spring.io/spring-data/jpa/reference/)
 - [Spring Modulith Reference](https://docs.spring.io/spring-modulith/)
+- [Spring Cloud Gateway](https://spring.io/projects/spring-cloud-gateway) ⭐ mandatory
+- [Spring Cloud Gateway — Reference](https://docs.spring.io/spring-cloud-gateway/reference/)
+- [Spring Guides](https://spring.io/guides)
 
 ### Java
 - [Java 25 Language Specification](https://docs.oracle.com/javase/specs/)
@@ -785,10 +1018,15 @@ if (booking != null) { ... }  // ❌ use Optional.map/filter/ifPresent
 ### Standards
 - [RFC 7807 — Problem Details for HTTP APIs](https://datatracker.ietf.org/doc/html/rfc7807)
 - [RFC 6238 — TOTP](https://datatracker.ietf.org/doc/html/rfc6238)
+- [RFC 6749 — OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749)
+- [RFC 8252 — PKCE](https://datatracker.ietf.org/doc/html/rfc8252)
+- [RFC 6797 — HSTS](https://datatracker.ietf.org/doc/html/rfc6797)
 - [NIST SP 800-63B — Authentication](https://pages.nist.gov/800-63-3/sp800-63b.html)
+- [NIST SP 800-57 — Key Management](https://nvd.nist.gov/800-57)
 - [OWASP Cheat Sheets](https://cheatsheetseries.owasp.org/)
 
-### Build & Testing
+### Build & Testing (mandatory)
+- [Maven — Guides Index](https://maven.apache.org/guides/index.html) ⭐ mandatory
 - [Maven — Build Lifecycle](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)
 - [Maven Enforcer Plugin](https://maven.apache.org/enforcer/)
 - [JaCoCo](https://www.jacoco.org/jacoco/trunk/doc/maven.html)

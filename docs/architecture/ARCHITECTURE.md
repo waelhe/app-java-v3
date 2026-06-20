@@ -421,16 +421,36 @@ All diagrams are in `docs/architecture/diagrams/`:
 
 ## Appendix: References
 
+### Spring Framework (mandatory)
 - [Spring Boot Reference](https://docs.spring.io/spring-boot/)
+- [Spring Boot — How to Deploy](https://docs.spring.io/spring-boot/how-to/deployment/index.html) ⭐ mandatory
+- [Spring Boot — Container Images](https://docs.spring.io/spring-boot/reference/packaging/container-images/dockerfiles.html)
+- [Spring Boot — AOT Cache](https://docs.spring.io/spring-boot/reference/packaging/aot-cache.html)
 - [Spring Modulith Reference](https://docs.spring.io/spring-modulith/)
-- [Spring Security Reference](https://docs.spring.io/spring-security/)
-- [Spring Cloud Gateway](https://spring.io/projects/spring-cloud-gateway)
-- [Maven Guides](https://maven.apache.org/guides/index.html)
+- [Spring Security Reference](https://docs.spring.io/spring-security/reference/)
+- [Spring Security — What's New (7.1)](https://docs.spring.io/spring-security/reference/whats-new.html) ⭐ mandatory
+- [Spring Security — What's New (7.0)](https://docs.spring.io/spring-security/reference/7.0/whats-new.html)
+- [Spring Security — Migration to 7.0](https://docs.spring.io/spring-security/reference/migration/index.html)
+- [Spring Security — Headers](https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html)
+- [Spring Cloud Gateway](https://spring.io/projects/spring-cloud-gateway) ⭐ mandatory
+- [Spring Cloud Gateway — Reference](https://docs.spring.io/spring-cloud-gateway/reference/)
+- [Spring Guides](https://spring.io/guides)
+
+### Maven (mandatory)
+- [Maven Guides Index](https://maven.apache.org/guides/index.html) ⭐ mandatory
+- [Maven Build Lifecycle](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)
+- [Maven Enforcer Plugin](https://maven.apache.org/enforcer/)
+
+### Cloudflare
 - [Cloudflare Containers](https://developers.cloudflare.com/containers/)
 - [Cloudflare Workers](https://developers.cloudflare.com/workers/)
 - [Cloudflare Hyperdrive](https://developers.cloudflare.com/hyperdrive/)
+
+### External Managed Services
 - [Neon PostgreSQL](https://neon.tech/docs)
 - [Upstash Redis](https://docs.upstash.com/redis)
+
+### Standards
 - [OWASP Cheat Sheets](https://cheatsheetseries.owasp.org/)
 - [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) (Authentication)
 - [NIST SP 800-57](https://nvd.nist.gov/800-57) (Key Management)
@@ -440,3 +460,4 @@ All diagrams are in `docs/architecture/diagrams/`:
 - [RFC 9068](https://datatracker.ietf.org/doc/html/rfc9068) (JWT for OAuth 2.0)
 - [RFC 6797](https://datatracker.ietf.org/doc/html/rfc6797) (HSTS)
 - [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) (Token Revocation)
+- [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) (Problem Details)
