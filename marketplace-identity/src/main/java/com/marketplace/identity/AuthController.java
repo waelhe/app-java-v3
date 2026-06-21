@@ -125,11 +125,13 @@ public class AuthController {
 
     /**
      * Step 2: Validates TOTP code for MFA-enabled users.
+     * <p>Requires the {@code mfaToken} returned by step 1 to prevent MFA bypass
+     * (OWASP MFA Cheat Sheet — MFA must be bound to the authenticated session).
      */
     @PostMapping("/login/mfa")
     @RateLimiter(name = "auth")
     public ResponseEntity<Map<String, Object>> verifyMfaLogin(@Valid @RequestBody MfaLoginRequest request) {
-        TwoStepLoginService.LoginResult result = loginService.verifyMfa(request.userId(), request.code());
+        TwoStepLoginService.LoginResult result = loginService.verifyMfa(request.userId(), request.mfaToken(), request.code());
 
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",
@@ -140,11 +142,12 @@ public class AuthController {
 
     /**
      * Step 2 alternative: Verifies recovery code.
+     * <p>Requires the {@code mfaToken} returned by step 1 (same binding as MFA).
      */
     @PostMapping("/login/recovery-code")
     @RateLimiter(name = "auth")
     public ResponseEntity<Map<String, Object>> verifyRecoveryCodeLogin(@Valid @RequestBody RecoveryCodeLoginRequest request) {
-        TwoStepLoginService.LoginResult result = loginService.verifyRecoveryCode(request.userId(), request.recoveryCode());
+        TwoStepLoginService.LoginResult result = loginService.verifyRecoveryCode(request.userId(), request.mfaToken(), request.recoveryCode());
 
         return ResponseEntity.ok(Map.of(
                 "status", "SUCCESS",

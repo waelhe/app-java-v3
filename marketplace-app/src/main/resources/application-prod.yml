@@ -68,6 +68,23 @@ spring:
 
 server:
   shutdown: graceful
+  # Spring Boot Reference — Running Behind a Forwarded-Header Proxy.
+  # Required for HTTPS issuer + HSTS to work behind TLS-terminating proxy
+  # (Railway/nginx/Traefik). Reference:
+  # https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
+  forward-headers-strategy: framework
+  # OWASP Session Management Cheat Sheet — Cookies.
+  # All session cookies must be HttpOnly (no JS access), Secure (HTTPS only),
+  # and SameSite=Strict (no cross-site submission).
+  # Reference: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#cookies
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: strict
+        max-age: 3600
+        name: SESSION
 
 logging:
   pattern:

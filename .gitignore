@@ -16,6 +16,7 @@ cp.txt
 *.p12
 *.jks
 *.keystore
+!marketplace-app/src/main/resources/keys/README.md
 
 # Environment files with real secrets — never commit.
 # .env.example is the committed template; .env holds real values.

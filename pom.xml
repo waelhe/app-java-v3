@@ -48,6 +48,12 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.0-RC3</instancio.version>
         <git-commit-id.version>10.0.0</git-commit-id.version>
+        <!-- Exception #10: ZXing — real QR code generation for RFC 6238 TOTP enrollment.
+             Reference: https://github.com/zxing/zxing -->
+        <zxing.version>3.5.3</zxing.version>
+        <!-- Exception #11: Apache Commons Codec — RFC 4648 Base32 for otpauth URIs.
+             Reference: https://commons.apache.org/proper/commons-codec/ -->
+        <commons-codec.version>1.18.0</commons-codec.version>
         <!-- Boot 4.1.0 managed versions lag behind transitive dep requirements -->
         <jackson.version>3.2.0</jackson.version>
         <prometheus-client.version>1.7.0</prometheus-client.version>
@@ -126,6 +132,27 @@
                 <artifactId>instancio-junit</artifactId>
                 <version>${instancio.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <!-- Exception #10: ZXing — production-grade QR code generation for TOTP enrollment.
+                 Replaces the prior placeholder hash-pattern implementation that produced
+                 images no authenticator app could decode. Reference: https://github.com/zxing/zxing -->
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>core</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>javase</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <!-- Exception #11: Apache Commons Codec — RFC 4648 Base32 for otpauth URIs.
+                 Required because Google/Microsoft Authenticators decode the secret as Base32,
+                 not Base64. Reference: https://commons.apache.org/proper/commons-codec/ -->
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>${commons-codec.version}</version>
             </dependency>
             <!-- Internal modules -->
             <dependency>

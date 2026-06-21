@@ -66,16 +66,40 @@ public final class TotpService {
      * Builds the otpauth:// URI for QR code generation.
      * Format: otpauth://totp/Label?secret=SECRET&issuer=ISSUER&digits=6&period=30
      *
-     * @param secret    Base64-encoded secret
-     * @param account   user account identifier (e.g., email)
-     * @param issuer    application name
-     * @return otpauth URI
+     * <p>The {@code secret} parameter is <strong>Base32-encoded (RFC 4648)</strong>
+     * because Google Authenticator, Microsoft Authenticator, and other compliant
+     * authenticator apps decode the secret as Base32, not Base64. The internal
+     * storage uses Base64 (for efficient DB encoding); we convert here to the
+     * authenticator-compatible Base32 representation.
+     *
+     * <p>The previous implementation called {@code Base64.getEncoder().encodeToString(secret.getBytes())}
+     * which both (a) re-encoded the Base64 string as if it were raw bytes — yielding a
+     * different secret than the one stored — and (b) used Base64 instead of Base32,
+     * so no authenticator app could decode it.
+     *
+     * <p><b>References</b>
+     * <ul>
+     *   <li><a href="https://github.com/google/google-authenticator/wiki/Key-Uri-Format">Google Authenticator Key URI Format</a> — "Base32 encoded according to RFC 3548"</li>
+     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc4648">RFC 4648 — Base16/32/64 Encodings</a></li>
+     *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238 — TOTP</a></li>
+     * </ul>
+     *
+     * @param secret Base64-encoded secret (internal storage format from {@link #generateSecret()})
+     * @param account user account identifier (e.g., email)
+     * @param issuer application name
+     * @return otpauth URI with Base32-encoded secret
      */
     public static String buildOtpAuthUri(String secret, String account, String issuer) {
+        // Decode the internal Base64 secret back to raw key bytes, then re-encode
+        // as Base32 (RFC 4648) — the format expected by authenticator apps.
+        byte[] rawKey = Base64.getDecoder().decode(secret);
+        String base32Secret = new org.apache.commons.codec.binary.Base32().encodeAsString(rawKey)
+                .replace("=", ""); // authenticators tolerate stripped padding
+
         return String.format(
                 "otpauth://totp/%s:%s?secret=%s&issuer=%s&digits=%d&period=%d",
                 issuer, account,
-                Base64.getEncoder().encodeToString(secret.getBytes()).replace("=", ""),
+                base32Secret,
                 issuer, CODE_DIGITS, TIME_STEP_SECONDS
         );
     }

@@ -71,6 +71,10 @@ marketplace:
   cors:
     allowed-origins: http://localhost:3000
   security:
+    # Dev-only: seed initial admin user + OAuth2 client on first startup.
+    # Default is false everywhere — must be explicitly enabled to avoid
+    # accidental credential seeding in non-dev environments.
+    seed-defaults: ${SEED_DEFAULTS:true}
     auth-server:
       issuer: http://localhost:8080
     jwt:
