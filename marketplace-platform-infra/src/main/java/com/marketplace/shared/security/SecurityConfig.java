@@ -427,23 +427,20 @@ public class SecurityConfig {
     }
 
     /**
-     * Scheduled JWK rotation -- rotates the signing key every 90 days per NIST SP 800-57
-     * recommendation for asymmetric keys used for authentication. The old key is kept
-     * as "previous" for token-validation overlap until the next rotation.
+     * JWK rotation is now scheduled directly on {@link RotatingJWKSource#rotate()}
+     * via {@code @Scheduled} (no-arg method, as required by Spring's
+     * {@code ScheduledAnnotationBeanPostProcessor}).
      *
-     * <p>Requires {@code @EnableScheduling} on the application (enabled via
-     * {@code @SpringBootApplication} which imports {@code @EnableScheduling} by default
-     * in Spring Boot 4.x when a {@code @Scheduled} bean is detected).
+     * <p>The prior {@code rotateJwk(JWKSource)} method here took a {@code JWKSource}
+     * parameter, which violated the {@code @Scheduled} no-arg rule and caused:
+     * "Could not create recurring task for @Scheduled method 'rotateJwk':
+     *  Only no-arg methods may be annotated with @Scheduled"
      *
-     * <p>Reference: NIST SP 800-57 section8 -- key rotation period for 2048-bit RSA.
+     * <p>Reference: https://docs.spring.io/spring-framework/reference/integration/scheduling.html
+     * "The @Scheduled annotation ... You can add the @Scheduled annotation to a method"
+     * (all examples are no-arg methods).
      */
-    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${marketplace.security.jwk.rotation-interval-ms:7776000000}")
-    // 90 days = 90 x 24 x 60 x 60 x 1000 = 7,776,000,000 ms
-    public void rotateJwk(JWKSource<SecurityContext> jwkSource) {
-        if (jwkSource instanceof RotatingJWKSource rotating) {
-            rotating.rotate();
-        }
-    }
+
     @Bean
     JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource,
                            com.marketplace.shared.security.oauth2.JwtRevocationValidator revocationValidator) throws IOException {

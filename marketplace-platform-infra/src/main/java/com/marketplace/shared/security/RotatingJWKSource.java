@@ -85,7 +85,19 @@ public class RotatingJWKSource implements JWKSource<SecurityContext> {
      *
      * <p>Thread-safe: uses {@link AtomicReference#compareAndSet} to ensure only
      * one rotation succeeds if called concurrently.
+     *
+     * <p>Scheduled automatically by Spring's {@code ScheduledAnnotationBeanPostProcessor}
+     * because this bean is registered via {@code @Bean} in {@link SecurityConfig}.
+     * The prior implementation in {@code SecurityConfig.rotateJwk(JWKSource)} took
+     * a {@code JWKSource} parameter, but {@code @Scheduled} requires no-arg methods
+     * (see Spring Framework reference: "The @Scheduled annotation ... You can add
+     * the @Scheduled annotation to a method" — all examples are no-arg).
+     *
+     * <p>Reference: NIST SP 800-57 section8 — key rotation period for 2048-bit RSA
+     * (90 days default = 7,776,000,000 ms).
      */
+    @org.springframework.scheduling.annotation.Scheduled(
+            fixedDelayString = "${marketplace.security.jwk.rotation-interval-ms:7776000000}")
     public void rotate() {
         JWKSet old = currentSet.get();
         RSAKey oldActive = (RSAKey) old.getKeys().getFirst();
