@@ -26,6 +26,7 @@ import org.springframework.security.converter.RsaKeyConverters;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -199,6 +200,12 @@ public class SecurityConfig {
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oauth2LoginSuccessHandler))
                 .cors(Customizer.withDefaults())
+                // OWASP Session Management Cheat Sheet — session fixation protection.
+                // Spring Security's default is migrateSession, but we set it explicitly
+                // so the behavior is documented and survives future default changes.
+                // Reference: https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html
+                .sessionManagement(session -> session
+                        .sessionFixation(fixation -> fixation.migrateSession()))
                 // Same explicit security headers as the protected API chain (HSTS, frameOptions,
                 // contentTypeOptions, referrerPolicy). Reference:
                 // https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html
@@ -213,6 +220,32 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    /**
+     * Exposes a global {@link AuthenticationManager} bean built from
+     * {@link DaoAuthenticationProvider} — the standard Spring Security pattern per
+     * <a href="https://docs.spring.io/spring-security/reference/servlet/authentication/architecture.html">
+     * Spring Security Reference — Authentication Architecture</a>.
+     *
+     * <p>This allows components (e.g. future programmatic authentication flows,
+     * tests) to inject {@code AuthenticationManager} directly instead of
+     * reconstructing it via {@code UserDetailsManager + PasswordEncoder} manually.
+     * The {@link TwoStepLoginService} still uses the manual pattern for the
+     * two-step MFA flow (which needs custom checks between password and MFA),
+     * but this bean is available for any component that needs standard
+     * username/password authentication.
+     */
+    @Bean
+    org.springframework.security.authentication.AuthenticationManager authenticationManager(
+            org.springframework.security.core.userdetails.UserDetailsService userDetailsService,
+            PasswordEncoder passwordEncoder) {
+        // Spring Security 7.x: DaoAuthenticationProvider takes UserDetailsService in the constructor.
+        // The no-arg constructor + setUserDetailsService() were removed in 7.x.
+        // Reference: https://docs.spring.io/spring-security/reference/servlet/authentication/passwords/dao-authentication-provider.html
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder);
+        return new org.springframework.security.authentication.ProviderManager(provider);
     }
 
     @Bean

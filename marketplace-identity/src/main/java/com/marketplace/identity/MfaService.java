@@ -1,13 +1,18 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.BadRequestException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -26,14 +31,27 @@ import java.util.UUID;
 @Transactional
 public class MfaService {
 
+    private static final Logger log = LoggerFactory.getLogger(MfaService.class);
+
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int RECOVERY_CODE_COUNT = 10;
     private static final int RECOVERY_CODE_LENGTH = 16;
+
+    /** Redis key prefix for used TOTP timesteps (replay protection). */
+    private static final String USED_TIMESTEP_KEY_PREFIX = "marketplace:mfa:used-timestep:";
+
+    /**
+     * TTL for used-timestep markers: 3 timesteps × 30s = 90 seconds.
+     * This covers the full ±1 validation window — after 90s the timestep can
+     * never match again (it's outside the window), so the marker is safe to expire.
+     */
+    private static final Duration USED_TIMESTEP_TTL = Duration.ofSeconds(90);
 
     private final MfaSecretRepository mfaSecretRepository;
     private final RecoveryCodeRepository recoveryCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthAuditService auditService;
+    private final StringRedisTemplate redisTemplate;
 
     private final String issuer;
 
@@ -41,11 +59,13 @@ public class MfaService {
                        RecoveryCodeRepository recoveryCodeRepository,
                        PasswordEncoder passwordEncoder,
                        AuthAuditService auditService,
+                       StringRedisTemplate redisTemplate,
                        @org.springframework.beans.factory.annotation.Value("${marketplace.security.mfa.issuer:Marketplace}") String issuer) {
         this.mfaSecretRepository = mfaSecretRepository;
         this.recoveryCodeRepository = recoveryCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
+        this.redisTemplate = redisTemplate;
         this.issuer = issuer;
     }
 
@@ -120,13 +140,46 @@ public class MfaService {
 
     /**
      * Verifies a TOTP code for login (called during authentication).
+     *
+     * <p><b>Replay protection</b> (RFC 6238 §5.2 step 4): "The verifier MUST NOT
+     * accept the second attempt of the OTP after the successful validation has
+     * been issued." After a successful validation, the matched timestep is
+     * atomically claimed in Redis (SETNX with TTL). Any subsequent attempt
+     * using the same timestep is rejected.
+     *
+     * <p>The TTL is 90 seconds (3 timesteps × 30s) — covering the full ±1
+     * validation window. After that, the timestep can never match again
+     * (it's outside the window), so the marker is safe to expire.
+     *
+     * @return true if the code is valid AND has not been replayed
      */
-    @Transactional(readOnly = true)
     public boolean verifyTotp(UUID userId, String code) {
-        return mfaSecretRepository.findByUserId(userId)
+        Optional<String> secretOpt = mfaSecretRepository.findByUserId(userId)
                 .filter(MfaSecret::isEnabled)
-                .map(mfa -> TotpService.validateCode(mfa.getSecret(), code))
-                .orElse(false);
+                .map(MfaSecret::getSecret);
+        if (secretOpt.isEmpty()) {
+            return false;
+        }
+
+        Optional<Long> timestepOpt = TotpService.validateCodeWithTimestep(secretOpt.get(), code);
+        if (timestepOpt.isEmpty()) {
+            return false;
+        }
+
+        long timestep = timestepOpt.get();
+        String key = USED_TIMESTEP_KEY_PREFIX + userId + ":" + timestep;
+
+        // Atomic claim: SETNX returns true if the key was set (first use),
+        // false if it already existed (replay attempt).
+        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(key, "1", USED_TIMESTEP_TTL);
+        if (!Boolean.TRUE.equals(claimed)) {
+            log.warn("TOTP replay detected: user={}, timestep={}", userId, timestep);
+            auditService.log(null, AuthEventType.MFA_FAILURE,
+                    "TOTP replay rejected for user " + userId);
+            return false;
+        }
+
+        return true;
     }
 
     /**
