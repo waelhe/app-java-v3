@@ -7,3 +7,12 @@ paths = [
   '''marketplace-app/src/test/resources/keys/''',
   '''marketplace-app/src/main/resources/keys/dev-rsa.pub'''
 ]
+# Synthetic MFA recovery-code fixtures used in TwoStepLoginServiceTest.
+# Format: 16 hex chars (matches MfaService.generateRecoveryCode() pattern).
+# These are test-only fixtures, not real secrets — they appear in git history
+# of commit 42e62e4 (PR #152, auth-completion-v2) and are no longer in HEAD.
+# Reference: gitleaks allowlist.regexes targets the extracted secret value.
+# https://github.com/gitleaks/gitleaks/blob/master/README.md#allowlist
+regexes = [
+  '''ABCD1234EFGH5678'''
+]

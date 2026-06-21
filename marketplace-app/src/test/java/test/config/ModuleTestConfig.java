@@ -90,7 +90,13 @@ public class ModuleTestConfig {
             com.marketplace.identity.BruteForceProtectionService bruteForceService,
             com.marketplace.identity.MfaService mfaService,
             com.marketplace.identity.AuthAuditService auditService,
-            com.marketplace.identity.UserRepository userRepository) {
-        return new com.marketplace.identity.TwoStepLoginService(userDetailsManager, passwordEncoder, bruteForceService, mfaService, auditService, userRepository);
+            com.marketplace.identity.UserRepository userRepository,
+            org.springframework.data.redis.core.StringRedisTemplate redisTemplate,
+            org.springframework.security.oauth2.jwt.JwtEncoder jwtEncoder,
+            com.marketplace.shared.config.MarketplaceProperties properties) {
+        return new com.marketplace.identity.TwoStepLoginService(
+                userDetailsManager, passwordEncoder, bruteForceService,
+                mfaService, auditService, userRepository,
+                redisTemplate, jwtEncoder, properties);
     }
 }
