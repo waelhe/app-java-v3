@@ -46,6 +46,7 @@ public class ModuleTestConfig {
 
     @Bean
     @Primary
+    @ConditionalOnMissingBean
     MarketplaceProperties marketplaceProperties() {
         return new MarketplaceProperties(
                 new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
