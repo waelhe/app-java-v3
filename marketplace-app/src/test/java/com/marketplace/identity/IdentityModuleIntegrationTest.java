@@ -78,6 +78,23 @@ class IdentityModuleIntegrationTest {
                     )
             );
         }
+
+        /**
+         * Provides an in-memory {@link OAuth2AuthorizationService} for the slice
+         * context. {@code SessionController} (a {@code @RestController} in the
+         * identity module) requires this bean for OAuth2 token revocation. In
+         * production, {@code SecurityConfig} provides a JDBC-backed instance; in
+         * the slice context, the in-memory implementation is sufficient because
+         * no actual authorization flows are exercised.
+         *
+         * <p>Reference: Spring Authorization Server
+         * {@code InMemoryOAuth2AuthorizationService} — intended for testing and
+         * development only.
+         */
+        @Bean
+        org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService identityAuthorizationService() {
+            return new org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService();
+        }
     }
 
     @Test
