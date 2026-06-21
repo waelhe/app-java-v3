@@ -155,6 +155,22 @@ public class SecurityConfig {
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql"))
                 .cors(Customizer.withDefaults())
+                // OWASP Secure Headers Cheat Sheet — explicit hardening (do not rely solely
+                // on Spring Security defaults). HSTS is critical behind a TLS-terminating
+                // proxy: the proxy terminates HTTPS but the app sees HTTP, so the default
+                // HSTS writer (which fires only for HTTPS requests) never activates.
+                // server.forward-headers-strategy=framework (set in application-prod.yml)
+                // makes Spring see the original https scheme so HSTS is emitted.
+                // Reference: https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html
+                .headers(headers -> headers
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000)) // 1 year — RFC 6797 recommended minimum
+                        .frameOptions(frame -> frame.deny())
+                        .contentTypeOptions(contentType -> {}) // X-Content-Type-Options: nosniff
+                        .referrerPolicy(referrer -> referrer
+                                .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
@@ -182,7 +198,19 @@ public class SecurityConfig {
                 .formLogin(Customizer.withDefaults())
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oauth2LoginSuccessHandler))
-                .cors(Customizer.withDefaults());
+                .cors(Customizer.withDefaults())
+                // Same explicit security headers as the protected API chain (HSTS, frameOptions,
+                // contentTypeOptions, referrerPolicy). Reference:
+                // https://docs.spring.io/spring-security/reference/servlet/exploits/headers.html
+                .headers(headers -> headers
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000))
+                        .frameOptions(frame -> frame.deny())
+                        .contentTypeOptions(contentType -> {})
+                        .referrerPolicy(referrer -> referrer
+                                .policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                );
 
         return http.build();
     }
