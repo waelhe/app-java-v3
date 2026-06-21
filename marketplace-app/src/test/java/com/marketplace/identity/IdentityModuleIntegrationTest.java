@@ -12,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.marketplace.shared.api.JwtRevocationPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -54,6 +56,17 @@ class IdentityModuleIntegrationTest {
 
     @Autowired
     private UserService userService;
+
+    /**
+     * Mocked {@link JwtRevocationPort} — provided in production by
+     * {@code JwtRevocationValidator} (marketplace-platform-infra), which is not
+     * loaded in STANDALONE module-test mode. SessionController requires this
+     * bean (constructor parameter 6) for JWT revocation checks; the mock is
+     * sufficient because no actual JWT revocation flows are exercised in this
+     * test.
+     */
+    @MockitoBean
+    JwtRevocationPort jwtRevocationPort;
 
     @TestConfiguration
     static class IdentityTestConfig {
