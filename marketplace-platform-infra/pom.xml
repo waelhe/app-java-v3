@@ -54,6 +54,24 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
+        <!--
+            RestClient auto-configuration starter.
+            Required since Spring Boot 4.0 — RestClient.Builder is no longer
+            auto-configured by the web starter. The Spring Boot 4.0 Migration
+            Guide states:
+              "Spring's Imperative RestClient and RestTemplate ->
+               spring-boot-starter-restclient (was previously bundled with
+               the web starter)"
+            Used by OAuth2LoginSuccessHandler (constructor parameter 5) to
+            call the OAuth2 provider's userInfo endpoint during social login.
+            Without this starter, ApplicationContext initialization fails with:
+              "No qualifying bean of type 'RestClient$Builder' available"
+            Reference: https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-restclient</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot4</artifactId>
