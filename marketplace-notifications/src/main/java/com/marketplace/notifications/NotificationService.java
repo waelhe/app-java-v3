@@ -2,9 +2,13 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+
+import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.UserRegisteredEvent;
+import com.marketplace.shared.api.UserVerifiedEvent;
 import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.slf4j.Logger;
@@ -34,13 +38,16 @@ public class NotificationService {
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final Optional<EmailService> emailService;
 
+    private final String authServerIssuer;
+
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
                                PaymentIntentLookupPort paymentIntentLookupPort,
                                CurrentUserProvider currentUserProvider,
                                UserLookupPort userLookupPort,
                                Optional<SimpMessagingTemplate> messagingTemplate,
-                               Optional<EmailService> emailService) {
+                               Optional<EmailService> emailService,
+                               @org.springframework.beans.factory.annotation.Value("${marketplace.security.auth-server.issuer:http://localhost:8080}") String authServerIssuer) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -48,6 +55,7 @@ public class NotificationService {
         this.userLookupPort = userLookupPort;
         this.messagingTemplate = messagingTemplate;
         this.emailService = emailService;
+        this.authServerIssuer = authServerIssuer;
     }
 
     public void onBookingCreated(UUID bookingId) {
@@ -70,6 +78,44 @@ public class NotificationService {
             sendEmail(bookingInfo.providerId(), "Payment " + state, "email/notification", Map.of("message", message));
             sendWebSocket(intent.consumerId(), "PAYMENT_STATE", message);
             sendWebSocket(bookingInfo.providerId(), "PAYMENT_STATE", message);
+        });
+    }
+
+    public void onUserRegistered(UserRegisteredEvent event) {
+        String verificationLink = authServerIssuer + "/api/v1/auth/verify?token=" + event.verificationToken();
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Welcome to Marketplace — Verify Your Email",
+                        "email/verify-email",
+                        Map.of("name", event.displayName(), "verificationLink", verificationLink));
+            } catch (Exception e) {
+                log.error("Failed to send verification email to {}: {}", event.email(), e.getMessage());
+            }
+        });
+    }
+
+    public void onUserVerified(UserVerifiedEvent event) {
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Email Verified — Welcome to Marketplace",
+                        "email/email-verified",
+                        Map.of("name", event.email()));
+            } catch (Exception e) {
+                log.error("Failed to send verified email to {}: {}", event.email(), e.getMessage());
+            }
+        });
+    }
+
+    public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
+        String resetLink = authServerIssuer + "/reset-password?token=" + event.resetToken();
+        emailService.ifPresent(es -> {
+            try {
+                es.send(event.email(), "Reset Your Password",
+                        "email/password-reset",
+                        Map.of("name", event.email(), "resetLink", resetLink, "expirationMinutes", 30));
+            } catch (Exception e) {
+                log.error("Failed to send password reset email to {}: {}", event.email(), e.getMessage());
+            }
         });
     }
 

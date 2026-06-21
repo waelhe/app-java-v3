@@ -4,6 +4,7 @@
         "shared :: shared-security",
         "catalog :: catalog-api",
         "catalog :: catalog-spi",
+        "identity :: identity-admin-spi",
         "messaging :: messaging-api"
     }
 )

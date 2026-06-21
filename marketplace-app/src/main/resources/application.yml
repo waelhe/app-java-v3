@@ -10,6 +10,27 @@ spring:
     compose:
       enabled: false
 
+  security:
+    max-failed-attempts: 5
+    lock-duration-minutes: 15
+    mfa:
+      issuer: Marketplace
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+          github:
+            client-id: ${GITHUB_CLIENT_ID:}
+            client-secret: ${GITHUB_CLIENT_SECRET:}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: user:email,read:user
+
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
@@ -133,26 +154,17 @@ management:
   endpoint:
     conditions:
       enabled: true
-    health:
-      show-details: when-authorized
-      show-components: when-authorized
-      probes:
-        enabled: true
-      group:
-        readiness:
-          include: db,diskSpace
-        liveness:
-          include: ping
+  health:
+    readinessstate:
+      enabled: true
   observations:
     enabled: true
-    annotations:
-      enabled: true
   metrics:
     tags:
       application: ${spring.application.name}
   tracing:
     sampling:
-      probability: 0.1
+      probability: 1.0
   otlp:
     metrics:
       export:
@@ -219,6 +231,9 @@ resilience4j:
       search:
         base-config: default
         limit-for-period: 30
+      auth:
+        base-config: default
+        limit-for-period: 5
 
 app:
   commission:
@@ -228,12 +243,9 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
   security:
+    max-failed-attempts: 5
+    lock-duration-minutes: 15
+    mfa:
+      issuer: Marketplace
     auth-server:
       issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
-    jwt:
-      audience: ${JWT_AUDIENCE:marketplace-api}
-      keystore:
-        path: ${JWT_KEYSTORE_PATH:}
-        password: ${JWT_KEYSTORE_PASSWORD:}
-        alias: ${JWT_KEY_ALIAS:}
-        key-password: ${JWT_KEY_PASSWORD:}

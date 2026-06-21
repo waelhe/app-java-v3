@@ -1,7 +1,10 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.UserRegisteredEvent;
+import com.marketplace.shared.api.UserVerifiedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -31,4 +34,21 @@ public class NotificationEventListener {
                 event.paymentIntentId(), event.state());
     }
 
+    @ApplicationModuleListener
+    public void onUserRegistered(UserRegisteredEvent event) {
+        notificationService.onUserRegistered(event);
+        log.info("Welcome email sent for user: {}", event.email());
+    }
+
+    @ApplicationModuleListener
+    public void onUserVerified(UserVerifiedEvent event) {
+        notificationService.onUserVerified(event);
+        log.info("Verification confirmation email sent for user: {}", event.email());
+    }
+
+    @ApplicationModuleListener
+    public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
+        notificationService.onPasswordResetRequested(event);
+        log.info("Password reset email sent for user: {}", event.email());
+    }
 }
