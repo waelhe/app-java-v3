@@ -160,6 +160,20 @@ Reference: https://docs.spring.io/spring-boot/reference/actuator/endpoints.html
 
 ---
 
+## Optional: AOT Cache (Startup Optimization)
+
+For high-volume production deployments where cold-start latency matters
+(Kubernetes pod scale-up, FaaS), see **[aot-cache.md](aot-cache.md)** for the
+officially-recommended AOT Cache workflow (Java 25+ JVM feature).
+
+> ⚠️ Do NOT confuse AOT Cache (safe, recommended) with AOT Processing / GraalVM
+> Native Image (incompatible with this project's `@Profile` and
+> `@ConditionalOnProperty` usage). See the doc for details.
+
+Reference: https://docs.spring.io/spring-boot/reference/packaging/aot-cache.html
+
+---
+
 ## JWT Keystore Generation
 
 Generate a keystore for JWT signing (required for production):

@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -81,37 +82,45 @@ public class AuthAuditService implements IdentityAdminSpi {
                 ));
     }
 
+    /**
+     * Extracts the client IP address from the current request, if any.
+     *
+     * <p>Uses Java {@code instanceof} pattern matching (JEP 394, Java 16+) to safely narrow
+     * the {@link RequestAttributes} to {@link ServletRequestAttributes} without an explicit
+     * cast and without a broad {@code catch (Exception)} block. When no request is bound
+     * to the current thread (e.g. scheduled tasks, async), {@code getRequestAttributes()}
+     * returns {@code null} and this method returns {@code null}.
+     *
+     * <p>When {@code server.forward-headers-strategy=framework} is active (set in
+     * application-prod.yml), Spring's {@code ForwardedHeaderFilter} resolves
+     * {@code X-Forwarded-For} from the trusted proxy chain into {@code request.getRemoteAddr()}.
+     * We trust ONLY this resolved value -- never the raw {@code X-Forwarded-For} header,
+     * which is client-controllable and spoofable.
+     * Reference: https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
+     */
     private String extractIpAddress() {
-        try {
-            var attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attrs != null) {
-                HttpServletRequest request = attrs.getRequest();
-                // When forward-headers-strategy=framework is active (set in application-prod.yml),
-                // Spring's ForwardedHeaderFilter resolves X-Forwarded-For from the trusted proxy
-                // chain into request.getRemoteAddr(). We trust ONLY this resolved value -- never
-                // the raw X-Forwarded-For header, which is client-controllable and spoofable.
-                // Reference: https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
-                String remoteAddr = request.getRemoteAddr();
-                if (remoteAddr != null && !remoteAddr.isBlank()) {
-                    return remoteAddr;
-                }
-                return "unknown";
+        RequestAttributes rawAttrs = RequestContextHolder.getRequestAttributes();
+        if (rawAttrs instanceof ServletRequestAttributes attrs) {
+            HttpServletRequest request = attrs.getRequest();
+            String remoteAddr = request.getRemoteAddr();
+            if (remoteAddr != null && !remoteAddr.isBlank()) {
+                return remoteAddr;
             }
-        } catch (Exception e) {
-            // ignore -- not in request context (e.g. scheduled task)
+            return "unknown";
         }
         return null;
     }
 
+    /**
+     * Extracts the User-Agent header from the current request, if any.
+     *
+     * <p>Uses the same {@code instanceof} pattern-matching approach as {@link #extractIpAddress()}
+     * -- no cast, no broad {@code catch (Exception)}.
+     */
     private String extractUserAgent() {
-        try {
-            var attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attrs != null) {
-                HttpServletRequest request = attrs.getRequest();
-                return request.getHeader("User-Agent");
-            }
-        } catch (Exception e) {
-            // ignore
+        RequestAttributes rawAttrs = RequestContextHolder.getRequestAttributes();
+        if (rawAttrs instanceof ServletRequestAttributes attrs) {
+            return attrs.getRequest().getHeader("User-Agent");
         }
         return null;
     }

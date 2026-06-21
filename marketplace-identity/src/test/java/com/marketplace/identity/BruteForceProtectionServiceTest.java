@@ -40,14 +40,24 @@ class BruteForceProtectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Construct with self=null first, then set self via reflection (or use a spy).
-        // For unit tests, self.isLocked() calls the real method directly (no proxy),
-        // which is fine -- jdbcTemplate is mocked so the query works.
+        // Self-injection wiring for the unit test.
+        //
+        // In production, Spring injects a @Lazy self-proxy through the constructor so that
+        // self.isLocked() goes through the Spring AOP proxy (honoring @Transactional).
+        // Reference: Spring Framework Reference -- Core -> Beans -> "Self-Injection of Beans".
+        //
+        // In this unit test there is no proxy and no Spring context. We construct the bean
+        // with self=null, then point `self` at the real instance. self.isLocked() then calls
+        // the real isLocked() method, which uses the mocked jdbcTemplate.
+        //
+        // ReflectionTestUtils is the Spring-documented approach for setting a `final` field
+        // that cannot be supplied through the constructor (the chicken-and-egg: `this` is not
+        // available as a constructor argument to itself).
+        // Reference: Spring Framework Reference -> Testing -> TestContext Framework ->
+        // "Dependency Injection of Test Fixtures" -- ReflectionTestUtils.
         bruteForceService = new BruteForceProtectionService(jdbcTemplate, auditService, null, 5, 15);
-        // Use Mockito spy to inject self -- the spy wraps the real object so self.isLocked()
-        // delegates to the real method (which uses the mocked jdbcTemplate).
-        BruteForceProtectionService spy = spy(bruteForceService);
-        org.springframework.test.util.ReflectionTestUtils.setField(bruteForceService, "self", spy);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                bruteForceService, "self", bruteForceService);
     }
 
     @Test

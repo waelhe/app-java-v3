@@ -3,6 +3,7 @@ package com.marketplace.identity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -11,7 +12,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
@@ -25,8 +25,15 @@ import static org.mockito.Mockito.*;
  *   <li>Redis failures fail open (never block auth on infra failure)</li>
  * </ul>
  *
- * <p>Type-safe approach: uses {@code RedisScript<Long>} matcher instead of raw
- * {@code RedisScript.class} -- eliminates the need for {@code @SuppressWarnings("unchecked")}.
+ * <p>Type-safe approach: uses {@code ArgumentMatchers.<RedisScript<Long>>any()} instead of
+ * the raw {@code any(RedisScript.class)} matcher. The raw form produces unchecked-conversion
+ * warnings because {@code RedisScript.class} has type {@code Class<RedisScript>} (raw), which
+ * propagates through {@code StringRedisTemplate#execute(RedisScript<T>, List<K>, Object...)}.
+ * The explicitly-typed matcher binds {@code T = Long} at compile time, so no
+ * {@code @SuppressWarnings("unchecked")} is needed on any test method.
+ *
+ * <p>Reference: Mockito {@code ArgumentMatchers.<T>any()} Javadoc -- "The matching method
+ * accepts a type parameter that allows the match to be type-safe."
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -41,14 +48,14 @@ class DistributedRateLimiterTest {
         // Default: fail-open=false (fail-closed per OWASP Fail Securely).
         rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, false);
         // Default: allow all (counter = 1L). Individual tests override with specific return values.
-        // Type-safe: RedisScript<? extends Object> matcher -- no unchecked warning.
-        lenient().when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        // Type-safe matcher: binds T=Long so .thenReturn(1L) compiles cleanly with no unchecked warning.
+        lenient().when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(1L);
     }
 
     @Test
     void tryAcquire_allowsRequestsUnderLimit() {
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(1L);
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"));
@@ -56,7 +63,7 @@ class DistributedRateLimiterTest {
 
     @Test
     void tryAcquire_allowsRequestsAtLimit() {
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(5L); // exactly at the limit
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"));
@@ -64,7 +71,7 @@ class DistributedRateLimiterTest {
 
     @Test
     void tryAcquire_blocksRequestsOverLimit() {
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(6L); // over the limit
 
         assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"));
@@ -73,7 +80,7 @@ class DistributedRateLimiterTest {
     @Test
     void tryAcquire_failsClosedOnRedisNullByDefault() {
         // Default: fail-closed (return false = deny) per OWASP "Fail Securely".
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(null);
 
         assertFalse(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
@@ -84,7 +91,7 @@ class DistributedRateLimiterTest {
     void tryAcquire_failsOpenOnRedisNullWhenConfigured() {
         // When fail-open=true is configured, Redis null -> allow (availability priority).
         rateLimiter = new DistributedRateLimiter(redisTemplate, 5, 60, true);
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenReturn(null);
 
         assertTrue(rateLimiter.tryAcquire("auth:ip:1.2.3.4"),
@@ -92,10 +99,9 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_failsClosedOnRedisConnectionFailureByDefault() {
         // Default: fail-closed per OWASP "Fail Securely".
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenThrow(new org.springframework.data.redis.RedisConnectionFailureException(
                         "Redis connection refused"));
 
@@ -104,10 +110,9 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_failsClosedOnRedisSystemExceptionByDefault() {
         // Default: fail-closed per OWASP "Fail Securely".
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenThrow(new org.springframework.data.redis.RedisSystemException(
                         "Redis system error", new RuntimeException()));
 
@@ -116,11 +121,10 @@ class DistributedRateLimiterTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void tryAcquire_propagatesNonRedisExceptions() {
         // Non-Redis exceptions (e.g. ClassCastException, NPE) must propagate -- fail closed
         // per OWASP "Fail Securely" principle.
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any(Object[].class)))
                 .thenThrow(new ClassCastException("Unexpected type mismatch"));
 
         assertThrows(ClassCastException.class,
