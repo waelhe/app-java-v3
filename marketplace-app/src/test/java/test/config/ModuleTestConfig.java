@@ -82,6 +82,37 @@ public class ModuleTestConfig {
         return new com.marketplace.identity.QrCodeService();
     }
 
+    /**
+     * Provides a stub {@link org.springframework.security.oauth2.jwt.JwtEncoder} for
+     * module-scoped tests ({@code @ApplicationModuleTest} in STANDALONE mode) that load
+     * the identity module without the shared-security module's {@code SecurityConfig}.
+     * <p>
+     * Without this bean, {@code TwoStepLoginService} (a {@code @Service} in marketplace-identity)
+     * fails to initialize because its constructor parameter 8 ({@code JwtEncoder}) has no
+     * qualifying bean in the module-scoped context.
+     * <p>
+     * The stub returns a dummy JWT — sufficient for context loading. Tests that exercise
+     * actual JWT issuance use {@code @SpringBootTest} (full context) where
+     * {@code SecurityConfig.jwtEncoder(JWKSource)} provides the real bean.
+     * <p>
+     * Reference: https://docs.spring.io/spring-modulith/reference/testing.html
+     * "@ApplicationModuleTest ... bootstraps the module under test and its direct dependencies
+     *  (or only the module itself, in STANDALONE mode)."
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    org.springframework.security.oauth2.jwt.JwtEncoder jwtEncoder() {
+        return parameters -> org.springframework.security.oauth2.jwt.Jwt
+                .withTokenValue("test-jwt-token")
+                .header("alg", "none")
+                .claim("sub", "test")
+                .issuedAt(java.time.Instant.now())
+                .expiresAt(java.time.Instant.now().plusSeconds(3600))
+                .issuer("http://localhost:8080")
+                .audience(java.util.List.of("marketplace-api"))
+                .build();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     com.marketplace.identity.TwoStepLoginService twoStepLoginService(
