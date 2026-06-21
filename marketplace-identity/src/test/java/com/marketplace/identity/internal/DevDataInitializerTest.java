@@ -28,8 +28,8 @@ import static org.mockito.Mockito.*;
  *
  * <p>Verifies the security-critical aspects:
  * <ul>
- *   <li>Idempotency — re-running does not duplicate the admin user or client</li>
- *   <li>PKCE is required on the seeded OAuth2 client (RFC 8252 §7.1)</li>
+ *   <li>Idempotency -- re-running does not duplicate the admin user or client</li>
+ *   <li>PKCE is required on the seeded OAuth2 client (RFC 8252 section7.1)</li>
  *   <li>Both {@code auth_users} and domain {@code users} rows are created for admin</li>
  *   <li>Redirect URI honors the {@code OAUTH2_REDIRECT_URI} env var</li>
  * </ul>
@@ -47,18 +47,17 @@ class DevDataInitializerTest {
 
     @BeforeEach
     void setUp() {
-        initializer = new DevDataInitializer();
-        // The initializer reads config via @Value fields — set them directly for unit tests
-        // (in production Spring picks these up from env vars / application.yml).
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "adminPassword", "test-admin-pass");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "clientSecret", "test-client-secret");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "redirectUri", "https://example.com/login/oauth2/code/marketplace-web-client");
-        org.springframework.test.util.ReflectionTestUtils.setField(initializer, "postLogoutUri", "https://example.com/");
+        // Constructor injection -- no reflection needed. Pass test config values directly.
+        initializer = new DevDataInitializer(
+                "test-admin-pass",
+                "test-client-secret",
+                "https://example.com/login/oauth2/code/marketplace-web-client",
+                "https://example.com/");
     }
 
     @AfterEach
     void tearDown() {
-        // No system properties set anymore — @Value fields are set via reflection.
+        // No system properties set anymore -- constructor injection is clean.
     }
 
     @Test
@@ -87,13 +86,13 @@ class DevDataInitializerTest {
         verify(clientRepository).save(clientCaptor.capture());
         RegisteredClient savedClient = clientCaptor.getValue();
         assertTrue(savedClient.getClientSettings().isRequireProofKey(),
-                "PKCE must be required (RFC 8252 §7.1)");
+                "PKCE must be required (RFC 8252 section7.1)");
         assertTrue(savedClient.getClientSettings().isRequireAuthorizationConsent());
         assertTrue(savedClient.getRedirectUris().stream()
                         .anyMatch(u -> u.toString().equals("https://example.com/login/oauth2/code/marketplace-web-client")),
                 "redirect_uri must honor OAUTH2_REDIRECT_URI env var");
         assertTrue(savedClient.getScopes().stream().anyMatch(s -> s.equals("email")),
-                "email scope must be present (OIDC Core §5.4)");
+                "email scope must be present (OIDC Core section5.4)");
         // Refresh-token rotation
         assertFalse(savedClient.getTokenSettings().isReuseRefreshTokens());
     }

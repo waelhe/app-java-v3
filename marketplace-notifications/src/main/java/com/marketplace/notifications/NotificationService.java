@@ -85,11 +85,12 @@ public class NotificationService {
         String verificationLink = authServerIssuer + "/api/v1/auth/verify?token=" + event.verificationToken();
         emailService.ifPresent(es -> {
             try {
-                es.send(event.email(), "Welcome to Marketplace — Verify Your Email",
+                es.send(event.email(), "Welcome to Marketplace -- Verify Your Email",
                         "email/verify-email",
                         Map.of("name", event.displayName(), "verificationLink", verificationLink));
             } catch (Exception e) {
-                log.error("Failed to send verification email to {}: {}", event.email(), e.getMessage());
+                // Pass 'e' as last arg so SLF4J prints the full stack trace for diagnostics.
+                log.error("Failed to send verification email to {}", event.email(), e);
             }
         });
     }
@@ -97,11 +98,11 @@ public class NotificationService {
     public void onUserVerified(UserVerifiedEvent event) {
         emailService.ifPresent(es -> {
             try {
-                es.send(event.email(), "Email Verified — Welcome to Marketplace",
+                es.send(event.email(), "Email Verified -- Welcome to Marketplace",
                         "email/email-verified",
                         Map.of("name", event.email()));
             } catch (Exception e) {
-                log.error("Failed to send verified email to {}: {}", event.email(), e.getMessage());
+                log.error("Failed to send verified email to {}", event.email(), e);
             }
         });
     }
@@ -114,7 +115,7 @@ public class NotificationService {
                         "email/password-reset",
                         Map.of("name", event.email(), "resetLink", resetLink, "expirationMinutes", 30));
             } catch (Exception e) {
-                log.error("Failed to send password reset email to {}: {}", event.email(), e.getMessage());
+                log.error("Failed to send password reset email to {}", event.email(), e);
             }
         });
     }
@@ -125,17 +126,23 @@ public class NotificationService {
                 try {
                     es.send(user.email(), subject, template, variables);
                 } catch (Exception e) {
-                    log.error("Failed to send email to user {}: {}", userId, e.getMessage());
+                    log.error("Failed to send email to user {}", userId, e);
                 }
             })
         );
     }
 
     private void sendWebSocket(UUID userId, String type, String message) {
-        messagingTemplate.ifPresent(template ->
-            template.convertAndSend("/topic/notifications/" + userId,
-                    new WebSocketNotification(type, message))
-        );
+        messagingTemplate.ifPresent(template -> {
+            try {
+                template.convertAndSend("/topic/notifications/" + userId,
+                        new WebSocketNotification(type, message));
+            } catch (Exception e) {
+                // WebSocket is best-effort -- notification persistence must not roll back
+                // if the STOMP broker is unreachable. Same pattern as sendEmail above.
+                log.error("Failed to send WebSocket notification to user {}", userId, e);
+            }
+        });
     }
 
     @Transactional(readOnly = true)

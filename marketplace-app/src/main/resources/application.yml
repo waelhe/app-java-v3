@@ -11,10 +11,9 @@ spring:
       enabled: false
 
   security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 15
-    mfa:
-      issuer: Marketplace
+    # Only standard Spring Security properties go here (oauth2.client.*).
+    # max-failed-attempts, lock-duration-minutes, and mfa.issuer are NOT Spring
+    # Security properties — they are under marketplace.security.* below.
     oauth2:
       client:
         registration:
@@ -97,10 +96,18 @@ spring:
   http:
     clients:
       connect-timeout: 5s
+      read-timeout: 10s
 
   websocket:
     messaging:
       preferred-json-mapper: jackson
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${STORAGE_MAX_FILE_SIZE:10MB}
+      max-request-size: ${STORAGE_MAX_REQUEST_SIZE:20MB}
+      file-size-threshold: 2KB
 
   data:
     redis:
@@ -122,7 +129,14 @@ spring:
       mail.smtp.writetimeout: 5000
   cache:
     type: ${CACHE_TYPE:redis}
-    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
+    cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,userIdByJwt
+    # TTL for all Redis cache entries — prevents stale data from persisting indefinitely
+    # if a @CacheEvict is missed (e.g. direct DB update by a DBA).
+    # Reference: Spring Boot Reference — IO Caching / Redis:
+    # "spring.cache.redis.time-to-live" sets the default time-to-live for cache entries.
+    # https://docs.spring.io/spring-boot/reference/io/caching.html#io.caching.provider.redis
+    redis:
+      time-to-live: 30m
   quartz:
     job-store-type: jdbc
     jdbc:
@@ -144,7 +158,7 @@ server:
     accesslog:
       enabled: true
       directory: logs
-      pattern: "%h %l %u %t &quot;%r&quot; %s %b %{ms}T"
+      pattern: '%h %l %u %t "%r" %s %b %{ms}T'
 
 management:
   endpoints:
@@ -179,10 +193,10 @@ management:
           endpoint: ${OTEL_TRACES_EXPORT_URL:http://localhost:4318/v1/traces}
 
 logging:
-  structured:
-    format:
-      console: logstash
-      file: logstash
+  # Structured format (logstash) is now disabled — logback-spring.xml defines
+  # the appenders directly with secret redaction via %replace. If structured
+  # JSON logging is needed for log aggregation, a custom StructuredLogFormatter
+  # with built-in redaction should be implemented (see logback-spring.xml comments).
   file:
     name: ${LOG_FILE:/var/log/marketplace/application.log}
   pattern:

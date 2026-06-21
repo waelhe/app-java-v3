@@ -35,10 +35,18 @@ class PasswordResetServiceTest {
     @InjectMocks private PasswordResetService passwordResetService;
 
     @Test
-    void initiateReset_silentWhenEmailNotFound() {
+    void initiateReset_auditOnlyWhenEmailNotFound() {
+        // OWASP: "Return a consistent message for both existent and non-existent accounts."
+        // For non-existent users, audit log is written but NO token is generated
+        // (FK constraint on verification_tokens.user_id -> users.id rejects random UUIDs).
         when(userRepository.findByEmail("unknown@test.com")).thenReturn(Optional.empty());
         assertDoesNotThrow(() -> passwordResetService.initiateReset("unknown@test.com"));
+        // Token is NOT generated -- no FK violation.
         verify(tokenService, never()).generateToken(any(), any());
+        // Audit log IS written -- same as existing-user path.
+        verify(auditService).log(eq("unknown@test.com"), eq(AuthEventType.PASSWORD_RESET_REQUESTED), anyString());
+        // Event is NOT published -- no email sent for non-existent users.
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

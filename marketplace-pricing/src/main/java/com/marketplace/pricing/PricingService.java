@@ -38,7 +38,7 @@ public class PricingService {
 
         BigDecimal basePrice = BigDecimal.valueOf(basePriceCents);
 
-        // Discount (discountPct is decimal 0→1, e.g. 0.05 = 5%)
+        // Discount (discountPct is decimal 0->1, e.g. 0.05 = 5%)
         BigDecimal discountAmount = basePrice.multiply(rule.getDiscountPct())
                 .setScale(0, RoundingMode.HALF_UP);
         long discountCents = discountAmount.longValue();
@@ -46,7 +46,7 @@ public class PricingService {
         // Subtotal after discount
         long subtotalCents = basePriceCents - discountCents;
 
-        // Tax on subtotal (taxRate is decimal 0→1, e.g. 0.15 = 15%)
+        // Tax on subtotal (taxRate is decimal 0->1, e.g. 0.15 = 15%)
         BigDecimal taxAmount = BigDecimal.valueOf(subtotalCents).multiply(rule.getTaxRate())
                 .setScale(0, RoundingMode.HALF_UP);
         long taxCents = taxAmount.longValue();

@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 /**
  * Identity-module implementation of {@link ProviderNameResolver}.
  * Resolves provider display names with a hierarchical fallback:
- * displayName → email → "Provider".
+ * displayName -> email -> "Provider".
  * Uses batch resolution via {@code findAllById} to avoid N+1 queries.
  */
 @Component

@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
  * <p>Validation follows OWASP Authentication Cheat Sheet:
  * <ul>
  *   <li>Email: standard format validation</li>
- *   <li>Password: min 8, max 64 chars — see {@link com.marketplace.identity.PasswordValidator#MAX_PASSWORD_LENGTH}</li>
+ *   <li>Password: min 8, max 64 chars -- see {@link com.marketplace.identity.PasswordValidator#MAX_PASSWORD_LENGTH}</li>
  * </ul>
  */
 public record RegisterRequest(

@@ -5,7 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 /**
  * Port interface for catalog search operations.
- * Decouples search module from catalog internals — search depends on this
+ * Decouples search module from catalog internals -- search depends on this
  * abstraction in shared-api, while catalog provides the implementation.
  */
 public interface CatalogSearchPort {

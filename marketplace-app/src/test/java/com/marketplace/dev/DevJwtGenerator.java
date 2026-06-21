@@ -19,7 +19,7 @@ import java.util.UUID;
 /**
  * Standalone utility to generate JWTs signed with the dev-only RSA private key.
  * <p>
- * NOT part of the application — run from IDE or {@code mvn exec:java} to obtain
+ * NOT part of the application -- run from IDE or {@code mvn exec:java} to obtain
  * a Bearer Token for local development against the Resource Server.
  * <p>
  * The corresponding public key is at {@code resources/keys/dev-rsa.pub} and

@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /**
  * Base entity with optimistic locking, auditing, and soft delete support.
- * Uses Hibernate 7 {@code @SoftDelete} — no manual field or filter needed.
+ * Uses Hibernate 7 {@code @SoftDelete} -- no manual field or filter needed.
  * Hibernate automatically adds WHERE is_deleted = false to all queries,
  * and converts DELETE statements to UPDATE is_deleted = true.
  */

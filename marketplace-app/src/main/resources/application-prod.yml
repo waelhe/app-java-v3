@@ -83,12 +83,14 @@ server:
         http-only: true
         secure: true
         same-site: strict
-        max-age: 3600
+        max-age: 1800
         name: SESSION
 
 logging:
-  pattern:
-    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\s*[=:]\s*[^,\s]+', '$1=****'}%n"
+  # Log redaction is now handled by logback-spring.xml (applies to BOTH console
+  # AND file sinks). The prior logging.pattern.console only worked for the default
+  # non-structured pattern — it was silently ignored when structured format was
+  # enabled. logback-spring.xml fixes this by defining redaction at the appender level.
   level:
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
@@ -136,8 +138,8 @@ management:
           endpoint: ${OTEL_TRACES_EXPORT_URL}
 
   security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 15
+    # Only standard Spring Security properties go here (oauth2.client.*).
+    # max-failed-attempts and lock-duration-minutes are under marketplace.security.* below.
     oauth2:
       client:
         registration:

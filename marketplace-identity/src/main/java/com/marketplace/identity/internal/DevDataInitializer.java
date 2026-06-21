@@ -38,18 +38,18 @@ import java.util.UUID;
  *     </ul>
  *     Defaulting to {@code false} prevents accidental seeding in prod even if
  *     the dev profile is mistakenly activated.</li>
- *   <li>The seeded admin password and client secret are <strong>not</strong> hardcoded —
+ *   <li>The seeded admin password and client secret are <strong>not</strong> hardcoded --
  *     they are read from environment variables and fall back to clearly-marked
  *     dev defaults printed once to the log.</li>
  *   <li>The seeded client enforces <strong>PKCE</strong> ({@code require-proof-key})
- *     per OAuth 2.1 / RFC 8252 §7.1.</li>
- *   <li>The redirect URI is read from {@code OAUTH2_REDIRECT_URI} env var — never
+ *     per OAuth 2.1 / RFC 8252 section7.1.</li>
+ *   <li>The redirect URI is read from {@code OAUTH2_REDIRECT_URI} env var -- never
  *     hardcoded to {@code 127.0.0.1}.</li>
  * </ul>
  *
  * <p>This replaces the prior {@code R__seed_oauth2_client.sql} Flyway repeatable
  * migration, which mixed schema migration with credential seeding (anti-pattern
- * per Spring Boot Reference — Database Initialization). Schema belongs in Flyway;
+ * per Spring Boot Reference -- Database Initialization). Schema belongs in Flyway;
  * data belongs in {@code ApplicationRunner}.
  *
  * <p>Placed in the {@code identity} module (internal package) so it can use the
@@ -58,11 +58,11 @@ import java.util.UUID;
  *
  * <p><b>References</b>
  * <ul>
- *   <li><a href="https://docs.spring.io/spring-boot/how-to/data-initialization.html">Spring Boot — Database Initialization</a></li>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.1">RFC 8252 §7.1 — PKCE for Authorization Code Grant</a></li>
- *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.1">RFC 6749 §3.1.2.1 — redirect_uri https recommended</a></li>
- *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet — Default Credentials</a></li>
- *   <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/server-authorization/client-registration.html">Spring Authorization Server — Client Settings</a></li>
+ *   <li><a href="https://docs.spring.io/spring-boot/how-to/data-initialization.html">Spring Boot -- Database Initialization</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.1">RFC 8252 section7.1 -- PKCE for Authorization Code Grant</a></li>
+ *   <li><a href="https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.1">RFC 6749 section3.1.2.1 -- redirect_uri https recommended</a></li>
+ *   <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet -- Default Credentials</a></li>
+ *   <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/server-authorization/client-registration.html">Spring Authorization Server -- Client Settings</a></li>
  * </ul>
  */
 @Configuration
@@ -72,23 +72,27 @@ public class DevDataInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(DevDataInitializer.class);
 
-    /** Fixed UUID for the seeded web client — stable across dev runs for easier testing. */
+    /** Fixed UUID for the seeded web client -- stable across dev runs for easier testing. */
     private static final UUID SEEDED_CLIENT_ID = UUID.fromString("a7bd8b0d-7d42-4a64-9e34-1ad3ab22e37e");
     private static final String CLIENT_ID = "marketplace-web-client";
     private static final String ADMIN_USERNAME = "admin";
 
-    /** Read via Spring's @Value — picks up env vars, system properties, or application.yml. */
-    @org.springframework.beans.factory.annotation.Value("${DEV_ADMIN_PASSWORD:admin-password-change-me}")
-    private String adminPassword;
+    /** Configuration values -- injected via constructor (not field injection) for testability. */
+    private final String adminPassword;
+    private final String clientSecret;
+    private final String redirectUri;
+    private final String postLogoutUri;
 
-    @org.springframework.beans.factory.annotation.Value("${DEV_CLIENT_SECRET:client-secret-change-me}")
-    private String clientSecret;
-
-    @org.springframework.beans.factory.annotation.Value("${OAUTH2_REDIRECT_URI:http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client}")
-    private String redirectUri;
-
-    @org.springframework.beans.factory.annotation.Value("${OAUTH2_POST_LOGOUT_URI:http://127.0.0.1:8080/}")
-    private String postLogoutUri;
+    public DevDataInitializer(
+            @org.springframework.beans.factory.annotation.Value("${DEV_ADMIN_PASSWORD:admin-password-change-me}") String adminPassword,
+            @org.springframework.beans.factory.annotation.Value("${DEV_CLIENT_SECRET:client-secret-change-me}") String clientSecret,
+            @org.springframework.beans.factory.annotation.Value("${OAUTH2_REDIRECT_URI:http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client}") String redirectUri,
+            @org.springframework.beans.factory.annotation.Value("${OAUTH2_POST_LOGOUT_URI:http://127.0.0.1:8080/}") String postLogoutUri) {
+        this.adminPassword = adminPassword;
+        this.clientSecret = clientSecret;
+        this.redirectUri = redirectUri;
+        this.postLogoutUri = postLogoutUri;
+    }
 
     @Bean
     @Transactional
@@ -112,7 +116,7 @@ public class DevDataInitializer {
                                 AuthAuditService auditService,
                                 String adminPassword) {
         if (userRepository.findByEmail(ADMIN_USERNAME).isPresent()) {
-            log.info("Admin user already exists — skipping seed.");
+            log.info("Admin user already exists -- skipping seed.");
             return;
         }
 
@@ -139,13 +143,14 @@ public class DevDataInitializer {
                                    String clientSecret,
                                    String redirectUri,
                                    String postLogoutUri) {
-        try {
-            if (clientRepository.findByClientId(CLIENT_ID) != null) {
-                log.info("OAuth2 client '{}' already exists — skipping seed.", CLIENT_ID);
-                return;
-            }
-        } catch (Exception e) {
-            log.debug("Client lookup failed (likely first run): {}", e.getMessage());
+        // findByClientId returns null for missing clients -- it does NOT throw.
+        // No try/catch needed. If the DB is down, the exception propagates so the
+        // operator sees the real error at startup, not a misleading "likely first run".
+        // Reference: Spring Authorization Server Javadoc -- RegisteredClientRepository.findByClientId
+        // returns null if the client is not found.
+        if (clientRepository.findByClientId(CLIENT_ID) != null) {
+            log.info("OAuth2 client '{}' already exists -- skipping seed.", CLIENT_ID);
+            return;
         }
 
         RegisteredClient client = RegisteredClient.withId(SEEDED_CLIENT_ID.toString())
@@ -160,12 +165,12 @@ public class DevDataInitializer {
                 .scope("openid")
                 .scope("profile")
                 .scope("email")
-                // OAuth 2.1 / RFC 8252 §7.1 — PKCE required for all clients.
+                // OAuth 2.1 / RFC 8252 section7.1 -- PKCE required for all clients.
                 .clientSettings(ClientSettings.builder()
                         .requireAuthorizationConsent(true)
                         .requireProofKey(true)
                         .build())
-                // RFC 6749 §10.6 — short-lived access tokens, no refresh-token reuse.
+                // RFC 6749 section10.6 -- short-lived access tokens, no refresh-token reuse.
                 .tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofMinutes(15))
                         .refreshTokenTimeToLive(Duration.ofDays(7))

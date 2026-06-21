@@ -13,7 +13,7 @@ public interface ProviderNameResolver {
 
     /**
      * Batch-resolve display names for the given provider IDs.
-     * Returns a map of providerId → displayName.
+     * Returns a map of providerId -> displayName.
      * IDs not found are mapped to a fallback value.
      */
     Map<UUID, String> resolveNames(Set<UUID> providerIds);

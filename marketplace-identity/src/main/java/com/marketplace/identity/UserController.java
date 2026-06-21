@@ -64,7 +64,7 @@ public class UserController {
             @Valid @RequestBody UpdateProfileRequest request,
             @AuthenticationPrincipal JwtAuthenticationToken token) {
         UUID userId = currentUserProvider.getCurrentUserId(token);
-        User updated = userService.updateProfile(userId, request.email(), request.displayName());
+        User updated = userService.updateProfile(userId, null, request.displayName());
         return ResponseEntity.ok(userMapper.toResponse(updated));
     }
 
@@ -87,7 +87,7 @@ public class UserController {
         org.springframework.security.core.userdetails.UserDetails updatedUser =
                 org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
                         .password(newEncodedPassword)
-                        .roles(user.getRole().name().replace("ROLE_", ""))
+                        .roles(user.getRole().name())
                         .disabled(!userDetails.isEnabled())
                         .build();
         userDetailsManager.updateUser(updatedUser);

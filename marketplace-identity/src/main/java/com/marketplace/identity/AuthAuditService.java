@@ -29,7 +29,18 @@ public class AuthAuditService implements IdentityAdminSpi {
         this.auditRepository = auditRepository;
     }
 
-    @Transactional
+    /**
+     * Logs an authentication event.
+     *
+     * <p>Uses {@code Propagation.REQUIRES_NEW} so the audit log entry commits in a
+     * <strong>separate</strong> transaction that survives the caller's rollback. Without
+     * this, {@code LOGIN_FAILURE}, {@code MFA_FAILURE}, and {@code ACCOUNT_LOCKED} events
+     * would be rolled back when the caller throws {@code BadRequestException} -- the most
+     * critical security events would never be persisted. Reference: Spring Framework
+     * Reference -- Transaction Propagation; OWASP Logging Cheat Sheet -- "Log all
+     * authentication events (success and failure)".
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void log(String username, AuthEventType eventType, String details) {
         String ipAddress = extractIpAddress();
         String userAgent = extractUserAgent();
@@ -75,14 +86,19 @@ public class AuthAuditService implements IdentityAdminSpi {
             var attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attrs != null) {
                 HttpServletRequest request = attrs.getRequest();
-                String xff = request.getHeader("X-Forwarded-For");
-                if (xff != null && !xff.isEmpty()) {
-                    return xff.split(",")[0].trim();
+                // When forward-headers-strategy=framework is active (set in application-prod.yml),
+                // Spring's ForwardedHeaderFilter resolves X-Forwarded-For from the trusted proxy
+                // chain into request.getRemoteAddr(). We trust ONLY this resolved value -- never
+                // the raw X-Forwarded-For header, which is client-controllable and spoofable.
+                // Reference: https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers
+                String remoteAddr = request.getRemoteAddr();
+                if (remoteAddr != null && !remoteAddr.isBlank()) {
+                    return remoteAddr;
                 }
-                return request.getRemoteAddr();
+                return "unknown";
             }
         } catch (Exception e) {
-            // ignore — not in request context
+            // ignore -- not in request context (e.g. scheduled task)
         }
         return null;
     }

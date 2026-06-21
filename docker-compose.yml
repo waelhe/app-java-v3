@@ -27,5 +27,32 @@ services:
       timeout: 5s
       retries: 5
 
+  app:
+    build: .
+    container_name: marketplace-app
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/marketplace
+      DB_USERNAME: marketplace
+      DB_PASSWORD: marketplace
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SPRING_PROFILES_ACTIVE: prod
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      AUTH_SERVER_ISSUER: http://localhost:8080
+      MANAGEMENT_SERVER_PORT: "8081"
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+      - logs:/var/log/marketplace
+
 volumes:
   pgdata:
+  uploads:
+  logs:

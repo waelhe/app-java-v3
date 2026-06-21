@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * Audit log for authentication events.
- * <p>Follows OWASP Authentication Cheat Sheet — log all auth events for security monitoring.
+ * <p>Follows OWASP Authentication Cheat Sheet -- log all auth events for security monitoring.
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a>
  */

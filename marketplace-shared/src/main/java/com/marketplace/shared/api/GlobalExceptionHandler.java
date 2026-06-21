@@ -10,6 +10,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
@@ -17,6 +18,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -80,6 +82,35 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
         return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
                 "Service temporarily unavailable. Please try again later.", request, "Service currently degraded");
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ProblemDetail handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        // Map the ResponseStatusException's status code to the closest ApiErrorTaxonomy.
+        // This prevents the catch-all @ExceptionHandler(Exception.class) from returning 500.
+        // Reference: Spring Framework Reference -- Web MVC Exception Handling;
+        // https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-rest-exceptions.html
+        HttpStatusCode statusCode = ex.getStatusCode();
+        ApiErrorTaxonomy taxonomy;
+        String detail = ex.getReason() != null ? ex.getReason() : statusCode.toString();
+
+        if (statusCode == HttpStatus.TOO_MANY_REQUESTS) {
+            taxonomy = ApiErrorTaxonomy.RATE_LIMIT;
+        } else if (statusCode == HttpStatus.NOT_FOUND) {
+            taxonomy = ApiErrorTaxonomy.NOT_FOUND;
+        } else if (statusCode == HttpStatus.CONFLICT) {
+            taxonomy = ApiErrorTaxonomy.CONFLICT;
+        } else if (statusCode == HttpStatus.SERVICE_UNAVAILABLE) {
+            taxonomy = ApiErrorTaxonomy.SERVICE_UNAVAILABLE;
+        } else if (statusCode.is4xxClientError()) {
+            taxonomy = ApiErrorTaxonomy.VALIDATION;
+        } else {
+            taxonomy = ApiErrorTaxonomy.INTERNAL;
+        }
+
+        ProblemDetail pd = problem(taxonomy, detail, request, null);
+        pd.setStatus(statusCode.value());
+        return pd;
     }
 
     @ExceptionHandler(Exception.class)

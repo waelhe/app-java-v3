@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * Stores TOTP shared secret for MFA.
- * <p>Follows RFC 6238 — Time-Based One-Time Password Algorithm.
+ * <p>Follows RFC 6238 -- Time-Based One-Time Password Algorithm.
  *
  * @see <a href="https://datatracker.ietf.org/doc/html/rfc6238">RFC 6238</a>
  */

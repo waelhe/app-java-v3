@@ -9,7 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  *
  * <p>Official reference:
  * <a href="https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-config/api-version.html">
- * Spring Framework — API Versioning</a>
+ * Spring Framework -- API Versioning</a>
  *
  * <p>Resolves API version from the {@code X-API-Version} request header
  * via {@link ApiVersionConfigurer#useRequestHeader(String)}.

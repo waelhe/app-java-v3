@@ -1,0 +1,20 @@
+{
+  "testId": "0f1b2f7b-f5eb-45f7-a382-b84ec8b53990",
+  "status": "failed",
+  "startedAt": null,
+  "finishedAt": "2026-06-19T15:07:10.594Z",
+  "videoUrl": null,
+  "failureAnalysisUrl": null,
+  "snapshotId": "snap_96e92363da7e0b92",
+  "runIdIfAvailable": "a3578eae-dadc-4954-84c4-493919167477",
+  "codeVersion": "v1",
+  "targetUrl": null,
+  "targetUrlSource": "project-default",
+  "failedStepIndex": 1,
+  "failureKind": "unknown",
+  "summary": {
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0
+  }
+}

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for the Marketplace application.
+
+  This file applies SECRET REDACTION to all log sinks (console + file) using
+  Logback's %replace conversion word. The regex redacts:
+  - password=..., secret=..., token=..., api-key=..., authorization=...
+  - JWTs (eyJ... pattern — Base64URL-encoded JWT segments)
+  - BCrypt hashes ({bcrypt}$2a$...)
+
+  The prior setup used `logging.pattern.console` with `%replace` in
+  application-prod.yml, but that ONLY applied to the default (non-structured)
+  console pattern. With `logging.structured.format: logstash` enabled, the
+  `%replace` was silently ignored. This logback-spring.xml fixes that by
+  applying redaction at the pattern level for both console and file appenders.
+
+  Trade-off: we disable Spring Boot's structured logstash format in favor of
+  pattern-based output with redaction. This is a slight downgrade for log
+  aggregation (no JSON), but secret redaction across ALL sinks is more
+  important than JSON parseability. A future enhancement can implement a
+  custom StructuredLogFormatter with built-in redaction.
+
+  Profile-specific overrides:
+  - prod: both appenders use %replace redaction
+  - dev: console uses a readable pattern without redaction (for DX)
+
+  Reference:
+  - https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.logback
+  - https://logback.qos.ch/manual/layouts.html#replace
+  - https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude
+-->
+<configuration>
+
+    <!-- Redaction regex — matches common secret patterns in log messages.
+         Replacement is '****' for ALL matches — no $1 backreference, because
+         alternatives 2 (JWT) and 3 (BCrypt) have no capture group, which made
+         $1 expand to empty and produced misleading '=****' output.
+         Using plain '****' is simpler and also redacts the key name (e.g.
+         'password=secret' -> '****'), which is more secure (less info leaked).
+         Reference: Logback %replace — 'replaces all occurrences of r with t'
+         https://logback.qos.ch/manual/layouts.html#replace -->
+    <property name="SECRET_REDACTION_REGEX"
+              value="(password|passwd|secret|token|api[-_]?key|authorization|bearer|refresh[-_]?token)\s*[=:]\s*[^\s,;'&quot;]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\{bcrypt\}\$2[abxy]\$\d{2}\$[A-Za-z0-9./]{53}"/>
+    <property name="SECRET_REDACTION_REPLACEMENT" value="****"/>
+
+    <!-- Console pattern for prod: redacted, semi-structured (key=value pairs).
+         IMPORTANT: %replace wraps BOTH %msg AND %ex (exception stack trace) —
+         secrets in stack traces (e.g. JDBC URLs with passwords) are also redacted. -->
+    <property name="CONSOLE_PATTERN_PROD"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+
+    <!-- Console pattern for dev: readable, no redaction (faster, better DX) -->
+    <property name="CONSOLE_PATTERN_DEV"
+              value="%d{HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L : %msg%n%ex"/>
+
+    <!-- File pattern for prod: redacted, same as console (covers msg + stack trace) -->
+    <property name="FILE_PATTERN_PROD"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+
+    <!-- Console appender (prod profile) -->
+    <appender name="CONSOLE_PROD" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN_PROD}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Console appender (dev profile) -->
+    <appender name="CONSOLE_DEV" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN_DEV}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Rolling file appender (prod profile) -->
+    <appender name="FILE_PROD" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE:-/var/log/marketplace/application.log}</file>
+        <encoder>
+            <pattern>${FILE_PATTERN_PROD}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE:-/var/log/marketplace/application}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>3GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Default profile (test/local): dev console, no file -->
+    <springProfile name="!prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_DEV"/>
+        </root>
+    </springProfile>
+
+    <!-- Prod profile: redacted console + redacted rolling file -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_PROD"/>
+            <appender-ref ref="FILE_PROD"/>
+        </root>
+    </springProfile>
+
+</configuration>

@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Summary DTO for provider listings — used by admin SPI.
+ * Summary DTO for provider listings -- used by admin SPI.
  * Decouples admin from the full JPA entity in the catalog module.
  */
 public record ProviderListingSummary(
