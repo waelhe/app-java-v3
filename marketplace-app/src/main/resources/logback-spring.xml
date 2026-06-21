@@ -45,17 +45,23 @@
 
     <!-- Console pattern for prod: redacted, semi-structured (key=value pairs).
          IMPORTANT: %replace wraps BOTH %msg AND %ex (exception stack trace) —
-         secrets in stack traces (e.g. JDBC URLs with passwords) are also redacted. -->
+         secrets in stack traces (e.g. JDBC URLs with passwords) are also redacted.
+         Note: %c{1} outputs the simple class name (rightmost logger segment).
+         The prior %c{1.} syntax is not a valid logback option — logback parses
+         the option as an integer, and "1." throws NumberFormatException, failing
+         ApplicationContext initialization for all WebMvcTest slices.
+         Reference: https://logback.qos.ch/manual/layouts.html (logger conversion word)
+         "This conversion word takes an integer as its first and only option." -->
     <property name="CONSOLE_PATTERN_PROD"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
 
     <!-- Console pattern for dev: readable, no redaction (faster, better DX) -->
     <property name="CONSOLE_PATTERN_DEV"
-              value="%d{HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L : %msg%n%ex"/>
+              value="%d{HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1}:%L : %msg%n%ex"/>
 
     <!-- File pattern for prod: redacted, same as console (covers msg + stack trace) -->
     <property name="FILE_PATTERN_PROD"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1.}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%t] %X{correlationId:-} --- %c{1}:%L - %replace(%msg%n%ex){${SECRET_REDACTION_REGEX},${SECRET_REDACTION_REPLACEMENT}}%n"/>
 
     <!-- Console appender (prod profile) -->
     <appender name="CONSOLE_PROD" class="ch.qos.logback.core.ConsoleAppender">
