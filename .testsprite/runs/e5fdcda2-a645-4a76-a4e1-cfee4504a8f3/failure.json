@@ -1,5 +1,0 @@
-{
-  "rootCauseHypothesis": "No assertions found in test code. Tests must contain at least one assertion.",
-  "recommendedFixTarget": null,
-  "evidence": []
-}

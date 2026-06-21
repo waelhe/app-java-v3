@@ -8,7 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.AuditorAware;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import com.marketplace.shared.jpa.JpaConfig;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
@@ -21,7 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 @Configuration
-@EnableJpaAuditing
+@Import(JpaConfig.class)
+
 public class ModuleTestConfig {
 
     @Bean
