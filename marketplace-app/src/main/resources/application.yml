@@ -88,9 +88,10 @@ spring:
         enabled: true
 
   session:
-    redis:
-      flush-mode: on_save
-      namespace: marketplace:session
+    data:
+      redis:
+        flush-mode: on_save
+        namespace: marketplace:session
     timeout: 30m
 
   http:
