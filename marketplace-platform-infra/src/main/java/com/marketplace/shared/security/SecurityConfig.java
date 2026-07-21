@@ -177,6 +177,7 @@ public class SecurityConfig {
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .oneTimeTokenLogin(Customizer.withDefaults())
                 .cors(Customizer.withDefaults());
 
         return http.build();
