@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @ActiveProfiles("test")
-@WithMockUser
+@WithMockUser(authorities = {"FACTOR_PASSWORD", "FACTOR_OTT", "ROLE_USER"})
 class CorsConfigurationTest {
 
     @Autowired
