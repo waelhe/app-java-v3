@@ -200,12 +200,18 @@ public class SecurityConfig {
 
     @Bean
     JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        authoritiesConverter.setAuthoritiesClaimName("roles");
-        authoritiesConverter.setAuthorityPrefix("ROLE_");
+        JwtGrantedAuthoritiesConverter rolesConverter = new JwtGrantedAuthoritiesConverter();
+        rolesConverter.setAuthoritiesClaimName("roles");
+        rolesConverter.setAuthorityPrefix("ROLE_");
+
+        JwtGrantedAuthoritiesConverter factorsConverter = new JwtGrantedAuthoritiesConverter();
+        factorsConverter.setAuthoritiesClaimName("factors");
+        factorsConverter.setAuthorityPrefix("");
 
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        converter.setJwtGrantedAuthoritiesConverter(
+                new org.springframework.security.oauth2.server.resource.authentication.DelegatingJwtGrantedAuthoritiesConverter(
+                        rolesConverter, factorsConverter));
         return converter;
     }
 
@@ -444,6 +450,8 @@ public class SecurityConfig {
         return context -> {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
                 context.getClaims().id(java.util.UUID.randomUUID().toString());
+                context.getClaims().claim("factors",
+                        java.util.List.of("FACTOR_PASSWORD", "FACTOR_OTT"));
             }
         };
     }

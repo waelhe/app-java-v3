@@ -42,6 +42,7 @@ class GraphQlErrorIntegrationTest {
                 .claim("sub", "test-user")
                 .claim("aud", List.of("marketplace-api"))
                 .claim("roles", List.of("PROVIDER"))
+                .claim("factors", List.of("FACTOR_PASSWORD", "FACTOR_OTT"))
                 .build();
         when(jwtDecoder.decode(anyString())).thenReturn(testJwt);
 
