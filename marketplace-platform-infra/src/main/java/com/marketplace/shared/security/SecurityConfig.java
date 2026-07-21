@@ -42,8 +42,11 @@ import org.springframework.security.oauth2.server.authorization.JdbcOAuth2Author
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
@@ -414,6 +417,34 @@ public class SecurityConfig {
         FilterRegistrationBean<CorrelationIdFilter> registrationBean = new FilterRegistrationBean<>(correlationIdFilter);
         registrationBean.setEnabled(false);
         return registrationBean;
+    }
+
+    /**
+     * Adds a random {@code jti} (JWT ID) claim to every access token issued by
+     * Spring Authorization Server, enabling per-token revocation via the
+     * {@code /oauth2/revoke} endpoint (RFC 7009).
+     *
+     * <p>Without {@code jti}, token revocation is a no-op — the revocation
+     * endpoint has no unique identifier to match against.
+     *
+     * <p>Reference: Spring Authorization Server — How-to: Customize JWT Claims:
+     * "You may add your own custom claims to an access token using an
+     * OAuth2TokenCustomizer<JwtEncodingContext> @Bean."
+     * https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html
+     *
+     * <p>Reference: RFC 9068 §2.2 — "The 'jti' (JWT ID) claim [...] provides
+     * a unique identifier for the JWT."
+     * https://datatracker.ietf.org/doc/html/rfc9068#section-2.2
+     *
+     * @return the token customizer bean
+     */
+    @Bean
+    OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+        return context -> {
+            if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+                context.getClaims().id(java.util.UUID.randomUUID().toString());
+            }
+        };
     }
 
     private static KeyPair generateRsaKey() {
