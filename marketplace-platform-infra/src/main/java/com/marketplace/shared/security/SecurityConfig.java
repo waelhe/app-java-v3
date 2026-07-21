@@ -448,6 +448,24 @@ public class SecurityConfig {
         };
     }
 
+    /**
+     * Handles one-time token generation by redirecting to the OTT submission page.
+     * Required by {@code oneTimeTokenLogin()} — without it, Spring Security throws
+     * {@code IllegalStateException: A OneTimeTokenGenerationSuccessHandler is required.}
+     *
+     * <p>Uses {@link RedirectOneTimeTokenGenerationSuccessHandler} which redirects
+     * to the OTT submit page after token generation.
+     *
+     * <p>Reference: Spring Security 7.1 — One-Time Token Login:
+     * https://docs.spring.io/spring-security/reference/servlet/authentication/one-time-token-login.html
+     *
+     * @return the OTT generation success handler
+     */
+    @Bean
+    org.springframework.security.web.authentication.ott.OneTimeTokenGenerationSuccessHandler oneTimeTokenGenerationSuccessHandler() {
+        return new org.springframework.security.web.authentication.ott.RedirectOneTimeTokenGenerationSuccessHandler("/ott/submit");
+    }
+
     private static KeyPair generateRsaKey() {
         try {
             KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
