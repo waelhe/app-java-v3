@@ -71,7 +71,8 @@ public class ModuleTestConfig {
                                 new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
                                 "marketplace-api"
                         ),
-                        new MarketplaceProperties.Security.AuthServer("http://localhost:8080")
+                        new MarketplaceProperties.Security.AuthServer("http://localhost:8080"),
+                        new MarketplaceProperties.Security.Session(1, false)
                 )
         );
     }

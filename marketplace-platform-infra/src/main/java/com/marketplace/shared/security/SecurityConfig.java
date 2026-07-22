@@ -26,6 +26,7 @@ import org.springframework.security.converter.RsaKeyConverters;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -171,15 +172,66 @@ public class SecurityConfig {
 
     @Bean
     @Order(4)
-    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
+                                                    SessionRegistry sessionRegistry) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .sessionManagement(session -> session
+                        .maximumSessions(properties.security().session().maximumSessions())
+                        .maxSessionsPreventsLogin(
+                                properties.security().session().maxSessionsPreventsLogin())
+                        .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
         return http.build();
+    }
+
+    /**
+     * Required by Spring Security's concurrent session control.
+     *
+     * <p>Without this listener, the {@link SessionRegistry} never receives
+     * {@code HttpSessionDestroyedEvent} notifications and cannot track expired
+     * sessions — concurrent session control silently breaks.
+     *
+     * <p>Reference: Spring Security 7.1 — Session Management:
+     * "When you use Spring Security's session-management and want to enable
+     * concurrent session control, you need to register the following listener
+     * in Spring Boot:"
+     * <pre>
+     * &#64;Bean
+     * public HttpSessionEventPublisher httpSessionEventPublisher() {
+     *     return new HttpSessionEventPublisher();
+     * }
+     * </pre>
+     * https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html#concurrent-session-control
+     *
+     * @return the HTTP session event publisher
+     */
+    @Bean
+    org.springframework.security.web.session.HttpSessionEventPublisher httpSessionEventPublisher() {
+        return new org.springframework.security.web.session.HttpSessionEventPublisher();
+    }
+
+    /**
+     * Explicit {@link SessionRegistry} bean for concurrent session tracking.
+     *
+     * <p>The default in-memory implementation is used. For horizontal scaling,
+     * this can be replaced with a Redis-backed implementation
+     * ({@code spring-boot-starter-session-data-redis} is already a dependency).
+     *
+     * <p>Reference: Spring Security 7.1 — Session Management:
+     * "The default SessionRegistry implementation in Spring Security relies
+     * on an in-memory Map."
+     * https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html#concurrent-session-control
+     *
+     * @return the session registry
+     */
+    @Bean
+    org.springframework.security.core.session.SessionRegistry sessionRegistry() {
+        return new org.springframework.security.core.session.SessionRegistryImpl();
     }
 
     @Bean

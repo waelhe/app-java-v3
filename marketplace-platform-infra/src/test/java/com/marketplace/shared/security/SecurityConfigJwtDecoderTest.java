@@ -169,7 +169,8 @@ class SecurityConfigJwtDecoderTest {
                                 new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
                                 AUDIENCE
                         ),
-                        new MarketplaceProperties.Security.AuthServer(ISSUER)
+                        new MarketplaceProperties.Security.AuthServer(ISSUER),
+                        new MarketplaceProperties.Security.Session(1, false)
                 )
         );
     }

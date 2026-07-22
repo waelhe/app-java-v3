@@ -25,7 +25,8 @@ public record MarketplaceProperties(
 
     public record Security(
         Jwt jwt,
-        AuthServer authServer
+        AuthServer authServer,
+        @DefaultValue Session session
     ) {
         public record Jwt(
             KeyStore keystore,
@@ -40,6 +41,24 @@ public record MarketplaceProperties(
         }
         public record AuthServer(
             @DefaultValue("http://localhost:8080") String issuer
+        ) {}
+
+        /**
+         * Concurrent session control configuration.
+         *
+         * <p>Reference: Spring Security 7.1 — Session Management:
+         * "You may want to prevent a user from authenticating to the same
+         * application multiple times at the same time."
+         * https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html#concurrent-session-control
+         *
+         * @param maximumSessions         the maximum number of concurrent sessions per user
+         *                                (default: 1 — prevents credential sharing)
+         * @param maxSessionsPreventsLogin if {@code true}, blocks the second login;
+         *                                if {@code false} (default), invalidates the first session
+         */
+        public record Session(
+            @DefaultValue("1") int maximumSessions,
+            @DefaultValue("false") boolean maxSessionsPreventsLogin
         ) {}
     }
 }
