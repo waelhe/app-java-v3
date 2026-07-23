@@ -2,6 +2,7 @@ package com.marketplace.catalog;
 
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.cache.CacheInvalidationPublisher;
 import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
@@ -48,17 +49,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final ProviderLookupPort providerLookupPort;
+    private final CacheInvalidationPublisher cacheInvalidationPublisher;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
                           ProviderNameResolver providerNameResolver,
                           ApplicationEventPublisher eventPublisher,
-                          ProviderLookupPort providerLookupPort) {
+                          ProviderLookupPort providerLookupPort,
+                          CacheInvalidationPublisher cacheInvalidationPublisher) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
         this.providerLookupPort = providerLookupPort;
+        this.cacheInvalidationPublisher = cacheInvalidationPublisher;
     }
 
     @Override
@@ -138,6 +142,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
+        publishCacheInvalidation();
         return saved;
     }
 
@@ -148,6 +153,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.update(title, description, category, priceCents);
+        publishCacheInvalidation();
         return listing;
     }
 
@@ -157,6 +163,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.activate();
+        publishCacheInvalidation();
         return listing;
     }
 
@@ -166,6 +173,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.pause();
+        publishCacheInvalidation();
         return listing;
     }
 
@@ -182,6 +190,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.archive();
+        publishCacheInvalidation();
         return toProviderListingSummary(listing);
     }
 
@@ -191,7 +200,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.archive();
+        publishCacheInvalidation();
         return listing;
+    }
+
+    /**
+     * Publishes cache invalidation messages for all catalog caches via
+     * Redis Pub/Sub, so that other service instances in a horizontally-
+     * scaled deployment also evict their local cache entries.
+     */
+    private void publishCacheInvalidation() {
+        cacheInvalidationPublisher.publishInvalidation("catalog-active");
+        cacheInvalidationPublisher.publishInvalidation("catalog-by-category");
+        cacheInvalidationPublisher.publishInvalidation("catalog-search");
+        cacheInvalidationPublisher.publishInvalidation("search-results");
     }
 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
