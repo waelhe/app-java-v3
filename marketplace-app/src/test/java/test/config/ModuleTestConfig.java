@@ -72,7 +72,8 @@ public class ModuleTestConfig {
                                 "marketplace-api"
                         ),
                         new MarketplaceProperties.Security.AuthServer("http://localhost:8080"),
-                        new MarketplaceProperties.Security.Session(1, false)
+                        new MarketplaceProperties.Security.Session(1, false),
+                        new MarketplaceProperties.Security.Admin(java.util.List.of())
                 )
         );
     }

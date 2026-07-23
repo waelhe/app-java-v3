@@ -58,7 +58,8 @@ class SessionManagementConfigTest {
                         "marketplace-api"
                 ),
                 new MarketplaceProperties.Security.AuthServer("http://localhost:8080"),
-                session
+                session,
+                new MarketplaceProperties.Security.Admin(java.util.List.of())
         );
 
         assertThat(security.session()).isNotNull();

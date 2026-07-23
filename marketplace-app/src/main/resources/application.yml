@@ -248,3 +248,6 @@ marketplace:
         password: ${JWT_KEYSTORE_PASSWORD:}
         alias: ${JWT_KEY_ALIAS:}
         key-password: ${JWT_KEY_PASSWORD:}
+    session:
+      maximum-sessions: ${SESSION_MAXIMUM_SESSIONS:1}
+      max-sessions-prevents-login: ${SESSION_MAX_PREVENTS_LOGIN:false}

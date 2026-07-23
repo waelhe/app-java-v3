@@ -48,13 +48,13 @@ class SecurityNegativeTests {
     }
 
     @Test
-    void adminEndpointsRequireAdminRole() throws Exception {
+    void adminEndpointsUseAuthorizationManager() throws Exception {
         String content = Files.readString(SECURITY_CONFIG);
 
         assertThat(content)
-                .as("Admin endpoints /api/v1/admin/** must require hasRole('ADMIN')")
-                .contains("hasRole(\"ADMIN\")")
-                .contains("/api/v1/admin/**");
+                .as("Admin endpoints /api/v1/admin/** must use AdminIpAuthorizationManager for IP-based access control")
+                .contains("/api/v1/admin/**")
+                .contains(".access(adminIpAuthorizationManager)");
     }
 
     @Test

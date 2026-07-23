@@ -170,7 +170,8 @@ class SecurityConfigJwtDecoderTest {
                                 AUDIENCE
                         ),
                         new MarketplaceProperties.Security.AuthServer(ISSUER),
-                        new MarketplaceProperties.Security.Session(1, false)
+                        new MarketplaceProperties.Security.Session(1, false),
+                        new MarketplaceProperties.Security.Admin(java.util.List.of())
                 )
         );
     }

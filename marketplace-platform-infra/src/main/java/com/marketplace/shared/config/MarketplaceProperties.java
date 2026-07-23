@@ -26,7 +26,8 @@ public record MarketplaceProperties(
     public record Security(
         Jwt jwt,
         AuthServer authServer,
-        @DefaultValue Session session
+        @DefaultValue Session session,
+        @DefaultValue Admin admin
     ) {
         public record Jwt(
             KeyStore keystore,
@@ -59,6 +60,28 @@ public record MarketplaceProperties(
         public record Session(
             @DefaultValue("1") int maximumSessions,
             @DefaultValue("false") boolean maxSessionsPreventsLogin
+        ) {}
+
+        /**
+         * Admin endpoint IP restrictions configuration.
+         *
+         * <p>When {@code allowedIpCidrs} is non-empty, admin endpoints
+         * ({@code /api/v1/admin/**}) require the client IP to match at
+         * least one entry in addition to {@code hasRole('ADMIN')}.
+         *
+         * <p>Uses Spring Security 7.1's {@code InetAddressMatcher} for
+         * IP address matching.
+         *
+         * <p>Reference: Spring Security 7.1 Release Highlights:
+         * "Added InetAddressMatcher — Introduced InetAddressMatcher in
+         * the core module for IP address matching capabilities."
+         * https://spring.io/projects/release-highlights
+         *
+         * @param allowedIpCidrs list of allowed IP addresses/CIDRs
+         *                       (empty = no IP restriction, default)
+         */
+        public record Admin(
+            @DefaultValue List<String> allowedIpCidrs
         ) {}
     }
 }

@@ -149,7 +149,8 @@ public class SecurityConfig {
     @Bean
     @Order(3)
     SecurityFilterChain protectedApiSecurityFilterChain(HttpSecurity http,
-                                                        CorrelationIdFilter correlationIdFilter) throws Exception {
+                                                        CorrelationIdFilter correlationIdFilter,
+                                                        AdminIpAuthorizationManager adminIpAuthorizationManager) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
@@ -158,7 +159,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").access(adminIpAuthorizationManager)
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exceptions -> exceptions
@@ -233,6 +234,29 @@ public class SecurityConfig {
     @Bean
     org.springframework.security.core.session.SessionRegistry sessionRegistry() {
         return new org.springframework.security.core.session.SessionRegistryImpl();
+    }
+
+    /**
+     * Authorization manager for admin endpoints that checks the client IP
+     * against an allowlist in addition to the standard role check.
+     *
+     * <p>When {@code marketplace.security.admin.allowed-ip-cidrs} is empty
+     * (default), IP restriction is disabled and admin access is controlled
+     * solely by {@code hasRole('ADMIN')} via {@code @PreAuthorize}.
+     *
+     * <p>When non-empty, the client IP must match at least one entry.
+     *
+     * <p>Reference: Spring Security 7.1 Release Highlights:
+     * "Added InetAddressMatcher — Introduced InetAddressMatcher in the
+     * core module for IP address matching capabilities."
+     * https://spring.io/projects/release-highlights
+     *
+     * @return the admin IP authorization manager
+     */
+    @Bean
+    AdminIpAuthorizationManager adminIpAuthorizationManager() {
+        return new AdminIpAuthorizationManager(
+                properties.security().admin().allowedIpCidrs());
     }
 
     @Bean
