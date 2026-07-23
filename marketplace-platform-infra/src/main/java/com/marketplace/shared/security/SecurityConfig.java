@@ -179,6 +179,7 @@ public class SecurityConfig {
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .oauth2Login(Customizer.withDefaults())
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maximumSessions())
                         .maxSessionsPreventsLogin(
