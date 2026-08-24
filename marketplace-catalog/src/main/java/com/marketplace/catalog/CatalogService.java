@@ -2,7 +2,7 @@ package com.marketplace.catalog;
 
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
-import com.marketplace.shared.cache.CacheInvalidationPublisher;
+import com.marketplace.shared.cache.CacheInvalidationRequested;
 import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.observation.annotation.Observed;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -49,20 +50,21 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final ProviderLookupPort providerLookupPort;
-    private final CacheInvalidationPublisher cacheInvalidationPublisher;
+
+    /** Cache names invalidated whenever catalog data changes. */
+    private static final List<String> CATALOG_CACHE_NAMES = List.of(
+            "catalog-active", "catalog-by-category", "catalog-search", "search-results");
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
                           ProviderNameResolver providerNameResolver,
                           ApplicationEventPublisher eventPublisher,
-                          ProviderLookupPort providerLookupPort,
-                          CacheInvalidationPublisher cacheInvalidationPublisher) {
+                          ProviderLookupPort providerLookupPort) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
         this.providerLookupPort = providerLookupPort;
-        this.cacheInvalidationPublisher = cacheInvalidationPublisher;
     }
 
     @Override
@@ -205,15 +207,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     /**
-     * Publishes cache invalidation messages for all catalog caches via
-     * Redis Pub/Sub, so that other service instances in a horizontally-
-     * scaled deployment also evict their local cache entries.
+     * Publishes a {@link CacheInvalidationRequested} event for all catalog
+     * caches. The Redis Pub/Sub message is only relayed to other instances
+     * after the current transaction commits successfully (AFTER_COMMIT),
+     * so a rolled-back transaction never triggers cross-instance eviction.
+     *
+     * <p>Reference: Spring Framework — Transactional Events:
+     * "the listener is bound to the commit phase of the transaction by
+     * default."
+     * https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html
      */
     private void publishCacheInvalidation() {
-        cacheInvalidationPublisher.publishInvalidation("catalog-active");
-        cacheInvalidationPublisher.publishInvalidation("catalog-by-category");
-        cacheInvalidationPublisher.publishInvalidation("catalog-search");
-        cacheInvalidationPublisher.publishInvalidation("search-results");
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
     }
 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {

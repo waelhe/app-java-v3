@@ -17,7 +17,7 @@ import static org.mockito.Mockito.*;
  * <ul>
  *   <li>Valid cache names are published to the Redis channel</li>
  *   <li>Null or blank cache names are silently ignored</li>
- *   <li>Redis failures are logged but do not propagate</li>
+ *   <li>Redis failures are logged, do not propagate, and are counted as metrics</li>
  * </ul>
  *
  * <p>Reference: Spring Data Redis 4.1 — {@code @RedisListener}:
@@ -31,6 +31,9 @@ class CacheInvalidationPublisherTest {
     @Mock
     private StringRedisTemplate redisTemplate;
 
+    @Mock
+    private CacheInvalidationMetrics metrics;
+
     @InjectMocks
     private CacheInvalidationPublisher publisher;
 
@@ -41,6 +44,7 @@ class CacheInvalidationPublisherTest {
         publisher.publishInvalidation(cacheName);
 
         verify(redisTemplate).convertAndSend(eq(CacheInvalidationPublisher.CHANNEL), eq(cacheName));
+        verifyNoInteractions(metrics);
     }
 
     @Test
@@ -58,7 +62,7 @@ class CacheInvalidationPublisherTest {
     }
 
     @Test
-    void publishInvalidation_redisFailureDoesNotPropagate() {
+    void publishInvalidation_redisFailureDoesNotPropagateAndCountsMetric() {
         String cacheName = "catalog-active";
         doThrow(new RuntimeException("Redis connection refused"))
                 .when(redisTemplate).convertAndSend(any(), any());
@@ -66,5 +70,6 @@ class CacheInvalidationPublisherTest {
         publisher.publishInvalidation(cacheName);
 
         verify(redisTemplate).convertAndSend(eq(CacheInvalidationPublisher.CHANNEL), eq(cacheName));
+        verify(metrics).publishFailure(cacheName);
     }
 }

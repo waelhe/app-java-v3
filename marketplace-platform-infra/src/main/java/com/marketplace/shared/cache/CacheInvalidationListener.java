@@ -34,9 +34,12 @@ public class CacheInvalidationListener {
     private static final Logger log = LoggerFactory.getLogger(CacheInvalidationListener.class);
 
     private final CacheManager cacheManager;
+    private final CacheInvalidationMetrics metrics;
 
-    public CacheInvalidationListener(CacheManager cacheManager) {
+    public CacheInvalidationListener(CacheManager cacheManager,
+                                     CacheInvalidationMetrics metrics) {
         this.cacheManager = cacheManager;
+        this.metrics = metrics;
     }
 
     /**
@@ -60,6 +63,7 @@ public class CacheInvalidationListener {
             }
         } catch (RuntimeException ex) {
             log.warn("Failed to evict local cache {}: {}", cacheName, ex.getMessage());
+            metrics.evictFailure(cacheName);
         }
     }
 }

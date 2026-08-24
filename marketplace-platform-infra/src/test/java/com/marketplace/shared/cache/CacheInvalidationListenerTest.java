@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
  *   <li>Valid cache names trigger local cache eviction</li>
  *   <li>Null or blank cache names are silently ignored</li>
  *   <li>Missing cache names do not cause errors</li>
- *   <li>Cache eviction failures are logged but do not propagate</li>
+ *   <li>Cache eviction failures are logged, do not propagate, and are counted as metrics</li>
  * </ul>
  *
  * <p>Reference: Spring Data Redis 4.1 — {@code @RedisListener}:
@@ -33,6 +33,9 @@ class CacheInvalidationListenerTest {
     @Mock
     private CacheManager cacheManager;
 
+    @Mock
+    private CacheInvalidationMetrics metrics;
+
     @InjectMocks
     private CacheInvalidationListener listener;
 
@@ -45,6 +48,7 @@ class CacheInvalidationListenerTest {
         listener.onCacheInvalidation(cacheName);
 
         verify(cache).clear();
+        verifyNoInteractions(metrics);
     }
 
     @Test
@@ -73,12 +77,13 @@ class CacheInvalidationListenerTest {
     }
 
     @Test
-    void onCacheInvalidation_cacheFailureDoesNotPropagate() {
+    void onCacheInvalidation_cacheFailureDoesNotPropagateAndCountsMetric() {
         String cacheName = "catalog-active";
         when(cacheManager.getCache(cacheName)).thenThrow(new RuntimeException("Cache error"));
 
         listener.onCacheInvalidation(cacheName);
 
         verify(cacheManager).getCache(cacheName);
+        verify(metrics).evictFailure(cacheName);
     }
 }

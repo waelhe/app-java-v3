@@ -35,9 +35,12 @@ public class CacheInvalidationPublisher {
     public static final String CHANNEL = "marketplace:cache:invalidation";
 
     private final StringRedisTemplate redisTemplate;
+    private final CacheInvalidationMetrics metrics;
 
-    public CacheInvalidationPublisher(StringRedisTemplate redisTemplate) {
+    public CacheInvalidationPublisher(StringRedisTemplate redisTemplate,
+                                       CacheInvalidationMetrics metrics) {
         this.redisTemplate = redisTemplate;
+        this.metrics = metrics;
     }
 
     /**
@@ -58,6 +61,7 @@ public class CacheInvalidationPublisher {
             log.debug("Published cache invalidation for: {}", cacheName);
         } catch (RuntimeException ex) {
             log.warn("Failed to publish cache invalidation for {}: {}", cacheName, ex.getMessage());
+            metrics.publishFailure(cacheName);
         }
     }
 }
