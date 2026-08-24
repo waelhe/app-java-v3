@@ -13,6 +13,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
@@ -159,7 +161,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
-                        .requestMatchers("/api/v1/admin/**").access(adminIpAuthorizationManager)
+                        // Defense-in-depth as documented: the chain keeps requiring the ADMIN role
+                        // (as it did before the IP restriction was introduced) AND the client IP
+                        // must match the allowlist when one is configured. Composed via
+                        // AuthorizationManagers.allOf per the official recommendation.
+                        .requestMatchers("/api/v1/admin/**").access(AuthorizationManagers.allOf(
+                                AuthorityAuthorizationManager.hasRole("ADMIN"),
+                                adminIpAuthorizationManager))
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exceptions -> exceptions
