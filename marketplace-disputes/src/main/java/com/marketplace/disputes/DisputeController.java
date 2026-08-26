@@ -3,6 +3,7 @@ package com.marketplace.disputes;
 import com.marketplace.shared.api.ApiConstants;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -36,6 +37,7 @@ public class DisputeController {
         return ResponseEntity.ok(disputes);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/admin/disputes/{id}/resolve")
     public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, authentication)));

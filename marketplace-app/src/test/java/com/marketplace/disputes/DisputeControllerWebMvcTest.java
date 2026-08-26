@@ -2,7 +2,9 @@ package com.marketplace.disputes;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -36,6 +38,18 @@ class DisputeControllerWebMvcTest {
 
     @MockitoBean
     private DisputeMapper disputeMapper;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void resolve_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/disputes/{id}/resolve", UUID.randomUUID()))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     @WithMockUser
