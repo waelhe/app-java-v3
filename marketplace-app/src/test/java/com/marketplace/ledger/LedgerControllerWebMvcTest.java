@@ -2,7 +2,9 @@ package com.marketplace.ledger;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,6 +36,21 @@ class LedgerControllerWebMvcTest {
 
     @MockitoBean
     private LedgerService ledgerService;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void creditProvider_withUserRole_returnsForbidden() throws Exception {
+        UUID providerId = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/admin/ledger/providers/{providerId}/credit", providerId)
+                        .param("paymentIntentId", UUID.randomUUID().toString())
+                        .param("amountCents", "5000"))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     void creditProvider_returnsOk() throws Exception {

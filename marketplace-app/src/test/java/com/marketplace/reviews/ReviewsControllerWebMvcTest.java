@@ -3,7 +3,9 @@ package com.marketplace.reviews;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -39,6 +41,22 @@ class ReviewsControllerWebMvcTest {
 
     @MockitoBean
     private ReviewMapper reviewMapper;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void create_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/reviews")
+                        .contentType("application/json")
+                        .content("""
+                                {"bookingId": "00000000-0000-0000-0000-000000000001", "rating": 5}
+                                """))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     void getById_returnsOk() throws Exception {

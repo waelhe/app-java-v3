@@ -3,7 +3,9 @@ package com.marketplace.provider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,6 +42,22 @@ class ProviderControllerWebMvcTest {
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void create_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/providers")
+                        .contentType("application/json")
+                        .content("""
+                                {"displayName": "Test Provider", "bio": "A test provider"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void getById_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
@@ -54,7 +72,7 @@ class ProviderControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "CONSUMER")
     void create_returnsOk() throws Exception {
         var profile = mockProviderProfile();
         var response = mockResponse();
