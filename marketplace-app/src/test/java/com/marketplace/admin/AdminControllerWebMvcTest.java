@@ -6,7 +6,9 @@ import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentsSpi;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,6 +53,22 @@ class AdminControllerWebMvcTest {
 
     @MockitoBean
     private RevisionService revisionService;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void updateUserRole_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/users/{id}/role", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"role": "ADMIN"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     void listUsers_returnsOk() throws Exception {

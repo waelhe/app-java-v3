@@ -3,7 +3,9 @@ package com.marketplace.booking;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,6 +42,22 @@ class BookingControllerWebMvcTest {
 
     @MockitoBean
     private BookingMapper bookingMapper;
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void create_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/bookings")
+                        .contentType("application/json")
+                        .content("""
+                                {"listingId": "00000000-0000-0000-0000-000000000001", "startsAt": "2026-06-15T10:00:00Z", "endsAt": "2026-06-15T11:00:00Z"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     @WithMockUser(roles = "CONSUMER")
