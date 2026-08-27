@@ -1,6 +1,5 @@
 package com.marketplace.availability;
 
-import com.marketplace.shared.security.AuthHelper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -8,7 +7,6 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,9 +33,6 @@ class AvailabilityControllerWebMvcTest {
 
     @MockitoBean
     private AvailabilityService availabilityService;
-
-    @MockitoBean
-    private AuthHelper authHelper;
 
     @Test
     void getSlots_returnsOk() throws Exception {

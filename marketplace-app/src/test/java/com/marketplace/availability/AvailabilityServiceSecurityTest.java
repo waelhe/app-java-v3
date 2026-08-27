@@ -3,12 +3,13 @@ package com.marketplace.availability;
 import com.marketplace.shared.security.AuthHelper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Instant;
 import java.time.LocalTime;
@@ -19,15 +20,24 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
-@EnableMethodSecurity
-@ActiveProfiles("test")
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = { AvailabilityService.class })
+@EnableMethodSecurity(proxyTargetClass = true)
 class AvailabilityServiceSecurityTest {
 
     @Autowired
     private AvailabilityService availabilityService;
 
     @MockitoBean
+    private AvailabilitySlotRepository repository;
+
+    @MockitoBean
+    private ProviderAvailabilityRuleRepository ruleRepository;
+
+    @MockitoBean
+    private ProviderTimeOffRepository timeOffRepository;
+
+    @MockitoBean(name = "authHelper")
     private AuthHelper authHelper;
 
     @Test
