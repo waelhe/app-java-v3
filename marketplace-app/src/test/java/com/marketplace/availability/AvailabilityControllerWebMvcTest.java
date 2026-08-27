@@ -54,7 +54,6 @@ class AvailabilityControllerWebMvcTest {
     @WithMockUser(roles = "PROVIDER")
     void createSlot_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
-        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         when(availabilityService.createSlot(any(), any(), any())).thenReturn(org.mockito.Mockito.mock(AvailabilitySlot.class));
 
         mockMvc.perform(post("/api/v1/providers/{providerId}/availability/slots", providerId)
@@ -67,7 +66,6 @@ class AvailabilityControllerWebMvcTest {
     @WithMockUser(roles = "PROVIDER")
     void createTimeOff_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
-        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         when(availabilityService.createTimeOff(any(), any(), any())).thenReturn(org.mockito.Mockito.mock(ProviderTimeOff.class));
 
         mockMvc.perform(post("/api/v1/providers/{providerId}/time-off", providerId)
