@@ -2,6 +2,7 @@ package com.marketplace.pricing;
 
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -13,7 +14,8 @@ import static org.mockito.Mockito.*;
 class PricingServiceTest {
 
     private final PricingRuleRepository ruleRepository = mock(PricingRuleRepository.class);
-    private final PricingService service = new PricingService(ruleRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final PricingService service = new PricingService(ruleRepository, eventPublisher);
 
     @Test
     void calculatePrice_withCategoryRule() {

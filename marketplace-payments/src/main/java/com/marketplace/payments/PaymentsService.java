@@ -3,6 +3,7 @@ package com.marketplace.payments;
 import com.marketplace.payments.spi.PaymentsSpi;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ConflictException;
@@ -12,7 +13,6 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.resilience4j.retry.annotation.Retry;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
@@ -30,6 +30,7 @@ import jakarta.validation.constraints.Min;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -168,20 +169,19 @@ public class PaymentsService implements PaymentsSpi {
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing")
     @ConcurrencyLimit(5)
-    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
         // In production: integrate with payment gateway here
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
         paymentRepository.save(payment);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
         return intent;
     }
 
     @Observed(name = "payment.confirm")
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent confirmIntent(UUID id, String externalId) {
         PaymentIntent intent = getIntent(id);
         intent.markSucceeded();
@@ -189,15 +189,16 @@ public class PaymentsService implements PaymentsSpi {
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
         return intent;
     }
 
     @Observed(name = "payment.cancel")
     @PreAuthorize("hasRole('CONSUMER')")
-    @CacheEvict(cacheNames = "paymentIntents", key = "#id")
     public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.cancel();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
         return intent;
     }
 
@@ -209,7 +210,6 @@ public class PaymentsService implements PaymentsSpi {
 
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    @CacheEvict(cacheNames = "paymentIntents", key = "#result.paymentIntentId")
     public Payment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
@@ -235,6 +235,7 @@ public class PaymentsService implements PaymentsSpi {
         }
         paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
         return payment;
     }
 

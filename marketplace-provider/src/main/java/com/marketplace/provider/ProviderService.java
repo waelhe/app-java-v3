@@ -1,15 +1,17 @@
 package com.marketplace.provider;
 
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -18,11 +20,16 @@ public class ProviderService {
 
     private final ProviderRepository providerRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
+
+    private static final Set<String> PROVIDER_CACHE_NAMES = Set.of("providers");
 
     public ProviderService(ProviderRepository providerRepository,
-                           CurrentUserProvider currentUserProvider) {
+                           CurrentUserProvider currentUserProvider,
+                           ApplicationEventPublisher eventPublisher) {
         this.providerRepository = providerRepository;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
@@ -38,27 +45,27 @@ public class ProviderService {
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile update(UUID id, String displayName, String bio, Authentication authentication) {
         ProviderProfile provider = getById(id);
         verifyOwnership(provider, authentication);
         provider.update(displayName, bio);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
         return provider;
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile verify(UUID id) {
         ProviderProfile provider = getById(id);
         provider.verify();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
         return provider;
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @CacheEvict(cacheNames = "providers", key = "#id")
     public ProviderProfile suspend(UUID id) {
         ProviderProfile provider = getById(id);
         provider.suspend();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
         return provider;
     }
 

@@ -6,6 +6,7 @@ import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.BookingCancelledEvent;
 import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.BadRequestException;
@@ -14,7 +15,6 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import io.github.resilience4j.retry.annotation.Retry;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -129,7 +130,6 @@ public class BookingService implements BookingSpi {
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
-    @CacheEvict(cacheNames = "bookings", key = "#id")
     public Booking confirm(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);
@@ -138,6 +138,7 @@ public class BookingService implements BookingSpi {
             availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
         return booking;
     }
 
@@ -145,11 +146,11 @@ public class BookingService implements BookingSpi {
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
-    @CacheEvict(cacheNames = "bookings", key = "#id")
     public Booking complete(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyProviderOwnership(booking, authentication);
         booking.complete();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
         return booking;
     }
 
@@ -157,7 +158,6 @@ public class BookingService implements BookingSpi {
     @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
-    @CacheEvict(cacheNames = "bookings", key = "#id")
     public Booking cancel(UUID id, Authentication authentication) {
         Booking booking = getById(id);
         verifyParticipantOwnership(booking, authentication);
@@ -166,10 +166,10 @@ public class BookingService implements BookingSpi {
             availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
         return booking;
     }
 
-    @CacheEvict(cacheNames = "bookings", key = "#id")
     public void autoCancel(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CANCELLED) {
@@ -180,9 +180,9 @@ public class BookingService implements BookingSpi {
             availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
     }
 
-    @CacheEvict(cacheNames = "bookings", key = "#id")
     public void autoConfirm(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CONFIRMED) {
@@ -193,6 +193,7 @@ public class BookingService implements BookingSpi {
             availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
     }
 
     private void verifyProviderOwnership(Booking booking, Authentication authentication) {

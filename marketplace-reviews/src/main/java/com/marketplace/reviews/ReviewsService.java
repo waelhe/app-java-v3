@@ -3,12 +3,12 @@ package com.marketplace.reviews;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -19,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -58,7 +59,6 @@ public class ReviewsService {
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    @CacheEvict(cacheNames = "reviews", allEntries = true)
     public Review create(UUID bookingId, UUID reviewerId,
                          Integer rating, String comment) {
         if (reviewRepository.existsByBookingId(bookingId)) {
@@ -78,16 +78,17 @@ public class ReviewsService {
         Review saved = reviewRepository.save(
                 Review.create(bookingId, reviewerId, bookingInfo.providerId(), rating, comment));
         eventPublisher.publishEvent(new ReviewCreatedEvent(saved.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("reviews")));
         return saved;
     }
 
     @PreAuthorize("hasRole('CONSUMER')")
-    @CacheEvict(cacheNames = "reviews", key = "#id")
     public Review update(UUID id, Integer rating, String comment, Authentication authentication) {
         Review review = getById(id);
         verifyOwnership(review, authentication);
         review.update(rating, comment);
         eventPublisher.publishEvent(new ReviewUpdatedEvent(id));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("reviews"), id));
         return review;
     }
 
