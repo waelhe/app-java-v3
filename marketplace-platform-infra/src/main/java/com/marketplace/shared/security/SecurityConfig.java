@@ -80,7 +80,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Configuration
-@EnableMethodSecurity
+@EnableMethodSecurity(proxyTargetClass = true)
 @EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
 public class SecurityConfig {
 
