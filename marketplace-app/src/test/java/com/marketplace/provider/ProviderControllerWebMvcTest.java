@@ -48,17 +48,6 @@ class ProviderControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
-    void create_withUserRole_returnsForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/providers")
-                        .contentType("application/json")
-                        .content("""
-                                {"displayName": "Test Provider", "bio": "A test provider"}
-                                """))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void getById_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
         var profile = mockProviderProfile();

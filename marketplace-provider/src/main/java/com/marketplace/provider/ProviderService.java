@@ -25,6 +25,7 @@ public class ProviderService {
         this.currentUserProvider = currentUserProvider;
     }
 
+    @PreAuthorize("hasRole('CONSUMER')")
     public ProviderProfile create(String displayName, String bio, UUID userId) {
         return providerRepository.save(ProviderProfile.create(displayName, bio, userId));
     }

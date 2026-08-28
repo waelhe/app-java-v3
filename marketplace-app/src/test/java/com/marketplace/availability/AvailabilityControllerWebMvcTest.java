@@ -1,6 +1,5 @@
 package com.marketplace.availability;
 
-import com.marketplace.shared.security.AuthHelper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -8,7 +7,6 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,9 +34,6 @@ class AvailabilityControllerWebMvcTest {
     @MockitoBean
     private AvailabilityService availabilityService;
 
-    @MockitoBean
-    private AuthHelper authHelper;
-
     @Test
     void getSlots_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
@@ -54,7 +49,6 @@ class AvailabilityControllerWebMvcTest {
     @WithMockUser(roles = "PROVIDER")
     void createSlot_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
-        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         when(availabilityService.createSlot(any(), any(), any())).thenReturn(org.mockito.Mockito.mock(AvailabilitySlot.class));
 
         mockMvc.perform(post("/api/v1/providers/{providerId}/availability/slots", providerId)
@@ -67,7 +61,6 @@ class AvailabilityControllerWebMvcTest {
     @WithMockUser(roles = "PROVIDER")
     void createTimeOff_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
-        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         when(availabilityService.createTimeOff(any(), any(), any())).thenReturn(org.mockito.Mockito.mock(ProviderTimeOff.class));
 
         mockMvc.perform(post("/api/v1/providers/{providerId}/time-off", providerId)

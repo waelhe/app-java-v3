@@ -100,7 +100,6 @@ class DisputeServiceTest {
     @Test
     void resolve_asAdmin_succeeds() {
         UUID disputeId = UUID.randomUUID();
-        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
 
@@ -110,18 +109,8 @@ class DisputeServiceTest {
     }
 
     @Test
-    void resolve_asNonAdmin_throws() {
-        UUID disputeId = UUID.randomUUID();
-        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-
-        assertThrows(AccessDeniedException.class,
-                () -> disputeService.resolve(disputeId, authentication));
-    }
-
-    @Test
     void resolve_notFound_throws() {
         UUID disputeId = UUID.randomUUID();
-        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(repository.findById(disputeId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,

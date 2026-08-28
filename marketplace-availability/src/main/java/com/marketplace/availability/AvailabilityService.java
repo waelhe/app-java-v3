@@ -8,6 +8,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.modulith.moments.DayHasPassed;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +40,7 @@ public class AvailabilityService implements AvailabilityPort {
         this.timeOffRepository = timeOffRepository;
     }
 
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @CacheEvict(cacheNames = "availability", allEntries = true)
     public AvailabilitySlot createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         return repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
@@ -58,6 +60,7 @@ public class AvailabilityService implements AvailabilityPort {
         return slotAvailable && !hasTimeOffConflict;
     }
 
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public ProviderAvailabilityRule createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
     }
@@ -121,6 +124,7 @@ public class AvailabilityService implements AvailabilityPort {
         }
     }
 
+    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Observed(name = "availability.timeoff.create")
     @CacheEvict(cacheNames = "availability", allEntries = true)
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {

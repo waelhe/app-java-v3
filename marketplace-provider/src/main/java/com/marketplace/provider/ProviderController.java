@@ -4,7 +4,6 @@ import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,7 +25,6 @@ public class ProviderController {
     }
 
     @PostMapping("/providers")
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<ProviderResponse> create(@Valid @RequestBody ProviderRequest request,
                                                    Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -47,13 +45,11 @@ public class ProviderController {
     }
 
     @PostMapping("/admin/providers/{id}/verify")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProviderResponse> verify(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.verify(id)));
     }
 
     @PostMapping("/admin/providers/{id}/suspend")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProviderResponse> suspend(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.suspend(id)));
     }

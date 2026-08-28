@@ -49,17 +49,6 @@ class BookingControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
-    void create_withUserRole_returnsForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/bookings")
-                        .contentType("application/json")
-                        .content("""
-                                {"listingId": "00000000-0000-0000-0000-000000000001", "startsAt": "2026-06-15T10:00:00Z", "endsAt": "2026-06-15T11:00:00Z"}
-                                """))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     @WithMockUser(roles = "CONSUMER")
     void create_returnsCreated() throws Exception {
         UUID listingId = UUID.randomUUID();

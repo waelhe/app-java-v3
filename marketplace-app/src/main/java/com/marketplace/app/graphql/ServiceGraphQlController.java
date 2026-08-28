@@ -8,7 +8,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
@@ -43,7 +42,6 @@ public class ServiceGraphQlController {
     }
 
     @MutationMapping
-    @PreAuthorize("hasRole('ADMIN')")
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
                                          Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);

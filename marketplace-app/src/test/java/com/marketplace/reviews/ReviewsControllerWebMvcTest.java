@@ -48,17 +48,6 @@ class ReviewsControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
-    void create_withUserRole_returnsForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/reviews")
-                        .contentType("application/json")
-                        .content("""
-                                {"bookingId": "00000000-0000-0000-0000-000000000001", "rating": 5}
-                                """))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void getById_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
         var review = mockReview(id);

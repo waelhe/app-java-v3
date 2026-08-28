@@ -84,7 +84,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Transactional(readOnly = true)
     public Page<ProviderListing> findAll(Pageable pageable) {
-        return listingRepository.findAll(pageable);
+        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
     }
 
     @Override

@@ -8,7 +8,6 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -49,7 +48,6 @@ public class BookingController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request,
                                                   Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
@@ -59,19 +57,16 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ResponseEntity<BookingResponse> confirm(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.confirm(id, authentication)));
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ResponseEntity<BookingResponse> complete(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.complete(id, authentication)));
     }
 
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
     public ResponseEntity<BookingResponse> cancel(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.cancel(id, authentication)));
     }

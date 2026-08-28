@@ -4,7 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
-import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,10 +42,8 @@ public class DisputeService {
         return repository.findByBookingId(bookingId);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     public Dispute resolve(UUID id, Authentication authentication) {
-        if (!currentUserProvider.isAdmin(authentication)) {
-            throw new AccessDeniedException("Only admins can resolve disputes");
-        }
         Dispute dispute = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Dispute not found: " + id));
         dispute.resolve();
         return dispute;
