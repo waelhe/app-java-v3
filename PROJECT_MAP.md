@@ -1,8 +1,31 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Current State (2026-06-18)
+## Current State (2026-08-29)
 
-**Branch:** `main` (local behind origin — run `git pull`)
+**Branch:** `fix/notification-email-transaction-isolation` (3 commits ahead of main)
+
+## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
+
+### PR #178 — Email Transaction Semantics (Spring Modulith alignment)
+- **Files:** `EmailNotificationService.java`, `NotificationService.java`, `EmailNotificationServiceTest.java`
+- **Changes:**
+  - Removed `@Transactional(REQUIRES_NEW)` from `sendEmail()` — `@ApplicationModuleListener` already provides `REQUIRES_NEW` (confirmed via `javap` on `spring-modulith-events-api-2.1.0.jar`)
+  - Corrected Javadoc to reflect actual behavior: listener runs in its own `REQUIRES_NEW` transaction, failure rolls back listener transaction only, log entry stays FAILED for retry
+  - Removed dead `log` field + unused imports from `NotificationService`
+  - Removed reflection-based test `sendEmailRequiresNewTransaction` (tested annotation presence, not behavior)
+- **Tests:** notifications 18/18 ✅
+
+### PR #178 — Catalog Public-Read ACTIVE-Only + Admin All-Statuses
+- **Files:** `CatalogSpi.java`, `CatalogService.java`, `CatalogController.java`, `ServiceGraphQlController.java`, `CatalogServiceTest.java` (new), + 3 test stub updates
+- **Changes:**
+  - Added `getActiveById(UUID)` to `CatalogSpi` + `CatalogService` (ACTIVE-only, 404 otherwise)
+  - GraphQL `service(id)` → `getActiveById` (closes draft leak on GraphQL)
+  - REST `GET /api/v1/catalog/{id}` → `getActiveById` (closes draft leak on REST — same class of vulnerability)
+  - `findAllSummaries()` → `listingRepository.findAll(pageable)` directly (restores pre-PR#177 admin behavior: DRAFT/PAUSED/ARCHIVED visible to ADMIN)
+  - `getById()` remains unfiltered for internal spine (update/activate/pause/archive after `verifyOwnership`)
+  - New `CatalogServiceTest`: 4 tests (admin sees all statuses, getActiveById ACTIVE/DRAFT/unknown)
+- **Tests:** 126/0 failures/3 skipped (environmental) ✅
+- **Design rationale:** Public read surface = ACTIVE-only (enforced by `listActive`, `listByCategory`, `findAll` post-#177, `searchByCriteria`, `searchFullText`). GraphQL schema exposes only `ACTIVE|INACTIVE`. Admin = all statuses (moderation). Internal spine = unfiltered after ownership check.
 
 ## Sprint 2 — Retry Semantics, Architecture & Final Polish (2026-06-18)
 
@@ -234,6 +257,7 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 
 ## Completions
 
+- **Sprint 3 — Complete**: Email transaction semantics aligned with Spring Modulith docs, catalog public-read surface enforced ACTIVE-only, admin all-statuses view restored
 - **Sprint 2 — All items complete**: Retry semantics (5× `catch(Exception)` removed), `@PreAuthorize` on ProviderController, `CatalogSpi` in GraphQL, `ReviewUpdatedEvent`, `BookingConfirmedEvent`, `save()` consistency
 - Upgraded to **Spring Boot 4.1.0**, **Maven 3.9.16**, **JaCoCo 0.8.15**
 - **Java 25** target (`--release 25`)
