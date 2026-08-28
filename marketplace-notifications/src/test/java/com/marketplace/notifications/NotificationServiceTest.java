@@ -6,7 +6,6 @@ import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.api.UserSummary;
-import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -35,9 +34,10 @@ class NotificationServiceTest {
                                               CurrentUserProvider currentUserProvider,
                                               UserLookupPort userLookupPort,
                                               Optional<SimpMessagingTemplate> messagingTemplate,
-                                              Optional<EmailService> emailService) {
+                                              Optional<com.marketplace.shared.email.EmailService> emailService) {
+        EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                currentUserProvider, userLookupPort, messagingTemplate, emailService);
+                currentUserProvider, emailNotificationService, messagingTemplate);
     }
 
     private UserLookupPort mockUserLookup() {
@@ -79,7 +79,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        EmailService emailService = mock(EmailService.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -259,7 +259,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        EmailService emailService = mock(EmailService.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));

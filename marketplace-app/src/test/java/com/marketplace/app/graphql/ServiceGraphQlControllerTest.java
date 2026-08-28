@@ -47,7 +47,7 @@ class ServiceGraphQlControllerTest {
                 .set(field(ProviderListing::getCategory), "general")
                 .set(field(ProviderListing::getPriceCents), 5000L)
                 .create();
-        when(catalogService.getById(id)).thenReturn(listing);
+        when(catalogService.getActiveById(id)).thenReturn(listing);
         when(serviceMapper.toResponse(listing)).thenReturn(
                 new ServiceResponse(id, "Test", "Desc", 50.0, "ACTIVE"));
 

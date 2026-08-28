@@ -31,7 +31,7 @@ public class ServiceGraphQlController {
 
     @QueryMapping
     public ServiceResponse service(@Argument UUID id) {
-        return serviceMapper.toResponse(catalogSpi.getById(id));
+        return serviceMapper.toResponse(catalogSpi.getActiveById(id));
     }
 
     @QueryMapping

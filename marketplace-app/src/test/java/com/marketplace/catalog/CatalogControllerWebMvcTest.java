@@ -81,7 +81,7 @@ class CatalogControllerWebMvcTest {
         var listing = mockListing(id);
         var response = mockResponse(id);
 
-        when(catalogService.getById(id)).thenReturn(listing);
+        when(catalogService.getActiveById(id)).thenReturn(listing);
         when(listingMapper.toResponse(listing)).thenReturn(response);
 
         mockMvc.perform(get("/api/v1/listings/{id}", id))

@@ -52,7 +52,7 @@ public class CatalogController {
     @GetMapping("/{id}")
     @RateLimiter(name = "catalog")
     public ResponseEntity<ListingResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(listingMapper.toResponse(catalogService.getById(id)));
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.getActiveById(id)));
     }
 
     @PostMapping

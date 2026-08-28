@@ -54,7 +54,7 @@ class GraphQlErrorIntegrationTest {
     @Test
     void shouldMapNotFoundError() {
         UUID id = UUID.randomUUID();
-        when(catalogService.getById(id)).thenThrow(new ResourceNotFoundException("Listing", id));
+        when(catalogService.getActiveById(id)).thenThrow(new ResourceNotFoundException("Listing", id));
 
         graphQlTester.mutate()
                 .header("X-Correlation-ID", "trace-not-found")
@@ -75,7 +75,7 @@ class GraphQlErrorIntegrationTest {
     @Test
     void shouldMapDomainConflictError() {
         UUID id = UUID.randomUUID();
-        when(catalogService.getById(id)).thenThrow(new IllegalStateException("Listing status conflict"));
+        when(catalogService.getActiveById(id)).thenThrow(new IllegalStateException("Listing status conflict"));
 
         graphQlTester.document("query($id: ID!){ service(id: $id) { id name } }")
                 .variable("id", id.toString())
@@ -92,7 +92,7 @@ class GraphQlErrorIntegrationTest {
     @Test
     void shouldHideInternalErrorDetails() {
         UUID id = UUID.randomUUID();
-        when(catalogService.getById(id)).thenThrow(new RuntimeException("sensitive details should not leak"));
+        when(catalogService.getActiveById(id)).thenThrow(new RuntimeException("sensitive details should not leak"));
 
         graphQlTester.document("query($id: ID!){ service(id: $id) { id name } }")
                 .variable("id", id.toString())

@@ -122,6 +122,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
+    public ProviderListing getActiveById(UUID id) {
+        return listingRepository.findById(id)
+                .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public ListingInfo getListingInfo(UUID listingId) {
         ProviderListing listing = getById(listingId);
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents());
@@ -172,7 +180,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Page<ProviderListingSummary> findAllSummaries(Pageable pageable) {
-        return findAll(pageable).map(this::toProviderListingSummary);
+        return listingRepository.findAll(pageable).map(this::toProviderListingSummary);
     }
 
     @Override
