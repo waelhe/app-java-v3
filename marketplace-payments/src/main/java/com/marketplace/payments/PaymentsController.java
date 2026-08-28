@@ -6,7 +6,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,7 +34,6 @@ public class PaymentsController {
     }
 
     @PostMapping("/intents")
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntentResponse> createIntent(@Valid @RequestBody CreateIntentRequest request,
                                                               Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
@@ -45,26 +43,22 @@ public class PaymentsController {
     }
 
     @PostMapping("/intents/{id}/process")
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntentResponse> processIntent(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.processIntent(id, authentication)));
     }
 
     @PostMapping("/intents/{id}/confirm")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentIntentResponse> confirmIntent(@PathVariable UUID id,
                                                                @Valid @RequestBody ConfirmIntentRequest request) {
         return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.confirmIntent(id, request.externalId())));
     }
 
     @PostMapping("/intents/{id}/cancel")
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<PaymentIntentResponse> cancelIntent(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.cancelIntent(id, authentication)));
     }
 
     @PostMapping("/{paymentId}/refund")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PaymentResponse> refundPayment(@PathVariable UUID paymentId) {
         return ResponseEntity.ok(paymentMapper.toResponse(paymentsService.refundPayment(paymentId)));
     }

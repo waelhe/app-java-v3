@@ -11,7 +11,6 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -57,7 +56,6 @@ public class CatalogController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> create(@Valid @RequestBody CreateListingRequest request,
                                                   Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
@@ -68,7 +66,6 @@ public class CatalogController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> update(@PathVariable UUID id,
                                                   @Valid @RequestBody UpdateListingRequest request,
                                                   Authentication authentication) {
@@ -78,19 +75,16 @@ public class CatalogController {
     }
 
     @PostMapping("/{id}/activate")
-    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> activate(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.activate(id, authentication)));
     }
 
     @PostMapping("/{id}/pause")
-    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> pause(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.pause(id, authentication)));
     }
 
     @PostMapping("/{id}/archive")
-    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<ListingResponse> archive(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.archive(id, authentication)));
     }

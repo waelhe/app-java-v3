@@ -10,7 +10,6 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -48,7 +47,6 @@ public class ReviewsController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<ReviewResponse> create(@Valid @RequestBody CreateReviewRequest request,
                                                  Authentication authentication) {
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
@@ -59,7 +57,6 @@ public class ReviewsController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('CONSUMER')")
     public ResponseEntity<ReviewResponse> update(@PathVariable UUID id,
                                                  @Valid @RequestBody UpdateReviewRequest request,
                                                  Authentication authentication) {

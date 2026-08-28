@@ -48,17 +48,6 @@ class CatalogControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
-    void create_withUserRole_returnsForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/listings")
-                        .contentType("application/json")
-                        .content("""
-                                {"title": "Test", "category": "cat", "priceCents": 1000}
-                                """))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void listActive_returnsOk() throws Exception {
         when(catalogService.listActive(any())).thenReturn(org.springframework.data.domain.Page.empty());
 

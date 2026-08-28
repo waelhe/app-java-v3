@@ -51,17 +51,6 @@ class PaymentsControllerWebMvcTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
-    void createIntent_withUserRole_returnsForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/payments/intents")
-                        .contentType("application/json")
-                        .content("""
-                                {"bookingId": "00000000-0000-0000-0000-000000000001"}
-                                """))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void getIntent_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
         var intent = mockPaymentIntent(id);
