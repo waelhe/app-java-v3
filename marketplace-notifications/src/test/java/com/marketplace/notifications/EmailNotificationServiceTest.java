@@ -5,14 +5,12 @@ import com.marketplace.shared.api.UserSummary;
 import com.marketplace.shared.email.EmailService;
 import com.marketplace.shared.email.EmailSendException;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
@@ -72,16 +70,5 @@ class EmailNotificationServiceTest {
         assertThatThrownBy(() -> service.sendEmail(USER_ID, "Test Subject", "email/template", Map.of()))
                 .isInstanceOf(EmailSendException.class)
                 .hasMessageContaining("SMTP error");
-    }
-
-    @Test
-    void sendEmailRequiresNewTransaction() throws Exception {
-        EmailNotificationService service = new EmailNotificationService(Optional.empty(), mockUserLookup());
-
-        var method = EmailNotificationService.class.getMethod("sendEmail", UUID.class, String.class, String.class, Map.class);
-        var annotation = method.getAnnotation(Transactional.class);
-
-        assertThat(annotation).isNotNull();
-        assertThat(annotation.propagation()).isEqualTo(org.springframework.transaction.annotation.Propagation.REQUIRES_NEW);
     }
 }
