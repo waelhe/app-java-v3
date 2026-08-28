@@ -1,16 +1,18 @@
 package com.marketplace.identity;
 
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -18,9 +20,11 @@ import java.util.UUID;
 public class UserService implements IdentitySpi {
 
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -49,8 +53,9 @@ public class UserService implements IdentitySpi {
 
     /**
      * Syncs user from OIDC token — creates if new, updates if changed.
+     * Cache invalidation is deferred to AFTER_COMMIT via
+     * {@link CacheInvalidationRelay}.
      */
-    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");
@@ -59,11 +64,13 @@ public class UserService implements IdentitySpi {
         return userRepository.findBySubject(subject)
                 .map(existing -> {
                     existing.updateProfile(email, name);
+                    publishCacheInvalidation();
                     return existing;
                 })
                 .orElseGet(() -> {
                     UserRole role = resolveRole(token);
                     User user = User.create(subject, email, name, role);
+                    publishCacheInvalidation();
                     return userRepository.save(user);
                 });
     }
@@ -75,10 +82,19 @@ public class UserService implements IdentitySpi {
         return UserRole.CONSUMER;
     }
 
-    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public void updateUserRole(UUID userId, String newRole) {
         User user = getById(userId);
         user.changeRole(UserRole.valueOf(newRole));
+        publishCacheInvalidation();
+    }
+
+    /**
+     * Publishes a cache-invalidation request that fires only after the current
+     * transaction commits successfully (see {@link CacheInvalidationRelay}).
+     */
+    private void publishCacheInvalidation() {
+        eventPublisher.publishEvent(new CacheInvalidationRequested(
+                List.of("users", "userSubjects"), null));
     }
 
     private UserSummary toUserSummary(User user) {
