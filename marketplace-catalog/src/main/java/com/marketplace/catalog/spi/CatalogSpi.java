@@ -14,6 +14,13 @@ public interface CatalogSpi {
 
     ProviderListing getById(UUID id);
 
+    /**
+     * Public single-listing view: resolves only ACTIVE listings.
+     * Use {@link #getById(UUID)} for internal flows (provider management,
+     * pricing, booking) that legitimately operate on non-ACTIVE listings.
+     */
+    ProviderListing getActiveById(UUID id);
+
     Page<ProviderListing> findAll(Pageable pageable);
 
     ProviderListing create(UUID providerId, String title, String description, String category, Long priceCents);
