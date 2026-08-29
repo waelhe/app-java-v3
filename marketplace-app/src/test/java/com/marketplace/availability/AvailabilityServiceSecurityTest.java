@@ -16,8 +16,10 @@ import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
@@ -68,5 +70,47 @@ class AvailabilityServiceSecurityTest {
 
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> availabilityService.createTimeOff(providerId, Instant.now(), Instant.now()));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void createSlot_whenOwner_thenInvokes() {
+        UUID providerId = UUID.randomUUID();
+        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
+        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AvailabilitySlot result = availabilityService.createSlot(providerId, Instant.now(), Instant.now());
+
+        assertThat(result.getProviderId()).isEqualTo(providerId);
+        verify(repository).save(any(AvailabilitySlot.class));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void createRule_whenOwner_thenInvokes() {
+        UUID providerId = UUID.randomUUID();
+        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
+        when(ruleRepository.save(any(ProviderAvailabilityRule.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProviderAvailabilityRule result = availabilityService.createRule(
+                providerId, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
+
+        assertThat(result.getProviderId()).isEqualTo(providerId);
+        verify(ruleRepository).save(any(ProviderAvailabilityRule.class));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void createTimeOff_whenOwner_thenInvokes() {
+        UUID providerId = UUID.randomUUID();
+        when(authHelper.ownsProvider(any(), any())).thenReturn(true);
+        when(timeOffRepository.save(any(ProviderTimeOff.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProviderTimeOff result = availabilityService.createTimeOff(providerId, Instant.now(), Instant.now());
+
+        assertThat(result.getId()).isNotNull();
+        verify(timeOffRepository).save(any(ProviderTimeOff.class));
     }
 }

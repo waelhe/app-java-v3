@@ -2,7 +2,7 @@
 
 ## Current State (2026-08-29)
 
-**Branch:** `main` (HEAD: `20af38e`)
+**Branch:** `main` (HEAD: `b80f477`)
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
@@ -37,9 +37,11 @@
   - `a2d51a7` — 4 missing **negative** tests (`BookingService.complete`, `CatalogService.activate/pause/archive`)
   - `da1bfe9` — 10 **positive** tests: BookingService (create/confirm/complete/cancel) + CatalogService (create/update/activate/pause/archiveListing/archive)
   - `6d1c522` — 11 **positive** tests: ReviewsService (create/update), ProviderService (create/update/verify/suspend), PaymentsService (createIntent/processIntent/confirmIntent/cancelIntent/refundPayment)
+  - `?` — 6 **positive-gap closure** tests: AvailabilityService (createSlot/createRule/createTimeOff when owner), DisputeService (resolve when admin), PaymentsService (2-arg `refundPayment` when admin + its own negative) — closes the 21/26 gap from the review report
 - **Coverage:** all 26 service-layer `@PreAuthorize` annotations have BOTH negative (`AccessDenied`) and positive (`ThenInvokes`) tests following the exact documented names; the 4 controller-level gates are covered by `WebMvcTest` (negative `..._withUserRole_returnsForbidden` + ADMIN positives) ⇒ **30/30 annotations covered**
+- **Gap closure (review report):** 6 tests added (Availability +3, Disputes +1, Payments +2 on the 2-arg `refundPayment(paymentId, amountCents)` overload — a rule that self-invocation had left untestable in both directions) → **52 service security tests = 26 rules × 2**; 21/26 gap closed, "26/26 بقسميه" now factually true
 - **Cleanup:** `cddfeff` — `@SuppressWarnings("unchecked")` isolated from public `getRevisions()` into private `queryRevisions()` in `RevisionService` (Hibernate Envers raw `List`); wildcard `import java.util.*` verified per `CODING_STANDARDS.md`
-- **Verification:** `mvn clean test` → **151 tests / 0 failures / 0 errors / 3 skipped** (skips environmental: Modulith verification + Testcontainers off)
+- **Verification:** `mvn clean test` (full reactor) → **538 tests / 0 failures / 0 errors / 3 skipped** (skips environmental: Modulith verification + Testcontainers off); `marketplace-app` module alone = 157
 
 #### Security Design — official model verified, NO production change (2026-08-29) ✅
 - **Decision:** D1/D2 closed with no code change — the system already implements the official Spring Security defense-in-depth model (verified against `method-security.html` v7.1.1, verbatim):
@@ -59,7 +61,7 @@
 - **Full reactor build (17 modules):** `BUILD SUCCESS` — `.\mvnw.cmd clean verify`
 - **Jacoco `check`** (INSTRUCTION COVEREDRATIO ≥ 0.70 per module BUNDLE): "All coverage checks have been met" on every module
 - **Compiler** `failOnWarning=true`: clean
-- **Surefire (unit):** 151 tests / 0 failures / 0 errors / 3 skipped
+- **Surefire (unit, full reactor):** 538 tests / 0 failures / 0 errors / 3 skipped (per-module aggregates: shared 30, platform-infra 35, identity 24, booking 47, payments 71, pricing 16, reviews 24, messaging 30, search 9, provider 25, availability 19, notifications 22, ledger 15, disputes 14, marketplace-app 157)
 - **Failsafe (integration):** 40 tests / 0 failures / 0 errors / 34 skipped (environmental — Testcontainers-off, Docker unavailable)
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)

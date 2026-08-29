@@ -91,6 +91,13 @@ class PaymentsServiceSecurityTest {
     }
 
     @Test
+    @WithMockUser(roles = "USER")
+    void refundPaymentAmount_whenNotAdmin_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> paymentsService.refundPayment(UUID.randomUUID(), 500L));
+    }
+
+    @Test
     @WithMockUser(roles = "CONSUMER", username = "consumer")
     void createIntent_whenConsumer_thenInvokes() {
         UUID bookingId = UUID.randomUUID();
@@ -169,5 +176,24 @@ class PaymentsServiceSecurityTest {
 
         assertThat(result.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(result.getRefundedAmountCents()).isEqualTo(1000L);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN", username = "admin")
+    void refundPaymentAmount_whenAdmin_thenInvokes() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intent.getId(), 1000L);
+        payment.markCompleted("ext-1");
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentIntentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentIntentRepository.save(any(PaymentIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Payment result = paymentsService.refundPayment(payment.getId(), 400L);
+
+        assertThat(result.getStatus()).isEqualTo(PaymentStatus.PARTIALLY_REFUNDED);
+        assertThat(result.getRefundedAmountCents()).isEqualTo(400L);
     }
 }
