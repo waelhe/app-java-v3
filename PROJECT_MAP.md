@@ -2,7 +2,7 @@
 
 ## Current State (2026-08-29)
 
-**Branch:** `main` (HEAD: `b80f477`)
+**Branch:** `main` (HEAD: `46968d3`)
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
