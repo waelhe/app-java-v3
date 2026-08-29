@@ -1,16 +1,18 @@
 package com.marketplace.identity;
 
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -18,9 +20,14 @@ import java.util.UUID;
 public class UserService implements IdentitySpi {
 
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserService(UserRepository userRepository) {
+    private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
+
+    public UserService(UserRepository userRepository,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -50,22 +57,23 @@ public class UserService implements IdentitySpi {
     /**
      * Syncs user from OIDC token — creates if new, updates if changed.
      */
-    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");
         String name = token.getToken().getClaimAsString("name");
 
-        return userRepository.findBySubject(subject)
+        User user = userRepository.findBySubject(subject)
                 .map(existing -> {
                     existing.updateProfile(email, name);
                     return existing;
                 })
                 .orElseGet(() -> {
                     UserRole role = resolveRole(token);
-                    User user = User.create(subject, email, name, role);
-                    return userRepository.save(user);
+                    User newUser = User.create(subject, email, name, role);
+                    return userRepository.save(newUser);
                 });
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        return user;
     }
 
     private UserRole resolveRole(JwtAuthenticationToken token) {
@@ -75,10 +83,10 @@ public class UserService implements IdentitySpi {
         return UserRole.CONSUMER;
     }
 
-    @CacheEvict(cacheNames = {"users", "userSubjects"}, allEntries = true)
     public void updateUserRole(UUID userId, String newRole) {
         User user = getById(userId);
         user.changeRole(UserRole.valueOf(newRole));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
     }
 
     private UserSummary toUserSummary(User user) {

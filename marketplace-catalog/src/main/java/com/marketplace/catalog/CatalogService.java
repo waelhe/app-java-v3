@@ -3,6 +3,7 @@ package com.marketplace.catalog;
 import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springframework.modulith.NamedInterface;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
@@ -14,7 +15,6 @@ import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -135,9 +135,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents());
     }
 
+    private static final Set<String> CATALOG_CACHE_NAMES =
+            Set.of("catalog-active", "catalog-by-category", "catalog-search", "search-results");
+
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing create(UUID providerId, String title, String description,
                                   String category, Long priceCents) {
         providerLookupPort.findById(providerId)
@@ -146,34 +148,35 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return saved;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.update(title, description, category, priceCents);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing activate(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.activate();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing pause(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.pause();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
 
@@ -185,20 +188,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListingSummary archiveListing(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.archive();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return toProviderListingSummary(listing);
     }
 
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
-    @CacheEvict(cacheNames = {"catalog-active", "catalog-by-category", "catalog-search", "search-results"}, allEntries = true)
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.archive();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
 

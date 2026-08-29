@@ -1,15 +1,17 @@
 package com.marketplace.pricing;
 
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -17,9 +19,14 @@ import java.util.UUID;
 public class PricingService {
 
     private final PricingRuleRepository pricingRuleRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public PricingService(PricingRuleRepository pricingRuleRepository) {
+    private static final Set<String> PRICING_CACHE_NAMES = Set.of("pricing-calculations");
+
+    public PricingService(PricingRuleRepository pricingRuleRepository,
+                          ApplicationEventPublisher eventPublisher) {
         this.pricingRuleRepository = pricingRuleRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -67,11 +74,12 @@ public class PricingService {
         return pricingRuleRepository.findAll();
     }
 
-    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule createRule(String name, String category,
                                   BigDecimal taxRate, BigDecimal discountPct) {
         PricingRule rule = PricingRule.create(name, category, taxRate, discountPct);
-        return pricingRuleRepository.save(rule);
+        PricingRule saved = pricingRuleRepository.save(rule);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -80,30 +88,32 @@ public class PricingService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule activate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
         rule.activate();
-        return pricingRuleRepository.save(rule);
+        PricingRule saved = pricingRuleRepository.save(rule);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
+        return saved;
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public PricingRule deactivate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
         rule.deactivate();
-        return pricingRuleRepository.save(rule);
+        PricingRule saved = pricingRuleRepository.save(rule);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
+        return saved;
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "pricing-calculations", allEntries = true)
     public void deleteById(UUID id) {
         if (!pricingRuleRepository.existsById(id)) {
             throw new ResourceNotFoundException("PricingRule", id);
         }
         pricingRuleRepository.deleteById(id);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
     }
 
     public record PriceBreakdown(

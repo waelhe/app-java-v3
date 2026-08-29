@@ -4,6 +4,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 
 import java.util.UUID;
@@ -15,6 +16,8 @@ import static org.mockito.Mockito.*;
 
 class ProviderServiceTest {
 
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+
     @Test
     void verifyChangesStatusToVerified() {
         ProviderRepository repository = mock(ProviderRepository.class);
@@ -25,7 +28,7 @@ class ProviderServiceTest {
                 .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
-        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
         ProviderProfile verified = service.verify(profile.getId());
 
         assertThat(verified.getStatus()).isEqualTo(ProviderStatus.VERIFIED);
@@ -41,7 +44,7 @@ class ProviderServiceTest {
                 .create();
         when(repository.findById(profile.getId())).thenReturn(java.util.Optional.of(profile));
 
-        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
         ProviderProfile suspended = service.suspend(profile.getId());
 
         assertThat(suspended.getStatus()).isEqualTo(ProviderStatus.SUSPENDED);
@@ -50,7 +53,7 @@ class ProviderServiceTest {
     @Test
     void getByIdThrowsWhenMissing() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
         UUID unknownId = Instancio.create(UUID.class);
         when(repository.findById(unknownId)).thenReturn(java.util.Optional.empty());
 
@@ -61,7 +64,7 @@ class ProviderServiceTest {
     @Test
     void create_savesAndReturnsProfile() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
         UUID userId = UUID.randomUUID();
         when(repository.save(any(ProviderProfile.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -76,7 +79,7 @@ class ProviderServiceTest {
     @Test
     void getById_returnsProfileWhenFound() {
         ProviderRepository repository = mock(ProviderRepository.class);
-        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class));
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
         UUID id = Instancio.create(UUID.class);
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
                 .set(field(ProviderProfile::getId), id)
@@ -94,7 +97,7 @@ class ProviderServiceTest {
         ProviderRepository repository = mock(ProviderRepository.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         Authentication authentication = mock(Authentication.class);
-        ProviderService service = new ProviderService(repository, currentUserProvider);
+        ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher);
         UUID id = Instancio.create(UUID.class);
         UUID userId = UUID.randomUUID();
         ProviderProfile profile = Instancio.of(ProviderProfile.class)

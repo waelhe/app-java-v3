@@ -17,6 +17,7 @@ import static org.instancio.Instancio.create;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.modulith.moments.DayHasPassed;
 
 class AvailabilityServiceTest {
@@ -24,11 +25,12 @@ class AvailabilityServiceTest {
     private final AvailabilitySlotRepository repository = mock(AvailabilitySlotRepository.class);
     private final ProviderAvailabilityRuleRepository ruleRepository = mock(ProviderAvailabilityRuleRepository.class);
     private final ProviderTimeOffRepository timeOffRepository = mock(ProviderTimeOffRepository.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private AvailabilityService service;
 
     @BeforeEach
     void setUp() {
-        service = new AvailabilityService(repository, ruleRepository, timeOffRepository);
+        service = new AvailabilityService(repository, ruleRepository, timeOffRepository, eventPublisher);
     }
 
     @Test

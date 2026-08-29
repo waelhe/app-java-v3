@@ -1,11 +1,12 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -29,21 +31,26 @@ public class AvailabilityService implements AvailabilityPort {
     private final AvailabilitySlotRepository repository;
     private final ProviderAvailabilityRuleRepository ruleRepository;
     private final ProviderTimeOffRepository timeOffRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
+    private static final Set<String> AVAILABILITY_CACHE_NAMES = Set.of("availability");
 
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,
-                               ProviderTimeOffRepository timeOffRepository) {
+                               ProviderTimeOffRepository timeOffRepository,
+                               ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.ruleRepository = ruleRepository;
         this.timeOffRepository = timeOffRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
-    @CacheEvict(cacheNames = "availability", allEntries = true)
     public AvailabilitySlot createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
-        return repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
+        AvailabilitySlot saved = repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -126,25 +133,26 @@ public class AvailabilityService implements AvailabilityPort {
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Observed(name = "availability.timeoff.create")
-    @CacheEvict(cacheNames = "availability", allEntries = true)
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
-        return timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
+        ProviderTimeOff saved = timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        return saved;
     }
 
     @Override
-    @CacheEvict(cacheNames = "availability", allEntries = true)
     public void bookSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         AvailabilitySlot slot = repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
                 .orElseThrow(() -> new ConflictException("No available slot for provider " + providerId));
         slot.markBooked();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
     }
 
     @Override
-    @CacheEvict(cacheNames = "availability", allEntries = true)
     public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt)
                 .ifPresent(AvailabilitySlot::markAvailable);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
     }
 }
