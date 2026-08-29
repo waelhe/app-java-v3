@@ -61,4 +61,25 @@ class CatalogServiceSecurityTest {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> catalogService.archiveListing(UUID.randomUUID(), null));
     }
+
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void activate_whenNotProvider_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> catalogService.activate(UUID.randomUUID(), null));
+    }
+
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void pause_whenNotProvider_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> catalogService.pause(UUID.randomUUID(), null));
+    }
+
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void archive_whenNotProviderOrAdmin_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> catalogService.archive(UUID.randomUUID(), null));
+    }
 }

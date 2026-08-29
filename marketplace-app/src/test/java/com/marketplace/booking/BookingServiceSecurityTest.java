@@ -62,4 +62,11 @@ class BookingServiceSecurityTest {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> bookingService.cancel(UUID.randomUUID(), null));
     }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void complete_whenNotProviderOrAdmin_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> bookingService.complete(UUID.randomUUID(), null));
+    }
 }
