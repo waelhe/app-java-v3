@@ -2,7 +2,7 @@
 
 ## Current State (2026-08-29)
 
-**Branch:** `main` (HEAD: `711b4c2`)
+**Branch:** `main` (HEAD: `6d1c522`)
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
@@ -30,6 +30,16 @@
   - `BookingExpirationServiceTest` (3): cancel stale bookings, propagate exception, annotation check
   - `BookingCancelledEventListenerTest` (3): auto refund, propagate exception, annotation check
   - `NotificationEventListenerTest` (6): 2 listeners × 3 tests each
+
+#### Method Security — D3 documented test pattern complete (2026-08-29) ✅
+- **Basis:** Spring Security reference — "You can then test the class to confirm it is enforcing the authorization rule" (`@WithMockUser(roles="ADMIN")` → `...ThenInvokes()` + `...ThenAccessDenied()`), `https://docs.spring.io/spring-security/reference/servlet/authorization/method-security.html`
+- **Commits (`main`):**
+  - `a2d51a7` — 4 missing **negative** tests (`BookingService.complete`, `CatalogService.activate/pause/archive`)
+  - `da1bfe9` — 10 **positive** tests: BookingService (create/confirm/complete/cancel) + CatalogService (create/update/activate/pause/archiveListing/archive)
+  - `6d1c522` — 11 **positive** tests: ReviewsService (create/update), ProviderService (create/update/verify/suspend), PaymentsService (createIntent/processIntent/confirmIntent/cancelIntent/refundPayment)
+- **Coverage:** all 25 service-layer `@PreAuthorize` rules now have BOTH negative (`AccessDenied`) and positive (`ThenInvokes`) tests following the exact documented names
+- **Cleanup:** `cddfeff` — `@SuppressWarnings("unchecked")` isolated from public `getRevisions()` into private `queryRevisions()` in `RevisionService` (Hibernate Envers raw `List`); wildcard `import java.util.*` verified per `CODING_STANDARDS.md`
+- **Verification:** `mvn clean test` → **151 tests / 0 failures / 0 errors / 3 skipped** (skips environmental: Modulith verification + Testcontainers off)
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
@@ -280,7 +290,7 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 
 ## Completions
 
-- **Sprint 4 — Complete**: Cache invalidation deferred to AFTER_COMMIT (PR #179), EventPublicationCleanup, Conversations cache, Issues #146/#147/#148 closed
+- **Sprint 4 — Complete**: Cache invalidation deferred to AFTER_COMMIT (PR #179), EventPublicationCleanup, Conversations cache, Issues #146/#147/#148 closed, Method Security D3 test pattern complete (30/30 rules: negative + positive)
 - **Sprint 3 — Complete**: Email transaction semantics aligned with Spring Modulith docs, catalog public-read surface enforced ACTIVE-only, admin all-statuses view restored
 - **Sprint 2 — Complete**: Retry semantics (5× `catch(Exception)` removed), `@PreAuthorize` on ProviderController, `CatalogSpi` in GraphQL, `ReviewUpdatedEvent`, `BookingConfirmedEvent`, `save()` consistency
 - Upgraded to **Spring Boot 4.1.0**, **Maven 3.9.16**, **JaCoCo 0.8.15**
