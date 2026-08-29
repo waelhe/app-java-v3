@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -55,9 +56,12 @@ public class User extends BaseEntity {
     public String getDisplayName() { return displayName; }
     public UserRole getRole() { return role; }
 
-    public void updateProfile(String email, String displayName) {
+    public boolean updateProfile(String email, String displayName) {
+        boolean changed = !Objects.equals(this.email, email)
+                || !Objects.equals(this.displayName, displayName);
         this.email = email;
         this.displayName = displayName;
+        return changed;
     }
 
     public void changeRole(UserRole newRole) {

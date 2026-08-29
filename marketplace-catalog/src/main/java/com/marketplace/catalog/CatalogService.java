@@ -7,6 +7,7 @@ import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.SearchCriteria;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -83,8 +84,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     @Transactional(readOnly = true)
-    public Page<ProviderListing> findAll(Pageable pageable) {
-        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+    public Page<ProviderListingView> findAll(Pageable pageable) {
+        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable)
+                .map(this::toProviderListingView);
     }
 
     @Override
@@ -122,9 +124,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    public ProviderListing getActiveById(UUID id) {
+    public ProviderListingView getActiveById(UUID id) {
         return listingRepository.findById(id)
                 .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .map(this::toProviderListingView)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
     }
 
@@ -140,8 +143,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
-    public ProviderListing create(UUID providerId, String title, String description,
-                                  String category, Long priceCents) {
+    public ProviderListingView create(UUID providerId, String title, String description,
+                                      String category, Long priceCents) {
         providerLookupPort.findById(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
@@ -149,7 +152,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
-        return saved;
+        return toProviderListingView(saved);
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
@@ -229,6 +232,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 BigDecimal.valueOf(listing.getPriceCents(), 2),
                 providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")
         ));
+    }
+
+    private ProviderListingView toProviderListingView(ProviderListing listing) {
+        return new ProviderListingView(
+                listing.getId(),
+                listing.getTitle(),
+                listing.getDescription(),
+                listing.getCategory(),
+                listing.getPriceCents(),
+                listing.getProviderId(),
+                listing.getStatus().name(),
+                listing.getCreatedAt(),
+                listing.getUpdatedAt()
+        );
     }
 
     private ProviderListingSummary toProviderListingSummary(ProviderListing listing) {

@@ -1,6 +1,6 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.ProviderListing;
+import com.marketplace.shared.api.ProviderListingView;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
@@ -14,8 +14,7 @@ class ServiceMapperTest {
 
     @Test
     void toResponse_mapsActiveListing() {
-        ProviderListing listing = ProviderListing.create(UUID.randomUUID(), "Service Title", "Desc", "cat", 5000L);
-        listing.activate();
+        ProviderListingView listing = view("Service Title", "Desc", 5000L, "ACTIVE");
 
         ServiceResponse response = mapper.toResponse(listing);
 
@@ -27,10 +26,15 @@ class ServiceMapperTest {
 
     @Test
     void toResponse_mapsNonActiveAsInactive() {
-        ProviderListing listing = ProviderListing.create(UUID.randomUUID(), "Draft", null, "cat", 3000L);
+        ProviderListingView listing = view("Draft", null, 3000L, "DRAFT");
 
         ServiceResponse response = mapper.toResponse(listing);
 
         assertEquals("INACTIVE", response.status());
+    }
+
+    private static ProviderListingView view(String title, String description, Long priceCents, String status) {
+        return new ProviderListingView(UUID.randomUUID(), title, description, "cat", priceCents,
+                UUID.randomUUID(), status, null, null);
     }
 }

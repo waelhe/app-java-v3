@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.api.ProviderSummary;
@@ -102,9 +103,9 @@ class CatalogServiceSecurityTest {
         when(listingRepository.save(any(ProviderListing.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProviderListing result = catalogService.create(providerId, "title", "desc", "cat", 1000L);
+        ProviderListingView result = catalogService.create(providerId, "title", "desc", "cat", 1000L);
 
-        assertThat(result.getStatus()).isEqualTo(ListingStatus.DRAFT);
+        assertThat(result.status()).isEqualTo(ListingStatus.DRAFT.name());
         verify(listingRepository).save(any(ProviderListing.class));
     }
 

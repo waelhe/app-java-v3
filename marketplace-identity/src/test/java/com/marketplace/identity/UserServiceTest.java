@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
 import org.junit.jupiter.api.Test;
@@ -116,6 +117,7 @@ class UserServiceTest {
         assertEquals("New User", result.getDisplayName());
         assertEquals(UserRole.CONSUMER, result.getRole());
         verify(userRepository).save(any());
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
     }
 
     @Test
@@ -135,6 +137,27 @@ class UserServiceTest {
         assertEquals("updated@b.com", result.getEmail());
         assertEquals("Updated Name", result.getDisplayName());
         verify(userRepository, never()).save(any());
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void syncFromOidc_whenProfileUnchanged_doesNotPublishInvalidation() {
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("existing-sub");
+        when(jwt.getClaimAsString("email")).thenReturn("a@b.com");
+        when(jwt.getClaimAsString("name")).thenReturn("Alice");
+
+        User existing = User.create("existing-sub", "a@b.com", "Alice", UserRole.CONSUMER);
+        when(userRepository.findBySubject("existing-sub")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals("a@b.com", result.getEmail());
+        assertEquals("Alice", result.getDisplayName());
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

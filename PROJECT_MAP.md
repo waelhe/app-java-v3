@@ -1,8 +1,34 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Current State (2026-08-29)
+## Current State (2026-08-30)
 
-**Branch:** `main` (HEAD: `46968d3`)
+**Branch:** `main` (HEAD: `96037ef`)
+
+### Review report deferred items — resolved (2026-08-30) ✅
+
+#### A2 — `CatalogSpi` entity leak across module boundary — FIXED
+- **Basis:** the module's own documented convention (`ProviderListingSummary` Javadoc: "Decouples admin from the full JPA entity in the catalog module") applied to the whole `catalog-spi` named interface
+- **Changes:**
+  - New `ProviderListingView` record in `shared :: shared-api` (id, title, description, category, priceCents, providerId, status, createdAt, updatedAt) — read-only, no `com.marketplace.catalog` import (keeps `shared` pure per ArchUnit rule)
+  - `CatalogSpi`: `getActiveById/findAll/create` now return `ProviderListingView`; dead `getById(UUID)` removed (zero consumers in code — only `CatalogController`/`CatalogService` internal use survived)
+  - `CatalogService`: entity→view mapping stays module-internal (`toProviderListingView`); `findAll` keeps the ACTIVE filter
+  - Presentation adapters: `ServiceGraphQlController`/`ServiceMapper` + `CatalogController`/`ListingMapper` (new view overload; `currency` ignored — unmapped today)
+- **Tests updated:** `ServiceGraphQlControllerTest`, `ServiceMapperTest`, `CatalogServiceTest`, `CatalogControllerWebMvcTest`, `CatalogServiceSecurityTest`
+
+#### A3 — `syncFromOidc` unconditional cache invalidation — FIXED
+- `User.updateProfile(...)` now returns `boolean changed` (`Objects.equals` guard)
+- `UserService.syncFromOidc` publishes `CacheInvalidationRequested` **only on user creation or actual profile change** — no more `event_publication` archive row + cache thrash on every `GET /users/me` when nothing changed
+- **Tests:** exist + create tests now assert publish; new `syncFromOidc_whenProfileUnchanged_doesNotPublishInvalidation` → identity module 25 tests
+
+#### A1 — "5 modules open without @ApplicationModule" — REFUTED (no change)
+- `Availability/Disputes/Ledger/Notifications/Provider` already declare `@ApplicationModule(allowedDependencies = {"shared :: shared-..."})` on their `*Module.java` marker class (e.g. `AvailabilityModule.java`)
+- Official docs (Spring Modulith 2.1.1, Fundamentals §Explicit Application Module Dependencies): *"you can also use the annotation on a single type located in the application module's root package"* — the exact pattern used; prior audit looked only at `package-info.java`
+
+#### A4/A5 — confirmed not-debt (no change): failsafe 40/40 is exact (reviewer's "55" counted `@Testcontainers` lines as `@Test`); Cloudflare check not in `.github/workflows`
+
+#### Verification — `mvn clean verify` → **BUILD SUCCESS** (17 modules)
+- Surefire full reactor: **539 / 0 / 0 / 3** (identity 24→25; app 157 unchanged)
+- Failsafe: 40 / 0 / 0 / 34 · Jacoco ≥ 0.70 all bundles · `-Werror` clean
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 

@@ -3,6 +3,7 @@ package com.marketplace.catalog;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
@@ -59,7 +60,7 @@ public class CatalogController {
     public ResponseEntity<ListingResponse> create(@Valid @RequestBody CreateListingRequest request,
                                                   Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
-        ProviderListing listing = catalogService.create(
+        ProviderListingView listing = catalogService.create(
                 providerId, request.title(), request.description(),
                 request.category(), request.priceCents());
         return ResponseEntity.status(HttpStatus.CREATED).body(listingMapper.toResponse(listing));

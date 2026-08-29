@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,7 +61,7 @@ class CatalogControllerWebMvcTest {
     void create_returnsCreated() throws Exception {
         UUID providerId = UUID.randomUUID();
         UUID listingId = UUID.randomUUID();
-        var listing = mockListing(listingId);
+        var listing = mockView(listingId);
         var response = mockResponse(listingId);
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerId);
@@ -78,7 +79,7 @@ class CatalogControllerWebMvcTest {
     @Test
     void getById_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
-        var listing = mockListing(id);
+        var listing = mockView(id);
         var response = mockResponse(id);
 
         when(catalogService.getActiveById(id)).thenReturn(listing);
@@ -88,10 +89,8 @@ class CatalogControllerWebMvcTest {
                 .andExpect(status().isOk());
     }
 
-    private static ProviderListing mockListing(UUID id) {
-        var listing = org.mockito.Mockito.mock(ProviderListing.class);
-        when(listing.getId()).thenReturn(id);
-        return listing;
+    private static ProviderListingView mockView(UUID id) {
+        return new ProviderListingView(id, null, null, null, null, null, null, null, null);
     }
 
     private static ListingResponse mockResponse(UUID id) {

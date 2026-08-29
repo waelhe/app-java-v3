@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @Transactional
@@ -56,23 +57,32 @@ public class UserService implements IdentitySpi {
 
     /**
      * Syncs user from OIDC token — creates if new, updates if changed.
+     * Publishes a cache invalidation only when the user was created or
+     * the profile actually changed, avoiding redundant cache thrash and
+     * unbounded growth of the event publication archive on every /me call.
      */
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");
         String name = token.getToken().getClaimAsString("name");
 
+        AtomicBoolean profileChanged = new AtomicBoolean(false);
         User user = userRepository.findBySubject(subject)
                 .map(existing -> {
-                    existing.updateProfile(email, name);
+                    if (existing.updateProfile(email, name)) {
+                        profileChanged.set(true);
+                    }
                     return existing;
                 })
                 .orElseGet(() -> {
                     UserRole role = resolveRole(token);
                     User newUser = User.create(subject, email, name, role);
+                    profileChanged.set(true);
                     return userRepository.save(newUser);
                 });
-        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        if (profileChanged.get()) {
+            eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        }
         return user;
     }
 
