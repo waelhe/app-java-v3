@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.BeforeEach;
@@ -122,6 +123,7 @@ class ReviewsServiceTest {
 
         Review updated = service.update(id, 5, "excellent", authentication);
         assertEquals(5, updated.getRating());
+        verify(eventPublisher).publishEvent(any(ReviewUpdatedEvent.class));
     }
 
     @Test
