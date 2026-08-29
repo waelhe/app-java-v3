@@ -41,15 +41,10 @@ public class RevisionService {
         return clazz;
     }
 
-    @SuppressWarnings("unchecked")
     public List<RevisionEntry> getRevisions(String entityName, UUID entityId) {
         Class<?> entityClass = resolveEntityClass(entityName);
         AuditReader auditReader = AuditReaderFactory.get(entityManager);
-        List<Object[]> results = auditReader.createQuery()
-                .forRevisionsOfEntity(entityClass, false, true)
-                .add(AuditEntity.id().eq(entityId))
-                .addOrder(AuditEntity.revisionNumber().asc())
-                .getResultList();
+        List<Object[]> results = queryRevisions(auditReader, entityClass, entityId);
 
         List<RevisionEntry> entries = new ArrayList<>(results.size());
 
@@ -74,6 +69,15 @@ public class RevisionService {
         }
 
         return entries;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> queryRevisions(AuditReader auditReader, Class<?> entityClass, UUID entityId) {
+        return auditReader.createQuery()
+                .forRevisionsOfEntity(entityClass, false, true)
+                .add(AuditEntity.id().eq(entityId))
+                .addOrder(AuditEntity.revisionNumber().asc())
+                .getResultList();
     }
 
     public record RevisionEntry(
