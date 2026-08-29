@@ -5,6 +5,7 @@ import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -22,7 +23,8 @@ class MessagingServiceTest {
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
     private final SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
-    private final MessagingService service = new MessagingService(conversationRepository, messageRepository, bookingParticipantProvider, messagingTemplate, messageMapper);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final MessagingService service = new MessagingService(conversationRepository, messageRepository, bookingParticipantProvider, messagingTemplate, messageMapper, eventPublisher);
 
     @Test
     void createConversation_savesNewUsingBookingParticipants() {

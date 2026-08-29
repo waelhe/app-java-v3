@@ -2,8 +2,10 @@ package com.marketplace.messaging;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import org.springframework.cache.annotation.Cacheable;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.util.Set;
 import java.util.UUID;
 
 @NamedInterface("messaging-api")
@@ -21,22 +24,27 @@ import java.util.UUID;
 @Transactional
 public class MessagingService {
 
+    private static final Set<String> CONVERSATION_CACHE_NAMES = Set.of("conversations");
+
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final SimpMessagingTemplate messagingTemplate;
     private final MessageMapper messageMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public MessagingService(ConversationRepository conversationRepository,
                             MessageRepository messageRepository,
                             BookingParticipantProvider bookingParticipantProvider,
                             SimpMessagingTemplate messagingTemplate,
-                            MessageMapper messageMapper) {
+                            MessageMapper messageMapper,
+                            ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.messagingTemplate = messagingTemplate;
         this.messageMapper = messageMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +84,9 @@ public class MessagingService {
         UUID participantB = bookingInfo.providerId().equals(participantA)
                 ? bookingInfo.consumerId()
                 : bookingInfo.providerId();
-        return conversationRepository.save(Conversation.create(participantA, participantB, bookingId));
+        Conversation saved = conversationRepository.save(Conversation.create(participantA, participantB, bookingId));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CONVERSATION_CACHE_NAMES));
+        return saved;
     }
 
     @Observed(name = "messaging.send")
