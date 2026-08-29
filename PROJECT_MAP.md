@@ -2,34 +2,57 @@
 
 ## Current State (2026-08-29)
 
-**Branch:** `fix/notification-email-transaction-isolation` (3 commits ahead of main)
+**Branch:** `main` (HEAD: `711b4c2`)
+
+### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
+
+#### PR #179 — ALL cache invalidation deferred to AFTER_COMMIT ✅ (merged `08c4e95`)
+- **Files:** 8 services (CatalogService, AvailabilityService, BookingService, PricingService, PaymentsService, ProviderService, ReviewsService, UserService), `CacheInvalidationRelay.java`, `CacheInvalidationMetrics.java`
+- **Changes:**
+  - Removed 30× `@CacheEvict` from service methods
+  - New `CacheInvalidationRelay`: `@TransactionalEventListener(AFTER_COMMIT)` publishes `CacheInvalidationRequested`
+  - New `CacheInvalidationMetrics`: Micrometer counter for invalidation events
+  - `CacheConfig`: `@EnableScheduling` for `EventPublicationCleanup`
+- **Tests:** `CacheInvalidationRelayTest` (6), `CacheInvalidationMetricsTest` (2)
+
+#### PR #179 additions — EventPublicationCleanup + Conversations cache
+- **Files:** `EventPublicationCleanup.java` (new), `MessagingService.java`
+- **Changes:**
+  - `EventPublicationCleanup`: `@Scheduled(cron="0 0 3 * * ?", zone="UTC")` purges completed publications >7 days
+  - `MessagingService`: publishes `CacheInvalidationRequested` on `createConversation()`
+- **Tests:** `MessagingServiceTest` updated
+
+#### Issues #146, #147, #148 — Closed ✅
+- **#146** (Unify @PreAuthorize): Closed "won't fix" — official docs say "Enforcing security at the service layer"
+- **#147** (verify ReviewUpdatedEvent): Added `verify(eventPublisher.publishEvent(ReviewUpdatedEvent.class))` to `ReviewsServiceTest`
+- **#148** (ApplicationModuleListener retry semantics): 15 tests across 4 modules:
+  - `BookingPaymentEventListenerTest` (3): non-completed state, propagate exception, annotation check
+  - `BookingExpirationServiceTest` (3): cancel stale bookings, propagate exception, annotation check
+  - `BookingCancelledEventListenerTest` (3): auto refund, propagate exception, annotation check
+  - `NotificationEventListenerTest` (6): 2 listeners × 3 tests each
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
 ### PR #178 — Email Transaction Semantics (Spring Modulith alignment)
 - **Files:** `EmailNotificationService.java`, `NotificationService.java`, `EmailNotificationServiceTest.java`
 - **Changes:**
-  - Removed `@Transactional(REQUIRES_NEW)` from `sendEmail()` — `@ApplicationModuleListener` already provides `REQUIRES_NEW` (confirmed via `javap` on `spring-modulith-events-api-2.1.0.jar`)
-  - Corrected Javadoc to reflect actual behavior: listener runs in its own `REQUIRES_NEW` transaction, failure rolls back listener transaction only, log entry stays FAILED for retry
+  - Removed `@Transactional(REQUIRES_NEW)` from `sendEmail()` — `@ApplicationModuleListener` already provides `REQUIRES_NEW`
+  - Corrected Javadoc to reflect actual behavior
   - Removed dead `log` field + unused imports from `NotificationService`
-  - Removed reflection-based test `sendEmailRequiresNewTransaction` (tested annotation presence, not behavior)
 - **Tests:** notifications 18/18 ✅
 
 ### PR #178 — Catalog Public-Read ACTIVE-Only + Admin All-Statuses
-- **Files:** `CatalogSpi.java`, `CatalogService.java`, `CatalogController.java`, `ServiceGraphQlController.java`, `CatalogServiceTest.java` (new), + 3 test stub updates
+- **Files:** `CatalogSpi.java`, `CatalogService.java`, `CatalogController.java`, `ServiceGraphQlController.java`, `CatalogServiceTest.java` (new)
 - **Changes:**
   - Added `getActiveById(UUID)` to `CatalogSpi` + `CatalogService` (ACTIVE-only, 404 otherwise)
-  - GraphQL `service(id)` → `getActiveById` (closes draft leak on GraphQL)
-  - REST `GET /api/v1/catalog/{id}` → `getActiveById` (closes draft leak on REST — same class of vulnerability)
-  - `findAllSummaries()` → `listingRepository.findAll(pageable)` directly (restores pre-PR#177 admin behavior: DRAFT/PAUSED/ARCHIVED visible to ADMIN)
-  - `getById()` remains unfiltered for internal spine (update/activate/pause/archive after `verifyOwnership`)
-  - New `CatalogServiceTest`: 4 tests (admin sees all statuses, getActiveById ACTIVE/DRAFT/unknown)
+  - GraphQL `service(id)` → `getActiveById` (closes draft leak)
+  - REST `GET /api/v1/catalog/{id}` → `getActiveById` (closes draft leak)
+  - `findAllSummaries()` → `listingRepository.findAll(pageable)` (restores admin all-statuses view)
 - **Tests:** 126/0 failures/3 skipped (environmental) ✅
-- **Design rationale:** Public read surface = ACTIVE-only (enforced by `listActive`, `listByCategory`, `findAll` post-#177, `searchByCriteria`, `searchFullText`). GraphQL schema exposes only `ACTIVE|INACTIVE`. Admin = all statuses (moderation). Internal spine = unfiltered after ownership check.
 
 ## Sprint 2 — Retry Semantics, Architecture & Final Polish (2026-06-18)
 
-### P0 — Retry Semantics (catch(Exception) removal)
+### P0 — Retry Semantics (catch(Exception) removal) ✅
 - **Files:** `BookingPaymentEventListener.java`, `BookingCancelledEventListener.java`, `BookingExpirationService.java`, `NotificationEventListener.java` (×2), `PaymentsService.java`
 - **Changes:**
   - Removed 5× `catch(Exception)` from `@ApplicationModuleListener`s — let exceptions propagate for proper retry
@@ -37,7 +60,7 @@
   - `PaymentsService.autoRefundByBooking()`: added `@Transactional(propagation = REQUIRES_NEW)` to prevent `UnexpectedRollbackException`
 - **Tests:** `BookingPaymentEventListenerTest`, `BookingCancelledEventListenerTest`, `BookingExpirationServiceTest`
 
-### P1 — Architecture & Security
+### P1 — Architecture & Security ✅
 - **Files:** `ProviderController.java`, `ServiceGraphQlController.java`, `ReviewsService.java`, `SearchController.java`, `ReviewUpdatedEvent.java`, `CatalogSpi.java`, `package-info.java`
 - **Changes:**
   - `@PreAuthorize` on `ProviderController.create()` (CONSUMER), `verify()`/`suspend()` (ADMIN)
@@ -48,11 +71,11 @@
   - `app` module `package-info.java`: added `"catalog :: catalog-spi"` to `allowedDependencies`
 - **Tests:** `ResilienceAnnotationTest` fixed for renamed search method
 
-### P2 — Final Consistency (PR #148)
+### P2 — Final Consistency ✅
 - **Files:** `BookingConfirmedEvent.java` (new), `BookingService.java`, `PaymentsService.java`
 - **Changes:**
   - `PaymentRepository.save(payment)` added after `payment.markRefunded()` in `autoRefundByBooking()`
-  - `BookingConfirmedEvent` record created in `marketplace-shared/api/` (same pattern as `BookingCancelledEvent`)
+  - `BookingConfirmedEvent` record created in `marketplace-shared/api/`
   - Published from `BookingService.confirm()` and `autoConfirm()`
 
 ## Sprint 1 — H4+H9+H10 (2026-06-14)
@@ -109,7 +132,7 @@
 - **Official docs:** Spring Modulith Moments (docs.spring.io/spring-modulith) — `DayHasPassed` event pattern
 
 **Java:** 25 (target `--release 25`)
-**Spring Boot:** 4.1.0 | **Spring Modulith:** 2.0.6 | **Maven:** 3.9.16 | **JaCoCo:** 0.8.15
+**Spring Boot:** 4.1.0 | **Spring Modulith:** 2.1.0 | **Maven:** 3.9.16 | **JaCoCo:** 0.8.15
 
 ---
 
@@ -257,8 +280,9 @@ Plus new `RevisionService` in `marketplace-admin` package for unified audit quer
 
 ## Completions
 
+- **Sprint 4 — Complete**: Cache invalidation deferred to AFTER_COMMIT (PR #179), EventPublicationCleanup, Conversations cache, Issues #146/#147/#148 closed
 - **Sprint 3 — Complete**: Email transaction semantics aligned with Spring Modulith docs, catalog public-read surface enforced ACTIVE-only, admin all-statuses view restored
-- **Sprint 2 — All items complete**: Retry semantics (5× `catch(Exception)` removed), `@PreAuthorize` on ProviderController, `CatalogSpi` in GraphQL, `ReviewUpdatedEvent`, `BookingConfirmedEvent`, `save()` consistency
+- **Sprint 2 — Complete**: Retry semantics (5× `catch(Exception)` removed), `@PreAuthorize` on ProviderController, `CatalogSpi` in GraphQL, `ReviewUpdatedEvent`, `BookingConfirmedEvent`, `save()` consistency
 - Upgraded to **Spring Boot 4.1.0**, **Maven 3.9.16**, **JaCoCo 0.8.15**
 - **Java 25** target (`--release 25`)
 - 6 cross-module integration links implemented and tested
