@@ -55,6 +55,13 @@
   - `PricingRuleController`: class-level annotation is the documented pattern; internal callers are structurally impossible — pricing `package-info.java` `allowedDependencies` excludes every business module ⇒ Modulith boundary prevents bypass
 - **Rejected alternative:** moving `@PreAuthorize("hasRole('ADMIN')")` from `PricingRuleController` onto `PricingService` — would remove a working web 403 test, diverge from the AdminController admin-zone pattern, and repay no debt
 
+#### Release gate — `mvn clean verify` green (2026-08-29) ✅
+- **Full reactor build (17 modules):** `BUILD SUCCESS` — `.\mvnw.cmd clean verify`
+- **Jacoco `check`** (INSTRUCTION COVEREDRATIO ≥ 0.70 per module BUNDLE): "All coverage checks have been met" on every module
+- **Compiler** `failOnWarning=true`: clean
+- **Surefire (unit):** 151 tests / 0 failures / 0 errors / 3 skipped
+- **Failsafe (integration):** 40 tests / 0 failures / 0 errors / 34 skipped (environmental — Testcontainers-off, Docker unavailable)
+
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
 ### PR #178 — Email Transaction Semantics (Spring Modulith alignment)
