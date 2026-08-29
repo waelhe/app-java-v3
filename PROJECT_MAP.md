@@ -2,7 +2,7 @@
 
 ## Current State (2026-08-29)
 
-**Branch:** `main` (HEAD: `6d1c522`)
+**Branch:** `main` (HEAD: `20af38e`)
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
@@ -23,7 +23,7 @@
 - **Tests:** `MessagingServiceTest` updated
 
 #### Issues #146, #147, #148 — Closed ✅
-- **#146** (Unify @PreAuthorize): Closed "won't fix" — official docs say "Enforcing security at the service layer"
+- **#146** (Unify @PreAuthorize): Closed "won't fix" — system verified against the official model: fine-grained rules at the service layer, coarse admin gates at controllers, plus the HttpSecurity catch-all (`anyRequest().authenticated()` + `/api/v1/admin/**` → ADMIN) that the docs mandate for unannotated methods (see "Security Design" below)
 - **#147** (verify ReviewUpdatedEvent): Added `verify(eventPublisher.publishEvent(ReviewUpdatedEvent.class))` to `ReviewsServiceTest`
 - **#148** (ApplicationModuleListener retry semantics): 15 tests across 4 modules:
   - `BookingPaymentEventListenerTest` (3): non-completed state, propagate exception, annotation check
@@ -37,9 +37,23 @@
   - `a2d51a7` — 4 missing **negative** tests (`BookingService.complete`, `CatalogService.activate/pause/archive`)
   - `da1bfe9` — 10 **positive** tests: BookingService (create/confirm/complete/cancel) + CatalogService (create/update/activate/pause/archiveListing/archive)
   - `6d1c522` — 11 **positive** tests: ReviewsService (create/update), ProviderService (create/update/verify/suspend), PaymentsService (createIntent/processIntent/confirmIntent/cancelIntent/refundPayment)
-- **Coverage:** all 25 service-layer `@PreAuthorize` rules now have BOTH negative (`AccessDenied`) and positive (`ThenInvokes`) tests following the exact documented names
+- **Coverage:** all 26 service-layer `@PreAuthorize` annotations have BOTH negative (`AccessDenied`) and positive (`ThenInvokes`) tests following the exact documented names; the 4 controller-level gates are covered by `WebMvcTest` (negative `..._withUserRole_returnsForbidden` + ADMIN positives) ⇒ **30/30 annotations covered**
 - **Cleanup:** `cddfeff` — `@SuppressWarnings("unchecked")` isolated from public `getRevisions()` into private `queryRevisions()` in `RevisionService` (Hibernate Envers raw `List`); wildcard `import java.util.*` verified per `CODING_STANDARDS.md`
 - **Verification:** `mvn clean test` → **151 tests / 0 failures / 0 errors / 3 skipped** (skips environmental: Modulith verification + Testcontainers off)
+
+#### Security Design — official model verified, NO production change (2026-08-29) ✅
+- **Decision:** D1/D2 closed with no code change — the system already implements the official Spring Security defense-in-depth model (verified against `method-security.html` v7.1.1, verbatim):
+  - "Enforcing security at the service layer" is one *benefit* of Method Security, not a mandate; class/interface-level annotations explicitly supported (docs show `@Controller @PreAuthorize(...)`)
+  - "The main tradeoff seems to be where you want your authorization rules to live." (coarse request-level vs fine method-level)
+  - "It's important to remember that when you use annotation-based Method Security, then unannotated methods are not secured. To protect against this, declare a catch-all authorization rule in your HttpSecurity instance."
+- **Code facts — the 3 layers:**
+  - **Request/catch-all:** `SecurityConfig` (marketplace-platform-infra) `protectedApiSecurityFilterChain` — `.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")` + `.anyRequest().authenticated()`
+  - **Fine-grained method security:** 26 service-layer SpEL rules (Catalog 6, Payments 6, Booking 4, Provider 4, Availability 3, Reviews 2, Disputes 1)
+  - **Coarse controller gates:** 4 (PricingRuleController class-level, LedgerController 2 methods, AdminController class-level) — each with WebMvcTest negative + positive coverage
+- **Why the controller-level gates are correct here (not debt):**
+  - `LedgerController`/`LedgerService.creditFromPayment`: `LedgerPaymentEventListener` invokes it with NO auth principal — docs warn "If the method is not being called in the context of an HTTP request, you will likely need to handle the AccessDeniedException yourself" ⇒ a service-layer ADMIN rule would break the listener
+  - `PricingRuleController`: class-level annotation is the documented pattern; internal callers are structurally impossible — pricing `package-info.java` `allowedDependencies` excludes every business module ⇒ Modulith boundary prevents bypass
+- **Rejected alternative:** moving `@PreAuthorize("hasRole('ADMIN')")` from `PricingRuleController` onto `PricingService` — would remove a working web 403 test, diverge from the AdminController admin-zone pattern, and repay no debt
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
