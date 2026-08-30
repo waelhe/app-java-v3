@@ -2,7 +2,7 @@
 
 ## Current State (2026-08-30)
 
-**Branch:** `feat/review-report-fixes-2026-08-30` (PR #180, base `main`; HEAD: `96037ef` + PR branch)
+**Branch:** `main` (HEAD: `9eb0687`) — PR #180 **merged** (squash `9eb0687`); all review-report items A1–A6 resolved/refuted below
 
 ### Review report deferred items — resolved (2026-08-30) ✅
 
