@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -70,13 +71,14 @@ class CatalogServiceTest {
     }
 
     @Test
-    void getActiveById_whenActive_returnsListing() {
+    void getActiveById_whenActive_returnsView() {
         ProviderListing active = listing(ListingStatus.ACTIVE);
         when(listingRepository.findById(active.getId())).thenReturn(Optional.of(active));
 
-        ProviderListing result = catalogService.getActiveById(active.getId());
+        ProviderListingView result = catalogService.getActiveById(active.getId());
 
-        assertThat(result).isSameAs(active);
+        assertThat(result.id()).isEqualTo(active.getId());
+        assertThat(result.status()).isEqualTo(ListingStatus.ACTIVE.name());
     }
 
     @Test

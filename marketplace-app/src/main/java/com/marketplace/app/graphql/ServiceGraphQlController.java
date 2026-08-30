@@ -1,7 +1,7 @@
 package com.marketplace.app.graphql;
 
-import com.marketplace.catalog.ProviderListing;
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -45,7 +45,7 @@ public class ServiceGraphQlController {
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
                                          Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
-        ProviderListing listing = catalogSpi.create(
+        ProviderListingView listing = catalogSpi.create(
                 providerId, input.name(), input.description(),
                 input.category(), input.priceCents());
         return serviceMapper.toResponse(listing);
