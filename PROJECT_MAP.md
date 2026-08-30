@@ -25,6 +25,18 @@
 - Official docs (Spring Modulith 2.1.1, Fundamentals §Explicit Application Module Dependencies): *"you can also use the annotation on a single type located in the application module's root package"* — the exact pattern used; prior audit looked only at `package-info.java`
 
 #### A4/A5 — confirmed not-debt (no change): failsafe 40/40 is exact (reviewer's "55" counted `@Testcontainers` lines as `@Test`); Cloudflare check not in `.github/workflows`
+- **Cloudflare external sweep (2026-08-30) — resolved, not debt:** CF exists only as docs/ADR target (`ARCHITECTURE.md §5`, ADR-003, diagrams) — no repo artifact implements it: no `wrangler.toml` anywhere; `Dockerfile` / `railway.toml` / `docker-compose.yml` and all three CI workflows are CF-free; `application-prod.yml` is env-var driven (`DB_URL`/`REDIS_HOST`/`OTEL_*`) with no CF-specific config. Operator-side config (Worker proxy, Hyperdrive) lives on the CF dashboard as the docs' Phase-0 account action ⇒ **no repo change**
+
+#### A6 — "async missing / `@ApplicationModuleListener` run synchronously" — REFUTED (no change)
+- **Root cause of the false finding:** the prior DOC-GROUNDED-DESIGN-AUDIT inspected `spring-boot-autoconfigure` + `modulith-runtime/actuator` but **not `spring-modulith-events-core`** — exactly the jar that owns the async auto-config (same "only read package-info" class of error as A1); verified independently byte-for-byte from `spring-modulith-events-core-2.1.0.jar`
+- **Basis:**
+  - `EventPublicationAutoConfiguration$AsyncEnablingConfiguration`: `@EnableAsync` + `@ConditionalOnMissingBean(AbstractAsyncConfiguration.class)` — backs off only if the app itself declares `@EnableAsync`/`AsyncConfigurer`; registered via `META-INF/spring/*AutoConfiguration.imports`
+  - `AsyncPropertiesDefaulter`: defaults `spring.task.execution.shutdown.await-termination=true` (period 2s); gated by `@ConditionalOnProperty("spring.modulith.default-async-termination", matchIfMissing=true)`
+  - `@ApplicationModuleListener` = `@Async` (unqualified) + `@Transactional(REQUIRES_NEW)` + `@TransactionalEventListener` — official events.html *"Spring Modulith provides @ApplicationModuleListener as a shortcut"* for the pattern that *"decouples the original transaction"*; zero mention of `@EnableAsync` in the page
+- **Code facts — no declarative async anywhere (main):** no `@EnableAsync`, no `AsyncConfigurer`, no custom `Executor`, no `autoconfigure.exclude`; only `ArchitectureRulesTest` mentions `@EnableAsync` ⇒ `@ConditionalOnMissingBean` never backs off; `dependency:tree` confirms `starter-jpa` → `events-core:2.1.0` on the app runtime classpath
+- **Executor identity:** Boot's `applicationTaskExecutor` (web auto-config in Boot 4.1.1 defines no competing executor — looks it up by name) + `spring.threads.virtual.enabled: true` ⇒ the 11 listener methods across 7 classes already run async post-commit on virtual threads
+- **Count (corrected):** 11 methods / 7 classes — BusinessMetrics ×4, Notification ×2, + Availability / BookingExpiration / BookingPayment / BookingCancelled / Ledger ×1 each
+- **Rejected alternative:** declaring `@EnableAsync` on `MarketplaceApplication` — redundant, and it would trip the ArchUnit guard `enableAsyncRequiresAsyncMethods` (checks direct `@Async`; listener methods are meta-annotated) ⇒ the repo already self-protects against that change
 
 #### Verification — `mvn clean verify` → **BUILD SUCCESS** (17 modules)
 - Surefire full reactor: **539 / 0 / 0 / 3** (identity 24→25; app 157 unchanged)
