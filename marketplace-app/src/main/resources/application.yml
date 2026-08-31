@@ -68,10 +68,17 @@ spring:
         enabled: true
 
   session:
-    redis:
-      flush-mode: on_save
-      namespace: marketplace:session
+    data:
+      redis:
+        repository-type: indexed
+        flush-mode: on_save
+        namespace: marketplace:session
     timeout: 30m
+
+  security:
+    oauth2:
+      authorizationserver:
+        issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
 
   http:
     clients:
@@ -228,8 +235,6 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
   security:
-    auth-server:
-      issuer: ${AUTH_SERVER_ISSUER:http://localhost:8080}
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
@@ -237,3 +242,5 @@ marketplace:
         password: ${JWT_KEYSTORE_PASSWORD:}
         alias: ${JWT_KEY_ALIAS:}
         key-password: ${JWT_KEY_PASSWORD:}
+    session:
+      max-sessions: ${SESSION_MAX_SESSIONS:2}

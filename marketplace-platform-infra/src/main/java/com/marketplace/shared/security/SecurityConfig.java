@@ -9,22 +9,18 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.core.annotation.Order;
-import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.converter.RsaKeyConverters;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,7 +32,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -56,9 +51,11 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
-import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -74,44 +71,32 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 @Configuration
+@EnableWebSecurity
 @EnableMethodSecurity(proxyTargetClass = true)
-@EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
 public class SecurityConfig {
 
     private final MarketplaceProperties properties;
     private final ObjectMapper objectMapper;
-    private final OAuth2ResourceServerProperties resourceServerProperties;
 
     public SecurityConfig(MarketplaceProperties properties,
-                          ObjectMapper objectMapper,
-                          OAuth2ResourceServerProperties resourceServerProperties) {
+                          ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.resourceServerProperties = resourceServerProperties;
     }
 
     @Bean
     @Order(1)
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
-                                                               OAuth2AuthorizationService authorizationService,
-                                                               OAuth2AuthorizationConsentService authorizationConsentService,
-                                                               RegisteredClientRepository registeredClientRepository) throws Exception {
-        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = new OAuth2AuthorizationServerConfigurer();
-
+    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
-                .with(authorizationServerConfigurer, authorizationServer -> authorizationServer
-                        .registeredClientRepository(registeredClientRepository)
-                        .authorizationService(authorizationService)
-                        .authorizationConsentService(authorizationConsentService)
-                        .oidc(Customizer.withDefaults())
-                )
+                .oauth2AuthorizationServer(authorizationServer -> {
+                    http.securityMatcher(authorizationServer.getEndpointsMatcher());
+                    authorizationServer.oidc(Customizer.withDefaults());
+                })
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
@@ -126,36 +111,21 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain publicApiSecurityFilterChain(HttpSecurity http,
-                                                     CorrelationIdFilter correlationIdFilter) throws Exception {
+    SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http,
+                                                          CorrelationIdFilter correlationIdFilter) throws Exception {
         http
-                .securityMatcher(new OrRequestMatcher(
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/listings/**"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/reviews/**"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/search/**"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/health/**"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/actuator/info"),
-                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/v3/api-docs")
-                ))
+                .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .cors(Customizer.withDefaults())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
-
-        return http.build();
-    }
-
-    @Bean
-    @Order(3)
-    SecurityFilterChain protectedApiSecurityFilterChain(HttpSecurity http,
-                                                        CorrelationIdFilter correlationIdFilter) throws Exception {
-        http
-                .securityMatcher("/api/**", "/actuator/**", "/graphql")
-                .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/v1/listings/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
@@ -170,16 +140,31 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Order(4)
-    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+    @Order(3)
+    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
+                                                   SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .sessionManagement(session -> session
+                        .maximumSessions(properties.security().session().maxSessions())
+                        .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
         return http.build();
+    }
+
+    @Bean
+    SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry(
+            FindByIndexNameSessionRepository<? extends Session> sessionRepository) {
+        return new SpringSessionBackedSessionRegistry<>(sessionRepository);
+    }
+
+    @Bean
+    HttpSessionEventPublisher httpSessionEventPublisher() {
+        return new HttpSessionEventPublisher();
     }
 
     @Bean
@@ -319,76 +304,26 @@ public class SecurityConfig {
         return new ImmutableJWKSet<>(new JWKSet(rsaKey));
     }
 
+    /**
+     * Decodes and validates access tokens signed by the co-located
+     * authorization server.
+     *
+     * <p>Reference: Spring Security — OAuth 2.0 Resource Server JWT:
+     * "Or, exposing a JwtDecoder @Bean has the same effect as decoder()...
+     * NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();"
+     * https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
+     *
+     * @param jwkSource the shared JWK source backed by the authorization server's signing keys
+     * @return the decoder validating {@code iss}, {@code aud} and signature
+     */
     @Bean
-    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) throws IOException {
-        OAuth2ResourceServerProperties.Jwt jwtProperties = resourceServerProperties.getJwt();
-        NimbusJwtDecoder decoder = buildResourceServerJwtDecoder(jwkSource, jwtProperties);
-
-        List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
-        String issuer = firstNonBlank(jwtProperties.getIssuerUri(), properties.security().authServer().issuer());
-        validators.add(JwtValidators.createDefaultWithIssuer(issuer));
-
-        List<String> audiences = jwtProperties.getAudiences().isEmpty()
-                ? List.of(properties.security().jwt().audience())
-                : jwtProperties.getAudiences();
-        validators.add(requiredAudiencesValidator(audiences));
-
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
+    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource,
+                          AuthorizationServerSettings authorizationServerSettings) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(jwkSource).build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(authorizationServerSettings.getIssuer()),
+                requiredAudiencesValidator(List.of(properties.security().jwt().audience()))));
         return decoder;
-    }
-
-    private NimbusJwtDecoder buildResourceServerJwtDecoder(JWKSource<SecurityContext> jwkSource,
-                                                           OAuth2ResourceServerProperties.Jwt jwtProperties) throws IOException {
-        if (jwtProperties.getPublicKeyLocation() != null) {
-            Resource publicKeyLocation = jwtProperties.getPublicKeyLocation();
-            try (InputStream inputStream = publicKeyLocation.getInputStream()) {
-                return withConfiguredAlgorithms(NimbusJwtDecoder.withPublicKey(RsaKeyConverters.x509().convert(inputStream)),
-                        jwtProperties.getJwsAlgorithms()).build();
-            }
-        }
-
-        if (!isBlank(jwtProperties.getJwkSetUri())) {
-            return withConfiguredAlgorithms(NimbusJwtDecoder.withJwkSetUri(jwtProperties.getJwkSetUri()),
-                    jwtProperties.getJwsAlgorithms()).build();
-        }
-
-        if (!isBlank(jwtProperties.getIssuerUri())) {
-            return withConfiguredAlgorithms(NimbusJwtDecoder.withIssuerLocation(jwtProperties.getIssuerUri()),
-                    jwtProperties.getJwsAlgorithms()).build();
-        }
-
-        return withConfiguredAlgorithms(NimbusJwtDecoder.withJwkSource(jwkSource), jwtProperties.getJwsAlgorithms()).build();
-    }
-
-    private static NimbusJwtDecoder.PublicKeyJwtDecoderBuilder withConfiguredAlgorithms(
-            NimbusJwtDecoder.PublicKeyJwtDecoderBuilder builder,
-            List<String> jwsAlgorithms) {
-        if (!jwsAlgorithms.isEmpty()) {
-            builder.signatureAlgorithm(SignatureAlgorithm.from(jwsAlgorithms.getFirst()));
-        }
-        return builder;
-    }
-
-    private static NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder withConfiguredAlgorithms(
-            NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder builder,
-            List<String> jwsAlgorithms) {
-        if (!jwsAlgorithms.isEmpty()) {
-            builder.jwsAlgorithms(algorithms -> jwsAlgorithms.stream()
-                    .map(SignatureAlgorithm::from)
-                    .forEach(algorithms::add));
-        }
-        return builder;
-    }
-
-    private static NimbusJwtDecoder.JwkSourceJwtDecoderBuilder withConfiguredAlgorithms(
-            NimbusJwtDecoder.JwkSourceJwtDecoderBuilder builder,
-            List<String> jwsAlgorithms) {
-        if (!jwsAlgorithms.isEmpty()) {
-            builder.jwsAlgorithms(algorithms -> jwsAlgorithms.stream()
-                    .map(SignatureAlgorithm::from)
-                    .forEach(algorithms::add));
-        }
-        return builder;
     }
 
     private static OAuth2TokenValidator<Jwt> requiredAudiencesValidator(List<String> audiences) {
@@ -401,17 +336,6 @@ public class SecurityConfig {
         ));
     }
 
-    private static String firstNonBlank(String candidate, String fallback) {
-        return isBlank(candidate) ? fallback : candidate;
-    }
-
-    @Bean
-    AuthorizationServerSettings authorizationServerSettings() {
-        return AuthorizationServerSettings.builder()
-                .issuer(properties.security().authServer().issuer())
-                .build();
-    }
-
     @Bean
     FilterRegistrationBean<CorrelationIdFilter> correlationIdFilterRegistration(CorrelationIdFilter correlationIdFilter) {
         FilterRegistrationBean<CorrelationIdFilter> registrationBean = new FilterRegistrationBean<>(correlationIdFilter);
@@ -420,21 +344,14 @@ public class SecurityConfig {
     }
 
     /**
-     * Adds a random {@code jti} (JWT ID) claim to every access token issued by
-     * Spring Authorization Server, enabling per-token revocation via the
-     * {@code /oauth2/revoke} endpoint (RFC 7009).
-     *
-     * <p>Without {@code jti}, token revocation is a no-op — the revocation
-     * endpoint has no unique identifier to match against.
-     *
-     * <p>Reference: Spring Authorization Server — How-to: Customize JWT Claims:
-     * "You may add your own custom claims to an access token using an
-     * OAuth2TokenCustomizer<JwtEncodingContext> @Bean."
-     * https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html
-     *
-     * <p>Reference: RFC 9068 §2.2 — "The 'jti' (JWT ID) claim [...] provides
-     * a unique identifier for the JWT."
-     * https://datatracker.ietf.org/doc/html/rfc9068#section-2.2
+     * Customizes every access token issued by Spring Authorization Server:
+     * <ul>
+     *   <li>{@code roles} — flattened authorities (e.g. "ADMIN") per
+     *       <a href="https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html">
+     *       How-to: Customize JWT Claims</a>.</li>
+     *   <li>{@code aud} — the resource server audience per
+     *       <a href="https://datatracker.ietf.org/doc/html/rfc9068#section-4.1.3">RFC 9068 §4.1.3</a>.</li>
+     * </ul>
      *
      * @return the token customizer bean
      */
@@ -442,7 +359,12 @@ public class SecurityConfig {
     OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
         return context -> {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-                context.getClaims().id(java.util.UUID.randomUUID().toString());
+                context.getClaims()
+                        .claim("roles", context.getPrincipal().getAuthorities().stream()
+                                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                                .map(a -> a.startsWith("ROLE_") ? a.replaceFirst("^ROLE_", "") : a)
+                                .collect(java.util.stream.Collectors.toSet()))
+                        .audience(List.of(properties.security().jwt().audience()));
             }
         };
     }

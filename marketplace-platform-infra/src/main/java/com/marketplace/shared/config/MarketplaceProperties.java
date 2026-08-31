@@ -25,7 +25,7 @@ public record MarketplaceProperties(
 
     public record Security(
         Jwt jwt,
-        AuthServer authServer
+        Session session
     ) {
         public record Jwt(
             KeyStore keystore,
@@ -38,8 +38,8 @@ public record MarketplaceProperties(
                 @DefaultValue("") String keyPassword
             ) {}
         }
-        public record AuthServer(
-            @DefaultValue("http://localhost:8080") String issuer
+        public record Session(
+            @DefaultValue("2") int maxSessions
         ) {}
     }
 }

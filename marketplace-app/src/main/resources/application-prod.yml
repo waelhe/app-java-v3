@@ -122,8 +122,6 @@ marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   security:
-    auth-server:
-      issuer: ${AUTH_SERVER_ISSUER}
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:

@@ -15,17 +15,14 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerProperties;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -45,7 +42,8 @@ class SecurityConfigJwtDecoderTest {
     void setUp() throws Exception {
         rsaKey = generateRsaKey();
         JWKSource<SecurityContext> jwkSource = new ImmutableJWKSet<>(new JWKSet(rsaKey));
-        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties(null, List.of())).jwtDecoder(jwkSource);
+        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper()).jwtDecoder(jwkSource,
+                AuthorizationServerSettings.builder().issuer(ISSUER).build());
     }
 
     @Test
@@ -64,40 +62,6 @@ class SecurityConfigJwtDecoderTest {
         assertThatThrownBy(() -> jwtDecoder.decode(token))
                 .isInstanceOf(JwtException.class)
                 .hasMessageContaining("audience");
-    }
-
-
-    @Test
-    void appliesSpringBootResourceServerIssuerAudienceAndPublicKeySettings() throws Exception {
-        OAuth2ResourceServerProperties resourceServerProperties = resourceServerProperties(
-                "https://boot-issuer.marketplace.test",
-                List.of("marketplace-api", "mobile-api")
-        );
-        resourceServerProperties.getJwt().setPublicKeyLocation(publicKeyResource());
-        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties).jwtDecoder(
-                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())));
-        String token = signedJwt("https://boot-issuer.marketplace.test", List.of("marketplace-api", "mobile-api"));
-
-        var jwt = jwtDecoder.decode(token);
-
-        assertThat(jwt.getIssuer()).hasToString("https://boot-issuer.marketplace.test");
-        assertThat(jwt.getAudience()).containsExactly("marketplace-api", "mobile-api");
-    }
-
-    @Test
-    void acceptsTokenWithAnyConfiguredSpringBootResourceServerAudience() throws Exception {
-        OAuth2ResourceServerProperties resourceServerProperties = resourceServerProperties(
-                ISSUER,
-                List.of("marketplace-api", "mobile-api")
-        );
-        resourceServerProperties.getJwt().setPublicKeyLocation(publicKeyResource());
-        jwtDecoder = new SecurityConfig(properties(), new ObjectMapper(), resourceServerProperties).jwtDecoder(
-                new ImmutableJWKSet<>(new JWKSet(generateRsaKey())));
-        String token = signedJwt(ISSUER, "marketplace-api");
-
-        var jwt = jwtDecoder.decode(token);
-
-        assertThat(jwt.getAudience()).containsExactly("marketplace-api");
     }
 
     @Test
@@ -137,13 +101,6 @@ class SecurityConfigJwtDecoderTest {
         return jwt.serialize();
     }
 
-    private ByteArrayResource publicKeyResource() throws Exception {
-        String publicKey = Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(
-                rsaKey.toRSAPublicKey().getEncoded());
-        String pem = "-----BEGIN PUBLIC KEY-----\n" + publicKey + "\n-----END PUBLIC KEY-----\n";
-        return new ByteArrayResource(pem.getBytes(StandardCharsets.UTF_8));
-    }
-
     private static RSAKey generateRsaKey() throws Exception {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
         keyPairGenerator.initialize(2048);
@@ -154,13 +111,6 @@ class SecurityConfigJwtDecoderTest {
                 .build();
     }
 
-    private static OAuth2ResourceServerProperties resourceServerProperties(String issuer, List<String> audiences) {
-        OAuth2ResourceServerProperties resourceServerProperties = new OAuth2ResourceServerProperties();
-        resourceServerProperties.getJwt().setIssuerUri(issuer);
-        resourceServerProperties.getJwt().setAudiences(audiences);
-        return resourceServerProperties;
-    }
-
     private static MarketplaceProperties properties() {
         return new MarketplaceProperties(
                 new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
@@ -169,7 +119,7 @@ class SecurityConfigJwtDecoderTest {
                                 new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
                                 AUDIENCE
                         ),
-                        new MarketplaceProperties.Security.AuthServer(ISSUER)
+                        new MarketplaceProperties.Security.Session(2)
                 )
         );
     }

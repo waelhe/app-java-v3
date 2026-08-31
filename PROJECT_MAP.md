@@ -42,6 +42,44 @@
 - Surefire full reactor: **539 / 0 / 0 / 3** (identity 24→25; app 157 unchanged)
 - Failsafe: 40 / 0 / 0 / 34 · Jacoco ≥ 0.70 all bundles · `-Werror` clean
 
+## Sprint 5 — Auth System Design — `feat/auth-system-design` (2026-08-31)
+
+**الفرع قيد التطوير:** `feat/auth-system-design` (الخطة ب.0–ب.5). كل التعديلات أدناه **غير ملتزمة** حتى الآن؛ تتطلب موافقة المستخدم قبل commit/PR.
+
+### كل ما عبثت به — ملفات المشروع المعدّلة (git status)
+| الملف | ما فعلته |
+|------|----------|
+| `marketplace-platform-infra/.../SecurityConfig.java` | ب.0 OAuth2TokenCustomizer (roles+aud)؛ ب.1 jwtDecoder مبسّط + requiredAudiencesValidator؛ ب.2 resourceServer chain `@Order(2)` + default `@Order(3)`؛ ب.3 beans `sessionRegistry` + `httpSessionEventPublisher` + `maximumSessions`؛ **هذا الأسبوع:** نوعا الـ wildcard `? extends Session` (سطر 152 معامل default chain، سطر 166-170 bean) |
+| `marketplace-platform-infra/.../MarketplaceProperties.java` | ب.3: إضافة سجل `Security.Session(@DefaultValue("2") int maxSessions)` |
+| `marketplace-app/src/main/resources/application.yml` | ب.3: كتلة `spring.session.data.redis` (indexed / on_save / namespace: marketplace:session) + `timeout: 30m`؛ **هذا اليوم:** كتلة `marketplace.security.session.max-sessions` المفقودة — إصلاح الخطأ M4 |
+| مواقع الإنشاء الأربعة | `ModuleTestConfig.java`، `MessagingModuleIntegrationTest.java`، `SecurityConfigJwtDecoderTest.java` (تحديث بناء `MarketplaceProperties`) + ملف **جديد غير متتبع** `OAuth2TokenCustomizerTest.java` (ب.0) |
+
+### أمراض جانبية خارج الـ workspace (يجب تنظيفها لاحقاً)
+- **حاوية Docker حية:** `redis-verify` (`-p 6379:6379 redis:7-alpine`) — ما زالت تعمل؛ تُحذف مع نهاية العمل ثم تستأنف عند الحاجة.
+- **سكربت فحص معزول:** `C:\Users\w-co\AppData\Local\Temp\opencode\session-wiring-check\src\` — AutoLike, ConsumerTyped/Wildcard/Concrete, Probe, ProbeConfig, RawIndexedRepo, RealAutoConsumer, RunRealAuto, RunAll (تمثيل مستقل خارج الـ reactor).
+- **سجلات تحقق:** `sec-test-full.log`، `sec-test-2.log`، `sec-test-3.log`، `infra-test-1.log` في `C:\Users\w-co\AppData\Local\Temp\opencode\`.
+
+### أخطائي (بترتيب زمني — عُولج كلٌّ منها بالإثبات)
+1. **M1 — استنتاج خاطئ من فحص معزول** (جلسات سابقة): كتبتُ `RawIndexedRepo implements FindByIndexNameSessionRepository<Session>` مباشرة، فنجح الحقن فاستنتجتُ «عيب Spring Generics». **استنتاج باطل**: الصنف المحاكي يطابق `<Session>` مباشرة بينما الـ bean الحقيقي يتنفّذ `<RedisSession>`. أُبطل هذا الأسبوع بالتمثيل الحي للـ autoconfig.
+2. **M2 — الوثوق بـ EXIT=0 الوهمي**: `.\mvnw.cmd` لا ينقل exit code في PowerShell مع `*>` — رصدت `EXIT=0` مع `Errors: 3` و `BUILD FAILURE`. القاعدة: التحقق الوحيد من السجل (`Tests run:` + `BUILD SUCCESS|FAILURE`).
+3. **M3 — الوقوع في رسالة Spring المضللة**: طلب `? extends Session` يُطبع في نص الخطأ كـ `<Session>`؛ كدت أُعيد التشخيص خطأ. الحقيقة (A/B حي): يطابق كلا الفولين بدقة.
+4. **M4 — إغفال كتلة `marketplace.security.session`**: `@DefaultValue` لا يهيّئ عقدة الأب؛ `properties.security().session()` = null → NPE في `defaultSecurityFilterChain:159` ظهر حياً بعد إصلاح wildcard. أُصلح بإضافة الكتلة في yml.
+5. **M5 — اقتراح ب.4 بوثيقة خاطئة مؤقتاً**: أنزلت Configuration Model الخاص بـ AS 1.5.8 (المستقل) القائل بـ `authorizationServer()` الثابت بينما 7.1.1 المدمج لا يملكه (مثبّت بالبايتكود). لم يُطبَّق شيء خاطئ — التحقق سبق التطبيق.
+6. **M6 — افتراض `$env:JAVA_HOME`**: غير معيّن في هذه البيئة؛ الحل المسار المباشر `C:\Program Files\Java\jdk-26\bin\javap.exe`.
+7. **M7 — فرضية «الخطأ قديم/قبل الإصلاح»** (جلسة سابقة): أُبطلت بالتمثيل الحي مع Docker — الخطأ حيّ ومتكرر بالضبط.
+8. **M8 — ميل التشخيص نحو auto-config**: تقرير الشروط أثبت `IndexedRedisSessionConfiguration matched` — اللوم على المعامل الخام لا على الإعدادات.
+
+### اكتشافاتي (مؤيدة بالبايتكود/الوثائق)
+- **D1 — السبب الجذري النهائي (ب.3)**: `RedisIndexedSessionRepository implements FindByIndexNameSessionRepository<RedisIndexedSessionRepository$RedisSession>` — نوع متداخل خاص. حقن `<Session>` يفشل **بموجب تصميم spring-session 4.1.1** لا بعيب إطار ولا إعداد خاطئ.
+- **D2 — الحل الرسمي**: النمط الموثّق `<S extends Session>` في وثيقة 4.1.1؛ التكافؤ العملي `? extends Session` (يُقلع السياق الحقيقي + Redis حية).
+- **D3 — براءة خادم الـ AS**: `OAuth2AuthorizationServerConfigurer.initSessionRegistry` (spring-security-config 7.1.1) يطلب `SessionRegistry.class` خام فقط — لا علاقة له بـ `FindByIndexNameSessionRepository`.
+- **D4 — واجهة 7.1.1 المدمجة**: لا يوجد `authorizationServer()` ثابت؛ فقط منشئ بلا وسائط + `getEndpointsMatcher` + `.with(...)` ⇒ **ب.4 = إضافة `@EnableWebSecurity` فقط** (بانتظار الموافقة؛ أيضاً `oauth2-client` حزمة ميتة بلا أي import ⇒ ب.5 حذف آمن).
+- **D5 — أمر الفحص** يجب أن يحوي `-am` وإلا `NoClassDefFoundError: ProviderListingView` مضلّل؛ بيئة: Java 26، JAVA_HOME غير معيّن.
+- **D6 — ربط سجلات Boot**: غياب عقدة الأب في yml = null (رخاوة)؛ `@DefaultValue` يقع على الورقة فقط.
+- **D7 — فجوة classpath للفحص المعزول**: قائمة جرار الـ .m2 المطلوبة لإعادة التمثيل محفوظة في `~/.config/opencode/AGENTS.md` (Current Session State).
+
+**التحقق الحالي:** `SecurityProblemDetailIntegrationTest` 3/3 ✅ + infra 36/36 ✅ (بعد إصلاح M4) ⇒ **ب.3 مكتمل ومُتحقَّق منه حياً**.
+
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
 #### PR #179 — ALL cache invalidation deferred to AFTER_COMMIT ✅ (merged `08c4e95`)
@@ -81,26 +119,28 @@
 - **Cleanup:** `cddfeff` — `@SuppressWarnings("unchecked")` isolated from public `getRevisions()` into private `queryRevisions()` in `RevisionService` (Hibernate Envers raw `List`); wildcard `import java.util.*` verified per `CODING_STANDARDS.md`
 - **Verification:** `mvn clean test` (full reactor) → **538 tests / 0 failures / 0 errors / 3 skipped** (skips environmental: Modulith verification + Testcontainers off); `marketplace-app` module alone = 157
 
-#### Security Design — official model verified, NO production change (2026-08-29) ✅
-- **Decision:** D1/D2 closed with no code change — the system already implements the official Spring Security defense-in-depth model (verified against `method-security.html` v7.1.1, verbatim):
-  - "Enforcing security at the service layer" is one *benefit* of Method Security, not a mandate; class/interface-level annotations explicitly supported (docs show `@Controller @PreAuthorize(...)`)
-  - "The main tradeoff seems to be where you want your authorization rules to live." (coarse request-level vs fine method-level)
-  - "It's important to remember that when you use annotation-based Method Security, then unannotated methods are not secured. To protect against this, declare a catch-all authorization rule in your HttpSecurity instance."
-- **Code facts — the 3 layers:**
-  - **Request/catch-all:** `SecurityConfig` (marketplace-platform-infra) `protectedApiSecurityFilterChain` — `.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")` + `.anyRequest().authenticated()`
-  - **Fine-grained method security:** 26 service-layer SpEL rules (Catalog 6, Payments 6, Booking 4, Provider 4, Availability 3, Reviews 2, Disputes 1)
-  - **Coarse controller gates:** 4 (PricingRuleController class-level, LedgerController 2 methods, AdminController class-level) — each with WebMvcTest negative + positive coverage
-- **Why the controller-level gates are correct here (not debt):**
-  - `LedgerController`/`LedgerService.creditFromPayment`: `LedgerPaymentEventListener` invokes it with NO auth principal — docs warn "If the method is not being called in the context of an HTTP request, you will likely need to handle the AccessDeniedException yourself" ⇒ a service-layer ADMIN rule would break the listener
-  - `PricingRuleController`: class-level annotation is the documented pattern; internal callers are structurally impossible — pricing `package-info.java` `allowedDependencies` excludes every business module ⇒ Modulith boundary prevents bypass
-- **Rejected alternative:** moving `@PreAuthorize("hasRole('ADMIN')")` from `PricingRuleController` onto `PricingService` — would remove a working web 403 test, diverge from the AdminController admin-zone pattern, and repay no debt
+#### Security Design — official model, framework-managed (2026-08-31) ✅
+- **Decision:** Full redesign of auth system to the official Spring Security 7.1.1 / Boot 4.1.1 pattern (verified via bytecode + GS 7.1.1 + Boot OAuth2 reference).
+- **Code facts — 3-chain architecture (unchanged):**
+  - **AS chain `@Order(1)` — authorizationServerSecurityFilterChain:** official DSL `http.oauth2AuthorizationServer(...)` with `securityMatcher(endpointsMatcher)` + `.oidc(withDefaults())` + `.authorizeHttpRequests` + `.exceptionHandling` + `.cors` — follows GS 7.1.1 verbatim.
+  - **Resource server chain `@Order(2)` — resourceServerSecurityFilterChain:** `.oauth2ResourceServer(jwt(jwtAuthConverter))` + `.sessionManagement(STATELESS)` + app policies.
+  - **Default chain `@Order(3)` — defaultSecurityFilterChain:** `formLogin` + `sessionManagement(maximumSessions(maxSessions) + sessionRegistry)` + `@EnableWebSecurity`.
+- **Key facts (bytecode-verified):**
+  - `DefaultWebSecurityCondition` = `AllNestedConditions(@ConditionalOnMissingBean(SecurityFilterChain) + @ConditionalOnClass(...))` → Boot's default chains NEVER register when custom chains exist → our 3 chains are the official extension point (F1).
+  - `HttpSecurity.oauth2AuthorizationServer(Customizer<OAuth2AuthorizationServerConfigurer>)` exists in `spring-security-config-7.1.1.jar` (F2 — GS 7.1.1 `Defining Required Components`).
+  - `@ConditionalOnMissingBean` on `authorizationServerSettings()` in `OAuth2AuthorizationServerConfiguration` is independent of chains → framework provides bean from `spring.security.oauth2.authorizationserver.issuer` even with our custom chains (F4).
+  - `with()` is NOT deprecated (only `requiresChannel`) — pre-7.0 pattern replaced by new DSL (settled: 3 definitive proofs).
+- **Single-source issuer:** `spring.security.oauth2.authorizationserver.issuer` → framework creates `AuthorizationServerSettings` bean → `jwtDecoder` injects it via `authorizationServerSettings.getIssuer()`. Removed `MarketplaceProperties.Security.AuthServer` record + manual `authorizationServerSettings` bean.
+- **Deleted:** `spring-boot-starter-security-oauth2-client` (zero Java usage outside 14 WebMvcTest exclusion annotations); dead google blocks from `application-test.yml` + `application-dev.yml`.
+- **Retained (production):** Jdbc `RegisteredClientRepository`/`OAuth2AuthorizationService`/`OAuth2AuthorizationConsentService` (Boot docs: "For production, consider using JdbcRegisteredClientRepository"); OIDC enabled (`R__seed_oauth2_client.sql:36` requests `scopes='openid,profile'`); JWT keystore + audience validator; all ProblemDetail handlers; session concurrency.
+- **3-layer authorization (unchanged):** 26 service SpEL + 4 controller coarse gates + catch-all `anyRequest().authenticated()` — NOT affected by this redesign.
 
-#### Release gate — `mvn clean verify` green (2026-08-29) ✅
-- **Full reactor build (17 modules):** `BUILD SUCCESS` — `.\mvnw.cmd clean verify`
-- **Jacoco `check`** (INSTRUCTION COVEREDRATIO ≥ 0.70 per module BUNDLE): "All coverage checks have been met" on every module
+#### Release gate — `mvn clean verify` green (2026-08-31) ✅
+- **Targeted build:** `mvn clean verify -pl marketplace-app -am` → **BUILD SUCCESS**
+- **Tests:** 157 run / 2 skipped (environmental) / 0 failures / 0 errors — `marketplace-app` module
+- **Per-module jacoco `check`** (INSTRUCTION COVEREDRATIO ≥ 0.70): "All coverage checks have been met" across all modules
 - **Compiler** `failOnWarning=true`: clean
-- **Surefire (unit, full reactor):** 538 tests / 0 failures / 0 errors / 3 skipped (per-module aggregates: shared 30, platform-infra 35, identity 24, booking 47, payments 71, pricing 16, reviews 24, messaging 30, search 9, provider 25, availability 19, notifications 22, ledger 15, disputes 14, marketplace-app 157)
-- **Failsafe (integration):** 40 tests / 0 failures / 0 errors / 34 skipped (environmental — Testcontainers-off, Docker unavailable)
+- **Security:** 3/3 `SecurityProblemDetailIntegrationTest` + infra 36/36 (incl. `SecurityConfigJwtDecoderTest` + `OAuth2TokenCustomizerTest` updated with new `AuthorizationServerSettings` injection)
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
