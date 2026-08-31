@@ -241,7 +241,7 @@ public class SecurityConfig {
         manager.setDeleteUserSql("delete from auth_users where username = ?");
         manager.setCreateAuthoritySql("insert into auth_authorities (username, authority) values (?, ?)");
         manager.setDeleteUserAuthoritiesSql("delete from auth_authorities where username = ?");
-        manager.setUserExistsSql("select username from auth_users where username = ?");
+        manager.setUserExistsSql("select count(*) from auth_users where username = ?");
         return manager;
     }
 
