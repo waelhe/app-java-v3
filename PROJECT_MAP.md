@@ -44,7 +44,7 @@
 
 ## Sprint 5 — Auth System Design — `feat/auth-system-design` (2026-08-31)
 
-**الفرع قيد التطوير:** `feat/auth-system-design` (الخطة ب.0–ب.5). كل التعديلات أدناه **غير ملتزمة** حتى الآن؛ تتطلب موافقة المستخدم قبل commit/PR.
+**الفرع:** `feat/auth-system-design` (الخطة المعدلة النهائية). **الحالة النهائية: مُلتزم ومدفوع في `77fc651` → PR #181.** (هذا القسم يسجّل مسار التطوير؛ الحقيقة المعتمدة النهائية في قسم «الخطة المعدلة النهائية» أدناه.)
 
 ### كل ما عبثت به — ملفات المشروع المعدّلة (git status)
 | الملف | ما فعلته |
@@ -79,6 +79,22 @@
 - **D7 — فجوة classpath للفحص المعزول**: قائمة جرار الـ .m2 المطلوبة لإعادة التمثيل محفوظة في `~/.config/opencode/AGENTS.md` (Current Session State).
 
 **التحقق الحالي:** `SecurityProblemDetailIntegrationTest` 3/3 ✅ + infra 36/36 ✅ (بعد إصلاح M4) ⇒ **ب.3 مكتمل ومُتحقَّق منه حياً**.
+
+### الخطة المعدلة النهائية — التوثيق الصادق للحجم (2026-08-31) ✅
+**الخلفية (من السجل، لا تخمين):** الخطة القديمة ب.0–ب.5 نفّذت **ب.0–ب.3** وحققتها حياً (3/3 + 36/36). أثناء عملها اكتُشفت افتراضات خاطئة في البنية **الداعمة** (M1–M8 + D1–D7 выше، كلها في: البادئة `spring.security.oauth2.authorizationserver`، OIDC الإجباري، عدّ 14 ملف، الكتل الميتة، ب.4=D4، ب.5=D5). وُثّقت هذه الأخطاء، ثم صُمّمت **خطة معدلة** تحافظ على ب.0–ب.3 المثبتة وتصحّح البنية الداعمة.
+
+**المُعتمَد الآن (خطة معدلة = 7 بنود جراحية + ب.0–ب.3 المُبقاة):**
+
+| النطاق | البنود | الحالة |
+|---|---|---|
+| **خطة معدلة (7 بنود)** | 1) DSL الرسمي `http.oauth2AuthorizationServer(...)` + `@EnableWebSecurity` + securityMatcher داخل اللامدا + `.oidc` + `.cors`<br>2) `jwtDecoder` يحقن `AuthorizationServerSettings.getIssuer()`<br>3) حذف فول `authorizationServerSettings` اليدوي<br>4) حذف `Security.AuthServer` من `MarketplaceProperties`<br>5) `spring.security.oauth2.authorizationserver.issuer` في base+test + حذف كتل الميتة<br>6) حذف `spring-boot-starter-security-oauth2-client` من infra/pom<br>7) 14 WebMvcTest (حذف استيرادات/استثناءات oauth2-client) + حذف google + 4 مواقع إنشاء | ✅ منفذة في `77fc651` |
+| **ب.0–ب.3 (من الخطة القديمة، مثبتة — مُبقاة)** | ب.0 `jwtTokenCustomizer` roles+aud + حذف `jti` اليدوي + `OAuth2TokenCustomizerTest` (3 اختبارات)<br>ب.1 `jwtDecoder` مبسّط + `requiredAudiencesValidator`<br>ب.2 دمج السلاسل 4→3 (public+protected في `resourceServerSecurityFilterChain`) + `/v3/api-docs/**`<br>ب.3 `sessionRegistry` + `httpSessionEventPublisher` + `maximumSessions` + `spring.session.data.redis` (indexed) | ✅ مثبتة حياً ومُبقاة |
+
+**حقيقة الـcommit:** كل ما سبق — البنود السبع + ب.0–ب.3 — مُلتزم ومدفوع في **commit واحد `77fc651`** على `feat/auth-system-design`، وأنشئ منه PR #181. **سطر 47 أعلاه («غير ملتزمة حتى الآن») لم يعد يطابق الواقع** — استُبدل بهذا القسم.
+- **CI على `77fc651`:** Build & Test ✅ + Full Integration ✅ (pass على JDK 25).
+- **PR #181:** OPEN / MERGEABLE / CLEAN.
+- **وصف الـPR:** حُدّث ليعكس الحجم الصادق (A = البنود السبع، B = ب.0، C = ب.1/ب.3، D = ب.2) — لا تقليص.
+- **تحقّق بنص الصدق:** كل ادعاءات الوصف طُوبقت بنداً بنداً ضد كود `77fc651` (لا ضد التقرير) — بلا تناقض.
 
 ### Sprint 4 — Cache After-Commit + Listener Retry Tests (2026-08-29)
 
