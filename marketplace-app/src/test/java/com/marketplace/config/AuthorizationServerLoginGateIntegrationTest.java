@@ -6,14 +6,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.sql.Connection;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.sql.DataSource;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,8 +18,6 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -32,6 +27,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -56,9 +52,24 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the Spring Authorization Server schema), the client is registered through the
  * {@link RegisteredClientRepository} bean, and the user through the
  * {@link UserDetailsManager} bean.
+ *
+ * <p>The schema is applied through {@code spring.sql.init} (not in a
+ * {@code @BeforeAll}) on purpose: {@code JdbcOAuth2AuthorizationService} resolves
+ * the LOB-ish column types from live database metadata while the bean is being
+ * constructed (JdbcOAuth2AuthorizationService.java:400-460). If the tables do not
+ * exist yet, every {@code *_value}/{@code *_metadata}/{@code attributes} column
+ * falls back to the BLOB default and token values are bound as {@code bytea}
+ * ({@code operator does not exist: text = bytea} on PostgreSQL). Boot orders the
+ * SQL initializer before the {@code JdbcTemplate} bean (and therefore before this
+ * test context's {@code JdbcOAuth2AuthorizationService}), which mirrors production,
+ * where Flyway migrates before the beans are constructed.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@TestPropertySource(properties = {
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql"
+})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AuthorizationServerLoginGateIntegrationTest {
 
@@ -83,9 +94,6 @@ class AuthorizationServerLoginGateIntegrationTest {
     private int port;
 
     @Autowired
-    private DataSource dataSource;
-
-    @Autowired
     private ObjectMapper objectMapper;
 
     @Autowired
@@ -102,11 +110,7 @@ class AuthorizationServerLoginGateIntegrationTest {
     private GateResult adminGate;
 
     @BeforeAll
-    void setUpFixtures() throws Exception {
-        try (Connection connection = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V13__authorization_security.sql"));
-        }
+    void setUpFixtures() {
         registerLoginGateClient();
         registerUser(ADMIN_USERNAME, "ADMIN");
         registerUser(USER_USERNAME, "USER");
@@ -122,10 +126,13 @@ class AuthorizationServerLoginGateIntegrationTest {
 
         // Mint side: the OAuth2TokenCustomizer issues roles + aud, the issuer comes from
         // spring.security.oauth2.authorizationserver.issuer (AuthorizationServerSettings bean).
-        String claims = jwtClaimsAsJson(gate.accessToken());
-        assertThat(claims).contains("\"iss\":\"http://localhost:8080\"");
-        assertThat(claims).contains("\"aud\":[\"marketplace-api\"]");
-        assertThat(claims).contains("ADMIN");
+        // aud is asserted through the parsed JSON: RFC 7519 4.1.3 allows the single-value
+        // (string) and the multi-value (array) serialization, so the raw-contains form
+        // would depend on the serializer's shape choice.
+        JsonNode claims = objectMapper.readTree(jwtClaimsAsJson(gate.accessToken()));
+        assertThat(claims.path("iss").asString()).isEqualTo("http://localhost:8080");
+        assertThat(claims.path("aud").toString()).contains("marketplace-api");
+        assertThat(claims.path("roles").toString()).contains("ADMIN");
 
         // Validate side: the real decoder (issuer + audience + signature) and the
         // JwtAuthenticationConverter (roles claim -> ROLE_ authorities) gate the API.
@@ -158,7 +165,7 @@ class AuthorizationServerLoginGateIntegrationTest {
         assertThat(refreshResponse.statusCode()).isEqualTo(200);
 
         JsonNode tokens = objectMapper.readTree(refreshResponse.body());
-        String rotatedAccessToken = tokens.path("access_token").asText();
+        String rotatedAccessToken = tokens.path("access_token").asString();
         assertThat(rotatedAccessToken).isNotBlank().isNotEqualTo(gate.accessToken());
 
         HttpResponse<String> apiResponse = getWithBearer(PROTECTED_ADMIN_PATH, rotatedAccessToken);
@@ -230,9 +237,9 @@ class AuthorizationServerLoginGateIntegrationTest {
 
         JsonNode tokens = objectMapper.readTree(tokenResponse.body());
         return new GateResult(
-                tokens.path("access_token").asText(),
-                tokens.path("refresh_token").asText(),
-                tokens.path("token_type").asText());
+                tokens.path("access_token").asString(),
+                tokens.path("refresh_token").asString(),
+                tokens.path("token_type").asString());
     }
 
     private synchronized GateResult adminGate() throws Exception {
