@@ -35,6 +35,9 @@ import org.springframework.util.StringUtils;
  * so production must not silently run on the seed placeholder. If the client is not
  * configured and the {@code prod} profile is active, startup fails. Absent configuration
  * in non-production profiles (dev, test) is a deliberate no-op, keeping the seed secret.
+ * The nested {@code marketplace.security.oauth2} section is bound non-null by an empty
+ * {@code @DefaultValue} (official constructor-binding behavior), so the section can be
+ * safely dereferenced in every profile. See {@code MarketplaceProperties}.
  *
  * @see <a href="https://docs.spring.io/spring-authorization-server/reference/core-model-components.html#registered-client-repository">Spring Authorization Server — RegisteredClientRepository</a>
  */
