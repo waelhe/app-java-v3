@@ -1,0 +1,204 @@
+# SYSTEM.md — الخريطة المرجعية لآلية عمل النظام
+
+> **غرض هذا الملف:** المرجع الدائم لفهم «كيف يعمل نظامنا» — يُقرأ **أولاً** قبل أي تعمّق في أي طبقة، ويُحدَّث عند كل حقيقة جديدة موثَّقة. هو الثالث في عائلة ملفات الجذر: `AGENTS.md` (القواعد) / `PROJECT_MAP.md` (سجل الحالة والقرارات) / `SYSTEM.md` (الآلية والفهم).
+>
+> **قاعدة الذهب:** كل حقيقة هنا تحمل دليلها `ملف:سطر` من هذا المستودع أو من مصدر رسمي محفوظ. لا يُضاف ادعاء بلا دليل، ولا يُعدَّل دليل بلا إعادة تحقق من الكود.
+
+---
+
+## 1. بطاقة الهوية (كلها مثبتة من الكود هذه الجلسة)
+
+| البند | القيمة | الدليل |
+|---|---|---|
+| النظام | Marketplace Backend — REST + GraphQL، سياق Spring **واحد** (حزمة الجذر `com.marketplace`) | `MarketplaceApplication.java` |
+| Java | 25 (`--release 25`) | `pom.xml:41` |
+| Spring Boot | **4.1.1** عبر الوراثة من `spring-boot-starter-parent` | `pom.xml:7-10` |
+| Spring Modulith | 2.1.0 (BOM مستورد) | `pom.xml:65-67` |
+| Spring Authorization Server | 7.1.1 (قادم عبر BOM الإطار؛ مصادره مخبأة محلياً — §10) | `scripts/verify-aud-claim/sas-all/` |
+| Maven | wrapper 3.9.16 (`./mvnw`)، enforcer يشترط `[3.9,)` | `mvnw` + `pom.xml:230` |
+| قاعدة البيانات | PostgreSQL 17 (Flyway يملك المخطط حصراً — §7) | `.github/workflows/ci.yml:23-24` |
+| الذاكرة/الجلسات | Redis 7 (جلسات + 13 مخبأة مسماة) | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
+| الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) | `pom.xml:44-45` |
+| الوحدات | **16** وحدة Maven في Reactor الجذر | `pom.xml:22-37` |
+| النشر | Dockerfile + railway.toml + docker-compose.yml | جذر المستودع |
+
+---
+
+## 2. نموذج الملكية المزدوج — من يملك ماذا ومتى
+
+النظام يقوم على مبدأين لا يُخلط بينهما: **Maven يملك زمن البناء** و**Spring Boot يملك زمن التشغيل**. أي سؤال «من قرر هذا؟» يُحل بتحديد الطبقة أولاً.
+
+| الجانب | المالك | الآلية | الدليل |
+|---|---|---|---|
+| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml:22-37` |
+| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10, 60-210` |
+| بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml:217-260` |
+| مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |
+| إنشاء الفول والتوصيل | Boot | component scan + auto-configuration شرطية | `MarketplaceApplication.java:9-11` |
+| قراءة الإعدادات | Boot | ربط نوعي `@ConfigurationProperties` | `MarketplaceProperties.java:17` |
+| دورة الحياة عند الإقلاع | Boot | runners ثم الجاهزية | صفحة `spring-application` الرسمية المحفوظة (`scripts/doc-verify/`) |
+
+---
+
+## 3. طبقة البناء — كيف يبني Maven النظام
+
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 16 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
+
+**الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
+
+| المرحلة | Plugin | ماذا يفعل عندنا |
+|---|---|---|
+| compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
+| test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
+| integration-test / verify | failsafe | اختبارات التكامل (`*IT`) — 34 منها بيئية تُتخطى بلا Docker |
+| verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:242-244`) |
+| validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.9,)` (`:230`) وJava `[21,)` (`:233`) |
+| package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
+
+**الأوامر المعتمدة:** البوابة الكاملة `./mvnw clean verify` — البناء الموجّه `./mvnw clean verify -pl <module> -am` (قاعدة AGENTS.md: تُشغَّل قبل أي دفع).
+
+---
+
+## 4. طبقة الإقلاع — كيف يقوم النظام (من `main()` حتى أول ترافيك)
+
+نقطة الدخول `MarketplaceApplication.java` (17 سطراً): `@SpringBootApplication` + `@Modulithic` + `@EnableConfigurationProperties(MarketplaceProperties.class)` (`:9-11`)، ثم `SpringApplication.run(...)` (`:14-16`).
+
+**التسلسل (مثبت من وثيقتي spring-application وauto-configuration الرسميتين المحفوظتين في `scripts/doc-verify/`):**
+
+1. `SpringApplication.run` ينشئ السياق ويجهّز البيئة: مصادر الإعدادات الخارجية (yml → متغيرات بيئة → args) بترتيب أسبقية موثق (`scripts/auth-design/boot-external-config.txt`).
+2. **انعاش السياق:** حبوب `com.marketplace` (scan) + **التهيئة التلقائية**: كل وحدة auto-configuration تُقرأ من `META-INF/spring/...AutoConfiguration.imports` وتخضع لشروط (`@ConditionalOnClass` / `@ConditionalOnMissingBean`) — **حبّة يعرّفها المستخدم تزيح نسخة الإطار**. مثال حي عندنا: خاصيات `spring.security.oauth2.authorizationserver.client.*` خاملة لأننا نعرّف `JdbcRegisteredClientRepository` بأنفسنا (قرار D2 الموثق).
+3. أثناء الانعاش نفسه تُهاجر قاعدة البيانات: **Flyway** يطبّق `db/migration` (27 ترحيلة V + الـ seed R__) لأن `ddl-auto: none` (`application.yml:28`) — أي أن المخطط ملك Flyway حصراً.
+4. يبدأ خادم الويب (Tomcat، المنفذ 8080 — `application.yml:127`)، ومعه خيوط افتراضية مفعّلة (`spring.threads.virtual.enabled: true` — `application.yml:4-7`).
+5. تُستدعى `ApplicationRunner`/`CommandLineRunner` — ثم فقط يصبح التطبيق **جاهزاً**. اقتباس رسمي حرفي: *"ready as soon as application and command-line runners have been called"* — ومهام الإقلاع مكانها الـ runners لا `@PostConstruct` (اقتباس الوثيقة نفسها). **هذه البوابة هي مكان أي مُهيّئ مستقبلي (مثل مُهيّئ سرّ العميل env→DB).**
+6. المراقبة تعمل: Actuator (يشمل `conditions` — `application.yml:135-141`)، معلومات البناء من `build-info` + `git-commit-id` في `/actuator/info`، والقياسات عبر OTLP (`application.yml:163-173`).
+
+**لماذا يهم هذا عملياً:** أي سلوك «غريب» عند الإقلاع يُشخَّص بترتيب هذا التسلسل — مثال مثبت: اختبارات `@SpringBootTest` بسياق كامل تحتاج Redis حياً لخزين الجلسات (`application.yml:70-75`)، فتفشل محلياً بلا خادم بينما CI (services) يوفره — الآلية إطارية سليمة والفرق بيئي.
+
+---
+
+## 5. البنية النمطية — 16 وحدة تحت Modulith
+
+**القسمة (من `pom.xml:22-37`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **13 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes.
+
+**آلية الحدود:** كل وحدة نطاق تحمل `package-info.java` يعلن `@NamedInterface` + `@ApplicationModule(allowedDependencies=...)`. نموذج حرفي (booking):
+
+```java
+@org.springframework.modulith.NamedInterface("booking")
+@org.springframework.modulith.ApplicationModule(
+    allowedDependencies = {"shared :: shared-api", "shared :: shared-security", "shared :: shared-jpa"}
+)
+package com.marketplace.booking;
+```
+
+الاعتماد العابر بين النطاقات **ممنوع بنيوياً** — التواصل يمر عبر: (أ) واجهات SPI في `shared/api` (AvailabilityPort, ProviderLookupPort, CatalogSpi, UserLookupPort, BookingParticipantProvider, PaymentIntentLookupPort…) ينفّذها مالك البيانات، أو (ب) أحداث نطاق تُنشر بعد الالتزام (AFTER_COMMIT). الحدود مفروضة زمنياً بفحص Modulith/ArchUnit ضمن CI.
+
+**آلية الأحداث (كلها موثقة في PROJECT_MAP):** مستمعو `@ApplicationModuleListener` يعملون بمعاملة `REQUIRES_NEW` مع إعادة محاولة عند فشل الاستماع (لا `catch(Exception)` — أُزيلت 5 مرات عمداً). إكمال النشر: `archive` في base/prod و`delete` في dev؛ ومهمة `EventPublicationCleanup` المنظّمة (`@Scheduled` 3 صباحاً) تطهّر المنشورات المنجزة الأقدم من 7 أيام. الأحداث المشتركة المعيشة: BookingCreated / BookingConfirmed / BookingCancelled / PaymentStateChanged / ReviewUpdated / CacheInvalidationRequested.
+
+**روابط النطاقات الفعالة (6):** booking↔availability (حجز/إعتاق الخانة)؛ Payment COMPLETED → ledger (قيود) + booking (autoConfirm)؛ Booking CANCELLED → payment (استرجاع)؛ catalog → provider (شرط VERIFIED)؛ notifications → email/WebSocket عبر `UserLookupPort`.
+
+---
+
+## 6. طبقة الأمن — Authorization Server داخل التطبيق (SAS 7.1.1)
+
+**ثلاث سلاسل فلترة بترتيب `@Order` (SecurityConfig في `marketplace-platform-infra/.../security/`):**
+
+| @Order | السلسلة | الوظيفة | الدليل |
+|---|---|---|---|
+| 1 | `authorizationServerSecurityFilterChain` | نقاط AS + OIDC، `securityMatcher(endpointsMatcher)` | `:93-111` |
+| 2 | `resourceServerSecurityFilterChain` | واجهات API عديمة الحالة (STATELESS) عبر JWT، `/api/v1/admin/** → ADMIN` + `anyRequest().authenticated()` | `:113-132` |
+| 3 | `defaultSecurityFilterChain` | تسجيل الدخول النموذجي + جلسات (Redis) | `:143-152` |
+
+**مصدر المفاتيح JWK — المسار المزدوج (`:267-306`):** في prod يُقرأ keystore من `MarketplaceProperties.Security.Jwt.KeyStore` (record متداخل: path/password/alias — `MarketplaceProperties.java:30-37`)، وخاناته الأربع في `application-prod.yml:127-131` **إلزامية بلا افتراضات ⇒ فشل فوري إن غابت** (قرار D6: مفاتيح دائمة في الإنتاج). في dev الخانات فارغة افتراضاً ⇒ توليد RSA عابر (`generateRsaKey()` — `:276`) بتصميم مقصود.
+
+**العملاء يحيون في قاعدة البيانات:** `JdbcRegisteredClientRepository` (جدول `oauth2_registered_client` من `V13__authorization_security.sql`) — وليس ملف إعدادات. حبّة JDBC تزيح auto-config الذاكرية (D2). سلوك الحفظ الحاسم: `save()` يبحث بالـ **PK (`id`)** — موجود ⇒ UPDATE، غائب ⇒ INSERT (`JdbcRegisteredClientRepository.java:147-156` بالمصادر المخبأة).
+
+**بذرة العميل `R__seed_oauth2_client.sql` (حالتها بعد المرحلة 1 — commit `5b5a238`):**
+- `:37` — `client_settings` يحمل **المفتاحين معاً**: `"settings.client.require-proof-key":true` + `"settings.client.require-authorization-consent":true` (D4 قائم).
+- `:40` — **upsert تقاربي:** `ON CONFLICT (id) DO UPDATE SET client_settings = EXCLUDED.client_settings, token_settings = EXCLUDED.token_settings` — السرّ وصفّا admin وissued_at خارج SET عمداً (حماية المدوَّر في البيئات الحية).
+- إغلاق F-A (غياب PKCE بالإغفال) مكتمل: البايت-كود يرفض غياب `code_challenge` مع `isRequireProofKey()` بـ `invalid_request` (`OAuth2AuthorizationCodeRequestAuthenticationValidator.java:206-227`)، ويفرض S256 وحده عند وجود التحدي (`:218-221` — درع مزدوج ضد ال downgrade). مفاتيح الإعدادات تُبنى concat وقت التشغيل (`ConfigurationSettingNames.java:33-55`) — لذا لا تظهر كنص واحد في grep.
+
+**نموذج التفويض ثلاثي الطبقات (موثق «Security Design» في PROJECT_MAP):** catch-all في HttpSecurity + 26 قاعدة `@PreAuthorize` دقيقة في طبقة الخدمات + 4 بوابات controllers إدارية — لكل قاعدة اختبار سالب وموجب (52 اختباراً).
+
+**دروس مثبتة تجريبياً (لا تُعَد اكتشافها):** `ClientSettings.withSettings(map)` لا يطبق الافتراضات (`:115-118`) بينما نفس الصف يعوّض افتراض TokenSettings دون ClientSettings (`JdbcRegisteredClientRepository.java:362-367` — عدم تناظر الإطار يقوّي «قاعدة البيانات هي الحقيقة» D2)؛ وخريطة Jackson متعددة الأشكال تسمح `UnmodifiableMap` وترفض `ImmutableCollections$List12` (جولة aud/E5 مثبتة بـ `AudRoundTrip.java`).
+
+**الجلسات:** خزين Redis بمساحة `marketplace:session` (`application.yml:70-75`)، بحد أقصى جلستين (`:245-246`)، وكلمة المرور `DelegatingPasswordEncoder` مع bcrypt (`SecurityConfig:197-199`).
+
+---
+
+## 7. طبقة البيانات — Flyway يملك المخطط
+
+- **المصدر الوحيد للمخطط:** 27 ترحيلة نسخية `V1..V27` + بذرة واحدة `R__seed_oauth2_client.sql` في `marketplace-app/src/main/resources/db/migration/`. قاعدة AGENTS.md صارمة: أي تغيير مخطط = ملف V جديد؛ **لا تُعدَّل ترحيلة موجودة أبداً**.
+- **دلالة R__ (Repeatable):** يعاد تطبيقه عند تغيّر checksum، وترتيبه **بعد آخر V** — هذه هي الآلية التي تجعل البذرة «حية» تتقارب مع الكود (أساس upsert المرحلة 1).
+- **تدقيق Envers:** كل الكيانات `@Audited` (جداول `_aud` من `V24`) والمستودعات `RevisionRepository` مع `RevisionService` موحّد للحجج التاريخية في `marketplace-admin`.
+- **Redis بثلاث أدوار:** جلسات + 13 مخبأة مسماة (`application.yml:111`) + خزين Quartz JDBC (`:112-118`, من `V21`). الإبطال **بعد الالتزام حصراً**: `CacheInvalidationRelay` (`@TransactionalEventListener(AFTER_COMMIT)`) ينشر `CacheInvalidationRequested` — لا `@CacheEvict` مباشر على الخدمات (أزيلت 30 إزالة في PR #179).
+- **البحث:** فهرس search مستقل (`V9`) + projections للقراءة فقط (ListingSimple, ReviewSummary, BookingSummary).
+
+---
+
+## 8. طبقة الإعدادات — الربط النوعي والبروفايلات
+
+- **الملفات:** `application.yml` (أساس) + `application-dev.yml` + `application-prod.yml` (في `marketplace-app/src/main/resources/`) + `application-test.yml` (في موارد الاختبار). أسبقية المصادر الخارجية وفق ترتيب Boot الموثق (نسخة محفوظة: `scripts/auth-design/boot-external-config.txt`).
+- **الربط النوعي:** سجل `MarketplaceProperties` (`@ConfigurationProperties(prefix="marketplace")` — `:17`) بشجرة records متداخلة (Cors/Security/Jwt/KeyStore/Session/OAuth2 — بعد PR #183). **السابقة الحاكمة:** `Jwt.KeyStore` — إعداد يُقرأ من env ويُحسم سلوكه (prod إلزامي/dev افتراضي فارغ)، ونفس النمط اتبعه `OAuth2.Client` (client-id/secret عبر `OAUTH_CLIENT_ID/SECRET`، §11). **درس الربط الرسمي (مثبت):** المكوّن المتداخل الغائب يُربط `null` — والوثيقة الرسمية تحلها بـ `@DefaultValue` فارغة (اقتباس حرفي مطابق في الصفحة المخبأة `boot-external-config.txt:1098`).
+- **متغيرات البيئة الحية:** `SPRING_DATASOURCE_URL`, `REDIS_HOST/PORT`, `MAIL_*`, `SESSION_MAX_SESSIONS`, `SERVER_PORT` (كلها ببادئات في `application.yml`).
+
+---
+
+## 9. طبقة الجودة و CI
+
+- **ثلاثة workflows** في `.github/workflows/`: `ci.yml` (services: postgres:17-alpine + redis:7-alpine بصحة مُتحقَّقة، gitleaks، JDK matrix temurin، `./mvnw verify --batch-mode` مع env قاعدة البيانات)، `integration-test.yml` (`clean verify` + تشغيل فعلي للخادم ببروفايل test)، `maven-publish.yml`.
+- **تصنيف الاختبارات:** وحدة (surefire, `*Test`) / تكامل (failsafe, `*IT`) — **فصل صارم لا يُخلط**. `@WebMvcTest` شرائح controllers (44 اختباراً)؛ `@SpringBootTest` سياق كامل (يحتاج Redis حياً — §4)؛ تكاملات الوحدات 14 صنف `ModuleIntegrationTest` في `marketplace-app`؛ Testcontainers مع `disabledWithoutDocker`.
+- **البوابات الخمس في كل build:** تغطية ≥70%، صفر تحذيرات مترجم، enforcer، فحص Modulith/ArchUnit، gitleaks. آخر بوابة خضراء مسجلة: `mvn clean verify` كامل الـ Reactor — 538 اختبار وحدة / 0 فشل (سجل PROJECT_MAP 2026-08-29، زمن 96037ef؛ الأعداد تنمو مع الدفعات).
+
+---
+
+## 10. خريطة التعمق — لكل طبقة: نقطة الدخول، ترتيب القراءة، المصادر المخبأة
+
+| الطبقة | ابدأ من | ثم اقرأ | المصادر الرسمية/المصدرية المخبأة محلياً |
+|---|---|---|---|
+| البناء (Maven) | `pom.xml` (كاملاً) | poms الوحدات (patterns التكرارية) | `scripts/doc-verify/maven-lifecycle.html` |
+| الإقلاع (Boot) | `MarketplaceApplication.java` | `application.yml` كاملاً | `scripts/doc-verify/{spring-application,auto-configuration}.html` + مصادر Boot 4.1.1 في `scripts/boot-as-verify/boot-as-src/` |
+| الوحدات (Modulith) | `package-info.java` للوحدة المستهدفة | `marketplace-shared/.../api/` (SPIs + الأحداث) | `scripts/modulith-events.html` |
+| الأمن (SAS) | `SecurityConfig.java` | `R__seed_oauth2_client.sql` → `V13` → `application-prod.yml:127-131` | مصادر SAS 7.1.1 في `scripts/verify-aud-claim/sas-all/` + وثائق `scripts/auth-design/` (sas-howto-pkce, core-model-components, boot-security…) + `scripts/doc-verify/{sas-model,sas-pkce}.html` |
+| البيانات | `db/migration/` بالترتيب العددي | كيان الوحدة + `RevisionService` + `CacheInvalidationRelay` | `scripts/doc-verify/flyway*.html` + `postgres*.html` |
+| الإعدادات | `MarketplaceProperties.java` | ymls الثلاثة + `application-test.yml` | `scripts/auth-design/boot-external-config.txt` |
+| CI | `.github/workflows/ci.yml` | `integration-test.yml` | — |
+| الجودة/الأحداث | اختبارات الوحدة المستهدفة | `@ApplicationModuleListener` في الوحدة | `scripts/modulith-check/` |
+
+**طقوس التعمق (تعلمت بالتجربة المسجلة في worklog):** (1) كل اقتباس رسمي يُنزَّل ويُطابق نصياً لا من الذاكرة؛ (2) المفاتيح المركبة قد لا تظهر في grep لأنها تُبنى concat (`ConfigurationSettingNames`)؛ (3) قراءة بايت-كود/مصادر الجرة عند غموض المصدر المتاح؛ (4) «خارج المتناول» ادعاء يُختبر قبل تصديقه.
+
+---
+
+## 11. الحالة الحالية للخطة الحاكمة (auth redesign)
+
+المستند الحاكم: `docs/security/auth-system-redesign-plan.md` (عربي، 149 سطراً — مراحل 0-4، F-A/F-B/F-C، D1-D9، INV-1..7، سلّم T1-T4). الوضع على main:
+
+- **المرحلة 0 ✅** (`f80b945`): التوثيق والقرارات.
+- **المرحلة 1 ✅** (`5b5a238`): إغلاق F-A بالخنقتين المعتمدتين (§6 أعلاه) + سجل PROJECT_MAP كامل.
+- **المفتوح (كلمتان):** المرحلة 2 (T3+T4 — حصانة تحميل البذرة الحقيقية، تغلق F-B وتوثق D4) أو المرحلة 3 (عميل مستهلك بموجب D9=(أ) confidential/BFF، يغلق F-C). سلوك PKCE **ساكن حتى يولد مستهلك** في المرحلة 3.
+- **مُغلق حسمه:** D6 (مفاتيح prod إلزامية)، D4 (consent=true قائم في البذرة)، D2 (خصائص AS الذاكرية خاملة).
+- **مُهيّئ سرّ العميل env→DB ✅** (PR #183 → `c16e750`، CI أخضر ×2): `OAuth2ClientSecretInitializer` (`ApplicationRunner`) + `MarketplaceProperties.Security.OAuth2.Client` (client-id/secret بـ `@DefaultValue` فارغة — اقتباس الربط الرسمي) + fail-fast مقيد بـ prod + `application-prod.yml` يربط `OAUTH_CLIENT_ID/SECRET` بلا افتراضات. جولة `save()` تحفظ الإعدادات بلا انجراف (INV-4 مثبت: `RegisteredClient.java:302-327` ينقل الخرائط نفسها عبر `withSettings`).
+- **بند عمليات مفتوح (خارج المستودع — سجل 9743109):** لا يوجد ضبط لـ `SPRING_PROFILES_ACTIVE` في أي ملف نشر ⇒ حاجز prod للمُهيّئ مضمون فقط إذا ضُبط المتغير = `prod` في لوحة Railway — تحقق واحد بلا كود، بيد المستخدم.
+
+---
+
+## 12. حقائق مؤكدة مسبقاً — لا تُدرس من جديد، فقط استشهد بها
+
+1. `save()` عند JDBC: upsert بالـ PK `id` لا بـ client_id (`:147-156`).
+2. `ClientSettings.withSettings` بلا افتراضات + `isRequireProofKey` null-safe (غياب المفتاح = false).
+3. مدقق PKCE: غياب التحدي + requireProofKey ⇒ `invalid_request` (RFC 7636 §4.4.1)؛ S256 فقط عند وجوده.
+4. عدم تناظر التعويض: TokenSettings يُعوَّض افتراضياً عند القراءة، ClientSettings لا.
+5. Jackson: `UnmodifiableMap` مسموح، `List12` مرفوض (PolymorphicTypeValidator) — صيغة `@class` في البذرة مشروعة.
+6. R__ يعاد تطبيقه عند تغيّر checksum، وترتيبه بعد كل V.
+7. `EXCLUDED` في PostgreSQL = الصف المقترح للإدراج.
+8. خصائص `spring.security.oauth2.authorizationserver.client.*` خاملة عندنا (D2).
+9. اختبارات السياق الكامل تحتاج Redis حياً (خزين الجلسات) — CI يوفره services.
+10. كل اقتباسات الخطة الأربع (Flyway/PostgreSQL/SAS/RFC) مُطابَقة نصياً 9/9 (`scripts/verify_docs_quotes.py`).
+
+---
+
+## 13. بروتوكول صيانة هذا الملف
+
+- **متى يُحدَّث:** عند كل دفعة تغيّر آلية (لا مجرد حالة — تلك لـ PROJECT_MAP)، أو عند تحقق جديد يعدّل حقلاً هنا. التحديث يرافق نفس دفعة التغيير إن أمكن.
+- **كيف:** الحقيقة + دليلها معاً؛ يُشار للـ commit عند كون الحقيقة زمنية (كما في §11).
+- **من:** المستخدم ينفّذ git (دفع مباشر أو PR)؛ المساعد يقترح التعديل موثقاً ولا يدفع بنفسه إلا بإذن صريح (قاعدة الجلسات الدائمة).
+- **اقرأ قبل أي مهمة في هذا المستودع:** هذا الملف → `PROJECT_MAP.md` (الحالة) → `AGENTS.md` (القواعد) → ثم الشجرة المستهدفة من §10.
