@@ -23,14 +23,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration;
-import org.springframework.boot.security.oauth2.client.autoconfigure.servlet.OAuth2ClientWebSecurityAutoConfiguration;
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration;
 
 @WebMvcTest(controllers = AdminController.class,
     excludeAutoConfiguration = {
-        OAuth2ClientAutoConfiguration.class,
-        OAuth2ClientWebSecurityAutoConfiguration.class,
         OAuth2ResourceServerAutoConfiguration.class
     })
 @WithMockUser(roles = "ADMIN")
