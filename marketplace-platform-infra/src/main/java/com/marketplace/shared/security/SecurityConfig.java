@@ -71,6 +71,7 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -241,7 +242,7 @@ public class SecurityConfig {
         manager.setDeleteUserSql("delete from auth_users where username = ?");
         manager.setCreateAuthoritySql("insert into auth_authorities (username, authority) values (?, ?)");
         manager.setDeleteUserAuthoritiesSql("delete from auth_authorities where username = ?");
-        manager.setUserExistsSql("select username from auth_users where username = ?");
+        manager.setUserExistsSql("select count(*) from auth_users where username = ?");
         return manager;
     }
 
@@ -353,6 +354,17 @@ public class SecurityConfig {
      *       <a href="https://datatracker.ietf.org/doc/html/rfc9068#section-4.1.3">RFC 9068 §4.1.3</a>.</li>
      * </ul>
      *
+     * <p>The {@code aud} claim is set with a mutable {@code ArrayList} on purpose:
+     * {@code JwtClaimsSet.Builder.audience()} stores the given list as-is
+     * (spring-security-oauth2-jose, JwtClaimsSet.java:113-115), and the JDBC-backed
+     * {@code JdbcOAuth2AuthorizationService} serializes the token claims with
+     * default typing enabled. An immutable {@code List.of(...)}
+     * ({@code java.util.ImmutableCollections$List12}) is denied by the security
+     * Jackson {@code PolymorphicTypeValidator} on deserialization, which breaks the
+     * {@code refresh_token} grant - the authorization metadata can no longer be
+     * read back. A standard {@code ArrayList} round-trips, exactly like the
+     * framework's own claim collections.
+     *
      * @return the token customizer bean
      */
     @Bean
@@ -364,7 +376,7 @@ public class SecurityConfig {
                                 .map(org.springframework.security.core.GrantedAuthority::getAuthority)
                                 .map(a -> a.startsWith("ROLE_") ? a.replaceFirst("^ROLE_", "") : a)
                                 .collect(java.util.stream.Collectors.toSet()))
-                        .audience(List.of(properties.security().jwt().audience()));
+                        .audience(new ArrayList<>(List.of(properties.security().jwt().audience())));
             }
         };
     }
