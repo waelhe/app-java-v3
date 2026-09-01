@@ -156,7 +156,7 @@
 - **Tests:** 157 run / 2 skipped (environmental) / 0 failures / 0 errors — `marketplace-app` module
 - **Per-module jacoco `check`** (INSTRUCTION COVEREDRATIO ≥ 0.70): "All coverage checks have been met" across all modules
 - **Compiler** `failOnWarning=true`: clean
-- **Security:** 3/3 `SecurityProblemDetailIntegrationTest` + infra 36/36 (incl. `SecurityConfigJwtDecoderTest` + `OAuth2TokenCustomizerTest` updated with new `AuthorizationServerSettings` injection)
+- **Security:** 3/3 `SecurityProblemDetailIntegrationTest` + infra 38/38 (incl. `SecurityConfigJwtDecoderTest` + `OAuth2TokenCustomizerTest` updated with new `AuthorizationServerSettings` injection + `JwtRolesRoundTripTest`: roles claim round-trip customizer→converter→`hasRole("ADMIN")`, incl. Security 7.1.1's unconditional `FactorGrantedAuthority.BEARER_AUTHORITY`)
 
 ## Sprint 3 — Notification Transaction Semantics + Catalog Read-Surface Integrity (2026-08-29)
 
