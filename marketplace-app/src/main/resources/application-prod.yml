@@ -129,3 +129,7 @@ marketplace:
         password: ${JWT_KEYSTORE_PASSWORD}
         alias: ${JWT_KEY_ALIAS}
         key-password: ${JWT_KEY_PASSWORD}
+    oauth2:
+      client:
+        client-id: ${OAUTH_CLIENT_ID}
+        secret: ${OAUTH_CLIENT_SECRET}
