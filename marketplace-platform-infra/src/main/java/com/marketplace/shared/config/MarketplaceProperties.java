@@ -25,7 +25,8 @@ public record MarketplaceProperties(
 
     public record Security(
         Jwt jwt,
-        Session session
+        Session session,
+        OAuth2 oauth2
     ) {
         public record Jwt(
             KeyStore keystore,
@@ -41,5 +42,13 @@ public record MarketplaceProperties(
         public record Session(
             @DefaultValue("2") int maxSessions
         ) {}
+        public record OAuth2(
+            Client client
+        ) {
+            public record Client(
+                @DefaultValue("") String clientId,
+                @DefaultValue("") String secret
+            ) {}
+        }
     }
 }
