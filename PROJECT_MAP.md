@@ -148,8 +148,19 @@
   - `with()` is NOT deprecated (only `requiresChannel`) — pre-7.0 pattern replaced by new DSL (settled: 3 definitive proofs).
 - **Single-source issuer:** `spring.security.oauth2.authorizationserver.issuer` → framework creates `AuthorizationServerSettings` bean → `jwtDecoder` injects it via `authorizationServerSettings.getIssuer()`. Removed `MarketplaceProperties.Security.AuthServer` record + manual `authorizationServerSettings` bean.
 - **Deleted:** `spring-boot-starter-security-oauth2-client` (zero Java usage outside 14 WebMvcTest exclusion annotations); dead google blocks from `application-test.yml` + `application-dev.yml`.
+- **`marketplace-web-client` — DECISION: intentionally deferred (not a gap, not dead code):** the registered client in `R__seed_oauth2_client.sql` is a **forward-looking placeholder with NO Relying Party**. Direct greps confirm: no `oauth2Login`/`ClientRegistration`/`OAuth2LoginConfigurer` anywhere; no module declares `oauth2-client`; the sole consumer of the old server-side client integration was removed **by design** in this redesign (`spring-boot-starter-security-oauth2-client` deleted above, and no SPA/BFF/frontend module exists in this backend-only Modulith). Completing the client (SPA vs BFF, PKCE, `client_credentials`, redirect URI) is a **future architectural decision**, deferred until a real consumer is defined. **No change to the seed now** — any PKCE/grant/redirect change before the consumer type is known would be speculative rework. E2E gate test (`it-login-gate-client`) remains isolated with its own client; it does NOT extend to the production placeholder.
 - **Retained (production):** Jdbc `RegisteredClientRepository`/`OAuth2AuthorizationService`/`OAuth2AuthorizationConsentService` (Boot docs: "For production, consider using JdbcRegisteredClientRepository"); OIDC enabled (`R__seed_oauth2_client.sql:36` requests `scopes='openid,profile'`); JWT keystore + audience validator; all ProblemDetail handlers; session concurrency.
 - **3-layer authorization (unchanged):** 26 service SpEL + 4 controller coarse gates + catch-all `anyRequest().authenticated()` — NOT affected by this redesign.
+
+#### Auth Redesign — Phase 0 (docs & verifications) done (2026-09-01) ✅ → plan: `docs/security/auth-system-redesign-plan.md`
+- **Status:** Redesign plan reviewed twice with independent verification; now the **governing plan**. Phase 0 = docs only (no behavior change, no merge).
+- **Phase 0 delivered:** `docs/security/auth-system-redesign-plan.md` — phases 0-4, findings F-A/F-B/F-C, decisions D1-D9, invariants INV-1..7, test ladder T1-T4, risk log (all quotes verbatim from RFC 9068/9700).
+- **F-A (bytecode 7.1.1):** `ClientSettings.withSettings(map)` constructs a fresh `Builder()` without applying defaults → production `marketplace-web-client` (R__seed: consent only) runs with `isRequireProofKey()=false` **by omission** — to close in Phase 1 (T4).
+- **F-B:** E5's `it-login-gate-client` is synthetic (proofKey=true/consent=false via `RegisteredClientRepository.save(...)`, schema loaded from `V13`); no test loads the production R__seed client — to close in Phase 2 (T3).
+- **F-C:** `marketplace-web-client` has no consumer (deferral record in line 151) — pending D9.
+- **D2 (Boot 4.1.1 bytecode):** `spring.security.oauth2.authorizationserver.client.*` only feeds an `InMemoryRegisteredClientRepository` behind `@ConditionalOnMissingBean(RegisteredClientRepository.class)` + `@Conditional(RegisteredClientsConfiguredCondition)` → inert here because we define the Jdbc bean.
+- **D5 javadoc fixed:** `SecurityConfig:353` now cites **RFC 7519 §4.1.3** for `aud` (was the wrong `rfc9068#section-4.1.3`).
+- **Pending user decisions:** merge order **#181→#182**; D9 (web client fate); confirm D4 (consent=true); permission to start Phase 1.
 
 #### Release gate — `mvn clean verify` green (2026-08-31) ✅
 - **Targeted build:** `mvn clean verify -pl marketplace-app -am` → **BUILD SUCCESS**

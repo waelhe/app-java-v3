@@ -351,7 +351,7 @@ public class SecurityConfig {
      *       <a href="https://docs.spring.io/spring-authorization-server/reference/guides/how-to-custom-claims-authorities.html">
      *       How-to: Customize JWT Claims</a>.</li>
      *   <li>{@code aud} — the resource server audience per
-     *       <a href="https://datatracker.ietf.org/doc/html/rfc9068#section-4.1.3">RFC 9068 §4.1.3</a>.</li>
+     *       <a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3">RFC 7519 §4.1.3</a>.</li>
      * </ul>
      *
      * <p>The {@code aud} claim is set with a mutable {@code ArrayList} on purpose:
