@@ -155,12 +155,26 @@
 #### Auth Redesign — Phase 0 (docs & verifications) done (2026-09-01) ✅ → plan: `docs/security/auth-system-redesign-plan.md`
 - **Status:** Redesign plan reviewed twice with independent verification; now the **governing plan**. Phase 0 = docs only (no behavior change, no merge).
 - **Phase 0 delivered:** `docs/security/auth-system-redesign-plan.md` — phases 0-4, findings F-A/F-B/F-C, decisions D1-D9, invariants INV-1..7, test ladder T1-T4, risk log (all quotes verbatim from RFC 9068/9700).
-- **F-A (bytecode 7.1.1):** `ClientSettings.withSettings(map)` constructs a fresh `Builder()` without applying defaults → production `marketplace-web-client` (R__seed: consent only) runs with `isRequireProofKey()=false` **by omission** — to close in Phase 1 (T4).
+- **F-A (bytecode 7.1.1):** `ClientSettings.withSettings(map)` constructs a fresh `Builder()` without applying defaults → production `marketplace-web-client` (R__seed: consent only) runs with `isRequireProofKey()=false` **by omission** — closed in Phase 1 by direct seed fix (T4 relocated to Phase 2 with T3, see below).
 - **F-B:** E5's `it-login-gate-client` is synthetic (proofKey=true/consent=false via `RegisteredClientRepository.save(...)`, schema loaded from `V13`); no test loads the production R__seed client — to close in Phase 2 (T3).
 - **F-C:** `marketplace-web-client` has no consumer (deferral record in line 151) — pending D9.
 - **D2 (Boot 4.1.1 bytecode):** `spring.security.oauth2.authorizationserver.client.*` only feeds an `InMemoryRegisteredClientRepository` behind `@ConditionalOnMissingBean(RegisteredClientRepository.class)` + `@Conditional(RegisteredClientsConfiguredCondition)` → inert here because we define the Jdbc bean.
 - **D5 javadoc fixed:** `SecurityConfig:353` now cites **RFC 7519 §4.1.3** for `aud` (was the wrong `rfc9068#section-4.1.3`).
 - **Pending user decisions:** merge order **#181→#182**; D9 (web client fate); confirm D4 (consent=true); permission to start Phase 1.
+
+#### Auth Redesign — Phase 1 (F-A closure) — APPROVED (2026-09-01) ✅
+- **Independent review (user, bytecode/sources 7.1.1 local):** all 4 documented layers confirmed; the `validateCodeChallenge` hypothesis is now source-proven:
+  - `OAuth2AuthorizationCodeRequestAuthenticationValidator.java:67,206-224` — missing `code_challenge` + `isRequireProofKey()` → `invalid_request` citing RFC 7636 §4.4.1; `:218-221` enforces S256-only when present = **double downgrade shield**.
+  - `ConfigurationSettingNames.java:33,43,49,55` — keys built by **concat** in `<clinit>` (`"settings."+"client."+"require-proof-key"` / `"...consent"`) ⇒ never visible as one string in grep; effective keys **verbatim-match** the seed JSON.
+  - `ClientSettings.java:53-55` (`Boolean.TRUE.equals(...)` null-safe ⇒ F-A = absent-key state); `:107` builder default `requireProofKey(true)` vs `:115-118` `withSettings` = bare `putAll` (no defaults); `JdbcRegisteredClientRepository.java:359-360` read path `withSettings(map).build()`.
+  - **Bonus findings:** `JdbcRegisteredClientRepository.java:363-365` compensates the missing default for **TokenSettings** (`accessTokenFormat=SELF_CONTAINED`) but **not** for ClientSettings — the framework itself attests «DB map is the truth» (D2). Flyway/PostgreSQL doc layers: accepted as written (quotes correct).
+- **Approved scope (verbatim — 1 file, 2 hunks):** `R__seed_oauth2_client.sql` — L37 `client_settings` + `"settings.client.require-proof-key":true` (sibling of the consent key, same `settings.client.` namespace); L40 `ON CONFLICT (id) DO NOTHING` → `ON CONFLICT (id) DO UPDATE SET client_settings = EXCLUDED.client_settings, token_settings = EXCLUDED.token_settings` (convergent upsert per PostgreSQL `excluded` semantics).
+- **Excluded by design (reviewer-confirmed):** `client_secret` / admin rows / `client_id_issued_at` / redirect / scopes stay out of SET (preserves rotated secrets in live envs — the seed itself says «rotate immediately»); `token_settings` value unchanged (rewritten only as a no-op on conflict).
+- **T4 relocated (single-line governance record per review mandate):** T4 leaves Phase 1 → merges into **Phase 2 with T3** — one shared harness loads the real `R__seed` via Flyway then reads via JDBC; fixing the earlier spec error (seed lives in `marketplace-app` resources; infra module cannot reach it).
+- **Residual accepted risk:** V13 defines PK on `id`, no UNIQUE(`client_id`) — an id-different/same-`client_id` row is not producible by any code path (only the seed writes the table in prod; E5 isolated with its own client). Accepted as theoretical.
+- **Post-merge behavior:** fresh DB → full settings from first boot; seeded DB → R__ checksum change → Flyway reapplies (repeatable, ordered last, after V13) → `DO UPDATE` converges → authz requests without a valid `code_challenge` rejected with `invalid_request`. Dormant until a consumer is born in Phase 3 (F-C).
+- **Delivery:** execution in my hands (prior merge/batch record clean); direct-to-main single commit (CI runs on `push: main`), same precedent as the Phase 0 batch (`f80b945`); local `main` = `origin/main` = `f80b945`.
+- **Open (2 words):** start **Phase 2** (T3+T4 — real-seed harness, closes the consent gap D4) or **Phase 3** (D9=(a) public/confidential consumer + PKCE flow).
 
 #### Release gate — `mvn clean verify` green (2026-08-31) ✅
 - **Targeted build:** `mvn clean verify -pl marketplace-app -am` → **BUILD SUCCESS**
