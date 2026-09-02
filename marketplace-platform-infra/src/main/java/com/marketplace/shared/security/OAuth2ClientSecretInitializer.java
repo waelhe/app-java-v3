@@ -2,7 +2,6 @@ package com.marketplace.shared.security;
 
 import com.marketplace.shared.config.MarketplaceProperties;
 import java.time.Duration;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -40,7 +39,7 @@ import org.springframework.util.StringUtils;
  * via {@link RegisteredClient#from RegisteredClient.from(existing)} and the settings are
  * re-derived from the official builders ({@code requireProofKey(true)} +
  * {@code requireAuthorizationConsent(true)} + the operational TTL/refresh values). The old
- * map is <em>not</em> carried over ({@code from()}copies maps verbatim — a partial/legacy
+ * map is <em>not</em> carried over ({@code from()} copies maps verbatim — a partial/legacy
  * map would preserve the id-token gap), so existing deployments converge on the complete
  * 8-key settings map at first startup.
  *
