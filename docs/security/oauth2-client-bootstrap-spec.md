@@ -2,7 +2,7 @@
 
 | البند | القيمة |
 |------|--------|
-| الحالة | **منفّذ (تدقيق محلي أخضر) — بانتظار PR الدفع** |
+| الحالة | **منفّذ (تدقيق محلي أخضر) — PR مفتوح ينتظر CI** — [PR #184](https://github.com/waelhe/app-java-v3/pull/184) |
 | التاريخ | سبتمبر 2026 |
 | المستند الحاكم | `docs/security/auth-system-redesign-plan.md` (المرحلتان 2 و3، F-A/F-B/F-C، D1-D9، T1-T4) |
 | الحوكمة | Protocol-Enforcer 6-Stage + Source Mandate + تثبيتات مراجعة (5) |

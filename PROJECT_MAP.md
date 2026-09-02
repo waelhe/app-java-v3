@@ -1,10 +1,10 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## PR #185 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ (under dev)
+## PR #184 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ (OPEN)
 
-**Branch:** `feat/jacoco-70pct-coverage-v5` — مواصفة معتمدة: `docs/security/oauth2-client-bootstrap-spec.md`.
+**Branch:** `feat/jacoco-70pct-coverage-v5` — قيدها المواصفة المعتمدة: `docs/security/oauth2-client-bootstrap-spec.md`. **PR OPEN:** https://github.com/waelhe/app-java-v3/pull/184
 
-**التنفيذ والتحقق أكملاه أخضر محلياً (بانتظار أمر الدفع):**
+**التنفيذ والتحقق أكملاه أخضر محلياً (PR دُفع، ينتظر CI):**
 - `OAuth2ClientSecretInitializer` أعيد تصميمه (المرجعية §4.1):
   - **تأسيس** (غائب ⇒ `RegisteredClient.withId(CLIENT_ID)` + التعريف الكامل + باني `ClientSettings`/`TokenSettings`) — المسار الرسمي الوحيد `save(RegisteredClient)`.
   - **converge-on-boot** (`from(existing)` للهوية فقط + باني الإعدادات — لا نقل خريطة مرضوضة).
