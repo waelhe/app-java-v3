@@ -112,10 +112,13 @@ package com.marketplace.booking;
 
 **العملاء يحيون في قاعدة البيانات:** `JdbcRegisteredClientRepository` (جدول `oauth2_registered_client` من `V13__authorization_security.sql`) — وليس ملف إعدادات. حبّة JDBC تزيح auto-config الذاكرية (D2). سلوك الحفظ الحاسم: `save()` يبحث بالـ **PK (`id`)** — موجود ⇒ UPDATE، غائب ⇒ INSERT (`JdbcRegisteredClientRepository.java:147-156` بالمصادر المخبأة).
 
-**بذرة العميل `R__seed_oauth2_client.sql` (حالتها بعد المرحلة 1 — commit `5b5a238`):**
-- `:37` — `client_settings` يحمل **المفتاحين معاً**: `"settings.client.require-proof-key":true` + `"settings.client.require-authorization-consent":true` (D4 قائم).
-- `:40` — **upsert تقاربي:** `ON CONFLICT (id) DO UPDATE SET client_settings = EXCLUDED.client_settings, token_settings = EXCLUDED.token_settings` — السرّ وصفّا admin وissued_at خارج SET عمداً (حماية المدوَّر في البيئات الحية).
-- إغلاق F-A (غياب PKCE بالإغفال) مكتمل: البايت-كود يرفض غياب `code_challenge` مع `isRequireProofKey()` بـ `invalid_request` (`OAuth2AuthorizationCodeRequestAuthenticationValidator.java:206-227`)، ويفرض S256 وحده عند وجود التحدي (`:218-221` — درع مزدوج ضد ال downgrade). مفاتيح الإعدادات تُبنى concat وقت التشغيل (`ConfigurationSettingNames.java:33-55`) — لذا لا تظهر كنص واحد في grep.
+**المسار الرسمي الوحيد لتأسيس العميل — `OAuth2ClientSecretInitializer` (إثر PR #185 — قيد التطوير):** الـ seed اليدوي (`R__seed_oauth2_client.sql`) **لم يعد يحمل العميل إطلاقاً** (أُخلي `oauth2_registered_client`؛ admin `auth_users`/`auth_authorities` باقٍ). التأسيس/التقارب/التدوير يجري عبر **`RegisteredClientRepository.save(RegisteredClient)` بالباني الرسمي** (`ClientSettings`/`TokenSettings`) في `ApplicationRunner`:
+- **تأسيس** (غائب) ⇒ `RegisteredClient.withId(a7bd8b0d-…)` + التعريف الكامل (grants `authorization_code,refresh_token,client_credentials`, redirect `127.0.0.1:8080/...`, scopes `openid,profile`, `client_secret_basic`).
+- **converge-on-boot** (موجود) ⇒ `from(existing)` للهوية فقط + باني الإعدادات (لا نقل خريطة مرضوضة بفجوة id-token).
+- **حارس idempotence**: save ⇔ السرّ اختلف ∨ خرائط الإعدادات اختلفت.
+- القيم الظرفية مثبتة: reuse=false / 900s / 604800s / 300s / consent=true / proof-key=true (الباني الافتراضي يختلف — يُثبَّت صراحةً).
+
+انسحب البند السابق «بذرة العميل تحمل المفتاحين معاً (D4) + upsert تقاربي» — أصبح تاريخياً بعد إخلاء العميل من R__ ودور المُهيّئ الكامل (تأسيس لا تدوير فقط).
 
 **نموذج التفويض ثلاثي الطبقات (موثق «Security Design» في PROJECT_MAP):** catch-all في HttpSecurity + 26 قاعدة `@PreAuthorize` دقيقة في طبقة الخدمات + 4 بوابات controllers إدارية — لكل قاعدة اختبار سالب وموجب (52 اختباراً).
 
@@ -177,6 +180,7 @@ package com.marketplace.booking;
 - **المفتوح (كلمتان):** المرحلة 2 (T3+T4 — حصانة تحميل البذرة الحقيقية، تغلق F-B وتوثق D4) أو المرحلة 3 (عميل مستهلك بموجب D9=(أ) confidential/BFF، يغلق F-C). سلوك PKCE **ساكن حتى يولد مستهلك** في المرحلة 3.
 - **مُغلق حسمه:** D6 (مفاتيح prod إلزامية)، D4 (consent=true قائم في البذرة)، D2 (خصائص AS الذاكرية خاملة).
 - **مُهيّئ سرّ العميل env→DB ✅** (PR #183 → `c16e750`، CI أخضر ×2): `OAuth2ClientSecretInitializer` (`ApplicationRunner`) + `MarketplaceProperties.Security.OAuth2.Client` (client-id/secret بـ `@DefaultValue` فارغة — اقتباس الربط الرسمي) + fail-fast مقيد بـ prod + `application-prod.yml` يربط `OAUTH_CLIENT_ID/SECRET` بلا افتراضات. جولة `save()` تحفظ الإعدادات بلا انجراف (INV-4 مثبت: `RegisteredClient.java:302-327` ينقل الخرائط نفسها عبر `withSettings`).
+- **تأسيس كامل على المسار الرسمي ⏳ (PR #184 — مفتوح):** المُهيّئ نفسه يتولى الآن **التأسيس** (لا التدوير فقط): غائب ⇒ `withId(a7bd8b0d-…)` + التعريف الكامل (grants/redirect/scopes/name/auth-methods — نقل SQL→Java بند مستقل في PR) + باني الإعدادات؛ converge-on-boot للهوية فقط؛ حارس save موسّع (سرّ ∨ خرائط). `R__seed_oauth2_client.sql` أُخلي من العميل (admin باقٍ) — يغلق الدين الأمني (سرّ مضمن) والفجوة الحية (id-token). مرجع: `docs/security/oauth2-client-bootstrap-spec.md` §4.1/§4.2/§4.4 (سجل الانحرافات).
 - **بند عمليات مفتوح (خارج المستودع — سجل 9743109):** لا يوجد ضبط لـ `SPRING_PROFILES_ACTIVE` في أي ملف نشر ⇒ حاجز prod للمُهيّئ مضمون فقط إذا ضُبط المتغير = `prod` في لوحة Railway — تحقق واحد بلا كود، بيد المستخدم.
 
 ---
