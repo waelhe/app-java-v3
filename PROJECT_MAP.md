@@ -1,5 +1,22 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## PR #185 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ (under dev)
+
+**Branch:** `feat/jacoco-70pct-coverage-v5` — مواصفة معتمدة: `docs/security/oauth2-client-bootstrap-spec.md`.
+
+**التنفيذ والتحقق أكملاه أخضر محلياً (بانتظار أمر الدفع):**
+- `OAuth2ClientSecretInitializer` أعيد تصميمه (المرجعية §4.1):
+  - **تأسيس** (غائب ⇒ `RegisteredClient.withId(CLIENT_ID)` + التعريف الكامل + باني `ClientSettings`/`TokenSettings`) — المسار الرسمي الوحيد `save(RegisteredClient)`.
+  - **converge-on-boot** (`from(existing)` للهوية فقط + باني الإعدادات — لا نقل خريطة مرضوضة).
+  - **حارس idempotence موسّع**: `save` ⇔ السرّ اختلف ∨ خرائط الإعدادات اختلفت.
+  - القيم الظرفية مثبتة صراحةً: reuse=false / 900s / 604800s / 300s / consent=true / proof-key=true؛ يعمل encode عند الحاجة فقط.
+- `R__seed_oauth2_client.sql` — **أُخلي العميل كاملاً** (`oauth2_registered_client`)، أُبقي admin `auth_users`/`auth_authorities`، وتوثيق السبب في رأس الملف (تحرير repeatable موثق).
+- اختبارات: `OAuth2ClientSecretInitializerTest` (6→**7**) + `AuthorizationServerLoginGateIntegrationTest` (**S2/S3/S4** عبر `@TestPropertySource` + صف المُهيّئ الفعلي، consent رسمي) — **6/0 أخضر بأثر حي** (openid→consent→code→id-token كامل).
+- **Verify محلي:** `marketplace-platform-infra` **46/0** (الغطاء met) + `marketplace-app` **46/0** — BUILD SUCCESS للمودوليْن.
+- **المواصفة §4.4:** سجل الانحرافات/التصحيحات (أ/ب/ج/د) —كل تصحيح بدليل من بايت-كود 7.1.1 أو التشغيل.
+
+**بانتظار أمر المستخدم:** تشكيل PR #185 (body: 5 تثبيتات + فجوتين + بند النقل SQL→Java + بند تطور الاختبارين + القرارات الثلاثة + سجل الانحرافات) + الدفع + هذه المتابعة من State Sync.
+
 ## Current State (2026-08-30)
 
 **Branch:** `main` (HEAD: `9eb0687`) — PR #180 **merged** (squash `9eb0687`); all review-report items A1–A6 resolved/refuted below
