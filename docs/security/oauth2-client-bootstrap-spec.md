@@ -2,11 +2,11 @@
 
 | البند | القيمة |
 |------|--------|
-| الحالة | **منفّذ (تدقيق محلي أخضر) — PR مفتوح ينتظر CI** — [PR #184](https://github.com/waelhe/app-java-v3/pull/184) |
+| الحالة | **منفّذ ومدمج** (main `773558e`، CI أخضر ×2) — المتابعة الجراحية [#185](https://github.com/waelhe/app-java-v3/pull/185) |
 | التاريخ | سبتمبر 2026 |
 | المستند الحاكم | `docs/security/auth-system-redesign-plan.md` (المرحلتان 2 و3، F-A/F-B/F-C، D1-D9، T1-T4) |
 | الحوكمة | Protocol-Enforcer 6-Stage + Source Mandate + تثبيتات مراجعة (5) |
-| PR الفعلي | [#184](https://github.com/waelhe/app-java-v3/pull/184) — مفتوح (CI أخضر) |
+| PR الفعلي | [#184](https://github.com/waelhe/app-java-v3/pull/184) — **مدمج** (773558e، 2026-09-02)؛ متابعة: [#185](https://github.com/waelhe/app-java-v3/pull/185) (استورد يتيم + javadoc + تأكيد id_token الحي + §3-ج) |
 
 > هذه المواصفة تحوّل تثبيتات المراجع الخمسة إلى **معايير قبول** إلزامية — لا سطر كود
 > قبل أن تُثبَّت كلها في التنفيذ، ولا خروج عنها إلا بتوثيق انحراف في PR body.
