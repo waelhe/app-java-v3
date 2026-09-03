@@ -1,5 +1,21 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Phase A — Host-Neutral Readiness (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
+
+**Order:** «أبدأ A» — مع توجيه صريح: تصميم رسمي من الوثائق لا اجتهاد، لا ترقيعات ولا ديون. القيد: `docs/security/client-hosting-strategy-plan.md` §7/§8 البند 10.
+
+**التنفيذ (فرع واحد، سلوك prod فقط، صفر وحدات/اعتماديات):**
+- `server.forward-headers-strategy: FRAMEWORK` في `application-prod.yml` **فقط** — قرار مسند كليًا من المصادر الرسمية: how-to/webserver 4.1 («If this is not enough … FRAMEWORK») + مرجع SS 7.1.1 exploits/http («Do not assume that only one of them is in use» — ForwardedHeaderFilter يعالج RFC 7239 + X-Forwarded-* كليهما) + قضية Boot #42804 (مغلقة duplicate/external: NATIVE لا يحترم X-Forwarded-Port) + مصدر spring-web 7.0.9 (المنفذ الغائب يُشتق 443/80 حسب scheme) + مصدر Boot 4.1.1 (التسجيل بترتيب `Ordered.HIGHEST_PRECEDENCE` لكل REQUEST/ASYNC/ERROR — قبل سلاسل Security). dev/test تبقى NONE (حد الثقة: خلف بروكسي موثوق فقط).
+- `server.tomcat.redirect-context-root: false` — وصفة الجافادوك الرسمية حرفيًا: «When using SSL terminated at a proxy, this property should be set to false.»
+- **اكتشافا التدقيق النهائي لبروفايل prod (أُغلقَا بنفس الدفعة — لا ديون متروكة):**
+  1. `spring.security.oauth2.authorizationserver.issuer: ${AUTH_SERVER_ISSUER}` بلا افتراض في prod — كان افتراض `http://localhost:8080` من `application.yml:81` يتسرب للإنتاج (نفس عقد fail-fast لـ DB_PASSWORD/JWT_KEYSTORE_*/CORS_ALLOWED_ORIGINS).
+  2. إصلاح عيب YAML كامن في `logging.pattern.console` بـ prod: `\s` غير مُهرَّبة داخل سلسلة مقتبسة مزدوجة جعلت الملف غير قابل للتحليل (اكتشفه اختبار الحارس الجديد — لم يظهر قط لأن بروفايل prod لم يُنشَّط في أي بيئة، اتساقًا مع الدين التشغيلي الموثق).
+- **الحارسان (marketplace-app):** `ForwardHeadersProdConfigTest` (3: prod يفعّل FRAMEWORK + يطفئ redirect-context-root؛ الأساس/dev/test بلا استراتيجية — حد الثقة؛ issuer بلا افتراض) + `ForwardedHeaderFilterBehaviorTest` (3: الفلتر الرسمي يكرّم Proto/Host/Port ويزيل الترويسات؛ المنفذ الغائب → 443؛ بلا ترويسات → لا تغيير). **6/0 أخضر محليًا** (JDK 25.0.4.1؛ بلا سياق Spring — لا يحتاجان Redis).
+- **مصادر رسمية مُنزَّلة ومحفوظة:** `scripts/prod-design-docs/` — صفحة how-to/webserver (Boot 4.1) + مرجع SS 7.1.1 exploits/http + مصادر Maven Central الرسمية (spring-boot 4.1.1 + وحداتها web-server/tomcat + spring-web 7.0.9 + spring-security-web 7.1.1) تحت `src-verify/`.
+- **مزامنة الدفعة:** الخطة الحاكمة (§6 صفان + §7 صف المرحلة A + §8 البند 10 ⚠️→✅ + §10 ثلاثة اقتباسات جديدة) + SYSTEM.md §11 (بند المرحلة A) + هذا القسم.
+
+**بانتظار كلمة الدمج** (الحوكمة: الدمج بأمر صريح). ما بعد الدمج: البوابات B (تقنية العميل) ثم C (الاستضافة) — بيد المستخدم.
+
 ## PR #184 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ ✅ MERGED (`773558e`)
 
 **Branch:** `feat/jacoco-70pct-coverage-v5` — قيدها المواصفة المعتمدة: `docs/security/oauth2-client-bootstrap-spec.md`. **PR:** https://github.com/waelhe/app-java-v3/pull/184 — مدمج

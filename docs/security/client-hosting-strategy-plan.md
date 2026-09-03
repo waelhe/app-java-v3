@@ -110,8 +110,8 @@ redirect URIs صريحة، واختبار بنمط S2/S3 يحمل الصف ال�
 |---------|----------------|--------|
 | الصورة حاوية رسمية بطبقات | Dockerfile يستخدم `jarmode=tools` (المرجع الرسمي: spring-boot/reference/packaging/container-images/dockerfiles.html — «java -Djarmode=tools -jar application.jar extract --layers») | ✅ منفذ (مرحلة 0 مغلقة) |
 | فحوص صحة/جهوزية رسمية | Actuator `/actuator/health/{liveness,readiness}` + HEALTHCHECK في Dockerfile | ✅ |
-| إعدادات إنتاج بلا افتراضات | `application-prod.yml` fail-fast: `${DB_PASSWORD}`, `${JWT_KEYSTORE_*}`, `${CORS_ALLOWED_ORIGINS}` | ✅ |
-| **متطلب مشترك لأي مضيف خلف بروكسي TLS** | `server.forward-headers-strategy` (مرجع Spring Boot الرسمي — howto/web-server خلف بروكسي) | ⚠️ **دين موثق** — غير مضبوط في `application*.yml` (تحقق جلسة 2026-09-03: `rg` بلا نتائج). يُغلق عند النشر **أيًّا كانت جهة الاستضافة** |
+| إعدادات إنتاج بلا افتراضات | `application-prod.yml` fail-fast: `${DB_PASSWORD}`, `${JWT_KEYSTORE_*}`, `${CORS_ALLOWED_ORIGINS}`, `${AUTH_SERVER_ISSUER}` (أُغلق بالمرحلة A: كانت قيمة الأساس `http://localhost:8080` تتسرب للإنتاج) | ✅ |
+| **متطلب مشترك لأي مضيف خلف بروكسي TLS** | `server.forward-headers-strategy: FRAMEWORK` في `application-prod.yml` فقط (مرجع Spring Boot الرسمي how-to/webserver «Running Behind a Front-end Proxy Server» + مرجع Spring Security 7.1.1: حد الثقة — خلف بروكسي موثوق فقط) + `server.tomcat.redirect-context-root: false` (وصفة الجافادوك الرسمية) | ✅ **مُغلق بالمرحلة A** (اختبار حارس: `ForwardHeadersProdConfigTest` + دبوس سلوك الفلتر: `ForwardedHeaderFilterBehaviorTest`) |
 | قواعد البيانات خارجية مُدارة | PostgreSQL 17 + Redis 7 (Neon/Upstash في سيناريو CF؛ قابلان للاستبدال بأي مزود مُدار متوافق) | ✅ قابل للنقل |
 
 **ترتيب القرارات (سبب منطقي موثق):** القرار (1) تقنية العميل يسبق القرار (2) الاستضافة،
@@ -134,7 +134,7 @@ redirect URIs صريحة، واختبار بنمط S2/S3 يحمل الصف ال�
 
 | المرحلة | المحتوى | الشرط المسبق | نوع العمل |
 |---------|---------|----------------|------------|
-| **A — جاهزية مضيفة-محايدة** (اختيارية) | قفل دينَّي `forward-headers-strategy` + تدقيق prod profile النهائي قبل النشر | إذن المستخدم | كود صغير + اختبار (1 PR) |
+| **A — جاهزية مضيفة-محايدة** (اختيارية) ✅ نُفِّذ (2026-09-03، أمر المستخدم «أبدأ A») | قفل دينَّي `forward-headers-strategy` (FRAMEWORK في prod فقط) + تدقيق prod profile النهائي: أُغلق تسرب افتراض issuer (`${AUTH_SERVER_ISSUER}` بلا افتراض) + أُصلح عيب صياغة YAML كامن في نمط تعقيم السجلات | إذن المستخدم ✅ | كود صغير + اختبار (1 PR: هذا) |
 | **B — عميل أول** | تطبيق نمط من مصفوفة §4: صف تسجيل بإعدادات صريحة عبر مسار #183 + أصل CORS + redirect URIs + اختبار S2/S3 للصف الفعلي | **قرار المستخدم: تقنية العميل ونمطه** | إعداد + اختبارات (1 PR لكل عميل) |
 | **C — نشر** | النشر وفق وثائق المضيف المختار الرسمية + قفل دين §5 التوثيقي في ARCHITECTURE.md (استبدال افتراض SPA المنتهي بالقرار الفعلي) | **قرار المستخدم: جهة الاستضافة** (بعد B منطقيًا) | عمليات + PR توثيقي صادق |
 | **D9 متعدد العملاء** | يُعاد صياغة D9: كل عميل بتسجيله المستقل؛ إن لم يظهر مستهلك ويب فعليًا يبقى خيار (ج) إزالة العميل الميت قائمًا | يُحسم تلقائيًا مع B | — |
@@ -156,7 +156,7 @@ redirect URIs صريحة، واختبار بنمط S2/S3 يحمل الصف ال�
 | 7 | سر العميل من البيئة (env→DB) | قرار المستخدم 2026-09-01 على المسار الرسمي (Jdbc singleton + save) — PR #183 مدموج | ✅ **مقرر ومنفذ** |
 | 8 | إعدادات صريحة كاملة لكل عميل (INV-2) | نتيجة F-A بالبايت-كود (ClientSettings لا يدمج الافتراضيات عند القراءة من DB) | ✅ **مثبت ومُختبر** |
 | 9 | الصورة: jarmode=tools + طبقات | مرجع SB الرسمي container-images/dockerfiles | ✅ **منفذ (مرحلة 0)** |
-| 10 | forward-headers-strategy خلف بروكسي | مرجع SB الرسمي | ⚠️ **دين موثق — يُغلق عند النشر (أي مضيف)** |
+| 10 | forward-headers-strategy خلف بروكسي | مرجع SB الرسمي (how-to/webserver) + مرجع SS 7.1.1 (حد الثقة) + قضية Boot الرسمية #42804 (NATIVE لا يحترم X-Forwarded-Port) + مصدر Boot 4.1.1 (FRAMEWORK = ForwardedHeaderFilter بترتيب HIGHEST_PRECEDENCE) | ✅ **مُغلق بالمرحلة A** — `FRAMEWORK` في `application-prod.yml` فقط |
 | 11 | توكن وصول TTL=300s بلا تجديد للعميل العام | سلوك SAS الرسمي (الاقتباس الحرفي في §3) + TokenSettings الرسمية | ✅ **رسمي** (الخيارات موثقة بصدق في §4) |
 | 12 | **جهة الاستضافة** | — القرار لم يُتخذ بعد من المستخدم | 🔶 **بوابة قرار — الخطة لا تدّعي مرجعية رسمية هنا، بل تحفظ قابلية النقل الرسمية** |
 | 13 | CORS بأصول صريحة | SAS how-to (CorsConfigurationSource بأصول محددة) — مربوط env عندنا | ✅ **رسمي ومنفذ** |
@@ -195,6 +195,9 @@ redirect URIs صريحة، واختبار بنمط S2/S3 يحمل الصف ال�
 | «The requireProofKey setting is important to prevent the PKCE Downgrade Attack.» | نفس الصفحة — متحقق منه منفذًا على main (S2) |
 | «It is recommended that you use a robust client-side library supported by your single-page app framework...» | نفس الصفحة — اختيار مكتبة العميل مسؤولية الواجهة وفق إطارها |
 | «java -Djarmode=tools -jar application.jar extract --layers --destination extracted» | spring-boot/reference/packaging/container-images/dockerfiles.html — منفذ حرفيًا في `Dockerfile` (مرحلة 0) |
+| «If this is not enough, Spring Framework provides a ForwardedHeaderFilter for the servlet stack … You can use them in your application by setting server.forward-headers-strategy to FRAMEWORK.» | Spring Boot 4.1 reference — how-to/webserver «Running Behind a Front-end Proxy Server» (المرحلة A) |
+| «Both kinds of headers are supplied by the client unless a proxy overwrites them … Only headers added by a proxy you control should reach the application.» | Spring Security 7.1.1 reference — features/exploits/http (حد الثقة: prod فقط خلف بروكسي موثوق يجرّد القيم الخارجية) (المرحلة A) |
+| «When using SSL terminated at a proxy, this property should be set to false.» | جافادوك `TomcatServerProperties#getRedirectContextRoot` في مصدر Boot 4.1.1 الرسمي (المرحلة A) |
 | PKCE/public-client/consent (RFC 9700 §2.1.1 و§4.14.2) + الادعاءات (RFC 9068 §2.2/§7.2.1.1، RFC 7519 §4.1.3) | rfc-editor.org — اقتباسات verbatim في `docs/security/auth-system-redesign-plan.md` §7 |
 | «Public clients MUST use PKCE [RFC7636]...» / «Authorization servers MUST mitigate PKCE downgrade attacks...» | RFC 9700 §2.1.1 — المرجع المعياري فوق الوثائق، متحقق منفذًا |
 
