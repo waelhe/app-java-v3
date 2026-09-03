@@ -66,12 +66,37 @@ spring:
       mail.smtp.timeout: 3000
       mail.smtp.writetimeout: 5000
 
+  security:
+    oauth2:
+      authorizationserver:
+        # Fail-fast like DB_PASSWORD / JWT_KEYSTORE_* / CORS_ALLOWED_ORIGINS: the base
+        # profile default (http://localhost:8080) must never leak into production.
+        # Behind a TLS-terminating proxy the issuer must be the public https origin.
+        issuer: ${AUTH_SERVER_ISSUER}
+
 server:
   shutdown: graceful
+  # Host-neutral readiness (adopted client & hosting strategy plan, Phase A):
+  # the application runs behind a trusted TLS-terminating proxy, so forwarded
+  # headers must be honored (official Spring Boot how-to "Running Behind a
+  # Front-end Proxy Server" + Spring Security 7.1.1 reference). FRAMEWORK (the
+  # ForwardedHeaderFilter, registered at Ordered.HIGHEST_PRECEDENCE) covers both
+  # the RFC 7239 "Forwarded" header and the full X-Forwarded-* set — including
+  # host and port, which NATIVE (Tomcat RemoteIpValve) does not honor.
+  forward-headers-strategy: FRAMEWORK
+  tomcat:
+    # Official javadoc: "When using SSL terminated at a proxy, this property
+    # should be set to false" (server.tomcat.redirect-context-root).
+    redirect-context-root: false
 
 logging:
   pattern:
-    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\s*[=:]\s*[^,\s]+', '$1=****'}%n"
+    # Logback %replace scrubbing (secrets masking). In a double-quoted YAML scalar
+    # each regex backslash must be escaped ("\\s" parses to "\s") — the previous
+    # unescaped "\s" made this file unparseable as YAML, a latent defect exposed by
+    # the Phase A prod-config guard test (ForwardHeadersProdConfigTest) because the
+    # prod profile had never been activated anywhere.
+    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\\s*[=:]\\s*[^,\\s]+', '$1=****'}%n"
   level:
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
