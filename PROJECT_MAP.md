@@ -1,8 +1,8 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## PR #184 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ (OPEN)
+## PR #184 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ ✅ MERGED (`773558e`)
 
-**Branch:** `feat/jacoco-70pct-coverage-v5` — قيدها المواصفة المعتمدة: `docs/security/oauth2-client-bootstrap-spec.md`. **PR OPEN:** https://github.com/waelhe/app-java-v3/pull/184
+**Branch:** `feat/jacoco-70pct-coverage-v5` — قيدها المواصفة المعتمدة: `docs/security/oauth2-client-bootstrap-spec.md`. **PR:** https://github.com/waelhe/app-java-v3/pull/184 — مدمج
 
 **التنفيذ والتحقق أكملاه أخضر محلياً (PR دُفع، ينتظر CI):**
 - `OAuth2ClientSecretInitializer` أعيد تصميمه (المرجعية §4.1):
@@ -15,7 +15,16 @@
 - **Verify محلي:** `marketplace-platform-infra` **46/0** (الغطاء met) + `marketplace-app` **46/0** — BUILD SUCCESS للمودوليْن.
 - **المواصفة §4.4:** سجل الانحرافات/التصحيحات (أ/ب/ج/د) —كل تصحيح بدليل من بايت-كود 7.1.1 أو التشغيل.
 
-**مدمج (2026-09-02):** PR #184 → main `773558e` (CI أخضر ×2) — التأسيس الموحّد على المسار الرسمي منفّذ كما راجعته المراجعة الحرفية (7 ملفات +741/−98؛ R__ أُخلي من العميل نهائياً). المتابعة الجراحية: PR #185 (استورد يتيم + javadoc + تأكيد id_token الحي في consent gate + §3-ج). مزامنة §13 مرفقة بنفس الدفعة.
+**مدمج (2026-09-02):** PR #184 → main `773558e` (CI أخضر ×2) — التأسيس الموحّد على المسار الرسمي منفّذ كما راجعته المراجعة الحرفية (7 ملفات +741/−98؛ R__ أُخلي من العميل نهائياً). المتابعة الجراحية: PR #185 (استورد يتيم + javadoc + تأكيد id_token الحي في consent gate + §3-ج) — **مدمجة لاحقًا** (انظر القسم التالي). مزامنة §13 مرفقة بنفس الدفعة.
+
+## PR #185 + #186 — المتابعة الجراحية + المرحلة 4 (D6) (2026-09-03) 🏗️ ✅ MERGED (`1ebdf07` / `6fdec07`)
+
+**مدمج (2026-09-03):**
+- **PR #185** → main `1ebdf07` (CI + Integration أخضر ×2 على الرأس وعلى main): إزالة `clientSecretExpiresAt(null)` الميتة (مُثبتة من بايت-كود 7.1.1 + V13:23) + استورد يتيم + javadoc + **تأكيد id_token الحي** في consent gate (non-blank، 3-part JWT، iss/aud/sub) + §3-ج بالمواصفة. Documentation+tests only — لا كود إنتاجي غير التهذيف.
+- **PR #186** → main `6fdec07` (CI + Integration أخضر ×2): **D6/المرحلة 4 مغلقة** — حارس prod fail-fast في `jwkSource` (`Environment` كوسيط `@Bean`؛ العابر مستحيل في prod) + بوابة `JwkSourceProdHardeningTest` (3 حالات؛ الثالثة JKS حقيقي RSA-2048 من keytool) + runbook `keys/README.md` + تصحيح دين ARCHITECTURE الموثقي (`RotatingJWKSource` الوهمية ×4 → ADR-004 Revised).
+- **تحقق محلي (JDK 25.0.4.1 في tools/):** `JwkSourceProdHardeningTest` 3/3 ثم المنظومة الكاملة (marketplace-shared + marketplace-platform-infra) **79/79** — 0 failures/errors/skipped؛ امتثال رسمي 12/12 بندًا (Spring 7.0.9 / SAS 7.1.1 / Maven — مصادر محفوظة scripts/prod-design-docs/).
+- **ملاحظة الدمج:** #186 كان مكدّسًا فوق #185؛ بعد squash #185 فُكّ التكدّس بـ rebase فوق main الجديد (`a49a44f`) — الفرق متحقق التطابق **بايتًا-بايت** مع ما اختبره CI، ثم أعاد CI التحقق على الرأس المفكوك قبل الدمج.
+- **بعد الدمجين:** main = `6fdec07` — المراحل 0/1/2/4 ✅. **المتبقي:** المرحلة 3 (قرار D9 = BFF حسب التوصية الرسمية، بيد المستخدم) ثم مراحل CF (1-4) والتشغيل.
 
 ## Current State (2026-08-30)
 
