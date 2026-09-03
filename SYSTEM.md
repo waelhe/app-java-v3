@@ -196,7 +196,7 @@ package com.marketplace.booking;
 - **مُغلق حسمه:** D4 (consent=true قائم عبر باني المُهيّئ — لا بذرة بعد الآن)، D2 (خصائص AS الذاكرية خاملة).
 - **مُهيّئ سرّ العميل env→DB ✅** (PR #183 → `c16e750`، CI أخضر ×2): `OAuth2ClientSecretInitializer` (`ApplicationRunner`) + `MarketplaceProperties.Security.OAuth2.Client` (client-id/secret بـ `@DefaultValue` فارغة — اقتباس الربط الرسمي) + fail-fast مقيد بـ prod + `application-prod.yml` يربط `OAUTH_CLIENT_ID/SECRET` بلا افتراضات. جولة `save()` تحفظ الإعدادات بلا انجراف (INV-4 مثبت: `RegisteredClient.java:302-327` ينقل الخرائط نفسها عبر `withSettings`).
 - **تأسيس كامل على المسار الرسمي ✅ (PR #184 → مدمج `773558e`، CI أخضر ×2):** المُهيّئ نفسه يتولى الآن **التأسيس** (لا التدوير فقط): غائب ⇒ `withId(a7bd8b0d-…)` + التعريف الكامل (grants/redirect/scopes/name/auth-methods — نقل SQL→Java بند مستقل في PR) + باني الإعدادات؛ converge-on-boot للهوية فقط؛ حارس save موسّع (سرّ ∨ خرائط). `R__seed_oauth2_client.sql` أُخلي من العميل (admin باقٍ) — يغلق الدين الأمني (سرّ مضمن) والفجوة الحية (id-token). مرجع: `docs/security/oauth2-client-bootstrap-spec.md` §4.1/§4.2/§4.4 (سجل الانحرافات).
-- **بند عمليات مفتوح (خارج المستودع — سجل 9743109):** لا يوجد ضبط لـ `SPRING_PROFILES_ACTIVE` في أي ملف نشر ⇒ حاجز prod للمُهيّئ مضمون فقط إذا ضُبط المتغير = `prod` في لوحة Railway — تحقق واحد بلا كود، بيد المستخدم.
+- **بند عمليات مُغلق ✅ (2026-09-04):** `SPRING_PROFILES_ACTIVE=prod` مضبوط الآن على خدمة Railway (مع خانات `JWT_KEYSTORE_*` الأربع وسر webhook المدفوعات) — النشر الحي `c82d9831` يقلع ببروفايل prod («The following 1 profile is active: "prod"»)؛ الحاجز صار فعليًا على منصة الإنتاج. السجل: §15.
 
 ---
 
@@ -259,4 +259,24 @@ package com.marketplace.booking;
 - **حذف رأس الفرع تلقائياً بعد الدمج** مفعَّل في إعدادات المستودع (2026-09-03) — البعيد يحمل `main` فقط منذ تنظيف ذلك اليوم.
 - **درس التكدُّس المسجَّل:** PR مكدَّس فوق فرع دُمج squash يظهر dirty رغم تطابق المحتوى — يُفكّ بـ `git rebase --onto` مع إثبات تطابق الفرق بايتاً-بايت، ثم يعيد CI التحقق على الرأس المفكوك قبل الدمج (مُطبَّق على #186 — سجل PROJECT_MAP).
 - **الاستثناء المحلي الموثَّق:** فرع `feat/redis-listener-pubsub` (عمل غير مدموج — مقاربة P3 قديمة) لا يُحذف إلا بأمر صريح.
+
+---
+
+## 15. سجل نشر الإنتاج — Railway (حالة حية، آخر تحقق 2026-09-04)
+
+> الوثيقة المرجعية الكاملة للنشر: `docs/railway-deployment-reference.md` (رأسه حُدّث 2026-09-04) + تقرير الجلسة الشامل بالأدلة (خارج المستودع: مساحة عمل الجلسة `download/railway-deployment-doc-2026-09.md`). هذا القسم: الحقائق الحية التي تُقرأ قبل أي قرار يمس الإنتاج.
+
+- **الإنتاج حي:** `https://app-java-v3-production-d020.up.railway.app` — نشر نشط `c82d9831` (SUCCESS) من main `27b5a155` عبر fork النشر المتزامن. بروفايل **prod** مفعّل. liveness/readiness 200 UP، jwks بمفتاح RSA دائم `kid=marketplace-jwt`.
+- **آلية البناء الحاكمة:** `railway.toml` → `builder=DOCKERFILE` + Dockerfile ثلاثي المراحل (temurin 25-jdk بناءً / 25-jre تشغيلًا، طبقات `jarmode=tools` الرسمية، مستخدم غير جذري `app`). البناء الفعلي مثبت في `serviceManifest` لكل نشور مصدر.
+- **جسر JVM↔المنصة:** `PORT` (تحقنه Railway) → `SERVER_PORT` في ENTRYPOINT؛ `JAVA_OPTS = -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError` (G1 الافتراضي) مقابل سقف 953MiB — الذاكرة المستقرة المقيسة ~0.56GB.
+- **قناة الأسرار:** keystore عبر متغير write-only `JWT_KEYSTORE_B64` يجسّده ENTRYPOINT عند كل إقلاع (كتابة ذرّية) إلى `/app/keys` — **دوران المفتاح = تحديث متغير** (الوصفة: `keys/README.md §2`، الموعد النهائي `ROTATION_DEADLINE=2026-12-02`).
+- **المتغيرات على الخدمة:** 25 (أسماؤها فقط قابلة للقراءة عبر API — القيم write-only؛ الأسرار محفوظة خارج المستودع في مساحة عمل الجلسة، `scripts/secrets/prod-secrets.env` بتصاريح 600).
+- **محددان بيئيان حاكمان (اقتباسا الوثائق الرسمية):** الفوليومات تُركب root-owned؛ وأوامر pre-deploy في حاوية منفصلة لا تكتب شيئًا يبقى — لذلك آلية B64 هي القناة الصحيحة لهذا التخطيط.
+- **ديون معلنة بنقاط إغلاق (لا ترقيع صامت):**
+  1. **إهمال Config-as-Code بصلاحية 2026-12-01** (لافتة رسمية: «Existing files keep working for legacy services until 2026-12-01») — الترحيل إلى إعداد خدمة-level (Dockerfile) قبل **2026-11-15**؛ وإلا وقع النشر على Railpack («Defaults to 21») وعاد فشل JDK 25.
+  2. قسم `[deploy]` الملفي (healthcheckPath) لا ينعكس في manifests النشور (null في 8/8 مقيسة) بينما `[build]` يعمل — يُحسم ضمن الترحيل نفسه.
+  3. `MAIL_*` placeholders (503 على فحص health الكامل فقط) و`OTEL_*` localhost (بلا collector) — بانتظار اختيار المزوّد.
+  4. مخلفات: فوليوم `/data` غير مستخدم + خدمة `netdiag` — فصل/حذف بأمر.
+- **علاقة خطة الاستضافة:** الإنتاج الحي على Railway لا يُغلق بوابة C (خطة العملاء §7) — الاستضافة القادمة للعملاء قرار مستقل موثق هناك؛ ARCHITECTURE.md §5 يبقى خط CF المستقبلي.
+- **حوكمة النشر:** أي إعادة نشر تجريبية تمر عبر fork (`sync_deploy_fork.py`)؛ CI سلطة الحكم على كل رأس قبل الدمج؛ فحص ما بعد النشر: liveness + jwks + OIDC discovery (سكربتات الجلسة `railway_final_evidence.py` — read-only).
 

@@ -1,29 +1,40 @@
 # Railway Deployment Reference — app-java-v3
 
-> **⚠️ هذه الوثيقة تاريخية — Railway لم يعد منصة النشر المعتمدة**
+> **الحالة (محدّثة 2026-09-04): نشِط — Railway هو منصة الإنتاج الحية**
 >
-> **الحالة:** غير نشط (kept for historical reference only)
-> **تاريخ التوثيق الأصلي:** 2026-05-01
-> **نقطة الاستعادة:** `ed57d15` (2026-04-28 03:06:45)
-> **حالة الباك اند الحالية:** نظيفة — مطابقة لـ `ed57d15`
->
-> ---
->
-> **المنصة المعتمدة الحالية:** Cloudflare Containers + Workers + Neon (PostgreSQL) + Upstash (Redis)
->
-> للنشر الحالي، راجع:
-> - [docs/architecture/ARCHITECTURE.md §5 — Cloudflare-First Deployment](architecture/ARCHITECTURE.md#5-cloudflare-first-deployment)
-> - [docs/architecture/diagrams/04-cloudflare-deployment.png](architecture/diagrams/04-cloudflare-deployment.png)
-> - [docs/external-services.md](external-services.md) (إعداد الخدمات الخارجية)
-> - [docs/deployment/README.md](deployment/README.md) (خيارات النشر الحالية)
-> - [docs/deployment/aot-cache.md](deployment/aot-cache.md) (تحسين cold start)
->
-> **السبب في ترك Railway:** Cloudflare يوفر شبكة عالمية (300+ POP) + تكامل أعمق
-> مع Workers + R2 + Hyperdrive. Railway كان بديلاً مؤقتاً قبل اعتماد Cloudflare.
+> **النشر الحي:** `https://app-java-v3-production-d020.up.railway.app` (بروفايل prod، نشر `c82d9831` من main `27b5a155`، فحص liveness/readiness = 200 UP)
+> **سجل النشر الحالي (سبتمبر 2026):** §0 أدناه — 7 دمجات (#190–#196) أصلحت 7 أسباب جذرية مختلفة
+> **ملاحظة حوكمة:** البوابة C (استضافة العملاء) في `docs/security/client-hosting-strategy-plan.md` ما زالت مفتوحة — الإنتاج الحي على Railway لا يُغلقها؛ ARCHITECTURE.md §5 يبقى خط CF المستقبلي.
 >
 > ---
 >
-> **ما يلي هو التوثيق الأصلي التاريخي (للمرجعية فقط — لا يُنفذ):**
+> **التاريخ الأول (أبريل-مايو 2026 — يُحفظ للمرجعية والدروس):** محاولة نشر سابقة على Railway انتهت بـ 20 كوميتًا أُلغيت (تعديلات غير مصرح بها على ملفات أمنية وتكوينية) — من جذور نظام الحوكمة الحالي (§14 من SYSTEM.md). ما يلي الوثيقة الأصلية كما كتبت يومها.
+
+---
+
+## 0. النشر الحالي — سبتمبر 2026 (من أول فشل إلى الإنتاج الحي)
+
+**السياق:** أمر المستخدم بنشر المستودع الجديد (fork `waelhe88-coder/app-java-v3`) على Railway. أول نشرين فشلا في مرحلة البناء. سلسلة الإصلاح الكاملة (سبعة أسباب جذرية بأدلتها — تقرير الجلسة الشامل محفوظ خارج المستودع):
+
+| # | العرض | السبب الجذري | الإصلاح (PR/كوميت) |
+|---|---|---|---|
+| 1 | فشل البناء مرتين (Nixpacks) | مزوّد Java الرسمي لا يوفر JDK 25 (قائمته 8–21) والمشروع `java.version=25` | `railway.toml`: `builder=DOCKERFILE` (#190/`9dbbbb5`) |
+| 2 | «.git directory is not found!» | بناء Railway يرسل لقطة المصدر بلا `.git` | `failOnNoGitDirectory=false` + `failOnUnableToExtractRepoInfo=false` — javadoc الإضافة (#191/`97dc51c`) |
+| 3 | «Could not find or load main class …JarLauncher» | Boot 4.1 غيّر تخطيط الطبقات: thin jar وطبقة loader فارغة | ENTRYPOINT `exec java $JAVA_OPTS -jar app.jar` — وصفة dockerfiles الرسمية (#192/`cf0a1a9`) |
+| 4 | «Connection to localhost:5432 refused» | `datasource.url` حرفي بلا placeholder (CI أعماه: PG عنده localhost) | `url: ${DB_URL:jdbc:postgresql://localhost:5432/marketplace}` + مجلدات سجلات لمستخدم app (#193/`7328ee0`) |
+| 5 | السجل ينقطع صامتًا منتصف Hibernate | قتل cgroup OOM (مقاييس المنصة: USAGE 0.998/1.000) — ZGC+75% فوق ميزانية 953MiB | G1 (افتراضي JDK) + `MaxRAMPercentage=60` (#194/`5f5a301`) |
+| 6 | «Bad value for type long : \xaced…» من quartzScheduler | بلا driverDelegate: StdJDBCDelegate يقرأ BYTEA كـ OID (pgjdbc) — أول تشغيل فعلي لمسار JDBC | `QuartzPostgresDelegateConfig` (customizer شرطي على jobStoreType==JDBC — مدخل yml يكسر RAMJobStore) + اختبار Testcontainers (#195/`674372e`) |
+| 7 | تسليم keystore JWT للحاوية غير الجذرية | الفوليومات root-owned؛ pre-deploy بلا فوليوم ولا استبقاء؛ ssh مرفوض بالتوكن المحصور (كلها وثائق رسمية) | متغير write-only `JWT_KEYSTORE_B64` يجسّده ENTRYPOINT عند كل إقلاع بكتابة ذرّية (#196/`27b5a155`) |
+
+**البنية الحية:** 3 خدمات (app + postgres:17-alpine + redis:7-alpine) + نطاق عام (targetPort 8080) + 25 متغيرًا (write-only) + فوليوم `/data` (زائد بعد آلية B64 — مرشح للفصل).
+
+**المصادر الرسمية المعتمدة للقرارات:** مرجع Boot 4.1 Dockerfiles (jarmode=tools/thin-jar) + javadoc git-commit-id + ملف Quartz `tables_postgres.sql` (PostgreSQLDelegate) + وثائق Railway (volumes: root mount؛ pre-deploy: حاوية منفصلة؛ healthchecks: PORT) + Nixpacks/Railpack providers (قوائم JDK) — نسخ محفوظة في مساحة عمل الجلسة `scripts/prod-design-docs/` وأعيد جلب أربع صفحات Railway حية عند مراجعة 2026-09-04.
+
+**ديون معلنة بنقاط إغلاق (مراجعة 2026-09-04 — القائمة الحية في SYSTEM.md §15):** إهمال Config-as-Code رسميًا حتى **2026-12-01** (لافتة الوثائق: «Existing files keep working for legacy services until…») — ترحيل إعداد الموجه إلى مستوى الخدمة قبل 2026-11-15 وإلا وقع النشر على Railpack («Defaults to 21»)؛ قسم `[deploy]` الملفي لا ينعكس في manifests (مقيس 8/8)؛ دوران مفتاح JWT قبل 2026-12-02؛ `MAIL_*`/`OTEL_*` placeholders.
+
+---
+
+> **⚠️ ما يلي هو التوثيق الأصلي التاريخي (أبريل-مايو 2026 — للمرجعية فقط):**
 
 ---
 
