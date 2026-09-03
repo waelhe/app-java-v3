@@ -54,8 +54,8 @@ class QuartzJdbcJobStoreConfigTest {
 
     @Container
     @ServiceConnection
-    @SuppressWarnings("resource") // Lifecycle managed by @Testcontainers extension
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
             DockerImageName.parse("postgres:17-alpine"))
             .withDatabaseName("marketplace");
 
