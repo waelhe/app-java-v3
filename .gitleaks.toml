@@ -4,6 +4,7 @@ useDefault = true
 [allowlist]
 description = "Test/demo fixtures that are non-production"
 paths = [
+  '''marketplace-platform-infra/src/test/resources/keys/''',
   '''marketplace-app/src/test/resources/keys/''',
   '''marketplace-app/src/main/resources/keys/dev-rsa.pub'''
 ]

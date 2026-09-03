@@ -84,7 +84,7 @@ L1: 13 domain modules            ← Bounded contexts (each owns its data + logi
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
 | 1 | `marketplace-shared` | L2 | API contracts | Port interfaces, event records, exceptions |
-| 2 | `marketplace-platform-infra` | L3 | Infra | JPA, Security, Cache, Observability, Email, RotatingJWKSource |
+| 2 | `marketplace-platform-infra` | L3 | Infra | JPA, Security, Cache, Observability, Email, JWK keystore signing |
 | 3 | `marketplace-identity` | L1 | Domain core | Users, auth, MFA/2FA, OAuth2, brute-force |
 | 4 | `marketplace-catalog` | L1 | Domain core | Listings, GraphQL, CatalogSpi |
 | 5 | `marketplace-booking` | L1 | Domain core | Bookings, expiration, 3 events |
@@ -170,7 +170,7 @@ spring-modulith-moments → publishes DayHasPassed (daily)
 POST /login/step1 → verify password → issue mfaToken (Redis, TTL 5min)
 POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery code
     → publish LOGIN_SUCCESS → AuthAuditService.log()
-    → issue JWT (RotatingJWKSource, 90d rotation)
+    → issue JWT (JWKSource — persistent JKS keystore in prod, runbook `keys/README.md`)
 ```
 
 ### Exception Handling Policy
@@ -274,7 +274,7 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 
 | Asset | Rotation | Storage |
 |-------|----------|---------|
-| JWT signing key (RSA-2048) | 90 days (automatic, @Scheduled) | RotatingJWKSource (active + previous with overlap) |
+| JWT signing key (RSA-2048) | On keytool regeneration (≤90 days, secrets-policy §3) | Immutable `JWKSet` from JKS (`$JWT_KEYSTORE_PATH`) — see `keys/README.md` |
 | JWT keystore | On keytool regeneration | JKS file (`$JWT_KEYSTORE_PATH`) |
 | OAuth2 client secrets | On provider rotation | Env vars (`GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_SECRET`) |
 | Dev admin password | N/A (dev only) | `DEV_ADMIN_PASSWORD` env var (dev profile only) |
@@ -356,12 +356,14 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 **Rationale:** Cloudflare has no managed Postgres/Redis. Using Neon + Upstash (best-in-class serverless) connected via Hyperdrive/REST keeps the app on Cloudflare while leveraging external managed data stores.
 **Trade-off:** Two external vendors (Neon, Upstash) for data tier. Acceptable given Cloudflare's gap.
 
-### ADR-004: RotatingJWKSource for JWT Signing
+### ADR-004 (Revised): Persistent JWK Source for JWT Signing
 
-**Context:** NIST SP 800-57 recommends cryptoperiod of 1-2 years for asymmetric signing keys.
-**Decision:** Automatic 90-day rotation with active + previous key overlap.
-**Rationale:** More conservative than NIST recommendation. Overlap window ensures tokens signed by previous key remain valid until expiry.
-**Reference:** https://nvd.nist.gov/800-57
+**Status:** supersedes the original ADR-004 ("RotatingJWKSource", automatic 90-day rotation with active+previous overlap) — **that decision was never implemented**; the shipped code uses an `ImmutableJWKSet` with a single active key. This revision records the implemented design.
+**Context:** NIST SP 800-57 recommends cryptoperiod of 1-2 years for asymmetric signing keys; the secrets policy (§3) mandates rotation of signing keys every 30-60 days and service keys every 90 days.
+**Decision:** Persistent JKS keystore bound from environment variables (`JWT_KEYSTORE_*`), single active key, loaded by `SecurityConfig.jwkSource()`. Rotation = keytool regeneration + redeploy. Profile-gated fail-fast: `prod` + blank keystore ⇒ startup failure (never a silent ephemeral key) — enforced in CI by `JwkSourceProdHardeningTest`. Runbook: `keys/README.md`.
+**Rationale:** Implements governing plan D6/INV-7 ("no ephemeral signing keys outside development"). Simple, auditable, matches `application-prod.yml` env-driven binding.
+**Trade-off (documented honestly):** no active+previous overlap — replacing the key immediately invalidates outstanding access tokens (TTL 300s) and refresh tokens (7d), forcing re-login. Accepted for the current scale; overlap would be a new documented decision.
+**Reference:** https://nvd.nist.gov/800-57 ; `docs/security/auth-system-redesign-plan.md` (D6/INV-7) ; `keys/README.md`
 
 ### ADR-005: Catch DataAccessException only in Event Listeners
 
