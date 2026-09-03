@@ -11,7 +11,13 @@ spring:
       enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/marketplace
+    # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
+    # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
+    # localhost for local dev/compose/CI (which run Postgres on localhost) while
+    # letting a non-prod container deployment (Railway) point at a real host.
+    # Evidence: the cf0a1a9 Railway deploy crash-looped on flywayInitializer
+    # "Connection to localhost:5432 refused" because this line was hardcoded.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/marketplace}
     username: ${DB_USERNAME:marketplace}
     password: ${DB_PASSWORD:}
     hikari:
