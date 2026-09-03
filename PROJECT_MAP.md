@@ -1,5 +1,30 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `c82d9831` @ main `27b5a155`)
+
+**Order:** «مستودع نشر جديد للنشر على Railway — شخّص فشل النشر وأصلحه» → «اضبط المتغيرات انت» → «تابع» (×2) — ثم «وثّق عملية النشر كلها» (هذه الدفعة).
+
+**الإنتاج الحي:** `https://app-java-v3-production-d020.up.railway.app` — بروفايل **prod**، إقلاع 12.989s، liveness/readiness = 200 UP، `/oauth2/jwks` يخدم RSA دائمًا (`kid=marketplace-jwt`)، Postgres 17 + Redis 7 على الشبكة الداخلية، ذاكرة مستقرة ~0.56GB من سقف 953MiB. البناء الفعلي: **DOCKERFILE @ /Dockerfile** (من `railway.toml` — مثبت في `serviceManifest` للنشر). المستودع المرجعي: fork `waelhe88-coder/app-java-v3` متزامن مع main حرفيًا.
+
+**سلسلة الإصلاح (7 دمجات، سبعة أسباب جذرية مختلفة العائلات، +251/−14 في 6 ملفات):**
+
+| PR | الكوميت | المشكلة → الجذر → الإصلاح |
+|---|---|---|
+| #190 | `9dbbbb5` | فشل بناء Nixpacks مرتين → مزوّد Java لا يوفر JDK 25 (قائمة رسمية: 8–21) → `railway.toml`: builder=DOCKERFILE |
+| #191 | `97dc51c` | «.git directory not found» → بناء Railway بلا `.git` → `failOnNoGitDirectory=false` (javadoc الإضافة) |
+| #192 | `cf0a1a9` | «Could not find or load JarLauncher» → Boot 4.1 thin-jar غيّر التخطيط → ENTRYPOINT `java -jar app.jar` (وصفة dockerfiles الرسمية) |
+| #193 | `7328ee0` | «Connection to localhost:5432 refused» → datasource.url حرفي بلا placeholder → `${DB_URL:…}` + مجلدات السجلات |
+| #194 | `5f5a301` | قتل cgroup OOM صامت (مقاييس: 0.998/1.000) → ZGC+75% فوق ميزانية 953MiB → G1 + MaxRAMPercentage=60 |
+| #195 | `674372e` | «Bad value for type long : \xaced» → بلا driverDelegate يقرأ BYTEA كـ OID → `SchedulerFactoryBeanCustomizer` شرطي (yml يكسر RAMJobStore) + أول اختبار Testcontainers لمسار JDBC |
+| #196 | `27b5a155` | تسليم keystore لقنوات مغلقة (فوليوم root/pre-deploy بلا فوليوم/ssh مرفوض) → تجسيد `JWT_KEYSTORE_B64` عند كل إقلاع بكتابة ذرّية |
+
+**البنية على المنصة (GraphQL API، خارج المستودع):** 3 خدمات (app + postgres:17-alpine + redis:7-alpine — نفس صور compose/CI) + نطاق عام (targetPort 8080) + 25 متغيرًا (القيم write-only؛ الأسرار في `scripts/secrets/` خارج المستودع) + فوليوم `/data` (**زائد بعد آلية B64 — مرشح للفصل**) + خدمة `netdiag` تشخيصية (مرشحة للحذف).
+
+**اكتشافات مراجعة 2026-09-04 (مستندة لجلوب حي للوثائق الرسمية):** (1) قسم `[deploy]` في `railway.toml` لا ينعكس في أي manifest (healthcheckPath=null في 8/8 نشور) بينما `[build]` يعمل — لا يطابق نص config-as-code الرسمي كما نقرأه؛ (2) **Railway أعلنت إهمال Config-as-Code حتى 2026-12-01** («Existing files keep working for legacy services until…») — بعده يقع النشر على Railpack («Defaults to 21») فيعود فشل JDK 25؛ **نقطة إغلاق: ترحيل إعداد الموجه إلى مستوى الخدمة قبل 2026-11-15**؛ (3) healthchecks المنصة بوابة نشر فقط لا مراقبة حية. كل الاقتباسات الرسمية محفوظة في `scripts/prod-design-docs/` (أعيد جلب 4 صفحات Railway حية).
+
+**الديون التشغيلية المفتوحة:** دوران مفتاح JWT قبل **2026-12-02** (`ROTATION_DEADLINE` في `scripts/secrets/prod-secrets.env`) + `MAIL_*` placeholders (503 على فحص health الكامل فقط) + `OTEL_*` localhost (رسائل دورية بلا collector) + بند (1) أعلاه. **التوثيق الكامل بالأدلة:** تقرير الجلسة `download/railway-deployment-doc-2026-09.md` + `docs/railway-deployment-reference.md` (حُدّث رأسه بهذه الدفعة) + SYSTEM.md §15.
+
+
 ## Gate B — First Two Clients: Public (Flutter/native) + Confidential BFF (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
 
 **Order:** قرار المستخدم المصحَّح: «(توصيتي لو جمهورك جوال: Flutter؛ لو ويب: Next.js BFF) **معا وليس واحد**» + «تابع بوابة B و تحقق من ان التعديلات تستند للوثائق الرسمية للاطار ومايفن ثم ادمج». القيد الحاكم: `docs/security/client-hosting-strategy-plan.md` §4/§7-B + `docs/security/oauth2-client-bootstrap-spec.md` §4.1/§4.4-هـ/و.
