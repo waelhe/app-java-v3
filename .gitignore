@@ -16,6 +16,10 @@ cp.txt
 *.p12
 *.jks
 *.keystore
+# Exception — test fixture only (documented in keys/README.md §5): a throwaway
+# RSA-2048/JKS key for JwkSourceProdHardeningTest (alias test-jwt, non-production
+# passwords, CN=marketplace-jwt-test). Never a production key.
+!marketplace-platform-infra/src/test/resources/keys/test-jwt.jks
 
 # Environment files with real secrets — never commit.
 # .env.example is the committed template; .env holds real values.

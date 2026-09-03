@@ -2,7 +2,7 @@
 
 | البند | القيمة |
 |------|--------|
-| الحالة | **خطة حاكمة — المرحلة 0 (توثيق) مكتملة؛ لا كود تنفيذي بعد** |
+| الحالة | **خطة حاكمة — المراحل 0-2 منفّذة ومدمجة (انظر SYSTEM.md §11 للحالة الحية)؛ المرحلة 4 منفّذة في PR المرحلة-4 — متبقٍ: المرحلة 3 (D9)** |
 | التاريخ | سبتمبر 2026 |
 | الفرع | `feat/auth-system-design` |
 | الحوكمة | Protocol-Enforcer 6-Stage + Source Mandate (اقتباس رسمي → مطابقة → حل) |
@@ -46,8 +46,11 @@
 - (أ) التسجيل عبر `oauth2Login`، أو (ب) SPA/PKCE، أو (ج) إزالة العميل الميت.
 - **لا يبدأ إلا بقرار D9 من المستخدم.**
 
-### المرحلة 4 — مفاتيح الإنتاج (اختياري — حسب D6)
-- Keystore دائم في بيئة الإنتاج بدلاً من التوليد العابر؛ Runbook + فحص CI.
+### المرحلة 4 — مفاتيح الإنتاج (منفّذة — PR المرحلة-4)
+- **الكود:** `SecurityConfig.jwkSource()` يحمل حارس fail-fast مقيد بـ `prod` (نفس نمط `OAuth2ClientSecretInitializer`): أي خانة keystore فارغة مع بروفايل prod ⇒ `IllegalStateException` عند الإقلاع — السقوط إلى المفتاح العابر مستحيل في prod. دفاع مزدوج مع ربط `application-prod.yml` بلا افتراضات.
+- **فحص CI (تخفيف سجل المخاطر §8):** `JwkSourceProdHardeningTest` (وحدة داخل infra) يفرض الحالات الثلاث: prod+فراغ ⇒ فشل؛ غير prod+فراغ ⇒ مفتاح عابر (نمط quickstart الرسمي)؛ prod+keystore كامل ⇒ تحميل المفتاح الدائم من JKS حقيقي مولّد بـ keytool (`src/test/resources/keys/test-jwt.jks`).
+- **Runbook:** `keys/README.md` (توليد keytool بـ JKS صريح + متغيرات البيئة الأربعة + تدوير ≤90 يومًا وفق secrets-policy §3 + حدود التصميم الموثقة بصدق).
+- **تصحيح دين موثقي مرافق:** `ARCHITECTURE.md` كان يوثّق `RotatingJWKSource` بتدوير تلقائي لا وجود له في الكود (4 مواضع، منها ADR-004) — صُحّحت كلها إلى التصميم المنفّذ (ADR-004 Revised).
 
 ---
 
@@ -83,11 +86,11 @@
 | # | القرار | الحالة | التوصية | المصدر |
 |---|--------|--------|----------|--------|
 | D1 | تعرف التطبيق كل سلاسله صراحة (RS بـ `oauth2ResourceServer.jwt` + سلسلة AS عبر DSL + default) | ثابت/موثق | إبقاء التوليف الصريح كـ INV-5 | بايت-كود + `SecurityConfig:92-157` |
-| D2 | مصدر الحقيقة لإعدادات العملاء | مفتوح | (ب) Flyway بإعدادات كاملة صريحة | Boot 4.1.1: `OAuth2AuthorizationServerConfiguration.registeredClientRepository()` هو `@ConditionalOnMissingBean` + `@Conditional(RegisteredClientsConfiguredCondition)` → يبني `InMemoryRegisteredClientRepository` من `spring.security.oauth2.authorizationserver.client.*`؛ وهو **بلا أثر** هنا لأن التطبيق يعرّف `JdbcRegisteredClientRepository` |
-| D3 | `require-proof-key: true` كتابة صريحة لكل العملاء | مفتوح (المرحلة 1) | اكتبها صراحة (لا نعتمد على الإفتراضي) | RFC 9700 §2.1.1 |
-| D4 | consent لعميل الإنتاج | مفتوح (المرحلة 2) | **إبقاء `true`** وإغلاق الفجوة باختبار T3 | RFC 9700 §4.11.2/§4.14.2 |
+| D2 | مصدر الحقيقة لإعدادات العملاء | **مغلق حسمه** (DB عبر `JdbcRegisteredClientRepository` — الخصائص الذاكرية خاملة) | (ب) Flyway بإعدادات كاملة صريحة → تحقق لاحقًا إلى: DB هي الحقيقة عبر المُهيّئ على المسار الرسمي | Boot 4.1.1: `OAuth2AuthorizationServerConfiguration.registeredClientRepository()` هو `@ConditionalOnMissingBean` + `@Conditional(RegisteredClientsConfiguredCondition)`؛ وهو **بلا أثر** هنا لأن التطبيق يعرّف `JdbcRegisteredClientRepository` |
+| D3 | `require-proof-key: true` كتابة صريحة لكل العملاء | **مغلق (منفّذ)** | يثبّته باني المُهيّئ صراحة (`requireProofKey(true)`) ويفرضه S2 على الصف الفعلي | RFC 9700 §2.1.1 |
+| D4 | consent لعميل الإنتاج | **مغلق (منفّذ)** | `requireAuthorizationConsent(true)` في باني المُهيّئ + S3 موجب/سالب بمستخدمين مختلفين | RFC 9700 §4.11.2/§4.14.2 |
 | D5 | عقد الادعاءات | ثابت | `roles` (RFC 9068 §7.2.1.1 — أصله RFC 7643 §4.1.2 / RFC 9068 §2.2.3.1)؛ `aud` (RFC 7519 §4.1.3 — javadoc صُحّح في المرحلة 0)؛ `FACTOR_BEARER` لا يُبنى عليه شيء | RFC 9068 §2.2: `aud REQUIRED - as defined in Section 4.1.3 of [RFC7519]` |
-| D6 | مصدر المفاتيح | مفتوح (المرحلة 4) | Keystore دائم عبر env في الإنتاج؛ لا مفاتيح عابرة | `application.yml:241-244` (افتراضيات فارغة) + `SecurityConfig:274-283` (توليد عابر كمهرب) |
+| D6 | مصدر المفاتيح | **مغلق (منفّذ — PR المرحلة-4)** | Keystore دائم عبر env في الإنتاج؛ لا مفاتيح عابرة — يُنفّذ بحارس fail-fast مقيد بـ prod + فحص CI (`JwkSourceProdHardeningTest`) + runbook `keys/README.md` | `application.yml` (افتراضيات فارغة) + `SecurityConfig.jwkSource()` (الحارس) + `keys/README.md` |
 | D7 | `JdbcUserDetailsManager` بـ SQL مخصص | ثابت | إبقاؤه | `SecurityConfig:236-246` |
 | D8 | الجلسات/CSRF | ثابت | سلسلة AS: جلسة + CSRF؛ سلسلة RS: `STATELESS` مع تجاهل CSRF لمسارات `/**` المطابقة | `SecurityConfig:119,121,150-154` |
 | D9 | مصير `marketplace-web-client` | **قرار المستخدم** | (أ) عميل سري server-side/BFF مستقبلاً، أو (ج) تعليق/إزالة العميل؛ (ب) SPA/PKCE | RFC 9700 §2.1.1 |
@@ -112,8 +115,8 @@
 |----|----------|---------|--------|
 | T1 | `JwtRolesRoundTripTest` (وحدة داخل infra — العميل المُصنَّع + conversion) | — | ✅ موجود (`a941af2`) |
 | T2 | `AuthorizationServerLoginGateIntegrationTest` (سلك كامل: PKCE موجب، 403 سالب، تدوير refresh، صفحة login/CSRF) | — | ✅ موجود (wire، قبل `a941af2`) |
-| T4 | round-trip إعدادات العميل من R__seed الفعلي (يُغلق F-A) | 1 | جديد |
-| T3 | تحميل R__seed الفعلي + التحقق من consent وPKCE (يُغلق F-B) | 2 | جديد |
+| T4 | round-trip إعدادات العميل الفعلي | 1 | **✅ تُحقّق بـ S1/S4/S5** (PR #184): قراءة الصف الذي أسسه المُهيّئ عبر `mapRow` الحقيقي — خريطة كاملة 8 مفاتيح + القيم الظرفية + convergence (R__ لم يعد يحمل العميل — الصف الفعلي = صف المُهيّئ) |
+| T3 | تحميل العميل الفعلي + التحقق من consent وPKCE | 2 | **✅ تُحقّق بـ S2/S3** (PR #184): PKCE مفروض عند التبادل على الصف الفعلي + consent موجب/سالب بمستخدمين مختلفين (مواصفة §4.3 — الشكل المعتمد عبر `@TestPropertySource` + ApplicationRunner) |
 
 ---
 

@@ -13,6 +13,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
@@ -80,6 +82,13 @@ import java.util.UUID;
 @EnableWebSecurity
 @EnableMethodSecurity(proxyTargetClass = true)
 public class SecurityConfig {
+
+    /**
+     * Production profile gate, mirroring {@link OAuth2ClientSecretInitializer}'s
+     * established fail-fast pattern (profile-gated, never a global fail-fast that
+     * would break dev/CI).
+     */
+    private static final Profiles PROD_PROFILE = Profiles.of("prod");
 
     private final MarketplaceProperties properties;
     private final ObjectMapper objectMapper;
@@ -263,9 +272,31 @@ public class SecurityConfig {
         return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
     }
 
+    /**
+     * Signing keys: a persistent JKS keystore bound from environment variables, or —
+     * <em>only outside the {@code prod} profile</em> — an ephemeral RSA key generated
+     * on startup.
+     *
+     * <p>Ephemeral generation is the official quickstart pattern (Spring Authorization
+     * Server — Getting Started: "This is a minimal configuration for getting started
+     * quickly"; its {@code generateRsaKey()} helper is "an instance of KeyPair with
+     * keys generated on startup"). It is fine for dev/test, but in production it would
+     * silently invalidate every issued token on each restart (and break multi-instance
+     * deployments), which the governing plan forbids — {@code auth-system-redesign-plan}
+     * INV-7: "لا مفاتيح توقيع عابرة في غير بيئة التطوير", risk register mitigation:
+     * "فحص CI يحظر {@code JWT_KEYSTORE_*} الفارغة في الإنتاج".
+     *
+     * <p>Hence this defense-in-depth gate, mirroring the initializer's profile-gated
+     * fail-fast: {@code prod} active + any blank keystore field ⇒ startup fails loudly
+     * instead of falling back to an ephemeral key. {@code application-prod.yml} already
+     * binds the four fields with no defaults (placeholder resolution fails when unset);
+     * this bean-level guard also catches blank-string values and any future binding
+     * drift. Enforced in CI by {@code JwkSourceProdHardeningTest}.
+     */
     @Bean
     JWKSource<SecurityContext> jwkSource(
-            ResourceLoader resourceLoader
+            ResourceLoader resourceLoader,
+            Environment environment
     ) throws Exception {
         var ks = properties.security().jwt().keystore();
         String keyStorePath = ks.path();
@@ -273,6 +304,13 @@ public class SecurityConfig {
         String keyAlias = ks.alias();
         String keyPassword = ks.keyPassword();
         if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
+            if (environment.acceptsProfiles(PROD_PROFILE)) {
+                throw new IllegalStateException(
+                        "marketplace.security.jwt.keystore.path/.password/.alias/.keyPassword must be configured"
+                                + " in production (JWT_KEYSTORE_PATH/JWT_KEYSTORE_PASSWORD/JWT_KEY_ALIAS/"
+                                + "JWT_KEY_PASSWORD) — ephemeral signing keys are forbidden outside development"
+                                + " (auth-system-redesign-plan INV-7)");
+            }
             KeyPair keyPair = generateRsaKey();
             RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
             RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
