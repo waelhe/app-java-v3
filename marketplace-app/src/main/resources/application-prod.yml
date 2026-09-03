@@ -158,3 +158,13 @@ marketplace:
       client:
         client-id: ${OAUTH_CLIENT_ID}
         secret: ${OAUTH_CLIENT_SECRET}
+        # Gate B pattern (1) — BFF confidential client callback URLs (comma-separated).
+        # Mandatory in prod: the development redirect constant (127.0.0.1) is not a valid
+        # production BFF callback (closes the documented gate-B debt).
+        redirect-uris: ${OAUTH_CLIENT_REDIRECT_URIS}
+      public-client:
+        # Gate B pattern (3) — public (secret-less) native client with PKCE (plan §4):
+        # classified by secret location, not by technology. Redirect URIs are the client
+        # application's identity (custom scheme per RFC 8252 or https app link).
+        client-id: ${OAUTH_PUBLIC_CLIENT_ID}
+        redirect-uris: ${OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}

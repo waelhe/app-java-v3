@@ -116,11 +116,16 @@ package com.marketplace.booking;
 
 **المسار الرسمي الوحيد لتأسيس العميل — `OAuth2ClientSecretInitializer` (PR #184 — مدمج `773558e`):** الـ seed اليدوي (`R__seed_oauth2_client.sql`) **لم يعد يحمل العميل إطلاقاً** (أُخلي `oauth2_registered_client`؛ admin `auth_users`/`auth_authorities` باقٍ). التأسيس/التقارب/التدوير يجري عبر **`RegisteredClientRepository.save(RegisteredClient)` بالباني الرسمي** (`ClientSettings`/`TokenSettings`) في `ApplicationRunner`:
 - **تأسيس** (غائب) ⇒ `RegisteredClient.withId(a7bd8b0d-…)` + التعريف الكامل (grants `authorization_code,refresh_token,client_credentials`, redirect `127.0.0.1:8080/...`, scopes `openid,profile`, `client_secret_basic`).
-- **converge-on-boot** (موجود) ⇒ `from(existing)` للهوية فقط + باني الإعدادات (لا نقل خريطة مرضوضة بفجوة id-token).
+- **converge-on-boot** (موجود) ⇒ إعادة اشتقاق كاملة عبر `RegisteredClient.withId(existing.getId())` (بوابة B: redirect URIs أصبحت موجهة بالبيئة — باني `from()` يزرع المجموعات المخزنة بلا عملية استبدال، INV-4) + باني الإعدادات (لا نقل خريطة مرضوضة بفجوة id-token).
 - **حارس idempotence**: save ⇔ السرّ اختلف ∨ خرائط الإعدادات اختلفت.
 - القيم الظرفية مثبتة: reuse=false / 900s / 604800s / 300s / consent=true / proof-key=true (الباني الافتراضي يختلف — يُثبَّت صراحةً).
 
 انسحب البند السابق «بذرة العميل تحمل المفتاحين معاً (D4) + upsert تقاربي» — أصبح تاريخياً بعد إخلاء العميل من R__ ودور المُهيّئ الكامل (تأسيس لا تدوير فقط).
+
+**بوابة B — العميلان الأولان (عام + سري) عبر مسار #183 نفسه:**
+- **العميل العام (النمط 3 — فلاتر/أصيل):** `OAuth2PublicClientInitializer` (ApplicationRunner ثانٍ) — `client_authentication_method: none` (بلا سرّ؛ العمود NULL-able في `V13:22`) + `authorization_code` **حصرًا** (لا منح refresh — سلوك gh-297) + `requireProofKey`/consent إلزاميان + access 900s/code 300s؛ redirect URIs من `OAUTH_PUBLIC_CLIENT_REDIRECT_URIS` (مخطط مخصص RFC 8252، فصل بفواصل)؛ id صف ثابت `10b588c6-4e85-43ec-9ecf-c588676774d7`؛ fail-fast في prod (كلا الخانتين)؛ حارس idempotence موسّع (تعريف كامل + خرائط).
+- **السري (النمط 1 — BFF):** `OAuth2ClientSecretInitializer` نفسه توسّع بـ `OAUTH_CLIENT_REDIRECT_URIS` (prod إلزامية بلا افتراض — يغلق دين «redirect الإنتاج مثبّت على ثابت التطوير»؛ dev بلا env يبقى على ثابت 127.0.0.1) + حارس idempotence موسّع للتعريف الكامل.
+- البوابة الحية للعميل العام: `PublicPkceClientGateIntegrationTest` (authorize+PKCE بمخطط مخصص → login → consent → code → تبادل بلا مصادقة عميل → **لا refresh_token** + id_token ثلاثي الأجزاء + aud/sub → admin يمر/user 403؛ سالباتها: بلا code_challenge=302 خطأ، Basic=401 invalid_client، refresh grant=401 فارغ).
 
 **نموذج التفويض ثلاثي الطبقات (موثق «Security Design» في PROJECT_MAP):** catch-all في HttpSecurity + 26 قاعدة `@PreAuthorize` دقيقة في طبقة الخدمات + 4 بوابات controllers إدارية — لكل قاعدة اختبار سالب وموجب (52 اختباراً).
 
@@ -181,6 +186,8 @@ package com.marketplace.booking;
 - **نقل الخطة للمستودع — PR #187 (2026-09-03، مفتوح وبانتظار كلمة الدمج):** فرع `docs/client-hosting-strategy-plan`: الخطة داخل `docs/security/` + إحالات جراحية (auth-system-redesign-plan / PROJECT_MAP / هذا الملف §11) + **نظام الحوكمة §14** (أُمر به بعد الاعتماد: «حدِّث الخريطة المرجعية وأضف نظام الحوكمة») — ماركداون فقط، لا كود ولا سلوك؛ CI + Integration أخضر ×2 على الرأس، `mergeable=clean`. ما بعد الدمج: البوابات B ثم C (+ A الاختيارية) — آلياتها في §14.2.
 - **المرحلة A — جاهزية مضيفة-محايدة ✅ نُفِّذت (2026-09-03، أمر «أبدأ A»؛ الدفعة قيد الدمج):** `server.forward-headers-strategy: FRAMEWORK` في `application-prod.yml` **فقط** (حد الثقة الرسمي: dev/test تبقى NONE) + `server.tomcat.redirect-context-root: false` (وصفة الجافادوك الرسمية) + **اكتشافا التدقيق النهائي لبروفايل prod أُغلقَا بنفس الدفعة**: (1) ربط `AUTH_SERVER_ISSUER` بلا افتراض في prod (كان افتراض `http://localhost:8080` من application.yml يتسرب للإنتاج) (2) إصلاح عيب صياغة YAML كامن في نمط تعقيم السجلات (`\s` غير مُهرَّبة داخل سلسلة مقتبسة مزدوجة — الملف كان غير قابل للتحليل أصلاً ولم يُكتشف لأن بروفايل prod لم يُنشَّط قط). الحارسان: `ForwardHeadersProdConfigTest` (الإعدادات) + `ForwardedHeaderFilterBehaviorTest` (سلوك الفلتر الرسمي) — 6/6 محليًا. الأساس الرسمي محفوظ: `scripts/prod-design-docs/` (صفحة how-to/webserver 4.1 + مرجع SS 7.1.1 exploits/http + مصادر Boot 4.1.1 وspring-web 7.0.9 من Maven Central + قضية #42804).
 
+- **بوابة B — العميلان الأولان ✅ نُفِّذت (2026-09-03، أمر المستخدم: النمطان معًا «فلاتر عام+PKCE وBFF سري»):** فرع `feat/phase-b-public-pkce-client`: العميل العام (`OAuth2PublicClientInitializer` — `none`/PKCE إلزامي/بلا refresh/redirect من env) + توسيع السري بـ `OAUTH_CLIENT_REDIRECT_URIS` (fail-fast في prod — يغلق دين «redirect الإنتاج مثبَّت على ثابت التطوير»). 17+59 اختبار وحدة + 12 تكامل حية خضراء محليًا (بوابة الدخول 6/6 + بوابة PKCE العامة 6/6). التفاصيل: خطة العملاء §7-B + المواصفة §4.4-هـ/و + §6 أعلاه.
+
 - **المرحلة 0 ✅** (`f80b945`): التوثيق والقرارات.
 - **المرحلة 1 ✅** (`5b5a238`): إغلاق F-A بالخنقتين المعتمدتين (§6 أعلاه) + سجل PROJECT_MAP كامل.
 - **المرحلة 2 ✅** (PR #184 → مدمج `773558e` 2026-09-02، CI أخضر ×2؛ **المتابعة الجراحية #185 → مدمجة `1ebdf07` 2026-09-03، CI أخضر ×2**: إزالة `clientSecretExpiresAt(null)` الميتة + تأكيد id_token الحي في consent gate): F-B مغلقة بالمعنى المقصود — S1–S6 تمرّن على **صف المُهيّئ الفعلي** (`@TestPropertySource` + `ApplicationRunner` يأسّس أثناء الإقلاع، لا عميل مُصنّع في كود الاختبار): قراءة الخريطة الكاملة (8 مفاتيح)، PKCE مفروض على الصف الفعلي، consent موجب/سالب بمستخدمين مختلفين، القيم الظرفية، convergence بصف قديم مرضوض. المواصفة: `docs/security/oauth2-client-bootstrap-spec.md`.
@@ -205,6 +212,10 @@ package com.marketplace.booking;
 8. خصائص `spring.security.oauth2.authorizationserver.client.*` خاملة عندنا (D2).
 9. اختبارات السياق الكامل تحتاج Redis حياً (خزين الجلسات) — CI يوفره services.
 10. كل اقتباسات الخطة الأربع (Flyway/PostgreSQL/SAS/RFC) مُطابَقة نصياً 9/9 (`scripts/verify_docs_quotes.py`).
+11. `PublicClientAuthenticationConverter` (منذ 7.0) يطابق **طلب PKCE فقط** في نقطة التوكن (authorization_code+code+code_verifier) ويوثّق العميل العام عبر code_verifier نفسه — طلب refresh_token (بلا code_verifier بحكم البروتوكول) يبقى مجهولاً (مصدر 7.1.1 المخبأ + TRACE حي بوابة B).
+12. فلاتر نهايات AS تعمل **بعد** `AuthorizationFilter` في السلسلة (ترتيب 7.1.1 المرصود: AuthorizationFilter 21/26 ثم نهايات authorize/token 22-26) — طلب توكن بلا مصادقة عميل يُرفض مجهولاً قبل وصوله للمنحة.
+13. `OAuth2AuthorizationServerConfigurer` يسجّل `HttpStatusEntryPoint(UNAUTHORIZED)` لنقاط AS (بايت-كود spring-security-config 7.1.1: `defaultAuthenticationEntryPointFor`) — رفض طلب refresh من عميل عام = **401 بجسم فارغ** (موثّق باختبار حي).
+
 
 ---
 

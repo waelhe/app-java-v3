@@ -1,5 +1,27 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Gate B — First Two Clients: Public (Flutter/native) + Confidential BFF (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
+
+**Order:** قرار المستخدم المصحَّح: «(توصيتي لو جمهورك جوال: Flutter؛ لو ويب: Next.js BFF) **معا وليس واحد**» + «تابع بوابة B و تحقق من ان التعديلات تستند للوثائق الرسمية للاطار ومايفن ثم ادمج». القيد الحاكم: `docs/security/client-hosting-strategy-plan.md` §4/§7-B + `docs/security/oauth2-client-bootstrap-spec.md` §4.1/§4.4-هـ/و.
+
+**التنفيذ (فرع واحد `feat/phase-b-public-pkce-client` من main `4c0455f`، صفر وحدات/اعتماديات/مخطط):**
+
+- **النمط (3) — العميل العام (فلاتر/أصيل):** `OAuth2PublicClientInitializer` جديد كليًا (ApplicationRunner ثانٍ بنمط #183/#184):
+  - `client_authentication_method: none` **بلا سرّ** — العمود NULL-able في مخططنا `V13:22` (بلا ترحيل)؛ id صف ثابت `10b588c6-4e85-43ec-9ecf-c588676774d7` بنفس منطق المواصفة §4.1-هـ (سباق الإقلاع = فشل صوتي).
+  - `authorization_code` **حصرًا** + بلا إعدادات refresh — «Spring Authorization Server will not issue refresh tokens for a public client. We recommend the backend for frontend (BFF) pattern… See gh-297» (SAS how-to — النص الحامل لبوابة B).
+  - `requireProofKey(true)` + `requireAuthorizationConsent(true)` (INV-2 — «The requireProofKey setting is important to prevent the PKCE Downgrade Attack») + access 900s / code 300s.
+  - redirect URIs من `OAUTH_PUBLIC_CLIENT_REDIRECT_URIS` (فصل بفواصل/trim/إسقاط فارغ) — مخطط مخصص RFC 8252؛ التعريف مطابق لعينة how-to الرسمية حرفيًا (none/authorization_code/openid,profile).
+  - fail-fast مقيد بـ prod (كلا الخانتين) + no-op في غير prod بلا إعداد (نفس عقد المواصفة §3-ج).
+- **النمط (1) — العميل السري (BFF):** توسيع `OAuth2ClientSecretInitializer`: `Client.redirectUris` جديدة (`OAUTH_CLIENT_REDIRECT_URIS`) — prod إلزامية بلا افتراض (**يغلق دين بوابة B الموثق**: redirect الإنتاج كان مثبَّتًا على ثابت التطوير `127.0.0.1`)، dev بلا env يبقى على ثابت المواصفة §4.1؛ converge أعيد هيكلتها إلى إعادة اشتقاق `withId(existing.getId())` (باني `from()` يزرع المجموعات المخزنة بلا استبدال — INV-4 من مصدر 7.1.1)؛ حارس idempotence موسّع للتعريف الكامل.
+- **الربط النوعي:** `MarketplaceProperties.Security.OAuth2.PublicClient(clientId, redirectUris)` بـ`@DefaultValue` فارغة (اقتباس الربط الرسمي — boot-external-config المحفوظ) + `application-prod.yml` يربط `OAUTH_PUBLIC_CLIENT_ID`/`OAUTH_PUBLIC_CLIENT_REDIRECT_URIS`/`OAUTH_CLIENT_REDIRECT_URIS` بلا افتراضات.
+- **الاختبارات (TDD حيّ):** `OAuth2PublicClientInitializerTest` (8: no-op/fail-fast ×3/تأسيس بالتعريف الرسمي/تطابق/converge يصون الهوية/صف مُخترق بسرّ يُعاد لتعريف بلا سر) + توسيع `OAuth2ClientSecretInitializerTest` (9: +fail-fast redirect في prod +converge redirect بيئية) + **البوابة الحية** `PublicPkceClientGateIntegrationTest` (6: تدفق كامل authorize+PKCE بمخطط مخصص → login → consent → code → **تبادل بلا مصادقة عميل** → لا refresh_token + id_token ثلاثي + aud/sub + admin 2xx/user 403 problem+json؛ سالبات: بلا code_challenge=302 خطأ للعميل، Basic بسر=401 invalid_client، refresh grant=**401 بجسم فارغ** — السلوك الرسمي 7.1.1 الموثق بالبلايت-كود+TRACE) + 7 مواضع بناء اختبارية محدَّثة + بوابة الدخول تمرر redirect عبر المسار البيئي (6/6).
+- **تحقيقات محلية (JDK 25.0.4.1 + Postgres 17.4/Redis 8.0.3 محمولان):** 17/17 المُهيّئان + 59/59 infra + 12/12 البوابتان الحيتان + `clean verify -pl marketplace-app -am`.
+- **التحقق الرسمي (أمر المستخدم — إطار + Maven):** كل الاقتباسات مطابقة نصيًا من النسخ المحفوظة (how-to-pkce: العميل العام/PKCE/gh-297/Downgrade + عينة التسجيل الرسمية؛ core-model: «must be registered»؛ boot-external-config: `@DefaultValue`؛ boot-spring-application: الـ runners) + مصادر/بلايت-كود 7.1.1 (PublicClientAuthenticationConverter PKCE-only؛ HttpStatusEntryPoint(401) للنهايات؛ باني from() بلا استبدال؛ TokenSettings defaults) + **Maven: صفر pom/وحدات/اعتماديات في الدفعة** (المصفوفة §5: «صفر اعتماديات Maven جديدة لهذه الخطة»).
+- **تحديثات الحوكمة بنفس الدفعة:** خطة العملاء (§4 تصحيح TTL 300→900 موثق + §7-B ✅ بذيل الانحراف عن «1 PR لكل عميل» + §8-11) + المواصفة (§4.4-هـ/و) + SYSTEM.md (§6 المُهيّئان + §11 + §12 حقائق 11-13) + هذا القسم.
+- **انحراف موثق:** أمر المستخدم «النمطان معًا» قدّم «1 PR لكل عميل» (§7) — الدفعة واحدة لأن بنية التأسيس (الربط النوعي + مواضع البناء السبعة + مسار #183) مشتركة بين النمطين؛ consumer عميل BFF نفسه (تطبيق Next.js) خارج هذا المستودع (الباك اند مرساة — §1 الخطة).
+
+**الحالة:** PR مفتوح من الفرع بانتظار CI ×2 ثم كلمة الدمج (الأمر الصريح موجود: «ثم ادمج»).
+
 ## Phase A — Host-Neutral Readiness (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
 
 **Order:** «أبدأ A» — مع توجيه صريح: تصميم رسمي من الوثائق لا اجتهاد، لا ترقيعات ولا ديون. القيد: `docs/security/client-hosting-strategy-plan.md` §7/§8 البند 10.
