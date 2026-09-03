@@ -2,11 +2,11 @@
 
 | البند | القيمة |
 |------|--------|
-| الحالة | **منفّذ (تدقيق محلي أخضر) — PR مفتوح ينتظر CI** — [PR #184](https://github.com/waelhe/app-java-v3/pull/184) |
+| الحالة | **منفّذ ومدمج** (main `773558e`، CI أخضر ×2) — المتابعة الجراحية [#185](https://github.com/waelhe/app-java-v3/pull/185) |
 | التاريخ | سبتمبر 2026 |
 | المستند الحاكم | `docs/security/auth-system-redesign-plan.md` (المرحلتان 2 و3، F-A/F-B/F-C، D1-D9، T1-T4) |
 | الحوكمة | Protocol-Enforcer 6-Stage + Source Mandate + تثبيتات مراجعة (5) |
-| PR المتوقع | #185 (بعد موافقة المستخدم) |
+| PR الفعلي | [#184](https://github.com/waelhe/app-java-v3/pull/184) — **مدمج** (773558e، 2026-09-02)؛ متابعة: [#185](https://github.com/waelhe/app-java-v3/pull/185) (استورد يتيم + javadoc + تأكيد id_token الحي + §3-ج) |
 
 > هذه المواصفة تحوّل تثبيتات المراجع الخمسة إلى **معايير قبول** إلزامية — لا سطر كود
 > قبل أن تُثبَّت كلها في التنفيذ، ولا خروج عنها إلا بتوثيق انحراف في PR body.
@@ -89,13 +89,11 @@
 (`withSettings` ينقل الخريطة المرضوضة بفجوة id-token كما هي — INV-4).
 بهذا يتقارب الصف القائم على المخطط الكامل عند أول بدء ولا يبقى مريضاً أبداً.
 
-### ج) قرار سلوك dev عند غياب env
-بعد إخلاء العميل من R__، dev/CI بلا `OAUTH_CLIENT_*` = **لا عميل إطلاقاً**.
-القرار (من فلسفة PR #183 ونمط `{noop}` في LoginGate):
-- **prod**: `application-prod.yml` يربط `OAUTH_CLIENT_ID/SECRET` إلزامياً (حاجز fail-fast قائم).
-- **غير prod (dev/test)**: سرّ dev **ثابت في الكود** (متغير بعيدين عن المنتج) —
-  يرافقه تحقق تشغيلي داخل المُهيّئ مع **التعريف الكامل** (Gap1). **مرفوض**: fail-fast شامل
-  (يكسر dev/CI) وسرّ عشوائي مسجَّل (فوضى).
+### ج) قرار سلوك dev عند غياب env — التصميم الرسمي (مستند للوثيقة الرسمية)
+**المرجع:** Spring Authorization Server — [Core Model / Components](https://docs.spring.io/spring-authorization-server/reference/core-model-components.html) (رسمية): «A client **must be registered** with the authorization server before it can initiate an authorization grant flow» — التسجيل للعميل يتم **حصراً** عبر `RegisteredClientRepository` (المركزي للمشتق/التسجيل) بالباني الرسمي؛ **لا وجود لعميل بلا تعريف**.
+بعد إخلاء العميل من R__، التصميم الرسمي:
+- **prod**: `application-prod.yml` يربط `OAUTH_CLIENT_ID/SECRET` إلزامياً (حاجز fail-fast قائم داخل المُهيّئ).
+- **غير prod (dev/test)**: بلا مستهلك (D9 مفتوح) وبلا `OAUTH_CLIENT_*` = **لا عميل إطلاقاً** (العملية no-op) — كما في الكود `OAuth2ClientSecretInitializer.run` (`:99-110`). **مرفوض**: سرّ dev **مضمَّن في الكود** (يخالف المبدأ الرسمي «لا عميل بلا تعريف» ويخالف سطر المعيار §1 «لا يحوي المستودع سرّ عميل»)، وfail-fast شامل (يكسر dev/CI)، وسرّ عشوائي مسجَّل (فوضى).
 - **لاتماثل convergence (موثق):** يُعالج الإعدادات لا الهوية — انحراف identity لاحقاً
   (scopes جديدة مثلأ) لن يصل للبيئات القائمة عبر المُهيّئ؛ له أثر في D9.
 

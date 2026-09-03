@@ -218,11 +218,22 @@ class AuthorizationServerLoginGateIntegrationTest {
 
         assertThat(gate.accessToken()).isNotBlank();
         assertThat(gate.refreshToken()).isNotBlank();
+        assertThat(gate.idToken())
+                .as("the openid scope must yield an id_token from the bootstrapped client")
+                .isNotBlank();
+        assertThat(gate.idToken().split("\\."))
+                .as("the id_token must be a structurally valid JWT")
+                .hasSize(3);
 
         JsonNode claims = objectMapper.readTree(jwtClaimsAsJson(gate.accessToken()));
         assertThat(claims.path("iss").asString()).isEqualTo("http://localhost:8080");
         assertThat(claims.path("aud").toString()).contains("marketplace-api");
         assertThat(claims.path("roles").toString()).contains("ADMIN");
+
+        JsonNode idTokenClaims = objectMapper.readTree(jwtClaimsAsJson(gate.idToken()));
+        assertThat(idTokenClaims.path("iss").asString()).isEqualTo("http://localhost:8080");
+        assertThat(idTokenClaims.path("aud").toString()).contains("marketplace-web-client");
+        assertThat(idTokenClaims.path("sub").asString()).isEqualTo(ADMIN_USERNAME);
     }
 
     /**
@@ -365,7 +376,8 @@ class AuthorizationServerLoginGateIntegrationTest {
         return new GateResult(
                 tokens.path("access_token").asString(),
                 tokens.path("refresh_token").asString(),
-                tokens.path("token_type").asString());
+                tokens.path("token_type").asString(),
+                tokens.path("id_token").asString());
     }
 
     private HttpResponse<String> postFormWithBasicAuth(String path, String clientId, String clientSecret,
@@ -448,7 +460,8 @@ class AuthorizationServerLoginGateIntegrationTest {
         return new GateResult(
                 tokens.path("access_token").asString(),
                 tokens.path("refresh_token").asString(),
-                tokens.path("token_type").asString());
+                tokens.path("token_type").asString(),
+                tokens.path("id_token").asString());
     }
 
     private synchronized GateResult adminGate() throws Exception {
@@ -619,6 +632,6 @@ class AuthorizationServerLoginGateIntegrationTest {
         return response.body() == null ? "" : response.body().substring(0, Math.min(500, response.body().length()));
     }
 
-    private record GateResult(String accessToken, String refreshToken, String tokenType) {
+    private record GateResult(String accessToken, String refreshToken, String tokenType, String idToken) {
     }
 }
