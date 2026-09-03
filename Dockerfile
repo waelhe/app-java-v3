@@ -37,12 +37,27 @@ COPY --from=extractor /app/extracted/application/ ./
 USER app
 EXPOSE 8080
 
-# Production JVM options: ZGC (generational by default since JDK 24 — the explicit
-# ZGenerational flag was removed in 24.0; Railway runtime log of 9dbbbb5:
-# "Ignoring option ZGenerational; support was removed in 24.0") + container-aware heap
+# Production JVM options — sized for a 1 GB container (Railway limits for this
+# service, serviceInstanceLimits: memoryBytes=1000000000 ≈ 953 MiB, cpu=2):
+#   The 57cdc9e0 deploy (7328ee0 — DB fix verified working: Hikari connected,
+#   "Database: jdbc:postgresql://postgres.railway.internal:5432", Flyway
+#   "Successfully validated 28 migrations") was OOM-killed silently mid-Hibernate:
+#   Railway metrics for that deploy show MEMORY_USAGE_GB 0.999/0.941/0.998/0.998
+#   vs MEMORY_LIMIT_GB 1.000 — the process hit the cgroup ceiling; a cgroup OOM
+#   kill produces NO Java exception (matches the logs cutting off mid-startup,
+#   first cycle crawling ~2 min under GC pressure before the kill).
+#   Old flags -XX:+UseZGC -XX:MaxRAMPercentage=75 → 715 MB max heap, leaving
+#   only ~240 MB for metaspace (Hibernate/Envers/Modulith/GraphQL/18 repositories
+#   ≈ 200+ MB) + code cache + thread stacks + ZGC metadata + netty direct
+#   buffers — over budget.
+#   Fix: drop ZGC for G1 (the JDK default collector — least exotic, best-tested
+#   path; OpenJDK positions ZGC for sub-ms latency on "8MB to 16TB" heaps, but
+#   its colored-pointer metadata and load barriers buy nothing at ~1 GB where
+#   boot-time footprint is the binding constraint) and drop the heap share to
+#   60% (~572 MB) — leaving ~380 MB for the non-heap side.
 # UseContainerSupport omitted — enabled by default since Java 10+
 # (same principle as @EnableWebSecurity being redundant in Boot)
-ENV JAVA_OPTS="-XX:+UseZGC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
 
 # Launch the THIN jar extracted by jarmode=tools — the Spring Boot 4.1 official
 # recipe (same reference page as above, saved: scripts/prod-design-docs/sb41-dockerfiles.html):
