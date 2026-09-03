@@ -127,6 +127,11 @@ spring:
             instanceId: AUTO
           threadPool:
             threadCount: 5
+          # org.quartz.jobStore.driverDelegateClass (PostgreSQLDelegate) is set
+          # programmatically by QuartzPostgresDelegateConfig — a yml entry here
+          # would also reach RAMJobStore (test profile, job-store-type: memory),
+          # which has no such setter and fails context boot: "JobStore class
+          # 'org.quartz.simpl.RAMJobStore' props could not be configured".
 
 
 server:
