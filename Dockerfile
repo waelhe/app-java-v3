@@ -26,7 +26,8 @@ WORKDIR /app
 # - /app/logs — Tomcat access log (server.tomcat.accesslog.directory: logs,
 #   relative to the /app workdir); without it the valve cannot create its files
 #   on first request.
-RUN mkdir -p /var/log/marketplace /app/logs && chown app:app /var/log/marketplace /app/logs
+RUN mkdir -p /var/log/marketplace /app/logs /app/keys \
+    && chown app:app /var/log/marketplace /app/logs /app/keys
 
 # Copy layers in order: most stable → most volatile
 COPY --from=extractor /app/extracted/dependencies/ ./
@@ -69,4 +70,19 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
 # deploy crashed with "Could not find or load main class …JarLauncher". Verified locally:
 # merged layers + `java -jar app.jar` boots MarketplaceApplication through Tomcat
 # (DB connection is the only failure when no database is present, as expected).
-ENTRYPOINT ["sh", "-c", "if [ -n \"$PORT\" ] && [ -z \"$SERVER_PORT\" ]; then export SERVER_PORT=$PORT; fi && exec java $JAVA_OPTS -jar app.jar"]
+# Materialize the JWT keystore from JWT_KEYSTORE_B64 (write-only secret variable,
+# ~2.9 KB base64 for the RSA-2048 JKS) into the app-owned /app/keys dir — the
+# documented way to deliver a signing key to this non-root image on Railway:
+#   - Volumes mount as root (docs.railway.com/volumes: "Volumes are mounted as
+#     the root user") — the non-root app user cannot write /data.
+#   - Pre-deploy commands run in a separate container without volumes mounted
+#     (docs.railway.com/deployments/pre-deploy-command: "Changes to the
+#     filesystem are not persisted and volumes are not mounted").
+#   - Project-scoped API tokens cannot open `railway ssh` / shell sessions
+#     (CLI "Unauthorized"; generateShellToken → "Bad Access").
+# Decoding here at EVERY boot is idempotent and survives redeploys/restarts;
+# key rotation is a variable update. Nothing is written when the variable is
+# absent (local dev keeps whatever the profile provides). Atomic via .tmp+mv
+# so a truncated/invalid value can never leave a half-written keystore that
+# SecurityConfig.jwkSource would try to load.
+ENTRYPOINT ["sh", "-c", "if [ -n \"$JWT_KEYSTORE_B64\" ]; then printf %s \"$JWT_KEYSTORE_B64\" | base64 -d > /app/keys/jwt-keystore.jks.tmp && mv /app/keys/jwt-keystore.jks.tmp /app/keys/jwt-keystore.jks; fi; if [ -n \"$PORT\" ] && [ -z \"$SERVER_PORT\" ]; then export SERVER_PORT=$PORT; fi && exec java $JAVA_OPTS -jar app.jar"]
