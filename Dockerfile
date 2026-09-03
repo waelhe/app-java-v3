@@ -18,6 +18,16 @@ FROM eclipse-temurin:25-jre-alpine
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
+# Writable log directories for the non-root user (both profiles):
+# - /var/log/marketplace — logback FILE appender, default of
+#   logging.file.name: ${LOG_FILE:/var/log/marketplace/application.log} (logback
+#   errors in the cf0a1a9 Railway runtime log: "openFile(/var/log/marketplace/
+#   application.log,true) call failed. java.io.FileNotFoundException")
+# - /app/logs — Tomcat access log (server.tomcat.accesslog.directory: logs,
+#   relative to the /app workdir); without it the valve cannot create its files
+#   on first request.
+RUN mkdir -p /var/log/marketplace /app/logs && chown app:app /var/log/marketplace /app/logs
+
 # Copy layers in order: most stable → most volatile
 COPY --from=extractor /app/extracted/dependencies/ ./
 COPY --from=extractor /app/extracted/spring-boot-loader/ ./
