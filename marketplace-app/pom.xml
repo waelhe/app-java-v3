@@ -282,6 +282,21 @@
                 <configuration>
                     <generateGitPropertiesFile>true</generateGitPropertiesFile>
                     <generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+                    <!-- Official javadoc (GitCommitIdMojo.java, saved at scripts/prod-design-docs/):
+                         "Specify whether the plugin should fail when a '.git' directory cannot be
+                         found. When set to false and no .git directory is found the plugin will
+                         skip execution." Railway's DOCKERFILE build sends the source snapshot
+                         without .git (build log: ".git directory is not found!"), so the deploy
+                         build of 9dbbbb5 failed at marketplace-app. With false: builds without
+                         .git (Railway) skip git.properties gracefully — /actuator/info keeps the
+                         build section (spring-boot build-info needs no .git); builds with .git
+                         (local, GitHub CI) are unchanged. -->
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <!-- Same doc, failOnUnableToExtractRepoInfo: "Set this to false to continue
+                         the build even if unable to get enough data for a complete run. This may
+                         be useful during CI builds if the CI server does weird things to the
+                         repository." Covers degraded snapshots beyond the plain missing-dir case. -->
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
                 </configuration>
             </plugin>
             <plugin>
