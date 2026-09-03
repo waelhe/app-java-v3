@@ -127,20 +127,11 @@ spring:
             instanceId: AUTO
           threadPool:
             threadCount: 5
-          # PostgreSQL bytea semantics (required by the DDL V21 was copied from —
-          # quartz-2.5.2 tables_postgres.sql header: "In your Quartz properties
-          # file, you'll need to set org.quartz.jobStore.driverDelegateClass =
-          # org.quartz.impl.jdbcjobstore.PostgreSQLDelegate"):
-          #   The default StdJDBCDelegate reads JOB_DATA via ResultSet.getBlob —
-          #   pgjdbc interprets a BYTEA column as a large-object OID and reads it
-          #   as a long, so the very first job registration crash-loops the boot:
-          #   "Couldn't store trigger 'DEFAULT.searchIndexRefreshTrigger' …:
-          #   Couldn't retrieve job: Bad value for type long : \xaced…"
-          #   (b5d9f7f5 Railway deploy — first time the JDBC store ever ran; the
-          #   test profile uses job-store-type: memory, so CI never saw this).
-          #   PostgreSQLDelegate overrides the blob reads with getBytes.
-          jobStore:
-            driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+          # org.quartz.jobStore.driverDelegateClass (PostgreSQLDelegate) is set
+          # programmatically by QuartzPostgresDelegateConfig — a yml entry here
+          # would also reach RAMJobStore (test profile, job-store-type: memory),
+          # which has no such setter and fails context boot: "JobStore class
+          # 'org.quartz.simpl.RAMJobStore' props could not be configured".
 
 
 server:
