@@ -110,9 +110,18 @@ public class EventPublicationResubmission {
     /**
      * The sweep, parameterized on the clock — the test seam
      * {@code EventPublicationResubmissionIntegrationTest} (different package)
-     * drives it directly. Resubmits every FAILED publication that was never
-     * resubmitted (first retry) or whose last resubmission precedes
-     * {@code now - RETRY_BACKOFF}.
+     * drives it directly. Resubmits every FAILED publication that has never
+     * been retried (its completion attempt count is still the original run)
+     * or whose last resubmission precedes {@code now - RETRY_BACKOFF}.
+     *
+     * <p>Never-retried is detected through the framework's own counter, not
+     * through a null date: {@code last_resubmission_date} is initialized to
+     * the publication date when the row is stored (verified live in the PR
+     * #210 diagnostic round — a freshly failed publication carries
+     * {@code completion_attempts = 1, last_resubmission_date = publication_date}),
+     * and the count is incremented by resubmission only (2.1.1 bytecode:
+     * {@code markResubmitted} is the sole increment site —
+     * {@code markProcessing}/{@code markFailed} update the status only).
      *
      * <p>Legacy pre-lifecycle rows ({@code status IS NULL AND completion_date
      * IS NULL}) are included by the framework's own failed-criteria query and
@@ -127,14 +136,17 @@ public class EventPublicationResubmission {
     }
 
     /**
-     * A publication is due when it has never been resubmitted (its last
-     * resubmission date is null) or its last resubmission lies before the
-     * backoff cutoff. Everything else — recently resubmitted, already retried
-     * within the window — is left alone so the sweep cannot hammer a failing
-     * listener.
+     * A publication is due when it has never been retried (attempt count
+     * still at the original listener invocation — transient faults heal
+     * within one sweep, not at the next deploy) or its last resubmission lies
+     * before the backoff cutoff. Everything else — recently resubmitted — is
+     * left alone so the sweep cannot hammer a failing listener.
      */
     private static boolean dueForRetry(EventPublication publication, Instant cutoff) {
+        if (publication.getCompletionAttempts() < 2) {
+            return true;
+        }
         Instant lastResubmission = publication.getLastResubmissionDate();
-        return lastResubmission == null || lastResubmission.isBefore(cutoff);
+        return lastResubmission != null && lastResubmission.isBefore(cutoff);
     }
 }

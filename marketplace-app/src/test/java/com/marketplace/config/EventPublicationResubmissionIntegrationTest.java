@@ -7,7 +7,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.marketplace.shared.cache.EventPublicationResubmission;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -24,9 +23,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.modulith.events.EventPublication.Status;
-import org.springframework.modulith.events.FailedEventPublications;
-import org.springframework.modulith.events.ResubmissionOptions;
-import org.springframework.modulith.events.core.EventPublicationRegistry;
 import org.springframework.modulith.events.core.Staleness;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -108,12 +104,6 @@ class EventPublicationResubmissionIntegrationTest {
 
     @Autowired
     private EventPublicationResubmission resubmission;
-
-    @Autowired
-    private FailedEventPublications failedPublications;
-
-    @Autowired
-    private EventPublicationRegistry registry;
 
     @Autowired
     private ProbeListener probeListener;
@@ -205,47 +195,6 @@ class EventPublicationResubmissionIntegrationTest {
     }
 
     @Test
-    @Order(2)
-    void DIAGNOSTIC_resubmissionPipelineBisection() throws Exception {
-        probeListener.failNextDeliveries();
-        transactions.executeWithoutResult(tx ->
-                events.publishEvent(new ResubmissionProbeEvent(UUID.randomUUID())));
-        awaitPublication("FAILED", 1, "listener failure marks the publication FAILED");
-
-        System.out.println("DIAG row-before: " + jdbc.queryForMap(
-                "select status, completion_attempts, last_resubmission_date, publication_date, event_type, listener_id"
-                        + " from event_publication where listener_id like ?", LISTENER_PATTERN));
-        System.out.println("DIAG registry-incomplete-before: " + registry.findIncompletePublications().stream()
-                .map(p -> "id=" + p.getIdentifier() + " status=" + p.getStatus()
-                        + " attempts=" + p.getCompletionAttempts()
-                        + " lastResub=" + p.getLastResubmissionDate()
-                        + " target=" + p.getTargetIdentifier())
-                .toList());
-
-        // Control A — the framework's own resubmit, NO filter, raw bean:
-        System.out.println("DIAG calling raw failedPublications.resubmit(defaults())");
-        failedPublications.resubmit(ResubmissionOptions.defaults());
-        Thread.sleep(3000);
-        System.out.println("DIAG row-after-raw: " + jdbc.queryForMap(
-                "select status, completion_attempts, last_resubmission_date from event_publication where listener_id like ?",
-                LISTENER_PATTERN));
-
-        // Control B — the component's sweep (with the backoff filter):
-        System.out.println("DIAG calling resubmission.resubmitDue(now)");
-        resubmission.resubmitDue(Instant.now());
-        Thread.sleep(3000);
-        System.out.println("DIAG row-after-sweep: " + jdbc.queryForMap(
-                "select status, completion_attempts, last_resubmission_date from event_publication where listener_id like ?",
-                LISTENER_PATTERN));
-        System.out.println("DIAG registry-incomplete-after: " + registry.findIncompletePublications().stream()
-                .map(p -> "id=" + p.getIdentifier() + " status=" + p.getStatus()
-                        + " attempts=" + p.getCompletionAttempts()
-                        + " lastResub=" + p.getLastResubmissionDate())
-                .toList());
-    }
-
-    @Test
-    @Disabled("diagnostic round — restored after the root cause is fixed")
     void failedPublicationIsRecoveredAtRuntimeWithoutRestart() {
         // 1 — the listener fails: the publication goes FAILED (attempts = 1).
         probeListener.failNextDeliveries();
@@ -263,7 +212,6 @@ class EventPublicationResubmissionIntegrationTest {
     }
 
     @Test
-    @Disabled("diagnostic round — restored after the root cause is fixed")
     void failedPublicationIsRetriedAtMostOncePerBackoffWindow() {
         probeListener.failNextDeliveries();
         transactions.executeWithoutResult(tx ->
