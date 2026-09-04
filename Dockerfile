@@ -48,6 +48,26 @@ RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted
 # Same base image as the runtime stage ⇒ identical JVM version ("the same Java
 # version" requirement of the recipe) — and training runs in /app, the exact
 # directory the runtime uses, so the recorded classpaths match.
+#
+# OTEL env-mapping guard (bf2b0acd deploy failure, 2026-09-04): Railway's BUILD
+# environment injects OpenTelemetry SDK env vars pointing at its build-telemetry
+# unix socket (build log of bf2b0acd: the exporter received the endpoint
+# "unix:///dev/otel-grpc.sock"). Spring Boot 4.1 maps OpenTelemetry SDK
+# environment variables to Spring Boot configuration properties BY DEFAULT —
+# "management.opentelemetry.map-environment-variables", default true
+# (spring-configuration-metadata.json of spring-boot-opentelemetry 4.1.1, from
+# Maven Central). The mapped endpoint reaches the OTLP gRPC span exporter, which
+# validates its endpoint scheme EAGERLY at bean creation and rejects unix://
+# ("Invalid endpoint, must start with http:// or https://") → the training
+# context crashed (UnsatisfiedDependencyException through webMvcObservationFilter
+# → observationRegistry → … → otlpGrpcSpanExporter). Disabling the env mapping
+# for the TRAINING RUN ONLY closes the whole injection channel (traces, metrics,
+# logging, resource attributes — one flag, root cause) and makes the build-time
+# training run identical to the locally-verified one; the runtime is untouched
+# (the service's OTEL_* variables flow through the yml placeholders, not the SDK
+# env mapping). Verified locally on the extracted-layer layout: injected
+# OTEL_EXPORTER_OTLP_ENDPOINT=unix:///dev/otel-grpc.sock → exit 1 with the exact
+# production failure; same env + this flag → exit 0 (clean exit=onRefresh).
 FROM eclipse-temurin:25-jre-alpine AS trainer
 WORKDIR /app
 COPY --from=extractor /app/extracted/dependencies/ ./
@@ -66,6 +86,7 @@ RUN java -XX:AOTCacheOutput=/app/app.aot \
     -Dspring.jpa.hibernate.ddl-auto=none \
     -Dspring.sql.init.mode=never \
     -Dspring.session.redis.configure-action=none \
+    -Dmanagement.opentelemetry.map-environment-variables=false \
     -jar app.jar
 
 # ── Runtime stage ────────────────────────────────────
