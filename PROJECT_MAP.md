@@ -24,8 +24,10 @@
 
 **الديون التشغيلية المفتوحة:** دوران مفتاح JWT قبل **2026-12-02** (`ROTATION_DEADLINE` في `scripts/secrets/prod-secrets.env`) + `MAIL_*` placeholders (503 على فحص health الكامل فقط) + `OTEL_*` localhost (رسائل دورية بلا collector) + بند (1) أعلاه. **التوثيق الكامل بالأدلة:** تقرير الجلسة `download/railway-deployment-doc-2026-09.md` + `docs/railway-deployment-reference.md` (حُدّث رأسه بهذه الدفعة) + SYSTEM.md §15.
 
+**ما بعد السجل (مزامنة الحقيقة 2026-09-04):** main تقدّم بعد النشر بثلاث دمجات — `56b8d5f` (#197 توثيق النشر) + `1fa9af1` (#198 تحديث الإصدارات: PostgreSQL 18 و Redis 8 في المستودع + أكشنات CI + اعتماديات مثبّتة) + `19f7cea` (#199 تصميم Dockerfile الرسمي: cache mount + مرحلة AOT + ENTRYPOINT خالص + keystore B64 في الذاكرة) — كلها CI ×2 أخضر على الرؤوس. **فُحص fork النشر (`waelhe88-coder/app-java-v3`) 2026-09-04: ما زال على `27b5a155`** (آخر دفع 2026-09-03 22:10) — أي أن النشر الحي لم يحمل بعد التحديثات المذكورة. **بيد المستخدم (بوابات):** (1) مزامنة fork النشر و/أو إعادة النشر من main `19f7cea` — توكن الجلسة بلا صلاحية دفع على fork النشر؛ (2) ترقية خدمتي PostgreSQL 17→18 و Redis 7→8 على بوابة Railway (المسار الرسمي للترقية الكبرى: خدمة جديدة + نقل البيانات، لا تبديل مرآة في مكانها)؛ (3) الترحيل من config-as-code قبل 2026-11-15 (البند 1 أعلاه). الإنتاج أعيد فحصه 2026-09-04: liveness/readiness UP + jwks يخدم المفتاح الدائم — والفحص الكامل DOWN بعنصر البريد الموثق فقط.
 
-## Gate B — First Two Clients: Public (Flutter/native) + Confidential BFF (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
+
+## Gate B — First Two Clients: Public (Flutter/native) + Confidential BFF (2026-09-03) 🏗️ ✅ **MERGED** (`c52cef8` = #189, CI أخضر ×2)
 
 **Order:** قرار المستخدم المصحَّح: «(توصيتي لو جمهورك جوال: Flutter؛ لو ويب: Next.js BFF) **معا وليس واحد**» + «تابع بوابة B و تحقق من ان التعديلات تستند للوثائق الرسمية للاطار ومايفن ثم ادمج». القيد الحاكم: `docs/security/client-hosting-strategy-plan.md` §4/§7-B + `docs/security/oauth2-client-bootstrap-spec.md` §4.1/§4.4-هـ/و.
 
@@ -45,9 +47,9 @@
 - **تحديثات الحوكمة بنفس الدفعة:** خطة العملاء (§4 تصحيح TTL 300→900 موثق + §7-B ✅ بذيل الانحراف عن «1 PR لكل عميل» + §8-11) + المواصفة (§4.4-هـ/و) + SYSTEM.md (§6 المُهيّئان + §11 + §12 حقائق 11-13) + هذا القسم.
 - **انحراف موثق:** أمر المستخدم «النمطان معًا» قدّم «1 PR لكل عميل» (§7) — الدفعة واحدة لأن بنية التأسيس (الربط النوعي + مواضع البناء السبعة + مسار #183) مشتركة بين النمطين؛ consumer عميل BFF نفسه (تطبيق Next.js) خارج هذا المستودع (الباك اند مرساة — §1 الخطة).
 
-**الحالة:** PR مفتوح من الفرع بانتظار CI ×2 ثم كلمة الدمج (الأمر الصريح موجود: «ثم ادمج»).
+**الحالة:** ✅ مدمج — `c52cef8` (#189) بعد CI ×2 أخضر (سُجّل هنا في دفعة مزامنة الحقيقة 2026-09-04؛ كان القسم يقرأ «بانتظار كلمة الدمج» — كلمة الدمج صدرت ونُفِّذت في جلسة سابقة انقطعت قبل تحديث هذا السجل).
 
-## Phase A — Host-Neutral Readiness (2026-09-03) 🏗️ ✅ IMPLEMENTED (awaiting merge word)
+## Phase A — Host-Neutral Readiness (2026-09-03) 🏗️ ✅ **MERGED** (`4c0455f` = #188, CI أخضر ×2)
 
 **Order:** «أبدأ A» — مع توجيه صريح: تصميم رسمي من الوثائق لا اجتهاد، لا ترقيعات ولا ديون. القيد: `docs/security/client-hosting-strategy-plan.md` §7/§8 البند 10.
 
@@ -61,7 +63,7 @@
 - **مصادر رسمية مُنزَّلة ومحفوظة:** `scripts/prod-design-docs/` — صفحة how-to/webserver (Boot 4.1) + مرجع SS 7.1.1 exploits/http + مصادر Maven Central الرسمية (spring-boot 4.1.1 + وحداتها web-server/tomcat + spring-web 7.0.9 + spring-security-web 7.1.1) تحت `src-verify/`.
 - **مزامنة الدفعة:** الخطة الحاكمة (§6 صفان + §7 صف المرحلة A + §8 البند 10 ⚠️→✅ + §10 ثلاثة اقتباسات جديدة) + SYSTEM.md §11 (بند المرحلة A) + هذا القسم.
 
-**بانتظار كلمة الدمج** (الحوكمة: الدمج بأمر صريح). ما بعد الدمج: البوابات B (تقنية العميل) ثم C (الاستضافة) — بيد المستخدم.
+**الحالة:** ✅ مدمج — `4c0455f` (#188) بعد CI ×2 أخضر (سُجّل هنا في دفعة مزامنة الحقيقة 2026-09-04). ما بعد الدمج: البوابات B (نُفِّذت واندمجت #189) ثم C (الاستضافة) — بيد المستخدم.
 
 ## PR #184 — OAuth2 client bootstrap on the official path (2026-09-02) 🏗️ ✅ MERGED (`773558e`)
 
@@ -442,7 +444,7 @@
 - **Unit tests**: 300+ across all modules (0 failures, 0 errors)
 - **Integration tests**: 14 ModuleIntegrationTest classes in `marketplace-app` (95 tests, 0 failures, 0 errors)
 - **WebMvcTest**: 44 controller tests across modules
-- **Infrastructure**: Testcontainers (PostgreSQL 17), Redis 7 (CI service)
+- **Infrastructure**: Testcontainers (PostgreSQL 18), Redis 8 (CI service) — refreshed 2026-09-04 (#198: PG 17→18 per postgresql.org current stable major; Redis 7→8 per redis.io; both verified live in CI ×2 green)
 
 ## Test Infrastructure Fixes (2026-06-13)
 
