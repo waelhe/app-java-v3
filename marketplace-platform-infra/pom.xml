@@ -42,6 +42,20 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Application Module Actuator — official recipe, Spring Modulith 2.1.1
+             reference "Production-ready Features — Application Module Actuator":
+             "To enable the actuator, add the spring-modulith-actuator dependency
+             to the project" (runtimeOnly scope; copy saved at
+             scripts/modulith-production-ready.html). Version from the Modulith
+             BOM imported in the root pom's dependencyManagement. Exposes
+             GET /actuator/modulith (the module structure: names, displayName,
+             dependencies) — secured by SecurityConfig's authenticated()
+             default for /actuator/** (only health/info are permitAll). -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-actuator</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-session-data-redis</artifactId>

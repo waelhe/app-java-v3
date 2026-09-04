@@ -147,12 +147,27 @@ server:
       enabled: true
       directory: logs
       pattern: "%h %l %u %t &quot;%r&quot; %s %b %{ms}T"
+      # Bound retention — spring-boot-tomcat 4.1.1 spring-configuration-metadata:
+      # server.tomcat.accesslog.max-days, "Number of days to retain the access
+      # log files before they are removed", DEFAULT -1 (Tomcat AccessLogValve
+      # maxDays semantics: <= 0 keeps every rotated file forever). With daily
+      # rotation (rotate: true default) the default grows /app/logs unbounded
+      # for the lifetime of the container's writable layer — the opposite of
+      # self-managing disk hygiene. 30 days matches a monthly investigation
+      # window; the files are container-local (lost on redeploy) either way.
+      max-days: 30
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # "modulith" — the Application Module Actuator (spring-modulith-actuator,
+        # official Modulith 2.1.1 "Production-ready Features" recipe): GET
+        # /actuator/modulith returns the live module structure (names,
+        # displayName, dependency graph) so the system reports its own layers.
+        # NOT permitAll in SecurityConfig — it falls under the authenticated()
+        # default for /actuator/** (module topology is internal information).
+        include: health,info,metrics,prometheus,modulith
   endpoint:
     conditions:
       enabled: true
