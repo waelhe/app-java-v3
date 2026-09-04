@@ -15,11 +15,11 @@
 | النظام | Marketplace Backend — REST + GraphQL، سياق Spring **واحد** (حزمة الجذر `com.marketplace`) | `MarketplaceApplication.java` |
 | Java | 25 (`--release 25`) | `pom.xml:41` |
 | Spring Boot | **4.1.1** عبر الوراثة من `spring-boot-starter-parent` | `pom.xml:7-10` |
-| Spring Modulith | 2.1.0 (BOM مستورد) | `pom.xml:65-67` |
+| Spring Modulith | 2.1.1 (BOM مستورد) | `pom.xml:65-67` |
 | Spring Authorization Server | 7.1.1 (قادم عبر BOM الإطار؛ مصادره مخبأة محلياً — §10) | `scripts/verify-aud-claim/sas-all/` |
 | Maven | wrapper 3.9.16 (`./mvnw`)، enforcer يشترط `[3.9,)` | `mvnw` + `pom.xml:230` |
-| قاعدة البيانات | PostgreSQL 17 (Flyway يملك المخطط حصراً — §7) | `.github/workflows/ci.yml:23-24` |
-| الذاكرة/الجلسات | Redis 7 (جلسات + 13 مخبأة مسماة) | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
+| قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers — ترقية 2026-09-04 من 17)؛ الإنتاج على Railway ما زال PostgreSQL 17 حتى ترقية بوابية من المستخدم؛ Flyway 12.4.0 (BOM) يقبلها — `handlesDatabaseProductNameAndVersion` يفحص البادئة لا النطاق | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` |
+| الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose — ترقية 2026-09-04 من 7)؛ الإنتاج على Railway ما زال Redis 7؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
 | الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) | `pom.xml:44-45` |
 | الوحدات | **16** وحدة Maven في Reactor الجذر | `pom.xml:22-37` |
 | النشر | Dockerfile + railway.toml + docker-compose.yml | جذر المستودع |
@@ -155,7 +155,7 @@ package com.marketplace.booking;
 
 ## 9. طبقة الجودة و CI
 
-- **ثلاثة workflows** في `.github/workflows/`: `ci.yml` (services: postgres:17-alpine + redis:7-alpine بصحة مُتحقَّقة، gitleaks، JDK matrix temurin، `./mvnw verify --batch-mode` مع env قاعدة البيانات)، `integration-test.yml` (`clean verify` + تشغيل فعلي للخادم ببروفايل test)، `maven-publish.yml`.
+- **ثلاثة workflows** في `.github/workflows/`: `ci.yml` (services: postgres:18-alpine + redis:8-alpine بصحة مُتحقَّقة، gitleaks@v3، JDK matrix temurin، `./mvnw verify --batch-mode` مع env قاعدة البيانات)، `integration-test.yml` (`clean verify` + تشغيل فعلي للخادم ببروفايل test)، `maven-publish.yml`. إصدارات الأكشنات مرفوعة إلى checkout@v7 / setup-java@v6 / upload-artifact@v7 / gitleaks@v3 (2026-09-04 — Node 20 يُحذف من عدّاءات GitHub في 2026-09-16 فكان الترقيل ضرورة لا رفاهية).
 - **تصنيف الاختبارات:** وحدة (surefire, `*Test`) / تكامل (failsafe, `*IT`) — **فصل صارم لا يُخلط**. `@WebMvcTest` شرائح controllers (44 اختباراً)؛ `@SpringBootTest` سياق كامل (يحتاج Redis حياً — §4)؛ تكاملات الوحدات 14 صنف `ModuleIntegrationTest` في `marketplace-app`؛ Testcontainers مع `disabledWithoutDocker`.
 - **البوابات الخمس في كل build:** تغطية ≥70%، صفر تحذيرات مترجم، enforcer، فحص Modulith/ArchUnit، gitleaks. آخر بوابة خضراء مسجلة: `mvn clean verify` كامل الـ Reactor — 538 اختبار وحدة / 0 فشل (سجل PROJECT_MAP 2026-08-29، زمن 96037ef؛ الأعداد تنمو مع الدفعات).
 
