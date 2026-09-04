@@ -1,5 +1,17 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Search Layer — الدالة الرسمية + إزالة الآلة الميتة (2026-09-04) 🏗️ فرع `fix/search-websearch-and-dead-matview`
+
+**الأمر الحاكم:** «افتح فرع جديد… نفّذ… أريد نظامًا مدارًا آليًا من الإطار ولا يوجد به عبث وتدخل وإدارة يدوية» — تنفيذ على طبقة البحث بلا رأي: كل تغيير مسند لدالة/سلوك رسمي موثق.
+
+**العيب الحي (مثبت من الكود):** `ProviderListingRepository.searchFullText` كان يستدعي `to_tsquery('simple', :query)` على مدخل المستخدم بعد تعديل يدوي في `SearchService` (`replaceAll("\\s+", " & ")`) — أي مدخل فيه `"` أو `(` أو `-` بادئ = خطأ صياغة tsquery → استثناء SQL → HTTP 500. **الإصلاح الرسمي:** `websearch_to_tsquery('simple', :query)` (مرجع PostgreSQL 18 — Parsing Queries: «simple unformatted text is a valid query»؛ مثالها الرسمي `""" )( dummy \ query <->` يُتحلل بلا خطأ) + حذف التعديل اليدوي (تمرير خام مقامًا) — والمستخدم يكسب عمليات البحث الرسمية: `"عبارة مقتبسة"` و`OR` و`-استثناء`.
+
+**الآلة الميتة (مثبتة بـ grep):** `mv_listing_search` (V9) تُنشأ وتُحدَّث كل 5 دقائق بواجبة Quartz متينة (`searchIndexRefreshJob`) بينما **لا يقرؤها أي استعلام** — البحث النصي يقرأ `provider_listings` عبر فهرس GIN مباشرة. **V29:** إسقاط العرض المادي وفهرسيه (فهرس GIN يبقى) + حذف صفوف الواجبة/الزناد من متجر Quartz JDBC (ترتيب Flyway-قبل-Quartz يضمنه الإطار: `SchedulerDependsOnDatabaseInitializationDetector` في spring-boot-quartz 4.1.1 — مثبت من الـ jar المحلي). حذف `SearchIndexQuartzConfig` + `SearchIndexRefresher` + اختباره.
+
+**الحارسان:** (1) `QuartzJdbcJobStoreConfigTest` أُعيدت كتابته بفاعل بديل (واجبة اختبار تُسجَّل زمن-التشغيل وتُحذف) — درس b5d9f7f5 (قراءة JOB_DATA bytea عبر PostgreSQLDelegate) محفوظ + تأكيد أن الواجبة الميتة لم تُعَد؛ (2) `CatalogSearchFullTextIntegrationTest` جديد: دلالات websearch (AND/عبارة/استثناء/OR) على PostgreSQL حقيقي + `assertThatCode().doesNotThrowAnyException()` للمدخلات الخاصة (يقفل فئة العيب) + يقلع على مخطط Flyway الحقيقي (V1..V29 — يتحقق من سلاسة V29 ذاتها). **درس CI مسجل (eff5966):** اختبارات الشرائح (`@ApplicationModuleTest`) تشارك قاعدة خدمة CI الواحدة وتُعاد استخدامًا عبر سياق مخبأ — اختبار يزرع صفوفًا يجب أن يعزل بقاعدته الخاصة (`@ServiceConnection` بحاوية مستقلة، نمط QuartzJdbcJobStoreConfigTest)، وإلا كسر اختبارات أخرى تعدّ الحالة فارغة (`CatalogModuleIntegrationTest.listActiveSummary_returnsEmptyPage` فشل بهذا التلوث في الدفعة الأولى — عولج من الجذر بعزل الحاوية لا بترقيع الاختبار القائم). `SearchServiceTest`: تمرير خام (+ اختبار خام جديد).
+
+**ما لم يُلمس:** واجهات REST/GraphQL (بوابة توافق OpenAPI لم تتأثر)، ترحيلات V1..V28 كما هي (V29 جديد فقط)، أسماء المخبآت وقنوات الإبطال (AFTER_COMMIT) كما هي، صفر اعتماديات جديدة، صفر تغيير حدود Modulith (SPI بنفس التوقيع — إعادة تسمية معامل + javadoc فقط).
+
 ## Event Publication Archive — إغلاق دين الإنتاج الحي (2026-09-04) 🏗️ فرع `fix/modulith-event-archive-schema`
 
 **الأمر الحاكم:** «فعل البروتوكول ونفذ… لا ترقيع ولا ديون» (المبدأ الدائم) — تنفيذ على آخر دين كودي معلن بعد إغلاق البوابات الثلاث (نشر #201 / طبقة البيانات / IaC #202).

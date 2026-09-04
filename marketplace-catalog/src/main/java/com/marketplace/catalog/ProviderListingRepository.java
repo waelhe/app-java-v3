@@ -22,22 +22,33 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * Full-text search using PostgreSQL tsvector with GIN index.
      * Searches title and description columns.
      * Matches the GIN index defined in V9__search_index.sql.
+     *
+     * <p>Uses the official {@code websearch_to_tsquery} — the PostgreSQL function
+     * designed for raw user input: "simple unformatted text is a valid query"
+     * and arbitrary special characters never raise a tsquery syntax error
+     * (PostgreSQL 18 reference, Functions › Text Search › Parsing Queries,
+     * example: {@code websearch_to_tsquery('english', '""" )( dummy \ query <->')}
+     * parses to {@code 'dummi' & 'queri'}). The previous {@code to_tsquery} form
+     * received mangled user input and raised SQL exceptions (HTTP 500) for any
+     * input containing quotes, parentheses or a leading dash. Users also gain
+     * the officially supported web-search operators: {@code "quoted phrase"},
+     * {@code OR}, and {@code -exclusion}.
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ to_tsquery('simple', :query)
+                  @@ websearch_to_tsquery('simple', :query)
             ORDER BY ts_rank(
                 to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                to_tsquery('simple', :query)
+                websearch_to_tsquery('simple', :query)
             ) DESC
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ to_tsquery('simple', :query)
+                          @@ websearch_to_tsquery('simple', :query)
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchFullText(@Param("query") String query, Pageable pageable);
