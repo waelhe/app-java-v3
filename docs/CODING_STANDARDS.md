@@ -834,8 +834,10 @@ RUN java -Djarmode=layertools -jar app.jar extract
 
 ### 17.4 Health Checks
 
+**Implemented design (2026-09-04, official-recipe aligned):** the repo's Dockerfile carries **no `HEALTHCHECK`** — the official Spring Boot 4.1 container recipe does not include one, and on Railway the platform owns deploy-time gating via `healthcheckPath` (`railway.toml` [deploy] → `/actuator/health/liveness`). The snippet below remains the reference pattern for generic Docker hosts that lack a platform healthcheck:
+
 ```dockerfile
-# Dockerfile HEALTHCHECK
+# Dockerfile HEALTHCHECK (generic-Docker reference pattern — not used on Railway)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD wget -qO- http://localhost:8080/actuator/health/liveness || exit 1
 ```

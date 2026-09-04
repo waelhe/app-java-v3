@@ -111,10 +111,10 @@ redirect URIs صريحة، واختبار بنمط S2/S3 يحمل الصف ال�
 | الحقيقة | الدليل الرسمي | الحالة |
 |---------|----------------|--------|
 | الصورة حاوية رسمية بطبقات | Dockerfile يستخدم `jarmode=tools` (المرجع الرسمي: spring-boot/reference/packaging/container-images/dockerfiles.html — «java -Djarmode=tools -jar application.jar extract --layers») | ✅ منفذ (مرحلة 0 مغلقة) |
-| فحوص صحة/جهوزية رسمية | Actuator `/actuator/health/{liveness,readiness}` + HEALTHCHECK في Dockerfile | ✅ |
+| فحوص صحة/جهوزية رسمية | Actuator `/actuator/health/{liveness,readiness}` (منفذ — application.yml probes) + بوابة نشر المنصة `healthcheckPath` في `railway.toml` [deploy] (دينها الموثق: لا ينعكس في manifests — SYSTEM.md §15)؛ **لا HEALTHCHECK في Dockerfile عمدًا**: وصفة Boot 4.1 الرسمية للحاوية لا تتضمنه والمنصة تملك بوابة النشر | ✅ (مُصوَّب 2026-09-04: النص القديم ادّعى وجود HEALTHCHECK في Dockerfile — لم يوجد قط، تحقق git -S) |
 | إعدادات إنتاج بلا افتراضات | `application-prod.yml` fail-fast: `${DB_PASSWORD}`, `${JWT_KEYSTORE_*}`, `${CORS_ALLOWED_ORIGINS}`, `${AUTH_SERVER_ISSUER}` (أُغلق بالمرحلة A: كانت قيمة الأساس `http://localhost:8080` تتسرب للإنتاج) | ✅ |
 | **متطلب مشترك لأي مضيف خلف بروكسي TLS** | `server.forward-headers-strategy: FRAMEWORK` في `application-prod.yml` فقط (مرجع Spring Boot الرسمي how-to/webserver «Running Behind a Front-end Proxy Server» + مرجع Spring Security 7.1.1: حد الثقة — خلف بروكسي موثوق فقط) + `server.tomcat.redirect-context-root: false` (وصفة الجافادوك الرسمية) | ✅ **مُغلق بالمرحلة A** (اختبار حارس: `ForwardHeadersProdConfigTest` + دبوس سلوك الفلتر: `ForwardedHeaderFilterBehaviorTest`) |
-| قواعد البيانات خارجية مُدارة | PostgreSQL 17 + Redis 7 (Neon/Upstash في سيناريو CF؛ قابلان للاستبدال بأي مزود مُدار متوافق) | ✅ قابل للنقل |
+| قواعد البيانات خارجية مُدارة | PostgreSQL 18 + Redis 8 في المستودع منذ 2026-09-04 (#198 — per postgresql.org/redis.io current stable)؛ الإنتاج الحي على Railway ما زال PostgreSQL 17 + Redis 7 حتى الترقية البوابية الموثقة (SYSTEM.md §15)؛ قابلان للاستبدال بأي مزود مُدار متوافق | ✅ قابل للنقل |
 
 **ترتيب القرارات (سبب منطقي موثق):** القرار (1) تقنية العميل يسبق القرار (2) الاستضافة،
 لأن الاستضافة تتبع العميل:
