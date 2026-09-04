@@ -70,6 +70,24 @@ jobs:
         run: git fetch --force --tags
 
       - name: OpenAPI backward compatibility gate
+        env:
+          # The gate boots the built jar (default profile, no
+          # SPRING_PROFILES_ACTIVE) to fetch /v3/api-docs. The base
+          # application.yml defaults to localhost:5432 with user
+          # "marketplace" — the CI postgres service runs as test/test, so
+          # without these overrides the boot fails with a connection/auth
+          # error the first time a baseline tag exists. (The tag path had
+          # never executed before 2026-09-05: zero tags existed, so the
+          # script always skipped itself.) The last three flags mirror the
+          # proven "Start Application" env of integration-test.yml.
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/marketplace
+          SPRING_DATASOURCE_USERNAME: test
+          SPRING_DATASOURCE_PASSWORD: test
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: false
+          MANAGEMENT_HEALTH_MAIL_ENABLED: false
+          MANAGEMENT_TRACING_ENABLED: false
         run: ./.ci/check-openapi-compat.sh
 
       - name: Run Maven verify (unit + integration tests)

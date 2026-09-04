@@ -1,35 +1,61 @@
-# This workflow will build a package using Maven and then publish it to GitHub packages when a release is created
+# This workflow builds a package using Maven and then publishes it to GitHub
+# Packages when a release is created.
 # For more information see: https://github.com/actions/setup-java/blob/main/docs/advanced-usage.md#apache-maven-with-a-settings-path
-
+#
+# Framework-managed release pipeline (reworked 2026-09-05 — the original
+# template had never run: zero releases existed, and two defects would have
+# failed the first run):
+#   1. The root pom carries no distributionManagement — `mvn deploy` had
+#      nowhere to publish. Added to the root pom (id "github" matches the
+#      server-id below; setup-java writes the authenticated server entry
+#      into settings.xml).
+#   2. The reactor version is 0.1.0-SNAPSHOT — a release publishes the TAG's
+#      version, so versions-maven-plugin sets every module version from the
+#      release tag name (v0.1.0 -> 0.1.0) via -DprocessAllModules. The poms
+#      on main stay 0.1.0-SNAPSHOT (development flow unchanged).
+# `deploy -DskipTests` publishes exactly what CI already verified: the tag
+# points at a main commit whose required checks (Build & Test + Full
+# Integration Test) ran the full suite. Checkout uses fetch-depth: 0 because
+# marketplace-app binds git-commit-id at build time.
 name: Maven Package
 
 on:
   release:
-    types: [created]
+    types: [ created ]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  build:
-
+  publish:
+    name: Publish to GitHub Packages
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-    - uses: actions/checkout@v7
-    - name: Set up JDK 25
-      uses: actions/setup-java@v6
-      with:
-        java-version: "25"
-        distribution: "temurin"
-        cache: maven
-        server-id: github
-        settings-path: ${{ github.workspace }}
+      - name: Checkout (full history for git-commit-id)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-    - name: Build with Maven
-      run: ./mvnw -B package --batch-mode
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: "temurin"
+          cache: maven
+          server-id: github
+          settings-path: ${{ github.workspace }}
 
-    - name: Publish to GitHub Packages Apache Maven
-      run: ./mvnw deploy -s $GITHUB_WORKSPACE/settings.xml
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
+      - name: Derive release version from tag
+        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Set reactor version from tag (strip -SNAPSHOT, all modules)
+        run: >-
+          ./mvnw --batch-mode org.codehaus.mojo:versions-maven-plugin:2.21.0:set
+          -DnewVersion="$RELEASE_VERSION" -DprocessAllModules
+          -DgenerateBackupPoms=false
+
+      - name: Build and publish
+        run: ./mvnw --batch-mode -DskipTests deploy -s "$GITHUB_WORKSPACE/settings.xml"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
