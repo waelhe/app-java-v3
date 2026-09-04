@@ -133,7 +133,20 @@ class EventPublicationResubmissionIntegrationTest {
 
     public static class ProbeListener {
 
-        final AtomicBoolean fail = new AtomicBoolean(true);
+        private final AtomicBoolean fail = new AtomicBoolean(true);
+
+        /** Control seam — must be a method, not field access: the bean is
+         *  AOP-proxied (CompletionRegisteringAdvisor), and a CGLIB proxy's
+         *  fields are never initialized — method calls delegate to the real
+         *  target instance. */
+        public void failNextDeliveries() {
+            fail.set(true);
+        }
+
+        /** Control seam — see {@link #failNextDeliveries()}. */
+        public void succeedFromNowOn() {
+            fail.set(false);
+        }
 
         @ApplicationModuleListener
         public void onProbe(ResubmissionProbeEvent event) {
@@ -184,13 +197,13 @@ class EventPublicationResubmissionIntegrationTest {
     @Test
     void failedPublicationIsRecoveredAtRuntimeWithoutRestart() {
         // 1 — the listener fails: the publication goes FAILED (attempts = 1).
-        probeListener.fail.set(true);
+        probeListener.failNextDeliveries();
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new ResubmissionProbeEvent(UUID.randomUUID())));
         awaitPublication("FAILED", 1, "listener failure marks the publication FAILED");
 
         // 2 — root cause fixed: the same listener now succeeds.
-        probeListener.fail.set(false);
+        probeListener.succeedFromNowOn();
 
         // 3 — one sweep re-delivers: publication completes into the archive
         //     with completion_attempts >= 2 (original attempt + resubmission).
@@ -200,7 +213,7 @@ class EventPublicationResubmissionIntegrationTest {
 
     @Test
     void failedPublicationIsRetriedAtMostOncePerBackoffWindow() {
-        probeListener.fail.set(true);
+        probeListener.failNextDeliveries();
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new ResubmissionProbeEvent(UUID.randomUUID())));
         awaitPublication("FAILED", 1, "listener failure marks the publication FAILED");
