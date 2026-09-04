@@ -2,8 +2,8 @@
 
 > **الحالة (محدّثة 2026-09-04): نشِط — Railway هو منصة الإنتاج الحية**
 >
-> **النشر الحي:** `https://app-java-v3-production-d020.up.railway.app` (بروفايل prod، نشر **`80171be7`** من main **`f9c5d34`** = #203 — تحقق حي 2026-09-04: liveness/readiness 200 UP، jwks RSA `kid=marketplace-jwt`، OIDC discovery 200، Flyway «now at version v28»، إقلاع 10.634s)
-> **سجل النشر الحالي (سبتمبر 2026):** §0 أدناه — موجة أولى #190–#196 (7 أسباب جذرية) + **موجة ثانية #197–#203 (إعادة التصميم على الوثائق الرسمية: Dockerfile الرباعي + AOT + طبقة البيانات PG18/Redis8 + IaC + V28) — §0.5**
+> **النشر الحي:** `https://app-java-v3-production-d020.up.railway.app` (بروفايل prod، نشر **`3e8de67f`** من main **`6a47e066`** = #205 — تحقق حي 2026-09-04: liveness/readiness 200 UP، jwks RSA `kid=marketplace-jwt`، OIDC discovery 200، Flyway «now at version v30» (V29+V30 مطبقتان)، صفر أسطر ERROR في الإقلاع، فحص دخان حي للبحث = 200 على المدخل الذي كان يسبب 500، إقلاع 11.537s — دفعه المستخدم بيده عبر fork 15:44Z)
+> **سجل النشر الحالي (سبتمبر 2026):** §0 أدناه — موجة أولى #190–#196 (7 أسباب جذرية) + موجة ثانية #197–#203 (إعادة التصميم على الوثائق الرسمية: Dockerfile الرباعي + AOT + طبقة البيانات PG18/Redis8 + IaC + V28) — §0.5 + **موجة ثالثة #205 (البحث بالدالة الرسمية + V29/V30) — §0.6**
 > **ملاحظة حوكمة:** البوابة C (استضافة العملاء) في `docs/security/client-hosting-strategy-plan.md` ما زالت مفتوحة — الإنتاج الحي على Railway لا يُغلقها؛ ARCHITECTURE.md §5 يبقى خط CF المستقبلي.
 >
 > ---
@@ -28,7 +28,7 @@
 
 **البنية الحية (بعد الموجة الثانية):** 5 خدمات: **app-java-v3** (بناء Dockerfile عبر IaC — المستودع بلا ملفات CaC؛ §0.5) + **postgres-18** (قالب postgres-ssl:18 الرسمي + فوليوم 84MB؛ نقل 57 جدولاً صفر فرق) + **redis** (8.2 بالقالب الرسمي: فوليوم + requirepass + RDB) + **postgres-17** (نافذة استرجاع — حذفها بأمر) + **netdiag** (ناقلة النقل — تنظيفها بأمر)؛ 25 متغيرًا على التطبيق (write-only، محفوظة بـ preserve() الرسمية) + فوليوم `/data` (مُصرّح به في IaC؛ فصله بأمر).
 
-**سلسلة نشور main كاملة (GraphQL v2 حي 2026-09-04):** `c82d9831` (27b5a155) ← فشل `bf2b0acd` (41eeb05 — أُصلح جذريًا في #201) ← `6c814e28` (349052b) ← `442c3665` (349052b — قطع طبقة البيانات) ← `51b5496d` (707e052 = #202) ← **`80171be7` (f9c5d34 = #203) — النشط**.
+**سلسلة نشور main كاملة (GraphQL v2 حي 2026-09-04):** `c82d9831` (27b5a155) ← فشل `bf2b0acd` (41eeb05 — أُصلح جذريًا في #201) ← `6c814e28` (349052b) ← `442c3665` (349052b — قطع طبقة البيانات) ← `51b5496d` (707e052 = #202) ← `80171be7` (f9c5d34 = #203) ← `d41ed3fe` (f988c08 = #204 truth-sync — شجرة تشغيل متطابقة بايتاً) ← **`3e8de67f` (6a47e066 = #205) — النشط**.
 
 ### 0.5 الموجة الثانية #197–#203 — إعادة التصميم على الوثائق الرسمية (2026-09-04)
 
@@ -50,6 +50,19 @@
 **المصادر الرسمية المعتمدة للقرارات (كل الموجتين):** مرجع Boot 4.1 Dockerfiles (jarmode=tools + AOT Cache) + javadoc git-commit-id + ملف Quartz `tables_postgres.sql` (PostgreSQLDelegate) + وثائق Railway (volumes: root mount؛ pre-deploy: حاوية منفصلة؛ healthchecks: PORT؛ cache-mounts؛ IaC + preserve()؛ قوالب postgres/redis؛ مسار dump/restore) + مرجع Modulith 2.1.1 (ملحق المخططات) + spring-configuration-metadata.json من Maven Central + Nixpacks/Railpack providers (قوائم JDK) — نسخ محفوظة محلياً (مساحة عمل الجلسة `download/audit2-docs/` + `scripts/doc-verify/`) والاقتباسات داخل المستودع تشير إلى عناوين URL الرسمية.
 
 **ديون معلنة (مراجعة 2026-09-04 بعد الموجة الثانية — القائمة الحية الموثوقة في SYSTEM.md §15):** ~~إهمال Config-as-Code حتى 2026-12-01~~ ✅ مُغلق (#202 — IaC)؛ ~~قسم `[deploy]` الملفي لا ينعكس في manifests~~ ✅ مُغلق (#202 — إعدادات خدمة-مستوى)؛ ~~جدول الأرشفة المفقود~~ ✅ مُغلق (#203 — V28). المفتوحة بيد المستخدم حصراً: حذف `postgres-17` (نافذة استرجاع — يحرر حد الخطة)، تنظيف `netdiag`، فصل فوليوم `/data`، نسخ فوليومات احتياطية (بوابة خطة/UI)، اختيار مزوّد `MAIL_*`/`OTEL_*`، دوران مفتاح JWT قبل **2026-12-02**، تدوير التوكنين (GitHub fork PAT + Railway token — ظهرا نصًا في المحادثة).
+
+### 0.6 الموجة الثالثة #205 — طبقة البحث بالدالة الرسمية + إزالة الآلة الميتة (2026-09-04)
+
+> المبدأ الحاكم (أمر المستخدم): «نظام مدار آليًا من الإطار، لا عبث ولا تدخل وإدارة يدوية — ابنِ وحسّن طبقة بدون كسر الطبقات الأخرى». دفع المستخدم بيده `6a47e066` إلى fork النشر (15:44Z) فبنى Railway تلقائيًا نشر `3e8de67f` (SUCCESS) وطبّق V29+V30 عند الإقلاع.
+
+| البند | التغيير | الأسناد الرسمي (مُتحقق) |
+|---|---|---|
+| #205/`6a47e066` | **البحث النصي بـ `websearch_to_tsquery('simple', :query)`** (إغلاق عيب 500 الحي: المدخل الخام بـ `(`/`"`/`-` كان يرمي خطأ صياغة tsquery) + عمليات المستخدم الرسمية (عبارة مقتبسة، `OR`، `-استثناء`) | مرجع PostgreSQL 18 §«Parsing Queries»: «simple unformatted text is a valid query» — الدالة الرسمية المصممة لمدخلات المستخدم |
+| V29 (ضمن #205) | إسقاط العرض المادي الميت `mv_listing_search` وفهرسيه + حذف صفوف واجبة `searchIndexRefresh` من متجر Quartz JDBC (آلة تُحدّث كل 5 دقائق بلا قارئ واحد — grep) | ترتيب Flyway-قبل-Quartz يضمنه الإطار (`SchedulerDependsOnDatabaseInitializationDetector` — spring-boot-quartz 4.1.1) |
+| V30 (ضمن #205) | تسلسل مراجعات Envers `revinfo_seq` (V24 كتبت identity بينما المولّد يستخدم التسلسل — أول كتابة `@Audited` على مخطط الترحيلات كانت ستفشل حيًا) | كشفه حارس يقلع على مخطط Flyway الحقيقي (نمط `QuartzJdbcJobStoreConfigTest` — درس «مخطط الاختبار ≠ مخطط الإنتاج») |
+| (حارس الجودة) | `CatalogSearchFullTextIntegrationTest` — دلالات websearch على PostgreSQL حقيقي + `doesNotThrowAnyException` للمدخلات الخاصة + إقلاع على V1..V30 | حارس failsafe دائم: أي جدول إطاري ناقص من الترحيلات يُكشف في CI |
+
+**التحقق الحي (نشر `3e8de67f`، 2026-09-04):** سجل الإقلاع يحمل `Migrating schema "public" to version "29 - remove dead search matview"` + `"30 - envers revision sequence"` + `Successfully applied 2 migrations … now at version v30` + **صفر أسطر ERROR** (وصفر أخطاء أرشفة — V28 مستمر)؛ إقلاع 11.537s ببروفايل prod؛ الفحص الثلاثي أخضر (liveness/readiness/jwks/OIDC)؛ **فحص دخان حي للميزة:** `GET /api/v1/search?q=cleaning (deep) -iron` (مدخل عيب الـ 500 القديم) = **200**، والعبارات المقتبسة و`OR` و`-استثناء` كلها 200.
 
 ---
 
