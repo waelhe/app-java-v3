@@ -5,4 +5,14 @@ target/
 **/target/
 cp.txt
 *.md
+**/*.md
+# Documentation trees — never needed in the build context (the layered runtime
+# image only ships application code + libs; excluding them shrinks the context
+# sent to the builder — Dockerfile best practices: "exclude files that are not
+# needed for the build" / "prevent copying them to the image").
+docs/
+keys/
+# Signing keys must never enter the build context (repo carries the runbook only
+# today; this also future-proofs a dev keystore dropped into keys/).
+.ci/
 .github/

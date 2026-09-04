@@ -7,9 +7,11 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.mock.env.MockEnvironment;
 
+import java.util.Base64;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>This is the CI check mandated by the risk register. It pins the contract of
  * {@link SecurityConfig#jwkSource(org.springframework.core.io.ResourceLoader,
- * org.springframework.core.env.Environment)} on three branches:</p>
+ * org.springframework.core.env.Environment)} on six branches:</p>
  *
  * <ol>
  *   <li><b>prod + blank keystore ⇒ fail-fast</b> — profile-gated exactly like
@@ -41,6 +43,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       JKS), committed under {@code src/test/resources/keys/test-jwt.jks}; the
  *       loaded key must carry the configured alias as its {@code keyID} and a
  *       private part, proving the production path end-to-end at the bean level.</li>
+ *   <li><b>prod + b64 channel ⇒ persistent JKS key, no file involved</b> — the
+ *       write-only-variable channel ({@code JWT_KEYSTORE_B64}) the Railway
+ *       production deployment uses: base64 JKS bytes decoded in memory by
+ *       {@code KeyStore.load(InputStream, char[])}.</li>
+ *   <li><b>b64 without complete credentials ⇒ fail-fast in every profile</b> — a
+ *       half-configured keystore is a misconfiguration, never an intentional
+ *       quickstart; it must not silently degrade to an ephemeral key.</li>
+ *   <li><b>b64 wins over path</b> — when both channels are present the base64
+ *       channel is authoritative (the production reality: the path value points
+ *       at a location only the legacy entrypoint ever materialized).</li>
  * </ol>
  *
  * <p>Unit level (no Spring context), mirroring {@code JwtRolesRoundTripTest}:
@@ -56,19 +68,19 @@ class JwkSourceProdHardeningTest {
 
     @Test
     void failsFastWhenKeystoreBlankInProdProfile() {
-        SecurityConfig config = new SecurityConfig(properties("", "", "", ""), null);
+        SecurityConfig config = new SecurityConfig(properties("", "", "", "", ""), null);
         MockEnvironment prod = new MockEnvironment();
         prod.setActiveProfiles("prod");
 
         assertThatThrownBy(() -> config.jwkSource(new DefaultResourceLoader(), prod))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("marketplace.security.jwt.keystore")
+                .hasMessageContaining("marketplace.security.jwt.keystore.b64")
                 .hasMessageContaining("ephemeral signing keys are forbidden outside development");
     }
 
     @Test
     void generatesEphemeralQuickstartKeyOutsideProdWhenKeystoreBlank() throws Exception {
-        SecurityConfig config = new SecurityConfig(properties("", "", "", ""), null);
+        SecurityConfig config = new SecurityConfig(properties("", "", "", "", ""), null);
         MockEnvironment dev = new MockEnvironment();
         dev.setActiveProfiles("dev");
 
@@ -86,7 +98,7 @@ class JwkSourceProdHardeningTest {
     @Test
     void loadsPersistentKeystoreWhenConfiguredInProdProfile() throws Exception {
         SecurityConfig config = new SecurityConfig(
-                properties(TEST_KEYSTORE, STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD), null);
+                properties(TEST_KEYSTORE, "", STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD), null);
         MockEnvironment prod = new MockEnvironment();
         prod.setActiveProfiles("prod");
 
@@ -102,13 +114,80 @@ class JwkSourceProdHardeningTest {
         assertThat(key.size()).isEqualTo(2048);
     }
 
-    private static MarketplaceProperties properties(String path, String storePassword,
+    @Test
+    void loadsPersistentKeystoreFromB64ChannelInProdProfile() throws Exception {
+        // The write-only-variable channel (JWT_KEYSTORE_B64) used by the Railway
+        // production deployment: base64 of the same real keytool JKS, decoded in
+        // memory — no file is ever touched.
+        SecurityConfig config = new SecurityConfig(
+                properties("", testKeystoreB64(), STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD), null);
+        MockEnvironment prod = new MockEnvironment();
+        prod.setActiveProfiles("prod");
+
+        JWKSource<SecurityContext> source = config.jwkSource(new DefaultResourceLoader(), prod);
+
+        assertThat(source).isInstanceOf(ImmutableJWKSet.class);
+        JWKSet jwkSet = ((ImmutableJWKSet<SecurityContext>) source).getJWKSet();
+        assertThat(jwkSet.getKeys()).hasSize(1);
+        RSAKey key = (RSAKey) jwkSet.getKeys().get(0);
+        assertThat(key.isPrivate()).isTrue();
+        // production identity preserved through the b64 channel: alias is the keyID
+        assertThat(key.getKeyID()).isEqualTo(KEY_ALIAS);
+        assertThat(key.size()).isEqualTo(2048);
+    }
+
+    @Test
+    void failsFastWhenB64ConfiguredWithoutCredentialsEvenOutsideProd() throws Exception {
+        // A half-configured keystore is a misconfiguration in ANY profile — it must
+        // never silently degrade to an ephemeral quickstart key.
+        SecurityConfig config = new SecurityConfig(
+                properties("", testKeystoreB64(), "", KEY_ALIAS, KEY_PASSWORD), null);
+        MockEnvironment dev = new MockEnvironment();
+        dev.setActiveProfiles("dev");
+
+        assertThatThrownBy(() -> config.jwkSource(new DefaultResourceLoader(), dev))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("password/.alias/.keyPassword are required")
+                .hasMessageContaining("b64")
+                .hasMessageContaining("never falls back to an ephemeral key");
+    }
+
+    @Test
+    void b64ChannelTakesPrecedenceOverPathChannel() throws Exception {
+        // Both channels present: the path points at a location that has never existed
+        // on the platform (the legacy entrypoint materialization target). b64 must
+        // win — otherwise resource loading would fail with FileNotFoundException.
+        SecurityConfig config = new SecurityConfig(
+                properties("classpath:keys/never-materialized.jks", testKeystoreB64(),
+                        STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD), null);
+        MockEnvironment prod = new MockEnvironment();
+        prod.setActiveProfiles("prod");
+
+        JWKSource<SecurityContext> source = config.jwkSource(new DefaultResourceLoader(), prod);
+
+        JWKSet jwkSet = ((ImmutableJWKSet<SecurityContext>) source).getJWKSet();
+        RSAKey key = (RSAKey) jwkSet.getKeys().get(0);
+        assertThat(key.getKeyID()).isEqualTo(KEY_ALIAS);
+        assertThat(key.isPrivate()).isTrue();
+    }
+
+    /**
+     * Base64 of the real committed test keystore ({@code keys/test-jwt.jks}) — the
+     * exact shape the production {@code JWT_KEYSTORE_B64} variable carries.
+     */
+    private static String testKeystoreB64() throws Exception {
+        try (var in = new ClassPathResource("keys/test-jwt.jks").getInputStream()) {
+            return Base64.getEncoder().encodeToString(in.readAllBytes());
+        }
+    }
+
+    private static MarketplaceProperties properties(String path, String b64, String storePassword,
                                                      String alias, String keyPassword) {
         return new MarketplaceProperties(
                 new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
                 new MarketplaceProperties.Security(
                         new MarketplaceProperties.Security.Jwt(
-                                new MarketplaceProperties.Security.Jwt.KeyStore(path, storePassword, alias, keyPassword),
+                                new MarketplaceProperties.Security.Jwt.KeyStore(path, b64, storePassword, alias, keyPassword),
                                 "marketplace-api"
                         ),
                         new MarketplaceProperties.Security.Session(2),

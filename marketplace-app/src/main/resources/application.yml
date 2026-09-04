@@ -135,7 +135,12 @@ spring:
 
 
 server:
-  port: ${SERVER_PORT:8080}
+  # PORT is the injected platform variable (Railway: "Railway will inject a PORT
+  # environment variable that your application should listen on" — docs.railway.com,
+  # reference/healthchecks, copy saved at scripts/prod-design-docs/railway-healthchecks.txt).
+  # The placeholder-with-default is the documented externalized-config mechanism —
+  # no container-side port mapping needed.
+  port: ${PORT:8080}
   shutdown: graceful
   tomcat:
     accesslog:
@@ -249,6 +254,11 @@ marketplace:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
+        # Two source channels resolved by SecurityConfig.jwkSource (b64 wins when
+        # both are present; credentials are required whenever either is set):
+        #   b64  — base64 JKS bytes, the write-only-variable channel (JWT_KEYSTORE_B64)
+        #   path — file:/classpath: location per keys/README.md
+        b64: ${JWT_KEYSTORE_B64:}
         path: ${JWT_KEYSTORE_PATH:}
         password: ${JWT_KEYSTORE_PASSWORD:}
         alias: ${JWT_KEY_ALIAS:}

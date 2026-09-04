@@ -150,7 +150,14 @@ marketplace:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
-        path: ${JWT_KEYSTORE_PATH}
+        # Source channels (b64 wins when both are present — see SecurityConfig.jwkSource
+        # for the full contract). Sources default to blank here: prod requires at least
+        # one of them, enforced fail-fast at the bean (a missing source must fail with
+        # the D6/INV-7 message, not with an opaque placeholder error). Credentials keep
+        # the no-default binding contract: unset JWT_KEYSTORE_PASSWORD/JWT_KEY_ALIAS/
+        # JWT_KEY_PASSWORD fail at placeholder resolution — the first defense layer.
+        b64: ${JWT_KEYSTORE_B64:}
+        path: ${JWT_KEYSTORE_PATH:}
         password: ${JWT_KEYSTORE_PASSWORD}
         alias: ${JWT_KEY_ALIAS}
         key-password: ${JWT_KEY_PASSWORD}

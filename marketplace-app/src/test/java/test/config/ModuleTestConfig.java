@@ -68,7 +68,7 @@ public class ModuleTestConfig {
                 new MarketplaceProperties.Cors(List.of("http://localhost:3000")),
                 new MarketplaceProperties.Security(
                         new MarketplaceProperties.Security.Jwt(
-                                new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", ""),
+                                new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", "", ""),
                                 "marketplace-api"
                         ),
                         new MarketplaceProperties.Security.Session(2),
