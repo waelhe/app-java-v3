@@ -115,6 +115,32 @@ spring:
   cache:
     type: ${CACHE_TYPE:redis}
     cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
+    redis:
+      # Entry TTL — the framework's own expiration channel for cache entries.
+      # Evidence: spring-configuration-metadata.json of spring-boot-cache
+      # 4.1.1 — "spring.cache.redis.time-to-live | Entry expiration. By
+      # default the entries never expire." Binding path (bytecode-verified in
+      # that jar): CacheProperties$Redis.timeToLive -> RedisCacheConfiguration
+      # -> defaultCacheConfig().entryTtl(...) -> every RedisCacheManager
+      # entry. Without this key, all 13 named caches hold entries FOREVER:
+      # invalidation only happens via CacheInvalidationRelay (AFTER_COMMIT),
+      # which fires solely when an entity CHANGES — dead rows never do.
+      # Growth is unbounded by construction: catalog-search / search-results
+      # key on the raw user query text (every unique search = a new row) and
+      # bookings / conversations / paymentIntents key on entity ids (every
+      # read-once entity leaves an immortal row after it goes cold). Redis on
+      # Railway runs with no maxmemory/eviction (requirepass + RDB only), so
+      # unexpired keys accumulate toward the container memory ceiling.
+      # TTL semantics: fixed expiry from write (SET .. EX — no sliding
+      # renewal), so a hot entry is rebuilt at most once per hour (one
+      # indexed DB read), and a dead row disappears within the hour. Value
+      # derivation, not taste: all 13 caches are rebuildable repository
+      # reads (correctness is governed by the AFTER_COMMIT relay, TTL is
+      # garbage collection only), and 1h = 2x the user interaction window
+      # (spring.session.timeout: 30m) — covers a working session with at
+      # most one rebuild per live entry. The test profile overrides
+      # cache.type to 'simple', so this key is inert there.
+      time-to-live: 1h
   # Quartz removed (V31, dead machine since V29): zero durable jobs remained,
   # so the starter, its JDBC store tables and this whole block were removed.
   # Scheduling is framework-managed: @Scheduled tasks and the Modulith
