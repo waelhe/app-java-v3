@@ -38,8 +38,29 @@ public record MarketplaceProperties(
             KeyStore keystore,
             @DefaultValue("marketplace-api") String audience
         ) {
+            /**
+             * Two source channels for the persistent JKS signing keystore, resolved
+             * with this precedence by {@code SecurityConfig#jwkSource} (its javadoc
+             * carries the full contract):
+             * <ul>
+             *   <li>{@code b64} — base64 of the JKS bytes, bound from
+             *       {@code JWT_KEYSTORE_B64}: the application-level channel for
+             *       platforms that deliver secrets as write-only environment
+             *       variables (Railway). Decoded in memory by
+             *       {@link java.security.KeyStore#load(java.io.InputStream, char[])} —
+             *       no file is ever materialized, keeping the container entrypoint
+             *       the pure official recipe.
+             *   </li>
+             *   <li>{@code path} — {@code file:}/{@code classpath:} location per the
+             *       runbook {@code keys/README.md} (development hosts, mounted
+             *       files).</li>
+             * </ul>
+             * Credentials ({@code password}/{@code alias}/{@code keyPassword}) are
+             * shared by both channels and required whenever either source is set.
+             */
             public record KeyStore(
                 @DefaultValue("") String path,
+                @DefaultValue("") String b64,
                 @DefaultValue("") String password,
                 @DefaultValue("") String alias,
                 @DefaultValue("") String keyPassword
