@@ -13,13 +13,13 @@
 **الإصلاح (التصميم الرسمي حصراً):**
 - `V28__modulith_event_archive.sql` — DDL من مرجع Modulith 2.1.1 الرسمي، الملحق «Schema Overview» → PostgreSQL → «Archive-enabled schema» (محفوظ `scripts/doc-verify/modulith-schema-2.1.html`؛ عمود-بعمود مطابق لـ V11 = نفس تعيينات حقول الكيان)، بأسلوب V11 (timestamptz/text + الفهرسان الرسميان: hash على serialized_event + completion_date).
 - `EventPublicationArchiveIntegrationTest` (failsafe) — نمط `QuartzJdbcJobStoreConfigTest` نفسه: `flyway.enabled=true` + `ddl-auto=none` + `@ServiceConnection postgres:18-alpine` → نشر `DayHasPassed` (نفس مسار الإنتاج: Moments) داخل معاملة ملتزمة → استقصاء ظهور صفَّي الأرشيف بختم `completion_date` + صفر بقايا في `event_publication` — **يغلق آلية الحجب نهائياً** (الاختبار يقلع على مخطط Flyway الحقيقي لا على مخطط الكيانات).
-- **الحقيقة المصاحبة (نمط «الدفعة تحمل تزامنها»):** SYSTEM.md §1 (الإنتاج PG 18.6/Redis 8.2/IaC) + §5 (آلية ARCHIVE + الحارس) + §7 (28 ترحيلة + درس الوضع-الرسمي) + §15 (truth-sync كامل: نشرة 51b5496d من 707e052، سلسلة النشور، طبقة البيانات، الديون المغلقة #202/#201/هذه الدفعة، الباقي بيد المستخدم).
+- **الحقيقة المصاحبة (نمط «الدفعة تحمل تزامنها»):** SYSTEM.md §1 (الإنتاج PG 18.6/Redis 8.2/IaC) + §5 (آلية ARCHIVE + الحارس) + §7 (28 ترحيلة + درس الوضع-الرسمي) + §15 (تم تحديثه لاحقًا في دفعة truth-sync إلى النشط `80171be7` من f9c5d34 — الحالة عند الدمج كانت 51b5496d/707e052).
 
 **ما لم يُلمس:** صفر كود إنتاج (SQL ترحيلة + اختبار فقط)، صفر اعتماديات، صفر تغيير سلوك سوى انغلاق الآلية المعطلة، `application*.yml` كما هي (archive بلا تغيير — الجدول كان ناقصه لا الإعداد).
 
-**ما بعد الدمج (متوقع بلا تدخل):** إعادة النشر من fork تطبّق V28 → `republish-outstanding-events-on-restart` يعيد المنشورات المعلّقة (idempotent) → تكتمل وتُؤرشف → يختفي الخطأ من سجلات الإقلاع.
+**ما بعد الدمج (متحقق — truth-sync 2026-09-04):** دمج squash → main = `f9c5d34` (#203) → CI على main أخضر → دفع fork (`707e052..f9c5d34`) → **نشر `80171be7` (SUCCESS من f9c5d34)**: سجل الإقلاع يثبت `Migrating schema "public" to version "28 - modulith event archive"` + `Successfully applied 1 migration, now at version v28`، **صفر أخطاء `event_publication_archive`** (مقابل سطرين في كل إقلاع سابق)، إقلاع 10.634s ببروفايل prod، فحص ثلاثي أخضر (liveness/readiness/jwks/OIDC) — الأدلة محفوظة (سجلات النشرة عبر GraphQL v2). **النظير الموثق:** docs/railway-deployment-reference.md §0.5 (الموجة الثانية #197–#203 بأسنادها الرسمي) + SYSTEM.md §15.
 
-## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `c82d9831` @ main `27b5a155`)
+## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `80171be7` @ main `f9c5d34` — حُدّثت في دفعة truth-sync؛ الحالة أدناه كُتبت لحظة توثيق الموجة الأولى)
 
 **Order:** «مستودع نشر جديد للنشر على Railway — شخّص فشل النشر وأصلحه» → «اضبط المتغيرات انت» → «تابع» (×2) — ثم «وثّق عملية النشر كلها» (هذه الدفعة).
 
