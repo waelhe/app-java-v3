@@ -2,8 +2,8 @@
 
 > **الحالة (محدّثة 2026-09-04): نشِط — Railway هو منصة الإنتاج الحية**
 >
-> **النشر الحي:** `https://app-java-v3-production-d020.up.railway.app` (بروفايل prod، نشر `c82d9831` من main `27b5a155`، فحص liveness/readiness = 200 UP)
-> **سجل النشر الحالي (سبتمبر 2026):** §0 أدناه — 7 دمجات (#190–#196) أصلحت 7 أسباب جذرية مختلفة
+> **النشر الحي:** `https://app-java-v3-production-d020.up.railway.app` (بروفايل prod، نشر **`80171be7`** من main **`f9c5d34`** = #203 — تحقق حي 2026-09-04: liveness/readiness 200 UP، jwks RSA `kid=marketplace-jwt`، OIDC discovery 200، Flyway «now at version v28»، إقلاع 10.634s)
+> **سجل النشر الحالي (سبتمبر 2026):** §0 أدناه — موجة أولى #190–#196 (7 أسباب جذرية) + **موجة ثانية #197–#203 (إعادة التصميم على الوثائق الرسمية: Dockerfile الرباعي + AOT + طبقة البيانات PG18/Redis8 + IaC + V28) — §0.5**
 > **ملاحظة حوكمة:** البوابة C (استضافة العملاء) في `docs/security/client-hosting-strategy-plan.md` ما زالت مفتوحة — الإنتاج الحي على Railway لا يُغلقها؛ ARCHITECTURE.md §5 يبقى خط CF المستقبلي.
 >
 > ---
@@ -26,11 +26,30 @@
 | 6 | «Bad value for type long : \xaced…» من quartzScheduler | بلا driverDelegate: StdJDBCDelegate يقرأ BYTEA كـ OID (pgjdbc) — أول تشغيل فعلي لمسار JDBC | `QuartzPostgresDelegateConfig` (customizer شرطي على jobStoreType==JDBC — مدخل yml يكسر RAMJobStore) + اختبار Testcontainers (#195/`674372e`) |
 | 7 | تسليم keystore JWT للحاوية غير الجذرية | الفوليومات root-owned؛ pre-deploy بلا فوليوم ولا استبقاء؛ ssh مرفوض بالتوكن المحصور (كلها وثائق رسمية) | متغير write-only `JWT_KEYSTORE_B64` يجسّده ENTRYPOINT عند كل إقلاع بكتابة ذرّية (#196/`27b5a155`) |
 
-**البنية الحية:** 3 خدمات (app + postgres:17-alpine + redis:7-alpine) + نطاق عام (targetPort 8080) + 25 متغيرًا (write-only) + فوليوم `/data` (زائد بعد آلية B64 — مرشح للفصل).
+**البنية الحية (بعد الموجة الثانية):** 5 خدمات: **app-java-v3** (بناء Dockerfile عبر IaC — المستودع بلا ملفات CaC؛ §0.5) + **postgres-18** (قالب postgres-ssl:18 الرسمي + فوليوم 84MB؛ نقل 57 جدولاً صفر فرق) + **redis** (8.2 بالقالب الرسمي: فوليوم + requirepass + RDB) + **postgres-17** (نافذة استرجاع — حذفها بأمر) + **netdiag** (ناقلة النقل — تنظيفها بأمر)؛ 25 متغيرًا على التطبيق (write-only، محفوظة بـ preserve() الرسمية) + فوليوم `/data` (مُصرّح به في IaC؛ فصله بأمر).
 
-**المصادر الرسمية المعتمدة للقرارات:** مرجع Boot 4.1 Dockerfiles (jarmode=tools/thin-jar) + javadoc git-commit-id + ملف Quartz `tables_postgres.sql` (PostgreSQLDelegate) + وثائق Railway (volumes: root mount؛ pre-deploy: حاوية منفصلة؛ healthchecks: PORT) + Nixpacks/Railpack providers (قوائم JDK) — نسخ محفوظة في مساحة عمل الجلسة `scripts/prod-design-docs/` وأعيد جلب أربع صفحات Railway حية عند مراجعة 2026-09-04.
+**سلسلة نشور main كاملة (GraphQL v2 حي 2026-09-04):** `c82d9831` (27b5a155) ← فشل `bf2b0acd` (41eeb05 — أُصلح جذريًا في #201) ← `6c814e28` (349052b) ← `442c3665` (349052b — قطع طبقة البيانات) ← `51b5496d` (707e052 = #202) ← **`80171be7` (f9c5d34 = #203) — النشط**.
 
-**ديون معلنة بنقاط إغلاق (مراجعة 2026-09-04 — القائمة الحية في SYSTEM.md §15):** إهمال Config-as-Code رسميًا حتى **2026-12-01** (لافتة الوثائق: «Existing files keep working for legacy services until…») — ترحيل إعداد الموجه إلى مستوى الخدمة قبل 2026-11-15 وإلا وقع النشر على Railpack («Defaults to 21»)؛ قسم `[deploy]` الملفي لا ينعكس في manifests (مقيس 8/8)؛ دوران مفتاح JWT قبل 2026-12-02؛ `MAIL_*`/`OTEL_*` placeholders.
+### 0.5 الموجة الثانية #197–#203 — إعادة التصميم على الوثائق الرسمية (2026-09-04)
+
+> المبدأ الحاكم (أمر المستخدم): «التزم بالوثائق وابحث عن التصميم الصحيح للنظام ضمنها.. لا أريد ما تراه أنت صحيحًا». كل بند أدناه مُسنَد إلى مصدر رسمي محفوظ أو مُعاد التحقق منه حيًا (2026-09-04).
+
+| PR | التغيير | الأسناد الرسمي (مُتحقق) |
+|---|---|---|
+| #197/`56b8d5f` | توثيق سلسلة الإصلاح الأولى (هذه الوثيقة §0) | سجلات النشور الحية + أدلة الجلسة |
+| #198/`1fa9af1` | تحديث إصدارات الخدمات والأدوات (PG18/Redis8 في CI/compose/Testcontainers؛ `failOnNoGitDirectory=false`) | javadoc الإضافة الرسمية + مصادر الإصدارات الرسمية |
+| #199/`19f7cea` | **Dockerfile الرباعي المراحل + قناة keystore B64 في الذاكرة** | مرجع Boot 4.1 Dockerfiles: jarmode=tools + استخراج الطبقات (النسخة الرسمية المحفوظة تحمل الوصفة حرفيًا: `RUN java -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -jar application.jar` ← `ENTRYPOINT java -XX:AOTCache=app.aot -jar application.jar`) + وصفات lifecycle لكل اعتمادية (spring-lifecycle-smoke-tests)؛ صيغة Railway للـ cache-mounts `id=s/<service-id>`؛ متغير مشغل `java` الرسمي `JDK_JAVA_OPTIONS`؛ قيود المنصة الموثقة (فوليومات root-owned؛ pre-deploy حاوية منفصلة) ⇒ B64 تُفكّ في الذاكرة لا ملف |
+| #200/`41eeb05` | truth-sync سجلات الحوكمة بعد #199 | سجلات الحوكمة الداخلية |
+| #201/`349052b` | **علم تدريب AOT يغلق حقن Railway لمتغيرات OTEL** (فشل نشر `bf2b0acd` من 41eeb05 بعد 94 ثانية) | `spring-configuration-metadata.json` لـ spring-boot-opentelemetry 4.1.1 من Maven Central (**أُعيد التحقق حيًا 2026-09-04**: `management.opentelemetry.map-environment-variables` افتراضي **true**) — التعطيل في مرحلة التدريب فقط يغلق قناة الحقن كاملة؛ + دورة إعادة إنتاج/إصلاح محلية حرفية (unix:///dev/otel-grpc.sock → exit 1؛ نفس البيئة + العلم → exit 0) |
+| (طبقة البيانات) | **PG 18.6 + Redis 8.2 بالتصميم الرسمي + نقل متحقق** | قوالب Railway الرسمية (postgres-ssl:18 serializedConfig حرفيًا + PGDATA فرعي + SSL_CERT_DAYS؛ redis:8.2 + startCommand الرسمي) + مسار الترحيل الرسمي (pg_dump -Fc --no-acl --no-owner → pg_restore --clean --if-exists -j 4 + ANALYZE + تحقق الأعداد): **57/57 جدولاً صفر فرق** (نقل متحقق مرتين + نافذة قَطع واحدة ~7 دقائق) |
+| #202/`707e052` | **ترحيل Config-as-Code → IaC** (قبل الموعد النهائي 2026-12-01) | docs.railway.com/infrastructure-as-code: أداة migrate + DSL رسمي + `preserve()` للأسرار؛ التطبيق `railway config apply` (builder=DOCKERFILE + healthcheckPath + timeout=300 خدمة-مستوى)؛ التحقق الحاسم: نشرة من مستودع بلا ملفات CaC بَنَت بـ Dockerfile (سجل البناء: [build 4/4] بذاكرة cache + [trainer 8/8] AOT) |
+| #203/`f9c5d34` | **V28: جدول event_publication_archive الرسمي + حارس Flyway حقيقي** | مرجع Modulith 2.1.1 — الملحق D «PostgreSQL → Archive-enabled schema»: مطابقة عمود-عمود وفهرس-فهرس (hash على serialized_event + completion_date — النسخة الرسمية المحفوظة مُتحقّقة)؛ التحقق الحي في 80171be7: «Migrating schema… to version 28 — modulith event archive» + **صفر أخطاء `event_publication_archive`** (كان سطرين في كل إقلاع سابق) |
+
+**نتيجة الموجة الثانية (مُتحقّقة حيًا في `80171be7`):** الإنتاج = main كامل بلا فجوات؛ إقلاع 10.634s (بروفايل prod + AOT cache)؛ صفر أخطاء أرشفة؛ الفحص الثلاثي أخضر (liveness/readiness/jwks/OIDC).
+
+**المصادر الرسمية المعتمدة للقرارات (كل الموجتين):** مرجع Boot 4.1 Dockerfiles (jarmode=tools + AOT Cache) + javadoc git-commit-id + ملف Quartz `tables_postgres.sql` (PostgreSQLDelegate) + وثائق Railway (volumes: root mount؛ pre-deploy: حاوية منفصلة؛ healthchecks: PORT؛ cache-mounts؛ IaC + preserve()؛ قوالب postgres/redis؛ مسار dump/restore) + مرجع Modulith 2.1.1 (ملحق المخططات) + spring-configuration-metadata.json من Maven Central + Nixpacks/Railpack providers (قوائم JDK) — نسخ محفوظة محلياً (مساحة عمل الجلسة `download/audit2-docs/` + `scripts/doc-verify/`) والاقتباسات داخل المستودع تشير إلى عناوين URL الرسمية.
+
+**ديون معلنة (مراجعة 2026-09-04 بعد الموجة الثانية — القائمة الحية الموثوقة في SYSTEM.md §15):** ~~إهمال Config-as-Code حتى 2026-12-01~~ ✅ مُغلق (#202 — IaC)؛ ~~قسم `[deploy]` الملفي لا ينعكس في manifests~~ ✅ مُغلق (#202 — إعدادات خدمة-مستوى)؛ ~~جدول الأرشفة المفقود~~ ✅ مُغلق (#203 — V28). المفتوحة بيد المستخدم حصراً: حذف `postgres-17` (نافذة استرجاع — يحرر حد الخطة)، تنظيف `netdiag`، فصل فوليوم `/data`، نسخ فوليومات احتياطية (بوابة خطة/UI)، اختيار مزوّد `MAIL_*`/`OTEL_*`، دوران مفتاح JWT قبل **2026-12-02**، تدوير التوكنين (GitHub fork PAT + Railway token — ظهرا نصًا في المحادثة).
 
 ---
 
