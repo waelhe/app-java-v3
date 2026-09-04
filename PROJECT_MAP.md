@@ -1,5 +1,23 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Platform Governance Layer — المنصة تفرض ما كان عرفًا، وتُوقظ بوابة التوافق، وتُسلِّم قناة الإصدار (2026-09-05) 🏗️ فرع `chore/platform-governance-layer`
+
+**الأمر الحاكم:** «فعل البروتوكول وملف agents.md ثم نفّذ… ثم نفّذ الخلاصة: الفجوتان الحقيقيتان (main أعزل، وبوابة التوافق نائمة) أهمّ من نصف توصياته — (1) حماية main بقواعد required-checks + PR إلزامي، (2) Dependabot مقيد بالـBOM، (3) CodeQL بعد تحقق JDK 25، (4) أول release يوقظ البوابة ويطلق Packages معًا» — الطبقة الخامسة، منصة-خالصة (صفر كود تطبيق).
+
+**الفجوة 1 (مقيسة بـ GitHub API في جولة التدقيق GH-CLAIMS-AUDIT):** `main` أعزل تمامًا — branch protection = 404 وrulesets = 0؛ الانضباط كان سلوكيًا (وكيل + AGENTS.md) لا إجبار منصة. **الإغلاق (البند 1):** ruleset نشط على `refs/heads/main` (id 22305466، أنشئ بـ API ومُتحقق قراءةً): دفع مباشر = مرفوض، دمج = PR حصرًا **squash حصرًا** (`allowed_merge_methods`) بعد اخضرار الفحصين المطلوبين (أسماء مقيسة من check-runs حية: `Build & Test (JDK 25)` + `Full Integration Test (JDK 25)`)، منع force-push والحذف، تاريخ خطي. **آلية الحجب مُثبتة تجريبيًا** (فرع probe حُمي ثم دُفع إليه مباشرة فرُفض GH-remote-rejected ثم نُظّف كل شيء) — والأول أُنشئ قبل دفعة الكود نفسها.
+
+**الفجوة 2 (مسار وسم بوابة OpenAPI كان مكسورًا لا نائمًا فقط):** صفر وسوم منذ البداية ⇒ السكربب كان يتجاوز نفسه دائمًا («No release tag found. Skipping»)، وحين يعمل وسم لأول مرة كان سيفشل: يُقلع البرطمان ببروفايل افتراضي (user `marketplace` من `application.yml`) بينما خدمة CI postgres تصادق `test/test`. **الإصلاح:** env على خطوة البوابة في ci.yml (نفس مجموعة إقلاع «Start Application» المُثبتة في integration-test.yml + بيانات الخدمة) — البوابة الآن قادرة على الإقلاع الفعلي ومسار الوسم يُختبر حيًا في CI هذه الدفعة نفسها (probe-tag دُفع قبل فتح PR).
+
+**البند 2 — Dependabot مقيد بحكام الـBOM:** `allow` = `org.springframework.boot*` + `org.springframework.modulith*` حصرًا (الأب + Modulith BOM — استثناء #1 في pom الجذر) + نظام github-actions؛ كل التجاوزات المدروسة (jackson 3.2.2، prometheus 1.8.0، commons-*، resilience4j، springdoc…) خارج القائمة عمدًا: إصداراتها اختيرت ضد بوابات enforcer (dependencyConvergence + requireUpperBoundDeps) ورفعها الآلي يكسر البناء. تجميع أسبوعي في PR واحد لكل نظام.
+
+**البند 3 — CodeQL (بعد تحقق رسمي):** Java extractor يدعم Java 25 رسميًا منذ CLI 2.23.1 (2025-09-23: «The Java extractor and QL libraries now support Java 25» — سجل تغييرات CodeQL + github.blog)؛ `codeql.yml` بـ`build-mode: manual` (من action.yml الرسمي: «building the source code using a manually specified build command») يبني المفاعل كاملاً بما فيه مصادر MapStruct المولّدة، على push/PR لـmain + أسبوعي، بأذون دنيا `security-events: write`.
+
+**البند 4 — قناة الإصدار تُسلَّم جاهزة:** `maven-publish.yml` أُعيد بناءه على مسار آلي: إصدار من اسم الوسم (`v0.1.0` → `0.1.0` عبر versions-maven-plugin:2.21.0 بـ`-DprocessAllModules` — المفاعل يبقى `0.1.0-SNAPSHOT` على main)، `distributionManagement` أُضيف لـpom الجذر (id `github` = server-id setup-java)، `deploy -DskipTests` (الوسم يشير لكوميت main ففحوصه الإلزامية شغّلت الاختبارات أصلًا) + checkout كامل التاريخ (git-commit-id). أول إصدار `v0.1.0` يُطلق فور الدمج: يوقظ بوابة OpenAPI (baseline = الوسم) ويطلق Packages معًا.
+
+**الحارس (نمط تثبيت yml):** `PlatformGovernanceFilesTest` (5 فحوص، وحدة بلا سياق): قائمة allow حصرية بالحاكمين + النظامان maven/github-actions فقط، codeql مثبّت على Java 25 + manual + اسم الفحص، كتلة بوابة OpenAPI تحمل اعتمادات الخدمة كاملة، سير النشر يستمد الإصدار من الوسم ويقفز اختبارات مؤكدة مسبقًا، وdistributionManagement يستهدف الحزمة الصحيحة بـid المطابق.
+
+**ما لم يُلمس:** صفر كود تطبيق، صفر ترحيلات، صفر حدود Modulith/SPI/أحداث، `check-openapi-compat.sh` نفسه لم يُعدَّل (إصلاحه في env الخطوة لا في السكربب — السكربب يبقى صديقًا لبيئة المطوّر المحلية)، الإنتاج لا يمسه شيء (كل ملفات الدفعة `*.md`/`.github`/`.ci` يستثنيها `.dockerignore` — شجرة تشغيل متطابقة بايتًا)، بوابة A1/A2 (MAIL/OTEL، PITR) كما هي بيد المستخدم.
+
 ## Cache Entry TTL Layer — صفوف المخبآت تنتهي ذاتيًا عبر قناة الإطار الرسمية (2026-09-05) 🏗️ فرع `feat/cache-ttl-lifecycle`
 
 **الأمر الحاكم:** «أكمل التنفيذ… لا رأي ولا تخمين ولا تصميم حسب ما تراه… أريد نظامًا مدارًا آليًا من الإطار… ابنِ وحسّن طبقة دون كسر الطبقات الأخرى» — استمرار نمط الجولات الثلاث السابقة: فجوة كامنة صفر-بوابات، تُغلق بقناة الإطار الرسمية لا بكود يدوي.

@@ -1,0 +1,60 @@
+# CodeQL static security analysis — Java (JDK 25).
+#
+# JDK 25 support evidence (official): CodeQL CLI 2.23.1 release notes
+# (2025-09-23) — "The Java extractor and QL libraries now support Java 25",
+# including Java 25 compact source files (JEP 512); announced at
+# github.blog/changelog/2025-09-26. The action resolves a current CLI
+# (2.26.x line as of 2026-09), comfortably beyond 2.23.1.
+#
+# build-mode: manual — we run the Maven build ourselves between init and
+# analyze ("building the source code using a manually specified build
+# command" per codeql-action v3.37.9 action.yml). This compiles the full
+# 16-module reactor INCLUDING MapStruct-generated mapper sources, which
+# buildless extraction (build-mode: none) would miss. Guard-pinned by
+# PlatformGovernanceFilesTest.
+name: CodeQL
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '27 5 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL Analyze (Java 25)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: 25
+          distribution: temurin
+          cache: maven
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java
+          build-mode: manual
+
+      # Extraction happens during this build. Tests are skipped: this job
+      # needs compilation (all 16 modules + generated sources), not test
+      # execution — main-branch commits already ran the full suite in the
+      # required CI checks. No services needed: the app does not boot here.
+      - name: Build for extraction (compile only)
+        run: ./mvnw --batch-mode -DskipTests package
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"

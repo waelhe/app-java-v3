@@ -210,6 +210,19 @@
         </dependencies>
     </dependencyManagement>
 
+    <!-- Release channel: GitHub Packages. The server id "github" matches
+         setup-java's server-id in .github/workflows/maven-publish.yml, which
+         writes the authenticated server entry (GITHUB_ACTOR / GITHUB_TOKEN)
+         into settings.xml at release-build time. Inert for normal builds —
+         only `mvn deploy` reads it. Guard-pinned by PlatformGovernanceFilesTest. -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/waelhe/app-java-v3</url>
+        </repository>
+    </distributionManagement>
+
     <build>
         <plugins>
             <plugin>
