@@ -43,7 +43,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 2.1.1 PostgreSQL "Archive-enabled schema" (Reference appendix —
  * https://docs.spring.io/spring-modulith/reference/appendix.html).
  *
- * <p>This test follows the {@code QuartzJdbcJobStoreConfigTest} pattern: boot
+ * <p>This test follows the {@code DeadQuartzStoreRemovalIntegrationTest}
+ * pattern (formerly {@code QuartzJdbcJobStoreConfigTest}, retired with the
+ * Quartz store it guarded): boot
  * the full application context on real PostgreSQL ({@code postgres:18-alpine},
  * same image as CI services and docker-compose) with Flyway enabled and
  * {@code ddl-auto=none}, so the registry runs against exactly the schema

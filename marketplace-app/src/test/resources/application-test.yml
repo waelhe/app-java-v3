@@ -5,9 +5,6 @@ spring:
     password: ${DB_PASSWORD:marketplace}
   cache:
     type: simple
-  quartz:
-    job-store-type: memory
-    auto-startup: false
   jpa:
     hibernate:
       ddl-auto: create-drop

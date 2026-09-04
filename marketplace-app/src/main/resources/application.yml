@@ -115,23 +115,10 @@ spring:
   cache:
     type: ${CACHE_TYPE:redis}
     cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
-  quartz:
-    job-store-type: jdbc
-    jdbc:
-      initialize-schema: never
-    properties:
-      org:
-        quartz:
-          scheduler:
-            instanceName: marketplaceScheduler
-            instanceId: AUTO
-          threadPool:
-            threadCount: 5
-          # org.quartz.jobStore.driverDelegateClass (PostgreSQLDelegate) is set
-          # programmatically by QuartzPostgresDelegateConfig — a yml entry here
-          # would also reach RAMJobStore (test profile, job-store-type: memory),
-          # which has no such setter and fails context boot: "JobStore class
-          # 'org.quartz.simpl.RAMJobStore' props could not be configured".
+  # Quartz removed (V31, dead machine since V29): zero durable jobs remained,
+  # so the starter, its JDBC store tables and this whole block were removed.
+  # Scheduling is framework-managed: @Scheduled tasks and the Modulith
+  # staleness monitor run on Spring's task scheduler.
 
 
 server:

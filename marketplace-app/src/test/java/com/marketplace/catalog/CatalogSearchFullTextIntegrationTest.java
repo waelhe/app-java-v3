@@ -42,12 +42,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       operators.</li>
  * </ul>
  *
- * <p>Boot pattern follows {@code QuartzJdbcJobStoreConfigTest} /
- * {@code EventPublicationArchiveIntegrationTest}: full application context on
+ * <p>Boot pattern follows {@code EventPublicationArchiveIntegrationTest} /
+ * {@code DeadQuartzStoreRemovalIntegrationTest} (formerly
+ * {@code QuartzJdbcJobStoreConfigTest}, retired with the Quartz store it
+ * guarded): full application context on
  * an ISOLATED {@code postgres:18-alpine} container via {@code @ServiceConnection},
  * with Flyway enabled and {@code ddl-auto=none} — so the native query runs
- * against exactly the schema migrations produce (V1..V30, including V29's
- * matview drop and V30's Envers revision sequence) and V30 (Envers revision sequence). Isolation is deliberate: this test seeds rows, and the shared
+ * against exactly the schema migrations produce (V1..V31, including V29's
+ * matview drop, V30's Envers revision sequence and V31's Quartz store drop). Isolation is deliberate: this test seeds rows, and the shared
  * CI service database is asserted-empty by other integration tests
  * ({@code CatalogModuleIntegrationTest.listActiveSummary_returnsEmptyPage} —
  * the eff5966 CI lesson: module-slice tests share the service database and
