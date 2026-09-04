@@ -43,9 +43,27 @@ spring:
   modulith:
     events:
       completion-mode: archive
+      # Official Staleness Monitor (Spring Modulith 2.1.1 Reference, "Event
+      # Publication Staleness and Automatic Marking as Failed"): "When any of
+      # the staleness durations is set to a non-zero value, the monitor is
+      # active: on each run it finds event publications in PUBLISHED, PROCESSING,
+      # or RESUBMITTED that are older than the corresponding duration and marks
+      # them as FAILED." Property names below are the ones the framework
+      # actually binds (spring-configuration-metadata.json of
+      # spring-modulith-events-core 2.1.1: published / processing / resubmitted
+      # [deprecated aliases: resubmission, check-intervall]).
+      #
+      # Root cause this closes: the previous keys `publication-threshold` /
+      # `processing-threshold` (commit cb2d8dd) do not exist in Modulith 2.1.1 —
+      # they bound to nothing, so the monitor never registered its task and
+      # stuck publications stayed zombie until a manual restart. Values keep the
+      # original declared intent (6h published, 1h processing); `resubmitted`
+      # (1h, symmetric with processing) closes the lifecycle loop so a
+      # resubmitted publication that makes no progress returns to FAILED.
       staleness:
-        publication-threshold: 6h
-        processing-threshold: 1h
+        published: 6h
+        processing: 1h
+        resubmitted: 1h
       republish-outstanding-events-on-restart: true
 
 
