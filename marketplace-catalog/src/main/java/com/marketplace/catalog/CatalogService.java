@@ -91,9 +91,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-search", key = "#tsQuery + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
+    @Cacheable(cacheNames = "catalog-search", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullText(query, pageable);
         return toSummaryPage(page);
     }
 
