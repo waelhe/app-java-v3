@@ -1,5 +1,24 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Event Publication Archive — إغلاق دين الإنتاج الحي (2026-09-04) 🏗️ فرع `fix/modulith-event-archive-schema`
+
+**الأمر الحاكم:** «فعل البروتوكول ونفذ… لا ترقيع ولا ديون» (المبدأ الدائم) — تنفيذ على آخر دين كودي معلن بعد إغلاق البوابات الثلاث (نشر #201 / طبقة البيانات / IaC #202).
+
+**الدين (موثق في worklog DATA-LAYER-REBUILD):** خطأ إنتاج حي في **كل إقلاع** — `ERROR: relation "event_publication_archive" does not exist` (سطران في سجلات 51b5496d؛ Position: 13 = بعد `INSERT INTO`). **الجذر المزدوج:**
+1. `application.yml:54-56` يفعّل `spring.modulith.events.completion-mode: archive` — الوضع الرسمي الذي ينقل كل منشور منجز من `event_publication` إلى جدول الأرشيف — لكن **V11 أنشأ `event_publication` فقط**؛ بروفايل prod (Flyway يملك المخطط، ddl-auto: none) لم ير الجدول قط.
+2. **آلية الحجب (لماذا CI أخضر):** بروفايل test يعطّل Flyway ويستخدم `ddl-auto: create-drop` — أي أن الاختبارات تبني `event_publication_archive` من كيان `ArchivedJpaEventPublication` (jar 2.1.1: `@Table(EVENT_PUBLICATION_ARCHIVE)` يرث حقول `@MappedSuperclass JpaEventPublication`) — المخطط في الاختبار ≠ مخطط الإنتاج.
+
+**الأثر الجهازي (سجل 51b5496d حي):** كل استكمال نشر فاشل ⇒ السجل يبقى غير منجز ⇒ تراكم دائم + إعادة نشر عند كل إقلاع (`republish-outstanding-events-on-restart: true` في prod) — المستمعان المتأثران هما `AvailabilityService.onDayHasPassed` (توليد الخانات: `findFirstBy…AndBookedFalse().isEmpty()` → idempotent) و`BookingExpirationService.onDayHasPassed` (إلغاء المعلّقة: يفلتر PENDING → idempotent). آلية الفشل: `CompletionRegisteringMethodInterceptor` (ترتيبه HIGHEST_PRECEDENCE+10 = خارج معاملة المستمع REQUIRES_NEW) ينفّذ INSERT الأرشيف **بعد** commit معاملة المستمع — كتابات المستمع تلتزم، واستكمال السجل فقط هو الفاشل.
+
+**الإصلاح (التصميم الرسمي حصراً):**
+- `V28__modulith_event_archive.sql` — DDL من مرجع Modulith 2.1.1 الرسمي، الملحق «Schema Overview» → PostgreSQL → «Archive-enabled schema» (محفوظ `scripts/doc-verify/modulith-schema-2.1.html`؛ عمود-بعمود مطابق لـ V11 = نفس تعيينات حقول الكيان)، بأسلوب V11 (timestamptz/text + الفهرسان الرسميان: hash على serialized_event + completion_date).
+- `EventPublicationArchiveIntegrationTest` (failsafe) — نمط `QuartzJdbcJobStoreConfigTest` نفسه: `flyway.enabled=true` + `ddl-auto=none` + `@ServiceConnection postgres:18-alpine` → نشر `DayHasPassed` (نفس مسار الإنتاج: Moments) داخل معاملة ملتزمة → استقصاء ظهور صفَّي الأرشيف بختم `completion_date` + صفر بقايا في `event_publication` — **يغلق آلية الحجب نهائياً** (الاختبار يقلع على مخطط Flyway الحقيقي لا على مخطط الكيانات).
+- **الحقيقة المصاحبة (نمط «الدفعة تحمل تزامنها»):** SYSTEM.md §1 (الإنتاج PG 18.6/Redis 8.2/IaC) + §5 (آلية ARCHIVE + الحارس) + §7 (28 ترحيلة + درس الوضع-الرسمي) + §15 (truth-sync كامل: نشرة 51b5496d من 707e052، سلسلة النشور، طبقة البيانات، الديون المغلقة #202/#201/هذه الدفعة، الباقي بيد المستخدم).
+
+**ما لم يُلمس:** صفر كود إنتاج (SQL ترحيلة + اختبار فقط)، صفر اعتماديات، صفر تغيير سلوك سوى انغلاق الآلية المعطلة، `application*.yml` كما هي (archive بلا تغيير — الجدول كان ناقصه لا الإعداد).
+
+**ما بعد الدمج (متوقع بلا تدخل):** إعادة النشر من fork تطبّق V28 → `republish-outstanding-events-on-restart` يعيد المنشورات المعلّقة (idempotent) → تكتمل وتُؤرشف → يختفي الخطأ من سجلات الإقلاع.
+
 ## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `c82d9831` @ main `27b5a155`)
 
 **Order:** «مستودع نشر جديد للنشر على Railway — شخّص فشل النشر وأصلحه» → «اضبط المتغيرات انت» → «تابع» (×2) — ثم «وثّق عملية النشر كلها» (هذه الدفعة).
