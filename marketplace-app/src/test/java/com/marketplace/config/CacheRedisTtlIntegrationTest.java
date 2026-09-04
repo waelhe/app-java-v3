@@ -94,14 +94,9 @@ class CacheRedisTtlIntegrationTest {
     @AfterEach
     void evictProbeEntry() {
         if (probeRedisKey != null) {
-            // The cache name + "::" prefix is the framework's default
-            // (CacheKeyPrefix.simple(), bytecode constant "::"), and the
-            // cache name segment is everything before it.
-            String cacheName = probeRedisKey.substring(0, probeRedisKey.indexOf("::"));
-            Cache cache = cacheManager.getCache(cacheName);
-            if (cache != null && probeRedisKey.contains("::")) {
-                cache.evict(probeRedisKey.substring(probeRedisKey.indexOf("::") + 2));
-            }
+            // Delete the exact key the framework wrote (discovered via SCAN
+            // in the test body) — no assumption about the key layout.
+            redisTemplate.delete(probeRedisKey);
             probeRedisKey = null;
         }
     }
@@ -126,25 +121,35 @@ class CacheRedisTtlIntegrationTest {
         String key = "ttl-probe:" + UUID.randomUUID();
         cache.put(key, "probe-value");
 
-        // The framework's default key layout: "<cacheName>::<key>"
-        // (CacheKeyPrefix.simple() — the "::" constant verified in the
-        // spring-data-redis 4.1.1 bytecode).
-        probeRedisKey = "users::" + key;
+        // Discover the exact key the framework wrote — no assumption about
+        // the prefix layout (the first CI round proved the literal
+        // "users::" guess wrong: the probe key was absent, TTL -2). SCAN for
+        // the unique probe uuid; on the isolated container this is cheap and
+        // exact. The discovered key doubles as the cleanup target.
+        java.util.Set<String> written = redisTemplate.keys("*" + key + "*");
+        if (written == null) {
+            written = java.util.Set.of();
+        }
+        assertThat(written)
+                .as("the framework must have written a cache entry holding key %s (found keys are the evidence)", key)
+                .isNotEmpty();
+        String actualKey = written.iterator().next();
+        probeRedisKey = actualKey;
 
-        // Read the TTL Redis itself carries for the entry. Without the
-        // time-to-live key this is -1 (no expiry — immortal by the framework
-        // default); a value in (0, 3600] proves the binding reached the
-        // writer and every entry now self-expires.
-        Long ttl = redisTemplate.getExpire(probeRedisKey);
+        // Read the TTL Redis itself carries for the entry the framework
+        // just wrote. Without the time-to-live key this is -1 (no expiry —
+        // immortal by the framework default); a value in (0, 3600] proves
+        // the binding reached the writer and every entry now self-expires.
+        Long ttl = redisTemplate.getExpire(actualKey);
         assertThat(ttl)
-                .as("cache entry must carry a positive Redis TTL (default: never expires)")
+                .as("cache entry %s must carry a positive Redis TTL (default: never expires)", actualKey)
                 .isNotNull()
                 .isPositive()
                 .isLessThanOrEqualTo(EXPECTED_TTL_SECONDS);
 
         // The entry is readable through the same cache path it was written
-        // (same prefix, same serialization) — TTL does not interfere with
-        // normal cache operations.
+        // (same key conversion, same serialization) — TTL does not interfere
+        // with normal cache operations.
         Cache.ValueWrapper wrapper = cache.get(key);
         assertThat(wrapper).isNotNull();
         assertThat(wrapper.get()).isEqualTo("probe-value");
