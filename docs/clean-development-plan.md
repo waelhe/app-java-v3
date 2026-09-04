@@ -27,14 +27,14 @@
 
 | # | المكتبة | الإصدار | النوع | السبب | المصدر |
 |---|---------|---------|-------|-------|--------|
-| 1 | Spring Modulith BOM | 2.1.0 | رسمي | Boot لا يدير Modulith (تمت الترقية من 2.0.6 في PR #144) | https://docs.spring.io/spring-modulith |
+| 1 | Spring Modulith BOM | 2.1.1 | رسمي | Boot لا يدير Modulith (ترقية الخط 2.1.x — أحدث مستقر في Central؛ 2.2.0-M1 مِلستون مستبعد) | https://docs.spring.io/spring-modulith |
 | 3 | Resilience4j BOM | 2.4.0 | رسمي | Boot لا يدير resilience4j-spring-boot4 | https://resilience4j.readme.io |
-| 4 | ArchUnit | 1.4.2 | رسمي | اختباري فقط، ليس في Boot BOM | https://www.archunit.org |
+| 4 | ArchUnit | 1.5.0 | رسمي | اختباري فقط، ليس في Boot BOM | https://www.archunit.org |
 | 5 | Spring REST Docs BOM | 4.0.0 | رسمي | يدير spring-restdocs-mockmvc | https://docs.spring.io/spring-restdocs |
 | 6 | spring-graphql-test | 2.0.3 | رسمي | ليس في Boot BOM | https://docs.spring.io/spring-graphql |
 | 7 | springdoc-openapi | 3.1.0 | **مجتمع** | يولّد OpenAPI/Swagger تلقائياً (مبني على Boot 4.1.0 parent — متوافق مع خط 4.1.x) | https://springdoc.org |
 | 8 | **MapStruct** | **1.6.3** | **مجتمع** | **يولّد mapper بين Entity↔DTO تلقائياً** | **https://mapstruct.org** |
-| 9 | **Instancio** | **6.0.0-RC3** | **مجتمع** | **يملأ كائنات الاختبار ببيانات عشوائية** | **https://www.instancio.org** |
+| 9 | **Instancio** | **6.0.0** | **مجتمع** | **GA صدر بعد RC — الاستثناء باقٍ (ليس في Boot BOM) لكن لم يعد RC** | **https://www.instancio.org** |
 | 10 | **commons-logging** | **1.4.0** | **رسمي (override)** | **spring-session-core 4.1.1 (Boot 4.1.1) يتطلب 1.4.0 بينما Boot 4.1.1 BOM يدير 1.3.6 — كشفها RequireUpperBoundDeps؛ يُلغى الاستثناء عند ترقية Boot تدار فيها 1.4.0** | https://commons.apache.org/proper/commons-logging |
 | 11 | **Jackson-2 BOM** | **2.22.2** | **رسمي (override)** | **swagger-core-jakarta 2.2.52 (springdoc 3.1.0) يتطلب 2.22.0 بينما Boot 4.1.1 يدير 2.21.5 — كشفها RequireUpperBoundDeps؛ يُلغى الاستثناء عندما يرفع Boot الإدارة إلى ≥ 2.22.0** | https://github.com/FasterXML/jackson-bom |
 
@@ -171,7 +171,7 @@ class BookingTest {
 ```xml
 <properties>
     <mapstruct.version>1.6.3</mapstruct.version>
-    <instancio.version>6.0.0-RC2</instancio.version>
+    <instancio.version>6.0.0</instancio.version>
 </properties>
 
 <dependencyManagement>
@@ -572,7 +572,7 @@ class BookingModuleIntegrationTest {
     @Container
     @ServiceConnection
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:17-alpine"))
+            DockerImageName.parse("postgres:18-alpine"))
             .withDatabaseName("marketplace");
 
     @Test

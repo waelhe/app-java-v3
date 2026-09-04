@@ -36,7 +36,7 @@ import org.testcontainers.utility.DockerImageName;
  * with {@code getBytes}.
  *
  * <p>This test boots the full application context with the JDBC job store on a
- * real PostgreSQL (same {@code postgres:17-alpine} image as CI services and
+ * real PostgreSQL (same {@code postgres:18-alpine} image as CI services and
  * docker-compose), with Flyway migrations applied — V21 creates the QRTZ
  * schema. Registering {@code SearchIndexQuartzConfig}'s durable job + trigger
  * writes and reads back the {@code JOB_DATA} blob through the configured
@@ -56,7 +56,7 @@ class QuartzJdbcJobStoreConfigTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:17-alpine"))
+            DockerImageName.parse("postgres:18-alpine"))
             .withDatabaseName("marketplace");
 
     @Autowired
