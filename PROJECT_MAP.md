@@ -1,6 +1,6 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
-## Search Layer — الدالة الرسمية + إزالة الآلة الميتة (2026-09-04) 🏗️ فرع `fix/search-websearch-and-dead-matview`
+## Search Layer — الدالة الرسمية + إزالة الآلة الميتة (2026-09-04) ✅ مُدمج وموزع ومتحقق حيًا (PR #205 → main `6a47e066` → نشر `3e8de67f`)
 
 **الأمر الحاكم:** «افتح فرع جديد… نفّذ… أريد نظامًا مدارًا آليًا من الإطار ولا يوجد به عبث وتدخل وإدارة يدوية» — تنفيذ على طبقة البحث بلا رأي: كل تغيير مسند لدالة/سلوك رسمي موثق.
 
@@ -8,9 +8,11 @@
 
 **الآلة الميتة (مثبتة بـ grep):** `mv_listing_search` (V9) تُنشأ وتُحدَّث كل 5 دقائق بواجبة Quartz متينة (`searchIndexRefreshJob`) بينما **لا يقرؤها أي استعلام** — البحث النصي يقرأ `provider_listings` عبر فهرس GIN مباشرة. **V29:** إسقاط العرض المادي وفهرسيه (فهرس GIN يبقى) + حذف صفوف الواجبة/الزناد من متجر Quartz JDBC (ترتيب Flyway-قبل-Quartz يضمنه الإطار: `SchedulerDependsOnDatabaseInitializationDetector` في spring-boot-quartz 4.1.1 — مثبت من الـ jar المحلي). حذف `SearchIndexQuartzConfig` + `SearchIndexRefresher` + اختباره.
 
-**الحارسان:** (1) `QuartzJdbcJobStoreConfigTest` أُعيدت كتابته بفاعل بديل (واجبة اختبار تُسجَّل زمن-التشغيل وتُحذف) — درس b5d9f7f5 (قراءة JOB_DATA bytea عبر PostgreSQLDelegate) محفوظ + تأكيد أن الواجبة الميتة لم تُعَد؛ (2) `CatalogSearchFullTextIntegrationTest` جديد: دلالات websearch (AND/عبارة/استثناء/OR) على PostgreSQL حقيقي + `assertThatCode().doesNotThrowAnyException()` للمدخلات الخاصة (يقفل فئة العيب) + يقلع على مخطط Flyway الحقيقي (V1..V29 — يتحقق من سلاسة V29 ذاتها). **درس CI مسجل (eff5966):** اختبارات الشرائح (`@ApplicationModuleTest`) تشارك قاعدة خدمة CI الواحدة وتُعاد استخدامًا عبر سياق مخبأ — اختبار يزرع صفوفًا يجب أن يعزل بقاعدته الخاصة (`@ServiceConnection` بحاوية مستقلة، نمط QuartzJdbcJobStoreConfigTest)، وإلا كسر اختبارات أخرى تعدّ الحالة فارغة (`CatalogModuleIntegrationTest.listActiveSummary_returnsEmptyPage` فشل بهذا التلوث في الدفعة الأولى — عولج من الجذر بعزل الحاوية لا بترقيع الاختبار القائم). `SearchServiceTest`: تمرير خام (+ اختبار خام جديد).
+**الحارسان:** (1) `QuartzJdbcJobStoreConfigTest` أُعيدت كتابته بفاعل بديل (واجبة اختبار تُسجَّل زمن-التشغيل وتُحذف) — درس b5d9f7f5 (قراءة JOB_DATA bytea عبر PostgreSQLDelegate) محفوظ + تأكيد أن الواجبة الميتة لم تُعَد؛ (2) `CatalogSearchFullTextIntegrationTest` جديد: دلالات websearch (AND/عبارة/استثناء/OR) على PostgreSQL حقيقي + `assertThatCode().doesNotThrowAnyException()` للمدخلات الخاصة (يقفل فئة العيب) + يقلع على مخطط Flyway الحقيقي (V1..V30 — يتحقق من سلاسة V29/V30 ذاتهما). **درس CI مسجل (eff5966):** اختبارات الشرائح (`@ApplicationModuleTest`) تشارك قاعدة خدمة CI الواحدة وتُعاد استخدامًا عبر سياق مخبأ — اختبار يزرع صفوفًا يجب أن يعزل بقاعدته الخاصة (`@ServiceConnection` بحاوية مستقلة، نمط QuartzJdbcJobStoreConfigTest)، وإلا كسر اختبارات أخرى تعدّ الحالة فارغة (`CatalogModuleIntegrationTest.listActiveSummary_returnsEmptyPage` فشل بهذا التلوث في الدفعة الأولى — عولج من الجذر بعزل الحاوية لا بترقيع الاختبار القائم). `SearchServiceTest`: تمرير خام (+ اختبار خام جديد).
 
-**ما لم يُلمس:** واجهات REST/GraphQL (بوابة توافق OpenAPI لم تتأثر)، ترحيلات V1..V28 كما هي (V29 جديد فقط)، أسماء المخبآت وقنوات الإبطال (AFTER_COMMIT) كما هي، صفر اعتماديات جديدة، صفر تغيير حدود Modulith (SPI بنفس التوقيع — إعادة تسمية معامل + javadoc فقط).
+**ما لم يُلمس:** واجهات REST/GraphQL (بوابة توافق OpenAPI لم تتأثر)، ترحيلات V1..V28 كما هي (V29/V30 جديدان فقط)، أسماء المخبآت وقنوات الإبطال (AFTER_COMMIT) كما هي، صفر اعتماديات جديدة، صفر تغيير حدود Modulith (SPI بنفس التوقيع — إعادة تسمية معامل + javadoc فقط).
+
+**ما بعد الدمج (متحقق — 2026-09-04):** دفع المستخدم بيده `6a47e066` إلى fork النشر (15:44Z) → Railway بنى تلقائيًا **نشر `3e8de67f` (SUCCESS)** → سجل الإقلاع يثبت `Migrating schema "public" to version "29 - remove dead search matview"` + `"30 - envers revision sequence"` + `Successfully applied 2 migrations … now at version v30` + **صفر أسطر ERROR** (وصفر أخطاء أرشفة — V28 مستمر) + إقلاع 11.537s ببروفايل prod. **فحص دخان حي للميزة:** `GET /api/v1/search?q=cleaning (deep) -iron` (مدخل عيب الـ 500 القديم) = **200**، والعبارات المقتبسة و`OR` و`-استثناء` كلها 200 — الدلالات الرسمية تعمل في الإنتاج. الأدلة محفوظة (سجلات النشرة عبر GraphQL v2). **النظير الموثق:** docs/railway-deployment-reference.md §0.6 + SYSTEM.md §15.
 
 ## Event Publication Archive — إغلاق دين الإنتاج الحي (2026-09-04) 🏗️ فرع `fix/modulith-event-archive-schema`
 
@@ -31,7 +33,7 @@
 
 **ما بعد الدمج (متحقق — truth-sync 2026-09-04):** دمج squash → main = `f9c5d34` (#203) → CI على main أخضر → دفع fork (`707e052..f9c5d34`) → **نشر `80171be7` (SUCCESS من f9c5d34)**: سجل الإقلاع يثبت `Migrating schema "public" to version "28 - modulith event archive"` + `Successfully applied 1 migration, now at version v28`، **صفر أخطاء `event_publication_archive`** (مقابل سطرين في كل إقلاع سابق)، إقلاع 10.634s ببروفايل prod، فحص ثلاثي أخضر (liveness/readiness/jwks/OIDC) — الأدلة محفوظة (سجلات النشرة عبر GraphQL v2). **النظير الموثق:** docs/railway-deployment-reference.md §0.5 (الموجة الثانية #197–#203 بأسنادها الرسمي) + SYSTEM.md §15.
 
-## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `80171be7` @ main `f9c5d34` — حُدّثت في دفعة truth-sync؛ الحالة أدناه كُتبت لحظة توثيق الموجة الأولى)
+## Railway Production Deployment (2026-09-03 → 09-04) 🚀 ✅ **LIVE** (deploy `3e8de67f` @ main `6a47e066` — دفعه المستخدم بيده؛ الحالة أدناه كُتبت لحظة توثيق الموجات)
 
 **Order:** «مستودع نشر جديد للنشر على Railway — شخّص فشل النشر وأصلحه» → «اضبط المتغيرات انت» → «تابع» (×2) — ثم «وثّق عملية النشر كلها» (هذه الدفعة).
 
