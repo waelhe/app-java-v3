@@ -93,11 +93,16 @@ public class EventPublicationResubmission {
 
     /**
      * Re-submits FAILED publications whose next retry is due. Runs every 15
-     * minutes (fixed delay — sweeps never overlap). Official defaults are kept
-     * for batch size (100) and max in-flight; the only policy applied is the
-     * {@link #RETRY_BACKOFF} filter.
+     * minutes (fixed delay — sweeps never overlap). The 5-minute initial
+     * delay keeps the first sweep clear of application warm-up: at boot the
+     * framework's own {@code republish-outstanding-events-on-restart} already
+     * re-delivers outstanding publications, and firing into a shutting-down
+     * context (CI evidence, PR #210 round 2: "Unexpected error occurred in
+     * scheduled task" — connection EOF against a container mid-teardown) is
+     * pure noise. Official defaults are kept for batch size (100) and max
+     * in-flight; the only policy applied is the {@link #RETRY_BACKOFF} filter.
      */
-    @Scheduled(fixedDelay = 15, timeUnit = TimeUnit.MINUTES)
+    @Scheduled(fixedDelay = 15, initialDelay = 5, timeUnit = TimeUnit.MINUTES)
     void resubmitFailedPublications() {
         resubmitDue(Instant.now());
     }
