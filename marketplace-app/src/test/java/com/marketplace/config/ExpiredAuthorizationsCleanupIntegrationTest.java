@@ -33,7 +33,9 @@ import org.testcontainers.utility.DockerImageName;
  * {@code ddl-auto: create-drop} hides what production actually runs — V24
  * revinfo, V28 archive table, V29 dead-job rows). Boots the full context on a
  * real PostgreSQL with {@code spring.flyway.enabled=true} +
- * {@code ddl-auto=none} (the {@code QuartzJdbcJobStoreConfigTest} pattern).
+ * {@code ddl-auto=none} (the {@code DeadQuartzStoreRemovalIntegrationTest}
+ * pattern — formerly {@code QuartzJdbcJobStoreConfigTest}, retired with the
+ * Quartz store it guarded).
  *
  * <p>Guards two behaviors:
  * <ol>
@@ -67,7 +69,7 @@ class ExpiredAuthorizationsCleanupIntegrationTest {
 
     @Container
     @ServiceConnection
-    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches QuartzJdbcJobStoreConfigTest (this testcontainers version ships a non-generic PostgreSQLContainer)
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches the established container pattern (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
             DockerImageName.parse("postgres:18-alpine"))
             .withDatabaseName("marketplace");
