@@ -50,6 +50,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       GitHub Packages repository declared under {@code distributionManagement}
  *       (server id {@code github}); the poms on main stay
  *       {@code 0.1.0-SNAPSHOT}.</li>
+ *   <li><b>container-scan.yml + .trivyignore.yaml + root pom tomcat.version</b> —
+ *       the container-image CVE gate (roadmap G-ENG-1): the workflow must keep
+ *       scanning the REAL production artifact (docker build of the repo
+ *       Dockerfile, image mode), must fail on HIGH/CRITICAL fixed findings
+ *       (exit-code 1), and must honor the yaml ignore file whose entries are
+ *       time-bounded ({@code expired_at}) — an ignore entry that silently
+ *       loses its expiry would weaken the gate forever. The root pom carries
+ *       the {@code <tomcat.version>11.0.25</tomcat.version>} override that
+ *       closed the three CRITICAL Tomcat 11.0.24 auth bypasses this layer
+ *       caught; the pin forces the override's removal to be a deliberate,
+ *       visible act (it becomes stale the moment the Boot parent manages
+ *       {@literal >=} 11.0.25).</li>
  * </ul>
  *
  * <p>File-location note: surefire runs with the module basedir
@@ -167,6 +179,83 @@ class PlatformGovernanceFilesTest {
         assertThat(dm).isGreaterThan(-1);
         String block = pom.substring(dm, pom.indexOf("</distributionManagement>", dm) + 24);
         assertThat(block).contains("<id>github</id>");
+    }
+
+    @Test
+    void containerScanWorkflowPinsTheCveGate() throws IOException {
+        String yml = read(".github/workflows/container-scan.yml");
+        // The check name the ruleset requires (required_status_checks context).
+        assertThat(yml).as("the check name the ruleset may require")
+                .contains("name: Container Image Scan (Docker)");
+        // The scan target is the production artifact: the same Dockerfile
+        // Railway builds (serviceManifest), driven through BuildKit (the
+        // Dockerfile needs RUN --mount=type=cache).
+        assertThat(yml).as("scans the image built from the repo Dockerfile")
+                .contains("uses: docker/build-push-action@v6")
+                .contains("load: true")
+                .contains("scan-type: image");
+        // Pinned tooling — no floating @master (drift = different gate).
+        assertThat(yml).as("pinned trivy-action + trivy version")
+                .contains("aquasecurity/trivy-action@v0.36.0")
+                .contains("version: v0.74.0");
+        // The gate itself: fail on HIGH/CRITICAL fixable findings, honoring
+        // the yaml ignore policy (the only sanctioned exceptions).
+        assertThat(yml).as("gate policy: HIGH/CRITICAL + fail + ignores")
+                .contains("severity: CRITICAL,HIGH")
+                .contains("exit-code: '1'")
+                .contains("ignore-unfixed: true")
+                .contains("trivyignores: .trivyignore.yaml");
+        // SARIF upload needs this permission (same shape as codeql.yml).
+        assertThat(yml).as("uploading SARIF needs this permission")
+                .contains("security-events: write");
+        // New CVEs land without code changes — the weekly rescan is the
+        // visible signal until the OTEL/MAIL alerting gates open (roadmap A1).
+        assertThat(yml).as("main is rescanned on a schedule").contains("schedule:");
+    }
+
+    @Test
+    void containerScanIgnoresAreBoundedEntries() throws IOException {
+        String ignore = read(".trivyignore.yaml");
+        // Every entry must be time-bounded: expired_at is enforced by trivy
+        // itself (verified live: past date => the finding returns). An entry
+        // without it would silence the gate indefinitely.
+        assertThat(ignore).as("the ignore entry must carry an expiry")
+                .contains("expired_at:");
+        // And justified: the statement documents why the finding is accepted.
+        assertThat(ignore).as("the ignore entry must carry a justification")
+                .contains("statement:");
+        // Exactly one bounded entry today. Counting "- id:" keeps the file
+        // honest: a silently widened list (someone pasting more CVEs) trips
+        // this pin and forces a deliberate, review-visible change.
+        int entries = ignore.split("(?m)^\s*-\s*id:", -1).length - 1;
+        assertThat(entries)
+                .as("exactly one documented ignore entry (CVE-2026-14456, "
+                        + "alpine openssl QUIC DoS — unreachable: the JVM serves "
+                        + "HTTP over JSSE, not system OpenSSL; awaiting the "
+                        + "eclipse-temurin rebuild)")
+                .isEqualTo(1);
+        assertThat(ignore).contains("id: CVE-2026-14456");
+    }
+
+    @Test
+    void rootPomCarriesTheTomcatSecurityOverride() throws IOException {
+        String pom = read("pom.xml");
+        // The official version-property override (Boot appendix "Version
+        // Properties": tomcat.version is in the table of properties that
+        // "can be used to override the versions managed by Spring Boot")
+        // closing the three CRITICAL Tomcat 11.0.24 auth bypasses
+        // (CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 — fixed upstream
+        // in 11.0.25). The pin makes removal deliberate: when the Boot parent
+        // manages >= 11.0.25, deleting the override must also update this
+        // test in the same PR (the Dependabot BOM PR will surface the bump).
+        assertThat(pom).as("tomcat override to the CVE-fixed 11.0.25")
+                .contains("<tomcat.version>11.0.25</tomcat.version>");
+        // The justification comment travels with the property — a future
+        // reader must find the CVE trail without git archaeology.
+        assertThat(pom).as("the override cites its CVE evidence")
+                .contains("CVE-2026-65182")
+                .contains("CVE-2026-65905")
+                .contains("CVE-2026-68525");
     }
 
     private static String read(String... segments) throws IOException {
