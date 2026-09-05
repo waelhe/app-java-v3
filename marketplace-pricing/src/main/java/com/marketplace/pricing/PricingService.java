@@ -2,6 +2,7 @@ package com.marketplace.pricing;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class PricingService {
      */
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "pricing-calculations", key = "#basePriceCents + '-' + #category")
+    @Observed(name = "pricing.calculate")
     public PriceBreakdown calculatePrice(long basePriceCents, String category) {
         PricingRule rule = pricingRuleRepository.findByCategoryAndActiveTrue(category)
                 .or(() -> pricingRuleRepository.findFirstByActiveTrueOrderByCreatedAtDesc())
@@ -74,6 +76,7 @@ public class PricingService {
         return pricingRuleRepository.findAll();
     }
 
+    @Observed(name = "pricing.rule.create")
     public PricingRule createRule(String name, String category,
                                   BigDecimal taxRate, BigDecimal discountPct) {
         PricingRule rule = PricingRule.create(name, category, taxRate, discountPct);
@@ -88,6 +91,7 @@ public class PricingService {
     }
 
     @Transactional
+    @Observed(name = "pricing.rule.activate")
     public PricingRule activate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
@@ -98,6 +102,7 @@ public class PricingService {
     }
 
     @Transactional
+    @Observed(name = "pricing.rule.deactivate")
     public PricingRule deactivate(UUID id) {
         PricingRule rule = pricingRuleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PricingRule", id));
@@ -108,6 +113,7 @@ public class PricingService {
     }
 
     @Transactional
+    @Observed(name = "pricing.rule.delete")
     public void deleteById(UUID id) {
         if (!pricingRuleRepository.existsById(id)) {
             throw new ResourceNotFoundException("PricingRule", id);
