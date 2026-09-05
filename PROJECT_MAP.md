@@ -1,5 +1,21 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Observation Coverage Layer — كل أمر أعمال مرصود عبر قناة الجانب الإطارية، والجرد مثبَّت بحارس (2026-09-05) ✅ مُدمج (PR #216 → main `0eabc1b`، CI أخضر ×3 على الرأس و×3 على main)
+
+**الأمر الحاكم:** «أكمل التنفيذ… أريد نظاماً مداراً آلياً من الإطار ولا يوجد به عبث وتدخل وإدارة يدوية… فعل البروتوكول وملف agents.md ثم» — الطبقة السادسة، استمرار نمط الجولات الخمس (فجوة مقيسة صفر-بوابات → إغلاق بقناة إطارية رسمية → حارس تثبيت).
+
+**الفجوة (مقيسة بـ git grep على الشجرة الحية):** `@Observed` كان موجوداً في 5 وحدات فقط (10 نقاط: booking×4, payments×3, catalog, availability, messaging) وصفراً في 8 وحدات أعمال — أوامر admin (`dispute.resolve`, `provider.verify/suspend`) وحركة الأموال (`ledger.credit/debit`) ومحرك التسعير كلها كانت تعمل في الظلام.
+
+**التحقق الحاسم قبل أي كود (من البتات الرسمية):** فُكَّت `spring-boot-micrometer-observation-4.1.1.jar` من مستخرج AOT المحفوظ: `ObservedAspectConfiguration` مسجلة في `AutoConfiguration.imports` بشروط `@ConditionalOnClass(ObservedAspect + org.aspectj.weaver.Advice)` + `@ConditionalOnBooleanProperty(management.observations.annotations.enabled)` — وكلاهما متوفر أصلاً على main (yml `observations.annotations.enabled: true` + `spring-boot-starter-aspectj` في platform-infra:94) ⇒ **الجانب يعمل تلقائياً وكل annotation جديدة حية فوراً — صفر تغيير إعدادات** (وثائق Boot الرسمية الحية جُلبت وطابقت حرفياً).
+
+**الإغلاق (23 نقطة جديدة، الجرد الكامل 33 عبر 13 وحدة، تسمية `module.action` القائمة):** identity (sync.oidc/role.update)، disputes (open/resolve)، reviews (create/update)، provider (create/update/verify/suspend)، pricing (calculate + rule.create/activate/deactivate/delete)، ledger (credit.payment/debit.commission)، notifications (mark.read)، booking.auto.cancel (الانتهاء التلقائي مميّز عن الإلغاء اليدوي)، و`email.send` على EmailService المشتركة (بوابة مزوّد البريد المفتوحة: زمن ونتيجة التسليم مرئيان أياً كان قرار المزوّد لاحقاً). **قراءة مسارات القراءة عمداً**: `http.server.requests` الإطارية تقيسها أصلاً — رصد خدمة عليها = عدّ مزدوج (لهذا `search` بلا مداخل).
+
+**الحارس (نمط PlatformGovernanceFilesTest):** `ObservationCoverageFilesTest` (اختباران بلا سياق): (1) يثبّت مفتاحي التفعيل معاً — boolean الـyml + starter-aspectj في pom (لا شيء في التشغيل يرفض مفتاحاً يُسقط بصمت) (2) يثبّت **الجرد الكامل 33 اسماً حرفياً** — مدخل مفقود = أمر أعمال أظلم؛ مدخل زائد = رصد خارج سياسة «أوامر لا قراءات»؛ كلاهما يكسر CI. الجرد مُتحقق آلياً بمسح المصادر (محاكاة Python طابقت التثبيت قبل Maven).
+
+**التحقق المحلي (JDK 25):** المفاعل الكامل 16 وحدة يُجمَّع + الوحدات التسع المعدلة كلها خضراء (identity 20، booking 47، disputes 14، reviews 24، provider 25، pricing 16، ledger 15، notifications 22، platform-infra) + الحارس 2/2.
+
+**ما لم يُلمس:** صفر إعدادات، صفر yml، صفر اعتماديات، صفر ترحيلات، صفر تغيير حدود Modulith/SPI/أحداث، صفر منطق تطبيق — سلوك التشغيل متطابق بايت-بايت عدا الرصد الجديد. بوابتا المستخدم (OTEL/MAIL، PITR) كما هما.
+
 ## Platform Governance Layer — المنصة تفرض ما كان عرفًا، وتُوقظ بوابة التوافق، وتُسلِّم قناة الإصدار (2026-09-05) 🏗️ فرع `chore/platform-governance-layer`
 
 **الأمر الحاكم:** «فعل البروتوكول وملف agents.md ثم نفّذ… ثم نفّذ الخلاصة: الفجوتان الحقيقيتان (main أعزل، وبوابة التوافق نائمة) أهمّ من نصف توصياته — (1) حماية main بقواعد required-checks + PR إلزامي، (2) Dependabot مقيد بالـBOM، (3) CodeQL بعد تحقق JDK 25، (4) أول release يوقظ البوابة ويطلق Packages معًا» — الطبقة الخامسة، منصة-خالصة (صفر كود تطبيق).
