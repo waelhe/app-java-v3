@@ -22,6 +22,7 @@ public record BookingInfo(
         if (currency == null || currency.isBlank()) {
             throw new IllegalStateException("Booking has invalid currency: " + currency);
         }
+        currency = Currencies.normalize(currency);
     }
 
     public void requireStatus(String required, String operation) {

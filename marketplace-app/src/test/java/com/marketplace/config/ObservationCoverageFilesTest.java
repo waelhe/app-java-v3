@@ -97,7 +97,8 @@ class ObservationCoverageFilesTest {
                     "payment.cancel", "payment.confirm", "payment.process",
                     "payment.psp.create", "payment.psp.webhook")),
             Map.entry("marketplace-pricing", List.of(
-                    "pricing.calculate", "pricing.rule.activate",
+                    "pricing.calculate", "pricing.currency.convert",
+                    "pricing.rule.activate",
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(

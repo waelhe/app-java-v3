@@ -15,6 +15,7 @@ public record ProviderListingView(
         String description,
         String category,
         Long priceCents,
+        String currency,
         UUID providerId,
         String status,
         Instant createdAt,

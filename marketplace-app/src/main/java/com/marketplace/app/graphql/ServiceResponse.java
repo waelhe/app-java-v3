@@ -7,6 +7,7 @@ public record ServiceResponse(
     String name,
     String description,
     double price,
+    String currency,
     String status
 ) {
 }

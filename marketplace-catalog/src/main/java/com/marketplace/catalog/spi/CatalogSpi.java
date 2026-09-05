@@ -21,7 +21,12 @@ public interface CatalogSpi {
 
     Page<ProviderListingView> findAll(Pageable pageable);
 
-    ProviderListingView create(UUID providerId, String title, String description, String category, Long priceCents);
+    /**
+     * Creates a listing priced in the given ISO 4217 currency (roadmap B4);
+     * {@code null}/blank keeps the house default SAR.
+     */
+    ProviderListingView create(UUID providerId, String title, String description, String category,
+                               Long priceCents, String currency);
 
     Page<ProviderListingSummary> findAllSummaries(Pageable pageable);
 
