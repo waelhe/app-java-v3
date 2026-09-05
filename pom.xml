@@ -57,6 +57,7 @@
         <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps) -->
         <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
         <awssdk.version>2.54.13</awssdk.version>
+        <stripe.version>33.4.1</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
     </properties>
 
@@ -146,6 +147,20 @@
                 <version>${awssdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!-- Exception #11: Stripe Java SDK — Boot does not manage the Stripe
+                 SDK. Consumed only by marketplace-payments (the real payment
+                 channel, roadmap B3 / gap G-PROD-3). Official evidence cached
+                 under scripts/psp-doc-verify/: Maven Central metadata (latest
+                 STABLE release 33.4.1), the official webhook-signature doc
+                 (constructEvent recipe + DEFAULT_TOLERANCE=300s verified from
+                 the sources jar), and bytecode-verified API surface
+                 (PaymentIntent.create + RequestOptions.setIdempotencyKey,
+                 Webhook.constructEvent, EventDataObjectDeserializer). -->
+            <dependency>
+                <groupId>com.stripe</groupId>
+                <artifactId>stripe-java</artifactId>
+                <version>${stripe.version}</version>
             </dependency>
             <!-- Internal modules -->
             <dependency>

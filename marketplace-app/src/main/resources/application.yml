@@ -278,6 +278,19 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # Real payment channel (roadmap B3 / gap G-PROD-3) — provider-optional
+  # exactly like the MAIL / MEDIA_S3 gates: when either Stripe credential is
+  # blank, no channel beans are created (StripeChannelConfiguredCondition)
+  # and processIntent keeps the existing internal-intent behavior; the
+  # /api/v1/payments/webhooks/stripe endpoint answers 503 SU-001 instead of
+  # half-verifying. Official credential shape (docs cached at
+  # scripts/psp-doc-verify/): sk_test_.../sk_live_... API key selects the
+  # official sandbox/live mode; whsec_... is the webhook endpoint secret.
+  payments:
+    psp:
+      stripe:
+        api-key: ${PAYMENTS_STRIPE_API_KEY:}
+        webhook-secret: ${PAYMENTS_STRIPE_WEBHOOK_SECRET:}
   # Listing media (roadmap B1 / G-PROD-1). S3-compatible presigned channel —
   # provider-optional exactly like the MAIL placeholders: when the four
   # MEDIA_S3_* credentials are blank, no storage beans are created

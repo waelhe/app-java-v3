@@ -44,6 +44,15 @@
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-envers</artifactId>
         </dependency>
+        <!-- Real payment channel (roadmap B3): Stripe Java SDK, version managed
+             by the parent dependencyManagement (Exception #11). The ONLY
+             consumer in the reactor — StripePspChannel is the single class
+             importing com.stripe (same isolation rule as S3MediaStorage for
+             the AWS SDK). -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
