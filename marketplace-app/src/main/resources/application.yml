@@ -278,6 +278,29 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # Listing media (roadmap B1 / G-PROD-1). S3-compatible presigned channel —
+  # provider-optional exactly like the MAIL placeholders: when the four
+  # MEDIA_S3_* credentials are blank, no storage beans are created
+  # (MediaStorageConfiguredCondition) and every /api/v1/media endpoint
+  # answers 503 SU-001 instead of half-working. Official credential shape
+  # (Cloudflare R2 doc, cached at scripts/media-doc-verify/):
+  #   endpoint = https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+  #   region   = auto ("Required by SDK but not used by R2")
+  # Any S3-compatible endpoint (incl. AWS S3) works — the provider choice is
+  # a deployment decision, not a code decision.
+  media:
+    storage:
+      endpoint: ${MEDIA_S3_ENDPOINT:}
+      region: ${MEDIA_S3_REGION:auto}
+      bucket: ${MEDIA_S3_BUCKET:}
+      access-key: ${MEDIA_S3_ACCESS_KEY:}
+      secret-key: ${MEDIA_S3_SECRET_KEY:}
+    limits:
+      max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:10485760}
+      allowed-content-types: ${MEDIA_ALLOWED_CONTENT_TYPES:image/jpeg,image/png,image/webp,image/gif}
+      # Presigned URL lifetime (upload + download). Official bounds: 1s to 7d
+      # (R2 doc + S3Presigner javadoc).
+      presign-ttl: ${MEDIA_PRESIGN_TTL:15m}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}

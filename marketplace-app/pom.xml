@@ -76,6 +76,10 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-disputes</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-media</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>
