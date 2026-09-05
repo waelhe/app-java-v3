@@ -52,6 +52,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
  *   <li>ledger — credit.payment, debit.commission (money movement)</li>
+ *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
+ *       presigned media channel; commands per policy, reads via
+ *       http.server.requests)</li>
  *   <li>messaging — send</li>
  *   <li>notifications — mark.read</li>
  *   <li>payments — process, confirm, cancel</li>
@@ -83,6 +86,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-identity", List.of("user.role.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.commission")),
+            Map.entry("marketplace-media", List.of(
+                    "media.asset.delete", "media.upload.confirm", "media.upload.request")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of("notification.mark.read")),
             Map.entry("marketplace-payments", List.of(

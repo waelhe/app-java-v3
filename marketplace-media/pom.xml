@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.marketplace</groupId>
+        <artifactId>marketplace-platform</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>marketplace-media</artifactId>
+    <name>marketplace-media</name>
+    <description>Listing media assets — S3-compatible presigned upload channel (roadmap B1 / G-PROD-1)</description>
+
+    <dependencies>
+        <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
+        <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-platform-infra</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
+        <dependency><groupId>org.springframework.modulith</groupId><artifactId>spring-modulith-api</artifactId></dependency>
+        <dependency><groupId>org.springframework.data</groupId><artifactId>spring-data-envers</artifactId></dependency>
+        <!-- S3-compatible object storage channel (G-PROD-1, roadmap B1). The AWS SDK v2
+             is the official client for S3-compatible endpoints — Cloudflare R2's own
+             presigned-URL documentation uses an AWS SDK with:
+               endpoint: https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com
+               region:   "auto"  ("Required by SDK but not used by R2")
+             Presigning is pure local computation ("generated server-side with no
+             communication with R2" — official R2 doc, cached at
+             scripts/media-doc-verify/r2-presigned-urls.md), so the default unconfigured
+             state needs no network at all. Versions are aligned by the awssdk BOM
+             imported in the parent pom (Exception #10). -->
+        <dependency><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId></dependency>
+        <!-- Minimal JDK-based HTTP implementation for the single network call this
+             module ever makes (HeadObject verification on upload confirmation).
+             Managed by the same awssdk BOM. -->
+        <dependency><groupId>software.amazon.awssdk</groupId><artifactId>url-connection-client</artifactId></dependency>
+
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.instancio</groupId><artifactId>instancio-junit</artifactId><scope>test</scope></dependency>
+    </dependencies>
+</project>

@@ -59,7 +59,7 @@ public class GlobalExceptionHandler {
         return problem(ApiErrorTaxonomy.AUTHN, "Authentication required", request, null);
     }
 
-    @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class})
+    @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class, ServiceUnavailableException.class})
     public ProblemDetail handleApiProblemDetail(ApiProblemDetailException ex, HttpServletRequest request) {
         ProblemDetail pd = ex.getBody();
         pd.setInstance(URI.create(request.getRequestURI()));
