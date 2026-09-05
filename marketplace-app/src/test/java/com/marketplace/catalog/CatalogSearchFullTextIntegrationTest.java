@@ -48,8 +48,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * guarded): full application context on
  * an ISOLATED {@code postgres:18-alpine} container via {@code @ServiceConnection},
  * with Flyway enabled and {@code ddl-auto=none} — so the native query runs
- * against exactly the schema migrations produce (V1..V31, including V29's
- * matview drop, V30's Envers revision sequence and V31's Quartz store drop). Isolation is deliberate: this test seeds rows, and the shared
+ * against exactly the schema migrations produce (V1..V34, including V29's
+ * matview drop, V30's Envers revision sequence, V31's Quartz store drop and
+ * V34's pg_trgm extension + trigram GIN index). Isolation is deliberate: this
+ * test seeds rows, and the shared
  * CI service database is asserted-empty by other integration tests
  * ({@code CatalogModuleIntegrationTest.listActiveSummary_returnsEmptyPage} —
  * the eff5966 CI lesson: module-slice tests share the service database and
@@ -183,6 +185,69 @@ class CatalogSearchFullTextIntegrationTest {
         // 'garden' alone: plain single-term query — no operator involved.
         Page<ListingSummary> page = catalogService.searchFullText("garden", Pageable.ofSize(10));
         assertThat(page.map(ListingSummary::title)).containsExactlyInAnyOrder("Garden View", "Cozy House");
+    }
+
+    // ---- Typo-tolerance fallback (V34 / pg_trgm word similarity) ----
+    // Lexical FTS needs exact stems; a one-edit typo must NOT return an
+    // empty page when the intended word is present. The fallback lives in
+    // CatalogService.searchFullText (FTS first, trigram retry on empty) —
+    // exercised here through the service (the public path callers use) and
+    // the repository (the raw query contract).
+
+    @Test
+    void oneEditTypoStillFindsListingsThroughService() {
+        // "gardn" ~ "garden": FTS finds no stem, pg_trgm word similarity
+        // surfaces both listings containing the word.
+        Page<ListingSummary> page = catalogService.searchFullText("gardn", Pageable.ofSize(10));
+        assertThat(page.map(ListingSummary::title))
+                .containsExactlyInAnyOrder("Garden View", "Cozy House");
+    }
+
+    @Test
+    void typoInDescriptionWordAlsoSurfaced() {
+        // "skylin" ~ "skyline" (City View Loft description): the searched
+        // text is title + description — the same expression both indexes use.
+        // Measured on real PostgreSQL: word_similarity = 0.857.
+        Page<ListingSummary> page = catalogService.searchFullText("skylin", Pageable.ofSize(10));
+        assertThat(page.map(ListingSummary::title)).containsExactly("City View Loft");
+    }
+
+    @Test
+    void repositoryFallbackReturnsTheSimilarWordListings() {
+        // Repository-level contract of the raw pg_trgm query: "gardn"
+        // (single-letter deletion of "garden") matches every listing
+        // containing the word — measured word_similarity 0.667 for both.
+        // Same-stem words tie (identical trigram overlap) so order is not
+        // asserted; the SQL orders by similarity DESC which is the correct
+        // semantics either way.
+        Page<ProviderListing> page = listingRepository.searchSimilar("gardn", Pageable.ofSize(10));
+        assertThat(page.map(ProviderListing::getTitle))
+                .containsExactlyInAnyOrder("Garden View", "Cozy House");
+    }
+
+    @Test
+    void belowFrameworkThresholdTypoReturnsEmptyPage() {
+        // Measured on real PostgreSQL with the seeded rows: substitution
+        // typo "gardin" scores word_similarity 0.571 and transposition
+        // "keybaord" 0.444 — both below pg_trgm.word_similarity_threshold
+        // (framework default 0.6, untouched: threshold tuning is a
+        // measurement-backed user decision, not a code default). The
+        // fallback must respect the framework threshold and return empty
+        // rather than noise.
+        assertThat(catalogService.searchFullText("gardin", Pageable.ofSize(10))).isEmpty();
+        assertThat(catalogService.searchFullText("keybaord", Pageable.ofSize(10))).isEmpty();
+    }
+
+    @Test
+    void specialCharactersInTypoFallbackNeverThrow() {
+        // The fallback query receives the same raw user input as FTS —
+        // pg_trgm similarity over arbitrary characters is pure string
+        // math, no parser involved, but the guarantee is asserted the same
+        // way as the FTS path above.
+        assertThatCode(() ->
+                catalogService.searchFullText("\"unbalanced (quote -minus", Pageable.ofSize(10)))
+                .as("raw user input must never raise in the fallback path either")
+                .doesNotThrowAnyException();
     }
 
     private ProviderListing active(String title, String description) {

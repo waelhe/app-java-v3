@@ -53,6 +53,34 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             nativeQuery = true)
     Page<ProviderListing> searchFullText(@Param("query") String query, Pageable pageable);
 
+    /**
+     * Typo-tolerant fallback search using the official pg_trgm extension
+     * (installed by V34): {@code word_similarity} compares the query's
+     * trigram set against every continuous extent of the indexed text, so
+     * a one-edit typo ("gardn" → "garden") still scores high similarity.
+     * Ranked by descending word similarity. Uses the GIN trigram index
+     * {@code idx_listing_search_trgm} (same expression and partial
+     * predicate as the FTS index — V34).
+     *
+     * <p>Operator {@code query <% text}: true when
+     * {@code word_similarity(query, text) >= pg_trgm.word_similarity_threshold}
+     * — the framework default (0.6), deliberately not overridden: threshold
+     * tuning is a measurement-backed decision, not a code default.
+     */
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false AND status = 'ACTIVE'
+              AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchSimilar(@Param("query") String query, Pageable pageable);
+
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false
