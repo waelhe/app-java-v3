@@ -279,8 +279,8 @@ class MultiReplicaReadinessIntegrationTest {
         // same already-migrated database (whichever context ran Flyway first,
         // the other validated). If validation failed, B's boot would have
         // failed the whole class. Both liveness endpoints must answer.
-        assertThat(get(portA, "/actuator/health/liveness", null).statusCode()).isEqualTo(200);
-        assertThat(get(portB, "/actuator/health/liveness", null).statusCode()).isEqualTo(200);
+        assertThat(getJson(portA, "/actuator/health/liveness").statusCode()).isEqualTo(200);
+        assertThat(getJson(portB, "/actuator/health/liveness").statusCode()).isEqualTo(200);
     }
 
     @Test
@@ -369,7 +369,7 @@ class MultiReplicaReadinessIntegrationTest {
         seedListingRow();
 
         // Replica A: cold miss -> the @Cacheable PUT into shared Redis.
-        HttpResponse<String> first = get(portA, "/api/v1/listings?page=0&size=10", null);
+        HttpResponse<String> first = getJson(portA, "/api/v1/listings?page=0&size=10");
         assertThat(first.statusCode()).as("cold browse on replica A: %s", body(first)).isEqualTo(200);
 
         // Remove the database rows behind the cache's back: raw JDBC fires no
@@ -377,7 +377,7 @@ class MultiReplicaReadinessIntegrationTest {
         // can now only answer from replica A's Redis entry.
         jdbcTemplate.update("DELETE FROM provider_listings");
 
-        HttpResponse<String> second = get(portB, "/api/v1/listings?page=0&size=10", null);
+        HttpResponse<String> second = getJson(portB, "/api/v1/listings?page=0&size=10");
         assertThat(second.statusCode()).as("replica B serves replica A's cache entry: %s", body(second))
                 .isEqualTo(200);
         assertThat(second.body())
@@ -406,6 +406,19 @@ class MultiReplicaReadinessIntegrationTest {
 
     // -- HTTP helpers (the AuthorizationServerLoginGateIntegrationTest shape) --
 
+    /** GET with {@code Accept: application/json} — REST/actuator endpoints (an
+     *  HTML Accept on these yields 406, the CI round-2 finding). */
+    private HttpResponse<String> getJson(int port, String path) throws Exception {
+        return httpClient.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + (path.startsWith("/") ? path : "/" + path)))
+                        .header("Accept", "application/json")
+                        .timeout(Duration.ofSeconds(30))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** GET with the browser Accept — login/authorize pages (HTML endpoints). */
     private HttpResponse<String> get(int port, String url, String sessionCookie) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url.startsWith("http") ? url : "http://127.0.0.1:" + port + url))
                 .header("Accept", "text/html,application/xhtml+xml")
@@ -421,6 +434,7 @@ class MultiReplicaReadinessIntegrationTest {
         return httpClient.send(
                 HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                         .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
                         .timeout(Duration.ofSeconds(30))
                         .GET()
                         .build(),
