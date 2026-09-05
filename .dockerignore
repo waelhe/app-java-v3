@@ -6,6 +6,10 @@ target/
 cp.txt
 *.md
 **/*.md
+load-test/
+# k6 measurement harness — the k6 binary is external by design (roadmap A5:
+# "أداة خارج المستودع"), and the harness must never enter the layered
+# runtime image (same exclusion logic as docs/).
 # Documentation trees — never needed in the build context (the layered runtime
 # image only ships application code + libs; excluding them shrinks the context
 # sent to the builder — Dockerfile best practices: "exclude files that are not
