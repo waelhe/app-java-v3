@@ -114,8 +114,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           FORCE: ${{ inputs.force_incident }}
         run: |
-          gh label create uptime-watchdog --color d73a4a \
-            --description "Production watchdog incident (opened by the Production Watchdog workflow)" 2>/dev/null || true
+          gh label create -R "$REPO" uptime-watchdog --color d73a4a \
+            --description "Production watchdog incident (opened by the Production Watchdog workflow)" || true
           existing=$(gh issue list -R "$REPO" --label uptime-watchdog --state open --json number --jq 'length')
           if [ "$existing" != "0" ]; then
             echo "An open watchdog incident already exists - skipping issue creation (dedup)."

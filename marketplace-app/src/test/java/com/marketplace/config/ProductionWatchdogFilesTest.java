@@ -126,6 +126,23 @@ class ProductionWatchdogFilesTest {
                 .contains("uptime-watchdog");
         assertThat(yml).as("dedup check: skip creation when an open incident exists")
                 .contains("skipping issue creation (dedup)");
+        // Found live (first smoke dispatch, run 33937151923): the job has no
+        // checkout, so gh has NO repository context - a gh command without
+        // -R fails (the label is silently not created, then issue create
+        // dies on "could not add label: 'uptime-watchdog' not found").
+        // Every gh invocation must name its repository explicitly.
+        for (String ghCmd : new String[] {"gh label create", "gh issue list",
+                "gh issue create", "gh issue close"}) {
+            boolean anyLineNamesRepo = yml.lines()
+                    .anyMatch(l -> l.contains(ghCmd) && l.contains("-R"));
+            assertThat(anyLineNamesRepo)
+                    .as("%s must carry -R on its command line - the job has no "
+                            + "checkout, so gh has no repository context without "
+                            + "it (live defect found in run 33937151923)", ghCmd)
+                    .isTrue();
+            assertThat(yml).as("%s must exist in the workflow", ghCmd)
+                    .contains(ghCmd);
+        }
         assertThat(yml).as("assignment to the repository owner is the notification "
                         + "channel - an assigned issue reaches the user")
                 .contains("--assignee \"$OWNER\"");
