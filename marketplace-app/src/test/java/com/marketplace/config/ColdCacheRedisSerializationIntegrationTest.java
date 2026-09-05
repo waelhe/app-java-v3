@@ -161,10 +161,10 @@ class ColdCacheRedisSerializationIntegrationTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency)
-                VALUES (?, ?, ?, ?, 'COMPLETED', 100_00L, 'SAR')
+                VALUES (?, ?, ?, ?, 'COMPLETED', ?, 'SAR')
                 ON CONFLICT (id) DO NOTHING
                 """,
-                BOOKING_ID, CONSUMER_ID, PROVIDER_ID, LISTING_ID);
+                BOOKING_ID, CONSUMER_ID, PROVIDER_ID, LISTING_ID, 100_00L);
         jdbcTemplate.update(
                 """
                 INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment)
