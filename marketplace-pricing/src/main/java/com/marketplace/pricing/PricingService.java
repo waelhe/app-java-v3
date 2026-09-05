@@ -4,6 +4,7 @@ import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import io.micrometer.observation.annotation.Observed;
+import java.io.Serializable;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -176,6 +177,15 @@ public class PricingService {
         eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
     }
 
+    /**
+     * Serializable for the Redis cache value path: the
+     * {@code pricing-calculations} @Cacheable site stores instances of this
+     * record and Spring Boot's default Redis value serializer is
+     * {@code JdkSerializationRedisSerializer} — record classes serialize via
+     * their canonical constructor (Object Serialization Specification chapter
+     * 4; serialVersionUID defaults to 0L and the match requirement is waived
+     * for records). All components (long, BigDecimal) are Serializable.
+     */
     public record PriceBreakdown(
             long basePriceCents,
             long discountCents,
@@ -184,5 +194,5 @@ public class PricingService {
             long totalCents,
             BigDecimal taxRate,
             BigDecimal discountPct
-    ) {}
+    ) implements Serializable {}
 }
