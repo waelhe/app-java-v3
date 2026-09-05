@@ -195,7 +195,8 @@ public class PaymentsService implements PaymentsSpi {
         bookingInfo.requireParticipant(consumerId);
         bookingInfo.requireStatus("CONFIRMED", "create payment intent");
 
-        PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(), idempotencyKey);
+        PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(),
+                bookingInfo.currency(), idempotencyKey);
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;

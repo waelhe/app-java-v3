@@ -55,7 +55,7 @@ class CatalogServiceSecurityTest {
     @WithMockUser(roles = "USER")
     void create_whenNotProvider_thenAccessDenied() {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
-                () -> catalogService.create(UUID.randomUUID(), "title", "desc", "cat", 1000L));
+                () -> catalogService.create(UUID.randomUUID(), "title", "desc", "cat", 1000L, null));
     }
 
     @Test
@@ -103,7 +103,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.save(any(ProviderListing.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProviderListingView result = catalogService.create(providerId, "title", "desc", "cat", 1000L);
+        ProviderListingView result = catalogService.create(providerId, "title", "desc", "cat", 1000L, null);
 
         assertThat(result.status()).isEqualTo(ListingStatus.DRAFT.name());
         verify(listingRepository).save(any(ProviderListing.class));

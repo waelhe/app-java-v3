@@ -101,6 +101,11 @@ spring:
     web:
       pageable:
         max-page-size: 100
+      # i18n floor (roadmap B4): the framework's AcceptHeaderLocaleResolver
+      # uses this as the default when a request carries no Accept-Language —
+      # responses stay byte-identical to the pre-B4 English literals.
+      # Arabic resolves via messages_ar.properties on Accept-Language: ar.
+      locale: en
   mail:
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}
@@ -278,6 +283,24 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # Currency exchange channel (roadmap B4 / gap G-PROD-4) — provider-optional
+  # exactly like the PSP/MEDIA_S3/MAIL gates: when no rate is bound, no
+  # exchange beans are created (StaticRatesConfiguredCondition) and
+  # GET /api/v1/pricing/convert answers 503 SU-001 instead of
+  # half-working. Rate semantics: units of the base currency per 1 unit of
+  # the CODE (e.g. USD: 3.75 with base SAR = 1 USD = 3.75 SAR). Bind one
+  # rate per supported currency — a live FX rates provider is a deployment
+  # decision for a later binding, not a code decision.
+  pricing:
+    currency:
+      exchange:
+        base-currency: ${EXCHANGE_BASE_CURRENCY:SAR}
+        # Bind rates to wake the channel (dormant until then):
+        #   YAML:   rates:
+        #             USD: 3.75
+        #   env:     MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_USD=3.75
+        # (one key per ISO 4217 code; relaxed binding flattens the env form
+        #  to the same rates.<CODE> property names)
   # Real payment channel (roadmap B3 / gap G-PROD-3) — provider-optional
   # exactly like the MAIL / MEDIA_S3 gates: when either Stripe credential is
   # blank, no channel beans are created (StripeChannelConfiguredCondition)

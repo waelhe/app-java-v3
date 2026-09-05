@@ -12,6 +12,5 @@ public interface ListingMapper {
     ListingResponse toResponse(ProviderListing listing);
 
     @Mapping(target = "price", expression = "java(java.math.BigDecimal.valueOf(listing.priceCents(), 2))")
-    @Mapping(target = "currency", ignore = true)
     ListingResponse toResponse(ProviderListingView listing);
 }

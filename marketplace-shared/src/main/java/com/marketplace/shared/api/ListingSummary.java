@@ -8,6 +8,7 @@ public record ListingSummary(
         String title,
         String category,
         BigDecimal price,
+        String currency,
         String providerName
 ) {
 }

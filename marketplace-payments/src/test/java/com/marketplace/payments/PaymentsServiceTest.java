@@ -70,6 +70,26 @@ class PaymentsServiceTest {
     }
 
     @Test
+    void createIntent_carriesBookingCurrency_roadmapB4() {
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "USD")
+                .create();
+
+        when(intentRepository.findByIdempotencyKey(null)).thenReturn(Optional.empty());
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent intent = service.createIntent(bookingId, consumerId, null);
+
+        assertEquals("USD", intent.getCurrency());
+    }
+
+    @Test
     void createIntent_idempotencyReturnsExisting() {
         UUID bookingId = create(UUID.class);
         UUID consumerId = create(UUID.class);
