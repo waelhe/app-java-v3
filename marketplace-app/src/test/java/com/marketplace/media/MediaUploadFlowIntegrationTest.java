@@ -28,6 +28,12 @@ import static org.mockito.Mockito.when;
  * boundary: request a presigned upload, confirm after storage verification,
  * read back through the listing, delete. The repository, entity lifecycle,
  * Envers auditing and the object ownership rules all run for real.
+ *
+ * <p><b>Per-method identities:</b> {@code @ApplicationModuleTest} is
+ * meta-annotated {@code @TestInstance(PER_CLASS)} (verified in the official
+ * spring-modulith-test 2.1.1 bytecode) — ONE instance serves every method, and
+ * the database is shared without rollback. Test identities are therefore
+ * allocated INSIDE each method, never as instance fields.
  */
 @ApplicationModuleTest
 @ActiveProfiles("test")
@@ -54,11 +60,7 @@ class MediaUploadFlowIntegrationTest {
     @Autowired
     private MediaAssetRepository mediaAssetRepository;
 
-    private final UUID userId = UUID.randomUUID();
-    private final UUID providerId = UUID.randomUUID();
-    private final UUID listingId = UUID.randomUUID();
-
-    private void mockOwner() {
+    private void mockOwner(UUID userId, UUID providerId, UUID listingId) {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
         when(currentUserProvider.isAdmin(any())).thenReturn(false);
         when(providerLookupPort.findById(providerId))
@@ -69,7 +71,10 @@ class MediaUploadFlowIntegrationTest {
 
     @Test
     void requestConfirmListDelete_fullLifecycle() {
-        mockOwner();
+        UUID userId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        mockOwner(userId, providerId, listingId);
         when(storage.presignUpload(anyString(), anyString()))
                 .thenReturn("https://storage.example/signed-put");
         when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(true);
@@ -107,10 +112,12 @@ class MediaUploadFlowIntegrationTest {
 
     @Test
     void secondAssetGetsNextPosition() {
-        mockOwner();
+        UUID userId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        mockOwner(userId, providerId, listingId);
         when(storage.presignUpload(anyString(), anyString())).thenReturn("https://u");
         when(storage.presignDownload(anyString())).thenReturn("https://g");
-        when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(true);
 
         var first = mediaService.requestUpload(listingId, "image/png", 100L, null);
         var second = mediaService.requestUpload(listingId, "image/png", 100L, null);
@@ -121,7 +128,10 @@ class MediaUploadFlowIntegrationTest {
 
     @Test
     void confirmWithoutStorageVerification_staysPending() {
-        mockOwner();
+        UUID userId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        mockOwner(userId, providerId, listingId);
         when(storage.presignUpload(anyString(), anyString())).thenReturn("https://u");
         when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(false);
 
