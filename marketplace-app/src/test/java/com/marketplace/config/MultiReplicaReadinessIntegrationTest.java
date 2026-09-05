@@ -167,7 +167,7 @@ class MultiReplicaReadinessIntegrationTest {
             registry.add("marketplace.security.jwt.keystore.path", () -> keystoreFile.toString());
             registry.add("marketplace.security.jwt.keystore.password", () -> "itstore");
             registry.add("marketplace.security.jwt.keystore.alias", () -> "itjwt");
-            registry.add("marketplace.security.jwt.keystore.key-password", () -> "itkey");
+            registry.add("marketplace.security.jwt.keystore.key-password", () -> "itjwtkey");
         }
     }
 
@@ -182,7 +182,7 @@ class MultiReplicaReadinessIntegrationTest {
                         System.getProperty("os.name", "").toLowerCase().contains("win") ? "keytool.exe" : "keytool").toString(),
                 "-genkeypair", "-keyalg", "RSA", "-keysize", "2048", "-alias", "itjwt",
                 "-keystore", keystoreFile.toString(), "-storetype", "JKS",
-                "-storepass", "itstore", "-keypass", "itkey",
+                "-storepass", "itstore", "-keypass", "itjwtkey",
                 "-dname", "CN=multi-replica-it", "-validity", "30")
                 .redirectErrorStream(true)
                 .start();
@@ -208,7 +208,7 @@ class MultiReplicaReadinessIntegrationTest {
                         "--marketplace.security.jwt.keystore.path=" + keystoreFile,
                         "--marketplace.security.jwt.keystore.password=itstore",
                         "--marketplace.security.jwt.keystore.alias=itjwt",
-                        "--marketplace.security.jwt.keystore.key-password=itkey");
+                        "--marketplace.security.jwt.keystore.key-password=itjwtkey");
         portB = ((WebServerApplicationContext) replicaB).getWebServer().getPort();
         assertThat(portB).as("replica B must be listening on its own port").isPositive();
     }
