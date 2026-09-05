@@ -170,6 +170,7 @@ public class BookingService implements BookingSpi {
         return booking;
     }
 
+    @Observed(name = "booking.auto.cancel")
     public void autoCancel(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CANCELLED) {

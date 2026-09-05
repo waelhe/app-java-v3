@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class DisputeService {
         this.bookingParticipantProvider = bookingParticipantProvider;
     }
 
+    @Observed(name = "dispute.open")
     public Dispute open(UUID bookingId, String reason, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         BookingInfo info = bookingParticipantProvider.getBookingInfo(bookingId);
@@ -42,6 +44,7 @@ public class DisputeService {
         return repository.findByBookingId(bookingId);
     }
 
+    @Observed(name = "dispute.resolve")
     @PreAuthorize("hasRole('ADMIN')")
     public Dispute resolve(UUID id, Authentication authentication) {
         Dispute dispute = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Dispute not found: " + id));

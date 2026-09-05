@@ -3,6 +3,7 @@ package com.marketplace.provider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -32,6 +33,7 @@ public class ProviderService {
         this.eventPublisher = eventPublisher;
     }
 
+    @Observed(name = "provider.create")
     @PreAuthorize("hasRole('CONSUMER')")
     public ProviderProfile create(String displayName, String bio, UUID userId) {
         return providerRepository.save(ProviderProfile.create(displayName, bio, userId));
@@ -44,6 +46,7 @@ public class ProviderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Provider not found: " + id));
     }
 
+    @Observed(name = "provider.update")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderProfile update(UUID id, String displayName, String bio, Authentication authentication) {
         ProviderProfile provider = getById(id);
@@ -53,6 +56,7 @@ public class ProviderService {
         return provider;
     }
 
+    @Observed(name = "provider.verify")
     @PreAuthorize("hasRole('ADMIN')")
     public ProviderProfile verify(UUID id) {
         ProviderProfile provider = getById(id);
@@ -61,6 +65,7 @@ public class ProviderService {
         return provider;
     }
 
+    @Observed(name = "provider.suspend")
     @PreAuthorize("hasRole('ADMIN')")
     public ProviderProfile suspend(UUID id) {
         ProviderProfile provider = getById(id);
