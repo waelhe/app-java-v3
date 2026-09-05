@@ -94,6 +94,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Cacheable(cacheNames = "catalog-search", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
         Page<ProviderListing> page = listingRepository.searchFullText(query, pageable);
+        if (page.isEmpty()) {
+            // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
+            // stem match — retry with word-similarity so a one-edit typo
+            // ("gardn") still surfaces the intended listings ("garden").
+            // An implementation detail of the catalog's search: the port
+            // contract, the search module and every caller are unchanged.
+            // Cached as the final result of this query either way.
+            page = listingRepository.searchSimilar(query, pageable);
+        }
         return toSummaryPage(page);
     }
 
