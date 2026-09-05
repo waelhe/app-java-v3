@@ -1,6 +1,7 @@
 package com.marketplace.payments;
 
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,14 +42,17 @@ import static org.mockito.Mockito.when;
  * Zero CI coverage caught the gap because no integration test wrote audited
  * payments/booking entities — every payments test mocks the repositories.
  * {@code V33__payments_psp_channel.sql} closes the debt; this test fails on
- * any recurrence by writing the three affected entities through the real
- * entity manager and asserting the audit rows carry the new columns.
+ * any recurrence by writing the affected entities through the real entity
+ * manager and asserting the audit rows carry the new columns.
  *
- * <p>Follows the {@code EventPublicationArchiveIntegrationTest} pattern:
- * full application context on real PostgreSQL with Flyway enabled and
- * {@code ddl-auto=none}, so Envers runs against exactly the schema
- * migrations produce (the {@code test} profile's {@code ddl-auto:
- * create-drop} is overridden).
+ * <p>Follows the {@code EventPublicationArchiveIntegrationTest} /
+ * {@code CatalogSearchFullTextIntegrationTest} patterns: full application
+ * context on real PostgreSQL with Flyway enabled and {@code ddl-auto=none},
+ * so Envers runs against exactly the schema migrations produce (the
+ * {@code test} profile's {@code ddl-auto: create-drop} is overridden).
+ * FK parents are seeded with raw SQL + ON CONFLICT DO NOTHING (the house
+ * seeding convention), then the audited entities are written through the
+ * real repositories so the full Envers path executes.
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -74,6 +78,12 @@ class AuditedWritesIntegrationTest {
     @Autowired
     private PaymentsService paymentsService;
 
+    /** FK parents for payment_intents: users -> provider_listings -> bookings. */
+    private static final UUID CONSUMER_ID = UUID.randomUUID();
+    private static final UUID PROVIDER_USER_ID = UUID.randomUUID();
+    private static final UUID LISTING_ID = UUID.randomUUID();
+    private static final UUID BOOKING_ID = UUID.randomUUID();
+
     /**
      * The real IdentityUserProvider resolves users from JWT subjects — this
      * test exercises the audited write path, not the auth resolution, so the
@@ -89,12 +99,43 @@ class AuditedWritesIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    private static final String CONSUMER = "audited-writes-test";
+    @BeforeEach
+    void seedFkParents() {
+        // Idempotent across test methods (ON CONFLICT DO NOTHING) — the
+        // migration schema enforces payment_intents.booking_id -> bookings(id)
+        // -> provider_listings(id) -> users(id).
+        jdbc.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'CONSUMER')
+                ON CONFLICT (id) DO NOTHING
+                """, CONSUMER_ID, "audited-consumer@example.com",
+                "audited-consumer@example.com", "Audited Writes Consumer");
+        jdbc.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """, PROVIDER_USER_ID, "audited-provider@example.com",
+                "audited-provider@example.com", "Audited Writes Provider");
+        jdbc.update("""
+                INSERT INTO provider_listings (id, provider_id, title, description, category,
+                    price_cents, currency, status)
+                VALUES (?, ?, 'audited test listing', 'x', 'CLEANING', 5000, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """, LISTING_ID, PROVIDER_USER_ID);
+        jdbc.update("""
+                INSERT INTO bookings (id, listing_id, consumer_id, provider_id, status, price_cents, currency)
+                VALUES (?, ?, ?, ?, 'CONFIRMED', 5000, 'SAR')
+                ON CONFLICT (id) DO NOTHING
+                """, BOOKING_ID, LISTING_ID, CONSUMER_ID, PROVIDER_USER_ID);
+        when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(CONSUMER_ID);
+        when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
+    }
 
     @Test
     void auditedPaymentWritesSurviveOnTheFlywaySchema() {
         UUID intentId = transactionTemplate.execute(status -> {
-            PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, "audit-" + UUID.randomUUID());
+            PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 5000L,
+                    "audit-" + UUID.randomUUID());
             intent = paymentIntentRepository.save(intent);
             Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
             paymentRepository.save(payment);
@@ -120,9 +161,8 @@ class AuditedWritesIntegrationTest {
     @Test
     void auditedPaymentWriteCarriesThePspLinkColumn() {
         UUID intentId = transactionTemplate.execute(status -> {
-            PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 1000L, null);
-            intent = paymentIntentRepository.save(intent);
-            return intent.getId();
+            PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 1000L, null);
+            return paymentIntentRepository.save(intent).getId();
         });
 
         Integer audWithPspColumn = jdbc.queryForObject(
@@ -135,17 +175,14 @@ class AuditedWritesIntegrationTest {
 
     @Test
     void processIntentOnInertChannelRunsTheFullAuditedWrite() {
-        Authentication consumer = new TestingAuthenticationToken(CONSUMER, "n/a", "ROLE_CONSUMER");
+        Authentication consumer = new TestingAuthenticationToken(
+                "audited-consumer@example.com", "n/a", "ROLE_CONSUMER");
         SecurityContextHolder.getContext().setAuthentication(consumer);
         try {
             UUID intentId = transactionTemplate.execute(status -> {
-                PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 2500L, null);
+                PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 2500L, null);
                 return paymentIntentRepository.save(intent).getId();
             });
-            UUID consumerId = jdbc.queryForObject(
-                    "SELECT consumer_id FROM payment_intents WHERE id = ?", UUID.class, intentId);
-            when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(consumerId);
-            when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
 
             PaymentsService.ProcessIntentResult result = transactionTemplate.execute(status ->
                     paymentsService.processIntent(intentId, consumer));
