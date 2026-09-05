@@ -56,6 +56,21 @@
         <commons-logging.version>1.4.0</commons-logging.version>
         <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps) -->
         <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
+        <!-- Override: Tomcat — Boot 4.1.1 manages 11.0.24, which ships three CRITICAL
+             authentication/authorization bypasses (trivy scan, 2026-09-06):
+             CVE-2026-65182 (security-constraint bypass, longer-path-before-shorter),
+             CVE-2026-65905 (DIGEST authenticator replay window), CVE-2026-68525 (FORM
+             auth POST/GET constraint bypass). All three are fixed in Apache Tomcat
+             11.0.25 ("2026-08-18 Fixed in Apache Tomcat 11.0.25", official
+             security-11.html — saved copy: scripts/cve-gate-docs/
+             tomcat-security-changelog.html), and 11.0.25 exists on Maven Central.
+             No Boot 4.1.x stable manages 11.0.25 yet (latest stable = 4.1.1), so the
+             official version-property override is the only path; tomcat.version
+             governs the whole Tomcat family (embed-core/el/websocket,
+             annotations-api — spring-boot-dependencies 4.1.1 BOM), keeping
+             dependencyConvergence green. Remove this override when the Boot parent
+             manages >= 11.0.25 (the weekly Dependabot BOM PR will surface it). -->
+        <tomcat.version>11.0.25</tomcat.version>
         <awssdk.version>2.54.13</awssdk.version>
         <stripe.version>33.4.1</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>

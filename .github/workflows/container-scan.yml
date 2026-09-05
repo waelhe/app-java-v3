@@ -1,0 +1,125 @@
+# Container image CVE scan — roadmap G-ENG-1's last open item ("فحص صور الحاوية
+# (Trivy)"; download/airbnb-level-gap-analysis.md §3): gitleaks, OpenAPI compat,
+# JaCoCo, Testcontainers, Dependabot and the k6 load baseline were all closed by
+# earlier layers; container-image scanning was the remaining zero.
+#
+# What this gate scans: the REAL production artifact. Railway builds this repo's
+# Dockerfile (Dockerfile @ /Dockerfile — serviceManifest, PROJECT_MAP Railway
+# section), so the scan builds the same multi-stage recipe (Maven package ->
+# jarmode=tools layers -> AOT training -> runtime) and scans the resulting
+# image. Trivy's image mode covers BOTH vulnerability surfaces in one pass:
+#   - os:     the eclipse-temurin:25-jre-alpine (alpine 3.24) packages
+#   - library: the Java dependencies inside the layered jars (Maven surface)
+# The fs-mode pom scan cannot see OS packages; the base-image-only scan cannot
+# see app jars — only the built image sees both, which is what production runs.
+#
+# Gate policy: fail the check on any HIGH/CRITICAL finding that HAS a fix
+# (ignore-unfixed: true — the official basic-usage recipe of the action README,
+# saved: scripts/cve-gate-docs/trivy-action-readme.md@v0.36.0). Fixable
+# severities are actionable by a version bump; unfixed ones are recorded in the
+# SARIF step below but cannot be acted on, so they do not block merges.
+# Documented, time-bounded exceptions live in .trivyignore.yaml (expired_at is
+# enforced by trivy itself — verified live against v0.74.0 both directions on
+# 2026-09-06: past date => finding returns, future date => silenced; the
+# classic .trivyignore text format does NOT enforce expiry, hence the yaml
+# form — trivy docs/guide/configuration/filtering.md, saved copy:
+# scripts/cve-gate-docs/trivy-filtering-docs.md).
+#
+# The layer that introduced this gate also fixed the defect it caught:
+# tomcat-embed-core 11.0.24 shipped three CRITICAL auth bypasses (root pom
+# <tomcat.version>11.0.25</tomcat.version> override, official evidence in
+# scripts/cve-gate-docs/tomcat-security-changelog.html — "2026-08-18 Fixed in
+# Apache Tomcat 11.0.25", all three "Affects: 11.0.0-M1 to 11.0.24").
+#
+# Schedule: CVEs appear without code changes (new DB entries match the same
+# pinned image), so main is rescanned weekly — same pattern as CodeQL's
+# cron (offset minute to avoid clustering). A failing scheduled run is the
+# visible signal until the OTEL/MAIL alerting gates (roadmap A1) are opened.
+#
+# Guard-pinned by PlatformGovernanceFilesTest
+# (containerScanWorkflowPinsTheCveGate / containerScanIgnoresAreBoundedEntries).
+name: Container Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '43 5 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Container Image Scan (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # BuildKit is required by the Dockerfile (RUN --mount=type=cache for the
+      # .m2 cache — Railway's officially supported format). build-push-action
+      # always drives BuildKit; load: true puts the image into the runner's
+      # docker daemon for the trivy scan below (trivy-action's default
+      # docker-host is unix://var/run/docker.sock). The image is never pushed.
+      # GHA layer cache (default mode): the stable runtime layers (extracted
+      # dependencies/ + AOT cache) survive across code-only changes; the
+      # Maven RUN layer re-executes by design — its --mount=type=cache is
+      # builder-local, so cold .m2 downloads are the price of scanning the
+      # real recipe (budgeted in the 45-minute timeout).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the production image (the Dockerfile Railway builds)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: app-java-v3:scan
+          cache-from: type=gha
+          cache-to: type=gha
+
+      # THE GATE — table output in the job log (the diff a failed check shows
+      # on the PR), exit-code 1 turns findings into a required-check failure.
+      - name: CVE gate — HIGH/CRITICAL fixed findings fail the check
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: app-java-v3:scan
+          vuln-type: os,library
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
+
+      # The RECORD — SARIF keeps every finding (all severities by default:
+      # "By default SARIF format enforces output of all vulnerabilities
+      # regardless of configured severities" — action README inputs table),
+      # uploaded to the Security tab next to CodeQL's code findings. Runs even
+      # when the gate failed above so the failure is visible with full detail.
+      - name: Record all findings for the Security tab (SARIF, non-blocking)
+        uses: aquasecurity/trivy-action@v0.36.0
+        if: always()
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: app-java-v3:scan
+          vuln-type: os,library
+          scanners: vuln
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '0'
+          trivyignores: .trivyignore.yaml
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: "/container-image"
