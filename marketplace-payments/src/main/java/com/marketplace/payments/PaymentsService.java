@@ -8,11 +8,13 @@ import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
@@ -47,6 +49,7 @@ public class PaymentsService implements PaymentsSpi {
     private final CurrentUserProvider currentUserProvider;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final PaymentWebhookSecurity paymentWebhookSecurity;
+    private final ObjectProvider<PspChannel> pspChannel;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
                            PaymentRepository paymentRepository,
@@ -54,7 +57,8 @@ public class PaymentsService implements PaymentsSpi {
                            ApplicationEventPublisher eventPublisher,
                            CurrentUserProvider currentUserProvider,
                            BookingParticipantProvider bookingParticipantProvider,
-                           PaymentWebhookSecurity paymentWebhookSecurity) {
+                           PaymentWebhookSecurity paymentWebhookSecurity,
+                           ObjectProvider<PspChannel> pspChannel) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.webhookEventRepository = webhookEventRepository;
@@ -62,6 +66,7 @@ public class PaymentsService implements PaymentsSpi {
         this.currentUserProvider = currentUserProvider;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentWebhookSecurity = paymentWebhookSecurity;
+        this.pspChannel = pspChannel;
     }
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
@@ -71,12 +76,44 @@ public class PaymentsService implements PaymentsSpi {
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature,
                                        UUID paymentIntentId, String externalId) {
         paymentWebhookSecurity.validateSignature(eventId + eventType, signature);
+        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId);
+    }
+
+    /**
+     * Provider-verified webhook dispatch: the signature was verified by the
+     * channel itself (Stripe: SDK constructEvent with DEFAULT_TOLERANCE), so
+     * only deduplication and dispatch remain. Falls through to the same
+     * event log and the same dispatch contract as the legacy HMAC channel.
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId) {
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
         webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, eventType));
         dispatchWebhookEvent(eventType, paymentIntentId, externalId);
         return true;
+    }
+
+    /**
+     * Stripe webhook entry point: verifies the notification with the
+     * provider's own signature scheme, resolves the local intent via the
+     * psp_intent_id link (V33) — metadata as the documented cross-check —
+     * and runs the verified dispatch. The 503 SU-001 inert answer mirrors
+     * the MAIL / MEDIA_S3 provider gates when the channel is unbound.
+     */
+    @Observed(name = "payment.psp.webhook")
+    public boolean handleStripeWebhook(String rawPayload, String signatureHeader) {
+        PspChannel channel = requireChannel();
+        PspChannel.VerifiedWebhook verified = channel.verifyWebhook(rawPayload, signatureHeader);
+        UUID intentId = verified.marketplaceIntentId();
+        if (intentId == null && verified.pspIntentId() != null) {
+            intentId = paymentIntentRepository.findByPspIntentId(verified.pspIntentId())
+                    .map(PaymentIntent::getId)
+                    .orElse(null);
+        }
+        return handleVerifiedWebhook("stripe", verified.eventId(), verified.eventType(),
+                intentId, verified.pspIntentId());
     }
 
     private void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId) {
@@ -164,19 +201,39 @@ public class PaymentsService implements PaymentsSpi {
         return saved;
     }
 
+    /**
+     * Result of processing a payment intent: the local intent plus the PSP
+     * client secret when the real channel is bound (the calling client needs
+     * it to complete the payment on the provider side). Null clientSecret =
+     * channel inert, existing behavior.
+     */
+    public record ProcessIntentResult(PaymentIntent intent, String clientSecret) {}
+
     @Observed(name = "payment.process")
     @PreAuthorize("hasRole('CONSUMER')")
     @Retry(name = "paymentProcessing")
     @CircuitBreaker(name = "paymentProcessing")
     @ConcurrencyLimit(5)
-    public PaymentIntent processIntent(UUID id, Authentication authentication) {
+    public ProcessIntentResult processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
         intent.markProcessing();
-        // In production: integrate with payment gateway here
+        // Real channel (roadmap B3): create the remote intent when the PSP is
+        // bound. The idempotency key is derived from the local intent id, so
+        // retries replay the SAME remote intent (official idempotency-key
+        // contract) instead of double-charging the flow.
+        PspChannel channel = pspChannel.getIfAvailable();
+        String clientSecret = null;
+        if (channel != null) {
+            var remote = channel.createRemoteIntent(
+                    intent.getId(), intent.getAmountCents(), intent.getCurrency(),
+                    "marketplace-intent-" + intent.getId());
+            intent.assignPspIntentId(remote.pspIntentId());
+            clientSecret = remote.clientSecret();
+        }
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
         paymentRepository.save(payment);
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
-        return intent;
+        return new ProcessIntentResult(intent, clientSecret);
     }
 
     @Observed(name = "payment.confirm")
@@ -275,5 +332,15 @@ public class PaymentsService implements PaymentsSpi {
         if (!intent.getConsumerId().equals(currentUserId)) {
             throw new AccessDeniedException("You do not own this payment intent");
         }
+    }
+
+    private PspChannel requireChannel() {
+        PspChannel channel = pspChannel.getIfAvailable();
+        if (channel == null) {
+            throw new ServiceUnavailableException(
+                    "Real payment channel is not configured. Set PAYMENTS_STRIPE_API_KEY and "
+                            + "PAYMENTS_STRIPE_WEBHOOK_SECRET to enable the PSP channel.");
+        }
+        return channel;
     }
 }

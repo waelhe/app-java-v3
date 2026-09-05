@@ -41,4 +41,7 @@ public class PaymentWebhookEvent extends BaseEntity {
 
     @Override
     public UUID getId() { return id; }
+    public String getProvider() { return provider; }
+    public String getEventId() { return eventId; }
+    public String getEventType() { return eventType; }
 }

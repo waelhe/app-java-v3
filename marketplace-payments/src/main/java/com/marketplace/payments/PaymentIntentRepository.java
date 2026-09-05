@@ -15,5 +15,8 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
 
     Optional<PaymentIntent> findByBookingId(UUID bookingId);
 
+    /** Resolves a local intent from the remote PSP intent id (webhook path, V33). */
+    Optional<PaymentIntent> findByPspIntentId(String pspIntentId);
+
     Page<PaymentIntentSummaryView> findAllSummariesBy(Pageable pageable);
 }

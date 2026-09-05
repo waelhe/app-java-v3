@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @RestController
@@ -71,6 +72,28 @@ public class PaymentsController {
                                         @RequestParam(required = false) String externalId,
                                         @RequestHeader(value = "X-Webhook-Signature", required = false) String signature) {
         boolean created = paymentsService.processWebhookEvent(provider, eventId, eventType, signature, paymentIntentId, externalId);
+        return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();
+    }
+
+    /**
+     * Stripe's own webhook channel (roadmap B3): the raw request body plus the
+     * Stripe-Signature header, exactly as the official verification recipe
+     * prescribes ("requestBody: The request body string sent by Stripe,
+     * signature: The Stripe-Signature header"). The body is read as raw bytes
+     * and decoded UTF-8 so the signed payload reaches the verifier
+     * byte-identical — a String converter would apply its own default charset
+     * and could re-encode the body, breaking the signature. The 503 SU-001
+     * answer when the channel is unbound is the house provider-gate
+     * convention — the notification is never partially verified. Registered
+     * by the existing "/api/v1/payments/webhooks/**" permitAll rule —
+     * anonymous by contract: authenticity comes from the signature, not from
+     * a session.
+     */
+    @PostMapping(path = "/webhooks/stripe", consumes = "application/json")
+    public ResponseEntity<Void> stripeWebhook(@RequestBody byte[] rawPayload,
+                                              @RequestHeader("Stripe-Signature") String signatureHeader) {
+        boolean created = paymentsService.handleStripeWebhook(
+                new String(rawPayload, StandardCharsets.UTF_8), signatureHeader);
         return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();
     }
 

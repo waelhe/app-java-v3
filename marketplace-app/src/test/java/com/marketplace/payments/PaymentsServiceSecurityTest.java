@@ -126,9 +126,9 @@ class PaymentsServiceSecurityTest {
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(consumerId);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PaymentIntent result = paymentsService.processIntent(intent.getId(), authentication);
+        PaymentsService.ProcessIntentResult result = paymentsService.processIntent(intent.getId(), authentication);
 
-        assertThat(result.getStatus()).isEqualTo(PaymentIntentStatus.PROCESSING);
+        assertThat(result.intent().getStatus()).isEqualTo(PaymentIntentStatus.PROCESSING);
         verify(paymentRepository).save(any(Payment.class));
     }
 

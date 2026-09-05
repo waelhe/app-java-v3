@@ -41,6 +41,15 @@ public class PaymentIntent extends BaseEntity {
     @Column(name = "idempotency_key", length = 64, unique = true)
     private String idempotencyKey;
 
+    /**
+     * Id of the remote PaymentIntent at the PSP (e.g. {@code pi_...}). Filled
+     * once when the remote intent is created via the PspChannel; webhooks
+     * resolve the local intent through it (V33). Nullable — the column only
+     * carries a value when the real payment channel is bound.
+     */
+    @Column(name = "psp_intent_id", length = 100)
+    private String pspIntentId;
+
     protected PaymentIntent() {
     }
 
@@ -67,6 +76,20 @@ public class PaymentIntent extends BaseEntity {
     public PaymentIntentStatus getStatus() { return status; }
     public Long getRefundedAmountCents() { return refundedAmountCents; }
     public String getIdempotencyKey() { return idempotencyKey; }
+    public String getPspIntentId() { return pspIntentId; }
+
+    /**
+     * Links this intent to its remote PSP counterpart. Idempotent: a repeated
+     * call with the same id keeps the link, a conflicting id is rejected —
+     * one local intent maps to exactly one remote intent.
+     */
+    public void assignPspIntentId(String pspIntentId) {
+        if (this.pspIntentId != null && !this.pspIntentId.equals(pspIntentId)) {
+            throw new IllegalStateException(
+                    "Payment intent already linked to a different PSP intent: " + this.pspIntentId);
+        }
+        this.pspIntentId = pspIntentId;
+    }
 
     public void markProcessing() {
         this.status.validateTransitionTo(PaymentIntentStatus.PROCESSING);
