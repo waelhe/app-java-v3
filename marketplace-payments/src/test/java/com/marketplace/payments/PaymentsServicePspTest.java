@@ -178,7 +178,10 @@ class PaymentsServicePspTest {
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_12", "payment_intent.succeeded",
                         intentId, "pi_12"));
-        when(webhookEventRepository.findByEventId("evt_12")).thenReturn(Optional.empty());
+        // Pre-check: absent; post-DIVE re-check: the winner's row exists.
+        when(webhookEventRepository.findByEventId("evt_12"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
                         "duplicate key value violates unique constraint"));

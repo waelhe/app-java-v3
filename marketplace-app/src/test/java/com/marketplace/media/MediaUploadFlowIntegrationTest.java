@@ -149,6 +149,10 @@ class MediaUploadFlowIntegrationTest {
 
         int racers = 4;
         var startGate = new java.util.concurrent.CountDownLatch(1);
+        // CodeRabbit #242 round 2: without a ready gate, startGate.countDown()
+        // can fire before every worker reaches await() — the uploads then run
+        // serially and the test passes without exercising the race at all.
+        var readyGate = new java.util.concurrent.CountDownLatch(racers);
         var ids = new java.util.ArrayList<java.util.concurrent.Future<UUID>>();
         try (var pool = java.util.concurrent.Executors.newFixedThreadPool(racers)) {
             for (int i = 0; i < racers; i++) {
@@ -159,6 +163,7 @@ class MediaUploadFlowIntegrationTest {
                                         .createEmptyContext());
                         org.springframework.security.core.context.SecurityContextHolder.getContext()
                                 .setAuthentication(authentication);
+                        readyGate.countDown();
                         startGate.await();
                         return mediaService.requestUpload(listingId, "image/png", 100L, null).mediaId();
                     } finally {
@@ -166,6 +171,9 @@ class MediaUploadFlowIntegrationTest {
                     }
                 }));
             }
+            assertThat(readyGate.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("every racer must be parked at the start gate before the race starts")
+                    .isTrue();
             startGate.countDown();
             var positions = new java.util.ArrayList<Integer>();
             for (var id : ids) {

@@ -309,7 +309,7 @@
     <div class="section-header">
       <div class="section-icon headers">🛡️</div>
       <div class="section-title">Security HTTP Headers (Spring Security 7)</div>
-      <div class="section-desc">Applied to all three SecurityFilterChains (order 1, 2, 3 — the AS, RS and default chains)</div>
+      <div class="section-desc">Reference hardening targets — Spring Security 7's built-in defaults (frame-deny, nosniff, referrer policy, HSTS on secure requests) apply to all three chains (order 1-3); the explicit CSP / Permissions-Policy directives below are documented targets, not yet configured in SecurityConfig</div>
     </div>
     <div class="grid grid-4">
       <div class="card">
@@ -368,7 +368,7 @@
     <div class="section-header">
       <div class="section-icon keys">🗝️</div>
       <div class="section-title">Key Management &amp; Rotation</div>
-      <div class="section-desc">NIST SP 800-57 compliant • Automatic rotation</div>
+      <div class="section-desc">NIST SP 800-57 cryptoperiod guidance • single persistent key, manual rotation via runbook (ADR-004 Revised — no automatic rotation)</div>
     </div>
     <div class="grid grid-3">
       <div class="card">

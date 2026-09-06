@@ -103,8 +103,16 @@ public class PaymentsService implements PaymentsSpi {
         try {
             webhookEventRecorder.record(provider, eventId, eventType);
         } catch (DataIntegrityViolationException ex) {
-            // A concurrent delivery of the same event won the insert race: it
-            // owns the event, this delivery is the already-processed replay.
+            // Distinguish a lost concurrent-duplicate race from every OTHER
+            // integrity failure (CodeRabbit #242 round 2: e.g. an oversized
+            // provider/eventId/eventType on the legacy route makes the insert
+            // fail on column limits — that is NOT "already processed", and
+            // acknowledging it with 200 would swallow the event). Only a row
+            // that actually exists under this eventId is the concurrent
+            // duplicate; anything else must surface.
+            if (webhookEventRepository.findByEventId(eventId).isEmpty()) {
+                throw ex;
+            }
             log.info("Webhook event {} concurrently recorded by another delivery — answering already-processed: {}",
                     eventId, ex.getMostSpecificCause().getMessage());
             return false;
@@ -115,7 +123,19 @@ public class PaymentsService implements PaymentsSpi {
             // The row is committed but the event was NOT processed: remove it
             // so the provider retry re-processes instead of being deduplicated
             // against a tombstone (recorded-and-lost).
-            webhookEventRecorder.delete(eventId);
+            try {
+                webhookEventRecorder.delete(eventId);
+            } catch (RuntimeException cleanupEx) {
+                // Never mask the ORIGINAL dispatch failure — but the surviving
+                // dedup row would acknowledge the provider's retry without
+                // processing it, so the orphan is logged as a loud operator
+                // signal (delete the payment_webhook_events row for this
+                // event to re-arm it).
+                log.error("Webhook event {} dispatch failed AND the compensating delete failed — the dedup row"
+                        + " survives and the provider retry will be acknowledged without processing. Operator"
+                        + " action: delete the payment_webhook_events row for event {}. Cleanup failure:",
+                        eventId, eventId, cleanupEx);
+            }
             throw ex;
         }
         return true;

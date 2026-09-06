@@ -70,6 +70,15 @@ jobs:
             echo "::error::release tag ${GITHUB_REF_NAME} points at $commit, which is NOT part of main history — refusing to publish an unverified commit" >&2
             exit 1
           fi
+          # No check may still be RUNNING (CodeRabbit #242 round 2: a queued or
+          # in_progress check must block the gate even when another check
+          # already succeeded — publishing must wait for the full check set).
+          pending=$(gh api --paginate "repos/${{ github.repository }}/commits/$commit/check-runs" \
+            --jq '[.check_runs[] | select(.status != "completed")] | length')
+          if [ "${pending:-0}" -ne 0 ]; then
+            echo "::error::tagged commit $commit still has $pending check-run(s) not completed — refusing to publish before CI finishes" >&2
+            exit 1
+          fi
           failing=$(gh api --paginate "repos/${{ github.repository }}/commits/$commit/check-runs" \
             --jq '[.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure") | .name] | join(", ")')
           if [ -n "$failing" ]; then

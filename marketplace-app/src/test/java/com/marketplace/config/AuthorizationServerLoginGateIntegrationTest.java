@@ -278,6 +278,9 @@ class AuthorizationServerLoginGateIntegrationTest {
 
         GateResult second = consentGate(USER_USERNAME, PASSWORD);
         assertThat(second.accessToken()).isNotBlank();
+        assertThat(consentPageRendered)
+                .as("a different principal must pass the consent page (cross-principal isolation)")
+                .isTrue();
     }
 
     /**
