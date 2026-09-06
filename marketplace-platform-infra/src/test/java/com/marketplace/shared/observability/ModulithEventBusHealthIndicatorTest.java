@@ -17,6 +17,10 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.Status;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 @ExtendWith(MockitoExtension.class)
 class ModulithEventBusHealthIndicatorTest {
@@ -119,6 +123,27 @@ class ModulithEventBusHealthIndicatorTest {
 
         assertThat(registry.get(ModulithEventBusHealthIndicator.STALE_PUBLICATIONS_METRIC).gauge().value())
                 .isEqualTo(3.0);
+    }
+
+    /**
+     * Scheduler wiring (CodeRabbit round-4 suggestion): pins the @Scheduled
+     * contract so the gauge cannot silently freeze. The probe interval must
+     * sample well inside the 5m {@code for:} window of
+     * {@code MarketplaceEventBusStale}; scheduling itself is activated app-wide
+     * by {@code CacheConfig}'s {@code @EnableScheduling}.
+     */
+    @Test
+    void refreshIsRegisteredAsScheduledProbeInsideTheAlertWindow() throws Exception {
+        var method = ModulithEventBusHealthIndicator.class.getDeclaredMethod("refreshStalePublicationsGauge");
+        var scheduled = method.getAnnotation(Scheduled.class);
+
+        assertThat(scheduled).as("@Scheduled must stay on the gauge refresh method").isNotNull();
+        assertThat(scheduled.timeUnit()).isEqualTo(TimeUnit.SECONDS);
+        assertThat(scheduled.fixedDelay()).isEqualTo(60);
+        assertThat(scheduled.initialDelay()).isEqualTo(30);
+        assertThat(scheduled.timeUnit().toMillis(scheduled.fixedDelay()))
+                .as("probe interval must stay well inside the 5m alert window")
+                .isLessThan(Duration.ofMinutes(5).toMillis());
     }
 
     @Test
