@@ -95,6 +95,33 @@ class ModulithEventBusHealthIndicatorTest {
     }
 
     @Test
+    void scheduledRefreshUpdatesGaugeWithoutHealthEndpoint() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        var indicator = new ModulithEventBusHealthIndicator(jdbcTemplate, providerOf(registry));
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(21600L))).thenReturn(3);
+
+        indicator.refreshStalePublicationsGauge();
+
+        assertThat(registry.get(ModulithEventBusHealthIndicator.STALE_PUBLICATIONS_METRIC).gauge().value())
+                .isEqualTo(3.0);
+    }
+
+    @Test
+    void scheduledRefreshKeepsLastGaugeValueWhenQueryFails() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        var indicator = new ModulithEventBusHealthIndicator(jdbcTemplate, providerOf(registry));
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(21600L)))
+                .thenReturn(3)
+                .thenThrow(new RuntimeException("DB connection failed"));
+
+        indicator.refreshStalePublicationsGauge();
+        indicator.refreshStalePublicationsGauge();
+
+        assertThat(registry.get(ModulithEventBusHealthIndicator.STALE_PUBLICATIONS_METRIC).gauge().value())
+                .isEqualTo(3.0);
+    }
+
+    @Test
     void healthReportsUpWithoutMeterRegistry() {
         var indicator = new ModulithEventBusHealthIndicator(jdbcTemplate, emptyMeterRegistry);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(21600L))).thenReturn(0);

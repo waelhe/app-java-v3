@@ -16,13 +16,28 @@ groups:
   - name: marketplace-availability
     rules:
       - alert: MarketplaceTargetDown
-        expr: up{job=~".*marketplace.*"} == 0 or absent(up{job=~".*marketplace.*"})
+        # Single-target loss: fires per matching target that is scraped and down.
+        expr: up{job=~".*marketplace.*"} == 0
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Prometheus cannot scrape the marketplace service"
           description: "Scrape target {{ $labels.job }} has been unreachable for 5 minutes."
+          slo: "docs/observability/slo.md#2-slo-1"
+      - alert: MarketplaceTargetAbsent
+        # Complete target loss: when service discovery removes EVERY matching
+        # target the == 0 branch above returns an empty vector, so absent() is
+        # the only signal. It emits a synthetic series WITHOUT a job label
+        # (regex matcher → no label derivation, official semantics), hence a
+        # separate alert with no {{ $labels.job }} interpolation.
+        expr: absent(up{job=~".*marketplace.*"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "All marketplace scrape targets absent from service discovery"
+          description: "No up series matched the marketplace job filter for 5 minutes - complete target loss (deployment crash, discovery drift, or job filter mismatch)."
           slo: "docs/observability/slo.md#2-slo-1"
       - alert: MarketplaceHttp5xxRateHigh
         expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[10m])) / sum(rate(http_server_requests_seconds_count[10m])) > 0.02
