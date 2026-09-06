@@ -3,7 +3,6 @@ package com.marketplace.media;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -72,10 +71,21 @@ public class MediaController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Upload declaration contract. {@code sizeBytes} carries only shape
+     * constraints ({@code @NotNull @Min(1)} — a declared file must be a
+     * positive number). The maximum upload size is a configurable business
+     * limit owned by {@link MediaProperties.Limits#maxUploadBytes()} (bound
+     * from {@code marketplace.media.limits.max-upload-bytes},
+     * {@code MEDIA_MAX_UPLOAD_BYTES} in env) and enforced by
+     * {@link MediaService#requestUpload} behind the official
+     * {@code @ConfigurationProperties} channel — never a hard-coded constant,
+     * per the Spring Boot externalized-configuration model.
+     */
     public record RequestUploadRequest(
             @NotNull UUID listingId,
             @NotBlank String contentType,
-            @NotNull @Min(1) @Max(104857600) Long sizeBytes
+            @NotNull @Min(1) Long sizeBytes
     ) {
     }
 }

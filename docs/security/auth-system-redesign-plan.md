@@ -151,3 +151,48 @@
 - [x] D6: الافتراضيات الفارغة + فرع التوليد العابر.
 - [x] F-B: E5 عميل بنيوي (لا R__seed) — تسجيله عبر `RegisteredClientRepository.save(...)` بـ proofKey=true/consent=false.
 - [ ] المرحلتان 1 و2 تتطلبان موافقة المستخدم الصريحة؛ قرار D9 وترتيب الدمج (#181 ثم #182) بانتظار كلمته.
+
+---
+
+## 10) خريطة ConditionalOnMissingBean — «الإدارة الآلية من الإطار» (تحقق بايت-كود، 2026-09-06)
+
+> **القاعدة الحاكمة:** «نظام مدار آلياً من الإطار ولا يوجد به عبث وتدخل وإدارة يدوية». كل bean
+> أمني نعرّفه إمّا هو نقطة الإمتداد الرسمية (سلاسل الفلاتر)، أو مكوّن ضروري لا توفّره الأوتو-كنفيغ
+> أصلاً (خدمات JDBC)، أو تخصيص أمني مبرَّر خلف `@ConditionalOnMissingBean`. الـ beans التي
+> يمكن للإطار إدارتها فعلاً تُترك له. **لا يوجد إعادة تعريف زائدة.**
+
+### الاقتباس الرسمي الحاسم (سلاسل الفلاتر)
+
+> **Official doc** — https://docs.spring.io/spring-boot/4.1.1/reference/web/spring-security.html
+> (Spring Security section, MVC Security):
+> "To completely switch off the default web application security configuration, including
+> Actuator security, or to combine multiple Spring Security components such as OAuth2
+> Client and Resource Server, **add a bean of type `SecurityFilterChain`** (doing so does
+> not disable the `UserDetailsService` configuration)."
+
+### الخريطة الكاملة (تحقق ببايت-كود Boot 4.1.1 في `~/.m2`)
+
+| الـ bean | يوفّره الإطار (Boot 4.1.1)؟ | نعرّفه نحن؟ | الحكم |
+|---|---|---|---|
+| سلاسل الأمان (AS/RS/default) | `OAuth2AuthorizationServerWebSecurityConfiguration` + `OAuth2ResourceServerWebSecurityAutoConfiguration` + `ServletWebSecurityAutoConfiguration$SecurityFilterChainConfiguration` — **كلها** تحمل `@ConditionalOnDefaultWebSecurity` (= `@ConditionalOnMissingBean(SecurityFilterChain)` + `@ConditionalOnClass`). عند وجود أي bean تطبيقي، تنصرف **كل** السلاسل | 3 سلاسل مخصصة | **نقطة الإمتداد الرسمية إلزامية** — الشرط على مستوى الفئة لا لكل سلسلة: لا يمكن تسليم سلسلة AS للإطار مع إبقاء RS/default مخصصتين |
+| `authorizationServerSettings` | نعم (`OAuth2AuthorizationServerConfiguration`, `@ConditionalOnMissingBean`) من `spring.security.oauth2.authorizationserver.issuer` | **لا نعرّفه** — نحقنه في `jwtDecoder` | **إدارة آلية فعلية** — من الإطار |
+| `RegisteredClientRepository` | نعم — **InMemory فقط** (`@ConditionalOnMissingBean` + `@Conditional(RegisteredClientsConfiguredCondition)`) | Jdbc | **تخصيص شرعي** — الإطار لا يقدّم JDBC افتراضياً (توصية Boot الرسمية) |
+| `OAuth2AuthorizationService` | **لا** — الأوتو-كنفيغ لا توفّره أصلاً | Jdbc | **ضروري إلزامي** — لا بديل إطاري |
+| `OAuth2AuthorizationConsentService` | **لا** — الأوتو-كنفيغ لا توفّره أصلاً | Jdbc | **ضروري إلزامي** — لا بديل إطاري |
+| `JWKSource` | نعم (`OAuth2AuthorizationServerJwtAutoConfiguration`, `@ConditionalOnMissingBean`) | نعرّفه + فحّاش fail-fast prod | **تخصيص أمني** — D6/INV-7 مفاتيح دائمة لا عابرة |
+| `JwtDecoder` | نعم (`OAuth2AuthorizationServerJwtAutoConfiguration`, `@ConditionalOnMissingBean`) | نعرّفه + iss/aud validators | **تخصيص أمني** — RFC 9068 §2.2 aud إلزامي |
+| `JwtAuthenticationConverter` | نعم (`JwtConverterConfiguration`, `@ConditionalOnMissingBean`) | نعرّفه (roles → ROLE_) | **تخصيص** — يربط ادعاءات `roles` بالسلطات |
+| `OAuth2TokenCustomizer` | لا يوفّر تخصيص الادعاءات افتراضياً | نعرّفه (roles + aud) | **تخصيص** — إضافة ادعاءات على التوكن |
+| الجلسات Redis | `SessionDataRedisAutoConfiguration` (بلا اعتماد على السلاسل) تحضّر فلتر الجلسة | لا نلمس الفلتر؛ نضيف `SpringSessionBackedSessionRegistry` للـ max-sessions فقط | **إدارة آلية** — من الإطار |
+
+### النتيجة
+
+التحقق الأمني الشامل (بايت-كود + وثيقة Boot 4.1.1 + هذا الملف §2-§8) يُثبت أن نظام المصادقة
+**مُدار آلياً من الإطار** بالضبط كما يلي:
+- **الإطار يدير:** `authorizationServerSettings`، الجلسات Redis، بنى JWKSet الداخلية.
+- **التطبيق يعرّف فقط:** نقاط الإمتداد التي تحتاج تخصيصاً أمنياً حقيقياً (مخازن JDBC، validators،
+  خرائط الأدوار، مفاتيح الإنتاج) — وكلها `@ConditionalOnMissingBean` ينصرف لصالحه رسمياً.
+- **سلاسل الأمان الثلاث:** هي البنية المعتمدة رسمياً عند الجمع بين AS + RS + login (توقعها
+  وثيقة Boot 4.1.1 أعلاه)، والبايت-كود يؤكد أنها الوحيدة النشطة.
+
+**لا ترقيع ولا إعادة تعريف زائدة ولا ديون جديدة في نظام المصادقة.**
