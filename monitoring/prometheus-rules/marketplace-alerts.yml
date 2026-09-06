@@ -16,7 +16,7 @@ groups:
   - name: marketplace-availability
     rules:
       - alert: MarketplaceTargetDown
-        expr: up{job=~".*marketplace.*"} == 0
+        expr: up{job=~".*marketplace.*"} == 0 or absent(up{job=~".*marketplace.*"})
         for: 5m
         labels:
           severity: critical

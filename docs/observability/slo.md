@@ -17,8 +17,8 @@
 ## 2. SLO-1 — التوفر: 99.5% شهرياً
 
 - **SLI:** نسبة الطلبات الناجحة = `1 − (طلبات 5xx / كل الطلبات)`، من مؤقّت `http.server.requests` (مقياس إطاري معياري من Micrometer/Actuator، مفعّل بـ `management.observations` — `application.yml:153-159`).
-- **تنبيهات المرصودة:** `MarketplaceTargetDown` (هدف السحب مفقود 5 دقائق — علامة فقدان المثيل كلياً) و`MarketplaceHttp5xxRateHigh` (نسبة 5xx > 2% لمدة 10 دقائق).
-- **ميزانية الخطأ:** 0.5% شهرياً (~21.9 دقيقة تعطل مكافئ). عتبة التنبيه (2%) أشد من الميزانية عمداً: الهدف الإنذار المبكر قبل استهلاكها لا بعده.
+- **تنبيهات المرصودة:** `MarketplaceTargetDown` (هدف السحب مفقود أو غائب كلياً — يُنبه عند `up == 0` وعند غياب سلسلة الهدف بـ`absent(...)`، علامة انقطاع السحب) و`MarketplaceHttp5xxRateHigh` (نسبة 5xx > 2% لمدة 10 دقائق).
+- **ميزانية الخطأ:** 0.5% شهرياً (~219 دقيقة تعطل مكافئ = 0.5% × 43,776 دقيقة لشهر 30.4 يومي). عتبة التنبيه (2%) أشد من الميزانية عمداً: الهدف الإنذار المبكر قبل استهلاكها لا بعده.
 - **الحالة:** قيمة أولية — تُعاير بعد أول ترافيك حقيقي (§6).
 
 ## 3. SLO-2 — نجاح الدفع: ≥ 99%
@@ -29,7 +29,7 @@
 
 ## 4. SLO-3 — سلامة ناقل الأحداث: صفر منشورات متقادمة
 
-- **SLI:** عدد صفوف `event_publication` غير المنجزة الأقدم من 6 ساعات — نفس استعلام `ModulithEventBusHealthIndicator.java:11,22-25` (العتبة 21600 ثانية تطابق `spring.modulith.events.staleness.publication-threshold: 6h` — `application-prod.yml:46-47`).
+- **SLI:** عدد صفوف `event_publication` غير المنجزة الأقدم من 6 ساعات — نفس استعلام `ModulithEventBusHealthIndicator.java:53-56` (العتبة 21600 ثانية تطابق `spring.modulith.events.staleness.publication-threshold: 6h` — `application-prod.yml:46-47`).
 - **المرآة القياسية (جديد هذا الـ PR):** القيمة نفسها تُنشر الآن كـ gauge باسم `marketplace.eventbus.stale` من داخل المؤشر نفسه — تحديثاتها تتبع إيقاع فحص الصحة (probe cadence)، وعند فشل الاستعلام تحتفظ بقيمتها الأخيرة بينما يهبط مؤشر الصحة.
 - **تنبيه المرصودة:** `MarketplaceEventBusStale` — أي قيمة > 0 لمدة 5 دقائق (هذا الناقل هو عمود الاتساق: قيود ledger، تأكيد booking، إشعارات notifications — تعثره انجراف صامت بين الوحدات، وهو عين الثغرة التي صنّفها تحليل الفجوات رقم 1).
 - **لماذا gauge إضافةً إلى الصحة:** مؤشر الصحة يُستهلك عبر `/actuator/health` (يتطلب فحصاً موجهاً)؛ الـ gauge يجعل الحالة قابلة للاستهلاك من أي خط قياسات — ويحوّل «نصف الحلقة» (يُراقَب ولا يُدار) إلى حلقة كاملة.
@@ -42,7 +42,7 @@
 |---|---|---|
 | `MarketplaceCacheInvalidationFailures` | > 5 إخفاقات إخلاء مخبأة في 15 دقيقة | `marketplace.cache.invalidation.evict.failure` — `CacheInvalidationMetrics.java` (يُحدّثه `CacheInvalidationRelay`) |
 | `MarketplaceCircuitBreakerOpen` | قاطع دائرة مفتوح > 2 دقيقة | `resilience4j.circuitbreaker.state` — يأتي نقلياً (runtime) عبر `resilience4j-spring-boot4` 2.4.0 → `resilience4j-micrometer` (pom على Maven Central)؛ الحالات في `application.yml:189-201` |
-| `MarketplaceDbPoolSaturated` | نشط/أقصى > 90% لمدة 5 دقائق | `hikariccp.connections.*` — Micrometer/Hikari؛ إعداد التجمع في `application.yml:17-23` (max 20) |
+| `MarketplaceDbPoolSaturated` | نشط/أقصى > 90% لمدة 5 دقائق | `hikaricp.connections.*` — Micrometer/Hikari (يُصدَّر `hikaricp_connections_active/_max`)؛ إعداد التجمع في `application.yml:17-23` (max 20) |
 
 ملاحظة: `up{job=~".*marketplace.*"}` تفترض أن اسم job عند المشغل يحتوي «marketplace» — إن خالف، يُعدّل المرشّح عند التوصيل (مسجّل هنا صراحة لئلا يُكتشف متأخراً).
 
