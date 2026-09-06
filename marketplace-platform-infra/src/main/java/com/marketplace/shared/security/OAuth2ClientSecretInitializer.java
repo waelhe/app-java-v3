@@ -2,6 +2,9 @@ package com.marketplace.shared.security;
 
 import com.marketplace.shared.config.MarketplaceProperties;
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -35,21 +38,35 @@ import org.springframework.util.StringUtils;
  * ({@link ClientSettings} / {@link TokenSettings}) rather than mutated SQL — the map is
  * never hand-written, so it cannot drift from what the framework serializes.
  *
- * <p><b>Converge-on-boot (client present):</b> the identity is taken from the existing row
- * via {@link RegisteredClient#from RegisteredClient.from(existing)} and the settings are
- * re-derived from the official builders ({@code requireProofKey(true)} +
- * {@code requireAuthorizationConsent(true)} + the operational TTL/refresh values). The old
- * map is <em>not</em> carried over ({@code from()} copies maps verbatim — a partial/legacy
- * map would preserve the id-token gap), so existing deployments converge on the complete
- * 8-key settings map at first startup.
+ * <p><b>Converge-on-boot (client present):</b> the full definition is re-derived from
+ * configuration and code constants and rebuilt with
+ * {@code RegisteredClient.withId(existing.getId())} — the identity-preserving equivalent
+ * of the spec's {@code RegisteredClient.from(existing)} "identity only" prescription
+ * (§4.1 تثبيت ب). It re-derives rather than copies because gate B made the redirect URIs
+ * environment-driven ({@code OAUTH_CLIENT_REDIRECT_URIS}): {@code from()} seeds the
+ * builder with the stored sets and offers no replace operation, so a partial copy would
+ * silently keep stale redirect URIs when the environment changes; re-derivation converges
+ * them at the next boot. The old settings map is <em>not</em> carried over either (a
+ * partial/legacy map would preserve the id-token gap), so existing deployments converge
+ * on the complete 8-key settings map at first startup.
  *
- * <p><b>Idempotence guard:</b> {@code save()} runs only when the raw secret differs from the
- * stored (encoded) value <em>or</em> the settings maps differ; matching secret + matching
- * settings is a no-op, so concurrent instances converge without rewriting identical rows.
+ * <p><b>Redirect URIs:</b> when {@code marketplace.security.oauth2.client.redirect-uris}
+ * is blank the fixed development definition from the spec (§4.1) applies —
+ * {@code http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client}, matched
+ * textually by the authorize endpoint so the random test port works. In the {@code prod}
+ * profile a blank value fails fast: production must configure the real BFF callback URLs
+ * ({@code OAUTH_CLIENT_REDIRECT_URIS}, comma-separated) — closing the documented gate-B
+ * debt (the production redirect was previously pinned to the development constant).
+ *
+ * <p><b>Idempotence guard:</b> {@code save()} runs only when the derived definition differs
+ * from the stored row — client id, name, secret, redirect URIs, authentication methods,
+ * grant types, scopes, or the settings maps. Matching secret + matching settings + matching
+ * definition is a no-op, so concurrent instances converge without rewriting identical rows.
  *
  * <p><b>Fail-fast by profile:</b> {@code application-prod.yml} binds the client from mandatory
- * environment variables ({@code OAUTH_CLIENT_ID}/{@code OAUTH_CLIENT_SECRET}), so production
- * must not silently run without a managed client. The nested
+ * environment variables ({@code OAUTH_CLIENT_ID}/{@code OAUTH_CLIENT_SECRET}/
+ * {@code OAUTH_CLIENT_REDIRECT_URIS}), so production must not silently run without a managed
+ * client or with the development redirect constant. The nested
  * {@code marketplace.security.oauth2} section is bound non-null by an empty {@code @DefaultValue}
  * (official constructor-binding behavior), so it is safe to dereference in every profile.
  *
@@ -94,9 +111,10 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
         MarketplaceProperties.Security.OAuth2.Client client = properties.security().oauth2().client();
         String clientId = client.clientId();
         String rawSecret = client.secret();
+        boolean prodProfile = environment.acceptsProfiles(PROD_PROFILE);
 
         if (!StringUtils.hasText(clientId) && !StringUtils.hasText(rawSecret)) {
-            if (environment.acceptsProfiles(PROD_PROFILE)) {
+            if (prodProfile) {
                 throw new IllegalStateException(
                         "marketplace.security.oauth2.client.clientId and .secret must be configured in production"
                                 + " (OAUTH_CLIENT_ID/OAUTH_CLIENT_SECRET)");
@@ -107,11 +125,19 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
             throw new IllegalStateException(
                     "marketplace.security.oauth2.client.clientId and .secret must both be configured");
         }
+        if (prodProfile && !StringUtils.hasText(client.redirectUris())) {
+            throw new IllegalStateException(
+                    "marketplace.security.oauth2.client.redirectUris must be configured in production"
+                            + " (OAUTH_CLIENT_REDIRECT_URIS) — the development redirect constant is not a"
+                            + " valid production BFF callback");
+        }
+
+        Set<String> redirectUris = parseRedirectUris(client.redirectUris());
 
         RegisteredClient existing = registeredClientRepository.findByClientId(clientId);
         boolean secretChanged = existing == null || !passwordEncoder.matches(rawSecret, existing.getClientSecret());
 
-        RegisteredClient target = buildTarget(existing, clientId, rawSecret, secretChanged);
+        RegisteredClient target = buildTarget(existing, clientId, rawSecret, secretChanged, redirectUris);
 
         if (!needsSave(existing, target)) {
             return;
@@ -128,36 +154,39 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
         }
     }
 
+    /**
+     * Full re-derivation (identity preserved via {@code withId}): the stored row is never
+     * a source of truth — the definition always comes from configuration (clientId,
+     * secret, redirect URIs) plus the spec §4.1 constants, so every boot converges the
+     * row to exactly what the environment says it should be.
+     */
     private RegisteredClient buildTarget(RegisteredClient existing,
                                          String clientId,
                                          String rawSecret,
-                                         boolean secretChanged) {
-        if (existing == null) {
-            return RegisteredClient.withId(CLIENT_ID)
-                    .clientId(clientId)
-                    .clientSecret(passwordEncoder.encode(rawSecret))
-                    .clientName(CLIENT_NAME)
-                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                    .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                    .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                    .redirectUri(REDIRECT_URI)
-                    .postLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI)
-                    .scope("openid")
-                    .scope("profile")
-                    .clientSettings(buildClientSettings())
-                    .tokenSettings(buildTokenSettings())
-                    .build();
-        }
-
-        RegisteredClient.Builder builder = RegisteredClient.from(existing)
+                                         boolean secretChanged,
+                                         Set<String> redirectUris) {
+        String id = existing == null ? CLIENT_ID : existing.getId();
+        RegisteredClient.Builder builder = RegisteredClient.withId(id)
                 .clientId(clientId)
+                .clientName(CLIENT_NAME)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS);
+        if (redirectUris.isEmpty()) {
+            builder.redirectUri(REDIRECT_URI);
+        } else {
+            redirectUris.forEach(builder::redirectUri);
+        }
+        builder.postLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI)
+                .scope("openid")
+                .scope("profile")
                 .clientSettings(buildClientSettings())
                 .tokenSettings(buildTokenSettings());
-        if (!secretChanged) {
-            builder.clientSecret(existing.getClientSecret());
-        } else {
+        if (existing == null || secretChanged) {
             builder.clientSecret(passwordEncoder.encode(rawSecret));
+        } else {
+            builder.clientSecret(existing.getClientSecret());
         }
         return builder.build();
     }
@@ -178,14 +207,46 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
                 .build();
     }
 
+    /**
+     * Full-definition comparison (spec §4.1 idempotence guard, extended in gate B to the
+     * fields the environment now drives): {@code save} happens if-and-only-if the stored
+     * row differs from the derived definition in identity-relevant fields or the settings
+     * maps. Matching secret + matching settings + matching definition is a no-op, so
+     * concurrent instances converge without rewriting identical rows.
+     */
     private static boolean needsSave(RegisteredClient existing, RegisteredClient target) {
         if (existing == null) {
             return true;
         }
-        if (!existing.getClientSecret().equals(target.getClientSecret())) {
+        if (!Objects.equals(existing.getClientId(), target.getClientId())
+                || !Objects.equals(existing.getClientName(), target.getClientName())
+                || !Objects.equals(existing.getClientSecret(), target.getClientSecret())
+                || !Objects.equals(existing.getRedirectUris(), target.getRedirectUris())
+                || !Objects.equals(existing.getPostLogoutRedirectUris(), target.getPostLogoutRedirectUris())
+                || !Objects.equals(existing.getClientAuthenticationMethods(), target.getClientAuthenticationMethods())
+                || !Objects.equals(existing.getAuthorizationGrantTypes(), target.getAuthorizationGrantTypes())
+                || !Objects.equals(existing.getScopes(), target.getScopes())) {
             return true;
         }
         return !existing.getClientSettings().getSettings().equals(target.getClientSettings().getSettings())
                 || !existing.getTokenSettings().getSettings().equals(target.getTokenSettings().getSettings());
+    }
+
+    /**
+     * Splits the comma-separated {@code OAUTH_CLIENT_REDIRECT_URIS} value; drops blank
+     * entries, preserves order. An empty/blank raw value means "not configured" and the
+     * caller falls back to the fixed development definition.
+     */
+    private static Set<String> parseRedirectUris(String raw) {
+        Set<String> uris = new LinkedHashSet<>();
+        if (!StringUtils.hasText(raw)) {
+            return uris;
+        }
+        for (String candidate : raw.split(",")) {
+            if (StringUtils.hasText(candidate)) {
+                uris.add(candidate.trim());
+            }
+        }
+        return uris;
     }
 }

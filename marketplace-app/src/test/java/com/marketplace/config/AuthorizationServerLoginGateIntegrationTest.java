@@ -75,7 +75,11 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
-        "marketplace.security.oauth2.client.secret=it-app-secret"
+        "marketplace.security.oauth2.client.secret=it-app-secret",
+        // Gate B pattern (1): prove the env-driven redirect URIs path live — the value
+        // equals the fixed development definition, so the flow is unchanged while the
+        // wiring (OAUTH_CLIENT_REDIRECT_URIS parsing) is exercised end to end.
+        "marketplace.security.oauth2.client.redirect-uris=http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client"
 })
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AuthorizationServerLoginGateIntegrationTest {

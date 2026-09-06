@@ -9,6 +9,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.constraints.Min;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -31,6 +32,8 @@ class PaymentsServiceTest {
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
     private final PaymentWebhookSecurity webhookSecurity = mock(PaymentWebhookSecurity.class);
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
     private final Authentication authentication = mock(Authentication.class);
     private final PaymentsService service = new PaymentsService(
             intentRepository,
@@ -39,7 +42,8 @@ class PaymentsServiceTest {
             eventPublisher,
             currentUserProvider,
             bookingParticipantProvider,
-            webhookSecurity
+            webhookSecurity,
+            pspChannel
     );
 
     @Test
@@ -63,6 +67,26 @@ class PaymentsServiceTest {
         assertEquals(PaymentIntentStatus.CREATED, intent.getStatus());
         assertEquals(bookingId, intent.getBookingId());
         assertEquals(5000L, intent.getAmountCents());
+    }
+
+    @Test
+    void createIntent_carriesBookingCurrency_roadmapB4() {
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "USD")
+                .create();
+
+        when(intentRepository.findByIdempotencyKey(null)).thenReturn(Optional.empty());
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent intent = service.createIntent(bookingId, consumerId, null);
+
+        assertEquals("USD", intent.getCurrency());
     }
 
     @Test

@@ -28,24 +28,33 @@ spring:
       inspection:
         enabled: false
 
-  quartz:
-    jdbc:
-      initialize-schema: never
-    properties:
-      org:
-        quartz:
-          jobStore:
-            isClustered: true
-
   cache:
     type: redis
 
   modulith:
     events:
       completion-mode: archive
+      # Official Staleness Monitor (Spring Modulith 2.1.1 Reference, "Event
+      # Publication Staleness and Automatic Marking as Failed"): "When any of
+      # the staleness durations is set to a non-zero value, the monitor is
+      # active: on each run it finds event publications in PUBLISHED, PROCESSING,
+      # or RESUBMITTED that are older than the corresponding duration and marks
+      # them as FAILED." Property names below are the ones the framework
+      # actually binds (spring-configuration-metadata.json of
+      # spring-modulith-events-core 2.1.1: published / processing / resubmitted
+      # [deprecated aliases: resubmission, check-intervall]).
+      #
+      # Root cause this closes: the previous keys `publication-threshold` /
+      # `processing-threshold` (commit cb2d8dd) do not exist in Modulith 2.1.1 —
+      # they bound to nothing, so the monitor never registered its task and
+      # stuck publications stayed zombie until a manual restart. Values keep the
+      # original declared intent (6h published, 1h processing); `resubmitted`
+      # (1h, symmetric with processing) closes the lifecycle loop so a
+      # resubmitted publication that makes no progress returns to FAILED.
       staleness:
-        publication-threshold: 6h
-        processing-threshold: 1h
+        published: 6h
+        processing: 1h
+        resubmitted: 1h
       republish-outstanding-events-on-restart: true
 
 
@@ -66,12 +75,37 @@ spring:
       mail.smtp.timeout: 3000
       mail.smtp.writetimeout: 5000
 
+  security:
+    oauth2:
+      authorizationserver:
+        # Fail-fast like DB_PASSWORD / JWT_KEYSTORE_* / CORS_ALLOWED_ORIGINS: the base
+        # profile default (http://localhost:8080) must never leak into production.
+        # Behind a TLS-terminating proxy the issuer must be the public https origin.
+        issuer: ${AUTH_SERVER_ISSUER}
+
 server:
   shutdown: graceful
+  # Host-neutral readiness (adopted client & hosting strategy plan, Phase A):
+  # the application runs behind a trusted TLS-terminating proxy, so forwarded
+  # headers must be honored (official Spring Boot how-to "Running Behind a
+  # Front-end Proxy Server" + Spring Security 7.1.1 reference). FRAMEWORK (the
+  # ForwardedHeaderFilter, registered at Ordered.HIGHEST_PRECEDENCE) covers both
+  # the RFC 7239 "Forwarded" header and the full X-Forwarded-* set — including
+  # host and port, which NATIVE (Tomcat RemoteIpValve) does not honor.
+  forward-headers-strategy: FRAMEWORK
+  tomcat:
+    # Official javadoc: "When using SSL terminated at a proxy, this property
+    # should be set to false" (server.tomcat.redirect-context-root).
+    redirect-context-root: false
 
 logging:
   pattern:
-    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\s*[=:]\s*[^,\s]+', '$1=****'}%n"
+    # Logback %replace scrubbing (secrets masking). In a double-quoted YAML scalar
+    # each regex backslash must be escaped ("\\s" parses to "\s") — the previous
+    # unescaped "\s" made this file unparseable as YAML, a latent defect exposed by
+    # the Phase A prod-config guard test (ForwardHeadersProdConfigTest) because the
+    # prod profile had never been activated anywhere.
+    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\\s*[=:]\\s*[^,\\s]+', '$1=****'}%n"
   level:
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
@@ -125,7 +159,14 @@ marketplace:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
-        path: ${JWT_KEYSTORE_PATH}
+        # Source channels (b64 wins when both are present — see SecurityConfig.jwkSource
+        # for the full contract). Sources default to blank here: prod requires at least
+        # one of them, enforced fail-fast at the bean (a missing source must fail with
+        # the D6/INV-7 message, not with an opaque placeholder error). Credentials keep
+        # the no-default binding contract: unset JWT_KEYSTORE_PASSWORD/JWT_KEY_ALIAS/
+        # JWT_KEY_PASSWORD fail at placeholder resolution — the first defense layer.
+        b64: ${JWT_KEYSTORE_B64:}
+        path: ${JWT_KEYSTORE_PATH:}
         password: ${JWT_KEYSTORE_PASSWORD}
         alias: ${JWT_KEY_ALIAS}
         key-password: ${JWT_KEY_PASSWORD}
@@ -133,3 +174,13 @@ marketplace:
       client:
         client-id: ${OAUTH_CLIENT_ID}
         secret: ${OAUTH_CLIENT_SECRET}
+        # Gate B pattern (1) — BFF confidential client callback URLs (comma-separated).
+        # Mandatory in prod: the development redirect constant (127.0.0.1) is not a valid
+        # production BFF callback (closes the documented gate-B debt).
+        redirect-uris: ${OAUTH_CLIENT_REDIRECT_URIS}
+      public-client:
+        # Gate B pattern (3) — public (secret-less) native client with PKCE (plan §4):
+        # classified by secret location, not by technology. Redirect URIs are the client
+        # application's identity (custom scheme per RFC 8252 or https app link).
+        client-id: ${OAUTH_PUBLIC_CLIENT_ID}
+        redirect-uris: ${OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}

@@ -1,5 +1,6 @@
 package com.marketplace.booking;
 
+import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -53,11 +54,17 @@ public class Booking extends BaseEntity {
 
     public Booking(UUID id, UUID consumerId, UUID providerId, UUID listingId,
                    Long priceCents, Instant startsAt, Instant endsAt, String notes) {
+        this(id, consumerId, providerId, listingId, priceCents, null, startsAt, endsAt, notes);
+    }
+
+    Booking(UUID id, UUID consumerId, UUID providerId, UUID listingId,
+            Long priceCents, String currency, Instant startsAt, Instant endsAt, String notes) {
         this.id = id;
         this.consumerId = consumerId;
         this.providerId = providerId;
         this.listingId = listingId;
         this.priceCents = priceCents;
+        this.currency = Currencies.normalizeOrDefault(currency, "SAR");
         this.startsAt = startsAt;
         this.endsAt = endsAt;
         this.notes = notes;
@@ -65,7 +72,19 @@ public class Booking extends BaseEntity {
 
     public static Booking create(UUID consumerId, UUID providerId, UUID listingId,
                                  Long priceCents, Instant startsAt, Instant endsAt, String notes) {
-        return new Booking(UUID.randomUUID(), consumerId, providerId, listingId, priceCents, startsAt, endsAt, notes);
+        return create(consumerId, providerId, listingId, priceCents, null, startsAt, endsAt, notes);
+    }
+
+    /**
+     * Creates a booking carrying the listing's ISO 4217 currency (roadmap
+     * B4): the money snapshot of the listing at booking time — same
+     * snapshot semantics as the price. Blank/null keeps the house default
+     * SAR, exactly the pre-existing behavior.
+     */
+    public static Booking create(UUID consumerId, UUID providerId, UUID listingId,
+                                 Long priceCents, String currency, Instant startsAt, Instant endsAt, String notes) {
+        return new Booking(UUID.randomUUID(), consumerId, providerId, listingId, priceCents,
+                currency, startsAt, endsAt, notes);
     }
 
     @Override

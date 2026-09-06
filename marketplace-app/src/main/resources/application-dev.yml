@@ -18,9 +18,6 @@ spring:
   flyway:
     clean-disabled: false
 
-  quartz:
-    job-store-type: memory
-
   cache:
     type: simple
 

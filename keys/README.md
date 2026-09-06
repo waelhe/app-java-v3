@@ -47,14 +47,19 @@ keytool -genkeypair \
 - **لا يُخزَّن الملف ولا كلمتا المرور في المستودع أبدًا** (secrets-policy §1/§2) —
   الحقن عبر متغيرات البيئة فقط.
 
-## 3) متغيرات البيئة الأربعة (بيئة prod)
+## 3) متغيرات البيئة (بيئة prod)
+
+قناتان للمصدر — تفصل بينهما `SecurityConfig#jwkSource` (b64 تتقدم عند توفرهما معًا):
 
 | المتغير | الخاصية المرتبطة | ملاحظة |
 |---|---|---|
-| `JWT_KEYSTORE_PATH` | `marketplace.security.jwt.keystore.path` | `file:` أو `classpath:` |
-| `JWT_KEYSTORE_PASSWORD` | `marketplace.security.jwt.keystore.password` | كلمة مخزن الـ JKS |
+| `JWT_KEYSTORE_B64` | `marketplace.security.jwt.keystore.b64` | base64 لبايتات الـ JKS — قناة المنصات التي تسلّم الأسرار كمتغيرات write-only (Railway)؛ تُفكّ في الذاكرة (`KeyStore.load`) ولا يُكتب ملف إطلاقًا |
+| `JWT_KEYSTORE_PATH` | `marketplace.security.jwt.keystore.path` | `file:` أو `classpath:` — قناة مضيفي التطوير والملفات المركّبة |
+| `JWT_KEYSTORE_PASSWORD` | `marketplace.security.jwt.keystore.password` | كلمة مخزن الـ JKS (مشتركة بين القناتين — مطلوبة متى ضُبط أحدهما) |
 | `JWT_KEY_ALIAS` | `marketplace.security.jwt.keystore.alias` | يصبح `keyID` للتوقيع |
 | `JWT_KEY_PASSWORD` | `marketplace.security.jwt.keystore.keyPassword` | كلمة المفتاح الخاص |
+
+مصدر ناقص (b64 أو path) بلا بيانات اعتماد كاملة = فشل إقلاع صريح في **كل** البروفايلات — لا يهبط أبدًا إلى مفتاح عابر.
 
 ## 4) التدوير (secrets-policy §3: كل ≤ 90 يومًا)
 
@@ -70,5 +75,5 @@ keytool -genkeypair \
 ## 5) التحقق
 
 - محليًا (dev): خانات فارغة ⇒ مفتاح عابر — طبيعي ومقصود.
-- CI: `JwkSourceProdHardeningTest` (3 حالات) ضمن `mvn clean verify`.
+- CI: `JwkSourceProdHardeningTest` (6 حالات: الثلاث الأصلية + قناة b64 في prod + الاعتمادات الناقصة في كل البروفايلات + تقدم b64 على path) ضمن `mvn clean verify`.
 - في الإنتاج: نجاح الإقلاع نفسه هو الدليل (لا يقلع prod بمفاتيح فارغة).

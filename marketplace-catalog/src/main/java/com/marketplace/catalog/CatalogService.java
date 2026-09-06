@@ -91,9 +91,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-search", key = "#tsQuery + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> searchFullText(String tsQuery, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.searchFullText(tsQuery, pageable);
+    @Cacheable(cacheNames = "catalog-search", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullText(query, pageable);
+        if (page.isEmpty()) {
+            // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
+            // stem match — retry with word-similarity so a one-edit typo
+            // ("gardn") still surfaces the intended listings ("garden").
+            // An implementation detail of the catalog's search: the port
+            // contract, the search module and every caller are unchanged.
+            // Cached as the final result of this query either way.
+            page = listingRepository.searchSimilar(query, pageable);
+        }
         return toSummaryPage(page);
     }
 
@@ -135,7 +144,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Transactional(readOnly = true)
     public ListingInfo getListingInfo(UUID listingId) {
         ProviderListing listing = getById(listingId);
-        return new ListingInfo(listing.getProviderId(), listing.getPriceCents());
+        return new ListingInfo(listing.getProviderId(), listing.getPriceCents(), listing.getCurrency());
     }
 
     private static final Set<String> CATALOG_CACHE_NAMES =
@@ -144,11 +153,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListingView create(UUID providerId, String title, String description,
-                                      String category, Long priceCents) {
+                                      String category, Long priceCents, String currency) {
         providerLookupPort.findById(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
-        ProviderListing listing = ProviderListing.create(providerId, title, description, category, priceCents);
+        ProviderListing listing = ProviderListing.create(providerId, title, description, category,
+                priceCents, currency);
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
@@ -158,9 +168,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, Authentication authentication) {
+        return update(id, title, description, category, priceCents, null, authentication);
+    }
+
+    /**
+     * Updates the listing; blank currency keeps the stored ISO 4217 code
+     * (omitting the field does not reset money semantics).
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing update(UUID id, String title, String description,
+                                  String category, Long priceCents, String currency,
+                                  Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
-        listing.update(title, description, category, priceCents);
+        listing.update(title, description, category, priceCents, currency);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
@@ -230,6 +251,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 listing.getTitle(),
                 listing.getCategory(),
                 BigDecimal.valueOf(listing.getPriceCents(), 2),
+                listing.getCurrency(),
                 providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")
         ));
     }
@@ -241,6 +263,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 listing.getDescription(),
                 listing.getCategory(),
                 listing.getPriceCents(),
+                listing.getCurrency(),
                 listing.getProviderId(),
                 listing.getStatus().name(),
                 listing.getCreatedAt(),

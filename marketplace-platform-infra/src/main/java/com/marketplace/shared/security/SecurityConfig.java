@@ -65,6 +65,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import javax.sql.DataSource;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.Key;
@@ -73,6 +74,7 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -273,9 +275,27 @@ public class SecurityConfig {
     }
 
     /**
-     * Signing keys: a persistent JKS keystore bound from environment variables, or —
-     * <em>only outside the {@code prod} profile</em> — an ephemeral RSA key generated
-     * on startup.
+     * Signing keys: a persistent JKS keystore delivered through one of two source
+     * channels, or — <em>only outside the {@code prod} profile</em> — an ephemeral RSA
+     * key generated on startup.
+     *
+     * <p><b>Source channels (b64 wins when both are present):</b></p>
+     * <ul>
+     *   <li><b>{@code b64}</b> — base64-encoded JKS bytes bound from
+     *       {@code JWT_KEYSTORE_B64} to
+     *       {@code marketplace.security.jwt.keystore.b64}. The application-level
+     *       channel for platforms that deliver secrets as write-only environment
+     *       variables (Railway: values are not readable through the API, volumes
+     *       mount as root so a non-root container cannot write them, and pre-deploy
+     *       filesystem changes do not persist — docs.railway.com/volumes,
+     *       /deployments/pre-deploy-command). Decoded and loaded in memory via
+     *       {@link KeyStore#load(InputStream, char[])}: no file is ever
+     *       materialized, so the container entrypoint stays the pure official
+     *       Spring Boot recipe {@code ENTRYPOINT ["java", "-jar", "app.jar"]}.
+     *       Key rotation is a variable update ({@code keys/README.md} §4).</li>
+     *   <li><b>{@code path}</b> — {@code file:}/{@code classpath:} location per the
+     *       runbook {@code keys/README.md} §2 (development hosts, mounted files).</li>
+     * </ul>
      *
      * <p>Ephemeral generation is the official quickstart pattern (Spring Authorization
      * Server — Getting Started: "This is a minimal configuration for getting started
@@ -287,11 +307,19 @@ public class SecurityConfig {
      * "فحص CI يحظر {@code JWT_KEYSTORE_*} الفارغة في الإنتاج".
      *
      * <p>Hence this defense-in-depth gate, mirroring the initializer's profile-gated
-     * fail-fast: {@code prod} active + any blank keystore field ⇒ startup fails loudly
-     * instead of falling back to an ephemeral key. {@code application-prod.yml} already
-     * binds the four fields with no defaults (placeholder resolution fails when unset);
-     * this bean-level guard also catches blank-string values and any future binding
-     * drift. Enforced in CI by {@code JwkSourceProdHardeningTest}.
+     * fail-fast:
+     * <ul>
+     *   <li>{@code prod} active + <b>both</b> sources blank ⇒ startup fails loudly
+     *       instead of falling back to an ephemeral key. {@code application-prod.yml}
+     *       binds the credential fields with no defaults (placeholder resolution
+     *       fails when unset); this bean-level guard also catches blank-string
+     *       values and any future binding drift.</li>
+     *   <li>A source present with incomplete credentials ({@code password},
+     *       {@code alias}, {@code keyPassword}) fails in <b>every</b> profile — a
+     *       half-configured keystore is a misconfiguration, never an intentional
+     *       quickstart, and must not silently degrade to an ephemeral key.</li>
+     * </ul>
+     * Enforced in CI by {@code JwkSourceProdHardeningTest}.
      */
     @Bean
     JWKSource<SecurityContext> jwkSource(
@@ -299,16 +327,19 @@ public class SecurityConfig {
             Environment environment
     ) throws Exception {
         var ks = properties.security().jwt().keystore();
+        String keyStoreB64 = ks.b64();
         String keyStorePath = ks.path();
         String keyStorePassword = ks.password();
         String keyAlias = ks.alias();
         String keyPassword = ks.keyPassword();
-        if (isBlank(keyStorePath) || isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
+        boolean hasB64 = isNotBlank(keyStoreB64);
+        boolean hasPath = isNotBlank(keyStorePath);
+        if (!hasB64 && !hasPath) {
             if (environment.acceptsProfiles(PROD_PROFILE)) {
                 throw new IllegalStateException(
-                        "marketplace.security.jwt.keystore.path/.password/.alias/.keyPassword must be configured"
-                                + " in production (JWT_KEYSTORE_PATH/JWT_KEYSTORE_PASSWORD/JWT_KEY_ALIAS/"
-                                + "JWT_KEY_PASSWORD) — ephemeral signing keys are forbidden outside development"
+                        "marketplace.security.jwt.keystore.b64 (JWT_KEYSTORE_B64) or .path (JWT_KEYSTORE_PATH)"
+                                + " must be configured in production (plus password/alias/keyPassword) —"
+                                + " ephemeral signing keys are forbidden outside development"
                                 + " (auth-system-redesign-plan INV-7)");
             }
             KeyPair keyPair = generateRsaKey();
@@ -320,14 +351,30 @@ public class SecurityConfig {
                     .build();
             return new ImmutableJWKSet<>(new JWKSet(rsaKey));
         }
+        if (isBlank(keyStorePassword) || isBlank(keyAlias) || isBlank(keyPassword)) {
+            throw new IllegalStateException(
+                    "marketplace.security.jwt.keystore.password/.alias/.keyPassword are required whenever a"
+                            + " keystore source (" + (hasB64 ? "b64" : "path") + ") is configured — a"
+                            + " half-configured keystore never falls back to an ephemeral key");
+        }
 
         KeyStore keyStore = KeyStore.getInstance("JKS");
-        String resolvedLocation = keyStorePath.startsWith("classpath:") || keyStorePath.startsWith("file:")
-                ? keyStorePath
-                : "file:" + keyStorePath;
+        if (hasB64) {
+            // Write-only secret platforms deliver the JKS as a base64 variable; decoding
+            // here keeps the container entrypoint pure (no shell materialization).
+            // Whitespace is stripped to stay compatible with tolerant base64 decoders
+            // (line-wrapped values) — same behavior the entrypoint decode provided.
+            byte[] keystoreBytes = Base64.getDecoder().decode(keyStoreB64.replaceAll("\\s", ""));
+            keyStore.load(new ByteArrayInputStream(keystoreBytes), keyStorePassword.toCharArray());
+        }
+        else {
+            String resolvedLocation = keyStorePath.startsWith("classpath:") || keyStorePath.startsWith("file:")
+                    ? keyStorePath
+                    : "file:" + keyStorePath;
 
-        try (InputStream inputStream = resourceLoader.getResource(resolvedLocation).getInputStream()) {
-            keyStore.load(inputStream, keyStorePassword.toCharArray());
+            try (InputStream inputStream = resourceLoader.getResource(resolvedLocation).getInputStream()) {
+                keyStore.load(inputStream, keyStorePassword.toCharArray());
+            }
         }
 
         RSAPublicKey publicKey = (RSAPublicKey) keyStore.getCertificate(keyAlias).getPublicKey();
@@ -431,6 +478,10 @@ public class SecurityConfig {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean isNotBlank(String value) {
+        return !isBlank(value);
     }
 
 }

@@ -2,7 +2,7 @@
 
 | البند | القيمة |
 |------|--------|
-| الحالة | **خطة حاكمة — المراحل 0-2 و4 منفّذة ومدمجة (main `6fdec07` 2026-09-03؛ انظر SYSTEM.md §11 للحالة الحية) — متبقٍ: المرحلة 3 (D9 بقرار المستخدم) ثم مراحل CF** |
+| الحالة | **خطة حاكمة — المراحل 0-2 و4 منفّذة ومدمجة (main `6fdec07` 2026-09-03؛ انظر SYSTEM.md §11 للحالة الحية) — المرحلة 3 (D9) أُعيد تأطيرها وحُكمها بـ `docs/security/client-hosting-strategy-plan.md` (معتمدة 2026-09-03): بوابة عميل أول (B) ثم بوابة استضافة (C)** |
 | التاريخ | سبتمبر 2026 |
 | الفرع | `feat/auth-system-design` |
 | الحوكمة | Protocol-Enforcer 6-Stage + Source Mandate (اقتباس رسمي → مطابقة → حل) |
@@ -45,6 +45,7 @@
 ### المرحلة 3 — عميل الويب (تُغلق F-C — مشروطة بـ D9)
 - (أ) التسجيل عبر `oauth2Login`، أو (ب) SPA/PKCE، أو (ج) إزالة العميل الميت.
 - **لا يبدأ إلا بقرار D9 من المستخدم.**
+- **تحديث حوكمة (2026-09-03):** بعد تحديد المستخدم أن الباك اند هو المشروع بينما تقنيات العملاء (فلاتر/Next.js/أي لغة) والاستضافة غير محددة، أُعيد تأطير هذه المرحلة كبوابة «عميل أول» متعددة الأنماط في الخطة الحاكمة الجديدة `docs/security/client-hosting-strategy-plan.md` §4/§7 (معتمدة بأمر المستخدم). قاعدة التصنيف فيها: مكان السر (confidential/BFF مقابل public+PKCE) لا لغة العميل.
 
 ### المرحلة 4 — مفاتيح الإنتاج (منفّذة — PR المرحلة-4)
 - **الكود:** `SecurityConfig.jwkSource()` يحمل حارس fail-fast مقيد بـ `prod` (نفس نمط `OAuth2ClientSecretInitializer`): أي خانة keystore فارغة مع بروفايل prod ⇒ `IllegalStateException` عند الإقلاع — السقوط إلى المفتاح العابر مستحيل في prod. دفاع مزدوج مع ربط `application-prod.yml` بلا افتراضات.
@@ -93,7 +94,7 @@
 | D6 | مصدر المفاتيح | **مغلق (منفّذ — PR المرحلة-4)** | Keystore دائم عبر env في الإنتاج؛ لا مفاتيح عابرة — يُنفّذ بحارس fail-fast مقيد بـ prod + فحص CI (`JwkSourceProdHardeningTest`) + runbook `keys/README.md` | `application.yml` (افتراضيات فارغة) + `SecurityConfig.jwkSource()` (الحارس) + `keys/README.md` |
 | D7 | `JdbcUserDetailsManager` بـ SQL مخصص | ثابت | إبقاؤه | `SecurityConfig:236-246` |
 | D8 | الجلسات/CSRF | ثابت | سلسلة AS: جلسة + CSRF؛ سلسلة RS: `STATELESS` مع تجاهل CSRF لمسارات `/**` المطابقة | `SecurityConfig:119,121,150-154` |
-| D9 | مصير `marketplace-web-client` | **قرار المستخدم** | (أ) عميل سري server-side/BFF مستقبلاً، أو (ج) تعليق/إزالة العميل؛ (ب) SPA/PKCE | RFC 9700 §2.1.1 |
+| D9 | مصير `marketplace-web-client` | **قرار المستخدم — أُعيد تأطيره** (بوابات متعددة العملاء في `docs/security/client-hosting-strategy-plan.md` §4؛ يُحسم بظهور أول مستهلك فعلي) | (أ) عميل سري server-side/BFF مستقبلاً، أو (ج) تعليق/إزالة العميل؛ (ب) SPA/PKCE | RFC 9700 §2.1.1 + توصية BFF الرسمية (SAS how-to: SPA with PKCE) |
 
 ---
 

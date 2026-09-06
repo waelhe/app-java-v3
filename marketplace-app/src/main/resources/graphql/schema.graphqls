@@ -13,6 +13,7 @@ type Service {
     description: String
     category: String!
     price: Float!
+    currency: String!
     status: ServiceStatus!
 }
 

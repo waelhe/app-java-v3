@@ -39,7 +39,21 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria("hello world", null, null, null), PageRequest.of(0, 10));
 
-        verify(port).searchFullText("hello & world", PageRequest.of(0, 10));
+        // Raw pass-through (trim only): websearch_to_tsquery owns the parsing.
+        verify(port).searchFullText("hello world", PageRequest.of(0, 10));
+    }
+
+    @Test
+    void passesRawInputThroughUnmangled() {
+        when(port.searchFullText(anyString(), any())).thenReturn(emptyPage());
+
+        // Quotes/parens/dashes are valid websearch_to_tsquery syntax, not
+        // pre-mangled "&" tsquery operators (the old munging fed to_tsquery
+        // invalid syntax -> SQL exception -> HTTP 500).
+        service.search(new SearchCriteria("\"garden view\" -crab ((", null, null, null),
+                PageRequest.of(0, 10));
+
+        verify(port).searchFullText("\"garden view\" -crab ((", PageRequest.of(0, 10));
     }
 
     @Test

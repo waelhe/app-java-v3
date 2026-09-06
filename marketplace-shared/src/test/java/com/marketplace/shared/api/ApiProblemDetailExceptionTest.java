@@ -44,4 +44,16 @@ class ApiProblemDetailExceptionTest {
         assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("CONFLICT-001");
         assertThat(ex.getBody().getProperties().get("category")).isEqualTo("conflict");
     }
+
+    @Test
+    void serviceUnavailableException_buildsProblemDetailWithContractFields() {
+        ServiceUnavailableException ex = new ServiceUnavailableException("Media storage is not configured");
+
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/service-unavailable"));
+        assertThat(ex.getBody().getTitle()).isEqualTo("Service Unavailable");
+        assertThat(ex.getBody().getDetail()).isEqualTo("Media storage is not configured");
+        assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("SU-001");
+        assertThat(ex.getBody().getProperties().get("category")).isEqualTo("availability");
+    }
 }

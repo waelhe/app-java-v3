@@ -21,7 +21,8 @@ import java.util.UUID;
 public interface ListingPriceProvider {
 
     /**
-     * Returns the provider ID and price for the given listing.
+     * Returns the provider ID, price and ISO 4217 currency for the given
+     * listing.
      *
      * @throws ResourceNotFoundException if the listing does not exist
      */
@@ -30,6 +31,26 @@ public interface ListingPriceProvider {
     /**
      * Carrier of server-derived listing data.
      * Immutable value object — no behaviour.
+     *
+     * @param currency ISO 4217 alphabetic code of the listing price —
+     *                 the money the booking will carry
      */
-    record ListingInfo(UUID providerId, Long priceCents) {}
+    record ListingInfo(UUID providerId, Long priceCents, String currency) {
+
+        /**
+         * Pre-currency convenience constructor (roadmap B4 kept it
+         * source-compatible): defaults the currency to the house code SAR
+         * exactly like the pre-existing callers assumed.
+         */
+        public ListingInfo(UUID providerId, Long priceCents) {
+            this(providerId, priceCents, com.marketplace.shared.api.Currencies.DEFAULT_CODE);
+        }
+
+        public ListingInfo {
+            if (currency == null || currency.isBlank()) {
+                throw new IllegalStateException("Listing has invalid currency: " + currency);
+            }
+            currency = com.marketplace.shared.api.Currencies.normalize(currency);
+        }
+    }
 }

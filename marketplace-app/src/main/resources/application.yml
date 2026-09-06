@@ -11,7 +11,13 @@ spring:
       enabled: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/marketplace
+    # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
+    # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
+    # localhost for local dev/compose/CI (which run Postgres on localhost) while
+    # letting a non-prod container deployment (Railway) point at a real host.
+    # Evidence: the cf0a1a9 Railway deploy crash-looped on flywayInitializer
+    # "Connection to localhost:5432 refused" because this line was hardcoded.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/marketplace}
     username: ${DB_USERNAME:marketplace}
     password: ${DB_PASSWORD:}
     hikari:
@@ -95,6 +101,11 @@ spring:
     web:
       pageable:
         max-page-size: 100
+      # i18n floor (roadmap B4): the framework's AcceptHeaderLocaleResolver
+      # uses this as the default when a request carries no Accept-Language —
+      # responses stay byte-identical to the pre-B4 English literals.
+      # Arabic resolves via messages_ar.properties on Accept-Language: ar.
+      locale: en
   mail:
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}
@@ -109,34 +120,72 @@ spring:
   cache:
     type: ${CACHE_TYPE:redis}
     cache-names: catalog-active,catalog-by-category,catalog-search,pricing-calculations,search-results,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
-  quartz:
-    job-store-type: jdbc
-    jdbc:
-      initialize-schema: never
-    properties:
-      org:
-        quartz:
-          scheduler:
-            instanceName: marketplaceScheduler
-            instanceId: AUTO
-          threadPool:
-            threadCount: 5
+    redis:
+      # Entry TTL — the framework's own expiration channel for cache entries.
+      # Evidence: spring-configuration-metadata.json of spring-boot-cache
+      # 4.1.1 — "spring.cache.redis.time-to-live | Entry expiration. By
+      # default the entries never expire." Binding path (bytecode-verified in
+      # that jar): CacheProperties$Redis.timeToLive -> RedisCacheConfiguration
+      # -> defaultCacheConfig().entryTtl(...) -> every RedisCacheManager
+      # entry. Without this key, all 13 named caches hold entries FOREVER:
+      # invalidation only happens via CacheInvalidationRelay (AFTER_COMMIT),
+      # which fires solely when an entity CHANGES — dead rows never do.
+      # Growth is unbounded by construction: catalog-search / search-results
+      # key on the raw user query text (every unique search = a new row) and
+      # bookings / conversations / paymentIntents key on entity ids (every
+      # read-once entity leaves an immortal row after it goes cold). Redis on
+      # Railway runs with no maxmemory/eviction (requirepass + RDB only), so
+      # unexpired keys accumulate toward the container memory ceiling.
+      # TTL semantics: fixed expiry from write (SET .. EX — no sliding
+      # renewal), so a hot entry is rebuilt at most once per hour (one
+      # indexed DB read), and a dead row disappears within the hour. Value
+      # derivation, not taste: all 13 caches are rebuildable repository
+      # reads (correctness is governed by the AFTER_COMMIT relay, TTL is
+      # garbage collection only), and 1h = 2x the user interaction window
+      # (spring.session.timeout: 30m) — covers a working session with at
+      # most one rebuild per live entry. The test profile overrides
+      # cache.type to 'simple', so this key is inert there.
+      time-to-live: 1h
+  # Quartz removed (V31, dead machine since V29): zero durable jobs remained,
+  # so the starter, its JDBC store tables and this whole block were removed.
+  # Scheduling is framework-managed: @Scheduled tasks and the Modulith
+  # staleness monitor run on Spring's task scheduler.
 
 
 server:
-  port: ${SERVER_PORT:8080}
+  # PORT is the injected platform variable (Railway: "Railway will inject a PORT
+  # environment variable that your application should listen on" — docs.railway.com,
+  # reference/healthchecks, copy saved at scripts/prod-design-docs/railway-healthchecks.txt).
+  # The placeholder-with-default is the documented externalized-config mechanism —
+  # no container-side port mapping needed.
+  port: ${PORT:8080}
   shutdown: graceful
   tomcat:
     accesslog:
       enabled: true
       directory: logs
       pattern: "%h %l %u %t &quot;%r&quot; %s %b %{ms}T"
+      # Bound retention — spring-boot-tomcat 4.1.1 spring-configuration-metadata:
+      # server.tomcat.accesslog.max-days, "Number of days to retain the access
+      # log files before they are removed", DEFAULT -1 (Tomcat AccessLogValve
+      # maxDays semantics: <= 0 keeps every rotated file forever). With daily
+      # rotation (rotate: true default) the default grows /app/logs unbounded
+      # for the lifetime of the container's writable layer — the opposite of
+      # self-managing disk hygiene. 30 days matches a monthly investigation
+      # window; the files are container-local (lost on redeploy) either way.
+      max-days: 30
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # "modulith" — the Application Module Actuator (spring-modulith-actuator,
+        # official Modulith 2.1.1 "Production-ready Features" recipe): GET
+        # /actuator/modulith returns the live module structure (names,
+        # displayName, dependency graph) so the system reports its own layers.
+        # NOT permitAll in SecurityConfig — it falls under the authenticated()
+        # default for /actuator/** (module topology is internal information).
+        include: health,info,metrics,prometheus,modulith
   endpoint:
     conditions:
       enabled: true
@@ -242,10 +291,69 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # Currency exchange channel (roadmap B4 / gap G-PROD-4) — provider-optional
+  # exactly like the PSP/MEDIA_S3/MAIL gates: when no rate is bound, no
+  # exchange beans are created (StaticRatesConfiguredCondition) and
+  # GET /api/v1/pricing/convert answers 503 SU-001 instead of
+  # half-working. Rate semantics: units of the base currency per 1 unit of
+  # the CODE (e.g. USD: 3.75 with base SAR = 1 USD = 3.75 SAR). Bind one
+  # rate per supported currency — a live FX rates provider is a deployment
+  # decision for a later binding, not a code decision.
+  pricing:
+    currency:
+      exchange:
+        base-currency: ${EXCHANGE_BASE_CURRENCY:SAR}
+        # Bind rates to wake the channel (dormant until then):
+        #   YAML:   rates:
+        #             USD: 3.75
+        #   env:     MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_USD=3.75
+        # (one key per ISO 4217 code; relaxed binding flattens the env form
+        #  to the same rates.<CODE> property names)
+  # Real payment channel (roadmap B3 / gap G-PROD-3) — provider-optional
+  # exactly like the MAIL / MEDIA_S3 gates: when either Stripe credential is
+  # blank, no channel beans are created (StripeChannelConfiguredCondition)
+  # and processIntent keeps the existing internal-intent behavior; the
+  # /api/v1/payments/webhooks/stripe endpoint answers 503 SU-001 instead of
+  # half-verifying. Official credential shape (docs cached at
+  # scripts/psp-doc-verify/): sk_test_.../sk_live_... API key selects the
+  # official sandbox/live mode; whsec_... is the webhook endpoint secret.
+  payments:
+    psp:
+      stripe:
+        api-key: ${PAYMENTS_STRIPE_API_KEY:}
+        webhook-secret: ${PAYMENTS_STRIPE_WEBHOOK_SECRET:}
+  # Listing media (roadmap B1 / G-PROD-1). S3-compatible presigned channel —
+  # provider-optional exactly like the MAIL placeholders: when the four
+  # MEDIA_S3_* credentials are blank, no storage beans are created
+  # (MediaStorageConfiguredCondition) and every /api/v1/media endpoint
+  # answers 503 SU-001 instead of half-working. Official credential shape
+  # (Cloudflare R2 doc, cached at scripts/media-doc-verify/):
+  #   endpoint = https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+  #   region   = auto ("Required by SDK but not used by R2")
+  # Any S3-compatible endpoint (incl. AWS S3) works — the provider choice is
+  # a deployment decision, not a code decision.
+  media:
+    storage:
+      endpoint: ${MEDIA_S3_ENDPOINT:}
+      region: ${MEDIA_S3_REGION:auto}
+      bucket: ${MEDIA_S3_BUCKET:}
+      access-key: ${MEDIA_S3_ACCESS_KEY:}
+      secret-key: ${MEDIA_S3_SECRET_KEY:}
+    limits:
+      max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:10485760}
+      allowed-content-types: ${MEDIA_ALLOWED_CONTENT_TYPES:image/jpeg,image/png,image/webp,image/gif}
+      # Presigned URL lifetime (upload + download). Official bounds: 1s to 7d
+      # (R2 doc + S3Presigner javadoc).
+      presign-ttl: ${MEDIA_PRESIGN_TTL:15m}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}
       keystore:
+        # Two source channels resolved by SecurityConfig.jwkSource (b64 wins when
+        # both are present; credentials are required whenever either is set):
+        #   b64  — base64 JKS bytes, the write-only-variable channel (JWT_KEYSTORE_B64)
+        #   path — file:/classpath: location per keys/README.md
+        b64: ${JWT_KEYSTORE_B64:}
         path: ${JWT_KEYSTORE_PATH:}
         password: ${JWT_KEYSTORE_PASSWORD:}
         alias: ${JWT_KEY_ALIAS:}

@@ -1,0 +1,8 @@
+{
+  "name": "app-java-v3-railway-iac",
+  "private": true,
+  "description": "Railway IaC SDK dependency for .railway/railway.ts evaluation (official CLI requirement)",
+  "devDependencies": {
+    "railway": "^3.11.0"
+  }
+}

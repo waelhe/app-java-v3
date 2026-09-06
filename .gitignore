@@ -33,3 +33,7 @@ cp.txt
 # internal test data. See https://www.testsprite.com/
 .testsprite/
 .testsprite
+
+# Node — Railway IaC SDK (needed only to evaluate .railway/railway.ts via the
+# Railway CLI; the app itself is Java/Maven and has no Node runtime)
+node_modules/

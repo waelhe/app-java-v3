@@ -45,9 +45,11 @@ public class ServiceGraphQlController {
     public ServiceResponse createService(@Argument @Valid ServiceInput input,
                                          Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
+        // GraphQL surface keeps the pre-B4 money contract: SAR house default
+        // (the currency parameter is the REST catalog surface's extension).
         ProviderListingView listing = catalogSpi.create(
                 providerId, input.name(), input.description(),
-                input.category(), input.priceCents());
+                input.category(), input.priceCents(), null);
         return serviceMapper.toResponse(listing);
     }
 }

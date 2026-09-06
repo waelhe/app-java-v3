@@ -1,6 +1,7 @@
 package com.marketplace.shared.email;
 
 import jakarta.mail.internet.MimeMessage;
+import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -50,6 +51,7 @@ public class EmailService {
      * @param variables template model variables
      */
     @ConcurrencyLimit(3)
+    @Observed(name = "email.send")
     public void send(String to, String subject, String template, Map<String, Object> variables) {
         try {
             Context ctx = new Context();

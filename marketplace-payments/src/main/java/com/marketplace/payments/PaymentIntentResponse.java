@@ -9,6 +9,8 @@ public record PaymentIntentResponse(
         Long amountCents,
         String currency,
         String status,
+        String pspIntentId,
+        String clientSecret,
         Instant createdAt,
         Instant updatedAt
 ) {

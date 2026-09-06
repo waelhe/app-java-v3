@@ -120,7 +120,8 @@ public class BookingService implements BookingSpi {
         if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {
             throw new BadRequestException("The provider is not available at the requested time");
         }
-        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(), startsAt, endsAt, notes);
+        Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(),
+                info.currency(), startsAt, endsAt, notes);
         Booking saved = bookingRepository.save(booking);
         eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
         return saved;
@@ -170,6 +171,7 @@ public class BookingService implements BookingSpi {
         return booking;
     }
 
+    @Observed(name = "booking.auto.cancel")
     public void autoCancel(UUID id) {
         Booking booking = getById(id);
         if (booking.getStatus() == BookingStatus.CANCELLED) {

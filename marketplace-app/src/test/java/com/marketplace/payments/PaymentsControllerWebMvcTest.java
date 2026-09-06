@@ -115,7 +115,11 @@ class PaymentsControllerWebMvcTest {
     void webhook_returnsAccepted() throws Exception {
         when(paymentsService.processWebhookEvent(any(), any(), any(), any(), any(), any())).thenReturn(true);
 
-        mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
+        // A non-Stripe provider exercises the legacy HMAC query-param channel;
+        // the literal /webhooks/stripe mapping is more specific than
+        // /webhooks/{provider} (Spring's specificity ordering) and serves the
+        // raw-body channel instead — both are pinned below.
+        mockMvc.perform(post("/api/v1/payments/webhooks/gateway")
                         .param("eventId", "evt_123")
                         .param("eventType", "payment_intent.succeeded"))
                 .andExpect(status().isAccepted());
@@ -125,12 +129,33 @@ class PaymentsControllerWebMvcTest {
     void webhook_withPaymentIntentIdReturnsAccepted() throws Exception {
         when(paymentsService.processWebhookEvent(any(), any(), any(), any(), any(), any())).thenReturn(true);
 
-        mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
+        mockMvc.perform(post("/api/v1/payments/webhooks/gateway")
                         .param("eventId", "evt_456")
                         .param("eventType", "payment_intent.succeeded")
                         .param("paymentIntentId", "00000000-0000-0000-0000-000000000001")
                         .param("externalId", "pi_test_789"))
                 .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void stripeWebhook_rawBodyAndSignatureHeaderAccepted() throws Exception {
+        when(paymentsService.handleStripeWebhook(any(), any())).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
+                        .contentType("application/json")
+                        .header("Stripe-Signature", "t=1760000000,v1=fakesig")
+                        .content("""
+                                {"id":"evt_1","type":"payment_intent.succeeded","data":{"object":{"id":"pi_1"}}}
+                                """))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void stripeWebhook_missingSignatureHeaderRejected() throws Exception {
+        mockMvc.perform(post("/api/v1/payments/webhooks/stripe")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 
     private static PaymentIntent mockPaymentIntent(UUID id) {
@@ -140,7 +165,7 @@ class PaymentsControllerWebMvcTest {
     }
 
     private static PaymentIntentResponse mockIntentResponse(UUID id) {
-        return new PaymentIntentResponse(id, null, null, null, null, null, null);
+        return new PaymentIntentResponse(id, null, null, null, null, null, null, null, null);
     }
 
     private static Payment mockPayment(UUID id) {

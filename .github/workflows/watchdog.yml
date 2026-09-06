@@ -1,0 +1,240 @@
+name: Production Watchdog
+
+# Layer 7 — production-watchdog: synthetic uptime monitoring of the live
+# deployment channel. This closes the alerting half of gap G-OPS-1
+# (airbnb-level-gap-analysis §3, "G-OPS-1: المراقبة العملية") with the
+# framework's own free channels — GitHub Actions schedules + issues — while
+# the OTEL/MAIL vendor decision stays exactly where the plan put it: a
+# user-owned gate (SYSTEM.md §14.2). Zero application code, zero runtime
+# surface: the app is never touched, and no redeploy is needed (the workflow
+# runs from this repository's main, not from the deployment fork).
+#
+# Official evidence (cached in the session workspace, scripts/doc-verify/):
+#   actions-schedule-events.html —
+#     "Scheduled workflows will only run on the default branch."
+#     "The shortest interval you can run scheduled workflows is once every
+#      5 minutes."
+#     "The schedule event can be delayed during periods of high loads of
+#      GitHub Actions workflow runs. High load times include the start of
+#      every hour. To decrease the chance of delay, schedule your workflow
+#      to run at a different time of the hour."  -> cron below is offset
+#     to 7/22/37/52, never on an hour or quarter boundary.
+#     "In a public repository, scheduled workflows are automatically disabled
+#      when no repository activity has occurred in 60 days."  -> Dependabot
+#     and merges keep this repository active; re-enable from the Actions tab
+#     if it ever trips.
+#   actions-workflow-syntax.html —
+#     "issues: write permits an action to add a comment to an issue."
+#   runner-ubuntu2404-readme.md (actions/runner-images) —
+#     "GitHub CLI 2.98.0" is preinstalled on ubuntu-latest.
+#
+# Probe contract (measured live 2026-09-05, SYSTEM.md §15):
+#   /actuator/health/liveness    -> 200  (process alive)
+#   /actuator/health/readiness   -> 200  (traffic-ready)
+#   /oauth2/jwks                 -> 200  (auth keys served)
+#   /.well-known/openid-configuration -> 200 (OIDC discovery)
+#   /actuator/modulith           -> 401  (boundary check: the endpoint is
+#        intentionally protected — 404 would mean the exposure list drifted,
+#        200 would mean the security boundary is gone; both are incidents)
+#   TLS is verified by curl's default behaviour: an expired or broken
+#   certificate fails the probe (code 000) and pages like any outage.
+#
+# /actuator/health (full) is deliberately NOT probed: it returns 503 on the
+# documented MAIL_* provider placeholder (SYSTEM.md §15, debt item 3 — a
+# user-owned gate, not an outage). Paging on it would be a permanent false
+# alarm. It turns into a probe target the day the MAIL provider is chosen.
+#
+# Alerting home (layer 15, measured 2026-09-06): this workflow manages
+# incidents ONLY where issues exist — upstream (waelhe). The deployment
+# fork carries the same file (mirror sync) and scheduled workflows DO run
+# there (7 schedule runs measured), but the fork has issues DISABLED
+# (measured has_issues=false): every healthy fork run died in "Close
+# resolved incident" with "the repository has disabled issues". The job
+# guard below confines incident management to its home; the fork's runs
+# become skipped (green) instead of failing.
+#
+# Deployment-channel freshness probe (layer 15): the fork that Railway
+# builds from now fast-forwards itself (fork-sync.yml). A dead sync (60-day
+# scheduled-workflow disablement, permission loss, divergence) would leave
+# production serving stale code with every HTTP probe green — so the
+# watchdog also measures the age of the oldest un-deployed upstream commit
+# via the public compare API. Threshold arithmetic is MEASURED, not
+# guessed: nominal sync cadence 30m; actual observed scheduled-run spacing
+# up to 2h53m (documented platform cron delay); Railway build ~15m; limit
+# 240m = observed worst spacing + build + margin.
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_incident:
+        description: "Self-test: open an incident issue even when all probes pass (the next healthy run closes it automatically)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-watchdog
+  cancel-in-progress: false
+
+permissions:
+  # issues: write is the alerting action (official syntax doc: "issues:
+  # write permits an action to add a comment to an issue").
+  # contents: read is explicit for the freshness probe's gh api reads of
+  # the two repositories' public branch state (least privilege: read only).
+  issues: write
+  contents: read
+
+jobs:
+  probe:
+    name: Probe public production endpoints
+    # Alerting home: only upstream runs this job (issues enabled there).
+    # Measured on the fork: gh issue list fails with "the repository has
+    # disabled issues" on every healthy run — the incident steps must not
+    # execute there. See the header comment for the full evidence.
+    if: github.repository == 'waelhe/app-java-v3'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe public production endpoints
+        id: probe
+        env:
+          BASE_URL: https://app-java-v3-production-d020.up.railway.app
+        run: |
+          set -u
+          declare -A want=(
+            ["/actuator/health/liveness"]="200"
+            ["/actuator/health/readiness"]="200"
+            ["/oauth2/jwks"]="200"
+            ["/.well-known/openid-configuration"]="200"
+            ["/actuator/modulith"]="401"
+          )
+          overall=0
+          : > probe-results.txt
+          for path in "${!want[@]}"; do
+            pass=0
+            for attempt in 1 2 3; do
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$BASE_URL$path" 2>/dev/null || echo 000)
+              if [ "$code" = "${want[$path]}" ]; then
+                pass=1
+                break
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                sleep 10
+              fi
+            done
+            if [ "$pass" = 1 ]; then
+              echo "OK    $path -> $code" | tee -a probe-results.txt
+            else
+              echo "FAIL  $path -> $code (want ${want[$path]}) after 3 attempts" | tee -a probe-results.txt
+              overall=1
+            fi
+          done
+          cat probe-results.txt
+          if [ "$overall" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Probe deployment channel freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM: waelhe/app-java-v3
+          DEPLOY_FORK: waelhe88-coder/app-java-v3
+          MAX_LAG_MINUTES: 240
+        run: |
+          set -u
+          if ! up_sha=$(gh api "repos/$UPSTREAM/branches/main" --jq .commit.sha 2>/dev/null); then
+            echo "FAIL  deployment channel: cannot read upstream main" | tee -a probe-results.txt
+            exit 1
+          fi
+          if ! fork_sha=$(gh api "repos/$DEPLOY_FORK/branches/main" --jq .commit.sha 2>/dev/null); then
+            echo "FAIL  deployment channel: cannot read fork main" | tee -a probe-results.txt
+            exit 1
+          fi
+          if [ "$up_sha" = "$fork_sha" ]; then
+            echo "OK    deployment channel fresh: fork main == upstream main ($(
+              echo "$up_sha" | cut -c1-12))" | tee -a probe-results.txt
+            exit 0
+          fi
+          # The fork lags upstream: measure the age of the OLDEST un-deployed
+          # commit. fork_sha is expected to be an ancestor of upstream main
+          # (the fork only ever advances by fast-forward); a failed compare
+          # means the channel has diverged — an incident of its own.
+          if ! cmp_json=$(gh api "repos/$UPSTREAM/compare/$fork_sha...$up_sha" 2>/dev/null); then
+            echo "FAIL  deployment channel: fork main ($(
+              echo "$fork_sha" | cut -c1-12)) is not in upstream history — channel diverged?" | tee -a probe-results.txt
+            exit 1
+          fi
+          ahead_by=$(echo "$cmp_json" | jq .ahead_by)
+          # The compare list is capped at 250 commits without paging
+          # (official doc: "the returned list is limited to 250 commits"):
+          # more than 250 un-deployed commits is a dead channel — page on
+          # it, do not try to date it.
+          if [ "$ahead_by" -gt 250 ]; then
+            echo "FAIL  deployment channel stale: fork is $ahead_by commits behind upstream" | tee -a probe-results.txt
+            exit 1
+          fi
+          oldest=$(echo "$cmp_json" | jq -r '.commits | if length > 0 then (map(.commit.committer.date) | min) else empty end')
+          if [ -z "$oldest" ]; then
+            echo "FAIL  deployment channel: cannot determine lag (ahead_by=$ahead_by)" | tee -a probe-results.txt
+            exit 1
+          fi
+          now_epoch=$(date -u +%s)
+          oldest_epoch=$(date -u -d "$oldest" +%s)
+          lag_minutes=$(( (now_epoch - oldest_epoch) / 60 ))
+          if [ "$lag_minutes" -gt "$MAX_LAG_MINUTES" ]; then
+            echo "FAIL  deployment channel stale: fork is ${lag_minutes}m behind upstream (limit ${MAX_LAG_MINUTES}m, ahead_by=$ahead_by)" | tee -a probe-results.txt
+            exit 1
+          fi
+          echo "OK    deployment channel lagging within tolerance: ${lag_minutes}m (limit ${MAX_LAG_MINUTES}m, ahead_by=$ahead_by)" | tee -a probe-results.txt
+
+      - name: Open incident issue (deduplicated)
+        if: failure() || inputs.force_incident == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FORCE: ${{ inputs.force_incident }}
+        run: |
+          gh label create -R "$REPO" uptime-watchdog --color d73a4a \
+            --description "Production watchdog incident (opened by the Production Watchdog workflow)" || true
+          existing=$(gh issue list -R "$REPO" --label uptime-watchdog --state open --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "An open watchdog incident already exists - skipping issue creation (dedup)."
+            exit 0
+          fi
+          {
+            echo "## Production unhealthy (endpoints or deployment channel)"
+            echo
+            echo "Detected by run $RUN_URL at $(date -u '+%Y-%m-%d %H:%M:%S UTC')."
+            echo
+            echo '```'
+            cat probe-results.txt
+            echo '```'
+            echo
+            if [ "$FORCE" = "true" ]; then
+              echo "_Self-test run (force_incident=true): all probes are healthy; this issue exists to prove the alerting channel end-to-end. The next healthy run will close it automatically._"
+            fi
+          } > incident-body.md
+          gh issue create -R "$REPO" \
+            --title "[watchdog] Production endpoints unhealthy - $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            --body-file incident-body.md \
+            --label uptime-watchdog \
+            --assignee "$OWNER"
+
+      - name: Close resolved incident
+        if: success() && inputs.force_incident != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          numbers=$(gh issue list -R "$REPO" --label uptime-watchdog --state open --json number --jq '.[].number')
+          if [ -z "$numbers" ]; then
+            echo "No open watchdog incident - nothing to close."
+            exit 0
+          fi
+          for n in $numbers; do
+            gh issue close "$n" -R "$REPO" \
+              --comment "All probes healthy again (run $RUN_URL, $(date -u '+%Y-%m-%d %H:%M:%S UTC')). Closing as resolved."
+          done

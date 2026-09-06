@@ -203,6 +203,13 @@ RegisteredClient.from(existing)      // الهوية فقط — لا نقل خر
 | ج | إرسال `state`/`client_id` خاصتَي authorization في POST الـ consent | `OAuth2AuthorizationConsentAuthenticationProvider` يولّد الـ consent **state** مختلفاً ("Generated authorization consent state")؛ الصفحة تحوي hidden `state`/`client_id` | POST يعيد استخدام **القيم المستخرجة من جسم صفحة الـ consent** (اختبار مقبول بلا تخمين) |
 | د | ظنّ `OAuth2AuthorizationConsentService.remove(id, principal)` ممكن | توقيع الواجهة: `remove(OAuth2AuthorizationConsent)` | `remove(findById(id, principal))` حين غير null |
 
+**إضافات بوابة B (2026-09-03 — العميل العام + redirect موجهة بالبيئة):**
+
+| # | الانحراف/القرار | الدليل | التصحيح المطابق للرسمي |
+|---|-------------------|--------|--------------------------|
+| هـ | converge بالنسخة الحرفية `RegisteredClient.from(existing)` لم يعد يكفي: بوابة B جعلت redirect URIs موجهة بالبيئة (`OAUTH_CLIENT_REDIRECT_URIS`)، وباني النسخ في `from()` يزرع مجموعات الصف المخزَّنة (`redirectUris.addAll` بلا أي عملية استبدال) فيبقي redirect قديمة بلا حذف | مصدر 7.1.1: `RegisteredClient.java` — الباني `Builder(RegisteredClient)` ينقل redirectUris/scopes/… بالنسخ ثم `ClientSettings.withSettings(الخريطة نفسها)` (INV-4) | إعادة اشتقاق كاملة عبر `RegisteredClient.withId(existing.getId())` — مكافئ «الهوية فقط» المعتمد (تثبيت ب) مع الحفاظ على هوية الصف؛ التعريف دائمًا من الإعدادات + ثوابت المواصفة |
+| و | توقّع أن طلب `grant_type=refresh_token` من العميل العام يُرفض 400 (unsupported_grant_type) | السلوك الرسمي الفعلي 7.1.1 (TRACE حي + المصدر): `PublicClientAuthenticationConverter` يطابق **طلب PKCE فقط** (`matchesPkceTokenRequest`: authorization_code + code + code_verifier) ⇒ طلب refresh (بلا code_verifier بحكم البروتوكول) يبقى مجهولًا؛ فلاتر النهايات تعمل بعد `AuthorizationFilter` (`anyRequest().authenticated()`) يرفض المجهول، ونقطة الدخول المسجلة لنقاط AS (`HttpStatusEntryPoint(UNAUTHORIZED)` من `OAuth2AuthorizationServerConfigurer`) تجيب 401 بجسم فارغ | اختبار `refreshTokenGrantIsUnavailableForPublicClient` يثبّت **401 + جسم فارغ** = الإطار يفرض «لن يُصدر refresh tokens لعميل عام» (gh-297) على طبقة المصادقة قبل تقييم المنحة أصلًا |
+
 **السياق**: كل تصحيح (أ-ج) تحقق منه **التشغيل الحيّ الأخضر** (`AuthorizationServerLoginGateIntegrationTest` 6/0:
 تدفق openid→consent→code→id-token كامل + consent لكل principal + القيم الظرفية المطابقة).
 لا تغيير في كود الإنتاج إلا ما مرّ تحت §4.1/§4.2.

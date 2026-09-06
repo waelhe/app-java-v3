@@ -1,0 +1,24 @@
+# Trivy vulnerability ignore policy — honored by .github/workflows/container-scan.yml
+# (input: trivyignores: .trivyignore.yaml).
+#
+# Gate policy (the workflow fails on HIGH/CRITICAL *fixed* findings):
+# every entry here MUST carry `expired_at` so it stops silencing the gate on a
+# date, and MUST carry `statement` with the engineering justification. Enforced
+# live against trivy 0.74.0 (2026-09-06): expired_at in the past => the finding
+# returns to the report (gate fails again); expired_at in the future => ignored.
+# This file is guard-pinned by PlatformGovernanceFilesTest
+# (containerScanIgnoresAreBoundedEntries).
+vulnerabilities:
+  # eclipse-temurin:25-jre-alpine (alpine 3.24.1) — libcrypto3/libssl3/openssl
+  # 3.5.7-r0. CVE-2026-14456 is an OpenSSL QUIC *server* DoS; the JVM serves
+  # HTTP over Tomcat/NIO with JSSE (java.* TLS), not the system OpenSSL, so the
+  # vulnerable code path is not reachable in this runtime. Fix exists upstream
+  # (3.5.8-r0 in alpine); waiting for the eclipse-temurin image to be rebuilt.
+  # Expiry: after this date the gate fails again if the base image has not
+  # picked up the fix — re-pull/re-pin or extend with a fresh justification.
+  - id: CVE-2026-14456
+    expired_at: 2026-10-05
+    statement: >-
+      alpine openssl QUIC-server DoS in the base image; unreachable (JVM uses
+      JSSE, not system OpenSSL); fix 3.5.8-r0 awaits the eclipse-temurin
+      rebuild.

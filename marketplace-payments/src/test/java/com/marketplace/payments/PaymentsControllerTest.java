@@ -39,7 +39,7 @@ class PaymentsControllerTest {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
-        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "CREATED", null, null);
+        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "CREATED", null, null, null, null);
 
         when(paymentsService.getIntentForUser(id, auth)).thenReturn(intent);
         when(paymentIntentMapper.toResponse(intent)).thenReturn(response);
@@ -57,7 +57,7 @@ class PaymentsControllerTest {
         UUID bookingId = UUID.randomUUID();
         var request = new PaymentsController.CreateIntentRequest(bookingId, "key-1");
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, 5000L, "key-1");
-        PaymentIntentResponse response = new PaymentIntentResponse(UUID.randomUUID(), bookingId, 5000L, "SAR", "CREATED", null, null);
+        PaymentIntentResponse response = new PaymentIntentResponse(UUID.randomUUID(), bookingId, 5000L, "SAR", "CREATED", null, null, null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(consumerId);
         when(paymentsService.createIntent(bookingId, consumerId, "key-1")).thenReturn(intent);
@@ -74,10 +74,10 @@ class PaymentsControllerTest {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
-        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "PROCESSING", null, null);
+        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "PROCESSING", null, null, null, null);
 
-        when(paymentsService.processIntent(id, auth)).thenReturn(intent);
-        when(paymentIntentMapper.toResponse(intent)).thenReturn(response);
+        when(paymentsService.processIntent(id, auth)).thenReturn(new PaymentsService.ProcessIntentResult(intent, null));
+        when(paymentIntentMapper.toResponse(any(PaymentsService.ProcessIntentResult.class))).thenReturn(response);
 
         ResponseEntity<PaymentIntentResponse> result = controller.processIntent(id, auth);
 
@@ -90,7 +90,7 @@ class PaymentsControllerTest {
         UUID id = UUID.randomUUID();
         var request = new PaymentsController.ConfirmIntentRequest("ext-1");
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
-        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "SUCCEEDED", null, null);
+        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "SUCCEEDED", null, null, null, null);
 
         when(paymentsService.confirmIntent(id, "ext-1")).thenReturn(intent);
         when(paymentIntentMapper.toResponse(intent)).thenReturn(response);
@@ -106,7 +106,7 @@ class PaymentsControllerTest {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
-        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "CANCELLED", null, null);
+        PaymentIntentResponse response = new PaymentIntentResponse(id, UUID.randomUUID(), 5000L, "SAR", "CANCELLED", null, null, null, null);
 
         when(paymentsService.cancelIntent(id, auth)).thenReturn(intent);
         when(paymentIntentMapper.toResponse(intent)).thenReturn(response);

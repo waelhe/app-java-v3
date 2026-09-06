@@ -32,8 +32,13 @@ public class SearchService {
         String query = criteria.query();
         String category = criteria.category();
         if (query != null && !query.isBlank()) {
-            String tsQuery = query.trim().replaceAll("\\s+", " & ");
-            return catalogSearchPort.searchFullText(tsQuery, pageable);
+            // Raw user input passed through: the official websearch_to_tsquery
+            // (ProviderListingRepository) parses it leniently and supports
+            // "quoted phrases", OR and -exclusion. The former hand-mangling
+            // (replaceAll("\\s+", " & ")) both corrupted the user's phrase
+            // intent and fed to_tsquery invalid syntax for quotes/parens/dashes
+            // (SQL exception -> HTTP 500).
+            return catalogSearchPort.searchFullText(query.trim(), pageable);
         }
         if (criteria.minPrice() != null || criteria.maxPrice() != null) {
             return catalogSearchPort.searchByCriteria(criteria, pageable);

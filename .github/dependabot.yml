@@ -1,0 +1,50 @@
+# Dependabot — version-update PRs for the two BOM governors only.
+#
+# Policy (root pom dependencyManagement + docs/governance/version-policy.md):
+# runtime dependency versions are governed by the Spring Boot parent BOM
+# (spring-boot-starter-parent 4.1.1) plus the Spring Modulith BOM (exception
+# #1 in the root pom). Those two ARE the version surface this repository
+# deliberately manages. Everything else is either BOM-managed implicitly (no
+# version in any pom) or a hand-audited override in the root pom
+# (jackson 3.2.2, jackson-2-bom 2.22.2, prometheus 1.8.0,
+# commons-logging 1.4.0, commons-lang3 3.20.0, resilience4j 2.4.0,
+# springdoc 3.1.0, mapstruct 1.6.3, archunit 1.5.0, instancio 6.0.0) whose
+# versions were chosen to satisfy the enforcer gates (dependencyConvergence
+# + requireUpperBoundDeps). Auto-bumping those would break the build gates,
+# not improve security, so they are excluded by NOT appearing in the allow
+# list below. Guard-pinned by PlatformGovernanceFilesTest.
+version: 2
+updates:
+  # Maven: the two BOM governors, batched into one PR per cadence.
+  - package-ecosystem: "maven"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-name: "org.springframework.boot*"
+      - dependency-name: "org.springframework.modulith*"
+    groups:
+      spring-bom-governors:
+        patterns:
+          - "org.springframework.boot*"
+          - "org.springframework.modulith*"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions versions (checkout@v7, setup-java@v6, gitleaks-action@v3,
+  # upload-artifact@v7, codeql-action@v3) — not part of the Maven dependency
+  # tree; keeping them current is safe and automated.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(actions)"

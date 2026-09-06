@@ -9,6 +9,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -58,6 +59,7 @@ public class ReviewsService {
         return reviewRepository.findByReviewerId(reviewerId, pageable);
     }
 
+    @Observed(name = "review.create")
     @PreAuthorize("hasRole('CONSUMER')")
     public Review create(UUID bookingId, UUID reviewerId,
                          Integer rating, String comment) {
@@ -82,6 +84,7 @@ public class ReviewsService {
         return saved;
     }
 
+    @Observed(name = "review.update")
     @PreAuthorize("hasRole('CONSUMER')")
     public Review update(UUID id, Integer rating, String comment, Authentication authentication) {
         Review review = getById(id);

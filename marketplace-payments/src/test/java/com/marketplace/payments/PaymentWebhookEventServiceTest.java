@@ -3,6 +3,7 @@ package com.marketplace.payments;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
@@ -22,8 +23,10 @@ class PaymentWebhookEventServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
         PaymentWebhookSecurity webhookSecurity = mock(PaymentWebhookSecurity.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, pspChannel);
         when(webhookRepository.findByEventId("evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
         boolean created = service.processWebhookEvent("mock", "evt_1", "payment_intent.succeeded", "sig");

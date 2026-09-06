@@ -1,5 +1,6 @@
 package com.marketplace.ledger;
 
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ public class LedgerService {
         this.balanceRepository = balanceRepository;
     }
 
+    @Observed(name = "ledger.credit.payment")
     public ProviderBalance creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
             return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
@@ -27,6 +29,7 @@ public class LedgerService {
         return balanceRepository.save(balance);
     }
 
+    @Observed(name = "ledger.debit.commission")
     public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId, long amountCents) {
         UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
         if (entryRepository.findBySourceId(sourceId).isPresent()) {

@@ -34,20 +34,21 @@
         <module>marketplace-notifications</module>
         <module>marketplace-ledger</module>
         <module>marketplace-disputes</module>
+        <module>marketplace-media</module>
         <module>marketplace-app</module>
     </modules>
 
     <properties>
         <java.version>25</java.version>
         <resilience4j.version>2.4.0</resilience4j.version>
-        <archunit.version>1.4.2</archunit.version>
+        <archunit.version>1.5.0</archunit.version>
         <jacoco.version>0.8.15</jacoco.version>
         <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
         <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <instancio.version>6.0.0-RC4</instancio.version>
-        <git-commit-id.version>10.0.0</git-commit-id.version>
+        <instancio.version>6.0.0</instancio.version>
+        <git-commit-id.version>10.0.1</git-commit-id.version>
         <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements -->
         <jackson.version>3.2.2</jackson.version>
         <prometheus-client.version>1.8.0</prometheus-client.version>
@@ -55,6 +56,23 @@
         <commons-logging.version>1.4.0</commons-logging.version>
         <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps) -->
         <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
+        <!-- Override: Tomcat — Boot 4.1.1 manages 11.0.24, which ships three CRITICAL
+             authentication/authorization bypasses (trivy scan, 2026-09-06):
+             CVE-2026-65182 (security-constraint bypass, longer-path-before-shorter),
+             CVE-2026-65905 (DIGEST authenticator replay window), CVE-2026-68525 (FORM
+             auth POST/GET constraint bypass). All three are fixed in Apache Tomcat
+             11.0.25 ("2026-08-18 Fixed in Apache Tomcat 11.0.25", official
+             security-11.html — saved copy: scripts/cve-gate-docs/
+             tomcat-security-changelog.html), and 11.0.25 exists on Maven Central.
+             No Boot 4.1.x stable manages 11.0.25 yet (latest stable = 4.1.1), so the
+             official version-property override is the only path; tomcat.version
+             governs the whole Tomcat family (embed-core/el/websocket,
+             annotations-api — spring-boot-dependencies 4.1.1 BOM), keeping
+             dependencyConvergence green. Remove this override when the Boot parent
+             manages >= 11.0.25 (the weekly Dependabot BOM PR will surface it). -->
+        <tomcat.version>11.0.25</tomcat.version>
+        <awssdk.version>2.54.13</awssdk.version>
+        <stripe.version>33.4.1</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
     </properties>
 
@@ -64,7 +82,7 @@
             <dependency>
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
-                <version>2.1.0</version>
+                <version>2.1.1</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -130,6 +148,34 @@
                 <artifactId>instancio-junit</artifactId>
                 <version>${instancio.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <!-- Exception #10: AWS SDK v2 BOM — Boot does not manage the AWS SDK.
+                 Consumed only by marketplace-media (S3-compatible presigned channel,
+                 roadmap B1 / G-PROD-1). Official evidence cached under
+                 scripts/media-doc-verify/: R2 presigned-URL documentation (SDK as the
+                 client, region "auto", endpoint https://<ACCOUNT_ID>.r2.cloudflarestorage.com)
+                 + the S3Presigner javadoc from s3-2.54.13-sources.jar + the official
+                 BOM listing (480 managed artifacts incl. s3 and url-connection-client). -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Exception #11: Stripe Java SDK — Boot does not manage the Stripe
+                 SDK. Consumed only by marketplace-payments (the real payment
+                 channel, roadmap B3 / gap G-PROD-3). Official evidence cached
+                 under scripts/psp-doc-verify/: Maven Central metadata (latest
+                 STABLE release 33.4.1), the official webhook-signature doc
+                 (constructEvent recipe + DEFAULT_TOLERANCE=300s verified from
+                 the sources jar), and bytecode-verified API surface
+                 (PaymentIntent.create + RequestOptions.setIdempotencyKey,
+                 Webhook.constructEvent, EventDataObjectDeserializer). -->
+            <dependency>
+                <groupId>com.stripe</groupId>
+                <artifactId>stripe-java</artifactId>
+                <version>${stripe.version}</version>
             </dependency>
             <!-- Internal modules -->
             <dependency>
@@ -207,8 +253,26 @@
                 <artifactId>marketplace-disputes</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-media</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <!-- Release channel: GitHub Packages. The server id "github" matches
+         setup-java's server-id in .github/workflows/maven-publish.yml, which
+         writes the authenticated server entry (GITHUB_ACTOR / GITHUB_TOKEN)
+         into settings.xml at release-build time. Inert for normal builds —
+         only `mvn deploy` reads it. Guard-pinned by PlatformGovernanceFilesTest. -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/waelhe/app-java-v3</url>
+        </repository>
+    </distributionManagement>
 
     <build>
         <plugins>

@@ -63,6 +63,40 @@ class BookingServiceTest {
     }
 
     @Test
+    void create_carriesListingCurrency_roadmapB4() {
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L, "USD"));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
+
+        assertEquals("USD", booking.getCurrency());
+    }
+
+    @Test
+    void create_legacyListingInfo_defaultsToSar_thePreB4Contract() {
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
+
+        assertEquals("SAR", booking.getCurrency());
+    }
+
+    @Test
     void confirm_changesStatusFromPendingToConfirmed() {
         UUID id = Instancio.create(UUID.class);
         UUID providerId = Instancio.create(UUID.class);

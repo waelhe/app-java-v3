@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.IsoCurrencyCode;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.ProviderListingView;
@@ -62,7 +63,7 @@ public class CatalogController {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         ProviderListingView listing = catalogService.create(
                 providerId, request.title(), request.description(),
-                request.category(), request.priceCents());
+                request.category(), request.priceCents(), request.currency());
         return ResponseEntity.status(HttpStatus.CREATED).body(listingMapper.toResponse(listing));
     }
 
@@ -72,7 +73,7 @@ public class CatalogController {
                                                   Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.update(
                 id, request.title(), request.description(),
-                request.category(), request.priceCents(), authentication)));
+                request.category(), request.priceCents(), request.currency(), authentication)));
     }
 
     @PostMapping("/{id}/activate")
@@ -90,19 +91,30 @@ public class CatalogController {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.archive(id, authentication)));
     }
 
+    /**
+     * Optional ISO 4217 currency of the listing price (roadmap B4). Blank
+     * or omitted keeps the house default SAR — existing clients keep the
+     * exact previous contract.
+     */
     public record CreateListingRequest(
             @NotBlank String title,
             String description,
             @NotBlank String category,
-            @NotNull Long priceCents
+            @NotNull Long priceCents,
+            @IsoCurrencyCode String currency
     ) {
     }
 
+    /**
+     * Optional ISO 4217 currency: blank/omitted keeps the stored currency
+     * (an update that omits the field does not reset money semantics).
+     */
     public record UpdateListingRequest(
             @NotBlank String title,
             String description,
             @NotBlank String category,
-            @NotNull Long priceCents
+            @NotNull Long priceCents,
+            @IsoCurrencyCode String currency
     ) {
     }
 }

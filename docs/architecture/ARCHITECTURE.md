@@ -400,7 +400,7 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 ### Operability
 - ✅ Actuator health endpoints (`/actuator/health/{liveness,readiness}`)
 - ✅ Prometheus metrics (`/actuator/prometheus`)
-- ✅ Dockerfile HEALTHCHECK
+- ✅ Deploy-time health gate via Railway `healthcheckPath` on `/actuator/health/liveness` (`railway.toml` [deploy]) — no Dockerfile `HEALTHCHECK` by design: the official Spring Boot 4.1 container recipe does not include one and the platform owns deploy gating (corrected 2026-09-04; the old line claimed a Dockerfile HEALTHCHECK that never existed — `git log -S HEALTHCHECK -- Dockerfile` is empty)
 - ✅ Structured logging (Logstash format)
 - ✅ Correlation IDs propagated across requests
 

@@ -4,6 +4,7 @@ import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -61,6 +62,7 @@ public class UserService implements IdentitySpi {
      * the profile actually changed, avoiding redundant cache thrash and
      * unbounded growth of the event publication archive on every /me call.
      */
+    @Observed(name = "user.sync.oidc")
     public User syncFromOidc(JwtAuthenticationToken token) {
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");
@@ -93,6 +95,7 @@ public class UserService implements IdentitySpi {
         return UserRole.CONSUMER;
     }
 
+    @Observed(name = "user.role.update")
     public void updateUserRole(UUID userId, String newRole) {
         User user = getById(userId);
         user.changeRole(UserRole.valueOf(newRole));

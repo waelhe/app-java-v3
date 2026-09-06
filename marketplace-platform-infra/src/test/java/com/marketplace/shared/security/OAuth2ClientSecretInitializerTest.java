@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
@@ -26,6 +28,8 @@ class OAuth2ClientSecretInitializerTest {
     private final RegisteredClientRepository repository = mock(RegisteredClientRepository.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
 
+    private static final String APP_REDIRECT_URI = "http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client";
+
     @Test
     void doesNothingWhenClientNotConfigured() {
         OAuth2ClientSecretInitializer initializer =
@@ -34,6 +38,17 @@ class OAuth2ClientSecretInitializerTest {
         initializer.run(null);
 
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void failsWhenRedirectUrisBlankInProductionProfile() {
+        OAuth2ClientSecretInitializer prodInitializer = new OAuth2ClientSecretInitializer(
+                properties("web", "raw", ""), repository, passwordEncoder, environment(true));
+
+        assertThatThrownBy(() -> prodInitializer.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("redirectUris must be configured in production")
+                .hasMessageContaining("OAUTH_CLIENT_REDIRECT_URIS");
     }
 
     @Test
@@ -74,6 +89,17 @@ class OAuth2ClientSecretInitializerTest {
                 .isEqualTo(Duration.ofSeconds(900));
         assertThat(saved.getTokenSettings().getSettings().get("settings.token.reuse-refresh-tokens"))
                 .isEqualTo(false);
+        assertThat(saved.getClientAuthenticationMethods())
+                .containsExactly(org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+        assertThat(saved.getAuthorizationGrantTypes())
+                .containsExactlyInAnyOrder(
+                        org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE,
+                        org.springframework.security.oauth2.core.AuthorizationGrantType.REFRESH_TOKEN,
+                        org.springframework.security.oauth2.core.AuthorizationGrantType.CLIENT_CREDENTIALS);
+        assertThat(saved.getScopes()).containsExactlyInAnyOrder("openid", "profile");
+        assertThat(saved.getRedirectUris())
+                .as("blank env redirect falls back to the fixed development definition (spec 4.1)")
+                .containsExactly(APP_REDIRECT_URI);
     }
 
     @Test
@@ -101,6 +127,31 @@ class OAuth2ClientSecretInitializerTest {
         assertThat(saved.getTokenSettings().getIdTokenSignatureAlgorithm()).isNotNull();
         assertThat(saved.getTokenSettings().getAccessTokenFormat()).isNotNull();
         assertThat(saved.getClientSecret()).isEqualTo("enc");
+    }
+
+    @Test
+    void convergesEnvDrivenRedirectUrisWhilePreservingRowIdentity() {
+        String existingRowId = UUID.randomUUID().toString();
+        RegisteredClient existing = completeClientWithRedirect(existingRowId, "https://old-bff.example.com/callback").build();
+        when(repository.findByClientId("web")).thenReturn(existing);
+        when(passwordEncoder.matches("raw", existing.getClientSecret())).thenReturn(true);
+
+        new OAuth2ClientSecretInitializer(
+                properties("web", "raw", "https://bff.example.com/callback , com.example.bff:/oauth2/callback"),
+                repository, passwordEncoder, environment(false))
+                .run(null);
+
+        RegisteredClient saved = savedClientArgument();
+        assertThat(saved.getId())
+                .as("converge re-derives the definition but preserves the row identity")
+                .isEqualTo(existingRowId);
+        assertThat(saved.getRedirectUris())
+                .as("env-driven redirect URIs replace the stored set (comma-split, trimmed, blanks dropped;"
+                        + " RegisteredClient stores them in a set, so order is not guaranteed)")
+                .containsExactlyInAnyOrder("https://bff.example.com/callback", "com.example.bff:/oauth2/callback");
+        assertThat(saved.getClientSecret())
+                .as("secret unchanged means the stored encoded secret is reused")
+                .isEqualTo(existing.getClientSecret());
     }
 
     @Test
@@ -164,19 +215,21 @@ class OAuth2ClientSecretInitializerTest {
     }
 
     private static RegisteredClient completeClient(String encodedSecret) {
-        return RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("web")
+        return completeClientWithRedirect(UUID.randomUUID().toString(), APP_REDIRECT_URI)
                 .clientSecret(encodedSecret)
+                .build();
+    }
+
+    private static RegisteredClient.Builder completeClientWithRedirect(String id, String redirectUri) {
+        return RegisteredClient.withId(id)
+                .clientId("web")
+                .clientSecret("irrelevant")
                 .clientName("Marketplace Web Client")
-                .clientAuthenticationMethod(
-                        org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(
-                        org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(
-                        org.springframework.security.oauth2.core.AuthorizationGrantType.REFRESH_TOKEN)
-                .authorizationGrantType(
-                        org.springframework.security.oauth2.core.AuthorizationGrantType.CLIENT_CREDENTIALS)
-                .redirectUri("http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .redirectUri(redirectUri)
                 .postLogoutRedirectUri("http://127.0.0.1:8080/")
                 .scope("openid")
                 .scope("profile")
@@ -189,17 +242,21 @@ class OAuth2ClientSecretInitializerTest {
                         .accessTokenTimeToLive(Duration.ofSeconds(900))
                         .refreshTokenTimeToLive(Duration.ofSeconds(604800))
                         .authorizationCodeTimeToLive(Duration.ofSeconds(300))
-                        .build())
-                .build();
+                        .build());
     }
 
     private static MarketplaceProperties properties(String clientId, String secret) {
+        return properties(clientId, secret, "");
+    }
+
+    private static MarketplaceProperties properties(String clientId, String secret, String redirectUris) {
         return new MarketplaceProperties(
                 null,
                 new MarketplaceProperties.Security(
                         null,
                         null,
                         new MarketplaceProperties.Security.OAuth2(
-                                new MarketplaceProperties.Security.OAuth2.Client(clientId, secret))));
+                                new MarketplaceProperties.Security.OAuth2.Client(clientId, secret, redirectUris),
+                                new MarketplaceProperties.Security.OAuth2.PublicClient("", ""))));
     }
 }

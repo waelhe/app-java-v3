@@ -5,6 +5,7 @@ import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -77,6 +78,7 @@ public class NotificationService {
         return repository.findByRecipientIdOrderByCreatedAtDesc(userId);
     }
 
+    @Observed(name = "notification.mark.read")
     public Notification markAsRead(UUID id, Authentication authentication) {
         Notification notification = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + id));
