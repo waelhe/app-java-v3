@@ -17,6 +17,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +50,7 @@ public class PaymentsService implements PaymentsSpi {
     private final CurrentUserProvider currentUserProvider;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final PaymentWebhookSecurity paymentWebhookSecurity;
+    private final WebhookEventRecorder webhookEventRecorder;
     private final ObjectProvider<PspChannel> pspChannel;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
@@ -58,6 +60,7 @@ public class PaymentsService implements PaymentsSpi {
                            CurrentUserProvider currentUserProvider,
                            BookingParticipantProvider bookingParticipantProvider,
                            PaymentWebhookSecurity paymentWebhookSecurity,
+                           WebhookEventRecorder webhookEventRecorder,
                            ObjectProvider<PspChannel> pspChannel) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
@@ -66,6 +69,7 @@ public class PaymentsService implements PaymentsSpi {
         this.currentUserProvider = currentUserProvider;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentWebhookSecurity = paymentWebhookSecurity;
+        this.webhookEventRecorder = webhookEventRecorder;
         this.pspChannel = pspChannel;
     }
 
@@ -82,16 +86,38 @@ public class PaymentsService implements PaymentsSpi {
     /**
      * Provider-verified webhook dispatch: the signature was verified by the
      * channel itself (Stripe: SDK constructEvent with DEFAULT_TOLERANCE), so
-     * only deduplication and dispatch remain. Falls through to the same
-     * event log and the same dispatch contract as the legacy HMAC channel.
+     * only deduplication and dispatch remain. The event row is inserted and
+     * committed FIRST (in its own transaction, {@link WebhookEventRecorder})
+     * — the unique event_id index is the serialization point, so a concurrent
+     * delivery of the same event loses cleanly here and is answered as
+     * already-processed instead of failing later with a 5xx (CodeRabbit
+     * #241). A dispatch that fails rolls this transaction back AND removes
+     * the committed row, so the provider's retry re-processes the event
+     * instead of hitting the dedup gate forever.
      */
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId) {
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
-        webhookEventRepository.save(PaymentWebhookEvent.create(provider, eventId, eventType));
-        dispatchWebhookEvent(eventType, paymentIntentId, externalId);
+        try {
+            webhookEventRecorder.record(provider, eventId, eventType);
+        } catch (DataIntegrityViolationException ex) {
+            // A concurrent delivery of the same event won the insert race: it
+            // owns the event, this delivery is the already-processed replay.
+            log.info("Webhook event {} concurrently recorded by another delivery — answering already-processed: {}",
+                    eventId, ex.getMostSpecificCause().getMessage());
+            return false;
+        }
+        try {
+            dispatchWebhookEvent(eventType, paymentIntentId, externalId);
+        } catch (RuntimeException ex) {
+            // The row is committed but the event was NOT processed: remove it
+            // so the provider retry re-processes instead of being deduplicated
+            // against a tombstone (recorded-and-lost).
+            webhookEventRecorder.delete(eventId);
+            throw ex;
+        }
         return true;
     }
 
@@ -111,6 +137,18 @@ public class PaymentsService implements PaymentsSpi {
             intentId = paymentIntentRepository.findByPspIntentId(verified.pspIntentId())
                     .map(PaymentIntent::getId)
                     .orElse(null);
+        }
+        if (intentId == null && "payment_intent.succeeded".equals(verified.eventType())) {
+            // Reject BEFORE recording: a recorded-but-unresolved event is
+            // deduplicated forever while never having confirmed the intent —
+            // the provider would keep answering 202 for a lost transition
+            // (CodeRabbit #241). A non-2xx answer makes Stripe retry, and by
+            // the next delivery the intent exists and resolves through the
+            // metadata path or the V33 psp_intent_id link.
+            throw new ConflictException(
+                    "payment_intent.succeeded event " + verified.eventId()
+                            + " could not be resolved to a marketplace payment intent —"
+                            + " rejecting so the provider retries it");
         }
         return handleVerifiedWebhook("stripe", verified.eventId(), verified.eventType(),
                 intentId, verified.pspIntentId());
