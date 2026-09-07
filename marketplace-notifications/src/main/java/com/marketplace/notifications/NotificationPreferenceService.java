@@ -111,7 +111,10 @@ public class NotificationPreferenceService {
      * client bug — silent last-write-wins would hide it), and an in-app
      * (DB) opt-out is rejected (the delivery path always creates the
      * in-app notification — the API never reports a state it does not
-     * honor).
+     * honor). The DB rule is also enforced at the binding layer
+     * ({@code NotificationPreferenceUpdate}'s {@code @AssertTrue}) — this
+     * service-level check is the defense-in-depth copy for non-HTTP
+     * callers, the house pattern of guarding the service itself.
      *
      * @param authentication the caller (self-scoped write)
      * @param request        the switches to apply

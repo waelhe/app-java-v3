@@ -133,4 +133,21 @@ class NotificationControllerWebMvcTest {
                                 """))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @WithMockUser
+    void updateMyPreferences_rejectsInAppChannelOptOut() throws Exception {
+        // Binding-layer validation (the record's @AssertTrue): the DB
+        // channel is always on — the framework answers 400 before any
+        // controller code runs (the service guard is the defense-in-depth
+        // copy; the WebMvc slice proves the framework layer).
+        mockMvc.perform(put("/api/v1/notifications/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferences": [
+                                  {"type": "PAYMENT_STATE", "channel": "DB", "enabled": false}
+                                ]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
 }
