@@ -15,12 +15,14 @@ class MessageMapperTest {
     void toResponse_mapsAllFields() {
         UUID id = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        Message msg = new Message(id, conversationId, UUID.randomUUID(), "Hello");
+        UUID senderId = UUID.randomUUID();
+        Message msg = new Message(id, conversationId, senderId, "Hello");
 
         MessageResponse response = mapper.toResponse(msg);
 
         assertEquals(id, response.id());
         assertEquals(conversationId, response.conversationId());
+        assertEquals(senderId, response.senderId());
         assertEquals("Hello", response.content());
         assertFalse(response.read());
     }

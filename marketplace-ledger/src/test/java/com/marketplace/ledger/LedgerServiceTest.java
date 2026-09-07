@@ -12,6 +12,108 @@ import static org.mockito.Mockito.*;
 class LedgerServiceTest {
 
     @Test
+    void creditFromPaymentRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.creditFromPayment(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
+    void creditFromPaymentZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
+    void debitFromCommissionRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromCommission(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
+    void debitFromCommissionZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromCommission(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
+    void debitFromRefundRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromRefund(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
+    void debitFromRefundZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    @Test
     void duplicateCreditDoesNotCreateNewEntry() {
         LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
         ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);

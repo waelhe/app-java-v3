@@ -1,5 +1,6 @@
 package com.marketplace.ledger;
 
+import com.marketplace.shared.api.BadRequestException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +24,10 @@ public class LedgerService {
 
     @Observed(name = "ledger.credit.payment")
     public ProviderBalance creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        }
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
             return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
         }
@@ -34,6 +39,10 @@ public class LedgerService {
 
     @Observed(name = "ledger.debit.commission")
     public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId, long amountCents) {
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        }
         UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
         if (entryRepository.findBySourceId(sourceId).isPresent()) {
             return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
@@ -54,6 +63,10 @@ public class LedgerService {
      */
     @Observed(name = "ledger.debit.refund")
     public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId, long amountCents) {
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        }
         UUID sourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
         if (entryRepository.findBySourceId(sourceId).isPresent()) {
             return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
@@ -67,6 +80,12 @@ public class LedgerService {
     @Transactional(readOnly = true)
     public ProviderBalance getBalance(UUID providerId) {
         return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+    }
+
+    private void requireNonNegativeAmount(long amountCents) {
+        if (amountCents < 0) {
+            throw new BadRequestException("Ledger amount must not be negative: " + amountCents + " cents");
+        }
     }
 
     /**
