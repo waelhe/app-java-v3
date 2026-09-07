@@ -94,8 +94,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of("notification.mark.read")),
             Map.entry("marketplace-payments", List.of(
-                    "payment.cancel", "payment.confirm", "payment.process",
-                    "payment.psp.create", "payment.psp.webhook")),
+                    "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
+                    "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),
             Map.entry("marketplace-pricing", List.of(
                     "pricing.calculate", "pricing.currency.convert",
                     "pricing.rule.activate",

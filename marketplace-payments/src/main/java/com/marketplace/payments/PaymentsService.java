@@ -97,6 +97,17 @@ public class PaymentsService implements PaymentsSpi {
      */
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId) {
+        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, null);
+    }
+
+    /**
+     * Full verified dispatch (L19): the Stripe route forwards the refund
+     * snapshot extracted from {@code charge.refunded} payloads; the legacy
+     * HMAC route has no payload and passes none.
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId,
+                                  PspChannel.RefundSnapshot refund) {
         if (webhookEventRepository.findByEventId(eventId).isPresent()) {
             return false;
         }
@@ -118,7 +129,7 @@ public class PaymentsService implements PaymentsSpi {
             return false;
         }
         try {
-            dispatchWebhookEvent(eventType, paymentIntentId, externalId);
+            dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund);
         } catch (RuntimeException ex) {
             // The row is committed but the event was NOT processed: remove it
             // so the provider retry re-processes instead of being deduplicated
@@ -171,10 +182,15 @@ public class PaymentsService implements PaymentsSpi {
                             + " rejecting so the provider retries it");
         }
         return handleVerifiedWebhook("stripe", verified.eventId(), verified.eventType(),
-                intentId, verified.pspIntentId());
+                intentId, verified.pspIntentId(), verified.refund());
     }
 
-    private void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId) {
+    /**
+     * Verified dispatch with the optional refund snapshot extracted from
+     * {@code charge.refunded} notifications (L19).
+     */
+    void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId,
+                              PspChannel.RefundSnapshot refund) {
         switch (eventType) {
             case "payment_intent.succeeded" -> {
                 if (paymentIntentId != null) {
@@ -186,8 +202,32 @@ public class PaymentsService implements PaymentsSpi {
             }
             case "payment_intent.processing" ->
                 log.info("Webhook: payment intent processing confirmed by gateway: eventType={}", eventType);
-            case "payment_intent.payment_failed" ->
-                log.warn("Webhook: payment intent failed: eventType={}", eventType);
+            case "payment_intent.payment_failed" -> {
+                // L19 — the closed loop: a failed payment now flips the local
+                // intent/payment to FAILED (event + cache invalidation) instead
+                // of dying as a log line while the booking stays "paid".
+                if (paymentIntentId != null) {
+                    log.warn("Webhook dispatch: payment_intent.payment_failed for intent {}", paymentIntentId);
+                    failIntent(paymentIntentId);
+                } else {
+                    log.warn("Webhook payment_intent.payment_failed missing paymentIntentId: eventType={}", eventType);
+                }
+            }
+            case "charge.refunded" -> {
+                // L19 — the async safety net: refunds completed at the provider
+                // (including dashboard-created ones) sync the local books to
+                // the remote cumulative actual. Best-effort by design (roadmap
+                // debt D4): an unresolvable intent is warned and acknowledged,
+                // never rejected into a retry loop.
+                if (refund != null && paymentIntentId != null) {
+                    log.info("Webhook dispatch: charge.refunded for intent {} cumulative {} cents",
+                            paymentIntentId, refund.refundedAmountCents());
+                    syncRemoteRefund(paymentIntentId, refund.refundedAmountCents());
+                } else {
+                    log.warn("Webhook charge.refunded without refund snapshot or resolvable intent: eventType={}",
+                            eventType);
+                }
+            }
             default ->
                 log.debug("Unhandled webhook event type: {}", eventType);
         }
@@ -309,6 +349,26 @@ public class PaymentsService implements PaymentsSpi {
         return intent;
     }
 
+    /**
+     * L19 — the failure half of the closed payment loop: mirrors
+     * {@link #confirmIntent(UUID, String)} exactly (state machine, payment
+     * row, event, cache invalidation) so a provider-confirmed failure lands
+     * the same way a provider-confirmed success does. Webhook-driven —
+     * {@code payment_intent.payment_failed} via dispatch; the ledger listener
+     * ignores non-COMPLETED states, so nothing is ever credited for a
+     * failed payment.
+     */
+    @Observed(name = "payment.fail")
+    public PaymentIntent failIntent(UUID id) {
+        PaymentIntent intent = getIntent(id);
+        intent.markFailed();
+        paymentRepository.findByPaymentIntentId(id)
+                .ifPresent(Payment::markFailed);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        return intent;
+    }
+
     @Observed(name = "payment.cancel")
     @PreAuthorize("hasRole('CONSUMER')")
     public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
@@ -341,6 +401,24 @@ public class PaymentsService implements PaymentsSpi {
                 throw new ConflictException("Refund amount exceeds intent amount");
             }
         }
+        // L19 — the closed money loop: when the real channel is bound AND the
+        // intent is linked to a remote intent, the refund is created at the
+        // provider with a derived idempotency key and the local books reflect
+        // the remote cumulative actual. Not linked = the intent never left the
+        // house (internal/test money) — nothing remote to refund; no channel =
+        // the documented inert path. Either way the existing internal flow
+        // below stays byte-compatible.
+        PspChannel channel = pspChannel.getIfAvailable();
+        if (channel != null && intent.getPspIntentId() != null) {
+            String idempotencyKey = refundIdempotencyKey(paymentId, alreadyRefunded, amountCents);
+            PspChannel.RemoteRefund remote = channel.createRemoteRefund(
+                    intent.getPspIntentId(), amountCents, idempotencyKey);
+            applyRemoteRefund(payment, intent, remote.refundedTotalCents());
+            paymentIntentRepository.save(intent);
+            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
+            eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+            return payment;
+        }
         boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());
         if (isFullRefund) {
             payment.markRefunded();
@@ -353,6 +431,69 @@ public class PaymentsService implements PaymentsSpi {
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
         return payment;
+    }
+
+    /**
+     * Applies the remote cumulative actual to the local rows: full when the
+     * provider says everything is refunded, partial otherwise. The remote
+     * number is authoritative (roadmap L19 acceptance 3) — the local books
+     * follow the money at the PSP even when refunds happened outside this
+     * service.
+     */
+    private void applyRemoteRefund(Payment payment, PaymentIntent intent, long remoteRefundedTotalCents) {
+        if (remoteRefundedTotalCents >= payment.getAmountCents()) {
+            payment.markRefunded();
+            intent.markRefunded();
+        } else {
+            payment.markPartiallyRefundedTotal(remoteRefundedTotalCents);
+            intent.markPartiallyRefundedTotal(remoteRefundedTotalCents);
+        }
+    }
+
+    /**
+     * Deterministic refund replay key, derived from the request as the local
+     * books see it: the payment, the refunded-so-far state, and the requested
+     * amount (or "full"). A retried request (after rollback) re-derives the
+     * SAME key and replays the same remote refund instead of double-charging;
+     * a NEW refund (state advanced) derives a different key and creates a new
+     * remote refund — the official idempotency-key contract.
+     */
+    static String refundIdempotencyKey(UUID paymentId, long alreadyRefundedCents, Long amountCents) {
+        String amount = amountCents == null ? "full" : amountCents.toString();
+        return "marketplace-refund-" + paymentId + "-" + alreadyRefundedCents + "-" + amount;
+    }
+
+    /**
+     * L19 — webhook-side refund sync ({@code charge.refunded}): sets the local
+     * books to the remote cumulative actual. Idempotent: a redelivery that
+     * carries no new state is a debug no-op instead of a state-machine
+     * violation, so the provider's retry loop never traps on a synced event
+     * (the dedup table covers identical event ids; this covers the same
+     * SNAPSHOT arriving under a different event id).
+     */
+    void syncRemoteRefund(UUID paymentIntentId, long remoteRefundedTotalCents) {
+        PaymentIntent intent = getIntent(paymentIntentId);
+        Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);
+        if (payment == null) {
+            log.warn("charge.refunded for intent {} without a local payment row — nothing to sync",
+                    paymentIntentId);
+            return;
+        }
+        boolean fullRemote = remoteRefundedTotalCents >= payment.getAmountCents();
+        boolean alreadySynced = payment.getRefundedAmountCents() == remoteRefundedTotalCents
+                && intent.getRefundedAmountCents() == remoteRefundedTotalCents
+                && payment.getStatus() == (fullRemote ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED);
+        if (alreadySynced) {
+            log.debug("charge.refunded for intent {} carries the already-synced total {} cents",
+                    paymentIntentId, remoteRefundedTotalCents);
+            return;
+        }
+        applyRemoteRefund(payment, intent, remoteRefundedTotalCents);
+        paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+        log.info("Synced remote refund state for intent {}: {} cents refunded (status {})",
+                paymentIntentId, remoteRefundedTotalCents, payment.getStatus());
     }
 
     @Retry(name = "paymentProcessing")

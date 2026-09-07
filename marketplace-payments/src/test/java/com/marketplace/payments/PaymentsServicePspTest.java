@@ -26,6 +26,9 @@ import static org.mockito.Mockito.*;
  *       idempotency key, psp_intent_id link assigned, clientSecret returned</li>
  *   <li>Stripe webhook — 503 SU-001 when unbound; verified dispatch with
  *       psp_intent_id fallback resolution when bound</li>
+ *   <li>L19 closed loop — payment_intent.payment_failed flips intent+payment
+ *       to FAILED; charge.refunded syncs the remote cumulative actual; the
+ *       bound-channel refund derives one idempotency key per request state</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -117,7 +120,7 @@ class PaymentsServicePspTest {
         UUID intentId = intent.getId();
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_9", "payment_intent.succeeded",
-                        intentId, "pi_remote_9"));
+                        intentId, "pi_remote_9", null));
         intent.markProcessing();
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
 
@@ -139,7 +142,7 @@ class PaymentsServicePspTest {
         UUID intentId = intent.getId();
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_10", "payment_intent.succeeded",
-                        null, "pi_remote_10"));
+                        null, "pi_remote_10", null));
         intent.assignPspIntentId("pi_remote_10");
         intent.markProcessing();
         when(intentRepository.findByPspIntentId("pi_remote_10")).thenReturn(Optional.of(intent));
@@ -157,7 +160,7 @@ class PaymentsServicePspTest {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_11", "payment_intent.succeeded",
-                        intentId, "pi_11"));
+                        intentId, "pi_11", null));
         when(webhookEventRepository.findByEventId("evt_11")).thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
 
         boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
@@ -177,7 +180,7 @@ class PaymentsServicePspTest {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_12", "payment_intent.succeeded",
-                        intentId, "pi_12"));
+                        intentId, "pi_12", null));
         // Pre-check: absent; post-DIVE re-check: the winner's row exists.
         when(webhookEventRepository.findByEventId("evt_12"))
                 .thenReturn(Optional.empty())
@@ -203,7 +206,7 @@ class PaymentsServicePspTest {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_13", "payment_intent.succeeded",
-                        null, "pi_unlinked_13"));
+                        null, "pi_unlinked_13", null));
         when(webhookEventRepository.findByEventId("evt_13")).thenReturn(Optional.empty());
         when(intentRepository.findByPspIntentId("pi_unlinked_13")).thenReturn(Optional.empty());
 
@@ -224,5 +227,176 @@ class PaymentsServicePspTest {
         intent.assignPspIntentId("pi_a");
         assertEquals("pi_a", intent.getPspIntentId());
         assertThrows(IllegalStateException.class, () -> intent.assignPspIntentId("pi_b"));
+    }
+
+    // ---- L19: the closed payment loop (roadmap §5 Layer 19) ----
+
+    /** Acceptance 1: a provider-confirmed failure flips intent+payment to FAILED. */
+    @Test
+    void handleStripeWebhook_paymentFailed_flipsIntentAndPaymentToFailed() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByEventId("evt_14")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        Payment payment = Payment.create(intentId, 5000L);
+        when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_14", "payment_intent.payment_failed",
+                        intentId, "pi_remote_14", null));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+
+        boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
+
+        assertTrue(created);
+        assertEquals(PaymentIntentStatus.FAILED, intent.getStatus());
+        assertEquals(PaymentStatus.FAILED, payment.getStatus());
+        verify(eventPublisher).publishEvent(
+                new com.marketplace.shared.api.PaymentStateChangedEvent(intentId, "FAILED"));
+    }
+
+    /** Acceptance 3 via the webhook net: local books follow the remote cumulative. */
+    @Test
+    void handleStripeWebhook_chargeRefunded_syncsRemoteCumulative() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByEventId("evt_15")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_15");
+        // A dashboard partial refund of 300 — local state still zero.
+        when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_15", "charge.refunded",
+                        null, "pi_remote_15", new PspChannel.RefundSnapshot(300L)));
+        when(intentRepository.findByPspIntentId("pi_remote_15")).thenReturn(Optional.of(intent));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+
+        boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
+
+        assertTrue(created);
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, payment.getStatus());
+        assertEquals(300L, payment.getRefundedAmountCents());
+        assertEquals(Long.valueOf(300L), intent.getRefundedAmountCents());
+        verify(intentRepository).save(intent);
+    }
+
+    /** Same snapshot redelivered under a new event id: no-op, no state-machine violation. */
+    @Test
+    void handleStripeWebhook_chargeRefunded_alreadySynced_isANoOp() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByEventId("evt_16")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.markPartiallyRefunded(300L);
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_16");
+        payment.markPartiallyRefunded(300L);
+        when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_16", "charge.refunded",
+                        intentId, "pi_remote_16", new PspChannel.RefundSnapshot(300L)));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+
+        boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
+
+        assertTrue(created);
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, payment.getStatus());
+        assertEquals(300L, payment.getRefundedAmountCents());
+        verify(intentRepository, never()).save(any());
+    }
+
+    /** Acceptance 2: one remote refund call with the derived idempotency key. */
+    @Test
+    void refundPayment_boundChannelAndLinkedIntent_callsRemoteRefundOnceWithDerivedKey() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_r1");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r1");
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(eq("pi_remote_r1"), eq(400L),
+                eq("marketplace-refund-" + payment.getId() + "-0-400")))
+                .thenReturn(new PspChannel.RemoteRefund("re_r1", "succeeded", 400L));
+
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+
+        verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r1"), eq(400L), anyString());
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(400L, result.getRefundedAmountCents());
+        assertEquals(Long.valueOf(400L), intent.getRefundedAmountCents());
+    }
+
+    /** Acceptance 3: the remote cumulative wins over the local sum (divergence case). */
+    @Test
+    void refundPayment_partialRefundAppliesRemoteCumulative() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_r2");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r2");
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        // Remote says 800 total (a dashboard refund of 400 existed) while the
+        // local request only accounts for its own 400 — the books follow remote.
+        when(pspChannel.createRemoteRefund(eq("pi_remote_r2"), any(), anyString()))
+                .thenReturn(new PspChannel.RemoteRefund("re_r2", "succeeded", 800L));
+
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(800L, result.getRefundedAmountCents());
+        assertEquals(Long.valueOf(800L), intent.getRefundedAmountCents());
+    }
+
+    /** Acceptance 4 mirror: channel bound but intent unlinked — internal path, no remote call. */
+    @Test
+    void refundPayment_unlinkedIntent_keepsInternalPath() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r3");
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+
+        verify(pspChannel, never()).createRemoteRefund(any(), any(), any());
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
+        assertEquals(400L, result.getRefundedAmountCents());
+    }
+
+    /** The retry contract: same request state ⇒ same key; advanced state ⇒ new key. */
+    @Test
+    void refundIdempotencyKey_isDeterministicPerState() {
+        UUID paymentId = UUID.randomUUID();
+        assertEquals(
+                PaymentsService.refundIdempotencyKey(paymentId, 0L, 400L),
+                PaymentsService.refundIdempotencyKey(paymentId, 0L, 400L));
+        assertEquals("marketplace-refund-" + paymentId + "-0-full",
+                PaymentsService.refundIdempotencyKey(paymentId, 0L, null));
+        // A rolled-back retry re-derives the same key (0 state); the NEXT
+        // distinct refund (state advanced to 400) derives a different one.
+        assertNotEquals(
+                PaymentsService.refundIdempotencyKey(paymentId, 0L, 400L),
+                PaymentsService.refundIdempotencyKey(paymentId, 400L, 400L));
     }
 }
