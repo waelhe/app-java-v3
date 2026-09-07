@@ -195,6 +195,10 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * A5: IllegalArgumentException maps to 400 VALIDATION (VAL-001) as an
+     * RFC 7807 problem.
+     */
     void handleIllegalArgument_returnsBadRequestValidationTaxonomy() {
         var ex = new IllegalArgumentException("priceCents must be positive");
         var request = new StubHttpServletRequest("/api/listings");
@@ -209,6 +213,10 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * A5: IllegalStateException maps to 409 CONFLICT (CONFLICT-001) as an
+     * RFC 7807 problem.
+     */
     void handleIllegalState_returnsConflictTaxonomy() {
         var ex = new IllegalStateException("Booking cannot be cancelled in current state");
         var request = new StubHttpServletRequest("/api/bookings/1");
@@ -223,6 +231,10 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * A6: with no client header, the trace id comes from the
+     * {@code correlationId} request attribute set by the filter.
+     */
     void problemDetail_includesTraceIdFromRequestAttributeWhenNoClientHeader() {
         // A6: when the client sends no X-Correlation-ID, CorrelationIdFilter
         // generates one and (with the fix) exposes it as the "correlationId"

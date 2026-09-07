@@ -80,6 +80,11 @@ class LedgerModuleIntegrationTest {
      * waits for the listener's own transaction to land the balance.
      */
     @Test
+    /**
+     * A payment-completed event credits the provider ledger and the owner
+     * sees the movement through provider-scoped access — the provider
+     stub resolves by user id (A1).
+     */
     void paymentCompletedEvent_creditsLedger_andOwnerSeesMovementThroughProviderAccess() {
         UUID providerId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();

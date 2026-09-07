@@ -60,6 +60,10 @@ class MediaUploadFlowIntegrationTest {
     @Autowired
     private MediaAssetRepository mediaAssetRepository;
 
+    /**
+     * Stubs ownership for the media flow: the user-owned provider profile
+     * ({@code findByUserId}, A1) plus the listing price info.
+     */
     private void mockOwner(UUID userId, UUID providerId, UUID listingId) {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
         when(currentUserProvider.isAdmin(any())).thenReturn(false);

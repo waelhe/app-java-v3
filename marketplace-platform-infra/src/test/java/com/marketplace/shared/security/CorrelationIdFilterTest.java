@@ -17,6 +17,10 @@ class CorrelationIdFilterTest {
     private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
     @Test
+    /**
+     * A client-supplied id is propagated to the response header, MDC and
+     * (A6) the request attribute.
+     */
     void propagatesExistingCorrelationId() throws Exception {
         HttpServletRequest request = mock();
         HttpServletResponse response = mock();
@@ -30,6 +34,10 @@ class CorrelationIdFilterTest {
     }
 
     @Test
+    /**
+     * A missing client header still yields a generated id in the header
+     * and (A6) the request attribute.
+     */
     void generatesCorrelationIdWhenMissing() throws Exception {
         HttpServletRequest request = mock();
         HttpServletResponse response = mock();

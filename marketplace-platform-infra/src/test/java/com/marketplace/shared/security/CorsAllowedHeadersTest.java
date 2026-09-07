@@ -20,6 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CorsAllowedHeadersTest {
 
     @Test
+    /**
+     * A2: X-API-Version must be an allowed CORS request header and the
+     * origin policy is unchanged by the header addition.
+     */
     void allowsXApiVersionRequestHeaderAcrossConfiguredOrigin() {
         SecurityConfig securityConfig = new SecurityConfig(properties(), new ObjectMapper());
 
@@ -37,6 +41,10 @@ class CorsAllowedHeadersTest {
                 .isEqualTo("http://localhost:3000");
     }
 
+    /**
+     * Minimal properties record for the {@code SecurityConfig} beans
+     * under test.
+     */
     private static MarketplaceProperties properties() {
         return new MarketplaceProperties(
                 new MarketplaceProperties.Cors(List.of("http://localhost:3000")),

@@ -161,6 +161,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
+    /**
+     * Creates a listing for the caller-owned provider profile. The
+     * {@code providerId} argument lives in the users.id space (V2
+     * references users(id)) and is resolved through {@code findByUserId}
+     * (A1) so the VERIFIED gate matches the profile owned by that user id.
+     */
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency) {
         providerLookupPort.findByUserId(providerId)
@@ -238,6 +244,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listing;
     }
 
+    /**
+     * Verifies the listing belongs to the calling user (admins bypass):
+     * the listing's provider id is a user id (A1 — V2 references
+     * users(id)), so the owner check resolves the user-owned profile via
+     * {@code findByUserId}.
+     */
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (currentUserProvider.isAdmin(authentication)) return;

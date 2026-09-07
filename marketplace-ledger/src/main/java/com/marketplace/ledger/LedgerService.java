@@ -22,6 +22,13 @@ public class LedgerService {
         this.balanceRepository = balanceRepository;
     }
 
+    /**
+     * L24 (money path 1 of 3): credits the provider's balance when a payment
+     * is captured — writes exactly one {@code PAYMENT_CREDIT} entry per
+     * payment intent (idempotent by source id). B2 amount guard: a negative
+     * amount is rejected with VALIDATION (400); a zero amount is a no-op that
+     * returns the current balance without writing a zero-impact entry.
+     */
     @Observed(name = "ledger.credit.payment")
     public ProviderBalance creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
         requireNonNegativeAmount(amountCents);
@@ -37,6 +44,14 @@ public class LedgerService {
         return balanceRepository.save(balance);
     }
 
+    /**
+     * L24 (money path 2 of 3): debits the platform commission from the
+     * provider's balance — the deterministic
+     * {@code nameUUIDFromBytes("commission-<intentId>")} source id makes
+     * replayed listeners no-ops (the debit lands exactly once per intent).
+     * B2 amount guard: negative amounts are rejected with VALIDATION (400);
+     * zero amounts return the current balance without writing an entry.
+     */
     @Observed(name = "ledger.debit.commission")
     public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId, long amountCents) {
         requireNonNegativeAmount(amountCents);
@@ -60,6 +75,8 @@ public class LedgerService {
      * makes the AFTER_COMMIT listener replays no-ops, so the debit lands
      * exactly once per refunded payment intent (a second delivery, a
      * concurrent listener, or a repeated decision can never double-debit).
+     * B2 amount guard: negative amounts are rejected with VALIDATION (400);
+     * zero amounts return the current balance without writing an entry.
      */
     @Observed(name = "ledger.debit.refund")
     public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId, long amountCents) {
@@ -82,6 +99,14 @@ public class LedgerService {
         return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
     }
 
+    /**
+     * B2 (financial integrity): shared precondition for all three money
+     * paths — ledger amounts are non-negative cents by contract; a negative
+     * value fails fast with VALIDATION (400) before any entry is written.
+     *
+     * @param amountCents the ledger amount in cents, must be {@code >= 0}
+     * @throws BadRequestException when {@code amountCents} is negative
+     */
     private void requireNonNegativeAmount(long amountCents) {
         if (amountCents < 0) {
             throw new BadRequestException("Ledger amount must not be negative: " + amountCents + " cents");

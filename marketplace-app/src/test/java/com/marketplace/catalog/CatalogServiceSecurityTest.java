@@ -95,6 +95,9 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * A verified provider resolved by user id (A1) may create a listing.
+     */
     void create_whenProvider_thenInvokes() {
         UUID currentUserId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
@@ -111,6 +114,10 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * The owner — matched through the user-owned profile (A1) — may
+     * update a listing.
+     */
     void update_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -130,6 +137,9 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * The owner (A1 lookup) may activate a listing.
+     */
     void activate_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -149,6 +159,9 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * The owner (A1 lookup) may pause a listing.
+     */
     void pause_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -169,6 +182,9 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * The owner (A1 lookup) may archive a listing (summary view).
+     */
     void archiveListing_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -188,6 +204,9 @@ class CatalogServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER", username = "provider")
+    /**
+     * The owner (A1 lookup) may archive a listing (entity view).
+     */
     void archive_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();

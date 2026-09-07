@@ -25,9 +25,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -147,7 +149,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(problemDetailAuthenticationEntryPoint())
                         .accessDeniedHandler(problemDetailAccessDeniedHandler()))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                        // Route the bearer-filter failure path (an invalid supplied
+                        // token arrives as InvalidBearerTokenException) through the
+                        // same problem-detail entry point as the anonymous path, so
+                        // every 401 carries the RFC 7807 body + RFC 6750 challenge.
+                        .authenticationEntryPoint(problemDetailAuthenticationEntryPoint()));
 
         return http.build();
     }
@@ -180,6 +187,12 @@ public class SecurityConfig {
         return new HttpSessionEventPublisher();
     }
 
+    /**
+     * CORS policy for the shared chains: credentials enabled, one-hour
+     * preflight cache and the request headers first-party clients send —
+     * including {@code X-API-Version}, consumed by
+     * {@code ApiVersioningConfig#useRequestHeader} (A2).
+     */
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
@@ -214,13 +227,41 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    /**
+     * The 401 handler for the resource-server chain: emits the RFC 7807
+     * problem body plus the RFC 6750 §3 {@code WWW-Authenticate} Bearer
+     * challenge (A3).
+     *
+     * <p>Challenge semantics mirror the framework's own
+     * {@code BearerTokenAuthenticationEntryPoint} (Spring Security 7):
+     * a request that <em>lacked</em> credentials — arriving from
+     * {@code ExceptionTranslationFilter} as
+     * {@code InsufficientAuthenticationException} — gets the bare
+     * {@code Bearer realm="marketplace"} challenge, per RFC 6750 §3.1
+     * ("If the request lacks any authentication information ... the resource
+     * server SHOULD NOT include an error code or other error information");
+     * a <em>supplied</em> token that failed validation — arriving from the
+     * resource-server bearer filter as {@code InvalidBearerTokenException}, an
+     * {@link OAuth2AuthenticationException} wrapping
+     * {@code BearerTokenErrors.invalidToken} — gets
+     * {@code error="invalid_token"} (plus {@code error_description}) per
+     * RFC 6750 §3 ("If the protected resource request included an access token
+     * and failed authentication, the resource server SHOULD include the
+     * 'error' attribute").
+     *
+     * <p>Registered on both official seams so all 401s share one contract:
+     * {@code .exceptionHandling().authenticationEntryPoint(...)} (the
+     * anonymous/translation path) and
+     * {@code .oauth2ResourceServer().authenticationEntryPoint(...)} (the
+     * bearer filter failure path — OAuth2ResourceServerConfigurer wires that
+     * entry point into {@code BearerTokenAuthenticationFilter}).
+     *
+     * @return the problem-detail authentication entry point
+     */
     @Bean
     AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
         return (request, response, ex) -> {
-            // RFC 6750 §3.1: a protected resource MUST challenge a missing/invalid
-            // bearer token with a WWW-Authenticate header (A3).
-            response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
-                    "Bearer realm=\"marketplace\", error=\"invalid_token\"");
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE, bearerChallenge(ex));
             writeProblemDetail(
                     response,
                     ApiErrorTaxonomy.AUTHN,
@@ -230,11 +271,38 @@ public class SecurityConfig {
         };
     }
 
+    /**
+     * Computes the RFC 6750 §3 Bearer challenge for an authentication failure,
+     * mirroring {@code BearerTokenAuthenticationEntryPoint} (Spring Security 7):
+     * error attributes only when the exception reports a failed <em>supplied</em>
+     * token ({@link OAuth2AuthenticationException} carrying the framework's
+     * {@code BearerTokenErrors} details), otherwise the bare realm challenge.
+     *
+     * @param ex the authentication failure reported by the filter chain
+     * @return the {@code WWW-Authenticate} header value
+     */
+    private static String bearerChallenge(AuthenticationException ex) {
+        if (ex instanceof OAuth2AuthenticationException oauth2) {
+            OAuth2Error error = oauth2.getError();
+            if (error.getDescription() != null && !error.getDescription().isBlank()) {
+                return "Bearer realm=\"marketplace\", error=\"" + error.getErrorCode()
+                        + "\", error_description=\"" + error.getDescription() + "\"";
+            }
+            return "Bearer realm=\"marketplace\", error=\"" + error.getErrorCode() + "\"";
+        }
+        return "Bearer realm=\"marketplace\"";
+    }
+
+    /**
+     * The 403 handler: an authenticated request that lacks sufficient
+     * privileges is challenged with {@code error="insufficient_scope"}
+     * (RFC 6750 §3.1) alongside the problem body (A3).
+     *
+     * @return the problem-detail access-denied handler
+     */
     @Bean
     AccessDeniedHandler problemDetailAccessDeniedHandler() {
         return (request, response, ex) -> {
-            // RFC 6750 §3.1: an authenticated request that lacks sufficient scope
-            // is challenged with error="insufficient_scope" (A3).
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
                     "Bearer realm=\"marketplace\", error=\"insufficient_scope\"");
             writeProblemDetail(

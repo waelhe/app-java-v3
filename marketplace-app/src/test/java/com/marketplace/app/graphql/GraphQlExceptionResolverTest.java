@@ -28,6 +28,10 @@ class GraphQlExceptionResolverTest {
     private final DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
 
     @BeforeEach
+    /**
+     * Stubs the minimal {@code DataFetchingEnvironment} surface the error
+     * builder reads (field source location + execution path).
+     */
     void setUpEnvironment() {
         Field field = mock(Field.class);
         when(field.getSourceLocation()).thenReturn(new SourceLocation(1, 1));
@@ -38,6 +42,10 @@ class GraphQlExceptionResolverTest {
     }
 
     @Test
+    /**
+     * A4: an {@code AccessDeniedException} must surface as
+     * FORBIDDEN/ACCESS_DENIED (authz), never INTERNAL_ERROR.
+     */
     void mapsAccessDeniedToForbiddenWithAccessDeniedCode() {
         GraphQLError error = first(resolver.resolveException(new AccessDeniedException("No access"), env).block());
 
@@ -48,6 +56,9 @@ class GraphQlExceptionResolverTest {
     }
 
     @Test
+    /**
+     * Regression: the NOT_FOUND mapping is unchanged by the A4 branch.
+     */
     void mapsResourceNotFoundAsBefore() {
         GraphQLError error = first(resolver.resolveException(
                 new ResourceNotFoundException("Listing", java.util.UUID.randomUUID()), env).block());
@@ -56,6 +67,10 @@ class GraphQlExceptionResolverTest {
     }
 
     @Test
+    /**
+     * Regression: the DOMAIN_CONFLICT mapping is unchanged by the A4
+     * branch.
+     */
     void mapsDomainConflictAsBefore() {
         GraphQLError error = first(resolver.resolveException(new IllegalStateException("boom"), env).block());
 
@@ -63,6 +78,9 @@ class GraphQlExceptionResolverTest {
         assertThat(error.getExtensions()).containsEntry("errorCode", "DOMAIN_CONFLICT");
     }
 
+    /**
+     * Asserts the resolver produced exactly one error and returns it.
+     */
     private static GraphQLError first(List<GraphQLError> errors) {
         assertThat(errors).hasSize(1);
         return errors.getFirst();

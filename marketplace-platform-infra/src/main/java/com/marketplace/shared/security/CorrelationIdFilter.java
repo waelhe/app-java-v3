@@ -22,6 +22,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String MDC_KEY = "correlationId";
 
     @Override
+    /**
+     * Propagates or generates the correlation id and publishes it to the
+     * MDC, the response header and — since A6 — the {@code correlationId}
+     * request attribute, so the error path can emit it in the problem
+     * body when the client sent no header.
+     */
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String correlationId = request.getHeader(HEADER_NAME);

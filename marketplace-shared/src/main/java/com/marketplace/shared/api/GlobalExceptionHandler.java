@@ -128,6 +128,12 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
+    /**
+     * Maps an {@link IllegalArgumentException} to the VALIDATION taxonomy
+     * (400, RFC 7807) — A5: an illegal argument is a client-contract
+     * violation, never a 500, mirroring the GraphQL resolver's
+     * VALIDATION_ERROR mapping.
+     */
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         // A5: an illegal argument is a client-contract violation (400), matching
         // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
@@ -135,6 +141,12 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(IllegalStateException.class)
+    /**
+     * Maps an {@link IllegalStateException} to the CONFLICT taxonomy
+     * (409, RFC 7807) — A5: an illegal state raised by a well-formed
+     * request is a domain conflict, mirroring the GraphQL resolver's
+     * DOMAIN_CONFLICT mapping.
+     */
     public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
         // A5: an illegal state in a well-formed request is a domain conflict (409),
         // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.

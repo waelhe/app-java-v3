@@ -22,11 +22,24 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
 
     private final boolean includeTraceId;
 
+    /**
+     * @param includeTraceId whether error extensions may carry the current
+     *                       correlation id (MDC) — bound from
+     *                       {@code marketplace.graphql.errors.include-trace-id}
+     *                       (default false, so trace ids never leak to
+     *                       external clients by accident)
+     */
     public GraphQlExceptionResolver(@Value("${marketplace.graphql.errors.include-trace-id:false}") boolean includeTraceId) {
         this.includeTraceId = includeTraceId;
     }
 
     @Override
+    /**
+     * Maps a data-fetcher exception to a single GraphQL error classified
+     * per the shared API error taxonomy — NOT_FOUND, VALIDATION_ERROR,
+     * DOMAIN_CONFLICT, ACCESS_DENIED (A4) and a masked INTERNAL fallback —
+     * mirroring the REST GlobalExceptionHandler mappings.
+     */
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
         if (ex instanceof ResourceNotFoundException) {
             return buildError(env, ErrorType.NOT_FOUND, "NOT_FOUND", "RESOURCE", ex.getMessage());
@@ -47,6 +60,11 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         return buildError(env, ErrorType.INTERNAL_ERROR, "INTERNAL_ERROR", "INTERNAL", GENERIC_INTERNAL_MESSAGE);
     }
 
+    /**
+     * Builds the classified {@link GraphQLError} with the taxonomy
+     * extensions ({@code errorCode}, {@code category} and, when enabled,
+     * the MDC trace id).
+     */
     private GraphQLError buildError(DataFetchingEnvironment env,
                                     ErrorType errorType,
                                     String errorCode,

@@ -69,6 +69,10 @@ class MediaServiceTest {
                         Duration.ofMinutes(15)));
     }
 
+    /**
+     * Stubs the happy-path ownership: the user-owned profile
+     * ({@code findByUserId}, A1) matches the asset's provider.
+     */
     private void mockOwner() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
@@ -109,6 +113,10 @@ class MediaServiceTest {
     }
 
     @Test
+    /**
+     * A provider id owned by another user is denied at upload request
+     * time (A1 lookup).
+     */
     void requestUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         when(listingPriceProvider.getListingInfo(listingId))
@@ -182,6 +190,10 @@ class MediaServiceTest {
     }
 
     @Test
+    /**
+     * A provider id owned by another user is denied at upload
+     * confirmation (A1 lookup).
+     */
     void confirmUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();

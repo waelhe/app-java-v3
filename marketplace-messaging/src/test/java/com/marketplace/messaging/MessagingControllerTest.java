@@ -108,6 +108,11 @@ class MessagingControllerTest {
         assertEquals(response, result.getBody());
     }
 
+    /**
+     * POST a message returns 201 with the mapped response — B1: the
+     * response now carries the authenticated user's id as
+     * {@code senderId}.
+     */
     @Test
     void sendMessage_createsAndReturns201() {
         UUID conversationId = UUID.randomUUID();

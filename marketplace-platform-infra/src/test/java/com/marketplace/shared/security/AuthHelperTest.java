@@ -43,6 +43,10 @@ class AuthHelperTest {
     }
 
     @Test
+    /**
+     * ownsProvider is true when the profile resolved by user id (A1)
+     * matches the caller.
+     */
     void ownsProvider_returnsTrueWhenUserMatches() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
@@ -54,6 +58,10 @@ class AuthHelperTest {
     }
 
     @Test
+    /**
+     * ownsProvider is false when the resolved profile belongs to another
+     * user.
+     */
     void ownsProvider_returnsFalseWhenUserMismatch() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
@@ -65,6 +73,10 @@ class AuthHelperTest {
     }
 
     @Test
+    /**
+     * ownsProvider is false when no provider profile exists for the user
+     * id.
+     */
     void ownsProvider_returnsFalseWhenProviderNotFound() {
         UUID providerId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
