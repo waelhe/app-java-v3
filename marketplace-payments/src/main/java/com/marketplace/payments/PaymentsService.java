@@ -413,6 +413,23 @@ public class PaymentsService implements PaymentsSpi {
             String idempotencyKey = refundIdempotencyKey(paymentId, alreadyRefunded, amountCents);
             PspChannel.RemoteRefund remote = channel.createRemoteRefund(
                     intent.getPspIntentId(), amountCents, idempotencyKey);
+            // CodeRabbit #249 round 1: the provider's status gates the local
+            // books. Only a SUCCEEDED refund moved money (its cumulative is
+            // authoritative); a PENDING one has not moved anything yet — the
+            // charge.refunded webhook completes that sync when it lands (the
+            // async safety net); anything else is a loud conflict with no
+            // local state change.
+            if ("pending".equals(remote.status())) {
+                log.info("Remote refund {} for payment {} is pending at the provider — local books"
+                                + " await the charge.refunded webhook (nothing refunded yet: {} cents)",
+                        remote.refundId(), paymentId, remote.refundedTotalCents());
+                return payment;
+            }
+            if (!"succeeded".equals(remote.status())) {
+                throw new ConflictException("Remote refund " + remote.refundId() + " for payment "
+                        + paymentId + " returned status '" + remote.status()
+                        + "' — no local refund state changed");
+            }
             applyRemoteRefund(payment, intent, remote.refundedTotalCents());
             paymentIntentRepository.save(intent);
             eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
@@ -477,6 +494,18 @@ public class PaymentsService implements PaymentsSpi {
         if (payment == null) {
             log.warn("charge.refunded for intent {} without a local payment row — nothing to sync",
                     paymentIntentId);
+            return;
+        }
+        // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
+        // order (official docs), and amount_refunded only grows — a snapshot
+        // BELOW the synced local totals is a stale, out-of-order event and is
+        // ignored instead of regressing the books.
+        if (remoteRefundedTotalCents < payment.getRefundedAmountCents()
+                || remoteRefundedTotalCents < intent.getRefundedAmountCents()) {
+            log.info("charge.refunded for intent {} carries an out-of-order snapshot ({} cents) below"
+                            + " the synced totals (payment {} / intent {}) — ignored",
+                    paymentIntentId, remoteRefundedTotalCents,
+                    payment.getRefundedAmountCents(), intent.getRefundedAmountCents());
             return;
         }
         boolean fullRemote = remoteRefundedTotalCents >= payment.getAmountCents();

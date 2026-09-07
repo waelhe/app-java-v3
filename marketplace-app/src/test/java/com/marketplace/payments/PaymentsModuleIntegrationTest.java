@@ -124,7 +124,7 @@ class PaymentsModuleIntegrationTest {
         intent.markProcessing();
         intent.assignPspIntentId("pi_fail_route");
         intent = paymentIntentRepository.save(intent);
-        paymentRepository.save(Payment.create(intent.getId(), 5000L));
+        Payment payment = paymentRepository.save(Payment.create(intent.getId(), 5000L));
 
         String payload = """
                 {"id":"evt_%s","type":"payment_intent.payment_failed","api_version":"2024-06-20",\
@@ -137,6 +137,8 @@ class PaymentsModuleIntegrationTest {
         assertThat(created).isTrue();
         assertThat(paymentIntentRepository.findById(intent.getId()).orElseThrow().getStatus())
                 .isEqualTo(PaymentIntentStatus.FAILED);
+        assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+                .isEqualTo(PaymentStatus.FAILED);
     }
 
     /**

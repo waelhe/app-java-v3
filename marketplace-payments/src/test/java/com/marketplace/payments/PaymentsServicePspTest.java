@@ -384,6 +384,83 @@ class PaymentsServicePspTest {
         assertEquals(400L, result.getRefundedAmountCents());
     }
 
+    /** Acceptance 2 + CodeRabbit round 1: a PENDING remote refund moves no money yet — books untouched. */
+    @Test
+    void refundPayment_pendingRemoteRefund_leavesLocalBooksUntouched() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_r4");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r4");
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(any(), any(), anyString()))
+                .thenReturn(new PspChannel.RemoteRefund("re_r4", "pending", 0L));
+
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+
+        assertEquals(PaymentStatus.COMPLETED, result.getStatus());
+        assertEquals(0L, result.getRefundedAmountCents());
+        verify(intentRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /** A non-succeeded/non-pending remote status is a loud conflict — no silent local advance. */
+    @Test
+    void refundPayment_failedRemoteRefundStatus_throwsConflict() {
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_r5");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_r5");
+        when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
+        when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(any(), any(), anyString()))
+                .thenReturn(new PspChannel.RemoteRefund("re_r5", "failed", 0L));
+
+        com.marketplace.shared.api.ConflictException thrown = assertThrows(
+                com.marketplace.shared.api.ConflictException.class,
+                () -> service(boundChannel).refundPayment(payment.getId(), 400L));
+
+        assertTrue(thrown.getMessage().contains("failed"));
+        verify(intentRepository, never()).save(any());
+    }
+
+    /** CodeRabbit round 1: out-of-order webhooks (no delivery-order guarantee) must not regress the books. */
+    @Test
+    void handleStripeWebhook_chargeRefunded_outOfOrderSnapshot_isIgnored() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByEventId("evt_17")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.markPartiallyRefunded(800L);
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_17");
+        payment.markPartiallyRefunded(800L);
+        // A stale event generated before the 800-cent refund: its snapshot
+        // (300) predates the synced total and must not pull the books back.
+        when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_17", "charge.refunded",
+                        intentId, "pi_remote_17", new PspChannel.RefundSnapshot(300L)));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+
+        boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
+
+        assertTrue(created);
+        assertEquals(800L, payment.getRefundedAmountCents());
+        assertEquals(Long.valueOf(800L), intent.getRefundedAmountCents());
+        verify(intentRepository, never()).save(any());
+    }
+
     /** The retry contract: same request state ⇒ same key; advanced state ⇒ new key. */
     @Test
     void refundIdempotencyKey_isDeterministicPerState() {
