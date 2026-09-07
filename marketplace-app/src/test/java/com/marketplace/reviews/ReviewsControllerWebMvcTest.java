@@ -87,6 +87,43 @@ class ReviewsControllerWebMvcTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // -- L21: reply ------------------------------------------------------
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void reply_returnsOk() throws Exception {
+        UUID id = UUID.randomUUID();
+        var review = mockReview(id);
+        var response = mockResponse(id);
+
+        when(reviewsService.reply(any(), any(), any())).thenReturn(review);
+        when(reviewMapper.toResponse(review)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/reviews/{id}/reply", id)
+                        .contentType("application/json")
+                        .content("""
+                                {"reply": "Thanks for the feedback"}
+                                """))
+                .andExpect(status().isOk());
+    }
+
+    // Note: the method-security negative for reply (USER -> 403) lives in
+    // ReviewsServiceSecurityTest with the REAL service bean — a @MockitoBean
+    // service does not carry the @PreAuthorize into the slice, so a 403 here
+    // would test the mock, not the guard (the ledger 403 pattern works because
+    // its guard sits on the controller itself).
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void reply_withBlankBody_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/reviews/{id}/reply", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"reply": "  "}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
     private static Review mockReview(UUID id) {
         var review = org.mockito.Mockito.mock(Review.class);
         when(review.getId()).thenReturn(id);
@@ -94,6 +131,6 @@ class ReviewsControllerWebMvcTest {
     }
 
     private static ReviewResponse mockResponse(UUID id) {
-        return new ReviewResponse(id, null, null, null, null, null);
+        return new ReviewResponse(id, null, null, null, null, null, null, null);
     }
 }

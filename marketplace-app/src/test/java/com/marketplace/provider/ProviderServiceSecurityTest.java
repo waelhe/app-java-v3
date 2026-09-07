@@ -1,5 +1,6 @@
 package com.marketplace.provider;
 
+import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,11 @@ class ProviderServiceSecurityTest {
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
+
+    // L21: the event-driven rating refresh resolves aggregates through the
+    // cross-module port.
+    @MockitoBean
+    private ReviewStatsPort reviewStatsPort;
 
     @Test
     @WithMockUser(roles = "USER")

@@ -1,6 +1,7 @@
 package com.marketplace.provider;
 
 import test.config.ModuleTestConfig;
+import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,12 @@ class ProviderModuleIntegrationTest {
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
+
+    // L21: the review-stats listener resolves aggregates through the
+    // cross-module port — outside this module slice, so the standard
+    // @MockitoBean pattern applies (house convention).
+    @MockitoBean
+    ReviewStatsPort reviewStatsPort;
 
     @Autowired
     private ProviderService providerService;

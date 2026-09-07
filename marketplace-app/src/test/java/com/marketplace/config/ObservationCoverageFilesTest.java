@@ -103,9 +103,10 @@ class ObservationCoverageFilesTest {
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.create", "provider.suspend", "provider.update",
-                    "provider.verify")),
-            Map.entry("marketplace-reviews", List.of("review.create", "review.update")),
+                    "provider.create", "provider.rating.stats", "provider.suspend",
+                    "provider.update", "provider.verify")),
+            Map.entry("marketplace-reviews", List.of(
+                    "review.create", "review.reply", "review.update")),
             Map.entry("marketplace-platform-infra", List.of("email.send")));
 
     private Path repoRoot() {

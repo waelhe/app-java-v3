@@ -1,5 +1,6 @@
 package com.marketplace.reviews;
 
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,6 +10,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.hibernate.envers.Audited;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -35,6 +37,13 @@ public class Review extends BaseEntity {
 
     @Column(name = "comment", columnDefinition = "TEXT")
     private String comment;
+
+    /** L21: the provider's reply — one per review (null until the first). */
+    @Column(name = "reply", columnDefinition = "TEXT")
+    private String reply;
+
+    @Column(name = "replied_at")
+    private Instant repliedAt;
 
     protected Review() {
     }
@@ -64,6 +73,8 @@ public class Review extends BaseEntity {
     public UUID getProviderId() { return providerId; }
     public Integer getRating() { return rating; }
     public String getComment() { return comment; }
+    public String getReply() { return reply; }
+    public Instant getRepliedAt() { return repliedAt; }
 
     public void update(Integer rating, String comment) {
         if (rating < 1 || rating > 5) {
@@ -71,5 +82,18 @@ public class Review extends BaseEntity {
         }
         this.rating = rating;
         this.comment = comment;
+    }
+
+    /**
+     * L21 (roadmap §5): the provider reply — unique by construction: the
+     * column pair is null until the first reply and a second attempt is a
+     * conflict, never an overwrite (acceptance 1: «ردّ واحد لكل تقييم (فريد)»).
+     */
+    public void reply(String reply) {
+        if (this.reply != null) {
+            throw new ConflictException("Review already has a provider reply");
+        }
+        this.reply = reply;
+        this.repliedAt = Instant.now();
     }
 }

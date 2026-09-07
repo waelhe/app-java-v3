@@ -37,7 +37,7 @@ class ProviderControllerTest {
         Authentication authentication = mock(Authentication.class);
         UUID userId = UUID.randomUUID();
         ProviderProfile profile = ProviderProfile.create("John", "Bio", userId);
-        ProviderResponse response = new ProviderResponse(UUID.randomUUID(), "John", "Bio", ProviderStatus.PENDING, null, null);
+        ProviderResponse response = new ProviderResponse(UUID.randomUUID(), "John", "Bio", ProviderStatus.PENDING, null, null, null);
 
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(providerService.create("John", "Bio", userId)).thenReturn(profile);
@@ -53,7 +53,7 @@ class ProviderControllerTest {
     void getById_returnsProvider() {
         UUID id = UUID.randomUUID();
         ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
-        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.PENDING, null, null);
+        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.PENDING, null, null, null);
 
         when(providerService.getById(id)).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);
@@ -70,7 +70,7 @@ class ProviderControllerTest {
         var request = new ProviderRequest("Jane", "Updated");
         Authentication authentication = mock(Authentication.class);
         ProviderProfile profile = ProviderProfile.create("Jane", "Updated", UUID.randomUUID());
-        ProviderResponse response = new ProviderResponse(id, "Jane", "Updated", ProviderStatus.PENDING, null, null);
+        ProviderResponse response = new ProviderResponse(id, "Jane", "Updated", ProviderStatus.PENDING, null, null, null);
 
         when(providerService.update(eq(id), eq("Jane"), eq("Updated"), any(Authentication.class))).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);
@@ -86,7 +86,7 @@ class ProviderControllerTest {
         UUID id = UUID.randomUUID();
         ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
         profile.verify();
-        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.VERIFIED, null, null);
+        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.VERIFIED, null, null, null);
 
         when(providerService.verify(id)).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);
@@ -102,7 +102,7 @@ class ProviderControllerTest {
         UUID id = UUID.randomUUID();
         ProviderProfile profile = ProviderProfile.create("John", "Bio", UUID.randomUUID());
         profile.suspend();
-        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.SUSPENDED, null, null);
+        ProviderResponse response = new ProviderResponse(id, "John", "Bio", ProviderStatus.SUSPENDED, null, null, null);
 
         when(providerService.suspend(id)).thenReturn(profile);
         when(providerMapper.toResponse(profile)).thenReturn(response);

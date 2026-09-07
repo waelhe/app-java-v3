@@ -8,6 +8,7 @@ public record ProviderResponse(
         String displayName,
         String bio,
         ProviderStatus status,
+        Double ratingAverage,
         Instant createdAt,
         Instant updatedAt
 ) {

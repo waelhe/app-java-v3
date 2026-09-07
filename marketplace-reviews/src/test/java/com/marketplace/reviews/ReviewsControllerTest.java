@@ -40,7 +40,7 @@ class ReviewsControllerTest {
     void getById_returnsReview() {
         UUID id = UUID.randomUUID();
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Good");
-        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good", null, null);
+        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good", null, null, null, null);
 
         when(reviewsService.getById(id)).thenReturn(review);
         when(reviewMapper.toResponse(review)).thenReturn(response);
@@ -84,7 +84,7 @@ class ReviewsControllerTest {
         UUID bookingId = UUID.randomUUID();
         var request = new ReviewsController.CreateReviewRequest(bookingId, 5, "Perfect");
         Review review = Review.create(bookingId, reviewerId, UUID.randomUUID(), 5, "Perfect");
-        ReviewResponse response = new ReviewResponse(UUID.randomUUID(), bookingId, 5, "Perfect", null, null);
+        ReviewResponse response = new ReviewResponse(UUID.randomUUID(), bookingId, 5, "Perfect", null, null, null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(reviewerId);
         when(reviewsService.create(bookingId, reviewerId, 5, "Perfect")).thenReturn(review);
@@ -102,7 +102,7 @@ class ReviewsControllerTest {
         Authentication auth = mock(Authentication.class);
         var request = new ReviewsController.UpdateReviewRequest(4, "Updated");
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Updated");
-        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Updated", null, null);
+        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Updated", null, null, null, null);
 
         when(reviewsService.update(id, 4, "Updated", auth)).thenReturn(review);
         when(reviewMapper.toResponse(review)).thenReturn(response);
@@ -111,5 +111,24 @@ class ReviewsControllerTest {
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(response, result.getBody());
+    }
+
+    @Test
+    void reply_delegatesToServiceAndReturns200() {
+        UUID id = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        var request = new ReviewsController.ReplyRequest("Thanks for the feedback");
+        Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Good");
+        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good",
+                "Thanks for the feedback", null, null, null);
+
+        when(reviewsService.reply(id, "Thanks for the feedback", auth)).thenReturn(review);
+        when(reviewMapper.toResponse(review)).thenReturn(response);
+
+        ResponseEntity<ReviewResponse> result = controller.reply(id, request, auth);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(response, result.getBody());
+        verify(reviewsService).reply(id, "Thanks for the feedback", auth);
     }
 }

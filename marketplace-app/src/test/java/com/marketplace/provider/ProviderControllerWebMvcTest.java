@@ -93,6 +93,6 @@ class ProviderControllerWebMvcTest {
     }
 
     private static ProviderResponse mockResponse() {
-        return new ProviderResponse(UUID.randomUUID(), null, null, null, null, null);
+        return new ProviderResponse(UUID.randomUUID(), null, null, null, null, null, null);
     }
 }

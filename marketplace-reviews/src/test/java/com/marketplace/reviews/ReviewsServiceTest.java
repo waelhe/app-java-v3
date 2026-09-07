@@ -4,6 +4,8 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
@@ -26,12 +28,14 @@ class ReviewsServiceTest {
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
+    private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
     private final Authentication authentication = mock(Authentication.class);
     private ReviewsService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReviewsService(reviewRepository, currentUserProvider, eventPublisher, bookingParticipantProvider);
+        service = new ReviewsService(reviewRepository, currentUserProvider, eventPublisher,
+                bookingParticipantProvider, providerLookupPort);
     }
 
     @Test
@@ -194,5 +198,89 @@ class ReviewsServiceTest {
         var result = service.listByReviewer(reviewerId, pageable);
 
         assertEquals(1, result.getTotalElements());
+    }
+
+    // -- L21: reply ------------------------------------------------------
+
+    private Review reviewFor(UUID providerId) {
+        return Review.create(Instancio.create(UUID.class), Instancio.create(UUID.class),
+                providerId, 4, "Good");
+    }
+
+    @Test
+    void reply_targetProviderSetsReplyAndInvalidatesCache() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID ownerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerId);
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+
+        Review result = service.reply(reviewId, "Thanks for the feedback", authentication);
+
+        assertEquals("Thanks for the feedback", result.getReply());
+        assertNotNull(result.getRepliedAt());
+        verify(eventPublisher).publishEvent(
+                org.mockito.ArgumentMatchers.argThat((Object ev) ->
+                        ev instanceof com.marketplace.shared.api.CacheInvalidationRequested));
+    }
+
+    @Test
+    void reply_throwsWhenCallerHasNoProviderProfile() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(reviewFor(Instancio.create(UUID.class))));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(providerLookupPort.findByUserId(userId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.reply(reviewId, "x", authentication));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reply_throwsForDifferentProvider() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID reviewedProviderId = Instancio.create(UUID.class);
+        UUID otherProviderId = Instancio.create(UUID.class);
+        UUID otherOwnerUserId = Instancio.create(UUID.class);
+        when(reviewRepository.findById(reviewId))
+                .thenReturn(Optional.of(reviewFor(reviewedProviderId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherOwnerUserId);
+        when(providerLookupPort.findByUserId(otherOwnerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(otherProviderId, "Other", "VERIFIED", otherOwnerUserId)));
+
+        AccessDeniedException ex = assertThrows(AccessDeniedException.class,
+                () -> service.reply(reviewId, "not mine", authentication));
+
+        assertTrue(ex.getMessage().contains("reviewed provider"));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void reply_throwsWhenAlreadyReplied() {
+        UUID reviewId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID ownerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerId);
+        review.reply("first");
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+
+        assertThrows(ConflictException.class, () -> service.reply(reviewId, "second", authentication));
+        assertEquals("first", review.getReply());
+    }
+
+    @Test
+    void reply_throwsWhenReviewMissing() {
+        UUID reviewId = Instancio.create(UUID.class);
+        when(reviewRepository.findById(reviewId)).thenReturn(Optional.empty());
+
+        assertThrows(com.marketplace.shared.api.ResourceNotFoundException.class,
+                () -> service.reply(reviewId, "x", authentication));
     }
 }

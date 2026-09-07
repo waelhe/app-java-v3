@@ -2,6 +2,7 @@ package com.marketplace.reviews;
 
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,12 @@ class ReviewsModuleIntegrationTest {
 
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
+
+    // L21: the reply ownership check resolves the caller's provider profile
+    // through the cross-module port — outside this module slice, so the
+    // standard @MockitoBean pattern applies (house convention).
+    @MockitoBean
+    ProviderLookupPort providerLookupPort;
 
     @Autowired
     private ReviewsService reviewsService;

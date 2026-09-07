@@ -92,4 +92,31 @@ class ReviewTest {
 
         assertThat(r1.getId()).isNotEqualTo(r2.getId());
     }
+
+    // -- L21: reply ------------------------------------------------------
+
+    @Test
+    void shouldSetReplyOnce() {
+        Review review = Review.create(Instancio.create(UUID.class), Instancio.create(UUID.class),
+                Instancio.create(UUID.class), 4, "Good");
+        assertThat(review.getReply()).isNull();
+        assertThat(review.getRepliedAt()).isNull();
+
+        review.reply("Thanks for the feedback");
+
+        assertThat(review.getReply()).isEqualTo("Thanks for the feedback");
+        assertThat(review.getRepliedAt()).isNotNull();
+    }
+
+    @Test
+    void shouldRejectSecondReply() {
+        Review review = Review.create(Instancio.create(UUID.class), Instancio.create(UUID.class),
+                Instancio.create(UUID.class), 4, "Good");
+        review.reply("first");
+
+        assertThatThrownBy(() -> review.reply("second"))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessage("Review already has a provider reply");
+        assertThat(review.getReply()).isEqualTo("first");
+    }
 }

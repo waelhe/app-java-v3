@@ -1,5 +1,19 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Layer 21 — تقييمات ثنائية: ردّ المزوّد + متوسط مخزّن (الأسبوع 2 من خطة توسع الميزات — V/J=2.0) (2026-09-07) ✅ مدمجة (PR #251 — الفحصان الإلزاميان عبر ruleset سلطة الدمج)
+
+**الأمر الحاكم:** «ابدأ الأسبوع 2» — ثاني الطبقات الأربع للطبقة الأسبوع الثاني. **إعلان §0 (AGENTS.md):** الملف الحاكم `docs/feature-expansion-roadmap.md` §5-L21 + §6؛ النواة: وحدتا reviews + provider (عقد حدث + JPA/Envers + ترحيلة)؛ الحدود: منفذ جديد `ReviewStatsPort` في shared-api (منفّذه `ReviewStatsAdapter` في reviews، مستهلكه `ProviderReviewStatsListener` في provider — عقد موثق في PR) + إعادة استخدام `ProviderLookupPort` كما هو (خندق L20) + الأحداث القائمة بلا أي تغيير على الناشر؛ الدين: لا.
+
+**البنية:** (أ) الرد عمودان على صف المراجعة (`V37`: `reply`/`replied_at` + مرآتا Envers `reviews_aud`) — فريد بالبناء: الزوج فارغ حتى أول رد و`Review.reply()` يرفض الثاني بـ`ConflictException`؛ `POST /api/v1/reviews/{id}/reply` بـ`@PreAuthorize("hasRole('PROVIDER')")` والملكية برمجية: `currentUserProvider` ← `ProviderLookupPort.findByUserId` ← الملف المحلول يجب أن يكون `review.providerId` نفسه (بلا تجاوز إداري — «المزوّد المستهدف حصراً»). (ب) `rating_average` على `provider_profiles` (+ المرآة): `ProviderReviewStatsListener` (جديد) يستهلك `ReviewCreatedEvent`/`ReviewUpdatedEvent` بـ`@ApplicationModuleListener` (AFTER_COMMIT+async) ويحل المزوّد + المجموع المعاد حسابه عبر `ReviewStatsPort.findStatsByReviewId` (استعلام `AVG/COUNT` مجمّع في `ReviewRepository` — دائماً من المصدر فلا انحراف) ← `ProviderService.applyRatingAverage` (بلا `@PreAuthorize` — لا رئيس على خيط async، سابقة `failIntent`) + `CacheInvalidationRequested(providers)`. (ج) `ReviewResponse` += `reply`/`repliedAt` و`ProviderResponse` += `ratingAverage`.
+
+**ما لم يُمس (عقد الأمان):** `ReviewsService.create/update` ومساراتها وحدثاها (الناشر صفر تغيير)، دورة حياة `ProviderProfile` (`verify/suspend/update`)، ترحيلة واحدة حصراً (V37 كما رسم البند)، لا اعتماديات/workflows/إعدادات.
+
+**الحرّاس (17 اختباراً):** كيان (رد واحد + 409 للثاني) + `ReviewsServiceTest` (5 مسارات: مالك سعيد + حدث الإبطال، لا ملف 403، مزوّد آخر 403، رد ثانٍ 409، مراجعة غائبة 404) + `ReviewsServiceSecurityTest.reply_whenNotProvider` (سلبي أمن الطريقة على الفول الحقيقي — الخدمة المسخَّرة لا تحمل `@PreAuthorize` للشريحة، موثق في PR) + عقد المتحكم + WebMvc (رد 200 + جسم فارغ 400) + `ProviderReviewStatsListenerTest` (حدثان + مراجعة غائبة skip) + `ReviewStatsAdapterTest` (2) + `ProviderServiceTest.applyRatingAverage` (القيمة + إبطال المخبأة) + توصيل شريحتَي reviews/provider (`@MockitoBean` للمنفذين العابرين) + دبوس الرصد (`review.reply`, `provider.rating.stats`) + **`ReviewsTwoWayIntegrationTest`** (الحلقة الكاملة: حدثان حقيقيان عبر الوحدات → المتوسط المخزن 3.5 → تحديث 4→5 → 4.0 بثبات قراءة متكررة؛ وحصرية الرد وفريته — سياق تطبيق كامل + Testcontainers/CI).
+
+**البوابة المحلية (JDK 25):** `verify -pl marketplace-app -am` = 243 اختباراً، صفر فشل حقيقي (الانحرافان البيئيان الموثقان فقط — CI سلطة الحكم).
+
+**التزامن التوثيقي في نفس الدفعة (درس #244):** قلب حالة L21 في الخارطة إلى «مدمج (PR #251)» + مدخل `SYSTEM.md §11` (أعلى القسم) + هذا القسم. التفاصيل بأدلة: جسم PR #251.
+
 ## Layer 23 — حظر/تعطيل حساب: نقطة إدارية واحدة تقلب enabled عبر مدير الإطار (الأسبوع 2 من خطة توسع الميزات — V/J=4.0) (2026-09-07) ✅ مدمجة (PR #250 — الفحصان الإلزاميان عبر ruleset سلطة الدمج)
 
 **الأمر الحاكم:** «ابدأ الأسبوع 2» — أول الطبقات الأربع للأسبوع الثاني (الثقة والسلامة، أعلاها نسبة). **إعلان §0 (AGENTS.md):** الملف الحاكم `docs/feature-expansion-roadmap.md` §5-L23 + §6؛ النواة: وحدة identity + سطح admin + سلسلة المصادقة؛ الحدود: `IdentitySpi += updateUserStatus` (توسيع عقد موثق، المنفّذ الوحيد `UserService`) — لا تغيير حدود Modulith (identity يسمح بـ`shared :: shared-security` أصلاً)؛ الدين: لا.
