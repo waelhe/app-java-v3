@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Verifies that incompatible OpenAPI changes reported by openapi-diff are fully
 # covered by documented exceptions in .ci/openapi-compat-allowlist.yml.
 #

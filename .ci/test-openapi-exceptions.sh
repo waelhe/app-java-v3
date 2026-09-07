@@ -8,10 +8,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERIFY="$SCRIPT_DIR/verify-openapi-exceptions.sh"
-case "$(uname -s)" in
-  *MINGW*|*MSYS*) AWK_GOOD=awk ;; # git-bash ships gawk
-  *) AWK_GOOD=awk ;;
-esac
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
