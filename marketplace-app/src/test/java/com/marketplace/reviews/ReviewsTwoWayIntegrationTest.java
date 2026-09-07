@@ -103,7 +103,10 @@ class ReviewsTwoWayIntegrationTest {
                 .isEqualTo((3 + 5) / 2.0);
 
         assertThat(reviewRepository.findById(first.getId()).orElseThrow().getRating()).isEqualTo(3);
-        providerRepository.delete(profile);
+        // Cleanup re-loads the row: the async listener bumped the version after
+        // the test's last read (CI round-1 evidence — the stale entity's
+        // optimistic delete matched 0 rows).
+        providerRepository.findById(providerId).ifPresent(providerRepository::delete);
     }
 
     @Test

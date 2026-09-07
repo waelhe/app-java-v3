@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
@@ -22,15 +23,18 @@ public class ProviderService {
     private final ProviderRepository providerRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReviewStatsPort reviewStatsPort;
 
     private static final Set<String> PROVIDER_CACHE_NAMES = Set.of("providers");
 
     public ProviderService(ProviderRepository providerRepository,
                            CurrentUserProvider currentUserProvider,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           ReviewStatsPort reviewStatsPort) {
         this.providerRepository = providerRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.reviewStatsPort = reviewStatsPort;
     }
 
     @Observed(name = "provider.create")
@@ -75,19 +79,32 @@ public class ProviderService {
     }
 
     /**
-     * L21 (roadmap §5): stores the event-recomputed rating average on the
-     * provider profile. Called by {@code ProviderReviewStatsListener} from
-     * the async AFTER_COMMIT dispatch of the review events — no
-     * {@code @PreAuthorize} because there is no principal on that thread
-     * (same shape as {@code PaymentsService#failIntent}, the webhook-driven
-     * write). The average is recomputed at the source (reviews module) so
-     * this is a plain assignment plus the cache invalidation convention.
+     * L21 (roadmap §5): lands the event-driven rating average on the provider
+     * profile. Called by {@code ProviderReviewStatsListener} from the async
+     * AFTER_COMMIT dispatch of the review events — no {@code @PreAuthorize}
+     * because there is no principal on that thread (same shape as
+     * {@code PaymentsService#failIntent}, the webhook-driven write).
+     *
+     * <p><b>Concurrency (CI round-1 evidence):</b> two review events dispatched
+     * close together run their listeners CONCURRENTLY on the same profile row —
+     * the optimistic version rejects one and its aggregate is lost until the
+     * event-publication resubmission retries it (minutes). The flow therefore
+     * resolves the reviewed provider, takes a PESSIMISTIC_WRITE row lock, and
+     * recomputes the aggregate INSIDE the locked transaction: the listeners
+     * serialize, and the last one to apply always carries the freshest
+     * {@code AVG} — no lost update, no stale regression. A missing profile
+     * (deleted provider) is a silent skip, not an exception — an exception
+     * would keep the publication incomplete and retry forever.
      */
     @Observed(name = "provider.rating.stats")
-    public void applyRatingAverage(UUID providerId, double ratingAverage) {
-        ProviderProfile provider = getById(providerId);
-        provider.applyRatingAverage(ratingAverage);
-        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, providerId));
+    public void refreshRatingAverage(UUID reviewId) {
+        reviewStatsPort.findStatsByReviewId(reviewId).ifPresent(initial ->
+                providerRepository.findByIdForUpdate(initial.providerId()).ifPresent(profile ->
+                        reviewStatsPort.findStatsByProviderId(profile.getId()).ifPresent(fresh -> {
+                            profile.applyRatingAverage(fresh.averageRating());
+                            eventPublisher.publishEvent(
+                                    new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, profile.getId()));
+                        })));
     }
 
     private void verifyOwnership(ProviderProfile provider, Authentication authentication) {

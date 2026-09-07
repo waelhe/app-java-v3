@@ -24,4 +24,14 @@ public interface ReviewStatsPort {
      * soft-deleted) — the caller simply skips.
      */
     Optional<ReviewStats> findStatsByReviewId(UUID reviewId);
+
+    /**
+     * L21 recompute-inside-the-lock seam: the provider side resolves the
+     * reviewed provider first, locks the profile row, then recomputes the
+     * aggregate through this method INSIDE the locked transaction — the
+     * freshest snapshot at apply time (concurrent listeners serialize on the
+     * row lock, so the last one to apply always carries the latest aggregate
+     * and no update is lost to an optimistic-version conflict).
+     */
+    Optional<ReviewStats> findStatsByProviderId(UUID providerId);
 }

@@ -30,4 +30,9 @@ public class ReviewStatsAdapter implements ReviewStatsPort {
         return reviewRepository.findById(reviewId)
                 .flatMap(review -> reviewRepository.getStatsByProviderId(review.getProviderId()));
     }
+
+    @Override
+    public Optional<ReviewStats> findStatsByProviderId(UUID providerId) {
+        return reviewRepository.getStatsByProviderId(providerId);
+    }
 }
