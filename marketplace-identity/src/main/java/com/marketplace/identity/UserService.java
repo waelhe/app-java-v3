@@ -2,14 +2,21 @@ package com.marketplace.identity;
 
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
 import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,15 +28,41 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Transactional
 public class UserService implements IdentitySpi {
 
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserDetailsManager userDetailsManager;
+    private final JdbcTemplate jdbcTemplate;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
 
+    /** Authorization rows in the SAS store (V13) are keyed by the principal name. */
+    static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
+            "DELETE FROM oauth2_authorization WHERE principal_name = ?";
+
+    /** Counting constraint (roadmap L23 acceptance 2): the last active ADMIN is untouchable. */
+    static final String COUNT_ACTIVE_ADMINS = """
+            SELECT COUNT(*) FROM auth_users u
+             WHERE u.enabled = true
+               AND EXISTS (SELECT 1 FROM auth_authorities a
+                            WHERE a.username = u.username AND a.authority = 'ROLE_ADMIN')
+            """;
+
+    /** The audit record insert on the table the schema has owned since V8. */
+    static final String INSERT_AUDIT_LOG = """
+            INSERT INTO audit_log (entity_type, entity_id, action, changed_by, old_values, new_values)
+            VALUES (?, ?, 'UPDATE', ?, ?::jsonb, ?::jsonb)
+            """;
+
     public UserService(UserRepository userRepository,
-                       ApplicationEventPublisher eventPublisher) {
+                       ApplicationEventPublisher eventPublisher,
+                       UserDetailsManager userDetailsManager,
+                       JdbcTemplate jdbcTemplate) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.userDetailsManager = userDetailsManager;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -100,6 +133,102 @@ public class UserService implements IdentitySpi {
         User user = getById(userId);
         user.changeRole(UserRole.valueOf(newRole));
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+    }
+
+    /**
+     * L23 (feature-expansion roadmap §5) — administrative account disable/enable.
+     *
+     * <p><b>The operative change</b> is {@code auth_users.enabled}, written through
+     * the framework-managed {@link UserDetailsManager} bean (the same manager the
+     * authentication chain reads from — {@code JdbcUserDetailsManager} wired in
+     * {@code SecurityConfig}: a disabled row makes the next form-login attempt
+     * throw {@code DisabledException}, so no new authorization code or token can
+     * be minted for the account).
+     *
+     * <p><b>Tokens already issued:</b> Spring Authorization Server 7.1.1 does not
+     * re-read {@code enabled} on the {@code refresh_token} grant (it deserializes
+     * the principal stored in {@code oauth2_authorization} — verified against the
+     * framework source). Disabling therefore also removes the account's
+     * authorization rows — the same store OAuth2 token revocation operates on —
+     * so the next refresh-token request returns {@code invalid_grant}
+     * ("Invalid request: refresh_token is invalid"). The already-minted access
+     * JWTs are self-contained and die by their 900s TTL; the roadmap's basis is
+     * the login chain, so per-request JWT revocation is deliberately out of
+     * scope. Enabling emits no token: the user simply logs in again.
+     *
+     * <p><b>The audit record:</b> the action lands in {@code audit_log} — the
+     * audit table the schema has carried since {@code V8__audit_log.sql}
+     * ("Audit log table for tracking entity changes") with exactly this shape
+     * ({@code entity_type/entity_id/action/changed_by/old_values/new_values}).
+     * The reason required by the roadmap rides inside {@code new_values} next to
+     * the flipped flag.
+     *
+     * <p><b>Counting constraint</b> (acceptance 2): disabling the last active
+     * ADMIN is rejected — the guard counts enabled users holding
+     * {@code ROLE_ADMIN} in {@code auth_authorities} (the login-side authority
+     * that the JWT {@code roles} claim is minted from).
+     */
+    @Observed(name = "user.status.update")
+    @Override
+    public void updateUserStatus(UUID userId, String status, String reason, String actor) {
+        boolean disable = "DISABLED".equals(status);
+        if (!disable && !"ENABLED".equals(status)) {
+            throw new IllegalArgumentException(
+                    "Unknown account status: " + status + " (expected DISABLED or ENABLED)");
+        }
+        User user = getById(userId);
+        String username = user.getSubject();
+        UserDetails stored;
+        try {
+            stored = userDetailsManager.loadUserByUsername(username);
+        } catch (UsernameNotFoundException ex) {
+            throw new ResourceNotFoundException(
+                    "No authentication account for user: " + userId + " (subject: " + username + ")");
+        }
+
+        if (disable && stored.isEnabled() && hasAdminAuthority(stored)) {
+            Long activeAdmins = jdbcTemplate.queryForObject(COUNT_ACTIVE_ADMINS, Long.class);
+            if (activeAdmins != null && activeAdmins <= 1) {
+                throw new ConflictException("Cannot disable the last active ADMIN account");
+            }
+        }
+
+        boolean wasEnabled = stored.isEnabled();
+        // The builder's disabled(...) flag drives auth_users.enabled on the manager's
+        // updateUser SQL; password and authorities are replayed verbatim so only the
+        // flag flips. The remaining account flags are preserved from the loaded row.
+        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
+                .withUsername(username)
+                .password(stored.getPassword())
+                .authorities(stored.getAuthorities())
+                .accountExpired(!stored.isAccountNonExpired())
+                .accountLocked(!stored.isAccountNonLocked())
+                .credentialsExpired(!stored.isCredentialsNonExpired())
+                .disabled(disable)
+                .build());
+
+        if (disable) {
+            jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
+        }
+
+        jdbcTemplate.update(INSERT_AUDIT_LOG,
+                "User", userId, actor,
+                "{\"enabled\": " + wasEnabled + "}",
+                "{\"enabled\": " + !disable + ", \"reason\": " + quote(reason) + "}");
+
+        log.info("Account status changed: userId={}, username={}, newStatus={}, actor={}, reason='{}'",
+                userId, username, status, actor, reason);
+    }
+
+    private static boolean hasAdminAuthority(UserDetails details) {
+        return details.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
+
+    /** Minimal JSON string quoting for the audit {@code new_values} payload. */
+    private static String quote(String value) {
+        String escaped = value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+        return "\"" + escaped + "\"";
     }
 
     private UserSummary toUserSummary(User user) {

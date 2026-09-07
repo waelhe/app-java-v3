@@ -166,4 +166,17 @@ class AdminControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         verify(identitySpi).updateUserRole(userId, "ADMIN");
     }
+
+    @Test
+    void updateUserStatus_callsSpiWithActorAndReturnsOk() {
+        UUID userId = UUID.randomUUID();
+        var request = new AdminController.ChangeStatusRequest("DISABLED", "policy violation");
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn("admin-actor");
+
+        ResponseEntity<Void> result = controller.updateUserStatus(userId, request, authentication);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        verify(identitySpi).updateUserStatus(userId, "DISABLED", "policy violation", "admin-actor");
+    }
 }

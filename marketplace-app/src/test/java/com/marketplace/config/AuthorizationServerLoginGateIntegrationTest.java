@@ -73,7 +73,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
+        // L23: V8 audit_log joins V13 — the status endpoint records the action
+        // and its reason in the audit table the schema has owned since V8.
+        "spring.sql.init.schema-locations=classpath:db/migration/V8__audit_log.sql,classpath:db/migration/V13__authorization_security.sql",
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
         "marketplace.security.oauth2.client.secret=it-app-secret",
         // Gate B pattern (1): prove the env-driven redirect URIs path live — the value
@@ -205,6 +207,83 @@ class AuthorizationServerLoginGateIntegrationTest {
         HttpResponse<String> apiResponse = getWithBearer(PROTECTED_ADMIN_PATH, rotatedAccessToken);
         assertThat(apiResponse.statusCode()).isNotEqualTo(401);
         assertThat(apiResponse.statusCode()).isNotEqualTo(403);
+    }
+
+    /**
+     * L23 (feature-expansion roadmap §5, Week 2) — acceptance 1 and 3, through
+     * the real framework chain. A disabled account is rejected at its next
+     * token request on BOTH issuance paths: the refresh grant (the stored
+     * authorizations are gone, so the token endpoint answers invalid_grant) and
+     * the form login (the JdbcUserDetailsManager read of auth_users.enabled
+     * throws DisabledException, so the login POST redirects to /login?error
+     * and no authorization code exists). Re-enabling emits no token — the
+     * user simply logs in again and a fresh gate mints new tokens.
+     */
+    @Test
+    void l23_disabledAccountIsRejectedAtNextTokenRequestAndReenabledWithoutNewToken() throws Exception {
+        String target = "it-status-target-user";
+        registerUser(target, "USER");
+        GateResult targetGate = loginGate(target, PASSWORD);
+        assertThat(targetGate.accessToken()).isNotBlank();
+        UUID targetId = syncProjectionIdViaMe(targetGate.accessToken());
+
+        GateResult admin = adminGate();
+
+        // Disable through the administrative endpoint (real HTTP, real
+        // UserDetailsManager flip, real authorization removal, real audit row).
+        HttpResponse<String> disable = putJsonWithBearer(
+                "/api/v1/admin/users/" + targetId + "/status", admin.accessToken(),
+                "{\"status\":\"DISABLED\",\"reason\":\"gate test disable\"}");
+        assertThat(disable.statusCode())
+                .as("disable call: %s", body(disable)).isEqualTo(200);
+
+        // Next token request #1 — refresh grant: the authorization rows are
+        // gone, so the token endpoint rejects the (never-used, unexpired)
+        // refresh token with invalid_grant.
+        HttpResponse<String> refreshAfter = postFormWithBasicAuth(TOKEN_PATH,
+                "grant_type=refresh_token&refresh_token=" + targetGate.refreshToken());
+        assertThat(refreshAfter.statusCode())
+                .as("refresh after disable: %s", body(refreshAfter)).isEqualTo(400);
+
+        // Next token request #2 — form login: DisabledException, /login?error,
+        // no code.
+        assertThat(loginIsRejected(target, PASSWORD))
+                .as("the next login attempt must be rejected for a disabled account").isTrue();
+
+        // Re-enable: the endpoint flips the flag; it mints nothing.
+        HttpResponse<String> enable = putJsonWithBearer(
+                "/api/v1/admin/users/" + targetId + "/status", admin.accessToken(),
+                "{\"status\":\"ENABLED\",\"reason\":\"appeal accepted\"}");
+        assertThat(enable.statusCode())
+                .as("enable call: %s", body(enable)).isEqualTo(200);
+
+        // Acceptance 3 — the user logs in again and a fresh gate mints tokens.
+        GateResult renewed = loginGate(target, PASSWORD);
+        assertThat(renewed.accessToken()).isNotBlank();
+        HttpResponse<String> apiResponse = getWithBearer("/api/v1/users/me", renewed.accessToken());
+        assertThat(apiResponse.statusCode()).isEqualTo(200);
+    }
+
+    /**
+     * L23 acceptance 2 — the counting constraint. it-login-gate-admin is the
+     * only enabled ROLE_ADMIN account in this context, so disabling it is
+     * rejected with 409 and nothing changes (the guard throws before any
+     * flip, removal or audit row).
+     */
+    @Test
+    void l23_lastActiveAdminCannotBeDisabled() throws Exception {
+        GateResult admin = adminGate();
+        UUID adminId = syncProjectionIdViaMe(admin.accessToken());
+
+        HttpResponse<String> attempt = putJsonWithBearer(
+                "/api/v1/admin/users/" + adminId + "/status", admin.accessToken(),
+                "{\"status\":\"DISABLED\",\"reason\":\"must not succeed\"}");
+
+        assertThat(attempt.statusCode())
+                .as("last-admin disable attempt: %s", body(attempt)).isEqualTo(409);
+        assertThat(attempt.body()).contains("last active ADMIN");
+        // Nothing changed: the admin can still authenticate.
+        assertThat(loginIsRejected(ADMIN_USERNAME, PASSWORD)).isFalse();
     }
 
     /**
@@ -561,6 +640,61 @@ class AuthorizationServerLoginGateIntegrationTest {
                 .GET()
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    // -- L23 helpers -----------------------------------------------------
+
+    /** JSON PUT with a Bearer token — the administrative status surface. */
+    private HttpResponse<String> putJsonWithBearer(String path, String accessToken, String json)
+            throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl() + path))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .timeout(Duration.ofSeconds(30))
+                .PUT(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /**
+     * Syncs the JWT subject into the identity projection through the real
+     * {@code /api/v1/users/me} endpoint (the projection row is what the admin
+     * status endpoint addresses by id) and returns the id.
+     */
+    private UUID syncProjectionIdViaMe(String accessToken) throws Exception {
+        HttpResponse<String> me = getWithBearer("/api/v1/users/me", accessToken);
+        assertThat(me.statusCode()).as("/me sync: %s", body(me)).isEqualTo(200);
+        JsonNode user = objectMapper.readTree(me.body());
+        assertThat(user.path("id").asString()).as("the /me response must carry the id").isNotBlank();
+        return java.util.UUID.fromString(user.path("id").asString());
+    }
+
+    /**
+     * Runs the login part of the gate and reports whether it FAILED: a
+     * rejected credential POST redirects to {@code /login?error} instead of
+     * the saved authorization request.
+     */
+    private boolean loginIsRejected(String username, String password) throws Exception {
+        String authorizeUrl = baseUrl() + AUTHORIZE_PATH
+                + "?response_type=code"
+                + "&client_id=" + CLIENT_ID
+                + "&scope=openid"
+                + "&state=" + UUID.randomUUID()
+                + "&redirect_uri=" + encode(REDIRECT_URI)
+                + "&code_challenge=" + base64Url(sha256(randomCodeVerifier()))
+                + "&code_challenge_method=S256";
+        HttpResponse<String> authorizeFirst = get(authorizeUrl, null);
+        assertThat(authorizeFirst.statusCode()).isEqualTo(302);
+        String sessionCookie = sessionCookie(authorizeFirst);
+        HttpResponse<String> loginPage = get(baseUrl() + LOGIN_PATH, sessionCookie);
+        String csrfToken = csrfTokenFrom(loginPage.body());
+        assertThat(csrfToken).isNotBlank();
+        sessionCookie = latestSessionCookie(loginPage, sessionCookie);
+        HttpResponse<String> loginPost = postForm(LOGIN_PATH,
+                "username=" + username + "&password=" + password + "&_csrf=" + encode(csrfToken), sessionCookie);
+        String location = loginPost.headers().firstValue("Location").orElse("");
+        return location.contains("/login?error");
     }
 
     private Map<String, String> attributesFromConsentPage(String pageBody) {
