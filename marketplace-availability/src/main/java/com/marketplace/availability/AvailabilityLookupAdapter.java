@@ -1,6 +1,7 @@
 package com.marketplace.availability;
 
 import com.marketplace.shared.api.AvailabilityLookupPort;
+import com.marketplace.shared.api.SlotWindowStats;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,5 +32,17 @@ public class AvailabilityLookupAdapter implements AvailabilityLookupPort {
     @Override
     public Set<UUID> findAvailableProviderIds(Instant startsAt, Instant endsAt) {
         return slotRepository.findAvailableProviderIds(startsAt, endsAt);
+    }
+
+    /**
+     * L25 (feature-expansion roadmap §5): the provider-stats slot aggregates
+     * — a read-only delegation to the constructor-projection query, exposed
+     * through the same shared-api port the search module already consumes
+     * (the port's charter is cross-module availability lookups; the
+     * extension is documented in the provider-stats PR).
+     */
+    @Override
+    public SlotWindowStats findProviderSlotStats(UUID providerId, Instant from, Instant to) {
+        return slotRepository.findProviderSlotStats(providerId, from, to);
     }
 }

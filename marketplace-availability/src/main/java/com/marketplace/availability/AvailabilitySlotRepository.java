@@ -1,5 +1,6 @@
 package com.marketplace.availability;
 
+import com.marketplace.shared.api.SlotWindowStats;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -49,4 +50,24 @@ public interface AvailabilitySlotRepository extends JpaRepository<AvailabilitySl
                   WHERE t.startsAt < :endsAt AND t.endsAt > :startsAt)
             """)
     Set<UUID> findAvailableProviderIds(@Param("startsAt") Instant startsAt, @Param("endsAt") Instant endsAt);
+
+    /**
+     * L25 (feature-expansion roadmap §5): one provider's slot-window
+     * aggregates — the constructor projection backs
+     * {@code AvailabilityLookupPort.findProviderSlotStats}. A slot belongs
+     * to the window when its {@code startsAt} lies in {@code [from, to)}
+     * (the house exclusive-end convention).
+     */
+    @Query("""
+            SELECT new com.marketplace.shared.api.SlotWindowStats(
+                COUNT(s),
+                SUM(CASE WHEN s.booked = true THEN 1 ELSE 0 END))
+            FROM AvailabilitySlot s
+            WHERE s.providerId = :providerId
+              AND s.startsAt >= :from
+              AND s.startsAt < :to
+            """)
+    SlotWindowStats findProviderSlotStats(@Param("providerId") UUID providerId,
+                                          @Param("from") Instant from,
+                                          @Param("to") Instant to);
 }

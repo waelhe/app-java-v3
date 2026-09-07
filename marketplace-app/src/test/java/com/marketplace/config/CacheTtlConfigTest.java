@@ -52,9 +52,12 @@ class CacheTtlConfigTest {
 
     @Test
     void baseConfigDeclaresAllNamedCaches() throws Exception {
-        // The 13 named caches this TTL governs. A missing name would silently
-        // create caches on demand (default RedisCacheManager behavior) — the
-        // list is the contract between yml and the @Cacheable annotations.
+        // The 14 named caches this TTL governs (L25 added provider-stats —
+        // its own 5m override rides the RedisCacheManagerBuilderCustomizer,
+        // pinned by CacheRedisTtlIntegrationTest). A missing name would
+        // silently create caches on demand (default RedisCacheManager
+        // behavior) — the list is the contract between yml and the
+        // @Cacheable annotations.
         String names = property("application.yml", "spring.cache.cache-names");
         assertThat(names).isNotNull();
         java.util.List<String> declared = java.util.Arrays.stream(names.split(","))
@@ -65,7 +68,7 @@ class CacheTtlConfigTest {
                         "catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2",
                         "pricing-calculations", "search-results-v2", "availability",
                         "bookings", "users", "userSubjects", "conversations",
-                        "paymentIntents", "reviews", "providers");
+                        "paymentIntents", "reviews", "providers", "provider-stats");
     }
 
     @Test

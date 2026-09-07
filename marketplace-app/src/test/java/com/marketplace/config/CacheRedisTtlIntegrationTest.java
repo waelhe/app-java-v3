@@ -154,4 +154,36 @@ class CacheRedisTtlIntegrationTest {
         assertThat(wrapper).isNotNull();
         assertThat(wrapper.get()).isEqualTo("probe-value");
     }
+
+    @Test
+    void providerStatsCacheCarriesTheShortOverrideTtl() {
+        // L25 (feature-expansion roadmap §5): the roadmap's "مخبأة قصيرة TTL"
+        // — the provider-stats cache alone overrides the global 1h with 5m
+        // through the official RedisCacheManagerBuilderCustomizer
+        // (ProviderStatsCacheConfig). Same probe pattern as the global TTL
+        // test: write through the cache manager, read the TTL Redis itself
+        // carries. Bound: (0, 300] seconds.
+        Cache cache = cacheManager.getCache("provider-stats");
+        assertThat(cache).as("the 'provider-stats' cache must exist").isNotNull();
+
+        String key = "stats-ttl-probe:" + UUID.randomUUID();
+        cache.put(key, "probe-value");
+
+        java.util.Set<String> written = redisTemplate.keys("*" + key + "*");
+        if (written == null) {
+            written = java.util.Set.of();
+        }
+        assertThat(written)
+                .as("the framework must have written the provider-stats probe entry")
+                .isNotEmpty();
+        String actualKey = written.iterator().next();
+        probeRedisKey = actualKey;
+
+        Long ttl = redisTemplate.getExpire(actualKey);
+        assertThat(ttl)
+                .as("provider-stats entries carry the 5m override, not the global 1h")
+                .isNotNull()
+                .isPositive()
+                .isLessThanOrEqualTo(300L);
+    }
 }
