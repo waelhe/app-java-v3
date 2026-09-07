@@ -78,4 +78,16 @@ public class Payment extends BaseEntity {
         this.status = PaymentStatus.PARTIALLY_REFUNDED;
         this.refundedAmountCents += refundAmountCents;
     }
+
+    /**
+     * L19: partial refund whose amount is the remote provider's cumulative
+     * actual (the PSP is the source of truth), not a locally summed delta —
+     * the field is SET to the remote total, so local books stay correct even
+     * when refunds happened outside this service.
+     */
+    public void markPartiallyRefundedTotal(long refundedTotalCents) {
+        this.status.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED);
+        this.status = PaymentStatus.PARTIALLY_REFUNDED;
+        this.refundedAmountCents = refundedTotalCents;
+    }
 }

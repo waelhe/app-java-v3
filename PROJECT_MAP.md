@@ -1,5 +1,19 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## Layer 19 — إغلاق حلقة الدفع: الفشل يقلب الحالة والاسترداد يصل Stripe والويبهوك يصحّح الدفاتر (الأسبوع 1 من خطة توسع الميزات — V/J=2.5) (2026-09-07) ✅ مدمجة (PR #249 — الفحصان الإلزاميان عبر ruleset سلطة الدمج)
+
+**الأمر الحاكم:** «ابدأ الأسبوع 1» + «اكمل التنفيذ… اريد نظام مدار اليا من الاطار ولايوجد به عبث وتدخل وادارة يدوية» — الحلقة مدفوعة من الإطار بالكامل: الويبهوك يقلب الحالات، الاسترداد يُنشأ بمفتاح idempotency مشتق (إعادة المحاولة لا تكرر المال)، المزامنة idempotent بذاتها. **إعلان §0:** الملف الحاكم `docs/feature-expansion-roadmap.md` §5-L19 + §6؛ النواة: وحدة payments + عقد SPI؛ الحدود: `PspChannel` += `createRemoteRefund` + `RemoteRefund`/`RefundSnapshot` + مكوّن خامس لـ`VerifiedWebhook` (تغيير عقد SPI موثق — المنفّذ الوحيد StripePspChannel)؛ الأحداث: ناشر `PaymentStateChangedEvent` الجديد "FAILED" يمر بالقناة القائمة؛ الدين: D4 محدّث لا مغلق (نقطة الإغلاق: أول استرداد جزئي حي).
+
+**البنية (أ):** `failIntent` — مرآة `confirmIntent` (آلة الحالات الصارمة، صف الدفع، الحدث، إبطال المخبأة) يقودها `payment_intent.payment_failed` من الويبهوك (القناتان). **(ب):** `refundPayment` عند قناة مربوطة + رابط `psp_intent_id`: `createRemoteRefund` (منفذ جديد) بمفتاح `marketplace-refund-<paymentId>-<already>-<amount|full>`؛ **الدفاتر تُطبّع على الفعلي التراكمي البعيد** `Charge.amount_refunded` (تعيين لا جمع عبر `markPartiallyRefundedTotal` الجديدة على الكيانين) — أشكال الـSDK قُرئت من جرة stripe-java 33.4.1 نفسها (javap) + الوثيقة الرسمية محفوظة (scripts/l19-docs-*.html): «you must specify a Charge or a PaymentIntent… You can do so multiple times, until the entire charge has been refunded». بلا قناة/بلا رابط ⇒ المسار الداخلي القائم بالبايت (معيار القبول 4). **(ج):** `charge.refunded` عبر `VerifiedWebhook` الموسعة بحمولة `RefundSnapshot` — `syncRemoteRefund` idempotent (إعادة التسليم ⇒ no-op لا كسر آلة حالات)؛ غير المحلول يُقرّ بأفضل جهد (D4).
+
+**ما لم يُمس:** نموذج idempotency النوايا القائم (`createIntent`)، القناة القديمة HMAC، `processWebhookEvent` بتواقيعه، الترحيلات (صفر — المخطط يحمل كل شيء)، Connect/الفواتير (خارج النطاق برسم الخطة).
+
+**الحرّاس (10 اختبارات جديدة + تحديث دبوس مقصود):** معايير القبول الأربعة ↔ `PaymentsServicePspTest` 16/16 (فشل الويبهوك ⇒ FAILED + الحدث؛ charge.refunded بالفعلي البعيد 300؛ إعادة التسليم no-op؛ نداء واحد بمفتاح مشتق؛ الفعلي البعيد 800 يعلو المحلي 400؛ غير مربوطة ⇒ لا نداء؛ حتمية المفتاح لكل حالة) + `PaymentsModuleIntegrationTest` +3 (الفشل عبر HMAC القديمة وعبر **توقيع Stripe حقيقي محسوب HMAC-SHA256** بترويسة `t=,v1=` الرسمية؛ المزامنة بتوقيع حي — Testcontainers/CI) + دبوس `ObservationCoverageFilesTest` حُدّث بمدخلين جديدين (`payment.fail`, `payment.psp.refund`) في نفس PR (قاعدة الحارس: التحديث المقصود في نفس الدفعة). الدفتر لا يُودع للفشل: مثبت هيكلياً (المستمع COMPLETED حصراً — اختبار قائم `ignoresNonCompletedEvents`).
+
+**البوابة المحلية (JDK 25):** clean verify = صفر فشل حقيقي (الانحرافان البيئيان الموثقان فقط)؛ PaymentsServicePspTest 16/16؛ Modulith/Architecture خضراء.
+
+**التزامن التوثيقي في نفس الدفعة:** قلب حالة L19 إلى «مدمج (PR #249)» + تحديث D4 + مدخل `SYSTEM.md §11` + هذا القسم. التفاصيل بأدلة: جسم PR #249.
+
 ## Layer 20 — أرباح المضيف ذاتياً: نقطتا وصول «me» للدفتر بملكية ownsProvider (الأسبوع 1 من خطة توسع الميزات — أعلى V/J=5.0) (2026-09-07) ✅ مدمجة (PR #248 — البوابة المحلية خضراء بالانحرافين الموثقين؛ الفحصان الإلزاميان عبر ruleset سلطة الدمج)
 
 **الأمر الحاكم:** «ابدأ الأسبوع 1» — أفتح PR الطبقتين الأولى والثانية (L20 ثم L19 — §4 من الخطة: لا تبعية بينهما، وحدتان منفصلتان). **إعلان §0 (AGENTS.md):** الملف الحاكم `docs/feature-expansion-roadmap.md` §5-L20 + §6؛ النواة: وحدات (ledger/provider/shared) + أمن الطريقة؛ الحدود: Modulith (ledger += `shared :: shared-security` — سابقة provider) + SPI (`ProviderLookupPort` += `findByUserId`) + الأحداث (صفر تغيير على الناشر)؛ الدين: لا.

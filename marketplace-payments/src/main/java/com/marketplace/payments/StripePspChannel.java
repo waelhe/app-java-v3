@@ -2,11 +2,13 @@ package com.marketplace.payments;
 
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.RefundCreateParams;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,6 +88,42 @@ class StripePspChannel implements PspChannel {
     }
 
     @Override
+    @Observed(name = "payment.psp.refund")
+    public RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents, String idempotencyKey) {
+        RefundCreateParams.Builder params = RefundCreateParams.builder()
+                .setPaymentIntent(pspIntentId);
+        if (amountCents != null) {
+            params.setAmount(amountCents);
+        }
+        RequestOptions options = RequestOptions.builder()
+                .setApiKey(apiKey)
+                .setIdempotencyKey(idempotencyKey)
+                .build();
+        try {
+            com.stripe.model.Refund refund = com.stripe.model.Refund.create(params.build(), options);
+            // The cumulative remote actual lives on the charge the refund
+            // landed on ("amount_refunded", Charges API) — the local books
+            // must reflect the provider's number, not a local sum. A refund
+            // created by payment intent always resolves to its charge; a
+            // null charge id means the provider answered incoherently and
+            // is surfaced loudly instead of being papered over.
+            if (refund.getCharge() == null) {
+                throw new PspChannelException("Stripe refund " + refund.getId()
+                        + " for intent " + pspIntentId + " carried no charge id — cannot read the"
+                        + " cumulative refunded amount");
+            }
+            Charge charge = Charge.retrieve(refund.getCharge(), RequestOptions.builder()
+                    .setApiKey(apiKey).build());
+            Long cumulative = charge.getAmountRefunded();
+            return new RemoteRefund(refund.getId(), refund.getStatus(),
+                    cumulative == null ? 0L : cumulative);
+        } catch (StripeException e) {
+            throw new PspChannelException("Stripe refund creation failed for intent "
+                    + pspIntentId + ": " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader) {
         Event event;
         try {
@@ -101,15 +139,25 @@ class StripePspChannel implements PspChannel {
         }
         PaymentIntent data = extractPaymentIntent(event);
         if (data == null) {
-            // Events we did not subscribe to (or non-payment-intent objects) —
+            // charge.refunded events carry a Charge, not a PaymentIntent (L19):
+            // the charge's payment_intent resolves the local intent through
+            // the V33 link and its amount_refunded is the remote actual.
+            Charge charge = extractCharge(event);
+            if (charge != null) {
+                Long cumulative = charge.getAmountRefunded();
+                return new VerifiedWebhook(event.getId(), event.getType(), null,
+                        charge.getPaymentIntent(),
+                        new RefundSnapshot(cumulative == null ? 0L : cumulative));
+            }
+            // Events we did not subscribe to (or unknown objects) —
             // acknowledged and ignored by returning a no-op record; dispatch
             // treats unknown types as debug-level noise, exactly like the
             // legacy webhook contract.
             log.debug("Stripe event {} carried no payment intent object: {}", event.getId(), event.getType());
-            return new VerifiedWebhook(event.getId(), event.getType(), null, null);
+            return new VerifiedWebhook(event.getId(), event.getType(), null, null, null);
         }
         UUID marketplaceIntentId = metadataIntentId(data.getMetadata());
-        return new VerifiedWebhook(event.getId(), event.getType(), marketplaceIntentId, data.getId());
+        return new VerifiedWebhook(event.getId(), event.getType(), marketplaceIntentId, data.getId(), null);
     }
 
     /**
@@ -126,6 +174,23 @@ class StripePspChannel implements PspChannel {
         try {
             if (deserializer.deserializeUnsafe() instanceof PaymentIntent intent) {
                 return intent;
+            }
+        } catch (EventDataObjectDeserializationException e) {
+            log.warn("Stripe event {} data could not be deserialized: {}", event.getId(), e.getMessage());
+        }
+        return null;
+    }
+
+    /** Same official extraction pattern for Charge-carrying events (L19). */
+    private Charge extractCharge(Event event) {
+        var deserializer = event.getDataObjectDeserializer();
+        var safe = deserializer.getObject();
+        if (safe.isPresent() && safe.get() instanceof Charge charge) {
+            return charge;
+        }
+        try {
+            if (deserializer.deserializeUnsafe() instanceof Charge charge) {
+                return charge;
             }
         } catch (EventDataObjectDeserializationException e) {
             log.warn("Stripe event {} data could not be deserialized: {}", event.getId(), e.getMessage());
