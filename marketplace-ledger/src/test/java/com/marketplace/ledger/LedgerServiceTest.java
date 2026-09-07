@@ -170,4 +170,40 @@ class LedgerServiceTest {
 
         assertThat(result.getAvailableCents()).isEqualTo(-4000L);
     }
+
+    @Test
+    void getBalanceForOwnerReturnsSameAsGetBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        ProviderBalance existing = ProviderBalance.empty(providerId);
+        existing.credit(4500L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
+
+        ProviderBalance result = service.getBalanceForOwner(providerId);
+
+        assertThat(result.getAvailableCents()).isEqualTo(4500L);
+    }
+
+    @Test
+    void getStatementForOwnerDelegatesToRepositoryPage() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        var expected = new org.springframework.data.domain.PageImpl<>(
+                java.util.List.of(LedgerEntry.paymentCredit(providerId, UUID.randomUUID(), 5000L)));
+        when(entryRepository.findByProviderIdOrderByCreatedAtDesc(providerId, pageable)).thenReturn(expected);
+
+        var result = service.getStatementForOwner(providerId, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getEntryType()).isEqualTo(LedgerEntryType.PAYMENT_CREDIT);
+        assertThat(result.getContent().get(0).getAmountCents()).isEqualTo(5000L);
+        verify(entryRepository).findByProviderIdOrderByCreatedAtDesc(providerId, pageable);
+    }
 }
