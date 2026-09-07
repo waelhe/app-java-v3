@@ -83,7 +83,11 @@ class NotificationPreferenceServiceTest {
     @Test
     void updateMyPreferencesCreatesTheOverrideWhenAbsent() {
         NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
-        when(repository.findByUserId(USER_ID)).thenReturn(List.of());
+        // The post-upsert storage state: the override row now exists (the
+        // mock's read side mirrors what the write side persisted).
+        NotificationPreference stored = NotificationPreference.create(
+                USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false);
+        when(repository.findByUserId(USER_ID)).thenReturn(List.of(stored));
         when(repository.findByUserIdAndTypeAndChannel(any(), any(), any())).thenReturn(Optional.empty());
 
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
