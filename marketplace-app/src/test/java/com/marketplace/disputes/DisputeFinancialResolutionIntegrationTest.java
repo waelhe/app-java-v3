@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
@@ -57,10 +58,13 @@ import static org.mockito.Mockito.when;
  * <p>Schema honesty: the {@code AuditedWritesIntegrationTest} pattern —
  * Flyway enabled and {@code ddl-auto=none} against a dedicated container,
  * so V38 (the disputes + disputes_aud columns) is the schema the loop runs
- * on, not an entity-generated one. The booking seam is the standard
- * {@code @MockitoBean} boundary (the L21 convention) so the price and
- * provider ownership are controlled while every money path in between is
- * production code.
+ * on, not an entity-generated one. The FK parents (users -&gt;
+ * provider_listings -&gt; bookings) are seeded with raw SQL + ON CONFLICT DO
+ * NOTHING — the house seeding convention — because the real schema
+ * enforces payment_intents.booking_id/consumer_id references (CI round-2
+ * evidence). The booking seam is the standard {@code @MockitoBean}
+ * boundary (the L21 convention) so the price and provider ownership are
+ * controlled while every money path in between is production code.
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -104,12 +108,50 @@ class DisputeFinancialResolutionIntegrationTest {
     @Autowired
     private LedgerEntryRepository ledgerEntryRepository;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    /**
+     * Seeds the FK parents the real schema enforces for payment_intents
+     * (users -&gt; provider_listings -&gt; bookings) — the AuditedWrites
+     * convention: raw SQL + ON CONFLICT DO NOTHING, idempotent per test.
+     * The booking's provider is the ledger's provider (a users row) so the
+     * seeded world and the money loop agree on one identity.
+     */
+    private void seedFkParents(UUID bookingId, UUID consumerId, UUID providerId, UUID listingId) {
+        jdbc.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'CONSUMER')
+                ON CONFLICT (id) DO NOTHING
+                """, consumerId, "l24-consumer-" + consumerId + "@example.com",
+                "l24-consumer-" + consumerId + "@example.com", "L24 Consumer");
+        jdbc.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """, providerId, "l24-provider-" + providerId + "@example.com",
+                "l24-provider-" + providerId + "@example.com", "L24 Provider");
+        jdbc.update("""
+                INSERT INTO provider_listings (id, provider_id, title, description, category,
+                    price_cents, currency, status)
+                VALUES (?, ?, 'l24 disputed listing', 'x', 'CLEANING', ?, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """, listingId, providerId, PRICE_CENTS);
+        jdbc.update("""
+                INSERT INTO bookings (id, listing_id, consumer_id, provider_id, status, price_cents, currency)
+                VALUES (?, ?, ?, ?, 'CONFIRMED', ?, 'SAR')
+                ON CONFLICT (id) DO NOTHING
+                """, bookingId, listingId, consumerId, providerId, PRICE_CENTS);
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void refundConsumerResolution_closesTheMoneyLoopOnce() {
         UUID providerId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        seedFkParents(bookingId, consumerId, providerId, listingId);
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", PRICE_CENTS, "SAR",
                 Instant.now(), Instant.now()));
@@ -188,6 +230,8 @@ class DisputeFinancialResolutionIntegrationTest {
         UUID providerId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        seedFkParents(bookingId, consumerId, providerId, listingId);
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", PRICE_CENTS, "SAR",
                 Instant.now(), Instant.now()));
