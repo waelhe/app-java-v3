@@ -36,7 +36,12 @@ CREATE TABLE notification_preferences (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by VARCHAR(200),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_notification_preferences_user_type_channel UNIQUE (user_id, type, channel)
+    CONSTRAINT uq_notification_preferences_user_type_channel UNIQUE (user_id, type, channel),
+    -- The in-app channel is always on (roadmap L22: "inside the app
+    -- always"): the API rejects a DB opt-out, and this CHECK makes the
+    -- invariant absolute — even raw SQL cannot store a state the delivery
+    -- path does not honor.
+    CONSTRAINT ck_notification_preferences_db_always_on CHECK (channel <> 'DB' OR enabled)
 );
 
 -- Envers audit history (V24 convention): every switch change (ADD/MOD)

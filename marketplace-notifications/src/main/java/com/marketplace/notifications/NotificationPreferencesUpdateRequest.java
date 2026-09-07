@@ -10,7 +10,8 @@ import java.util.List;
  * the set of switches to apply in one request. Upsert semantics: each
  * entry creates the override row if absent or flips the existing one;
  * "back to default" is expressed as {@code enabled = true}, so no delete
- * path exists and the matrix stays sparse.
+ * path exists and the matrix stays sparse. An in-app ({@code DB}) opt-out
+ * is rejected — that channel is always on.
  *
  * @param preferences  the switches to apply (at least one)
  */

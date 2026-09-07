@@ -4,7 +4,9 @@ import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,7 +23,12 @@ class NotificationPreferenceServiceTest {
 
     private NotificationPreferenceService createService(NotificationPreferenceRepository repository,
                                                         CurrentUserProvider currentUserProvider) {
-        return new NotificationPreferenceService(repository, currentUserProvider);
+        // The dedicated REQUIRES_NEW upsert transaction rides a mocked
+        // manager in unit tests: the callback runs inline, commit/rollback
+        // are no-ops, and exceptions still propagate — exactly what the
+        // race-retry test needs to exercise.
+        return new NotificationPreferenceService(repository, currentUserProvider,
+                mock(PlatformTransactionManager.class));
     }
 
     private CurrentUserProvider mockUser() {
@@ -147,10 +154,47 @@ class NotificationPreferenceServiceTest {
 
         createService(repository, mockUser())
                 .updateMyPreferences(mock(Authentication.class), new NotificationPreferencesUpdateRequest(List.of(
-                        new NotificationPreferenceUpdate(NotificationType.BOOKING_CREATED, NotificationChannel.DB, false))));
+                        new NotificationPreferenceUpdate(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, false))));
 
         ArgumentCaptor<NotificationPreference> saved = ArgumentCaptor.forClass(NotificationPreference.class);
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
+    }
+
+    @Test
+    void updateMyPreferencesRejectsTheInAppChannelOptOut() {
+        // The DB (in-app) channel is always on — an opt-out would be a
+        // stored state the delivery path does not honor, so it is rejected
+        // before any write (CodeRabbit round 1).
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+
+        assertThatThrownBy(() -> createService(repository, mockUser())
+                .updateMyPreferences(mock(Authentication.class), new NotificationPreferencesUpdateRequest(List.of(
+                        new NotificationPreferenceUpdate(NotificationType.PAYMENT_STATE, NotificationChannel.DB, false)))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("DB");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateMyPreferencesRetriesTheUpsertWhenConcurrentInsertWinsTheRace() {
+        // Two concurrent PUTs can both read "no row" for the same key and
+        // both insert; the unique constraint aborts the loser's inner
+        // transaction (DataIntegrityViolationException). The request is
+        // retried once in a fresh transaction — the second attempt takes
+        // the insert again here (in production the winner's row now exists
+        // and it becomes the flip) and the valid PUT never fails.
+        NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
+        when(repository.findByUserIdAndTypeAndChannel(any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.save(any(NotificationPreference.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_notification_preferences_user_type_channel"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findByUserId(USER_ID)).thenReturn(List.of());
+
+        createService(repository, mockUser())
+                .updateMyPreferences(mock(Authentication.class), new NotificationPreferencesUpdateRequest(List.of(
+                        new NotificationPreferenceUpdate(NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false))));
+
+        verify(repository, times(2)).save(any(NotificationPreference.class));
     }
 }
