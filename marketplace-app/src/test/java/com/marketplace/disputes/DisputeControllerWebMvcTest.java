@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,11 +68,48 @@ class DisputeControllerWebMvcTest {
         var dispute = mockDispute();
         var response = mockResponse();
 
-        when(service.resolve(any(), any())).thenReturn(dispute);
+        when(service.resolve(any(), any(), any())).thenReturn(dispute);
+        when(disputeMapper.toResponse(dispute)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/admin/disputes/{id}/resolve", id)
+                        .contentType("application/json")
+                        .content("{\"resolution\": \"REFUND_CONSUMER\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void resolve_withoutBody_defaultsToNoActionAndReturnsOk() throws Exception {
+        // L24 backward compatibility: the pre-L24 callers send no body and
+        // keep working — the resolve lands as NO_ACTION (the old semantics,
+        // no money movement). The body is optional in the OpenAPI contract.
+        UUID id = UUID.randomUUID();
+        var dispute = mockDispute();
+        var response = mockResponse();
+
+        when(service.resolve(eq(id), eq(DisputeResolution.NO_ACTION), any())).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/admin/disputes/{id}/resolve", id))
                 .andExpect(status().isOk());
+        verify(service).resolve(eq(id), eq(DisputeResolution.NO_ACTION), any());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void resolve_withNullResolution_isRejected() throws Exception {
+        // L24: a PRESENT body must name the decision — @NotNull fires
+        // MethodArgumentNotValidException through the house taxonomy (the
+        // same boundary-test class as the L21 reply tests). Note: a body with
+        // an UNKNOWN enum value currently lands in the catch-all 500 (an
+        // HttpMessageNotReadableException taxonomy gap shared by every
+        // @RequestBody endpoint) — fixing that is a shared-layer decision,
+        // deliberately out of this layer's scope.
+        mockMvc.perform(post("/api/v1/admin/disputes/{id}/resolve", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("{\"resolution\": null}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
     }
 
     private static Dispute mockDispute() {
@@ -77,6 +117,6 @@ class DisputeControllerWebMvcTest {
     }
 
     private static DisputeResponse mockResponse() {
-        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null);
+        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null, null, null, null);
     }
 }

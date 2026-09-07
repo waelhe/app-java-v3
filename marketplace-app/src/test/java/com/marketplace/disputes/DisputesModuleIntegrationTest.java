@@ -3,6 +3,7 @@ package com.marketplace.disputes;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,14 @@ class DisputesModuleIntegrationTest {
 
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
+
+    /**
+     * L24: the refund port is implemented in marketplace-payments — outside
+     * this module slice — so the slice replaces it at the boundary (the
+     * same @MockitoBean treatment BookingParticipantProvider gets).
+     */
+    @MockitoBean
+    PaymentRefundPort paymentRefundPort;
 
     @Autowired
     private DisputeService disputeService;

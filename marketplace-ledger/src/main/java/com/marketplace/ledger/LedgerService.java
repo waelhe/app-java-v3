@@ -44,6 +44,26 @@ public class LedgerService {
         return balanceRepository.save(balance);
     }
 
+    /**
+     * L24 (feature-expansion roadmap §5): the full refund's debit — mirrors
+     * the original PAYMENT_CREDIT on the provider's balance. Same idempotent
+     * shape as the credit: the derived {@code refund-<intentId>} source id
+     * makes the AFTER_COMMIT listener replays no-ops, so the debit lands
+     * exactly once per refunded payment intent (a second delivery, a
+     * concurrent listener, or a repeated decision can never double-debit).
+     */
+    @Observed(name = "ledger.debit.refund")
+    public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId, long amountCents) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        }
+        entryRepository.save(LedgerEntry.refundDebit(providerId, sourceId, amountCents));
+        ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
     @Transactional(readOnly = true)
     public ProviderBalance getBalance(UUID providerId) {
         return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
