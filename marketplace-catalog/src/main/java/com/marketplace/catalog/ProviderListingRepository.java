@@ -102,4 +102,84 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                            @Param("minPrice") Long minPrice,
                                            @Param("maxPrice") Long maxPrice,
                                            Pageable pageable);
+
+    // L27 (feature-expansion roadmap §5) — window-restricted variants. The
+    // provider-id whitelist is the server-derived availability answer (see
+    // AvailabilityLookupPort); the caller guarantees a NON-EMPTY collection —
+    // an empty whitelist short-circuits to an honest empty page before any
+    // query. ORDER BY id is the deterministic total order offset pagination
+    // requires (without it, page boundaries can repeat or skip rows —
+    // "no deceptive pages"); the ranked variants keep their ranking first
+    // with id as the tiebreaker for the same reason.
+
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false
+              AND status = 'ACTIVE'
+              AND provider_id IN (:providerIds)
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+            ORDER BY id
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false
+                      AND status = 'ACTIVE'
+                      AND provider_id IN (:providerIds)
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchByCriteriaRestricted(@Param("category") String category,
+                                                     @Param("minPrice") Long minPrice,
+                                                     @Param("maxPrice") Long maxPrice,
+                                                     @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                     Pageable pageable);
+
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false AND status = 'ACTIVE'
+              AND provider_id IN (:providerIds)
+              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('simple', :query)
+            ORDER BY ts_rank(
+                to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
+                websearch_to_tsquery('simple', :query)
+            ) DESC, id
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND provider_id IN (:providerIds)
+                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('simple', :query)
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchFullTextRestricted(@Param("query") String query,
+                                                   @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                   Pageable pageable);
+
+    /**
+     * Typo-tolerant fallback of the restricted FTS — same contract as
+     * {@link #searchSimilar}, plus the provider whitelist.
+     */
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false AND status = 'ACTIVE'
+              AND provider_id IN (:providerIds)
+              AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND provider_id IN (:providerIds)
+                      AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchSimilarRestricted(@Param("query") String query,
+                                                  @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                  Pageable pageable);
 }

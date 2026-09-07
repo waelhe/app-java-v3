@@ -1,5 +1,6 @@
 package com.marketplace.search;
 
+import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.SearchCriteria;
@@ -9,18 +10,31 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
+
 /**
- * Search service depends on CatalogSearchPort abstraction only,
- * not on catalog internals. This decouples search from catalog module.
+ * Search service depends on CatalogSearchPort and AvailabilityLookupPort
+ * abstractions only, not on catalog or availability internals. This
+ * decouples search from the providing modules.
+ *
+ * <p>L27 (feature-expansion roadmap §5): when the criteria carry a stay
+ * window {@code [checkIn, checkOut)}, the results are restricted to the
+ * providers the availability port reports as available — the bulk form of
+ * {@code AvailabilityService.isAvailable}. An empty availability answer is
+ * an honest empty page (total 0) without any catalog query, and the
+ * restricted catalog queries apply the same restriction to their pagination
+ * counts, so no page lies about its totals.
  */
 @Service
 @Transactional(readOnly = true)
 public class SearchService {
 
     private final CatalogSearchPort catalogSearchPort;
+    private final AvailabilityLookupPort availabilityLookupPort;
 
-    public SearchService(CatalogSearchPort catalogSearchPort) {
+    public SearchService(CatalogSearchPort catalogSearchPort, AvailabilityLookupPort availabilityLookupPort) {
         this.catalogSearchPort = catalogSearchPort;
+        this.availabilityLookupPort = availabilityLookupPort;
     }
 
     // The -v2 suffix is the ListingSummary serialization-schema namespace —
@@ -33,7 +47,50 @@ public class SearchService {
         return search(new SearchCriteria(query, category, null, null), pageable);
     }
 
+    /**
+     * The criteria path (the controller's entry). L27: the cache key comes
+     * from the dedicated {@link SearchCriteriaCacheKeyGenerator} — an
+     * injective, length-prefixed component key (the record's toString()
+     * concatenates values unescaped and can collide across different
+     * criteria — PR #256 round 1). The window (checkIn/checkOut) rides as
+     * first-class key segments, so two different windows never share a
+     * cached entry (the acceptance criterion: extend the search-results-v2
+     * key with the window). Staleness is governed by the existing
+     * AFTER_COMMIT relay: listing writes evict via
+     * {@code CatalogService.CATALOG_CACHE_NAMES}, availability writes evict
+     * via {@code AvailabilityService}'s invalidation set.
+     */
+    @Cacheable(cacheNames = "search-results-v2", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
+        if (criteria.hasWindow()) {
+            return searchWindowed(criteria, pageable);
+        }
+        return searchUnwindowed(criteria, pageable);
+    }
+
+    /**
+     * L27 window path: restrict to the providers that are available for the
+     * window, then run the ordinary branch dispatch against the restricted
+     * catalog queries.
+     */
+    private Page<ListingSummary> searchWindowed(SearchCriteria criteria, Pageable pageable) {
+        Set<java.util.UUID> availableProviderIds =
+                availabilityLookupPort.findAvailableProviderIds(criteria.checkIn(), criteria.checkOut());
+        if (availableProviderIds.isEmpty()) {
+            // Nobody qualifies — an honest empty page (total 0), no query.
+            return Page.empty(pageable);
+        }
+        String query = criteria.query();
+        if (query != null && !query.isBlank()) {
+            return catalogSearchPort.searchFullTextRestricted(query.trim(), availableProviderIds, pageable);
+        }
+        // Covers the price / category / browse-all branches: they are the
+        // optional predicates of one criteria query.
+        return catalogSearchPort.searchByCriteriaRestricted(criteria, availableProviderIds, pageable);
+    }
+
+    /** The pre-L27 dispatch — byte-identical for windowless criteria. */
+    private Page<ListingSummary> searchUnwindowed(SearchCriteria criteria, Pageable pageable) {
         String query = criteria.query();
         String category = criteria.category();
         if (query != null && !query.isBlank()) {

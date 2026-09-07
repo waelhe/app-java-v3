@@ -1,5 +1,6 @@
 package com.marketplace.search;
 
+import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.SearchCriteria;
@@ -9,19 +10,75 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class SearchServiceTest {
 
     private final CatalogSearchPort port = mock(CatalogSearchPort.class);
-    private final SearchService service = new SearchService(port);
+    private final AvailabilityLookupPort availabilityPort = mock(AvailabilityLookupPort.class);
+    private final SearchService service = new SearchService(port, availabilityPort);
 
     private static Page<ListingSummary> emptyPage() {
         return new PageImpl<>(List.of());
     }
+
+    // ---- L27: the window path -------------------------------------------------
+
+    private static final Instant CHECK_IN = Instant.parse("2026-09-25T10:00:00Z");
+    private static final Instant CHECK_OUT = CHECK_IN.plusSeconds(3 * 24 * 3600);
+
+    @Test
+    void windowWithoutQuery_restrictsTheCriteriaSearchToAvailableProviders() {
+        UUID available = UUID.randomUUID();
+        when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of(available));
+        when(port.searchByCriteriaRestricted(any(), any(), any())).thenReturn(emptyPage());
+
+        service.search(new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT), PageRequest.of(0, 10));
+
+        verify(availabilityPort).findAvailableProviderIds(CHECK_IN, CHECK_OUT);
+        // The whitelist rides the restricted criteria query — the criteria
+        // record passes through as-is (the catalog contract reads only its
+        // category/price components, the window itself is already resolved
+        // into the whitelist), and the unrestricted branches are never taken.
+        verify(port).searchByCriteriaRestricted(argThat(SearchCriteria::hasWindow), eq(Set.of(available)), eq(PageRequest.of(0, 10)));
+        verify(port, never()).listActive(any());
+        verify(port, never()).searchByCriteria(any(), any());
+    }
+
+    @Test
+    void windowWithQuery_restrictsTheFullTextSearchToAvailableProviders() {
+        UUID available = UUID.randomUUID();
+        when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of(available));
+        when(port.searchFullTextRestricted(anyString(), any(), any())).thenReturn(emptyPage());
+
+        service.search(new SearchCriteria("yoga retreat", null, null, null, CHECK_IN, CHECK_OUT), PageRequest.of(0, 10));
+
+        verify(port).searchFullTextRestricted(eq("yoga retreat"), eq(Set.of(available)), eq(PageRequest.of(0, 10)));
+        // The unrestricted FTS branch is never taken when a window is present.
+        verify(port, never()).searchFullText(anyString(), any());
+    }
+
+    @Test
+    void windowWithNoAvailableProvider_isAnHonestEmptyPageWithoutAnyCatalogQuery() {
+        when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of());
+
+        Page<ListingSummary> page = service.search(new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT), PageRequest.of(0, 10));
+
+        assertThat(page).isEmpty();
+        assertThat(page.getTotalElements()).isZero();
+        verify(port, never()).searchByCriteriaRestricted(any(), any(), any());
+        verify(port, never()).searchFullTextRestricted(anyString(), any(), any());
+        verify(port, never()).listActive(any());
+    }
+
+    // ---- The pre-L27 dispatch: unchanged (backward compatibility) --------------
 
     @Test
     void usesCriteriaSearchWhenPriceFilterProvided() {

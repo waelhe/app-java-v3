@@ -115,6 +115,52 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return toSummaryPage(page);
     }
 
+    /**
+     * L27 (feature-expansion roadmap §5): the window-restricted criteria
+     * search — the same branch coverage and price mapping as
+     * {@link #searchByCriteria(SearchCriteria, Pageable)} (category / price
+     * / browse-all are optional predicates of the same query), plus the
+     * {@code provider_id IN (:providerIds)} restriction in BOTH the content
+     * and the count query. Deliberately NOT cached at this level: the
+     * whitelist varies per request, and the search module's
+     * {@code search-results-v2} cache (criteria-keyed, window included) is
+     * the caching surface for window searches.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
+        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
+        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
+                criteria.category(), minPrice, maxPrice, providerIds, pageable);
+        return toSummaryPage(page);
+    }
+
+    /**
+     * L27: the window-restricted full-text search — mirrors
+     * {@link #searchFullText(String, Pageable)} (official
+     * {@code websearch_to_tsquery} ranking, plus the pg_trgm
+     * typo-tolerance fallback), with the
+     * {@code provider_id IN (:providerIds)} restriction applied to both
+     * queries and their counts.
+     *
+     * <p>Fallback condition (PR #256 full-review round): the fallback runs
+     * only when NO full-text match exists at all
+     * ({@code getTotalElements() == 0}) — an out-of-range page over real
+     * matches is legitimately empty ({@code isEmpty()} is true while
+     * {@code getTotalElements() > 0}) and must stay an honest empty page,
+     * not be replaced by the similarity result set.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, pageable);
+        if (page.getTotalElements() == 0) {
+            page = listingRepository.searchSimilarRestricted(query, providerIds, pageable);
+        }
+        return toSummaryPage(page);
+    }
+
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
         return listByCategory(category, pageable);
