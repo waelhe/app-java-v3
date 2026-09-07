@@ -40,6 +40,11 @@ class MessagingWebSocketControllerTest {
     @InjectMocks
     private MessagingWebSocketController controller;
 
+    /**
+     * POST over WebSocket returns the mapped message payload — B1: the
+     * response now carries the authenticated sender's id as
+     * {@code senderId} (canonical constructor gained the third component).
+     */
     @Test
     void shouldSendMessage() {
         UUID conversationId = Instancio.create(UUID.class);
@@ -54,7 +59,7 @@ class MessagingWebSocketControllerTest {
                 .thenReturn(msg);
 
         when(messageMapper.toResponse(msg)).thenReturn(
-                new com.marketplace.messaging.MessageResponse(msg.getId(), msg.getConversationId(), msg.getContent(), msg.isRead(), null, null));
+                new com.marketplace.messaging.MessageResponse(msg.getId(), msg.getConversationId(), msg.getSenderId(), msg.getContent(), msg.isRead(), null, null));
 
         var response = controller.sendMessage(conversationId, Map.of("content", "hello"), principal);
 
