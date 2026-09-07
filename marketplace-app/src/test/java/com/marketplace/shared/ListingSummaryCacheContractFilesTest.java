@@ -84,6 +84,37 @@ class ListingSummaryCacheContractFilesTest {
                 .doesNotContain("catalog-active,", "search-results,", "catalog-search,");
     }
 
+    /**
+     * L27 (feature-expansion roadmap §5): the stay window rides the
+     * search-results-v2 cache key, and the freshness contract extends with
+     * it — availability writes must evict the search cache, exactly like
+     * listing writes already do. Pinned at the source level (the house
+     * files-guard pattern) because the key is a SpEL string: a future
+     * refactor that drops {@code #criteria} from the key (or drops
+     * "search-results-v2" from the availability invalidation set) would
+     * silently let different windows share one cached entry — or let
+     * window-filtered pages go stale after bookings — with no failing test
+     * at the unit level.
+     */
+    @Test
+    void searchResultsKeyCarriesTheWindow_andAvailabilityWritesEvictIt() throws IOException {
+        String searchService = read("marketplace-search/src/main/java/com/marketplace/search/SearchService.java");
+
+        assertThat(searchService)
+                .as("the criteria-path @Cacheable key is the SearchCriteria record itself — "
+                        + "its toString() covers every component including the stay window")
+                .contains("key = \"(#criteria == null ? '' : #criteria.toString())");
+
+        String availabilityService = read(
+                "marketplace-availability/src/main/java/com/marketplace/availability/AvailabilityService.java");
+
+        assertThat(availabilityService)
+                .as("L27 freshness contract: availability writes evict the window-filtered "
+                        + "search-results-v2 pages through the AFTER_COMMIT relay, the same way "
+                        + "listing writes evict CATALOG_CACHE_NAMES")
+                .contains("Set.of(\"availability\", \"search-results-v2\")");
+    }
+
     private java.util.Set<String> cacheableNames(String source) {
         java.util.Set<String> names = new java.util.LinkedHashSet<>();
         Matcher matcher = CACHEABLE_NAME.matcher(source);

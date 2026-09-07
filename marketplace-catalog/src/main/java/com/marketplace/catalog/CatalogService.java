@@ -115,6 +115,45 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return toSummaryPage(page);
     }
 
+    /**
+     * L27 (feature-expansion roadmap §5): the window-restricted criteria
+     * search — the same branch coverage and price mapping as
+     * {@link #searchByCriteria(SearchCriteria, Pageable)} (category / price
+     * / browse-all are optional predicates of the same query), plus the
+     * {@code provider_id IN (:providerIds)} restriction in BOTH the content
+     * and the count query. Deliberately NOT cached at this level: the
+     * whitelist varies per request, and the search module's
+     * {@code search-results-v2} cache (criteria-keyed, window included) is
+     * the caching surface for window searches.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
+        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
+        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
+                criteria.category(), minPrice, maxPrice, providerIds, pageable);
+        return toSummaryPage(page);
+    }
+
+    /**
+     * L27: the window-restricted full-text search — mirrors
+     * {@link #searchFullText(String, Pageable)} (official
+     * {@code websearch_to_tsquery} ranking, plus the pg_trgm
+     * typo-tolerance fallback on an empty page), with the
+     * {@code provider_id IN (:providerIds)} restriction applied to both
+     * queries and their counts.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, pageable);
+        if (page.isEmpty()) {
+            page = listingRepository.searchSimilarRestricted(query, providerIds, pageable);
+        }
+        return toSummaryPage(page);
+    }
+
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
         return listByCategory(category, pageable);

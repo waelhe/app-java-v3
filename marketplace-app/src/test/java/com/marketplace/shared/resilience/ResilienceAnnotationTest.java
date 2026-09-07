@@ -143,8 +143,13 @@ class ResilienceAnnotationTest {
         @Test
         @DisplayName("searchWithCriteria should have @RateLimiter")
         void searchWithCriteria_hasRateLimiter() throws NoSuchMethodException {
+            // L27: the signature gained the stay-window params (checkIn/checkOut)
+            // — the guard follows the live contract, exactly as it did for the
+            // B4 currency-era signature changes.
             Method method = SearchController.class.getMethod("searchWithCriteria",
-                    String.class, String.class, java.math.BigDecimal.class, java.math.BigDecimal.class, org.springframework.data.domain.Pageable.class);
+                    String.class, String.class, java.math.BigDecimal.class, java.math.BigDecimal.class,
+                    java.time.Instant.class, java.time.Instant.class,
+                    org.springframework.data.domain.Pageable.class);
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);
             assertNotNull(rl, "searchWithCriteria should have @RateLimiter");

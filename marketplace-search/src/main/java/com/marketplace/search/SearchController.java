@@ -26,8 +26,13 @@ public class SearchController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) java.math.BigDecimal minPrice,
             @RequestParam(required = false) java.math.BigDecimal maxPrice,
+            // L27: the stay window [checkIn, checkOut) — exclusive end. The
+            // SearchCriteria record is the gate: a half-open, reversed or
+            // zero-length window is a 400 at construction (before any query).
+            @RequestParam(required = false) java.time.Instant checkIn,
+            @RequestParam(required = false) java.time.Instant checkOut,
             Pageable pageable) {
-        SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice);
+        SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice, checkIn, checkOut);
         return ResponseEntity.ok(PagedResponse.of(searchService.search(criteria, pageable)));
     }
 
