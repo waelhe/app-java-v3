@@ -89,6 +89,9 @@ class MessagingControllerTest {
         assertEquals(3L, result.getBody().unreadCount());
     }
 
+    /**
+     * POST a conversation returns 201 with the mapped response.
+     */
     @Test
     void createConversation_createsAndReturns201() {
         UUID bookingId = UUID.randomUUID();

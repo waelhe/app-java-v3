@@ -19,11 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class CorsAllowedHeadersTest {
 
-    @Test
     /**
      * A2: X-API-Version must be an allowed CORS request header and the
      * origin policy is unchanged by the header addition.
      */
+    @Test
     void allowsXApiVersionRequestHeaderAcrossConfiguredOrigin() {
         SecurityConfig securityConfig = new SecurityConfig(properties(), new ObjectMapper());
 

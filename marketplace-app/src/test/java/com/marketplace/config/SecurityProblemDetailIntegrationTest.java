@@ -8,6 +8,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithMockUser;
+    /**
+     * Builds the MockMvc over the full test context used by every
+     * security problem-detail contract test in this class.
+     */
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -113,6 +117,10 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(header().exists("X-Correlation-ID"));
     }
 
+    /**
+     * The 401 body follows the RFC 7807 problem shape declared in the
+     * OpenAPI problem-detail schema (type/title/status/detail/traceId).
+     */
     @Test
     void unauthorizedProblemDetailPayload_conformsToOpenApiProblemDetailSchema() throws Exception {
         String openApiDoc = mockMvc.perform(get("/v3/api-docs"))

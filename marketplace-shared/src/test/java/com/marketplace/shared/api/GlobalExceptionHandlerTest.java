@@ -182,6 +182,10 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("category")).isEqualTo("rate-limit");
     }
 
+    /**
+     * A circuit-breaker CallNotPermittedException maps to 503 with the
+     * UNAVAILABLE taxonomy.
+     */
     @Test
     void handleCircuitBreakerOpen_returnsServiceUnavailable() {
         var ex = CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test"));
@@ -194,11 +198,11 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("category")).isEqualTo("availability");
     }
 
-    @Test
     /**
      * A5: IllegalArgumentException maps to 400 VALIDATION (VAL-001) as an
      * RFC 7807 problem.
      */
+    @Test
     void handleIllegalArgument_returnsBadRequestValidationTaxonomy() {
         var ex = new IllegalArgumentException("priceCents must be positive");
         var request = new StubHttpServletRequest("/api/listings");
@@ -212,11 +216,11 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getDetail()).isEqualTo("priceCents must be positive");
     }
 
-    @Test
     /**
      * A5: IllegalStateException maps to 409 CONFLICT (CONFLICT-001) as an
      * RFC 7807 problem.
      */
+    @Test
     void handleIllegalState_returnsConflictTaxonomy() {
         var ex = new IllegalStateException("Booking cannot be cancelled in current state");
         var request = new StubHttpServletRequest("/api/bookings/1");
@@ -230,11 +234,11 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getDetail()).isEqualTo("Booking cannot be cancelled in current state");
     }
 
-    @Test
     /**
      * A6: with no client header, the trace id comes from the
      * {@code correlationId} request attribute set by the filter.
      */
+    @Test
     void problemDetail_includesTraceIdFromRequestAttributeWhenNoClientHeader() {
         // A6: when the client sends no X-Correlation-ID, CorrelationIdFilter
         // generates one and (with the fix) exposes it as the "correlationId"
@@ -249,6 +253,10 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("traceId")).isEqualTo("server-generated-trace");
     }
 
+    /**
+     * An unexpected exception is masked behind the 500 INTERNAL problem
+     * body.
+     */
     @Test
     void handleGeneral_returnsInternalError() {
         var ex = new RuntimeException("Unexpected error");

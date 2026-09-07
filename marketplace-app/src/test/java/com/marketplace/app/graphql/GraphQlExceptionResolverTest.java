@@ -27,11 +27,11 @@ class GraphQlExceptionResolverTest {
     private final GraphQlExceptionResolver resolver = new GraphQlExceptionResolver(false);
     private final DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
 
-    @BeforeEach
     /**
      * Stubs the minimal {@code DataFetchingEnvironment} surface the error
      * builder reads (field source location + execution path).
      */
+    @BeforeEach
     void setUpEnvironment() {
         Field field = mock(Field.class);
         when(field.getSourceLocation()).thenReturn(new SourceLocation(1, 1));
@@ -41,11 +41,11 @@ class GraphQlExceptionResolverTest {
         when(env.getExecutionStepInfo()).thenReturn(stepInfo);
     }
 
-    @Test
     /**
      * A4: an {@code AccessDeniedException} must surface as
      * FORBIDDEN/ACCESS_DENIED (authz), never INTERNAL_ERROR.
      */
+    @Test
     void mapsAccessDeniedToForbiddenWithAccessDeniedCode() {
         GraphQLError error = first(resolver.resolveException(new AccessDeniedException("No access"), env).block());
 
@@ -55,10 +55,10 @@ class GraphQlExceptionResolverTest {
         assertThat(error.getMessage()).isEqualTo("No access");
     }
 
-    @Test
     /**
      * Regression: the NOT_FOUND mapping is unchanged by the A4 branch.
      */
+    @Test
     void mapsResourceNotFoundAsBefore() {
         GraphQLError error = first(resolver.resolveException(
                 new ResourceNotFoundException("Listing", java.util.UUID.randomUUID()), env).block());
@@ -66,11 +66,11 @@ class GraphQlExceptionResolverTest {
         assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.NOT_FOUND);
     }
 
-    @Test
     /**
      * Regression: the DOMAIN_CONFLICT mapping is unchanged by the A4
      * branch.
      */
+    @Test
     void mapsDomainConflictAsBefore() {
         GraphQLError error = first(resolver.resolveException(new IllegalStateException("boom"), env).block());
 

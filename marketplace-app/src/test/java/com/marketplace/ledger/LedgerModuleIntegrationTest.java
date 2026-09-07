@@ -59,10 +59,18 @@ class LedgerModuleIntegrationTest {
     @Autowired
     private TransactionTemplate transactions;
 
+    /**
+     * The ledger module context boots with its declared dependencies
+     * (Modulith boundary smoke test).
+     */
     @Test
     void contextLoads() {
     }
 
+    /**
+     * A payment credit creates the provider balance and the PAYMENT_CREDIT
+     * entry inside the ledger module boundary.
+     */
     @Test
     void creditFromPayment_createsBalance() {
         var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L);
@@ -79,12 +87,12 @@ class LedgerModuleIntegrationTest {
      * {@code EventPublicationArchiveIntegrationTest}); the plain poll loop
      * waits for the listener's own transaction to land the balance.
      */
-    @Test
     /**
      * A payment-completed event credits the provider ledger and the owner
      * sees the movement through provider-scoped access — the provider
      stub resolves by user id (A1).
      */
+    @Test
     void paymentCompletedEvent_creditsLedger_andOwnerSeesMovementThroughProviderAccess() {
         UUID providerId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
@@ -109,6 +117,10 @@ class LedgerModuleIntegrationTest {
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
 
+    /**
+     * Polls the async balance projection until the predicate holds
+     * (AFTER_COMMIT event-listener delivery).
+     */
         awaitBalance(providerId, priceCents - commissionCents);
 
         ProviderBalance balance = ledgerService.getBalanceForOwner(providerId);

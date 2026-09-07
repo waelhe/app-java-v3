@@ -120,6 +120,10 @@ public class GlobalExceptionHandler {
                 request, null, "detail");
     }
 
+    /**
+     * Resilience4j circuit-breaker open → 503 SERVICE_UNAVAILABLE with the
+     * masked problem body (no internal state leaks).
+     */
     @ExceptionHandler(CallNotPermittedException.class)
     public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
         return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
@@ -127,26 +131,26 @@ public class GlobalExceptionHandler {
                 "Service currently degraded", "detail");
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
     /**
      * Maps an {@link IllegalArgumentException} to the VALIDATION taxonomy
      * (400, RFC 7807) — A5: an illegal argument is a client-contract
      * violation, never a 500, mirroring the GraphQL resolver's
      * VALIDATION_ERROR mapping.
      */
+    @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         // A5: an illegal argument is a client-contract violation (400), matching
         // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
         return problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, "detail");
     }
 
-    @ExceptionHandler(IllegalStateException.class)
     /**
      * Maps an {@link IllegalStateException} to the CONFLICT taxonomy
      * (409, RFC 7807) — A5: an illegal state raised by a well-formed
      * request is a domain conflict, mirroring the GraphQL resolver's
      * DOMAIN_CONFLICT mapping.
      */
+    @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
         // A5: an illegal state in a well-formed request is a domain conflict (409),
         // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.

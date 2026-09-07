@@ -94,6 +94,10 @@ public class LedgerService {
         return balanceRepository.save(balance);
     }
 
+    /**
+     * Returns the provider’s current balance, or an empty balance when no
+     * entry has been written yet (read-only projection).
+     */
     @Transactional(readOnly = true)
     public ProviderBalance getBalance(UUID providerId) {
         return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));

@@ -22,6 +22,10 @@ public class AuthHelper {
         return currentUserProvider.getCurrentUserId(authentication).equals(userId);
     }
 
+    /**
+     * Whether the authentication carries the ADMIN authority — delegates to
+     * the shared current-user provider.
+     */
     public boolean isAdmin(Authentication authentication) {
         return currentUserProvider.isAdmin(authentication);
     }

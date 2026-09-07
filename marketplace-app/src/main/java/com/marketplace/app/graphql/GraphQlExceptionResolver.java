@@ -33,13 +33,13 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         this.includeTraceId = includeTraceId;
     }
 
-    @Override
     /**
      * Maps a data-fetcher exception to a single GraphQL error classified
      * per the shared API error taxonomy — NOT_FOUND, VALIDATION_ERROR,
      * DOMAIN_CONFLICT, ACCESS_DENIED (A4) and a masked INTERNAL fallback —
      * mirroring the REST GlobalExceptionHandler mappings.
      */
+    @Override
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
         if (ex instanceof ResourceNotFoundException) {
             return buildError(env, ErrorType.NOT_FOUND, "NOT_FOUND", "RESOURCE", ex.getMessage());

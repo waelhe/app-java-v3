@@ -33,6 +33,10 @@ class AuthHelperTest {
         assertThat(authHelper.isCurrentUser(userId, auth)).isFalse();
     }
 
+    /**
+     * isAdmin delegates the decision to the current-user provider’s admin
+     * resolution.
+     */
     @Test
     void isAdmin_delegatesToProvider() {
         when(currentUserProvider.isAdmin(auth)).thenReturn(true);
@@ -42,11 +46,11 @@ class AuthHelperTest {
         assertThat(authHelper.isAdmin(auth)).isFalse();
     }
 
-    @Test
     /**
      * ownsProvider is true when the profile resolved by user id (A1)
      * matches the caller.
      */
+    @Test
     void ownsProvider_returnsTrueWhenUserMatches() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
@@ -57,11 +61,11 @@ class AuthHelperTest {
         assertThat(authHelper.ownsProvider(providerId, auth)).isTrue();
     }
 
-    @Test
     /**
      * ownsProvider is false when the resolved profile belongs to another
      * user.
      */
+    @Test
     void ownsProvider_returnsFalseWhenUserMismatch() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
@@ -72,11 +76,11 @@ class AuthHelperTest {
         assertThat(authHelper.ownsProvider(providerId, auth)).isFalse();
     }
 
-    @Test
     /**
      * ownsProvider is false when no provider profile exists for the user
      * id.
      */
+    @Test
     void ownsProvider_returnsFalseWhenProviderNotFound() {
         UUID providerId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);

@@ -86,6 +86,11 @@ class CatalogServiceSecurityTest {
                 () -> catalogService.pause(UUID.randomUUID(), null));
     }
 
+    /**
+     * A provider-scoped archive call from a non-owner non-admin is denied at
+     * the method-security layer — while A1 keeps the ownership id space on
+     * users.id so the legitimate owner path still passes.
+     */
     @Test
     @WithMockUser(roles = "CONSUMER")
     void archive_whenNotProviderOrAdmin_thenAccessDenied() {
@@ -93,11 +98,11 @@ class CatalogServiceSecurityTest {
                 () -> catalogService.archive(UUID.randomUUID(), null));
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * A verified provider resolved by user id (A1) may create a listing.
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void create_whenProvider_thenInvokes() {
         UUID currentUserId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
@@ -112,12 +117,12 @@ class CatalogServiceSecurityTest {
         verify(listingRepository).save(any(ProviderListing.class));
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * The owner — matched through the user-owned profile (A1) — may
      * update a listing.
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void update_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -135,11 +140,11 @@ class CatalogServiceSecurityTest {
         assertThat(result.getTitle()).isEqualTo("new");
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * The owner (A1 lookup) may activate a listing.
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void activate_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -157,11 +162,11 @@ class CatalogServiceSecurityTest {
         assertThat(result.getStatus()).isEqualTo(ListingStatus.ACTIVE);
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * The owner (A1 lookup) may pause a listing.
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void pause_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -180,11 +185,11 @@ class CatalogServiceSecurityTest {
         assertThat(result.getStatus()).isEqualTo(ListingStatus.PAUSED);
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * The owner (A1 lookup) may archive a listing (summary view).
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void archiveListing_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();
@@ -202,11 +207,11 @@ class CatalogServiceSecurityTest {
         assertThat(result).isNotNull();
     }
 
-    @Test
-    @WithMockUser(roles = "PROVIDER", username = "provider")
     /**
      * The owner (A1 lookup) may archive a listing (entity view).
      */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
     void archive_whenProvider_thenInvokes() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         UUID currentUserId = UUID.randomUUID();

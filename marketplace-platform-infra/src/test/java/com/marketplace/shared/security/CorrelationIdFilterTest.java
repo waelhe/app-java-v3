@@ -16,11 +16,11 @@ class CorrelationIdFilterTest {
 
     private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
-    @Test
     /**
      * A client-supplied id is propagated to the response header, MDC and
      * (A6) the request attribute.
      */
+    @Test
     void propagatesExistingCorrelationId() throws Exception {
         HttpServletRequest request = mock();
         HttpServletResponse response = mock();
@@ -33,11 +33,11 @@ class CorrelationIdFilterTest {
         verify(request).setAttribute("correlationId", "existing-id");
     }
 
-    @Test
     /**
      * A missing client header still yields a generated id in the header
      * and (A6) the request attribute.
      */
+    @Test
     void generatesCorrelationIdWhenMissing() throws Exception {
         HttpServletRequest request = mock();
         HttpServletResponse response = mock();

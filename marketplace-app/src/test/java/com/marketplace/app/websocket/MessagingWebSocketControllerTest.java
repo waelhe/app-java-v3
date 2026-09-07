@@ -64,6 +64,7 @@ class MessagingWebSocketControllerTest {
         var response = controller.sendMessage(conversationId, Map.of("content", "hello"), principal);
 
         assertThat(response.id()).isEqualTo(msg.getId());
+        assertThat(response.senderId()).isEqualTo(senderId);
         assertThat(response.content()).isEqualTo("hello");
     }
 

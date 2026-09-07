@@ -141,6 +141,10 @@ class LedgerServiceTest {
         verify(balanceRepository, never()).save(any());
     }
 
+    /**
+     * A repeated payment-intent credit is a no-op: the source-id lookup
+     * short-circuits so the balance is credited exactly once.
+     */
     @Test
     void duplicateCreditDoesNotCreateNewEntry() {
         LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
