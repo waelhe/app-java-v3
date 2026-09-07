@@ -57,7 +57,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       presigned media channel; commands per policy, reads via
  *       http.server.requests)</li>
  *   <li>messaging — send</li>
- *   <li>notifications — mark.read</li>
+ *   <li>notifications — mark.read, preferences.update (L22 — the
+ *       per-channel unsubscribe switch write)</li>
  *   <li>payments — process, confirm, cancel; psp.create + psp.webhook
  *       (layer 9 — the real PSP channel; the webhook observation lives on
  *       the Stripe entry point, not the shared dispatch helper, so the
@@ -94,7 +95,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.upload.confirm", "media.upload.request")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
-            Map.entry("marketplace-notifications", List.of("notification.mark.read")),
+            Map.entry("marketplace-notifications", List.of(
+                    "notification.mark.read", "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
                     "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),

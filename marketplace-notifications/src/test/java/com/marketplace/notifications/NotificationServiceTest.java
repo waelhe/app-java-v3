@@ -35,9 +35,33 @@ class NotificationServiceTest {
                                               UserLookupPort userLookupPort,
                                               Optional<SimpMessagingTemplate> messagingTemplate,
                                               Optional<com.marketplace.shared.email.EmailService> emailService) {
+        return createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, messagingTemplate, emailService,
+                defaultPreferences());
+    }
+
+    private NotificationService createService(NotificationRepository repository,
+                                              BookingParticipantProvider bookingProvider,
+                                              PaymentIntentLookupPort paymentIntentLookupPort,
+                                              CurrentUserProvider currentUserProvider,
+                                              UserLookupPort userLookupPort,
+                                              Optional<SimpMessagingTemplate> messagingTemplate,
+                                              Optional<com.marketplace.shared.email.EmailService> emailService,
+                                              NotificationPreferenceService preferences) {
         EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                currentUserProvider, emailNotificationService, messagingTemplate);
+                currentUserProvider, emailNotificationService, messagingTemplate, preferences);
+    }
+
+    /**
+     * L22 default gate: no override anywhere — every channel enabled. With
+     * this the pre-L22 tests keep meaning "the default is exactly the old
+     * behavior" (roadmap acceptance criterion 2).
+     */
+    private NotificationPreferenceService defaultPreferences() {
+        NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
+        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        return preferences;
     }
 
     private UserLookupPort mockUserLookup() {
@@ -91,6 +115,73 @@ class NotificationServiceTest {
 
         verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
+    }
+
+    @Test
+    void onPaymentStateChangedSuppressesEmailForUnsubscribedConsumer() {
+        // L22 acceptance criterion 1: the consumer unsubscribed from EMAIL
+        // for PAYMENT_STATE => the in-app notification is created, WS is
+        // pushed, and NO email call is made for the consumer — while the
+        // provider's email still goes (interaction verified).
+        NotificationPreferenceService preferences = defaultPreferences();
+        when(preferences.isChannelEnabled(CONSUMER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL))
+                .thenReturn(false);
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        UUID paymentIntentId = create(UUID.class);
+        UUID bookingId = create(UUID.class);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(of(PaymentIntentDetails.class)
+                        .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
+                        .set(field(PaymentIntentDetails::bookingId), bookingId)
+                        .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .create()));
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+
+        verify(emailService, never()).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(repository, times(2)).save(any(Notification.class));
+        verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
+    }
+
+    @Test
+    void onBookingCreatedSuppressesWebSocketForUnsubscribedRecipients() {
+        // L22: WS sends by default and honors an explicit opt-out — both
+        // recipients unsubscribed from WS for BOOKING_CREATED => no push at
+        // all, while the in-app rows land and both emails still go.
+        NotificationPreferenceService preferences = defaultPreferences();
+        when(preferences.isChannelEnabled(any(), eq(NotificationType.BOOKING_CREATED), eq(NotificationChannel.WS)))
+                .thenReturn(false);
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingCreated(bookingId);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(repository, times(2)).save(any(Notification.class));
     }
 
     @Test
