@@ -72,15 +72,4 @@ class SearchCriteriaTest {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_IN))
                 .isInstanceOf(BadRequestException.class);
     }
-
-    @Test
-    void windowRidesTheCacheKeyCarrier() {
-        // The search-results-v2 cache key is the criteria's toString() — the
-        // window components must appear in it so two different windows never
-        // share a cached entry (the roadmap's "extend the cache key with the
-        // window", pinned structurally here and by the files guard).
-        String keyCarrier = new SearchCriteria("q", null, null, null, CHECK_IN, CHECK_OUT).toString();
-
-        assertThat(keyCarrier).contains("checkIn=" + CHECK_IN).contains("checkOut=" + CHECK_OUT);
-    }
 }

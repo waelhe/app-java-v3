@@ -89,10 +89,13 @@ class ListingSummaryCacheContractFilesTest {
      * search-results-v2 cache key, and the freshness contract extends with
      * it — availability writes must evict the search cache, exactly like
      * listing writes already do. Pinned at the source level (the house
-     * files-guard pattern) because the key is a SpEL string: a future
-     * refactor that drops {@code #criteria} from the key (or drops
-     * "search-results-v2" from the availability invalidation set) would
-     * silently let different windows share one cached entry — or let
+     * files-guard pattern): the criteria path uses the dedicated injective
+     * key generator (PR #256 round 1 — the record's toString() concatenated
+     * values unescaped and could collide across different criteria), and
+     * the generator appends the window components as first-class segments.
+     * A future refactor that drops the generator (or the window segments,
+     * or "search-results-v2" from the availability invalidation set) would
+     * silently let different criteria share one cached entry — or let
      * window-filtered pages go stale after bookings — with no failing test
      * at the unit level.
      */
@@ -101,9 +104,16 @@ class ListingSummaryCacheContractFilesTest {
         String searchService = read("marketplace-search/src/main/java/com/marketplace/search/SearchService.java");
 
         assertThat(searchService)
-                .as("the criteria-path @Cacheable key is the SearchCriteria record itself — "
-                        + "its toString() covers every component including the stay window")
-                .contains("key = \"(#criteria == null ? '' : #criteria.toString())");
+                .as("the criteria path keys the cache through the dedicated injective generator")
+                .contains("keyGenerator = \"searchCriteriaKeyGenerator\"");
+
+        String keyGenerator = read(
+                "marketplace-search/src/main/java/com/marketplace/search/SearchCriteriaCacheKeyGenerator.java");
+
+        assertThat(keyGenerator)
+                .as("the window components are first-class key segments")
+                .contains("append(key, criteria.checkIn());")
+                .contains("append(key, criteria.checkOut());");
 
         String availabilityService = read(
                 "marketplace-availability/src/main/java/com/marketplace/availability/AvailabilityService.java");

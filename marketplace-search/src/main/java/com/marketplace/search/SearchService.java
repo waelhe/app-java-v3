@@ -48,16 +48,19 @@ public class SearchService {
     }
 
     /**
-     * The criteria path (the controller's entry). L27: the cache key is the
-     * criteria record itself — its {@code toString()} covers every component
-     * INCLUDING the stay window, so two different windows can never share a
+     * The criteria path (the controller's entry). L27: the cache key comes
+     * from the dedicated {@link SearchCriteriaCacheKeyGenerator} — an
+     * injective, length-prefixed component key (the record's toString()
+     * concatenates values unescaped and can collide across different
+     * criteria — PR #256 round 1). The window (checkIn/checkOut) rides as
+     * first-class key segments, so two different windows never share a
      * cached entry (the acceptance criterion: extend the search-results-v2
      * key with the window). Staleness is governed by the existing
      * AFTER_COMMIT relay: listing writes evict via
      * {@code CatalogService.CATALOG_CACHE_NAMES}, availability writes evict
      * via {@code AvailabilityService}'s invalidation set.
      */
-    @Cacheable(cacheNames = "search-results-v2", key = "(#criteria == null ? '' : #criteria.toString()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    @Cacheable(cacheNames = "search-results-v2", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
         if (criteria.hasWindow()) {
             return searchWindowed(criteria, pageable);
