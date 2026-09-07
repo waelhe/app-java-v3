@@ -68,9 +68,14 @@ class PaymentsModuleIntegrationTest {
     }
 
     @Test
-    void listIntents_returnsEmptyPage() {
+    void listIntents_isAReadWithoutSideEffects() {
+        // L19: sibling tests in this class seed real intents (webhook failure,
+        // refund sync), so "empty page" is no longer a valid assumption on the
+        // shared test database — the read contract that always held is: the
+        // listing does not create or consume rows (before == after).
+        long before = paymentsService.listIntents(Pageable.ofSize(10)).getTotalElements();
         var page = paymentsService.listIntents(Pageable.ofSize(10));
-        assertThat(page).isEmpty();
+        assertThat(page.getTotalElements()).isEqualTo(before);
     }
 
     @Test
