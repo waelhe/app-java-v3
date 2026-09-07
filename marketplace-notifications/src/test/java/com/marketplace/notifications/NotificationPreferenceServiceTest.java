@@ -180,21 +180,30 @@ class NotificationPreferenceServiceTest {
     void updateMyPreferencesRetriesTheUpsertWhenConcurrentInsertWinsTheRace() {
         // Two concurrent PUTs can both read "no row" for the same key and
         // both insert; the unique constraint aborts the loser's inner
-        // transaction (DataIntegrityViolationException). The request is
-        // retried once in a fresh transaction — the second attempt takes
-        // the insert again here (in production the winner's row now exists
-        // and it becomes the flip) and the valid PUT never fails.
+        // transaction (DataIntegrityViolationException). The request retries
+        // once in a fresh transaction: the lookup now finds the winner's
+        // committed row and the same request takes the FLIP path — exactly
+        // one save (the failed insert) and the winner's row flipped to the
+        // requested value.
+        NotificationPreference winner = NotificationPreference.create(
+                USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, true);
         NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
-        when(repository.findByUserIdAndTypeAndChannel(any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findByUserIdAndTypeAndChannel(USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL))
+                .thenReturn(Optional.empty())      // the losing read
+                .thenReturn(Optional.of(winner));  // the retry finds the committed winner
         when(repository.save(any(NotificationPreference.class)))
-                .thenThrow(new DataIntegrityViolationException("uq_notification_preferences_user_type_channel"))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(repository.findByUserId(USER_ID)).thenReturn(List.of());
+                .thenThrow(new DataIntegrityViolationException("uq_notification_preferences_user_type_channel"));
+        when(repository.findByUserId(USER_ID)).thenReturn(List.of(winner));
 
-        createService(repository, mockUser())
+        List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .updateMyPreferences(mock(Authentication.class), new NotificationPreferencesUpdateRequest(List.of(
                         new NotificationPreferenceUpdate(NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false))));
 
-        verify(repository, times(2)).save(any(NotificationPreference.class));
+        verify(repository, times(1)).save(any(NotificationPreference.class));
+        assertThat(winner.isEnabled())
+                .as("the retry flips the winner's row to the requested value")
+                .isFalse();
+        assertThat(matrix).extracting(NotificationPreferenceView::enabled)
+                .containsExactly(true, true, true, true, false, true);
     }
 }
