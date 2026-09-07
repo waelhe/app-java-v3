@@ -12,10 +12,13 @@ import java.time.Instant;
  * availability overlap predicate uses ({@code AvailabilityService.isAvailable},
  * strict inequalities {@code slot.starts_at < checkOut} and
  * {@code slot.ends_at > checkIn}). The record is its own gate: an invalid
- * window cannot exist — construction itself rejects a half-open window or a
+ * window cannot exist — construction itself rejects an incomplete window
+ * (one date without the other) or a
  * non-positive one ({@link BadRequestException} → HTTP 400 through
  * {@code GlobalExceptionHandler}), before any query runs (the acceptance
- * criterion "validate inputs before the predicate").
+ * criterion "validate inputs before the predicate"). The valid window
+ * itself IS half-open — {@code [checkIn, checkOut)} — and is never
+ * rejected.
  */
 public record SearchCriteria(
         String query,
@@ -29,7 +32,9 @@ public record SearchCriteria(
     /**
      * Canonical constructor — the window invariant:
      * both dates together, and {@code checkIn < checkOut} strictly
-     * (a zero-length or reversed window is a 400, not a silently-empty page).
+     * (an incomplete, zero-length or reversed window is a 400, not a
+     * silently-empty page; the half-open {@code [checkIn, checkOut)}
+     * interval itself is the valid form and is never rejected).
      */
     public SearchCriteria {
         if (checkIn == null && checkOut == null) {
