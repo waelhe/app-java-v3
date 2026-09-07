@@ -126,8 +126,8 @@ class CatalogServiceTest {
 
     @Test
     void searchFullTextRestricted_keepsTheTrigramFallbackOnAnEmptyPage() {
-        // First the lexical FTS — empty — then the pg_trgm fallback, exactly
-        // like the unrestricted searchFullText.
+        // Zero TOTAL matches — the pg_trgm fallback runs, exactly like the
+        // unrestricted searchFullText.
         when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
         when(listingRepository.searchSimilarRestricted(anyString(), any(), any()))
@@ -138,6 +138,22 @@ class CatalogServiceTest {
         assertThat(result).hasSize(1);
         verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
         verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullTextRestricted_outOfRangePageOverRealMatches_staysEmpty_noFallback() {
+        // Matches exist (total 1) but the requested page is past them: the
+        // content is legitimately empty — the fallback must NOT replace it
+        // with a different result set (PR #256 full-review round:
+        // isEmpty() is true while totalElements > 0).
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
+
+        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(5, 10));
+
+        assertThat(result).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any());
     }
 
     @Test
