@@ -86,7 +86,8 @@ class ObservationCoverageFilesTest {
                     "booking.confirm", "booking.create")),
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
-            Map.entry("marketplace-identity", List.of("user.role.update", "user.sync.oidc")),
+            Map.entry("marketplace-identity", List.of(
+                    "user.role.update", "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.commission")),
             Map.entry("marketplace-media", List.of(

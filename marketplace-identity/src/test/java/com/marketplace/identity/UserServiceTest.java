@@ -1,10 +1,12 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserSummary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -12,8 +14,12 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.provisioning.UserDetailsManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +27,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,6 +39,12 @@ class UserServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private UserDetailsManager userDetailsManager;
+
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     @InjectMocks
     private UserService userService;
@@ -212,5 +226,133 @@ class UserServiceTest {
         User result = userService.syncFromOidc(token);
 
         assertEquals(UserRole.PROVIDER, result.getRole());
+    }
+
+    // -- L23: updateUserStatus -------------------------------------------
+
+    @Test
+    void syncFromOidc_rejectsNonJwtAuthentication() {
+        org.springframework.security.authentication.UsernamePasswordAuthenticationToken nonJwt =
+                org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+                        .authenticated("user", "password", java.util.List.of());
+
+        assertThrows(IllegalArgumentException.class, () -> userService.syncFromOidc(nonJwt));
+        verifyNoInteractions(userRepository);
+    }
+
+    private static UserDetails userDetails(boolean enabled, String... roles) {
+        org.springframework.security.core.userdetails.User.UserBuilder builder =
+                org.springframework.security.core.userdetails.User.withUsername("target-user")
+                        .password("{noop}secret")
+                        .disabled(!enabled);
+        if (roles.length > 0) {
+            builder.roles(roles);
+        }
+        return builder.build();
+    }
+
+    @Test
+    void updateUserStatus_disableFlipsFlagRemovesAuthorizationsAndLogsAudit() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "USER"));
+
+        userService.updateUserStatus(id, "DISABLED", "policy violation", "admin-actor");
+
+        // The operative flip goes through the framework manager, flag only.
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).updateUser(captured.capture());
+        assertEquals("target-user", captured.getValue().getUsername());
+        assertFalse(captured.getValue().isEnabled(), "the account must be disabled");
+        assertEquals("{noop}secret", captured.getValue().getPassword());
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_USER")), "authorities replayed verbatim");
+        // Issued authorizations die with the disable — and nothing else is written.
+        verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
+        verifyNoMoreInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void updateUserStatus_enableRestoresFlagWithoutTouchingAuthorizations() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(false, "USER"));
+
+        userService.updateUserStatus(id, "ENABLED", "appeal accepted", "admin-actor");
+
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).updateUser(captured.capture());
+        assertTrue(captured.getValue().isEnabled(), "the account must be enabled");
+        // Enabling emits no token and removes nothing (the user logs in again).
+        verify(jdbcTemplate, never()).update(anyString(), (Object) any());
+    }
+
+    @Test
+    void updateUserStatus_throwsForUnknownStatus() {
+        UUID id = UUID.randomUUID();
+
+        // No repository stub: input validation rejects the request before any load.
+        assertThrows(IllegalArgumentException.class,
+                () -> userService.updateUserStatus(id, "BANISHED", "x", "admin-actor"));
+        verify(userDetailsManager, never()).updateUser(any());
+    }
+
+    @Test
+    void updateUserStatus_throwsWhenProjectionMissing() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> userService.updateUserStatus(id, "DISABLED", "x", "admin-actor"));
+    }
+
+    @Test
+    void updateUserStatus_throwsWhenAuthenticationAccountMissing() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.of(
+                User.create("ghost-subject", "g@b.com", "Ghost", UserRole.CONSUMER)));
+        when(userDetailsManager.loadUserByUsername("ghost-subject"))
+                .thenThrow(new UsernameNotFoundException("ghost-subject"));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> userService.updateUserStatus(id, "DISABLED", "x", "admin-actor"));
+        verify(userDetailsManager, never()).updateUser(any());
+    }
+
+    @Test
+    void updateUserStatus_rejectsDisablingTheLastActiveAdmin() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("admin-user", "a@b.com", "Admin", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("admin-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-user"));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> userService.updateUserStatus(id, "DISABLED", "x", "admin-actor"));
+
+        assertTrue(ex.getMessage().contains("last active ADMIN"));
+        verify(userDetailsManager, never()).updateUser(any());
+        verify(jdbcTemplate, never()).update(anyString(), (Object) any());
+    }
+
+    @Test
+    void updateUserStatus_allowsDisablingAnAdminWhenOthersRemain() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("admin-user", "a@b.com", "Admin", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("admin-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-user", "other-admin"));
+
+        userService.updateUserStatus(id, "DISABLED", "handover", "admin-actor");
+
+        verify(userDetailsManager).updateUser(any());
     }
 }
