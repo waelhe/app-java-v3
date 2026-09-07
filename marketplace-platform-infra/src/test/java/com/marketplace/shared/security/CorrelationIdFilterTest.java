@@ -26,6 +26,7 @@ class CorrelationIdFilterTest {
         filter.doFilterInternal(request, response, chain);
 
         verify(response).setHeader("X-Correlation-ID", "existing-id");
+        verify(request).setAttribute("correlationId", "existing-id");
     }
 
     @Test
@@ -38,5 +39,6 @@ class CorrelationIdFilterTest {
         filter.doFilterInternal(request, response, chain);
 
         verify(response).setHeader(eq("X-Correlation-ID"), anyString());
+        verify(request).setAttribute(eq("correlationId"), anyString());
     }
 }

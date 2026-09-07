@@ -163,7 +163,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency) {
-        providerLookupPort.findById(providerId)
+        providerLookupPort.findByUserId(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
         ProviderListing listing = ProviderListing.create(providerId, title, description, category,
@@ -241,7 +241,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (currentUserProvider.isAdmin(authentication)) return;
-        providerLookupPort.findById(listing.getProviderId())
+        // A1: listing.getProviderId() lives in the users.id space (V2 references
+        // users(id)) — resolve through findByUserId, not findById (provider_profiles.id).
+        providerLookupPort.findByUserId(listing.getProviderId())
                 .filter(provider -> provider.userId() != null && provider.userId().equals(currentUserId))
                 .orElseThrow(() -> new AccessDeniedException("You do not own this listing"));
     }

@@ -127,6 +127,20 @@ public class GlobalExceptionHandler {
                 "Service currently degraded", "detail");
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+        // A5: an illegal argument is a client-contract violation (400), matching
+        // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
+        return problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, "detail");
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
+        // A5: an illegal state in a well-formed request is a domain conflict (409),
+        // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.
+        return problem(ApiErrorTaxonomy.CONFLICT, ex.getMessage(), request, null, "detail");
+    }
+
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception for {}: {}", request.getRequestURI(), ex.getMessage(), ex);

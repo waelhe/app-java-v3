@@ -72,7 +72,7 @@ class MediaServiceTest {
     private void mockOwner() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
     }
 
@@ -115,7 +115,7 @@ class MediaServiceTest {
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", UUID.randomUUID())));
 
         assertThrows(AccessDeniedException.class,
@@ -188,7 +188,7 @@ class MediaServiceTest {
         when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", UUID.randomUUID())));
 
         assertThrows(AccessDeniedException.class,

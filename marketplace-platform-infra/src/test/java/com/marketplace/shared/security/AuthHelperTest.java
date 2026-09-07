@@ -48,7 +48,7 @@ class AuthHelperTest {
         ProviderSummary summary = mock();
         when(summary.userId()).thenReturn(userId);
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(summary));
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(summary));
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isTrue();
     }
@@ -59,7 +59,7 @@ class AuthHelperTest {
         ProviderSummary summary = mock();
         when(summary.userId()).thenReturn(UUID.randomUUID());
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(summary));
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(summary));
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isFalse();
     }
@@ -68,7 +68,7 @@ class AuthHelperTest {
     void ownsProvider_returnsFalseWhenProviderNotFound() {
         UUID providerId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.empty());
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.empty());
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isFalse();
     }

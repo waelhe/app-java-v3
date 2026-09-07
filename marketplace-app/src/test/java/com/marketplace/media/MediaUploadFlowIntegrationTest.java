@@ -63,7 +63,7 @@ class MediaUploadFlowIntegrationTest {
     private void mockOwner(UUID userId, UUID providerId, UUID listingId) {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
         when(currentUserProvider.isAdmin(any())).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));

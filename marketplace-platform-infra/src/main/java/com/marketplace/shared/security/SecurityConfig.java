@@ -16,6 +16,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -184,7 +185,10 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(properties.cors().allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"));
+        // X-API-Version must be allowed so versioned clients can send the
+        // X-API-Version request header consumed by ApiVersioningConfig
+        // (ApiVersionConfigurer#useRequestHeader) across the same origin (A2).
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key", "X-API-Version"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -212,22 +216,34 @@ public class SecurityConfig {
 
     @Bean
     AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
-        return (request, response, ex) -> writeProblemDetail(
-                response,
-                ApiErrorTaxonomy.AUTHN,
-                "Authentication required",
-                request
-        );
+        return (request, response, ex) -> {
+            // RFC 6750 §3.1: a protected resource MUST challenge a missing/invalid
+            // bearer token with a WWW-Authenticate header (A3).
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
+                    "Bearer realm=\"marketplace\", error=\"invalid_token\"");
+            writeProblemDetail(
+                    response,
+                    ApiErrorTaxonomy.AUTHN,
+                    "Authentication required",
+                    request
+            );
+        };
     }
 
     @Bean
     AccessDeniedHandler problemDetailAccessDeniedHandler() {
-        return (request, response, ex) -> writeProblemDetail(
-                response,
-                ApiErrorTaxonomy.AUTHZ,
-                "Access denied",
-                request
-        );
+        return (request, response, ex) -> {
+            // RFC 6750 §3.1: an authenticated request that lacks sufficient scope
+            // is challenged with error="insufficient_scope" (A3).
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
+                    "Bearer realm=\"marketplace\", error=\"insufficient_scope\"");
+            writeProblemDetail(
+                    response,
+                    ApiErrorTaxonomy.AUTHZ,
+                    "Access denied",
+                    request
+            );
+        };
     }
 
     private void writeProblemDetail(HttpServletResponse response,

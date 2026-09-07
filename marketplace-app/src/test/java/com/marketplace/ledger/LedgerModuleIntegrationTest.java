@@ -98,7 +98,7 @@ class LedgerModuleIntegrationTest {
         // enforced in a future slice setup: stub the AuthHelper collaborators
         // so the owner mapping is consistent (CodeRabbit #248 round 1).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
                 new ProviderSummary(providerId, "Test Provider", "VERIFIED", ownerUserId)));
 
         transactions.executeWithoutResult(tx ->

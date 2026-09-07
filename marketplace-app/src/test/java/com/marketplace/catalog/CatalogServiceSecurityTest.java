@@ -98,7 +98,7 @@ class CatalogServiceSecurityTest {
     void create_whenProvider_thenInvokes() {
         UUID currentUserId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
         when(listingRepository.save(any(ProviderListing.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -120,7 +120,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
 
         ProviderListing result = catalogService.update(listingId, "new", "desc", "cat", 1000L, authentication);
@@ -139,7 +139,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
 
         ProviderListing result = catalogService.activate(listingId, authentication);
@@ -159,7 +159,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
 
         ProviderListing result = catalogService.pause(listingId, authentication);
@@ -178,7 +178,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
 
         ProviderListingSummary result = catalogService.archiveListing(listingId, authentication);
@@ -197,7 +197,7 @@ class CatalogServiceSecurityTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
 
         ProviderListing result = catalogService.archive(listingId, authentication);

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
@@ -52,6 +53,8 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
                 .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        "Bearer realm=\"marketplace\", error=\"invalid_token\""))
                 .andExpect(header().exists("X-Correlation-ID"));
     }
 
@@ -69,6 +72,8 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.errorCode").value("AUTHZ-001"))
                 .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        "Bearer realm=\"marketplace\", error=\"insufficient_scope\""))
                 .andExpect(header().exists("X-Correlation-ID"));
     }
 

@@ -9,6 +9,7 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.graphql.execution.DataFetcherExceptionResolverAdapter;
 import org.springframework.graphql.execution.ErrorType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -35,6 +36,12 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         }
         if (ex instanceof IllegalStateException) {
             return buildError(env, ErrorType.BAD_REQUEST, "DOMAIN_CONFLICT", "DOMAIN", ex.getMessage());
+        }
+        if (ex instanceof AccessDeniedException) {
+            // A4: distinguish an authorization failure from an internal error so
+            // GraphQL clients can tell a denied request from a broken server,
+            // matching the AUTHZ taxonomy the REST layer returns for 403.
+            return buildError(env, ErrorType.FORBIDDEN, "ACCESS_DENIED", "authz", ex.getMessage());
         }
 
         return buildError(env, ErrorType.INTERNAL_ERROR, "INTERNAL_ERROR", "INTERNAL", GENERIC_INTERNAL_MESSAGE);

@@ -30,6 +30,11 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         }
         MDC.put(MDC_KEY, correlationId);
         response.setHeader(HEADER_NAME, correlationId);
+        // A6: expose the generated/propagated id as a request attribute so the
+        // error path (GlobalExceptionHandler.problem) can emit it in the problem
+        // body even when the client sent no header — otherwise the server-side
+        // generated traceId stays in the MDC and never reaches the response.
+        request.setAttribute(MDC_KEY, correlationId);
         try {
             filterChain.doFilter(request, response);
         } finally {
