@@ -49,4 +49,30 @@ class ProviderLookupAdapterTest {
 
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    void findByUserId_returnsSummary() {
+        UUID userId = UUID.randomUUID();
+        ProviderProfile profile = ProviderProfile.create("John", "Bio", userId);
+        UUID id = profile.getId();
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(profile));
+
+        Optional<ProviderSummary> result = adapter.findByUserId(userId);
+
+        assertTrue(result.isPresent());
+        assertEquals(id, result.get().id());
+        assertEquals("John", result.get().displayName());
+        assertEquals("PENDING", result.get().status());
+        assertEquals(userId, result.get().userId());
+    }
+
+    @Test
+    void findByUserId_returnsEmptyWhenUserHasNoProfile() {
+        UUID userId = UUID.randomUUID();
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        Optional<ProviderSummary> result = adapter.findByUserId(userId);
+
+        assertTrue(result.isEmpty());
+    }
 }
