@@ -71,6 +71,6 @@ public class LedgerService {
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Transactional(readOnly = true)
     public Page<LedgerEntry> getStatementForOwner(UUID providerId, Pageable pageable) {
-        return entryRepository.findByProviderIdOrderByCreatedAtDesc(providerId, pageable);
+        return entryRepository.findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable);
     }
 }

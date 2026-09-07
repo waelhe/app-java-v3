@@ -11,6 +11,9 @@ import java.util.UUID;
 public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>, RevisionRepository<LedgerEntry, UUID, Integer> {
     Optional<LedgerEntry> findBySourceId(UUID sourceId);
 
-    /** Provider statement (L20): newest-first movement page for one provider. */
-    Page<LedgerEntry> findByProviderIdOrderByCreatedAtDesc(UUID providerId, Pageable pageable);
+    /** Provider statement (L20): newest-first movement page for one provider.
+     * Secondary id-DESC keeps ties (the credit + commission-debit pair land
+     * in one listener transaction — identical createdAt) in a stable order,
+     * so pagination across a tie boundary is deterministic. */
+    Page<LedgerEntry> findByProviderIdOrderByCreatedAtDescIdDesc(UUID providerId, Pageable pageable);
 }

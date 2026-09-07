@@ -7,6 +7,7 @@ import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ApplicationModuleTest
@@ -83,6 +85,7 @@ class LedgerModuleIntegrationTest {
         UUID bookingId = UUID.randomUUID();
         UUID paymentIntentId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
         long priceCents = 5000L;
         long commissionCents = 500L; // app.commission.rate = 0.10 (test profile)
 
@@ -91,6 +94,12 @@ class LedgerModuleIntegrationTest {
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", priceCents, "SAR",
                 Instant.now(), Instant.now()));
+        // The guarded reads must be authorized even if method security is
+        // enforced in a future slice setup: stub the AuthHelper collaborators
+        // so the owner mapping is consistent (CodeRabbit #248 round 1).
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Test Provider", "VERIFIED", ownerUserId)));
 
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
@@ -108,6 +117,22 @@ class LedgerModuleIntegrationTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
                                 LedgerEntryType.COMMISSION_DEBIT, commissionCents));
+
+        // Equal-timestamp stability across pages (CodeRabbit #248 round 1): the
+        // credit + commission pair lands in ONE listener transaction, so both
+        // rows share createdAt — paging at size 1 walks the tie deterministically
+        // (createdAt DESC, id DESC): the two pages are disjoint and together hold
+        // exactly the two movements.
+        Page<LedgerEntry> pageOne = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 1));
+        Page<LedgerEntry> pageTwo = ledgerService.getStatementForOwner(providerId, PageRequest.of(1, 1));
+        assertThat(pageOne.getContent()).hasSize(1);
+        assertThat(pageTwo.getContent()).hasSize(1);
+        assertThat(pageOne.getContent().get(0).getId())
+                .isNotEqualTo(pageTwo.getContent().get(0).getId());
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getId)
+                .containsExactlyInAnyOrder(
+                        pageOne.getContent().get(0).getId(), pageTwo.getContent().get(0).getId());
     }
 
     /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */

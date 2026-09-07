@@ -104,6 +104,34 @@ class ProviderLedgerControllerWebMvcTest {
                 .andExpect(jsonPath("$.last").value(true));
     }
 
+    /**
+     * Signed statement contract (CodeRabbit #248 round 1): the commission
+     * debit presents a NEGATIVE amountCents so a client summing the page
+     * reproduces the balance (5000 credit − 500 commission = 4500).
+     */
+    @Test
+    void getMyStatement_commissionDebitPresentsNegativeAmount() throws Exception {
+        UUID providerId = stubOwnProvider();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID commissionSourceId = UUID.nameUUIDFromBytes(
+                ("commission-" + paymentIntentId).getBytes());
+        when(ledgerService.getStatementForOwner(any(UUID.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(
+                        List.of(
+                                LedgerEntry.paymentCredit(providerId, paymentIntentId, 5000L),
+                                LedgerEntry.commissionDebit(providerId, commissionSourceId, 500L)),
+                        PageRequest.of(0, 20),
+                        2));
+
+        mockMvc.perform(get("/api/v1/providers/me/ledger/statement")
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[1].entryType").value("COMMISSION_DEBIT"))
+                .andExpect(jsonPath("$.content[1].amountCents").value(-500L))
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
     @Test
     void getMyBalance_withoutProviderProfile_returnsNotFound() throws Exception {
         UUID userId = UUID.randomUUID();

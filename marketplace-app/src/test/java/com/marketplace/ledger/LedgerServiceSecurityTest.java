@@ -87,12 +87,12 @@ class LedgerServiceSecurityTest {
     void getStatementForOwner_whenOwner_thenInvokes() {
         UUID providerId = UUID.randomUUID();
         when(authHelper.ownsProvider(any(), any())).thenReturn(true);
-        when(entryRepository.findByProviderIdOrderByCreatedAtDesc(any(UUID.class), any(Pageable.class)))
+        when(entryRepository.findByProviderIdOrderByCreatedAtDescIdDesc(any(UUID.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         Page<LedgerEntry> result = ledgerService.getStatementForOwner(providerId, Pageable.ofSize(10));
 
         assertThat(result).isNotNull();
-        verify(entryRepository).findByProviderIdOrderByCreatedAtDesc(providerId, Pageable.ofSize(10));
+        verify(entryRepository).findByProviderIdOrderByCreatedAtDescIdDesc(providerId, Pageable.ofSize(10));
     }
 }

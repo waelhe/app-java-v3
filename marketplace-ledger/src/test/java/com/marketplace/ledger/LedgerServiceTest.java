@@ -197,13 +197,13 @@ class LedgerServiceTest {
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         var expected = new org.springframework.data.domain.PageImpl<>(
                 java.util.List.of(LedgerEntry.paymentCredit(providerId, UUID.randomUUID(), 5000L)));
-        when(entryRepository.findByProviderIdOrderByCreatedAtDesc(providerId, pageable)).thenReturn(expected);
+        when(entryRepository.findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable)).thenReturn(expected);
 
         var result = service.getStatementForOwner(providerId, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getEntryType()).isEqualTo(LedgerEntryType.PAYMENT_CREDIT);
         assertThat(result.getContent().get(0).getAmountCents()).isEqualTo(5000L);
-        verify(entryRepository).findByProviderIdOrderByCreatedAtDesc(providerId, pageable);
+        verify(entryRepository).findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable);
     }
 }
