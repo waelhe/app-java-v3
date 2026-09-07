@@ -22,6 +22,9 @@ class NotificationControllerTest {
     private NotificationService service;
 
     @Mock
+    private NotificationPreferenceService preferenceService;
+
+    @Mock
     private Authentication authentication;
 
     @InjectMocks
@@ -48,5 +51,32 @@ class NotificationControllerTest {
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(notification);
+    }
+
+    @Test
+    void getMyPreferencesReturnsEffectiveMatrix() {
+        var matrix = List.of(new NotificationPreferenceView(
+                NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false));
+        when(preferenceService.getMyPreferences(authentication)).thenReturn(matrix);
+
+        ResponseEntity<List<NotificationPreferenceView>> result = controller.getMyPreferences(authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isSameAs(matrix);
+    }
+
+    @Test
+    void updateMyPreferencesReturnsEffectiveMatrix() {
+        var request = new NotificationPreferencesUpdateRequest(List.of(
+                new NotificationPreferenceUpdate(NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false)));
+        var matrix = List.of(new NotificationPreferenceView(
+                NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, false));
+        when(preferenceService.updateMyPreferences(authentication, request)).thenReturn(matrix);
+
+        ResponseEntity<List<NotificationPreferenceView>> result =
+                controller.updateMyPreferences(request, authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isSameAs(matrix);
     }
 }
