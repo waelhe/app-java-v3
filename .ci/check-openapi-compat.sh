@@ -56,15 +56,28 @@ generate_spec "baseline" "$WORK_DIR/baseline-openapi.json"
 git checkout -q "$CURRENT_SHA"
 
 # Breaking-change gate: endpoint deletions, schema narrowing, status/media type changes.
+openapi_diff_exit=0
 docker run --rm -t -v "$WORK_DIR:/spec" openapitools/openapi-diff:latest \
   /spec/baseline-openapi.json /spec/current-openapi.json \
-  --fail-on-incompatible || {
-    if grep -Eq '^exceptions:\s*\[\s*\]\s*$' "$ROOT_DIR/.ci/openapi-compat-allowlist.yml"; then
-      echo "OpenAPI incompatible changes detected and no allowlist exceptions are documented."
-      exit 1
-    fi
-    echo "OpenAPI incompatible changes detected. Validate documented exceptions in .ci/openapi-compat-allowlist.yml before merge."
-    exit 1
-  }
+  --fail-on-incompatible > "$WORK_DIR/openapi-diff-report.txt" 2>&1 || openapi_diff_exit=$?
 
-echo "OpenAPI backward compatibility gate passed."
+if [[ "$openapi_diff_exit" -eq 0 ]]; then
+  echo "OpenAPI backward compatibility gate passed."
+  exit 0
+fi
+
+# Incompatible changes detected: an empty exceptions list is always a failure;
+# a non-empty list must cover every reported breaking (path, status) change.
+verify_exit=0
+bash "$ROOT_DIR/.ci/verify-openapi-exceptions.sh" \
+  "$WORK_DIR/openapi-diff-report.txt" "$ROOT_DIR/.ci/openapi-compat-allowlist.yml" \
+  || verify_exit=$?
+
+cat "$WORK_DIR/openapi-diff-report.txt"
+
+if [[ "$verify_exit" -eq 0 ]]; then
+  echo "OpenAPI incompatible changes detected; all covered by documented exceptions in .ci/openapi-compat-allowlist.yml."
+  exit 0
+fi
+echo "OpenAPI incompatible changes detected and not fully covered by documented exceptions. Fix .ci/openapi-compat-allowlist.yml before merge."
+exit 1

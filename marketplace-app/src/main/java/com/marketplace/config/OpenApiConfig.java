@@ -36,6 +36,7 @@ public class OpenApiConfig {
                         .addResponses("NotFound", problemResponse("Resource not found"))
                         .addResponses("Conflict", problemResponse("Conflict"))
                         .addResponses("TooManyRequests", problemResponse("Rate limit exceeded"))
+                        .addResponses("ServiceUnavailable", problemResponse("Service temporarily unavailable - upstream/dependency degraded"))
                         .addResponses("InternalServerError", problemResponse("Unexpected error"))
                         .addSecuritySchemes("bearerAuth",
                                 new SecurityScheme()
@@ -58,6 +59,7 @@ public class OpenApiConfig {
                 addResponseIfMissing(operation, "409", "#/components/responses/Conflict");
                 addResponseIfMissing(operation, "429", "#/components/responses/TooManyRequests");
                 addResponseIfMissing(operation, "500", "#/components/responses/InternalServerError");
+                addResponseIfMissing(operation, "503", "#/components/responses/ServiceUnavailable");
             }));
         };
     }
