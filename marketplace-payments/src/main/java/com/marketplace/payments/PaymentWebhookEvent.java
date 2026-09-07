@@ -20,7 +20,7 @@ public class PaymentWebhookEvent extends BaseEntity {
     @Column(name = "provider", nullable = false, length = 50)
     private String provider;
 
-    @Column(name = "event_id", nullable = false, unique = true, length = 200)
+    @Column(name = "event_id", nullable = false, length = 200)
     private String eventId;
 
     @Column(name = "event_type", nullable = false, length = 100)

@@ -113,7 +113,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_metadataResolution_dispatchesVerifiedEvent() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_9")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_9")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
@@ -135,7 +135,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_pspLinkFallback_resolvesIntentWithoutMetadata() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_10")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_10")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
@@ -161,7 +161,7 @@ class PaymentsServicePspTest {
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_11", "payment_intent.succeeded",
                         intentId, "pi_11", null));
-        when(webhookEventRepository.findByEventId("evt_11")).thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_11")).thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
 
         boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
 
@@ -172,17 +172,18 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_concurrentDuplicateInsert_answersAlreadyProcessed() {
         // CodeRabbit #241: two concurrent deliveries of the same event both
-        // pass the findByEventId lookup. The recorder's flushed insert is the
-        // serialization point — the loser (unique event_id violation crossing
-        // the recorder's transactional boundary) is answered already-processed
-        // (false / HTTP 200), never a 5xx, and never dispatches.
+        // pass the provider-scoped findByProviderAndEventId lookup (B5). The
+        // recorder's flushed insert is the serialization point — the loser
+        // (unique (provider, event_id) violation crossing the recorder's
+        // transactional boundary) is answered already-processed (false / HTTP
+        // 200), never a 5xx, and never dispatches.
         UUID intentId = UUID.randomUUID();
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_12", "payment_intent.succeeded",
                         intentId, "pi_12", null));
         // Pre-check: absent; post-DIVE re-check: the winner's row exists.
-        when(webhookEventRepository.findByEventId("evt_12"))
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_12"))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
@@ -207,7 +208,7 @@ class PaymentsServicePspTest {
         when(pspChannel.verifyWebhook("payload", "t=1,v1=sig"))
                 .thenReturn(new PspChannel.VerifiedWebhook("evt_13", "payment_intent.succeeded",
                         null, "pi_unlinked_13", null));
-        when(webhookEventRepository.findByEventId("evt_13")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_13")).thenReturn(Optional.empty());
         when(intentRepository.findByPspIntentId("pi_unlinked_13")).thenReturn(Optional.empty());
 
         com.marketplace.shared.api.ConflictException thrown = assertThrows(
@@ -217,7 +218,7 @@ class PaymentsServicePspTest {
         assertTrue(thrown.getMessage().contains("evt_13"));
         // Rejected BEFORE the dedup row exists — the retry is not blocked.
         verify(webhookEventRepository, never()).saveAndFlush(any());
-        verify(webhookEventRepository, never()).deleteByEventId(any());
+        verify(webhookEventRepository, never()).deleteByProviderAndEventId(eq("stripe"), any());
     }
 
     @Test
@@ -235,7 +236,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_paymentFailed_flipsIntentAndPaymentToFailed() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_14")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_14")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
@@ -261,7 +262,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_chargeRefunded_syncsRemoteCumulative() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_15")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_15")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
@@ -291,7 +292,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_chargeRefunded_alreadySynced_isANoOp() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_16")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_16")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
@@ -434,7 +435,7 @@ class PaymentsServicePspTest {
     @Test
     void handleStripeWebhook_chargeRefunded_outOfOrderSnapshot_isIgnored() {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        when(webhookEventRepository.findByEventId("evt_17")).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_17")).thenReturn(Optional.empty());
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);

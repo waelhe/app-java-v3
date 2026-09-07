@@ -52,6 +52,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -72,6 +73,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L, "USD"));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -89,11 +91,33 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
 
         assertEquals("SAR", booking.getCurrency());
+    }
+
+    @Test
+    void create_rejectsWindowThatDoesNotMatchAnExactSlot() {
+        // codex-review-fixes-plan B4 (Option M): isAvailable is an overlap
+        // check; the booking must match an open slot exactly. A sub-window that
+        // is "available" still must not pass create — it would only fail at
+        // confirm's bookSlot. Fail early with BadRequestException (400).
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(false);
+
+        assertThrows(BadRequestException.class,
+                () -> service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes"));
+        verify(bookingRepository, never()).save(any(Booking.class));
     }
 
     @Test

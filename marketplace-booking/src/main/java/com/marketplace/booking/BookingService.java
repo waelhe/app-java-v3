@@ -120,6 +120,13 @@ public class BookingService implements BookingSpi {
         if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {
             throw new BadRequestException("The provider is not available at the requested time");
         }
+        if (!availabilityPort.hasExactAvailableSlot(info.providerId(), startsAt, endsAt)) {
+            // codex-review-fixes-plan B4 (Option M): isAvailable() is an overlap
+            // check (search semantics); bookSlot() needs an exact open slot. A
+            // sub-window would pass create and only fail at confirm — reject it
+            // here with an early 400 instead.
+            throw new BadRequestException("The requested time window must match an available slot exactly");
+        }
         Booking booking = Booking.create(consumerId, info.providerId(), listingId, info.priceCents(),
                 info.currency(), startsAt, endsAt, notes);
         Booking saved = bookingRepository.save(booking);

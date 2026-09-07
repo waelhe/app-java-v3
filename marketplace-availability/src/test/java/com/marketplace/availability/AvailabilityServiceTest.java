@@ -112,6 +112,34 @@ class AvailabilityServiceTest {
     }
 
     @Test
+    void hasExactAvailableSlot_returnsTrueWhenExactOpenSlotExists() {
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T10:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T11:00:00Z");
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt))
+                .thenReturn(Optional.of(mock(AvailabilitySlot.class)));
+
+        boolean exact = service.hasExactAvailableSlot(providerId, startsAt, endsAt);
+
+        assertThat(exact).isTrue();
+    }
+
+    @Test
+    void hasExactAvailableSlot_returnsFalseWhenOnlySubWindowCovered() {
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:30:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T10:30:00Z");
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt))
+                .thenReturn(Optional.empty());
+
+        boolean exact = service.hasExactAvailableSlot(providerId, startsAt, endsAt);
+
+        assertThat(exact).isFalse();
+    }
+
+    @Test
     void createRuleSavesAndReturnsRule() {
         UUID providerId = create(UUID.class);
         DayOfWeek dayOfWeek = DayOfWeek.MONDAY;
