@@ -17,11 +17,14 @@ import org.testcontainers.utility.DockerImageName;
 import java.util.UUID;
 
 /**
- * Guard for V39 (Codex review fix C3, docs/codex-review-fixes-plan.md §3-C3):
- * the corrected provider_profiles.user_id backfill that (1) severs any link to
- * a soft-deleted user and (2) re-links NULL profiles to the single ACTIVE
- * (is_deleted = false) PROVIDER whose display_name matches — V23's criteria
- * plus is_deleted=false on both the join and the uniqueness subquery.
+ * Guard for V39 (Codex review fix C3, docs/codex-review-fixes-plan.md
+ * §3-C3, shaped by the CodeRabbit security finding CWE-639): the
+ * provider_profiles.user_id repair that (1) severs any link to a soft-deleted
+ * user and (2) assigns nothing afterwards — users.display_name is not
+ * ownership evidence (UserService.syncFromOidc rewrites it from the OIDC
+ * "name" claim on every login and V1 declares no UNIQUE on it), so a name
+ * match could bind a profile to the wrong active provider and
+ * ProviderRepository.findByUserId would treat that as true ownership.
  *
  * <p>Follows the {@code AuditedWritesIntegrationTest} /
  * {@code DeadQuartzStoreRemovalIntegrationTest} pattern: real PostgreSQL with
@@ -41,11 +44,11 @@ import java.util.UUID;
  *       boot (the {@code AuditedWrites} reasoning).</li>
  *   <li><b>Semantics of the repair on the real schema:</b> this test seeds
  *       active + soft-deleted users and unlinked profiles, then executes the
- *       exact two statements of V39 verbatim (the sever, then the corrected
- *       backfill) and asserts the outcome: the deleted twin does not win the
- *       match, and no profile stays bound to a tombstone. Executing the
- *       migration text itself (read from the classpath migration file) is the
- *       honest guard — it cannot drift from the shipped script.</li>
+ *       exact statement of V39 verbatim (the sever) and asserts the outcome:
+ *       no profile stays bound to a tombstone, and no unlinked profile is
+ *       ever assigned by display_name. Executing the migration text itself
+ *       (read from the classpath migration file) is the honest guard — it
+ *       cannot drift from the shipped script.</li>
  * </ol>
  */
 @SpringBootTest(properties = {
@@ -119,16 +122,17 @@ class ProviderUserIdBackfillIntegrationTest {
     }
 
     @Test
-    void backfillLinksOnlyTheActiveSingleMatch() {
-        // A name-twin: one ACTIVE PROVIDER and one soft-deleted PROVIDER with
-        // the same display_name. V23 would have seen both in its COUNT and
-        // (without is_deleted on the subquery) suppressed the match; the
-        // corrected backfill must ignore the deleted twin and link the active
-        // one. We run the repair against these as the "before-V39" rows by
-        // first setting user_id NULL (the post-sever state the backfill
-        // targets).
+    void unlinkedProfilesAreNotAssignedByDisplayName() {
+        // The CWE-639 scenario: one ACTIVE PROVIDER and two soft-deleted
+        // PROVIDERs sharing the display_name of an unlinked profile. V23's
+        // COUNT saw all three and suppressed the match; a display_name
+        // "corrected" backfill would have ignored the deleted twins and
+        // linked the active one — binding ownership to a mutable, non-unique
+        // name (UserService.syncFromOidc rewrites it from the OIDC "name"
+        // claim on every login). V39 must assign nothing: the profile stays
+        // NULL for manual repair, whoever currently bears the name.
         String display = "c3-active-provider";
-        UUID active = insertUser("c3-active-provider-subject", display, "PROVIDER", false);
+        insertUser("c3-active-provider-subject", display, "PROVIDER", false);
         insertUser("c3-deleted-twin-1", display, "PROVIDER", true);
         insertUser("c3-deleted-twin-2", display, "PROVIDER", true);
 
@@ -136,14 +140,13 @@ class ProviderUserIdBackfillIntegrationTest {
 
         runV39();
 
-        // The two deleted name-twins must not poison the match: the profile is
-        // linked to the single ACTIVE provider, not suppressed.
+        // display_name is not ownership evidence — no assignment is allowed.
         UUID linked = jdbc.queryForObject(
                 "SELECT user_id FROM provider_profiles WHERE id = ?", UUID.class, profile);
         assertThat(linked)
-                .as("the profile must be backfilled to the single active PROVIDER, "
-                        + "ignoring soft-deleted name-twins")
-                .isEqualTo(active);
+                .as("an unlinked profile must NOT be assigned by display_name — "
+                        + "it stays NULL for manual repair (CWE-639)")
+                .isNull();
     }
 
     @Test

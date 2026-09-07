@@ -1,25 +1,38 @@
 -- V39: repair the provider_profiles.user_id backfill for soft-deleted users.
 --
--- Codex review fix C3 (docs/codex-review-fixes-plan.md §3-C3): V23
+-- Codex review fix C3 (docs/codex-review-fixes-plan.md §3-C3), shaped by the
+-- CodeRabbit security finding (CWE-639): V23
 -- (V23__backfill_provider_user_id.sql) linked provider_profiles to users by
--- display_name + role without filtering on is_deleted. Two defects, both
--- closed here WITHOUT rewriting V23 (a migration that has already shipped —
--- the C4 rule: never rewrite an applied migration; ship a new V):
+-- display_name + role without filtering on is_deleted. This migration closes
+-- the repairable half of that defect WITHOUT rewriting V23 (a migration that
+-- has already shipped — the C4 rule: never rewrite an applied migration;
+-- ship a new V):
 --
 --  (1) A profile could be linked to a user that is soft-deleted. Hibernate
---      ORM @SoftDelete (BaseEntity.java:40, column is_deleted) makes deleted
+--      ORM @SoftDelete (BaseEntity.java, column is_deleted) makes deleted
 --      users invisible to every entity query, so a profile bound to a deleted
 --      user is an ownerless orphan the ORM can never resolve — and the
 --      soft-deleted user alone poisons the match (the V23 COUNT subquery saw
 --      the deleted row and suppressed a valid single match). This migration
---      first severs every such binding (user_id -> NULL) so no profile stays
---      linked to a tombstone.
+--      severs every such binding (user_id -> NULL) so no profile stays
+--      linked to a tombstone. No guessing is involved: a tombstone cannot
+--      own anything, so the sever is always safe.
 --
---  (2) The corrected backfill then re-links the now-NULL profiles to the
---      single ACTIVE (is_deleted = false) PROVIDER user whose display_name
---      matches — the exact V23 criteria plus is_deleted=false on BOTH the
---      join user and the uniqueness COUNT subquery. Rows with no active match
---      or multiple active matches stay NULL (linked manually), mirroring V23.
+--  (2) The suppressed-match half is deliberately NOT repaired by re-linking:
+--      users.display_name is not ownership evidence. It is mutable
+--      identity-provider data (UserService.syncFromOidc rewrites
+--      users.display_name from the OIDC "name" claim on every login), and
+--      the schema never made it unique (V1 declares no UNIQUE on
+--      users.display_name). Re-assigning by name could therefore bind a
+--      profile to the WRONG active provider, and ProviderRepository
+--      .findByUserId — the ownership "me" seam (L20) — would treat that
+--      assignment as true ownership: an authorization bypass through a
+--      user-controlled key (CWE-639). Per the CodeRabbit finding, rows
+--      without immutable ownership evidence stay NULL for manual repair;
+--      this schema holds no immutable evidence for a profile (no
+--      created_by/subject/email column on provider_profiles to match
+--      against), so the honest migration assigns nothing and every unlinked
+--      row goes to manual repair.
 --
 -- DML only — no schema change: user_id already exists on provider_profiles
 -- (V22) and its _aud mirror (V24). Like V23/V29 before it, this data repair
@@ -28,28 +41,10 @@
 -- the repair itself is intentionally not written (the table was empty at
 -- migration time and the next entity write snapshot is authoritative).
 
--- (1) First sever every profile bound to a soft-deleted user. The set-first
--- ORDER for the two statements matters: this runs the repair, then the
--- backfill below sees the repaired (NULL) rows and may re-link them to a
--- valid active user.
+-- Sever every profile bound to a soft-deleted user. This is the whole
+-- migration: single statement, no re-assignment (see (2) above).
 UPDATE provider_profiles pp
    SET user_id = NULL
   FROM users u
  WHERE pp.user_id = u.id
    AND u.is_deleted = true;
-
--- (2) Corrected backfill — V23's match with is_deleted=false on the join and
--- on the uniqueness COUNT (so a deleted name-twin can no longer suppress the
--- single valid active match). Only rows still unlinked are considered.
-UPDATE provider_profiles pp
-   SET user_id = u.id
-  FROM users u
- WHERE pp.user_id IS NULL
-   AND u.display_name = pp.display_name
-   AND u.role = 'PROVIDER'
-   AND u.is_deleted = false
-   AND (SELECT COUNT(*)
-          FROM users u2
-         WHERE u2.display_name = pp.display_name
-           AND u2.role = 'PROVIDER'
-           AND u2.is_deleted = false) = 1;
