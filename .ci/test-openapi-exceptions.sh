@@ -6,7 +6,8 @@
 #   non-empty uncovered / stale / expired -> exit 1
 #   expiry must be a real calendar date (month lengths, leap years) -> exit 1 otherwise
 #   incompatible parameter / request-body changes fail closed even when a
-#   response break is covered -> exit 1
+#   response break is covered -> exit 1 (including "- Add" params: the console
+#   report cannot distinguish optional from required additions)
 #   response media-type deletion is representable and may be covered -> exit 0
 set -euo pipefail
 
@@ -172,8 +173,6 @@ cat > "$TMP/report-request.txt" <<'REPORT'
 --                            What's Changed                            --
 --------------------------------------------------------------------------
 - POST   /pet
-  Parameter:
-    - Add name in query
   Request:
     - Changed application/json
       Schema: Broken compatibility
@@ -198,11 +197,10 @@ exceptions:
     reason: schema narrowing migration
     expiry: 2999-01-01
 YML
-# The optional parameter add must NOT trip the gate; the broken request body must.
 if "$VERIFY" "$TMP/report-request.txt" "$TMP/allow-request.yml" >/dev/null 2>&1; then
   echo "FAIL case 8: request-body break alongside a covered response break must exit 1"; exit 1
 fi
-echo "OK case 8: covered response + incompatible request body (optional param add passes) -> exit 1"
+echo "OK case 8: covered response + incompatible request body -> exit 1"
 
 # Report with parameter changes and a covered response break.
 cat > "$TMP/report-param.txt" <<'REPORT'
@@ -277,5 +275,44 @@ if ! "$VERIFY" "$TMP/report-repcontent.txt" "$TMP/allow-repcontent.yml" >/dev/nu
   echo "FAIL case 10: representable response content deletion must exit 0 when covered"; exit 1
 fi
 echo "OK case 10: response media-type deletion covered by (path, status) exception -> exit 0"
+
+# Report with a parameter addition and a covered response break. The console
+# report renders "- Add" identically for optional and required additions, so
+# the gate fails closed (CodeRabbit round 3, follow-up finding).
+cat > "$TMP/report-paramadd.txt" <<'REPORT'
+==========================================================================
+==                            API CHANGE LOG                            ==
+==========================================================================
+--------------------------------------------------------------------------
+--                            What's Changed                            --
+--------------------------------------------------------------------------
+- POST   /pet
+  Parameter:
+    - Add name in query
+  Return Type:
+    - Changed 200 OK
+      Media types:
+        - Changed application/json
+          Schema: Broken compatibility
+--------------------------------------------------------------------------
+--                                Result                                --
+--------------------------------------------------------------------------
+                 API changes broke backward compatibility
+--------------------------------------------------------------------------
+REPORT
+
+# Case 11: required/ambiguous parameter addition + allowlisted response break -> exit 1
+cat > "$TMP/allow-paramadd.yml" <<'YML'
+exceptions:
+  - path: POST /pet
+    status: 200
+    ticket: TCK-401
+    reason: schema narrowing migration
+    expiry: 2999-01-01
+YML
+if "$VERIFY" "$TMP/report-paramadd.txt" "$TMP/allow-paramadd.yml" >/dev/null 2>&1; then
+  echo "FAIL case 11: parameter addition alongside a covered response break must exit 1"; exit 1
+fi
+echo "OK case 11: covered response + parameter addition (required-ness invisible) -> exit 1"
 
 echo "ALL openapi-exceptions allowlist tests passed."

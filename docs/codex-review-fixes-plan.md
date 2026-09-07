@@ -206,7 +206,7 @@
 ```
 Batch A (أمن + فضاء المعرّف):  A1→A2→A3→A4→A5→A6 — **منفَّذ عبر PR #253** (A3 مُحسَّنة بجولة CodeRabbit: تحدّي عارٍ لطلبات بلا توكن، `error="invalid_token"` للتوكن المُقدَّم التالف عبر بوابة `oauth2ResourceServer().authenticationEntryPoint`)
 Batch B (دومين/API):            B1→B2 — **منفَّذ عبر PR #253** (+ B3/B4/B5 بعد قرار المستخدم)
-Batch C (بنية/CI):              C1→C2 — **منفَّذ عبر PR #253** (C2 مُكمَّلة بجولتين: إصلاح تغليف — إزالة BOM قبل الـshebang، صلاحية 755 للسكربتين الجديدتين، وسطر نهاية الملف — ثم ج3 CodeRabbit: تقويم حقيقي للتواريخ + فشل مقفول [UNREPRESENTABLE] لتغييرات المعاملات/الطلب غير الممثَّلة في قائمة (path,status) وفق دلالات ChangedParameters/ChangedParameter/ChangedContent/ChangedMediaType الرسمية)؛ C3 ينتظر، وC4 قرار موثق
+Batch C (بنية/CI):              C1→C2 — **منفَّذ عبر PR #253** (C2 مُكمَّلة بجولتين: إصلاح تغليف — إزالة BOM قبل الـshebang، صلاحية 755 للسكربتين الجديدتين، وسطر نهاية الملف — ثم جولتا CodeRabbit ج3: تقويم حقيقي للتواريخ + فشل مقفول [UNREPRESENTABLE] لتغييرات المعاملات (بما فيها Add — التقرير النصي لا يُظهر required) والطلب غير الممثَّلة في قائمة (path,status) وفق دلالات ChangedParameters/ChangedParameter/ChangedContent/ChangedMediaType الرسمية)؛ C3 ينتظر، وC4 قرار موثق
 ```
 
 - فرع واحد: `feat/codex-still-valid-sweep` من `origin/main`؛ دمج عبر PR واحد squash (حوكمة §14.3).

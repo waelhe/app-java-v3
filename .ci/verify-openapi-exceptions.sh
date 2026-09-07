@@ -16,14 +16,15 @@
 #   - ChangedParameter.isCoreChanged: required-increase/style/explode/allowEmpty-decrease -> INCOMPATIBLE
 #   - ChangedContent.isCoreChanged: deleted media types -> INCOMPATIBLE (REQUEST/RESPONSE_CONTENT_DECREASED)
 #   - ChangedMediaType: rendered as "Schema: Broken compatibility" when incompatible
-# Therefore "- Delete/- Changed <param>" lines and request-side breaks emit
-# [UNREPRESENTABLE] and fail the gate. Response media-type deletion is
-# representable (the enclosing status is known) and is treated as a (path, status) break.
-# Known residual: "- Add <param>" renders identically for required (incompatible)
-# and optional (compatible) additions; a required-add co-occurring with a
-# documented response break is not distinguishable from the console report -
-# a required-add alone still fails via the uncovered/stale arms because no
-# (path, status) break is reported for it.
+# Therefore all "- Add/- Delete/- Changed <param>" lines and request-side breaks
+# emit [UNREPRESENTABLE] and fail the gate: the console report does not
+# expose parameter required-ness, so "- Add" cannot be distinguished between
+# optional (compatible) and required (incompatible) additions - failing closed
+# on every Add is the conservative default; a compatible optional add
+# co-occurring with a documented response break must be resolved explicitly
+# (revert the add, or switch the gate to a report format that exposes
+# required). Response media-type deletion is representable (the enclosing
+# status is known) and is treated as a (path, status) break.
 #
 # Usage: verify-openapi-exceptions.sh <openapi-diff-report.txt> <allowlist.yml>
 #   exit 0 = accepted   exit 1 = rejected with named errors
@@ -63,11 +64,11 @@ awk -v UNREP="$TMP/unrep.txt" '
   $0 ~ /Parameter:/ { block = "param"; next }
   $0 ~ /Request:/ { block = "request"; next }
 
-  # Fail closed: parameter deletions/changes (REQUEST_PARAMS_DECREASED,
+  # Fail closed: parameter deletions/changes/additions (REQUEST_PARAMS_DECREASED,
   # REQUEST_PARAMS_REQUIRED_INCREASED and friends in the official model).
-  # "- Add" params are not failed: the console report cannot distinguish a
-  # compatible optional add from an incompatible required add (see header).
-  block == "param" && $0 ~ /-[[:space:]]+(Delete|Changed)[[:space:]]+/ {
+  # "- Add" is failed too: the console report cannot distinguish a compatible
+  # optional add from an incompatible required add (see header).
+  block == "param" && $0 ~ /-[[:space:]]+(Add|Delete|Changed)[[:space:]]+/ {
     print method "\t" path "\t" "parameter-change" > UNREP
     next
   }
