@@ -20,8 +20,9 @@ class OpenApiConfigTest {
         config.defaultProblemResponsesCustomizer().customise(openAPI);
 
         Operation operation = openAPI.getPaths().get("/api/items").getGet();
-        assertThat(operation.getResponses()).containsKeys("400", "401", "403", "404", "409", "429", "500");
+        assertThat(operation.getResponses()).containsKeys("400", "401", "403", "404", "409", "429", "500", "503");
         assertThat(operation.getResponses().get("404").get$ref()).isEqualTo("#/components/responses/NotFound");
+        assertThat(operation.getResponses().get("503").get$ref()).isEqualTo("#/components/responses/ServiceUnavailable");
     }
 
     @Test
@@ -41,7 +42,7 @@ class OpenApiConfigTest {
         OpenAPI openApi = config.marketplaceOpenAPI();
 
         assertThat(openApi.getComponents().getResponses()).containsKeys(
-                "BadRequest", "Unauthorized", "Forbidden", "NotFound", "Conflict", "TooManyRequests", "InternalServerError");
+                "BadRequest", "Unauthorized", "Forbidden", "NotFound", "Conflict", "TooManyRequests", "ServiceUnavailable", "InternalServerError");
 
         ObjectSchema schema = (ObjectSchema) openApi.getComponents().getSchemas().get("ProblemDetail");
         assertThat(schema.getProperties()).containsKeys("type", "title", "status", "detail", "instance", "errorCode", "category", "userMessage");

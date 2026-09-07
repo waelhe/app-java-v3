@@ -33,6 +33,10 @@ class AuthHelperTest {
         assertThat(authHelper.isCurrentUser(userId, auth)).isFalse();
     }
 
+    /**
+     * isAdmin delegates the decision to the current-user provider’s admin
+     * resolution.
+     */
     @Test
     void isAdmin_delegatesToProvider() {
         when(currentUserProvider.isAdmin(auth)).thenReturn(true);
@@ -42,33 +46,45 @@ class AuthHelperTest {
         assertThat(authHelper.isAdmin(auth)).isFalse();
     }
 
+    /**
+     * ownsProvider is true when the profile resolved by user id (A1)
+     * matches the caller.
+     */
     @Test
     void ownsProvider_returnsTrueWhenUserMatches() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
         when(summary.userId()).thenReturn(userId);
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(summary));
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(summary));
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isTrue();
     }
 
+    /**
+     * ownsProvider is false when the resolved profile belongs to another
+     * user.
+     */
     @Test
     void ownsProvider_returnsFalseWhenUserMismatch() {
         UUID providerId = UUID.randomUUID();
         ProviderSummary summary = mock();
         when(summary.userId()).thenReturn(UUID.randomUUID());
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(summary));
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(summary));
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isFalse();
     }
 
+    /**
+     * ownsProvider is false when no provider profile exists for the user
+     * id.
+     */
     @Test
     void ownsProvider_returnsFalseWhenProviderNotFound() {
         UUID providerId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.empty());
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.empty());
 
         assertThat(authHelper.ownsProvider(providerId, auth)).isFalse();
     }

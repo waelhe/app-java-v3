@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -181,6 +182,10 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("category")).isEqualTo("rate-limit");
     }
 
+    /**
+     * A circuit-breaker CallNotPermittedException maps to 503 with the
+     * UNAVAILABLE taxonomy.
+     */
     @Test
     void handleCircuitBreakerOpen_returnsServiceUnavailable() {
         var ex = CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test"));
@@ -193,6 +198,65 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getProperties().get("category")).isEqualTo("availability");
     }
 
+    /**
+     * A5: IllegalArgumentException maps to 400 VALIDATION (VAL-001) as an
+     * RFC 7807 problem.
+     */
+    @Test
+    void handleIllegalArgument_returnsBadRequestValidationTaxonomy() {
+        var ex = new IllegalArgumentException("priceCents must be positive");
+        var request = new StubHttpServletRequest("/api/listings");
+        var response = handler.handleIllegalArgument(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
+        assertThat(response.getTitle()).isEqualTo("Bad Request");
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getDetail()).isEqualTo("priceCents must be positive");
+    }
+
+    /**
+     * A5: IllegalStateException maps to 409 CONFLICT (CONFLICT-001) as an
+     * RFC 7807 problem.
+     */
+    @Test
+    void handleIllegalState_returnsConflictTaxonomy() {
+        var ex = new IllegalStateException("Booking cannot be cancelled in current state");
+        var request = new StubHttpServletRequest("/api/bookings/1");
+        var response = handler.handleIllegalState(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/conflict"));
+        assertThat(response.getTitle()).isEqualTo("Conflict");
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("CONFLICT-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("conflict");
+        assertThat(response.getDetail()).isEqualTo("Booking cannot be cancelled in current state");
+    }
+
+    /**
+     * A6: with no client header, the trace id comes from the
+     * {@code correlationId} request attribute set by the filter.
+     */
+    @Test
+    void problemDetail_includesTraceIdFromRequestAttributeWhenNoClientHeader() {
+        // A6: when the client sends no X-Correlation-ID, CorrelationIdFilter
+        // generates one and (with the fix) exposes it as the "correlationId"
+        // request attribute — the error path must emit it in the body.
+        MockHttpServletRequest inner = new MockHttpServletRequest();
+        inner.setRequestURI("/api/bookings/1");
+        inner.setAttribute("correlationId", "server-generated-trace");
+        jakarta.servlet.http.HttpServletRequest request = new jakarta.servlet.http.HttpServletRequestWrapper(inner);
+
+        var response = handler.handleIllegalState(new IllegalStateException("state conflict"), request);
+
+        assertThat(response.getProperties().get("traceId")).isEqualTo("server-generated-trace");
+    }
+
+    /**
+     * An unexpected exception is masked behind the 500 INTERNAL problem
+     * body.
+     */
     @Test
     void handleGeneral_returnsInternalError() {
         var ex = new RuntimeException("Unexpected error");

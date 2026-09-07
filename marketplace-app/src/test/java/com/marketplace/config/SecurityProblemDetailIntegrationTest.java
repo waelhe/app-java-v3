@@ -6,12 +6,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithMockUser;
+    /**
+     * Builds the MockMvc over the full test context used by every
+     * security problem-detail contract test in this class.
+     */
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -39,6 +45,13 @@ class SecurityProblemDetailIntegrationTest {
                 .build();
     }
 
+    /**
+     * RFC 6750 §3.1: an anonymous request (no credentials at all) must be
+     * challenged with the bare realm challenge — no {@code error} param —
+     * ("If the request lacks any authentication information ... the resource
+     * server SHOULD NOT include an error code or other error information")
+     * while still carrying the problem+json 401 body.
+     */
     @Test
     void unauthenticatedApiRequestReturnsProblemDetail401() throws Exception {
         mockMvc.perform(get("/api/v1/bookings"))
@@ -52,9 +65,39 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
                 .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        "Bearer realm=\"marketplace\""))
                 .andExpect(header().exists("X-Correlation-ID"));
     }
 
+    /**
+     * RFC 6750 §3: a request that supplied a bearer token which failed
+     * validation must be challenged with {@code error="invalid_token"}
+     * ("If the protected resource request included an access token and failed
+     * authentication, the resource server SHOULD include the 'error'
+     * attribute") and must return the same problem+json 401 contract as the
+     * anonymous path — the resource-server DSL entry point routes the
+     * {@code InvalidBearerTokenException} to the shared handler.
+     */
+    @Test
+    void invalidBearerTokenReturnsProblemDetail401WithInvalidTokenChallenge() throws Exception {
+        mockMvc.perform(get("/api/v1/bookings")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-real-jwt"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.errorCode").value("AUTHN-001"))
+                .andExpect(jsonPath("$.category").value("authz"))
+                .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        containsString("error=\"invalid_token\"")))
+                .andExpect(header().exists("X-Correlation-ID"));
+    }
+
+    /**
+     * An authenticated request lacking the required privileges (403) must be
+     * challenged with {@code error="insufficient_scope"} per RFC 6750 §3.1
+     * while carrying the problem+json body.
+     */
     @Test
     @WithMockUser(roles = "USER")
     void authenticatedNonAdminRequestReturnsProblemDetail403() throws Exception {
@@ -69,9 +112,15 @@ class SecurityProblemDetailIntegrationTest {
                 .andExpect(jsonPath("$.errorCode").value("AUTHZ-001"))
                 .andExpect(jsonPath("$.category").value("authz"))
                 .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        "Bearer realm=\"marketplace\", error=\"insufficient_scope\""))
                 .andExpect(header().exists("X-Correlation-ID"));
     }
 
+    /**
+     * The 401 body follows the RFC 7807 problem shape declared in the
+     * OpenAPI problem-detail schema (type/title/status/detail/traceId).
+     */
     @Test
     void unauthorizedProblemDetailPayload_conformsToOpenApiProblemDetailSchema() throws Exception {
         String openApiDoc = mockMvc.perform(get("/v3/api-docs"))

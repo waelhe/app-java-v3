@@ -33,14 +33,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-@Service
-@Transactional
 /**
  * Implements {@link ListingPriceProvider} so that the booking module can
  * derive price and provider from a listing synchronously.
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
  */
+@Service
+@Transactional
 @NamedInterface("catalog-api")
 public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
 
@@ -140,6 +140,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
     }
 
+    /**
+     * The booking-facing projection: exposes exactly the provider id, price
+     * and currency the booking flow needs — no other listing state.
+     */
     @Override
     @Transactional(readOnly = true)
     public ListingInfo getListingInfo(UUID listingId) {
@@ -159,11 +163,17 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private static final Set<String> CATALOG_CACHE_NAMES =
             Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v2");
 
+    /**
+     * Creates a listing for the caller-owned provider profile. The
+     * {@code providerId} argument lives in the users.id space (V2
+     * references users(id)) and is resolved through {@code findByUserId}
+     * (A1) so the VERIFIED gate matches the profile owned by that user id.
+     */
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency) {
-        providerLookupPort.findById(providerId)
+        providerLookupPort.findByUserId(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
         ProviderListing listing = ProviderListing.create(providerId, title, description, category,
@@ -229,6 +239,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return toProviderListingSummary(listing);
     }
 
+    /**
+     * Archives the caller’s own listing (ownership verified against the
+     * users.id space per A1) and requests the catalog cache invalidation.
+     */
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     public ProviderListing archive(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);
@@ -238,10 +252,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listing;
     }
 
+    /**
+     * Verifies the listing belongs to the calling user (admins bypass):
+     * the listing's provider id is a user id (A1 — V2 references
+     * users(id)), so the owner check resolves the user-owned profile via
+     * {@code findByUserId}.
+     */
     private void verifyOwnership(ProviderListing listing, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (currentUserProvider.isAdmin(authentication)) return;
-        providerLookupPort.findById(listing.getProviderId())
+        // A1: listing.getProviderId() lives in the users.id space (V2 references
+        // users(id)) — resolve through findByUserId, not findById (provider_profiles.id).
+        providerLookupPort.findByUserId(listing.getProviderId())
                 .filter(provider -> provider.userId() != null && provider.userId().equals(currentUserId))
                 .orElseThrow(() -> new AccessDeniedException("You do not own this listing"));
     }

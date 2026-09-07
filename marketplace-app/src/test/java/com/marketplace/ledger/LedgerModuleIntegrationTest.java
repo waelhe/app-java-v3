@@ -59,10 +59,18 @@ class LedgerModuleIntegrationTest {
     @Autowired
     private TransactionTemplate transactions;
 
+    /**
+     * The ledger module context boots with its declared dependencies
+     * (Modulith boundary smoke test).
+     */
     @Test
     void contextLoads() {
     }
 
+    /**
+     * A payment credit creates the provider balance and the PAYMENT_CREDIT
+     * entry inside the ledger module boundary.
+     */
     @Test
     void creditFromPayment_createsBalance() {
         var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L);
@@ -78,6 +86,11 @@ class LedgerModuleIntegrationTest {
      * dispatch is AFTER_COMMIT + async (same contract as
      * {@code EventPublicationArchiveIntegrationTest}); the plain poll loop
      * waits for the listener's own transaction to land the balance.
+     */
+    /**
+     * A payment-completed event credits the provider ledger and the owner
+     * sees the movement through provider-scoped access — the provider
+     stub resolves by user id (A1).
      */
     @Test
     void paymentCompletedEvent_creditsLedger_andOwnerSeesMovementThroughProviderAccess() {
@@ -98,12 +111,16 @@ class LedgerModuleIntegrationTest {
         // enforced in a future slice setup: stub the AuthHelper collaborators
         // so the owner mapping is consistent (CodeRabbit #248 round 1).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
-        when(providerLookupPort.findById(providerId)).thenReturn(Optional.of(
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
                 new ProviderSummary(providerId, "Test Provider", "VERIFIED", ownerUserId)));
 
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
 
+    /**
+     * Polls the async balance projection until the predicate holds
+     * (AFTER_COMMIT event-listener delivery).
+     */
         awaitBalance(providerId, priceCents - commissionCents);
 
         ProviderBalance balance = ledgerService.getBalanceForOwner(providerId);

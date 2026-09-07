@@ -11,6 +11,140 @@ import static org.mockito.Mockito.*;
 
 class LedgerServiceTest {
 
+    /**
+     * B2: a negative amount on the payment-credit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void creditFromPaymentRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.creditFromPayment(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the payment-credit path is a no-op — the current
+     * balance is returned and neither an entry nor a balance write occurs.
+     */
+    @Test
+    void creditFromPaymentZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a negative amount on the commission-debit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void debitFromCommissionRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromCommission(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the commission-debit path is a no-op — the
+     * current balance is returned and neither an entry nor a balance
+     * write occurs.
+     */
+    @Test
+    void debitFromCommissionZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromCommission(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a negative amount on the refund-debit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void debitFromRefundRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromRefund(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the refund-debit path is a no-op — the current
+     * balance is returned and neither an entry nor a balance write occurs.
+     */
+    @Test
+    void debitFromRefundZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * A repeated payment-intent credit is a no-op: the source-id lookup
+     * short-circuits so the balance is credited exactly once.
+     */
     @Test
     void duplicateCreditDoesNotCreateNewEntry() {
         LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
