@@ -2,6 +2,7 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,11 +47,25 @@ class ReviewsServiceSecurityTest {
     @MockitoBean
     private BookingParticipantProvider bookingParticipantProvider;
 
+    // L21: the reply ownership check resolves the caller's provider profile
+    // through the cross-module port.
+    @MockitoBean
+    private ProviderLookupPort providerLookupPort;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotConsumer_thenAccessDenied() {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> reviewsService.create(UUID.randomUUID(), UUID.randomUUID(), 5, "Great"));
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void reply_whenNotProvider_thenAccessDenied() {
+        // L21: the method-security gate on the provider side of the two-way
+        // review — a non-PROVIDER principal never reaches the ownership logic.
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> reviewsService.reply(UUID.randomUUID(), "Thanks", null));
     }
 
     @Test

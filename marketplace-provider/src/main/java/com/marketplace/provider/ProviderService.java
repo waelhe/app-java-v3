@@ -74,6 +74,22 @@ public class ProviderService {
         return provider;
     }
 
+    /**
+     * L21 (roadmap §5): stores the event-recomputed rating average on the
+     * provider profile. Called by {@code ProviderReviewStatsListener} from
+     * the async AFTER_COMMIT dispatch of the review events — no
+     * {@code @PreAuthorize} because there is no principal on that thread
+     * (same shape as {@code PaymentsService#failIntent}, the webhook-driven
+     * write). The average is recomputed at the source (reviews module) so
+     * this is a plain assignment plus the cache invalidation convention.
+     */
+    @Observed(name = "provider.rating.stats")
+    public void applyRatingAverage(UUID providerId, double ratingAverage) {
+        ProviderProfile provider = getById(providerId);
+        provider.applyRatingAverage(ratingAverage);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, providerId));
+    }
+
     private void verifyOwnership(ProviderProfile provider, Authentication authentication) {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!currentUserProvider.isAdmin(authentication)

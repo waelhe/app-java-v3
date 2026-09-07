@@ -8,6 +8,8 @@ public record ReviewResponse(
         UUID bookingId,
         Integer rating,
         String comment,
+        String reply,
+        Instant repliedAt,
         Instant createdAt,
         Instant updatedAt
 ) {

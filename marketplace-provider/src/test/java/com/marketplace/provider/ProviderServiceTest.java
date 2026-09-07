@@ -114,4 +114,21 @@ class ProviderServiceTest {
         assertThat(result.getDisplayName()).isEqualTo("New Name");
         assertThat(result.getBio()).isEqualTo("new bio");
     }
+
+    // -- L21: stored rating average ---------------------------------------
+
+    @Test
+    void applyRatingAverage_storesValueAndInvalidatesProviderCache() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        UUID providerId = UUID.randomUUID();
+        ProviderProfile profile = ProviderProfile.create("Rated", "bio", UUID.randomUUID());
+        assertThat(profile.getRatingAverage()).isNull();
+        when(repository.findById(providerId)).thenReturn(java.util.Optional.of(profile));
+
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher);
+        service.applyRatingAverage(providerId, 4.5);
+
+        assertThat(profile.getRatingAverage()).isEqualTo(4.5);
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
+    }
 }
