@@ -66,9 +66,14 @@ public class AdminController {
     /**
      * L23 (feature-expansion roadmap §5) — administrative account
      * disable/enable. The reason is part of the contract: it is recorded with
-     * the action in the audit log by the identity module.
+     * the action in the audit log by the identity module. The status values
+     * are pinned at the request boundary (bean validation) — the service
+     * keeps its own guard as defense-in-depth for SPI callers.
      */
-    public record ChangeStatusRequest(@NotBlank String status, @NotBlank String reason) {}
+    public record ChangeStatusRequest(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "DISABLED|ENABLED",
+                    message = "status must be DISABLED or ENABLED") String status,
+            @NotBlank String reason) {}
 
     @PutMapping("/users/{id}/status")
     public ResponseEntity<Void> updateUserStatus(@PathVariable UUID id,

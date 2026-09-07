@@ -21,6 +21,7 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -42,12 +43,23 @@ public class UserService implements IdentitySpi {
     static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
             "DELETE FROM oauth2_authorization WHERE principal_name = ?";
 
-    /** Counting constraint (roadmap L23 acceptance 2): the last active ADMIN is untouchable. */
-    static final String COUNT_ACTIVE_ADMINS = """
-            SELECT COUNT(*) FROM auth_users u
+    /**
+     * Counting constraint (roadmap L23 acceptance 2): the last active ADMIN is
+     * untouchable. The lock matters (CodeRabbit round 1): the counting read
+     * and the flip below must be atomic — two concurrent disable requests
+     * must not both pass a count of 2 and leave the system with zero active
+     * admins. {@code FOR UPDATE} on the counted rows (stable order, no
+     * deadlock) holds them for the rest of this transaction, so a concurrent
+     * transaction re-reads the post-commit state. Row locks on an aggregate
+     * are not allowed on PostgreSQL, hence the row select counted in Java.
+     */
+    static final String LOCK_ACTIVE_ADMINS = """
+            SELECT u.username FROM auth_users u
              WHERE u.enabled = true
                AND EXISTS (SELECT 1 FROM auth_authorities a
                             WHERE a.username = u.username AND a.authority = 'ROLE_ADMIN')
+             ORDER BY u.username
+             FOR UPDATE
             """;
 
     public UserService(UserRepository userRepository,
@@ -203,8 +215,11 @@ public class UserService implements IdentitySpi {
         }
 
         if (disable && stored.isEnabled() && hasAdminAuthority(stored)) {
-            Long activeAdmins = jdbcTemplate.queryForObject(COUNT_ACTIVE_ADMINS, Long.class);
-            if (activeAdmins != null && activeAdmins <= 1) {
+            // The lock is taken BEFORE the guard's decision (see LOCK_ACTIVE_ADMINS):
+            // the counted rows stay locked through the flip, so concurrent
+            // disables serialize on the same set instead of racing the count.
+            List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
+            if (activeAdmins.size() <= 1) {
                 throw new ConflictException("Cannot disable the last active ADMIN account");
             }
         }

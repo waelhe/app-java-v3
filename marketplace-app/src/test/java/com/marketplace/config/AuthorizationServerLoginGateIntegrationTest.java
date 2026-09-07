@@ -234,6 +234,15 @@ class AuthorizationServerLoginGateIntegrationTest {
 
         GateResult admin = adminGate();
 
+        // CodeRabbit round 1: the status values are pinned at the request
+        // boundary (bean validation @Pattern on the controller record) — an
+        // unsupported value is a 400 before any service logic.
+        HttpResponse<String> invalid = putJsonWithBearer(
+                "/api/v1/admin/users/" + targetId + "/status", admin.accessToken(),
+                "{\"status\":\"BANISHED\",\"reason\":\"gate test\"}");
+        assertThat(invalid.statusCode())
+                .as("invalid status: %s", body(invalid)).isEqualTo(400);
+
         // Disable through the administrative endpoint (real HTTP, real
         // UserDetailsManager flip, real authorization removal, audit log line).
         HttpResponse<String> disable = putJsonWithBearer(
@@ -751,6 +760,11 @@ class AuthorizationServerLoginGateIntegrationTest {
         sessionCookie = latestSessionCookie(loginPage, sessionCookie);
         HttpResponse<String> loginPost = postForm(LOGIN_PATH,
                 "username=" + username + "&password=" + password + "&_csrf=" + encode(csrfToken), sessionCookie);
+        // CodeRabbit round 3: a non-302 login POST (e.g. 500) has no Location and
+        // would read as "not rejected" — the redirect contract is asserted first.
+        assertThat(loginPost.statusCode())
+                .as("login POST must answer the 302 redirect contract: %s", body(loginPost))
+                .isEqualTo(302);
         String location = loginPost.headers().firstValue("Location").orElse("");
         return location.contains("/login?error");
     }

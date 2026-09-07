@@ -330,7 +330,8 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("admin-user"))
                 .thenReturn(userDetails(true, "ADMIN"));
-        when(jdbcTemplate.queryForObject(anyString(), eq(Long.class))).thenReturn(1L);
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-user"));
 
         ConflictException ex = assertThrows(ConflictException.class,
                 () -> userService.updateUserStatus(id, "DISABLED", "x", "admin-actor"));
@@ -347,7 +348,8 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername("admin-user"))
                 .thenReturn(userDetails(true, "ADMIN"));
-        when(jdbcTemplate.queryForObject(anyString(), eq(Long.class))).thenReturn(2L);
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-user", "other-admin"));
 
         userService.updateUserStatus(id, "DISABLED", "handover", "admin-actor");
 
