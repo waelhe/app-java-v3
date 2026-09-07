@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent;
@@ -269,25 +270,78 @@ class AuthorizationServerLoginGateIntegrationTest {
     }
 
     /**
-     * L23 acceptance 2 — the counting constraint. it-login-gate-admin is the
-     * only enabled ROLE_ADMIN account in this context, so disabling it is
-     * rejected with 409 and nothing changes (the guard throws before any
-     * flip or authorization removal).
+     * L23 acceptance 2 — the counting constraint. it-login-gate-admin must be
+     * the only enabled ROLE_ADMIN account at the moment of the attempt, so the
+     * disable is rejected with 409 and nothing changes (the guard throws
+     * before any flip or authorization removal).
+     *
+     * <p><b>Environment adaptation (round-2 CI evidence):</b> the CI job's
+     * OpenAPI gate boots the jar on the shared service database first (default
+     * profile, real Flyway), which applies {@code R__seed_oauth2_client.sql}
+     * and seeds the {@code admin} account (ROLE_ADMIN, enabled). The guard
+     * counts it, so the 409 never fires there and the disable would succeed —
+     * mutating the shared admin and cascading into the consent tests. The
+     * seeded admin is therefore silenced through the framework manager for
+     * the duration of the attempt and restored in a finally block; the
+     * Integration job (no Flyway, no seed) simply skips the step.
      */
     @Test
     void l23_lastActiveAdminCannotBeDisabled() throws Exception {
         GateResult admin = adminGate();
         UUID adminId = syncProjectionIdViaMe(admin.accessToken());
 
-        HttpResponse<String> attempt = putJsonWithBearer(
-                "/api/v1/admin/users/" + adminId + "/status", admin.accessToken(),
-                "{\"status\":\"DISABLED\",\"reason\":\"must not succeed\"}");
+        UserDetails seededAdmin = silenceSeededAdminIfPresent();
+        try {
+            HttpResponse<String> attempt = putJsonWithBearer(
+                    "/api/v1/admin/users/" + adminId + "/status", admin.accessToken(),
+                    "{\"status\":\"DISABLED\",\"reason\":\"must not succeed\"}");
 
-        assertThat(attempt.statusCode())
-                .as("last-admin disable attempt: %s", body(attempt)).isEqualTo(409);
-        assertThat(attempt.body()).contains("last active ADMIN");
+            assertThat(attempt.statusCode())
+                    .as("last-admin disable attempt: %s", body(attempt)).isEqualTo(409);
+            assertThat(attempt.body()).contains("last active ADMIN");
+        } finally {
+            restoreSeededAdmin(seededAdmin);
+        }
         // Nothing changed: the admin can still authenticate.
         assertThat(loginIsRejected(ADMIN_USERNAME, PASSWORD)).isFalse();
+    }
+
+    /**
+     * Disables the Flyway-seeded {@code admin} account when it exists so the
+     * guard's world has exactly one active admin. Returns the loaded row for
+     * {@link #restoreSeededAdmin(UserDetails)} (null when no seed exists —
+     * the Integration job).
+     */
+    private UserDetails silenceSeededAdminIfPresent() {
+        UserDetails seeded;
+        try {
+            seeded = userDetailsManager.loadUserByUsername("admin");
+        } catch (UsernameNotFoundException noSeed) {
+            return null;
+        }
+        if (seeded.isEnabled()) {
+            userDetailsManager.updateUser(withEnabled(seeded, false));
+        }
+        return seeded;
+    }
+
+    /** Restores the seeded admin to the state it was loaded in. */
+    private void restoreSeededAdmin(UserDetails seeded) {
+        if (seeded != null && seeded.isEnabled()) {
+            userDetailsManager.updateUser(withEnabled(seeded, true));
+        }
+    }
+
+    /** Replays the loaded row with only the enabled flag changed. */
+    private static UserDetails withEnabled(UserDetails source, boolean enabled) {
+        return org.springframework.security.core.userdetails.User.withUsername(source.getUsername())
+                .password(source.getPassword())
+                .authorities(source.getAuthorities())
+                .accountExpired(!source.isAccountNonExpired())
+                .accountLocked(!source.isAccountNonLocked())
+                .credentialsExpired(!source.isCredentialsNonExpired())
+                .disabled(!enabled)
+                .build();
     }
 
     /**
