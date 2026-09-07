@@ -40,12 +40,17 @@ public class DisputeController {
     /**
      * L24: the resolve decision carries the financial outcome — the body's
      * {@code resolution} selects REFUND_CONSUMER / RELEASE_PROVIDER /
-     * NO_ACTION (roadmap §5).
+     * NO_ACTION (roadmap §5). The body is OPTIONAL for backward
+     * compatibility: a body-less call resolves with NO_ACTION — exactly the
+     * endpoint's pre-L24 semantics (resolve, no money movement) — so the
+     * public contract stays compatible (the OpenAPI gate) and money never
+     * moves implicitly: REFUND_CONSUMER must be named explicitly.
      */
     @PostMapping("/admin/disputes/{id}/resolve")
     public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id,
-                                                    @Valid @RequestBody ResolveDisputeRequest request,
+                                                    @Valid @RequestBody(required = false) ResolveDisputeRequest request,
                                                     Authentication authentication) {
-        return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, request.resolution(), authentication)));
+        DisputeResolution resolution = request == null ? DisputeResolution.NO_ACTION : request.resolution();
+        return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, resolution, authentication)));
     }
 }

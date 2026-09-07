@@ -80,4 +80,19 @@ class DisputeControllerTest {
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isEqualTo(response);
     }
+
+    @Test
+    void resolve_withoutBody_defaultsToNoAction() {
+        // L24 backward compatibility: a body-less call resolves with
+        // NO_ACTION — the endpoint's pre-L24 semantics, kept byte-compatible
+        // for existing callers (the OpenAPI gate).
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        when(disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication)).thenReturn(dispute);
+
+        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId, null, authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(disputeService).resolve(disputeId, DisputeResolution.NO_ACTION, authentication);
+    }
 }
