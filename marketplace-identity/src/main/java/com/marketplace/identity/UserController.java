@@ -2,8 +2,7 @@ package com.marketplace.identity;
 
 import com.marketplace.shared.api.ApiConstants;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,9 +19,17 @@ public class UserController {
         this.userMapper = userMapper;
     }
 
+    /**
+     * The plain {@link Authentication} parameter (house convention, every other
+     * controller) — L23's gate test proved the previous
+     * {@code @AuthenticationPrincipal JwtAuthenticationToken} parameter resolved
+     * to {@code null} for real Bearer requests (the resolver returns the
+     * {@code Jwt} principal; the type mismatch yields null), so every real
+     * client call died with 500 INT-001.
+     */
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal JwtAuthenticationToken token) {
-        User user = userService.syncFromOidc(token);
+    public ResponseEntity<UserResponse> getCurrentUser(Authentication authentication) {
+        User user = userService.syncFromOidc(authentication);
         return ResponseEntity.ok(userMapper.toResponse(user));
     }
 }

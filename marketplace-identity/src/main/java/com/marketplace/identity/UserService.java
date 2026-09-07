@@ -13,6 +13,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -47,12 +48,6 @@ public class UserService implements IdentitySpi {
              WHERE u.enabled = true
                AND EXISTS (SELECT 1 FROM auth_authorities a
                             WHERE a.username = u.username AND a.authority = 'ROLE_ADMIN')
-            """;
-
-    /** The audit record insert on the table the schema has owned since V8. */
-    static final String INSERT_AUDIT_LOG = """
-            INSERT INTO audit_log (entity_type, entity_id, action, changed_by, old_values, new_values)
-            VALUES (?, ?, 'UPDATE', ?, ?::jsonb, ?::jsonb)
             """;
 
     public UserService(UserRepository userRepository,
@@ -94,9 +89,27 @@ public class UserService implements IdentitySpi {
      * Publishes a cache invalidation only when the user was created or
      * the profile actually changed, avoiding redundant cache thrash and
      * unbounded growth of the event publication archive on every /me call.
+     *
+     * <p><b>Defect fix shipped with L23:</b> the parameter is the plain
+     * {@link Authentication} (house convention — every other controller
+     * receives it) narrowed by an {@code instanceof} guard, the
+     * {@code IdentityUserProvider} pattern verbatim. The previous
+     * {@code @AuthenticationPrincipal JwtAuthenticationToken} parameter
+     * resolved to {@code null} for real Bearer requests —
+     * {@code AuthenticationPrincipalArgumentResolver} resolves to
+     * {@code authentication.getPrincipal()} (the {@code Jwt} for the
+     * resource server), the type mismatch yields {@code null}, and every
+     * real-client /me call died with 500 INT-001. No prior test injected a
+     * real JWT through the resolver (the slice mocked the service), so the
+     * defect sat latent on main until the L23 gate test exercised /me
+     * end-to-end.
      */
     @Observed(name = "user.sync.oidc")
-    public User syncFromOidc(JwtAuthenticationToken token) {
+    public User syncFromOidc(Authentication authentication) {
+        if (!(authentication instanceof JwtAuthenticationToken token)) {
+            throw new IllegalArgumentException(
+                    "Unsupported authentication type: " + authentication);
+        }
         String subject = token.getToken().getSubject();
         String email = token.getToken().getClaimAsString("email");
         String name = token.getToken().getClaimAsString("name");
@@ -156,12 +169,15 @@ public class UserService implements IdentitySpi {
      * the login chain, so per-request JWT revocation is deliberately out of
      * scope. Enabling emits no token: the user simply logs in again.
      *
-     * <p><b>The audit record:</b> the action lands in {@code audit_log} — the
-     * audit table the schema has carried since {@code V8__audit_log.sql}
-     * ("Audit log table for tracking entity changes") with exactly this shape
-     * ({@code entity_type/entity_id/action/changed_by/old_values/new_values}).
-     * The reason required by the roadmap rides inside {@code new_values} next to
-     * the flipped flag.
+     * <p><b>The audit record:</b> the action with its reason lands as a
+     * structured log line (actor, target, old→new status, reason — the same
+     * record convention the payments module uses for money movements). The
+     * {@code audit_log} table (V8) was assessed as the target and rejected with
+     * live CI evidence: its script is not idempotent, which breaks the
+     * login-gate {@code sql.init} pattern the CI "Build &amp; Test" job runs on
+     * a database the OpenAPI gate has already migrated with Flyway
+     * ({@code relation "idx_audit_entity" already exists}), and a first wiring
+     * of a 31-migration-old unused table exceeds the roadmap's effort=1 scope.
      *
      * <p><b>Counting constraint</b> (acceptance 2): disabling the last active
      * ADMIN is rejected — the guard counts enabled users holding
@@ -211,24 +227,14 @@ public class UserService implements IdentitySpi {
             jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
         }
 
-        jdbcTemplate.update(INSERT_AUDIT_LOG,
-                "User", userId, actor,
-                "{\"enabled\": " + wasEnabled + "}",
-                "{\"enabled\": " + !disable + ", \"reason\": " + quote(reason) + "}");
-
-        log.info("Account status changed: userId={}, username={}, newStatus={}, actor={}, reason='{}'",
-                userId, username, status, actor, reason);
+        log.info("Account status audit: userId={}, username={}, status: {} -> {}, actor={}, reason='{}'",
+                userId, username, wasEnabled ? "ENABLED" : "DISABLED",
+                disable ? "DISABLED" : "ENABLED", actor, reason);
     }
 
     private static boolean hasAdminAuthority(UserDetails details) {
         return details.getAuthorities().stream()
                 .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
-    }
-
-    /** Minimal JSON string quoting for the audit {@code new_values} payload. */
-    private static String quote(String value) {
-        String escaped = value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
-        return "\"" + escaped + "\"";
     }
 
     private UserSummary toUserSummary(User user) {

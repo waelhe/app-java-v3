@@ -230,6 +230,16 @@ class UserServiceTest {
 
     // -- L23: updateUserStatus -------------------------------------------
 
+    @Test
+    void syncFromOidc_rejectsNonJwtAuthentication() {
+        org.springframework.security.authentication.UsernamePasswordAuthenticationToken nonJwt =
+                org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+                        .authenticated("user", "password", java.util.List.of());
+
+        assertThrows(IllegalArgumentException.class, () -> userService.syncFromOidc(nonJwt));
+        verifyNoInteractions(userRepository);
+    }
+
     private static UserDetails userDetails(boolean enabled, String... roles) {
         org.springframework.security.core.userdetails.User.UserBuilder builder =
                 org.springframework.security.core.userdetails.User.withUsername("target-user")
@@ -242,7 +252,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUserStatus_disableFlipsFlagRemovesAuthorizationsAndRecordsAudit() {
+    void updateUserStatus_disableFlipsFlagRemovesAuthorizationsAndLogsAudit() {
         UUID id = UUID.randomUUID();
         User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
@@ -259,13 +269,9 @@ class UserServiceTest {
         assertEquals("{noop}secret", captured.getValue().getPassword());
         assertTrue(captured.getValue().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_USER")), "authorities replayed verbatim");
-        // Issued authorizations die with the disable.
+        // Issued authorizations die with the disable — and nothing else is written.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
-        // The audit row carries the reason (V8 audit_log).
-        verify(jdbcTemplate).update(eq(UserService.INSERT_AUDIT_LOG),
-                eq("User"), eq(id), eq("admin-actor"),
-                eq("{\"enabled\": true}"),
-                eq("{\"enabled\": false, \"reason\": \"policy violation\"}"));
+        verifyNoMoreInteractions(jdbcTemplate);
     }
 
     @Test

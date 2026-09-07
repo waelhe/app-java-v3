@@ -73,9 +73,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
         "spring.sql.init.mode=always",
-        // L23: V8 audit_log joins V13 — the status endpoint records the action
-        // and its reason in the audit table the schema has owned since V8.
-        "spring.sql.init.schema-locations=classpath:db/migration/V8__audit_log.sql,classpath:db/migration/V13__authorization_security.sql",
+        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
         "marketplace.security.oauth2.client.secret=it-app-secret",
         // Gate B pattern (1): prove the env-driven redirect URIs path live — the value
@@ -218,6 +216,12 @@ class AuthorizationServerLoginGateIntegrationTest {
      * throws DisabledException, so the login POST redirects to /login?error
      * and no authorization code exists). Re-enabling emits no token — the
      * user simply logs in again and a fresh gate mints new tokens.
+     *
+     * <p>The {@code /api/v1/users/me} call that establishes the identity
+     * projection row is the first end-to-end exercise of /me with a real
+     * Bearer JWT: it guards the L23 defect fix for the latent
+     * {@code @AuthenticationPrincipal} null resolution (every real-client /me
+     * call on main died with 500 INT-001).
      */
     @Test
     void l23_disabledAccountIsRejectedAtNextTokenRequestAndReenabledWithoutNewToken() throws Exception {
@@ -230,7 +234,7 @@ class AuthorizationServerLoginGateIntegrationTest {
         GateResult admin = adminGate();
 
         // Disable through the administrative endpoint (real HTTP, real
-        // UserDetailsManager flip, real authorization removal, real audit row).
+        // UserDetailsManager flip, real authorization removal, audit log line).
         HttpResponse<String> disable = putJsonWithBearer(
                 "/api/v1/admin/users/" + targetId + "/status", admin.accessToken(),
                 "{\"status\":\"DISABLED\",\"reason\":\"gate test disable\"}");
@@ -268,7 +272,7 @@ class AuthorizationServerLoginGateIntegrationTest {
      * L23 acceptance 2 — the counting constraint. it-login-gate-admin is the
      * only enabled ROLE_ADMIN account in this context, so disabling it is
      * rejected with 409 and nothing changes (the guard throws before any
-     * flip, removal or audit row).
+     * flip or authorization removal).
      */
     @Test
     void l23_lastActiveAdminCannotBeDisabled() throws Exception {
