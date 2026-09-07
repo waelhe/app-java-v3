@@ -1,6 +1,7 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.ApiConstants;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -36,8 +37,15 @@ public class DisputeController {
         return ResponseEntity.ok(disputes);
     }
 
+    /**
+     * L24: the resolve decision carries the financial outcome — the body's
+     * {@code resolution} selects REFUND_CONSUMER / RELEASE_PROVIDER /
+     * NO_ACTION (roadmap §5).
+     */
     @PostMapping("/admin/disputes/{id}/resolve")
-    public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, authentication)));
+    public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id,
+                                                    @Valid @RequestBody ResolveDisputeRequest request,
+                                                    Authentication authentication) {
+        return ResponseEntity.ok(disputeMapper.toResponse(service.resolve(id, request.resolution(), authentication)));
     }
 }

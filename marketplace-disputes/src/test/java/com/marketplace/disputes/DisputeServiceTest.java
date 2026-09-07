@@ -2,6 +2,9 @@ package com.marketplace.disputes;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.PaymentRefundPort;
+import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -32,6 +35,9 @@ class DisputeServiceTest {
 
     @Mock
     private BookingParticipantProvider bookingParticipantProvider;
+
+    @Mock
+    private PaymentRefundPort paymentRefundPort;
 
     @InjectMocks
     private DisputeService disputeService;
@@ -98,14 +104,76 @@ class DisputeServiceTest {
     }
 
     @Test
-    void resolve_asAdmin_succeeds() {
+    void resolve_noAction_succeeds_withoutTouchingTheRefundPath() {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
 
-        Dispute result = disputeService.resolve(disputeId, authentication);
+        Dispute result = disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication);
 
-        verify(repository).findById(disputeId);
+        assertThat(result.getStatus()).isEqualTo(DisputeStatus.RESOLVED);
+        assertThat(result.getResolution()).isEqualTo(DisputeResolution.NO_ACTION);
+        assertThat(result.getRefundPaymentId()).isNull();
+        assertThat(result.getRefundedAmountCents()).isNull();
+        verifyNoInteractions(paymentRefundPort);
+    }
+
+    @Test
+    void resolve_releaseProvider_succeeds_withoutTouchingTheRefundPath() {
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+
+        Dispute result = disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, authentication);
+
+        assertThat(result.getResolution()).isEqualTo(DisputeResolution.RELEASE_PROVIDER);
+        verifyNoInteractions(paymentRefundPort);
+    }
+
+    @Test
+    void resolve_refundConsumer_executesTheRefundOnceAndRecordsTheMovement() {
+        UUID disputeId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+        when(paymentRefundPort.refundForBooking(bookingId, null))
+                .thenReturn(new RefundOutcome(paymentId, 5000L));
+
+        Dispute result = disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication);
+
+        assertThat(result.getStatus()).isEqualTo(DisputeStatus.RESOLVED);
+        assertThat(result.getResolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
+        assertThat(result.getRefundPaymentId()).isEqualTo(paymentId);
+        assertThat(result.getRefundedAmountCents()).isEqualTo(5000L);
+        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, null);
+    }
+
+    @Test
+    void resolve_refundConsumer_refundFailure_propagates() {
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+        when(paymentRefundPort.refundForBooking(any(), any()))
+                .thenThrow(new ResourceNotFoundException("No payment intent for booking"));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication));
+    }
+
+    @Test
+    void resolve_alreadyResolved_throws409_beforeAnyRefundAttempt() {
+        // L24 acceptance 1: a repeated resolve request is a conflict BEFORE
+        // the refund path is invoked — no double debit is even attempted.
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        dispute.resolve(DisputeResolution.REFUND_CONSUMER);
+        dispute.recordRefund(UUID.randomUUID(), 5000L);
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+
+        assertThrows(ConflictException.class,
+                () -> disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication));
+        verifyNoInteractions(paymentRefundPort);
     }
 
     @Test
@@ -114,6 +182,7 @@ class DisputeServiceTest {
         when(repository.findById(disputeId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
-                () -> disputeService.resolve(disputeId, authentication));
+                () -> disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication));
+        verifyNoInteractions(paymentRefundPort);
     }
 }

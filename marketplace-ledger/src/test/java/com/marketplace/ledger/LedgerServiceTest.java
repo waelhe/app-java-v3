@@ -206,4 +206,56 @@ class LedgerServiceTest {
         assertThat(result.getContent().get(0).getAmountCents()).isEqualTo(5000L);
         verify(entryRepository).findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable);
     }
+
+    @Test
+    void debitFromRefundMirrorsTheOriginalCreditAndDebitsBalance() {
+        // L24 acceptance 2: the refund debit is the credit's mirror — the
+        // same amount, a derived refund-<intentId> source id, a debit.
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.empty());
+        when(entryRepository.save(any(LedgerEntry.class))).thenAnswer(i -> i.getArgument(0));
+        ProviderBalance credited = ProviderBalance.empty(providerId);
+        credited.credit(5000L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(credited));
+        when(balanceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 5000L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        var captor = org.mockito.ArgumentCaptor.forClass(LedgerEntry.class);
+        verify(entryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryType()).isEqualTo(LedgerEntryType.REFUND_DEBIT);
+        assertThat(captor.getValue().getSourceId()).isEqualTo(expectedSourceId);
+        assertThat(captor.getValue().getAmountCents()).isEqualTo(5000L);
+    }
+
+    @Test
+    void debitFromRefundSkipsOnDuplicate() {
+        // L24 acceptance 1 (the ledger belt): the derived source id makes
+        // replays no-ops — no second entry, no second debit.
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.of(mock(LedgerEntry.class)));
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        balance.credit(5000L);
+        balance.debit(5000L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 5000L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
 }
