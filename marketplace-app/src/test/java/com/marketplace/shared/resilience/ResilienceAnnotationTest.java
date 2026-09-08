@@ -2,7 +2,9 @@ package com.marketplace.shared.resilience;
 
 import com.marketplace.booking.BookingService;
 import com.marketplace.catalog.CatalogController;
+import com.marketplace.media.MediaController;
 import com.marketplace.payments.PaymentsService;
+import com.marketplace.reviews.ReviewsController;
 import com.marketplace.search.SearchController;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -164,6 +166,50 @@ class ResilienceAnnotationTest {
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);
             assertNotNull(rl, "searchByCategory should have @RateLimiter");
+        }
+    }
+
+    @Nested
+    @DisplayName("Public Write Endpoints Rate Limiting (L29)")
+    class PublicWriteEndpointsRateLimiting {
+
+        @Test
+        @DisplayName("BookingController.create should have @RateLimiter(bookingCreate)")
+        void bookingCreate_hasRateLimiter() throws NoSuchMethodException {
+            Method method = com.marketplace.booking.BookingController.class.getMethod("create",
+                    com.marketplace.booking.BookingController.CreateBookingRequest.class,
+                    Authentication.class);
+
+            RateLimiter rl = method.getAnnotation(RateLimiter.class);
+            assertNotNull(rl, "create should have @RateLimiter");
+            assertEquals("bookingCreate", rl.name(),
+                    "RateLimiter should use the independent bookingCreate instance");
+        }
+
+        @Test
+        @DisplayName("ReviewsController.create should have @RateLimiter(reviewCreate)")
+        void reviewCreate_hasRateLimiter() throws NoSuchMethodException {
+            Method method = com.marketplace.reviews.ReviewsController.class.getMethod("create",
+                    com.marketplace.reviews.ReviewsController.CreateReviewRequest.class,
+                    Authentication.class);
+
+            RateLimiter rl = method.getAnnotation(RateLimiter.class);
+            assertNotNull(rl, "create should have @RateLimiter");
+            assertEquals("reviewCreate", rl.name(),
+                    "RateLimiter should use the independent reviewCreate instance");
+        }
+
+        @Test
+        @DisplayName("MediaController.requestUpload should have @RateLimiter(mediaUpload)")
+        void mediaUpload_hasRateLimiter() throws NoSuchMethodException {
+            Method method = com.marketplace.media.MediaController.class.getMethod("requestUpload",
+                    com.marketplace.media.MediaController.RequestUploadRequest.class,
+                    Authentication.class);
+
+            RateLimiter rl = method.getAnnotation(RateLimiter.class);
+            assertNotNull(rl, "requestUpload should have @RateLimiter");
+            assertEquals("mediaUpload", rl.name(),
+                    "RateLimiter should use the independent mediaUpload instance");
         }
     }
 }

@@ -292,6 +292,31 @@ resilience4j:
       search:
         base-config: default
         limit-for-period: 30
+      # L29 (feature-expansion roadmap §5, Week 4): coverage for the
+      # high-impact PUBLIC WRITE endpoints — booking creation, review
+      # creation, media upload requests. Official Resilience4j Spring Boot
+      # model (docs cached scripts/week4-docs/spring-boot-integration.md):
+      # named instances bound here, consumed via @RateLimiter annotations.
+      # timeout-duration 0 = fail fast with RequestNotPermitted -> 429
+      # ProblemDetail (RL-001) instead of queueing write calls behind the
+      # 5s default wait — writes must not silently serialize.
+      # G8 calibration: every value below is env-tunable (relaxed binding,
+      # RESILIENCE4J_RATELIMITER_INSTANCES_<NAME>_LIMIT_FOR_PERIOD etc.)
+      # and intentionally conservative until real traffic exists (debt D2).
+      # Per-instance state is in-memory: at N replicas the effective limit
+      # is N x the value below (documented multi-replica behavior).
+      bookingCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      reviewCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      mediaUpload:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
 
 app:
   commission:

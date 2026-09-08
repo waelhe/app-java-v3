@@ -4,6 +4,8 @@ import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,8 +47,16 @@ public class ProviderStatsController {
     }
 
     @GetMapping("/providers/me/stats")
+    @Operation(summary = "Get my host stats",
+            description = "The provider's own occupancy, net revenue (after the documented "
+                    + "commission) and completed bookings for the window. Omitted window = last "
+                    + "30 days; max window = 1 year.")
     public ResponseEntity<ProviderStatsResponse> getMyStats(
+            @Parameter(description = "Window start (inclusive), ISO-8601 instant — both bounds "
+                    + "must be present together", example = "2026-09-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
+            @Parameter(description = "Window end (inclusive), ISO-8601 instant — both bounds "
+                    + "must be present together", example = "2026-09-30T23:59:59Z")
             @RequestParam(required = false) Instant to,
             Authentication authentication) {
         StatsWindow window = (from == null && to == null)

@@ -2,6 +2,9 @@ package com.marketplace.pricing;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.IsoCurrencyCode;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -29,9 +32,16 @@ public class CurrencyExchangeController {
     }
 
     @GetMapping
+    @Operation(summary = "Convert money between currencies",
+            description = "Display-only conversion of a minor-units amount between two quoted "
+                    + "ISO 4217 currencies using the deployment's exchange rates. Answers 503 "
+                    + "SU-001 when no rates are bound (G9).")
     public ResponseEntity<ConversionResponse> convert(
+            @Parameter(description = "Amount in minor units of the source currency", example = "35000")
             @RequestParam @NotNull @Min(0) Long amountCents,
+            @Parameter(description = "Source ISO 4217 currency code", example = "SAR")
             @RequestParam @NotBlank @IsoCurrencyCode String from,
+            @Parameter(description = "Target ISO 4217 currency code", example = "USD")
             @RequestParam @NotBlank @IsoCurrencyCode String to) {
         CurrencyExchangePort.ExchangeQuote quote = pricingService.convert(amountCents, from, to);
         return ResponseEntity.ok(new ConversionResponse(
@@ -44,12 +54,19 @@ public class CurrencyExchangeController {
         ));
     }
 
+    @Schema(description = "Conversion result with the rate actually applied")
     public record ConversionResponse(
+            @Schema(description = "Source amount in minor units", example = "35000")
             Long amountCents,
+            @Schema(description = "Source ISO 4217 currency", example = "SAR")
             String from,
+            @Schema(description = "Converted amount in minor units", example = "9333")
             Long convertedCents,
+            @Schema(description = "Target ISO 4217 currency", example = "USD")
             String to,
+            @Schema(description = "Applied exchange rate (target per source unit)", example = "0.26666")
             java.math.BigDecimal rate,
+            @Schema(description = "Rate source identifier", example = "static-env")
             String source
     ) {
     }
