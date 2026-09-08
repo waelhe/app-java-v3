@@ -301,16 +301,24 @@ class ListingPriceCalendarServiceTest {
      * The race backstop's translation (CodeRabbit round 1): a violation of
      * the V41 live-range EXCLUDE constraint — the loser of two concurrent
      * overlapping writers — surfaces as the SAME 409 ConflictException the
-     * sequential rejection answers with.
+     * sequential rejection answers with. Realistic chain: Hibernate does
+     * not parse the constraint NAME for exclusion violations (null —
+     * measured live), so the SQLState 23P01 + the constraint name in the
+     * message carry the identity.
      */
     @Test
     void exclusionConstraintViolation_translatesToThe409Taxonomy() {
         when(seasonalRateRepository.findByListingIdOrderByFromDateAsc(LISTING)).thenReturn(List.of());
+        String psqlMessage = "conflicting key value violates exclusion constraint \""
+                + ListingPriceCalendarService.LIVE_RANGE_EXCLUSION_CONSTRAINT + "\"";
+        // Plain SQLException carries the SQLState (the postgres driver is not
+        // on this module's test classpath — the JDBC standard constructor
+        // preserves it through Hibernate's wrapping, verified live).
+        java.sql.SQLException psql = new java.sql.SQLException(psqlMessage, "23P01");
         when(seasonalRateRepository.save(any(SeasonalRate.class))).thenThrow(
-                new DataIntegrityViolationException("race loser",
+                new DataIntegrityViolationException("could not execute statement [ERROR: " + psqlMessage + "]",
                         new org.hibernate.exception.ConstraintViolationException(
-                                "exclusion violation", null,
-                                ListingPriceCalendarService.LIVE_RANGE_EXCLUSION_CONSTRAINT)));
+                                "could not execute statement", psql, null)));
 
         assertThrows(ConflictException.class, () -> service.addSeasonalRate(LISTING,
                 LocalDate.parse("2026-01-15"), LocalDate.parse("2026-01-16"), 20_000L, authentication));
@@ -319,16 +327,19 @@ class ListingPriceCalendarServiceTest {
 
     /**
      * The translation must NOT mask unrelated database errors — a different
-     * constraint's violation surfaces unchanged (CodeRabbit round 1: "while
-     * preserving other database errors").
+     * constraint's violation (another SQLState / another name) surfaces
+     * unchanged (CodeRabbit round 1: "while preserving other database
+     * errors").
      */
     @Test
     void otherIntegrityViolations_surfaceUnchanged() {
         when(seasonalRateRepository.findByListingIdOrderByFromDateAsc(LISTING)).thenReturn(List.of());
+        java.sql.SQLException psql = new java.sql.SQLException(
+                "new row violates check constraint \"chk_seasonal_rates_range\"", "23514");
         when(seasonalRateRepository.save(any(SeasonalRate.class))).thenThrow(
-                new DataIntegrityViolationException("unrelated",
+                new DataIntegrityViolationException("could not execute statement [ERROR: check violation]",
                         new org.hibernate.exception.ConstraintViolationException(
-                                "check violation", null, "chk_seasonal_rates_range")));
+                                "could not execute statement", psql, "chk_seasonal_rates_range")));
 
         assertThrows(DataIntegrityViolationException.class, () -> service.addSeasonalRate(LISTING,
                 LocalDate.parse("2026-01-15"), LocalDate.parse("2026-01-16"), 20_000L, authentication));

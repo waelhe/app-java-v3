@@ -229,9 +229,18 @@ public class ListingPriceCalendarService {
      * unchanged — the translation must not mask unrelated database errors.
      */
     private RuntimeException overlapConflictOrRethrow(DataIntegrityViolationException ex, UUID listingId) {
-        if (ex.getCause() instanceof ConstraintViolationException violation
-                && LIVE_RANGE_EXCLUSION_CONSTRAINT.equals(violation.getConstraintName())) {
-            return SeasonalRate.overlapConflict(listingId);
+        if (ex.getCause() instanceof ConstraintViolationException violation) {
+            // Hibernate 7 does not parse the constraint NAME for PostgreSQL
+            // exclusion violations — measured live: getConstraintName() is
+            // null while the SQLState carries 23P01 (PostgreSQL's
+            // exclusion_violation, a class no other violation uses). The
+            // pair (23P01 + this constraint's name in the message) is the
+            // precise identity of OUR backstop.
+            if ("23P01".equals(violation.getSQLState())
+                    && ex.getMessage() != null
+                    && ex.getMessage().contains(LIVE_RANGE_EXCLUSION_CONSTRAINT)) {
+                return SeasonalRate.overlapConflict(listingId);
+            }
         }
         return ex;
     }
