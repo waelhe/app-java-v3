@@ -1,6 +1,7 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,10 @@ class BookingServiceSecurityTest {
 
     @MockitoBean
     private AvailabilityPort availabilityPort;
+
+    /** L26: the effective-price seam the booking total derivation consumes. */
+    @MockitoBean
+    private EffectivePricePort effectivePricePort;
 
     @Test
     @WithMockUser(roles = "USER")
