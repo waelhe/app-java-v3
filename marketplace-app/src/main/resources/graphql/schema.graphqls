@@ -27,7 +27,9 @@ enum ServiceStatus {
 # BookingInfo). spring-graphql's GraphQlArgumentBinder binds input keys to
 # constructor parameter names BY NAME, so the field name must equal the
 # ServiceInput.priceCents record component. (The read side keeps display
-# units: Service.price — major units via ServiceMapper.)
+# units: Service.price — major units via ServiceMapper.) Int is a signed
+# 32-bit scalar per the GraphQL spec — the explicit shared ceiling
+# 2,147,483,647 is declared in ServiceInput via @Max.
 input ServiceInput {
     name: String!
     description: String
