@@ -215,6 +215,24 @@ class ProviderStatsIntegrationTest {
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    @WithMockUser
+    void windowWithNoSlots_reportsZerosWithoutFailing() {
+        // The empty-aggregate boundary (PR #257 review round): SUM over
+        // zero rows is SQL NULL while COUNT is 0 — a window with no slots
+        // (a new provider, or a future window) must return honest zeros,
+        // never a null-boxing failure. A window in 2027 matches nothing.
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
+
+        ProviderStatsResponse stats = statsService.getStats(OWNER_USER_ID,
+                new StatsWindow(LocalDate.of(2027, 6, 1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                        LocalDate.of(2027, 7, 1).atStartOfDay(ZoneOffset.UTC).toInstant()));
+
+        assertThat(stats.occupancyRate()).isZero();
+        assertThat(stats.netRevenueCents()).isZero();
+        assertThat(stats.completedBookings()).isZero();
+    }
+
     private void slot(Instant startsAt, boolean booked) {
         jdbcTemplate.update(
                 "INSERT INTO availability_slots (id, provider_id, starts_at, ends_at, booked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, now(), now())",

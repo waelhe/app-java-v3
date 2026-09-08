@@ -57,11 +57,16 @@ public interface AvailabilitySlotRepository extends JpaRepository<AvailabilitySl
      * {@code AvailabilityLookupPort.findProviderSlotStats}. A slot belongs
      * to the window when its {@code startsAt} lies in {@code [from, to)}
      * (the house exclusive-end convention).
+     *
+     * <p>COALESCE (PR #257 review round): {@code SUM} over zero matching
+     * rows yields SQL NULL while {@code COUNT} yields 0 — an empty window
+     * (a new provider with no slots yet) must construct
+     * {@code SlotWindowStats(0, 0)}, never a null-boxing failure.
      */
     @Query("""
             SELECT new com.marketplace.shared.api.SlotWindowStats(
                 COUNT(s),
-                SUM(CASE WHEN s.booked = true THEN 1 ELSE 0 END))
+                COALESCE(SUM(CASE WHEN s.booked = true THEN 1 ELSE 0 END), 0))
             FROM AvailabilitySlot s
             WHERE s.providerId = :providerId
               AND s.startsAt >= :from
