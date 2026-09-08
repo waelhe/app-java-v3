@@ -2,15 +2,19 @@ package com.marketplace.media;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -171,6 +175,36 @@ final class S3MediaStorage implements AutoCloseable {
                 .bucket(bucket)
                 .key(objectKey)
                 .build());
+    }
+
+    /**
+     * L28: fetches the raw object bytes — the thumbnail pipeline's read half
+     * (scale the original server-side). The AWS SDK v2 synchronous channel
+     * the client already uses ({@code getObjectAsBytes}).
+     */
+    byte[] getObject(String objectKey) {
+        ResponseBytes<GetObjectResponse> object =
+                client.getObjectAsBytes(GetObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(objectKey)
+                        .build());
+        return object.asByteArray();
+    }
+
+    /**
+     * L28: stores the generated thumbnail bytes under the deterministic
+     * {@code {objectKey}/thumb} key — the pipeline's write half. Server-side
+     * PUT via the SDK client (not a presign: the thumbnail is produced by
+     * this process, never by a client).
+     */
+    void putObject(String objectKey, String contentType, byte[] bytes) {
+        client.putObject(PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(objectKey)
+                        .contentType(contentType)
+                        .contentLength((long) bytes.length)
+                        .build(),
+                RequestBody.fromBytes(bytes));
     }
 
     @Override

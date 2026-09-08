@@ -48,6 +48,8 @@ class MediaServiceTest {
     @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock
     private Authentication authentication;
 
     private MediaService service;
@@ -58,7 +60,7 @@ class MediaServiceTest {
     @BeforeEach
     void setUp() {
         service = new MediaService(repository, storageProvider, mediaProperties(),
-                listingPriceProvider, providerLookupPort, currentUserProvider);
+                listingPriceProvider, providerLookupPort, currentUserProvider, eventPublisher);
     }
 
     /**
@@ -70,7 +72,7 @@ class MediaServiceTest {
                 new MediaProperties.Storage("", "auto", "", "", "", false),
                 new MediaProperties.Limits(10_485_760L,
                         Set.of("image/jpeg", "image/png", "image/webp", "image/gif"),
-                        Duration.ofMinutes(15)));
+                        Duration.ofMinutes(15), 640, 25_000_000L));
     }
 
     /**

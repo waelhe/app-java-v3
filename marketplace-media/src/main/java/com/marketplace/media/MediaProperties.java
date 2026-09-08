@@ -59,6 +59,30 @@ public record MediaProperties(
              * URLs. Official bounds: 1 second to 7 days (R2 doc + S3Presigner
              * javadoc, "cannot be longer than 7 days").
              */
-            @DefaultValue("15m") Duration presignTtl
+            @DefaultValue("15m") Duration presignTtl,
+            /**
+             * L28 (feature-expansion roadmap §5): the maximum width in pixels of
+             * the generated thumbnail — environment-tunable per the roadmap
+             * ("مفتاح جديد قابل للبيئة"). JPEG/PNG sources wider than this are
+             * scaled down (aspect preserved); anything narrower keeps the
+             * original as its own thumbnail (no duplicate stored).
+             */
+            @DefaultValue("640") int thumbMaxWidth,
+            /**
+             * L28 hardening (CodeRabbit #263): the raster budget — the maximum
+             * number of source pixels ({@code width × height}, read from the
+             * image header, never decoded) the thumbnail pipeline is willing
+             * to decode on the asynchronous listener thread. A full-decode
+             * raster costs roughly 4 bytes per pixel (int sample model), so
+             * the default 25,000,000 (25 megapixels — above mainstream camera
+             * output, which tops out around 12–27 MP) bounds the transient
+             * allocation to ~100 MB while a highly compressed image inside the
+             * 10 MB upload byte cap could otherwise declare gigapixels and
+             * exhaust the heap. Sources above the budget keep the original as
+             * their own thumbnail — no decode, no failure, documented in the
+             * V43 decision matrix. Environment-tunable via
+             * {@code MEDIA_LIMITS_THUMB_SOURCE_MAX_PIXELS}.
+             */
+            @DefaultValue("25000000") long thumbSourceMaxPixels
     ) {}
 }
