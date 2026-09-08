@@ -6,6 +6,7 @@ public record ServiceResponse(
     UUID id,
     String name,
     String description,
+    String category,
     double price,
     String currency,
     String status

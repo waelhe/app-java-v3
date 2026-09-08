@@ -5,6 +5,7 @@ import com.marketplace.shared.security.CorrelationIdFilter;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.graphql.execution.DataFetcherExceptionResolverAdapter;
@@ -46,6 +47,14 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         }
         if (ex instanceof IllegalArgumentException) {
             return buildError(env, ErrorType.BAD_REQUEST, "VALIDATION_ERROR", "VALIDATION", ex.getMessage());
+        }
+        // Bean Validation failures surfaced by spring-graphql's ValidationHelper
+        // (Jakarta @Valid on @Argument parameters) — mapped to the same VALIDATION
+        // taxonomy the REST GlobalExceptionHandler returns for
+        // ConstraintViolationException, so a rejected input carries identical
+        // error semantics on both surfaces.
+        if (ex instanceof ConstraintViolationException violation) {
+            return buildError(env, ErrorType.BAD_REQUEST, "VALIDATION_ERROR", "VALIDATION", violation.getMessage());
         }
         if (ex instanceof IllegalStateException) {
             return buildError(env, ErrorType.BAD_REQUEST, "DOMAIN_CONFLICT", "DOMAIN", ex.getMessage());

@@ -13,6 +13,14 @@ import jakarta.validation.constraints.NotNull;
  * GraphQL the only surface that forbade a free listing — a cross-surface
  * contract contradiction. @Min(0) is the money-cents precedent already used
  * by CurrencyExchangeController amountCents.
+ *
+ * <p>Binding contract (spring-graphql {@code GraphQlArgumentBinder}): input
+ * keys are matched to record component names <em>by name</em> — the schema
+ * input field must therefore be {@code priceCents: Int!}. The previous
+ * {@code price: Float!} schema field could never bind to this component, so
+ * the {@code createService} mutation rejected every price (paid and free)
+ * since the surface's origin — fixed together with the first end-to-end
+ * mutation test (see ServiceGraphQlMutationIntegrationTest).
  */
 public record ServiceInput(
     @NotBlank String name,
