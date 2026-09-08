@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -48,11 +49,16 @@ public class ProviderLedgerController {
     }
 
     @GetMapping("/providers/me/ledger/balance")
+    @Operation(summary = "Get my ledger balance (L20)",
+            description = "The calling provider's current ledger balance in minor units — the "
+                    + "amount credited from completed payments.")
     public ResponseEntity<ProviderBalance> getMyBalance(Authentication authentication) {
         return ResponseEntity.ok(ledgerService.getBalanceForOwner(requireOwnProviderId(authentication)));
     }
 
     @GetMapping("/providers/me/ledger/statement")
+    @Operation(summary = "Get my ledger statement (L20)",
+            description = "Paginated ledger movements for the calling provider.")
     public ResponseEntity<PagedResponse<LedgerEntryResponse>> getMyStatement(Authentication authentication,
                                                                              Pageable pageable) {
         UUID providerId = requireOwnProviderId(authentication);

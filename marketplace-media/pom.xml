@@ -15,6 +15,14 @@
     <description>Listing media assets — S3-compatible presigned upload channel (roadmap B1 / G-PROD-1)</description>
 
     <dependencies>
+        <!-- L29 (feature-expansion roadmap §5): OpenAPI annotation vocabulary for the
+             springdoc-generated public client contract (summaries/examples on the
+             mobile-consumed endpoints and request records). Managed at the root
+             (Exception #12) aligned with the springdoc-resolved chain. -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+        </dependency>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-platform-infra</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>

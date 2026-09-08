@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -25,6 +26,8 @@ public class ProviderController {
     }
 
     @PostMapping("/providers")
+    @Operation(summary = "Become a provider", description = "Creates the caller's provider "
+            + "profile (host onboarding).")
     public ResponseEntity<ProviderResponse> create(@Valid @RequestBody ProviderRequest request,
                                                    Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -33,11 +36,15 @@ public class ProviderController {
     }
 
     @GetMapping("/providers/{id}")
+    @Operation(summary = "Get a provider profile", description = "Public provider profile with "
+            + "the stored rating average (L21).")
     public ResponseEntity<ProviderResponse> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.getById(id)));
     }
 
     @PutMapping("/providers/{id}")
+    @Operation(summary = "Update my provider profile", description = "Owner-scoped update of "
+            + "display name and bio.")
     public ResponseEntity<ProviderResponse> update(@PathVariable UUID id, @Valid @RequestBody ProviderRequest request,
                                                    Authentication authentication) {
         return ResponseEntity.ok(providerMapper.toResponse(

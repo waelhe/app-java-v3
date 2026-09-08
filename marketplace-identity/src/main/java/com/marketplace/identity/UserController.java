@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +29,8 @@ public class UserController {
      * client call died with 500 INT-001.
      */
     @GetMapping("/me")
+    @Operation(summary = "Get my profile", description = "The authenticated user's profile — the "
+            + "bootstrap call after every login (roles, subject, display name).")
     public ResponseEntity<UserResponse> getCurrentUser(Authentication authentication) {
         User user = userService.syncFromOidc(authentication);
         return ResponseEntity.ok(userMapper.toResponse(user));

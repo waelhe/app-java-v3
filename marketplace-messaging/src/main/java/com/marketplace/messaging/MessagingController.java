@@ -3,6 +3,8 @@ package com.marketplace.messaging;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -32,12 +34,16 @@ public class MessagingController {
     }
 
     @GetMapping("/conversations/{id}")
+    @Operation(summary = "Get one conversation", description = "A conversation the caller "
+            + "participates in (booking-scoped chat).")
     public ResponseEntity<ConversationResponse> getConversation(@PathVariable UUID id, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(conversationMapper.toResponse(messagingService.getConversation(id, userId)));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
+    @Operation(summary = "List a conversation's messages", description = "Paginated messages of "
+            + "a conversation the caller participates in, oldest first.")
     public ResponseEntity<PagedResponse<MessageResponse>> getMessages(
             @PathVariable UUID conversationId, Pageable pageable, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -46,12 +52,16 @@ public class MessagingController {
     }
 
     @GetMapping("/conversations/{conversationId}/unread")
+    @Operation(summary = "Count unread messages", description = "The caller's unread message "
+            + "count in one conversation (badge polling endpoint).")
     public ResponseEntity<UnreadCountResponse> getUnreadCount(@PathVariable UUID conversationId, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(new UnreadCountResponse(messagingService.getUnreadCount(conversationId, userId)));
     }
 
     @PostMapping("/conversations")
+    @Operation(summary = "Open a conversation", description = "Creates (or returns) the "
+            + "conversation for a booking — the single chat thread per booking.")
     public ResponseEntity<ConversationResponse> createConversation(@Valid @RequestBody CreateConversationRequest request,
                                                                    Authentication authentication) {
         UUID participantA = currentUserProvider.getCurrentUserId(authentication);
@@ -60,6 +70,8 @@ public class MessagingController {
     }
 
     @PostMapping("/conversations/{conversationId}/messages")
+    @Operation(summary = "Send a message", description = "Sends a chat message to a conversation "
+            + "the caller participates in; the other participant is notified.")
     public ResponseEntity<MessageResponse> sendMessage(@PathVariable UUID conversationId,
                                                        @Valid @RequestBody SendMessageRequest request,
                                                        Authentication authentication) {
@@ -69,6 +81,8 @@ public class MessagingController {
     }
 
     @PostMapping("/conversations/{conversationId}/read")
+    @Operation(summary = "Mark a conversation read", description = "Clears the caller's unread "
+            + "counter for the conversation.")
     public ResponseEntity<Void> markAsRead(@PathVariable UUID conversationId,
                                            Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -76,16 +90,25 @@ public class MessagingController {
         return ResponseEntity.ok().build();
     }
 
+    @Schema(description = "Conversation request: the booking the chat thread belongs to")
     public record CreateConversationRequest(
+            @Schema(description = "The booking this conversation is about",
+                    example = "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")
             @NotNull UUID bookingId
     ) {
     }
 
+    @Schema(description = "Outbound chat message")
     public record SendMessageRequest(
+            @Schema(description = "Message body (plain text)", example = "Hi! Is early check-in possible?")
             @NotBlank String content
     ) {
     }
 
-    public record UnreadCountResponse(long unreadCount) {
+    @Schema(description = "Unread badge count")
+    public record UnreadCountResponse(
+            @Schema(description = "Unread messages for the caller in this conversation", example = "3")
+            long unreadCount
+    ) {
     }
 }

@@ -1,6 +1,8 @@
 package com.marketplace.pricing;
 
 import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -57,12 +59,18 @@ public class ListingPriceCalendarController {
     }
 
     @GetMapping
+    @Operation(summary = "Read my listing's price calendar (L26)",
+            description = "The listing's pricing model: weekend multiplier, seasonal ranges and "
+                    + "the effective nightly prices for the requested window.")
     public ListingCalendarResponse getCalendar(@PathVariable UUID listingId,
                                                Authentication authentication) {
         return calendarService.getCalendar(listingId, authentication);
     }
 
     @PutMapping("/weekend-rule")
+    @Operation(summary = "Upsert the weekend rule (L26)",
+            description = "Sets (or replaces) the weekend multiplier on the base price for "
+                    + "Saturday and Sunday nights.")
     public ResponseEntity<WeekendRuleResponse> upsertWeekendRule(
             @PathVariable UUID listingId,
             @Valid @RequestBody UpsertWeekendRuleRequest request,
@@ -72,6 +80,8 @@ public class ListingPriceCalendarController {
     }
 
     @DeleteMapping("/weekend-rule")
+    @Operation(summary = "Delete the weekend rule (L26)",
+            description = "Removes the multiplier — weekends return to the flat base price.")
     public ResponseEntity<Void> deleteWeekendRule(@PathVariable UUID listingId,
                                                   Authentication authentication) {
         calendarService.deleteWeekendRule(listingId, authentication);
@@ -79,6 +89,10 @@ public class ListingPriceCalendarController {
     }
 
     @PostMapping("/seasonal-rates")
+    @Operation(summary = "Add a seasonal rate (L26)",
+            description = "One absolute-price range [fromDate, toDate) — exclusive end. A real "
+                    + "overlap with a sibling answers 409; adjacent ranges sharing a boundary "
+                    + "are legal (open intervals).")
     public ResponseEntity<SeasonalRateResponse> addSeasonalRate(
             @PathVariable UUID listingId,
             @Valid @RequestBody SeasonalRateRequest request,
@@ -89,6 +103,8 @@ public class ListingPriceCalendarController {
     }
 
     @PutMapping("/seasonal-rates/{rateId}")
+    @Operation(summary = "Update a seasonal rate (L26)",
+            description = "Replaces one range's dates and absolute price (overlap rules apply).")
     public ResponseEntity<SeasonalRateResponse> updateSeasonalRate(
             @PathVariable UUID listingId,
             @PathVariable UUID rateId,
@@ -99,6 +115,9 @@ public class ListingPriceCalendarController {
     }
 
     @DeleteMapping("/seasonal-rates/{rateId}")
+    @Operation(summary = "Delete a seasonal rate (L26)",
+            description = "Removes one seasonal range — those nights fall back to the weekend/base "
+                    + "rules.")
     public ResponseEntity<Void> deleteSeasonalRate(@PathVariable UUID listingId,
                                                    @PathVariable UUID rateId,
                                                    Authentication authentication) {
@@ -110,7 +129,12 @@ public class ListingPriceCalendarController {
      * The weekend multiplier on the base price — same bounds the entity
      * factory enforces ({@code (0, 10]}, the 3-digit scale of V41).
      */
+    @Schema(
+            description = "Weekend multiplier request: (0, 10] — the factor applied to the base "
+                    + "price for Saturday and Sunday nights")
     public record UpsertWeekendRuleRequest(
+            @Schema(
+                    description = "Weekend price multiplier", example = "1.2")
             @NotNull
             @DecimalMin(value = "0", inclusive = false, message = "Weekend multiplier must be > 0")
             @DecimalMax(value = "10", inclusive = true, message = "Weekend multiplier must be <= 10")
@@ -121,9 +145,18 @@ public class ListingPriceCalendarController {
      * One seasonal range: {@code [fromDate, toDate)} with an EXCLUSIVE end
      * and a non-negative absolute price in minor units.
      */
+    @Schema(
+            description = "Seasonal range request: [fromDate, toDate) with an exclusive end and an "
+                    + "absolute nightly price")
     public record SeasonalRateRequest(
+            @Schema(
+                    description = "Range start (inclusive), ISO-8601 date", example = "2026-12-24")
             @NotNull LocalDate fromDate,
+            @Schema(
+                    description = "Range end (EXCLUSIVE — not priced), ISO-8601 date", example = "2026-12-31")
             @NotNull LocalDate toDate,
+            @Schema(
+                    description = "Absolute nightly price for the range, minor units", example = "52000")
             @DecimalMin(value = "0", message = "Seasonal price must not be negative")
             long priceCents
     ) {}

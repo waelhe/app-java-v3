@@ -25,7 +25,11 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Marketplace API")
-                        .description("RESTful marketplace platform API with Spring Boot 4")
+                        .description("RESTful marketplace platform API with Spring Boot 4. "
+                                + "Public clients authenticate end users with Authorization Code + PKCE "
+                                + "(no secret, no refresh token, 900s access tokens) — the pinned client "
+                                + "auth decision is documented in docs/api/public-client-auth.md. "
+                                + "All errors follow the RFC 7807 contract in docs/api/error-contract.md.")
                         .version("v1.0.0"))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components()

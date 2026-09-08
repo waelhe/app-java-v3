@@ -136,6 +136,20 @@
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
             </dependency>
+            <!-- Exception #12: swagger-annotations-jakarta — the OpenAPI annotation
+                 vocabulary (io.swagger.v3.oas.annotations.*) used by the domain
+                 controllers/records for the springdoc-generated public client
+                 contract (feature-expansion roadmap §5 L29-ب). Annotations-only
+                 artifact with zero transitive dependencies; version pinned to the
+                 exact swagger-core-jakarta chain springdoc 3.1.0 resolves
+                 (verified via dependency:tree on marketplace-app). Runtime
+                 consumption of the annotations stays in marketplace-app (the
+                 springdoc starter reads them from the application context). -->
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-annotations-jakarta</artifactId>
+                <version>2.2.52</version>
+            </dependency>
             <!-- Exception #8: MapStruct — compile-time code generation for Entity↔DTO mapping -->
             <dependency>
                 <groupId>org.mapstruct</groupId>
