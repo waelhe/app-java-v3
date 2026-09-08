@@ -72,7 +72,7 @@ class MediaServiceTest {
                 new MediaProperties.Storage("", "auto", "", "", "", false),
                 new MediaProperties.Limits(10_485_760L,
                         Set.of("image/jpeg", "image/png", "image/webp", "image/gif"),
-                        Duration.ofMinutes(15), 640));
+                        Duration.ofMinutes(15), 640, 25_000_000L));
     }
 
     /**

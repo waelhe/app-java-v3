@@ -67,6 +67,22 @@ public record MediaProperties(
              * scaled down (aspect preserved); anything narrower keeps the
              * original as its own thumbnail (no duplicate stored).
              */
-            @DefaultValue("640") int thumbMaxWidth
+            @DefaultValue("640") int thumbMaxWidth,
+            /**
+             * L28 hardening (CodeRabbit #263): the raster budget — the maximum
+             * number of source pixels ({@code width × height}, read from the
+             * image header, never decoded) the thumbnail pipeline is willing
+             * to decode on the asynchronous listener thread. A full-decode
+             * raster costs roughly 4 bytes per pixel (int sample model), so
+             * the default 25,000,000 (25 megapixels — above mainstream camera
+             * output, which tops out around 12–27 MP) bounds the transient
+             * allocation to ~100 MB while a highly compressed image inside the
+             * 10 MB upload byte cap could otherwise declare gigapixels and
+             * exhaust the heap. Sources above the budget keep the original as
+             * their own thumbnail — no decode, no failure, documented in the
+             * V43 decision matrix. Environment-tunable via
+             * {@code MEDIA_LIMITS_THUMB_SOURCE_MAX_PIXELS}.
+             */
+            @DefaultValue("25000000") long thumbSourceMaxPixels
     ) {}
 }

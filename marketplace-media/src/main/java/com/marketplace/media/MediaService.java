@@ -257,12 +257,15 @@ public class MediaService {
             byte[] original = s3.getObject(asset.getObjectKey());
             try {
                 byte[] scaled = Thumbnails.scaleToMaxWidth(
-                        original, properties.limits().thumbMaxWidth(), asset.getContentType());
+                        original, properties.limits().thumbMaxWidth(), asset.getContentType(),
+                        properties.limits().thumbSourceMaxPixels());
                 if (scaled != null) {
                     s3.putObject(thumbKey, asset.getContentType(), scaled);
                     asset.recordThumbKey(thumbKey);
                 } else {
-                    // Already within the width bound — no duplicate object.
+                    // Within the width bound, or over the raster budget
+                    // (header-declared pixels above the configured limit —
+                    // never decoded) — the original is its own thumbnail.
                     asset.recordThumbKey(asset.getObjectKey());
                 }
             } catch (java.io.IOException ex) {

@@ -64,8 +64,10 @@ public class MediaAsset extends BaseEntity {
      * L28 (feature-expansion roadmap §5): the deterministic thumbnail key
      * {@code {objectKey}/thumb} once background processing has run. NULL =
      * processing pending (or failed and awaiting the documented resubmission
-     * retry); non-null and equal to {@code objectKey} = non-processable or
-     * already-small original — the thumbnail IS the original by design.
+     * retry); non-null and equal to {@code objectKey} = non-processable, an
+     * already-small original, or a source over the raster budget (header-
+     * declared pixels above the configured limit — never decoded) — the
+     * thumbnail IS the original by design.
      */
     @Column(name = "thumb_object_key", length = 500)
     private String thumbObjectKey;

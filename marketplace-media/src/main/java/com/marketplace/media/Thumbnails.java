@@ -2,8 +2,11 @@ package com.marketplace.media;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.ImageOutputStream;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
@@ -45,30 +48,66 @@ final class Thumbnails {
      * Scales the encoded image down to at most {@code maxWidth} pixels wide
      * (aspect ratio preserved, bilinear interpolation) and re-encodes it in
      * the SAME format — PNG stays lossless PNG, JPEG stays JPEG (no
-     * cross-format surprises, no alpha flattening).
+     * cross-format surprises, no alpha flattening, no alpha invention).
      *
-     * @return the scaled encoded bytes, or {@code null} when the original is
-     *         already within the bound — the caller then points the thumbnail
-     *         at the original object instead of storing a duplicate (an
-     *         already-small image needs no copy).
+     * <p><b>Raster budget (CodeRabbit #263 hardening):</b> the source header's
+     * {@code width × height} is read through an {@link ImageReader} WITHOUT
+     * raster decoding first; sources declaring more than
+     * {@code maxSourcePixels} pixels are never decoded — the caller keeps the
+     * original as its own thumbnail (a highly compressed image inside the
+     * upload byte cap can otherwise allocate a gigabyte-scale raster on the
+     * asynchronous listener thread). The header-only dimension read is the
+     * official ImageReader contract: {@code getWidth}/{@code getHeight} read
+     * from the stream header.
+     *
+     * <p><b>Target image type (CodeRabbit #263 hardening):</b> the scaled
+     * target always uses one of the two explicit standard types — chosen from
+     * {@code source.getColorModel().hasAlpha()} (ARGB when the source carries
+     * alpha, RGB otherwise). It is deliberately NEVER derived from
+     * {@code source.getType()}: ImageIO can return {@code TYPE_CUSTOM} (0) for
+     * valid images read through custom color models, and the
+     * {@code BufferedImage(int, int, int)} constructor rejects that value with
+     * {@code IllegalArgumentException} — a failure the caller's IOException
+     * contract does not cover.
+     *
+     * @return the scaled encoded bytes, or {@code null} when no real thumbnail
+     *         is needed — the original is already within the width bound, or
+     *         its header declares more pixels than the budget; the caller then
+     *         points the thumbnail at the original object instead of storing a
+     *         duplicate (an already-small or oversized-raster image needs no
+     *         copy).
      * @throws IOException when the bytes cannot be read as an image — the
      *         caller treats this as a processing failure (publication FAILED,
      *         retried by the documented resubmission machinery, debt D3).
      */
-    static byte[] scaleToMaxWidth(byte[] encoded, int maxWidth, String contentType) throws IOException {
+    static byte[] scaleToMaxWidth(byte[] encoded, int maxWidth, String contentType,
+                                  long maxSourcePixels) throws IOException {
+        int[] header = headerDimensions(encoded);
+        if ((long) header[0] * header[1] > maxSourcePixels) {
+            // Raster budget exceeded — never decode (header-only read above).
+            return null;
+        }
+        if (header[0] <= maxWidth) {
+            // Within the width bound — no scaling needed, no duplicate stored.
+            return null;
+        }
         BufferedImage source = ImageIO.read(new ByteArrayInputStream(encoded));
         if (source == null) {
             // No registered reader accepted the bytes (corrupt/empty) — a
             // processing failure by contract, not a silent fallback.
             throw new IOException("No ImageIO reader accepted the media bytes");
         }
-        if (source.getWidth() <= maxWidth) {
-            return null;
-        }
         double scale = (double) maxWidth / source.getWidth();
         int targetWidth = maxWidth;
         int targetHeight = (int) Math.round(source.getHeight() * scale);
-        BufferedImage target = new BufferedImage(targetWidth, targetHeight, source.getType());
+        // Explicit standard target type from the source's alpha presence —
+        // never source.getType(): TYPE_CUSTOM (0) would make the constructor
+        // below throw IllegalArgumentException (outside the IOException
+        // contract), and the type never encodes anything the format needs.
+        int targetType = source.getColorModel().hasAlpha()
+                ? BufferedImage.TYPE_INT_ARGB
+                : BufferedImage.TYPE_INT_RGB;
+        BufferedImage target = new BufferedImage(targetWidth, targetHeight, targetType);
         Graphics2D graphics = target.createGraphics();
         try {
             graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
@@ -83,15 +122,43 @@ final class Thumbnails {
     }
 
     /**
-     * Reads the pixel dimensions of the encoded image — used by tests and
-     * diagnostics; same failure contract as {@link #scaleToMaxWidth}.
+     * Reads the pixel dimensions of the encoded image from its header — used
+     * by the raster budget gate, tests and diagnostics; same failure contract
+     * as {@link #scaleToMaxWidth}. Header-only: no raster is decoded.
      */
     static int[] dimensions(byte[] encoded) throws IOException {
-        BufferedImage source = ImageIO.read(new ByteArrayInputStream(encoded));
-        if (source == null) {
-            throw new IOException("No ImageIO reader accepted the media bytes");
+        return headerDimensions(encoded);
+    }
+
+    /**
+     * The header-only dimension read (official ImageReader contract): picks
+     * the registered reader for the stream and asks it for
+     * {@code getWidth(0)} / {@code getHeight(0)} — both answered from the
+     * format header, so a gigapixel declaration costs a few bytes of parsing,
+     * not the raster allocation a full {@link ImageIO#read} would make.
+     */
+    private static int[] headerDimensions(byte[] encoded) throws IOException {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(encoded))) {
+            if (input == null) {
+                throw new IOException("No ImageIO stream for the media bytes");
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                throw new IOException("No ImageIO reader accepted the media bytes");
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width <= 0 || height <= 0) {
+                    throw new IOException("Image header carries no usable dimensions");
+                }
+                return new int[]{width, height};
+            } finally {
+                reader.dispose();
+            }
         }
-        return new int[]{source.getWidth(), source.getHeight()};
     }
 
     private static byte[] encode(BufferedImage image, String contentType) throws IOException {
@@ -106,19 +173,26 @@ final class Thumbnails {
         ImageWriter writer = writers.next();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
-            writer.setOutput(ImageIO.createImageOutputStream(out));
-            ImageWriteParam param = writer.getDefaultWriteParam();
-            if ("image/jpeg".equals(contentType) && param.canWriteCompressed()) {
-                // JPEG: explicit mode first, then quality — the ImageWriteParam
-                // contract (setCompressionQuality requires MODE_EXPLICIT).
-                // PNG keeps its format-default compression.
-                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(0.85f);
+            // try-with-resources on the stream (CodeRabbit #263 hardening):
+            // ImageWriter.write does not guarantee flushing the configured
+            // output — only close() does. Reading out.toByteArray() while the
+            // stream is open can return incomplete bytes.
+            try (ImageOutputStream stream = ImageIO.createImageOutputStream(out)) {
+                writer.setOutput(stream);
+                ImageWriteParam param = writer.getDefaultWriteParam();
+                if ("image/jpeg".equals(contentType) && param.canWriteCompressed()) {
+                    // JPEG: explicit mode first, then quality — the ImageWriteParam
+                    // contract (setCompressionQuality requires MODE_EXPLICIT).
+                    // PNG keeps its format-default compression.
+                    param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                    param.setCompressionQuality(0.85f);
+                }
+                writer.write(null, new IIOImage(image, null, null), param);
             }
-            writer.write(null, new IIOImage(image, null, null), param);
         } finally {
             writer.dispose();
         }
+        // Read AFTER the stream is closed — every buffered byte is flushed.
         return out.toByteArray();
     }
 }
