@@ -87,4 +87,18 @@ class ServiceInputValidationTest {
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .containsExactly("priceCents");
     }
+
+    /** CodeRabbit r1: the shared GraphQL Int ceiling (2,147,483,647) is explicit in the type. */
+    @Test
+    void priceCentsAtGraphQLIntCeilingIsValid_aboveItIsRejected() {
+        assertThat(validator.validate(
+                new ServiceInput("Ceiling", "desc", "general", 2_147_483_647L))).isEmpty();
+
+        Set<ConstraintViolation<ServiceInput>> violations =
+                validator.validate(new ServiceInput("Above ceiling", "desc", "general", 2_147_483_648L));
+
+        assertThat(violations)
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .containsExactly("priceCents");
+    }
 }

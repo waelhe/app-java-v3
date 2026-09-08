@@ -47,7 +47,7 @@ class ServiceGraphQlControllerTest {
         ProviderListingView listing = view(id, "Test", "Desc", 5000L, "ACTIVE");
         when(catalogService.getActiveById(id)).thenReturn(listing);
         when(serviceMapper.toResponse(listing)).thenReturn(
-                new ServiceResponse(id, "Test", "Desc", 50.0, "SAR", "ACTIVE"));
+                new ServiceResponse(id, "Test", "Desc", "general", 50.0, "SAR", "ACTIVE"));
 
         ServiceResponse response = controller.service(id);
 
@@ -61,9 +61,9 @@ class ServiceGraphQlControllerTest {
         when(catalogService.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(l1, l2)));
         when(serviceMapper.toResponse(l1)).thenReturn(
-                new ServiceResponse(UUID.randomUUID(), "Svc1", "Desc1", 10.0, "SAR", "ACTIVE"));
+                new ServiceResponse(UUID.randomUUID(), "Svc1", "Desc1", "general", 10.0, "SAR", "ACTIVE"));
         when(serviceMapper.toResponse(l2)).thenReturn(
-                new ServiceResponse(UUID.randomUUID(), "Svc2", "Desc2", 20.0, "SAR", "ACTIVE"));
+                new ServiceResponse(UUID.randomUUID(), "Svc2", "Desc2", "general", 20.0, "SAR", "ACTIVE"));
 
         List<ServiceResponse> services = controller.services();
 
@@ -79,7 +79,7 @@ class ServiceGraphQlControllerTest {
         when(catalogService.create(eq(providerId), eq("New Svc"), eq("Desc"), eq("cat"), eq(3000L), isNull()))
                 .thenReturn(listing);
         when(serviceMapper.toResponse(listing)).thenReturn(
-                new ServiceResponse(UUID.randomUUID(), "New Svc", "Desc", 30.0, "SAR", "ACTIVE"));
+                new ServiceResponse(UUID.randomUUID(), "New Svc", "Desc", "general", 30.0, "SAR", "ACTIVE"));
 
         var input = new ServiceInput("New Svc", "Desc", "cat", 3000L);
         ServiceResponse response = controller.createService(input, auth);

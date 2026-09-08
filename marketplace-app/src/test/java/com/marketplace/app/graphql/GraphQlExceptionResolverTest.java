@@ -79,6 +79,27 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
+     * Bean Validation failures (surfaced by spring-graphql's ValidationHelper
+     * for @Valid @Argument parameters) must carry the same VALIDATION
+     * taxonomy the REST GlobalExceptionHandler returns for
+     * ConstraintViolationException — never the masked INTERNAL_ERROR
+     * fallback.
+     */
+    @Test
+    void mapsConstraintViolationToValidationTaxonomy() {
+        GraphQLError error = first(resolver.resolveException(
+                new jakarta.validation.ConstraintViolationException(
+                        "createService.input.priceCents: must be greater than or equal to 0",
+                        java.util.Set.of()),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
+        assertThat(error.getExtensions()).containsEntry("errorCode", "VALIDATION_ERROR");
+        assertThat(error.getExtensions()).containsEntry("category", "VALIDATION");
+        assertThat(error.getMessage()).contains("must be greater than or equal to 0");
+    }
+
+    /**
      * Asserts the resolver produced exactly one error and returns it.
      */
     private static GraphQLError first(List<GraphQLError> errors) {
