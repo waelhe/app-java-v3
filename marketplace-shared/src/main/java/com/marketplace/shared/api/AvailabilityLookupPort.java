@@ -37,4 +37,14 @@ public interface AvailabilityLookupPort {
      * @param endsAt   window end (exclusive side)
      */
     Set<UUID> findAvailableProviderIds(Instant startsAt, Instant endsAt);
+
+    /**
+     * L25 (feature-expansion roadmap §5): one provider's slot-window
+     * aggregates — total slots in the window and how many are booked —
+     * the two counts the provider's occupancy ratio divides. Window
+     * semantics: slots whose {@code starts_at} lies in
+     * {@code [from, to)} (the house exclusive-end convention). The
+     * contract extension is documented in the provider-stats PR.
+     */
+    SlotWindowStats findProviderSlotStats(UUID providerId, Instant from, Instant to);
 }

@@ -48,4 +48,27 @@ class AvailabilityLookupAdapterTest {
         verify(slotRepository).findAvailableProviderIds(startsAt, endsAt);
         verifyNoMoreInteractions(slotRepository);
     }
+
+    /**
+     * L25 (feature-expansion roadmap §5): the provider-stats slot aggregates
+     * ride the same port — a read-only delegation with the exact
+     * {@code [from, to)} bounds (the aggregate semantics run against real
+     * PostgreSQL in {@code ProviderStatsIntegrationTest}).
+     */
+    @Test
+    void delegatesTheSlotWindowStats_verbatim() {
+        UUID providerId = UUID.randomUUID();
+        Instant from = Instant.parse("2026-09-01T00:00:00Z");
+        Instant to = Instant.parse("2026-10-01T00:00:00Z");
+        com.marketplace.shared.api.SlotWindowStats answer =
+                new com.marketplace.shared.api.SlotWindowStats(6, 2);
+        when(slotRepository.findProviderSlotStats(providerId, from, to)).thenReturn(answer);
+
+        com.marketplace.shared.api.SlotWindowStats result =
+                availabilityLookupPort.findProviderSlotStats(providerId, from, to);
+
+        assertThat(result).isEqualTo(answer);
+        verify(slotRepository).findProviderSlotStats(providerId, from, to);
+        verifyNoMoreInteractions(slotRepository);
+    }
 }

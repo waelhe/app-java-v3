@@ -128,7 +128,7 @@ spring:
     # namespaces (CodeRabbit #241) — bumped with every ListingSummary record
     # component change so stale pre-change entries are never read. See
     # CatalogService.CATALOG_CACHE_NAMES.
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v2,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v2,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache
