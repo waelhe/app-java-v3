@@ -2,6 +2,7 @@ package com.marketplace.booking;
 
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -32,6 +33,14 @@ class BookingModuleIntegrationTest {
 
     @MockitoBean
     AvailabilityPort availabilityPort;
+
+    /**
+     * L26: the effective-price seam — PricingService (the port's only
+     * implementation) lives in the pricing module, which is NOT part of
+     * the booking slice (booking's direct dependencies are shared-only).
+     */
+    @MockitoBean
+    EffectivePricePort effectivePricePort;
 
     @MockitoBean
     PaymentIntentLookupPort paymentIntentLookupPort;

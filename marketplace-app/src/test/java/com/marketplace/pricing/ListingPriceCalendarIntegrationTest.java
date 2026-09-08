@@ -2,7 +2,6 @@ package com.marketplace.pricing;
 
 import com.marketplace.booking.Booking;
 import com.marketplace.booking.BookingService;
-import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -63,10 +62,14 @@ import static org.mockito.Mockito.when;
  *   <li>the writes leave Envers revisions on the @Audited V41 tables and
  *       evict the {@code pricing-calculations} cache after commit.</li>
  * </ol>
- * {@code CurrentUserProvider} and {@code AvailabilityPort} are the
- * {@code @MockitoBean} seams (the L22 convention): the calendar ownership
- * checks are driven through them, and availability is not the path under
- * test.
+ * {@code CurrentUserProvider} is the only {@code @MockitoBean} seam (the
+ * L22 convention) — the ownership checks are driven through it. The
+ * availability check rides the REAL stack too (the L27 pattern): a free
+ * slot is seeded per listing owner — {@code AvailabilityPort} must NOT be
+ * mocked here because its implementation IS the concrete
+ * {@code AvailabilityService} bean (no dedicated adapter), so a type
+ * replacement would starve {@code AvailabilityController} of the concrete
+ * bean and break the full context boot.
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -90,9 +93,6 @@ class ListingPriceCalendarIntegrationTest {
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
-
-    @MockitoBean
-    AvailabilityPort availabilityPort;
 
     @Autowired
     private ListingPriceCalendarService calendarService;
@@ -134,6 +134,20 @@ class ListingPriceCalendarIntegrationTest {
                 ON CONFLICT (id) DO NOTHING
                 """, consumerId, "l26-" + consumerId, "l26-" + consumerId + "@example.com", "L26 Consumer");
         return consumerId;
+    }
+
+    /**
+     * A free slot covering the stay window — the REAL availability path
+     * (V15): booked=false and a strict overlap with [CHECK_IN, CHECK_OUT);
+     * no time-off rows are seeded, so isAvailable answers true.
+     */
+    private void seedFreeAvailabilitySlot(UUID providerId) {
+        jdbc.update("""
+                INSERT INTO availability_slots (id, provider_id, starts_at, ends_at, booked, created_at, updated_at, version)
+                VALUES (?, ?, ?, ?, FALSE, now(), now(), 0)
+                ON CONFLICT (id) DO NOTHING
+                """, UUID.randomUUID(), providerId,
+                Instant.parse("2026-01-15T00:00:00Z"), Instant.parse("2026-01-19T00:00:00Z"));
     }
 
     private UUID seedVerifiedProviderOwner() {
@@ -181,8 +195,7 @@ class ListingPriceCalendarIntegrationTest {
         assertThat(pricingService.calculateBookingTotalCents(listingId, BASE, CHECK_IN, CHECK_OUT))
                 .isEqualTo(32_000L);
 
-        when(availabilityPort.isAvailable(any(UUID.class), any(Instant.class), any(Instant.class)))
-                .thenReturn(true);
+        seedFreeAvailabilitySlot(owner);
         Booking booking = bookingService.create(seedConsumer(), listingId, CHECK_IN, CHECK_OUT, null);
         assertThat(booking.getPriceCents()).isEqualTo(32_000L);
         assertThat(booking.getCurrency()).isEqualTo("SAR");
@@ -225,8 +238,7 @@ class ListingPriceCalendarIntegrationTest {
         assertThat(pricingService.calculateBookingTotalCents(listingId, BASE, CHECK_IN, CHECK_OUT))
                 .isEqualTo(BASE);
 
-        when(availabilityPort.isAvailable(any(UUID.class), any(Instant.class), any(Instant.class)))
-                .thenReturn(true);
+        seedFreeAvailabilitySlot(owner);
         Booking booking = bookingService.create(seedConsumer(), listingId, CHECK_IN, CHECK_OUT, null);
         assertThat(booking.getPriceCents()).isEqualTo(BASE);
     }
@@ -391,8 +403,6 @@ class ListingPriceCalendarIntegrationTest {
         UUID listingId = seedListing(owner);
         actingAs(owner, false);
         Authentication auth = currentAuthentication();
-        when(availabilityPort.isAvailable(any(UUID.class), any(Instant.class), any(Instant.class)))
-                .thenReturn(true);
 
         Cache cache = cacheManager.getCache("pricing-calculations");
         assertThat(cache).isNotNull();
