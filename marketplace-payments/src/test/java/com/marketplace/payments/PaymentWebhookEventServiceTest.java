@@ -41,7 +41,7 @@ class PaymentWebhookEventServiceTest {
     void concurrentDuplicateInsertIsAnsweredAlreadyProcessedNever5xx() {
         // CodeRabbit #241: two concurrent deliveries of the same event both
         // pass the provider-scoped findByProviderAndEventId lookup (B5); the
-        // composite UNIQUE(provider, event_id) index (V41) must make the
+        // composite UNIQUE(provider, event_id) index (V42) must make the
         // recorder's insert the serialization point — the loser is
         // answered false (already processed, HTTP 200), never a 5xx.
         PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
@@ -159,7 +159,7 @@ class PaymentWebhookEventServiceTest {
     @Test
     void sameEventIdAcrossProviders_isNotDeduplicated() {
         // B5 (codex-review-fixes-plan §4): the dedup scope is per provider —
-        // UNIQUE(provider, event_id) (V41). The same event_id under a second
+        // UNIQUE(provider, event_id) (V42). The same event_id under a second
         // channel is a NEW event and must be processed, not acknowledged as
         // already-processed.
         PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);

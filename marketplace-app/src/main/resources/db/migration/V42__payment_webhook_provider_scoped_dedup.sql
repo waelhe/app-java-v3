@@ -1,5 +1,7 @@
--- B5 (docs/codex-review-fixes-plan.md §4): webhook dedup must be scoped to the
--- event's provider (channel), not global. The UNIQUE(event_id) gate was Stripe
+-- B5 (docs/codex-review-fixes-plan.md §4) — numbered V42, not V41: V41 is
+-- taken on main by listing_price_calendar (L26, PR #258) after this branch
+-- cut. The dedup must be scoped to the event's provider (channel), not
+-- global. The UNIQUE(event_id) gate was Stripe
 -- by accident of being the only channel; a future channel may emit event_ids
 -- that collide with Stripe's space. The composite unique key replaces it — the
 -- existing idx_payment_webhook_events_provider index still serves provider

@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
  * dispatch the payment transition, the loser then failing on the unique
  * {@code (provider, event_id)} write with a 5xx).
  *
- * <p>Gate scope (B5): the unique key is provider-scoped (V41) — dedup applies
+ * <p>Gate scope (B5): the unique key is provider-scoped (V42) — dedup applies
  * per channel, so migrate/postgreSQL-scoped lookups carry the provider.</p>
  *
  * <p>{@link #record} runs in its own transaction ({@code REQUIRES_NEW}) and
