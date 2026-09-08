@@ -45,7 +45,7 @@ public class NotificationController {
     @GetMapping("/notifications/preferences")
     @Operation(summary = "Get my notification preferences",
             description = "The caller's effective preference matrix — every notification type "
-                    + "× every channel with the stored override or the enabled default (L22).")
+                    + "× every channel with the stored override or the enabled default.")
     public ResponseEntity<List<NotificationPreferenceView>> getMyPreferences(Authentication authentication) {
         return ResponseEntity.ok(preferenceService.getMyPreferences(authentication));
     }
@@ -58,7 +58,7 @@ public class NotificationController {
     @PutMapping("/notifications/preferences")
     @Operation(summary = "Update my notification preferences",
             description = "Applies the requested switches (upsert) and returns the resulting "
-                    + "effective matrix. \"Back to default\" is enabled = true (L22).")
+                    + "effective matrix. \"Back to default\" is enabled = true.")
     public ResponseEntity<List<NotificationPreferenceView>> updateMyPreferences(
             @Valid @RequestBody NotificationPreferencesUpdateRequest request,
             Authentication authentication) {

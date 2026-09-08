@@ -47,7 +47,7 @@ public class ProviderStatsController {
     }
 
     @GetMapping("/providers/me/stats")
-    @Operation(summary = "Get my host stats (L25)",
+    @Operation(summary = "Get my host stats",
             description = "The provider's own occupancy, net revenue (after the documented "
                     + "commission) and completed bookings for the window. Omitted window = last "
                     + "30 days; max window = 1 year.")

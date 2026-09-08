@@ -37,7 +37,7 @@ public class ProviderController {
 
     @GetMapping("/providers/{id}")
     @Operation(summary = "Get a provider profile", description = "Public provider profile with "
-            + "the stored rating average (L21).")
+            + "the stored rating average.")
     public ResponseEntity<ProviderResponse> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.getById(id)));
     }

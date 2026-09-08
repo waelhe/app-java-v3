@@ -49,7 +49,7 @@ public class ProviderLedgerController {
     }
 
     @GetMapping("/providers/me/ledger/balance")
-    @Operation(summary = "Get my ledger balance (L20)",
+    @Operation(summary = "Get my ledger balance",
             description = "The calling provider's current ledger balance in minor units — the "
                     + "amount credited from completed payments.")
     public ResponseEntity<ProviderBalance> getMyBalance(Authentication authentication) {
@@ -57,7 +57,7 @@ public class ProviderLedgerController {
     }
 
     @GetMapping("/providers/me/ledger/statement")
-    @Operation(summary = "Get my ledger statement (L20)",
+    @Operation(summary = "Get my ledger statement",
             description = "Paginated ledger movements for the calling provider.")
     public ResponseEntity<PagedResponse<LedgerEntryResponse>> getMyStatement(Authentication authentication,
                                                                              Pageable pageable) {

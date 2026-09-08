@@ -26,7 +26,7 @@ key-less access joins this exact class through configuration — not new code
 | Access token TTL | 900 seconds | `OAuth2PublicClientInitializer.java:187` |
 | Authorization code TTL | 300 seconds | `OAuth2PublicClientInitializer.java:188` |
 | Consent | required | `OAuth2PublicClientInitializer.java:176` |
-| Redirect URIs | environment-driven (`OAUTH_PUBLIC_CLIENT_REDIRECT_URIS`, custom-scheme per RFC 8252) | `OAuth2PublicClientInitializer` bootstrap section |
+| Redirect URIs | environment-driven (`OAUTH_PUBLIC_CLIENT_REDIRECT_URIS`, comma-separated). Native apps register a **custom-scheme** redirect (RFC 8252 §7.1); SPAs register an exact **`https`** redirect (app link). Both forms are valid values of the same variable — the client class is one, only the app form differs. | `OAuth2PublicClientInitializer.java:45-48` (bootstrap javadoc: "custom scheme per RFC 8252 or an https app link") |
 
 ## Why no API keys
 

@@ -27,7 +27,7 @@ public class SearchController {
             description = "Full-text search with typo tolerance (pg_trgm) and optional filters. "
                     + "When both stay-window dates are present, the window must be a valid "
                     + "half-open interval [checkIn, checkOut) and results are restricted to "
-                    + "providers with an available slot overlapping it (L27).")
+                    + "providers with an available slot overlapping it.")
     public ResponseEntity<PagedResponse<ListingSummary>> searchWithCriteria(
             @Parameter(description = "Free-text query (websearch syntax: quoted phrases, OR, -exclusions)",
                     example = "\"sea view\" jeddah")

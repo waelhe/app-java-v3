@@ -59,7 +59,7 @@ public class ListingPriceCalendarController {
     }
 
     @GetMapping
-    @Operation(summary = "Read my listing's price calendar (L26)",
+    @Operation(summary = "Read my listing's price calendar",
             description = "The listing's pricing model: weekend multiplier, seasonal ranges and "
                     + "the effective nightly prices for the requested window.")
     public ListingCalendarResponse getCalendar(@PathVariable UUID listingId,
@@ -68,7 +68,7 @@ public class ListingPriceCalendarController {
     }
 
     @PutMapping("/weekend-rule")
-    @Operation(summary = "Upsert the weekend rule (L26)",
+    @Operation(summary = "Upsert the weekend rule",
             description = "Sets (or replaces) the weekend multiplier on the base price for "
                     + "Saturday and Sunday nights.")
     public ResponseEntity<WeekendRuleResponse> upsertWeekendRule(
@@ -80,7 +80,7 @@ public class ListingPriceCalendarController {
     }
 
     @DeleteMapping("/weekend-rule")
-    @Operation(summary = "Delete the weekend rule (L26)",
+    @Operation(summary = "Delete the weekend rule",
             description = "Removes the multiplier — weekends return to the flat base price.")
     public ResponseEntity<Void> deleteWeekendRule(@PathVariable UUID listingId,
                                                   Authentication authentication) {
@@ -89,7 +89,7 @@ public class ListingPriceCalendarController {
     }
 
     @PostMapping("/seasonal-rates")
-    @Operation(summary = "Add a seasonal rate (L26)",
+    @Operation(summary = "Add a seasonal rate",
             description = "One absolute-price range [fromDate, toDate) — exclusive end. A real "
                     + "overlap with a sibling answers 409; adjacent ranges sharing a boundary "
                     + "are legal (open intervals).")
@@ -103,7 +103,7 @@ public class ListingPriceCalendarController {
     }
 
     @PutMapping("/seasonal-rates/{rateId}")
-    @Operation(summary = "Update a seasonal rate (L26)",
+    @Operation(summary = "Update a seasonal rate",
             description = "Replaces one range's dates and absolute price (overlap rules apply).")
     public ResponseEntity<SeasonalRateResponse> updateSeasonalRate(
             @PathVariable UUID listingId,
@@ -115,7 +115,7 @@ public class ListingPriceCalendarController {
     }
 
     @DeleteMapping("/seasonal-rates/{rateId}")
-    @Operation(summary = "Delete a seasonal rate (L26)",
+    @Operation(summary = "Delete a seasonal rate",
             description = "Removes one seasonal range — those nights fall back to the weekend/base "
                     + "rules.")
     public ResponseEntity<Void> deleteSeasonalRate(@PathVariable UUID listingId,

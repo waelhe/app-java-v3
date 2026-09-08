@@ -35,7 +35,7 @@ public class ReviewsController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Get one review", description = "A single published review with the "
-            + "provider reply when one exists (L21).")
+            + "provider reply when one exists.")
     public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.getById(id)));
     }
@@ -65,7 +65,7 @@ public class ReviewsController {
     @RateLimiter(name = "reviewCreate")
     @Operation(summary = "Create a review",
             description = "One review per completed booking, by the consumer who booked. The stored "
-                    + "provider rating average updates asynchronously (L21).")
+                    + "provider rating average updates asynchronously.")
     public ResponseEntity<ReviewResponse> create(@Valid @RequestBody CreateReviewRequest request,
                                                  Authentication authentication) {
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
@@ -77,7 +77,7 @@ public class ReviewsController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Update my review", description = "The original reviewer may edit the "
-            + "rating/comment; the provider average recomputes (L21).")
+            + "rating/comment; the provider average recomputes.")
     public ResponseEntity<ReviewResponse> update(@PathVariable UUID id,
                                                  @Valid @RequestBody UpdateReviewRequest request,
                                                  Authentication authentication) {
@@ -90,7 +90,7 @@ public class ReviewsController {
      */
     @PostMapping("/{id}/reply")
     @Operation(summary = "Reply to a review (provider)", description = "One public reply per review, "
-            + "owned by the reviewed provider (L21).")
+            + "owned by the reviewed provider.")
     public ResponseEntity<ReviewResponse> reply(@PathVariable UUID id,
                                                  @Valid @RequestBody ReplyRequest request,
                                                  Authentication authentication) {

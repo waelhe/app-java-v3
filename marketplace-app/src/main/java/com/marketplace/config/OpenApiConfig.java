@@ -29,7 +29,10 @@ public class OpenApiConfig {
                                 + "Public clients authenticate end users with Authorization Code + PKCE "
                                 + "(no secret, no refresh token, 900s access tokens) — the pinned client "
                                 + "auth decision is documented in docs/api/public-client-auth.md. "
-                                + "All errors follow the RFC 7807 contract in docs/api/error-contract.md.")
+                                + "Resource API errors follow the RFC 7807 contract in "
+                                + "docs/api/error-contract.md; authorization-server errors follow "
+                                + "the separate OAuth error contract (302 redirect / 401) "
+                                + "documented in docs/api/public-client-auth.md.")
                         .version("v1.0.0"))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components()

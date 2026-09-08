@@ -66,7 +66,7 @@ public class BookingController {
     @RateLimiter(name = "bookingCreate")
     @Operation(summary = "Create a booking request",
             description = "Books a stay window for a listing. The nightly total is derived server-side "
-                    + "from the effective price (L26) — the client never supplies pricing.")
+                    + "from the effective price — the client never supplies pricing.")
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request,
                                                   Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
