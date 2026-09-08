@@ -98,7 +98,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
-                    "media.asset.delete", "media.upload.confirm", "media.upload.request")),
+                    "media.asset.delete", "media.thumbnail.process", "media.upload.confirm",
+                    "media.upload.request")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.mark.read", "notification.preferences.update")),
