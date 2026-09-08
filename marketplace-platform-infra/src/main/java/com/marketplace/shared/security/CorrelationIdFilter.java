@@ -21,6 +21,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String HEADER_NAME = "X-Correlation-ID";
     public static final String MDC_KEY = "correlationId";
 
+    /**
+     * Propagates or generates the correlation id and publishes it to the
+     * MDC, the response header and — since A6 — the {@code correlationId}
+     * request attribute, so the error path can emit it in the problem
+     * body when the client sent no header.
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -30,6 +36,11 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         }
         MDC.put(MDC_KEY, correlationId);
         response.setHeader(HEADER_NAME, correlationId);
+        // A6: expose the generated/propagated id as a request attribute so the
+        // error path (GlobalExceptionHandler.problem) can emit it in the problem
+        // body even when the client sent no header — otherwise the server-side
+        // generated traceId stays in the MDC and never reaches the response.
+        request.setAttribute(MDC_KEY, correlationId);
         try {
             filterChain.doFilter(request, response);
         } finally {

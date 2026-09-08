@@ -1,6 +1,7 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,10 @@ class BookingServiceSecurityTest {
     @MockitoBean
     private AvailabilityPort availabilityPort;
 
+    /** L26: the effective-price seam the booking total derivation consumes. */
+    @MockitoBean
+    private EffectivePricePort effectivePricePort;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotConsumer_thenAccessDenied() {
@@ -88,6 +93,7 @@ class BookingServiceSecurityTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
         when(availabilityPort.isAvailable(providerId, startsAt, endsAt)).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, startsAt, endsAt)).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Booking result = bookingService.create(consumerId, listingId, startsAt, endsAt, "notes");

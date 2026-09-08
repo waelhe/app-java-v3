@@ -63,6 +63,27 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * L23 (feature-expansion roadmap §5) — administrative account
+     * disable/enable. The reason is part of the contract: it is recorded with
+     * the action in the audit log by the identity module. The status values
+     * are pinned at the request boundary (bean validation) — the service
+     * keeps its own guard as defense-in-depth for SPI callers.
+     */
+    public record ChangeStatusRequest(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "DISABLED|ENABLED",
+                    message = "status must be DISABLED or ENABLED") String status,
+            @NotBlank String reason) {}
+
+    @PutMapping("/users/{id}/status")
+    public ResponseEntity<Void> updateUserStatus(@PathVariable UUID id,
+                                                 @Valid @RequestBody ChangeStatusRequest request,
+                                                 Authentication authentication) {
+        identitySpi.updateUserStatus(id, request.status(), request.reason(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
     // -- Listings -------------------------------------------------------
 
     @GetMapping("/listings")

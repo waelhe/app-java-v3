@@ -232,7 +232,9 @@ public class MediaService {
         if (currentUserProvider.isAdmin(authentication)) {
             return;
         }
-        providerLookupPort.findById(providerId)
+        // A1: the providerId of an asset/listing is a user id (V2/V32),
+        // so compare against the user-owned profile via findByUserId.
+        providerLookupPort.findByUserId(providerId)
                 .filter(provider -> provider.userId() != null && provider.userId().equals(currentUserId))
                 .orElseThrow(() -> new AccessDeniedException(denialMessage));
     }

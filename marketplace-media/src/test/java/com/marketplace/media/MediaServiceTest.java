@@ -61,6 +61,10 @@ class MediaServiceTest {
                 listingPriceProvider, providerLookupPort, currentUserProvider);
     }
 
+    /**
+     * Builds the media properties stub (bucket, allowed types, size limit)
+     * shared by the tests in this class.
+     */
     private MediaProperties mediaProperties() {
         return new MediaProperties(
                 new MediaProperties.Storage("", "auto", "", "", "", false),
@@ -69,10 +73,14 @@ class MediaServiceTest {
                         Duration.ofMinutes(15)));
     }
 
+    /**
+     * Stubs the happy-path ownership: the user-owned profile
+     * ({@code findByUserId}, A1) matches the asset's provider.
+     */
     private void mockOwner() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
     }
 
@@ -99,6 +107,10 @@ class MediaServiceTest {
         verify(storage, never()).presignUpload(any(), any());
     }
 
+    /**
+     * An oversize upload is rejected before any presign request is made —
+     * validation precedes the storage side effect.
+     */
     @Test
     void requestUpload_withOversize_rejectsBeforeSigning() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
@@ -108,6 +120,10 @@ class MediaServiceTest {
         verify(storage, never()).presignUpload(any(), any());
     }
 
+    /**
+     * A provider id owned by another user is denied at upload request
+     * time (A1 lookup).
+     */
     @Test
     void requestUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
@@ -115,7 +131,7 @@ class MediaServiceTest {
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", UUID.randomUUID())));
 
         assertThrows(AccessDeniedException.class,
@@ -166,6 +182,10 @@ class MediaServiceTest {
         assertEquals(MediaAssetStatus.PENDING_UPLOAD, asset.getStatus());
     }
 
+    /**
+     * A confirm on an asset whose storage object verified transitions the
+     * asset to UPLOADED and persists it.
+     */
     @Test
     void confirmUpload_whenVerified_marksUploaded() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
@@ -181,6 +201,10 @@ class MediaServiceTest {
         assertEquals("https://storage.example/signed-get", view.downloadUrl());
     }
 
+    /**
+     * A provider id owned by another user is denied at upload
+     * confirmation (A1 lookup).
+     */
     @Test
     void confirmUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
@@ -188,7 +212,7 @@ class MediaServiceTest {
         when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
-        when(providerLookupPort.findById(providerId))
+        when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", UUID.randomUUID())));
 
         assertThrows(AccessDeniedException.class,

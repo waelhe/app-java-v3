@@ -1,6 +1,7 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
 import com.marketplace.shared.api.BadRequestException;
@@ -34,12 +35,22 @@ class BookingServiceTest {
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final ListingPriceProvider listingPriceProvider = mock(ListingPriceProvider.class);
     private final AvailabilityPort availabilityPort = mock(AvailabilityPort.class);
+    /**
+     * L26: the effective-price seam mock. Defaulted to the FLAT base — the
+     * port's no-calendar answer — so every pre-L26 assertion stays
+     * byte-identical (the roadmap's backward-compatibility criterion);
+     * dedicated tests stub it per scenario.
+     */
+    private final EffectivePricePort effectivePricePort = mock(EffectivePricePort.class);
     private final Authentication authentication = mock(Authentication.class);
     private BookingService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher, listingPriceProvider, availabilityPort);
+        when(effectivePricePort.calculateBookingTotalCents(any(), anyLong(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(1));
+        service = new BookingService(bookingRepository, currentUserProvider, eventPublisher,
+                listingPriceProvider, availabilityPort, effectivePricePort);
     }
 
     @Test
@@ -52,6 +63,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -72,6 +84,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L, "USD"));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -89,11 +102,66 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
 
         assertEquals("SAR", booking.getCurrency());
+    }
+
+    /**
+     * L26 (feature-expansion roadmap §5): the booking total is the port's
+     * answer for the stay window, not the static listing price — the change
+     * contract "BookingService.create يشتق الإجمالي عبر PricingService بالسعر
+     * الفعّال لكل يوم". The window passed to the port is exactly the booking
+     * window ([startsAt, endsAt) — the same convention as L27).
+     */
+    @Test
+    void create_storesTheEffectiveWindowTotal_theL26Contract() {
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant startsAt = Instant.parse("2026-01-15T14:00:00Z");
+        Instant endsAt = Instant.parse("2026-01-18T11:00:00Z");
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, startsAt, endsAt)).thenReturn(true);
+        // B4 (merged on top of L26): create() now also requires an exact open
+        // slot — same stub every other create-path test carries, so the L26
+        // assertion (total = the port's window answer) stays the contract
+        // under test, unaffected by the B4 gate.
+        when(availabilityPort.hasExactAvailableSlot(providerId, startsAt, endsAt)).thenReturn(true);
+        when(effectivePricePort.calculateBookingTotalCents(listingId, 5000L, startsAt, endsAt))
+                .thenReturn(17_300L);
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Booking booking = service.create(consumerId, listingId, startsAt, endsAt, "weekend stay");
+
+        assertEquals(17_300L, booking.getPriceCents());
+        verify(effectivePricePort).calculateBookingTotalCents(listingId, 5000L, startsAt, endsAt);
+    }
+
+    @Test
+    void create_rejectsWindowThatDoesNotMatchAnExactSlot() {
+        // codex-review-fixes-plan B4 (Option M): isAvailable is an overlap
+        // check; the booking must match an open slot exactly. A sub-window that
+        // is "available" still must not pass create — it would only fail at
+        // confirm's bookSlot. Fail early with BadRequestException (400).
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(false);
+
+        assertThrows(BadRequestException.class,
+                () -> service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes"));
+        verify(bookingRepository, never()).save(any(Booking.class));
     }
 
     @Test

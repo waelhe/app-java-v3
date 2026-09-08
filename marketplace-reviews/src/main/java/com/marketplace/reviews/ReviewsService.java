@@ -8,6 +8,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
+import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
@@ -31,15 +32,18 @@ public class ReviewsService {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final BookingParticipantProvider bookingParticipantProvider;
+    private final ProviderLookupPort providerLookupPort;
 
     public ReviewsService(ReviewRepository reviewRepository,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher,
-                          BookingParticipantProvider bookingParticipantProvider) {
+                          BookingParticipantProvider bookingParticipantProvider,
+                          ProviderLookupPort providerLookupPort) {
         this.reviewRepository = reviewRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.providerLookupPort = providerLookupPort;
     }
 
     @Transactional(readOnly = true)
@@ -100,5 +104,30 @@ public class ReviewsService {
         if (!review.getReviewerId().equals(currentUserId) && !currentUserProvider.isAdmin(authentication)) {
             throw new AccessDeniedException("You did not write this review");
         }
+    }
+
+    /**
+     * L21 (roadmap §5) — the provider side of the two-way review: the target
+     * provider replies to its own review. Ownership follows the L20 seam:
+     * the caller's user id resolves to their provider profile
+     * ({@code ProviderLookupPort.findByUserId}) and that profile must BE the
+     * review's provider — «المزوّد المستهدف حصراً يملك الرد» (no admin bypass,
+     * the scope names the provider exclusively). Uniqueness is by
+     * construction: {@link Review#reply(String)} rejects a second reply.
+     */
+    @Observed(name = "review.reply")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public Review reply(UUID id, String reply, Authentication authentication) {
+        Review review = getById(id);
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        UUID callerProviderId = providerLookupPort.findByUserId(currentUserId)
+                .orElseThrow(() -> new AccessDeniedException("You do not own a provider profile"))
+                .id();
+        if (!review.getProviderId().equals(callerProviderId)) {
+            throw new AccessDeniedException("Only the reviewed provider can reply");
+        }
+        review.reply(reply);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("reviews"), id));
+        return review;
     }
 }

@@ -40,6 +40,26 @@ public interface PspChannel {
                                     String idempotencyKey);
 
     /**
+     * Creates a remote refund on a previously charged payment intent (L19 —
+     * the closed money loop). Official contract: "you must specify a Charge
+     * or a PaymentIntent object on which to create it ... You can optionally
+     * refund only part of a charge. You can do so multiple times, until the
+     * entire charge has been refunded" (Refunds / Create a refund).
+     *
+     * @param pspIntentId    the remote intent id ({@code pi_...}) to refund
+     * @param amountCents    partial amount in the smallest currency unit,
+     *                       or {@code null} for the remaining (full) amount
+     * @param idempotencyKey deterministic replay key — a retried request
+     *                       replays the SAME remote refund instead of
+     *                       double-refunding
+     * @return the refund id, its remote status and the CUMULATIVE amount
+     *         refunded on the underlying charge after this refund — the
+     *         remote actual the local books must reflect (roadmap L19
+     *         acceptance 3), not a locally computed sum
+     */
+    RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents, String idempotencyKey);
+
+    /**
      * Verifies a raw webhook notification with the provider's own signature
      * scheme and extracts the fields the dispatch contract needs. Throws
      * {@link PspChannelException} when verification fails — the official
@@ -52,7 +72,25 @@ public interface PspChannel {
     /** Remote intent identifiers handed back to the calling client. */
     record RemoteIntent(String pspIntentId, String clientSecret) {}
 
-    /** Verified webhook fields mapped onto the house dispatch contract. */
+    /** Remote refund outcome: id, provider status, cumulative remote total. */
+    record RemoteRefund(String refundId, String status, long refundedTotalCents) {}
+
+    /**
+     * Refund state carried by a verified {@code charge.refunded} webhook
+     * (L19): the cumulative refunded amount on the charge, taken from the
+     * provider's own payload — the async safety net that syncs local state
+     * for refunds completed outside this service (including the Stripe
+     * dashboard).
+     */
+    record RefundSnapshot(long refundedAmountCents) {}
+
+    /**
+     * Verified webhook fields mapped onto the house dispatch contract. For
+     * {@code charge.refunded} events the {@code pspIntentId} carries the
+     * charge's payment intent id (resolution then flows through the V33
+     * {@code findByPspIntentId} link) and {@code refund} carries the
+     * snapshot; otherwise {@code refund} is null.
+     */
     record VerifiedWebhook(String eventId, String eventType, UUID marketplaceIntentId,
-                           String pspIntentId) {}
+                           String pspIntentId, RefundSnapshot refund) {}
 }

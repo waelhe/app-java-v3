@@ -6,6 +6,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -63,6 +64,18 @@ public class ReviewsController {
         return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.update(id, request.rating(), request.comment(), authentication)));
     }
 
+    /**
+     * L21 (roadmap §5): the provider side of the two-way review — one reply
+     * per review, owned exclusively by the reviewed provider.
+     */
+    @PostMapping("/{id}/reply")
+    public ResponseEntity<ReviewResponse> reply(@PathVariable UUID id,
+                                                 @Valid @RequestBody ReplyRequest request,
+                                                 Authentication authentication) {
+        return ResponseEntity.ok(reviewMapper.toResponse(
+                reviewsService.reply(id, request.reply(), authentication)));
+    }
+
     public record CreateReviewRequest(
             @NotNull UUID bookingId,
             @NotNull @Min(1) @Max(5) Integer rating,
@@ -73,6 +86,11 @@ public class ReviewsController {
     public record UpdateReviewRequest(
             @NotNull @Min(1) @Max(5) Integer rating,
             String comment
+    ) {
+    }
+
+    public record ReplyRequest(
+            @NotBlank String reply
     ) {
     }
 }

@@ -3,6 +3,7 @@ package com.marketplace.admin;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.AvailabilityPort;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -37,6 +38,14 @@ class AdminModuleIntegrationTest {
 
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
+
+    /**
+     * L26: BookingService (wired into this slice through AdminController)
+     * consumes the effective-price port whose only implementation
+     * (PricingService) lives in the pricing module — outside the slice.
+     */
+    @MockitoBean
+    EffectivePricePort effectivePricePort;
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;

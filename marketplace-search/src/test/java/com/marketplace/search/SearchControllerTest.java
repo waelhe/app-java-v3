@@ -35,9 +35,25 @@ class SearchControllerTest {
         Page<ListingSummary> page = new PageImpl<>(List.of());
         when(searchService.search(any(SearchCriteria.class), eq(pageable))).thenReturn(page);
 
-        ResponseEntity<PagedResponse<ListingSummary>> result = controller.searchWithCriteria(null, null, null, null, pageable);
+        ResponseEntity<PagedResponse<ListingSummary>> result = controller.searchWithCriteria(null, null, null, null, null, null, pageable);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void searchWithCriteria_carriesTheStayWindowToTheService() {
+        PageRequest pageable = PageRequest.of(0, 10);
+        when(searchService.search(any(SearchCriteria.class), eq(pageable))).thenReturn(new PageImpl<>(List.of()));
+        java.time.Instant checkIn = java.time.Instant.parse("2026-10-05T10:00:00Z");
+        java.time.Instant checkOut = java.time.Instant.parse("2026-10-08T10:00:00Z");
+
+        controller.searchWithCriteria(null, null, null, null, checkIn, checkOut, pageable);
+
+        org.mockito.ArgumentCaptor<SearchCriteria> captor = org.mockito.ArgumentCaptor.forClass(SearchCriteria.class);
+        verify(searchService).search(captor.capture(), eq(pageable));
+        assertTrue(captor.getValue().hasWindow());
+        assertEquals(checkIn, captor.getValue().checkIn());
+        assertEquals(checkOut, captor.getValue().checkOut());
     }
 
     @Test

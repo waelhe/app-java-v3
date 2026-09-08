@@ -489,7 +489,7 @@ class PaymentsServiceTest {
     @Test
     void webhookEvent_processesSuccessfully() {
         String eventId = "evt_new";
-        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig");
@@ -509,7 +509,7 @@ class PaymentsServiceTest {
                 .set(field(PaymentIntent::getAmountCents), 5000L)
                 .create();
 
-        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -525,7 +525,7 @@ class PaymentsServiceTest {
     @Test
     void webhookEvent_succeededWithoutIntentIdLogsWarning() {
         String eventId = "evt_no_intent";
-        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig");
@@ -537,7 +537,7 @@ class PaymentsServiceTest {
     @Test
     void webhookEvent_passesNullSignatureToValidator() {
         String eventId = "evt_no_sig";
-        when(webhookEventRepository.findByEventId(eventId)).thenReturn(Optional.empty());
+        when(webhookEventRepository.findByProviderAndEventId("stripe", eventId)).thenReturn(Optional.empty());
         when(webhookEventRepository.save(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", null);

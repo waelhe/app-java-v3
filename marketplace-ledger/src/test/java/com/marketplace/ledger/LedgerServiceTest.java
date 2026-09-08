@@ -11,6 +11,140 @@ import static org.mockito.Mockito.*;
 
 class LedgerServiceTest {
 
+    /**
+     * B2: a negative amount on the payment-credit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void creditFromPaymentRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.creditFromPayment(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the payment-credit path is a no-op — the current
+     * balance is returned and neither an entry nor a balance write occurs.
+     */
+    @Test
+    void creditFromPaymentZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a negative amount on the commission-debit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void debitFromCommissionRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromCommission(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the commission-debit path is a no-op — the
+     * current balance is returned and neither an entry nor a balance
+     * write occurs.
+     */
+    @Test
+    void debitFromCommissionZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromCommission(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a negative amount on the refund-debit path must fail fast —
+     * VALIDATION (400) via BadRequestException — before any entry or
+     * balance write happens.
+     */
+    @Test
+    void debitFromRefundRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.debitFromRefund(providerId, paymentIntentId, -1L))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * B2: a zero amount on the refund-debit path is a no-op — the current
+     * balance is returned and neither an entry nor a balance write occurs.
+     */
+    @Test
+    void debitFromRefundZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = create(UUID.class);
+        UUID paymentIntentId = create(UUID.class);
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 0L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * A repeated payment-intent credit is a no-op: the source-id lookup
+     * short-circuits so the balance is credited exactly once.
+     */
     @Test
     void duplicateCreditDoesNotCreateNewEntry() {
         LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
@@ -169,5 +303,93 @@ class LedgerServiceTest {
         ProviderBalance result = service.debitFromCommission(providerId, paymentIntentId, 5000L);
 
         assertThat(result.getAvailableCents()).isEqualTo(-4000L);
+    }
+
+    @Test
+    void getBalanceForOwnerReturnsSameAsGetBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        ProviderBalance existing = ProviderBalance.empty(providerId);
+        existing.credit(4500L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
+
+        ProviderBalance result = service.getBalanceForOwner(providerId);
+
+        assertThat(result.getAvailableCents()).isEqualTo(4500L);
+    }
+
+    @Test
+    void getStatementForOwnerDelegatesToRepositoryPage() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        var expected = new org.springframework.data.domain.PageImpl<>(
+                java.util.List.of(LedgerEntry.paymentCredit(providerId, UUID.randomUUID(), 5000L)));
+        when(entryRepository.findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable)).thenReturn(expected);
+
+        var result = service.getStatementForOwner(providerId, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getEntryType()).isEqualTo(LedgerEntryType.PAYMENT_CREDIT);
+        assertThat(result.getContent().get(0).getAmountCents()).isEqualTo(5000L);
+        verify(entryRepository).findByProviderIdOrderByCreatedAtDescIdDesc(providerId, pageable);
+    }
+
+    @Test
+    void debitFromRefundMirrorsTheOriginalCreditAndDebitsBalance() {
+        // L24 acceptance 2: the refund debit is the credit's mirror — the
+        // same amount, a derived refund-<intentId> source id, a debit.
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.empty());
+        when(entryRepository.save(any(LedgerEntry.class))).thenAnswer(i -> i.getArgument(0));
+        ProviderBalance credited = ProviderBalance.empty(providerId);
+        credited.credit(5000L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(credited));
+        when(balanceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 5000L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        var captor = org.mockito.ArgumentCaptor.forClass(LedgerEntry.class);
+        verify(entryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryType()).isEqualTo(LedgerEntryType.REFUND_DEBIT);
+        assertThat(captor.getValue().getSourceId()).isEqualTo(expectedSourceId);
+        assertThat(captor.getValue().getAmountCents()).isEqualTo(5000L);
+    }
+
+    @Test
+    void debitFromRefundSkipsOnDuplicate() {
+        // L24 acceptance 1 (the ledger belt): the derived source id makes
+        // replays no-ops — no second entry, no second debit.
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.of(mock(LedgerEntry.class)));
+        ProviderBalance balance = ProviderBalance.empty(providerId);
+        balance.credit(5000L);
+        balance.debit(5000L);
+        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.debitFromRefund(providerId, paymentIntentId, 5000L);
+
+        assertThat(result.getAvailableCents()).isZero();
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
     }
 }

@@ -44,5 +44,13 @@ public class LedgerEntry extends BaseEntity {
         return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.COMMISSION_DEBIT, amountCents);
     }
 
+    /** L24 — the full refund's debit (mirrors the PAYMENT_CREDIT amount). */
+    public static LedgerEntry refundDebit(UUID providerId, UUID sourceId, long amountCents) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.REFUND_DEBIT, amountCents);
+    }
+
     @Override public UUID getId(){return id;}
+    public UUID getSourceId(){return sourceId;}
+    public LedgerEntryType getEntryType(){return entryType;}
+    public long getAmountCents(){return amountCents;}
 }

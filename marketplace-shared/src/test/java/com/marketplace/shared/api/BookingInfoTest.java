@@ -23,8 +23,14 @@ class BookingInfoTest {
     }
 
     @Test
-    void constructor_rejectsNonPositivePriceCents() {
-        assertThatThrownBy(() -> new BookingInfo(providerId, consumerId, "OPEN", 0L, "USD", now, now))
+    void constructor_acceptsZeroPriceCents_freeListing() {
+        var info = new BookingInfo(providerId, consumerId, "OPEN", 0L, "USD", now, now);
+        assertThat(info.priceCents()).isZero();
+    }
+
+    @Test
+    void constructor_rejectsNegativePriceCents() {
+        assertThatThrownBy(() -> new BookingInfo(providerId, consumerId, "OPEN", -1L, "USD", now, now))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("invalid price");
     }

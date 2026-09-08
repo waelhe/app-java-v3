@@ -25,6 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Select.field;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
@@ -96,5 +100,70 @@ class CatalogServiceTest {
 
         assertThatThrownBy(() -> catalogService.getActiveById(java.util.UUID.randomUUID()))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- L27: the window-restricted search surface ---------------------------
+
+    private static final java.util.Set<java.util.UUID> PROVIDER_IDS =
+            java.util.Set.of(java.util.UUID.randomUUID(), java.util.UUID.randomUUID());
+
+    @Test
+    void searchByCriteriaRestricted_mapsPricesAndDelegatesWithTheWhitelist() {
+        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                null, null, java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(20));
+
+        var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
+
+        assertThat(result).hasSize(1);
+        // BigDecimal 10 -> 1000 cents: the same movePointRight(2) mapping as
+        // the unrestricted path rides the restricted query.
+        verify(listingRepository).searchByCriteriaRestricted(
+                eq(null), eq(1000L), eq(2000L), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullTextRestricted_keepsTheTrigramFallbackOnAnEmptyPage() {
+        // Zero TOTAL matches — the pg_trgm fallback runs, exactly like the
+        // unrestricted searchFullText.
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(listingRepository.searchSimilarRestricted(anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var result = catalogService.searchFullTextRestricted("gardn", PROVIDER_IDS, PageRequest.of(0, 10));
+
+        assertThat(result).hasSize(1);
+        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullTextRestricted_outOfRangePageOverRealMatches_staysEmpty_noFallback() {
+        // Matches exist (total 1) but the requested page is past them: the
+        // content is legitimately empty — the fallback must NOT replace it
+        // with a different result set (PR #256 full-review round:
+        // isEmpty() is true while totalElements > 0).
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
+
+        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(5, 10));
+
+        assertThat(result).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any());
+    }
+
+    @Test
+    void searchFullTextRestricted_noFallbackWhenFtsMatches() {
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(0, 10));
+
+        assertThat(result).hasSize(1);
+        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any());
     }
 }

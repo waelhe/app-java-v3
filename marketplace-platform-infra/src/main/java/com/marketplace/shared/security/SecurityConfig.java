@@ -16,6 +16,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,9 +25,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -146,7 +149,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(problemDetailAuthenticationEntryPoint())
                         .accessDeniedHandler(problemDetailAccessDeniedHandler()))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                        // Route the bearer-filter failure path (an invalid supplied
+                        // token arrives as InvalidBearerTokenException) through the
+                        // same problem-detail entry point as the anonymous path, so
+                        // every 401 carries the RFC 7807 body + RFC 6750 challenge.
+                        .authenticationEntryPoint(problemDetailAuthenticationEntryPoint()));
 
         return http.build();
     }
@@ -179,12 +187,21 @@ public class SecurityConfig {
         return new HttpSessionEventPublisher();
     }
 
+    /**
+     * CORS policy for the shared chains: credentials enabled, one-hour
+     * preflight cache and the request headers first-party clients send —
+     * including {@code X-API-Version}, consumed by
+     * {@code ApiVersioningConfig#useRequestHeader} (A2).
+     */
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(properties.cors().allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"));
+        // X-API-Version must be allowed so versioned clients can send the
+        // X-API-Version request header consumed by ApiVersioningConfig
+        // (ApiVersionConfigurer#useRequestHeader) across the same origin (A2).
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key", "X-API-Version"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -210,24 +227,91 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    /**
+     * The 401 handler for the resource-server chain: emits the RFC 7807
+     * problem body plus the RFC 6750 §3 {@code WWW-Authenticate} Bearer
+     * challenge (A3).
+     *
+     * <p>Challenge semantics mirror the framework's own
+     * {@code BearerTokenAuthenticationEntryPoint} (Spring Security 7):
+     * a request that <em>lacked</em> credentials — arriving from
+     * {@code ExceptionTranslationFilter} as
+     * {@code InsufficientAuthenticationException} — gets the bare
+     * {@code Bearer realm="marketplace"} challenge, per RFC 6750 §3.1
+     * ("If the request lacks any authentication information ... the resource
+     * server SHOULD NOT include an error code or other error information");
+     * a <em>supplied</em> token that failed validation — arriving from the
+     * resource-server bearer filter as {@code InvalidBearerTokenException}, an
+     * {@link OAuth2AuthenticationException} wrapping
+     * {@code BearerTokenErrors.invalidToken} — gets
+     * {@code error="invalid_token"} (plus {@code error_description}) per
+     * RFC 6750 §3 ("If the protected resource request included an access token
+     * and failed authentication, the resource server SHOULD include the
+     * 'error' attribute").
+     *
+     * <p>Registered on both official seams so all 401s share one contract:
+     * {@code .exceptionHandling().authenticationEntryPoint(...)} (the
+     * anonymous/translation path) and
+     * {@code .oauth2ResourceServer().authenticationEntryPoint(...)} (the
+     * bearer filter failure path — OAuth2ResourceServerConfigurer wires that
+     * entry point into {@code BearerTokenAuthenticationFilter}).
+     *
+     * @return the problem-detail authentication entry point
+     */
     @Bean
     AuthenticationEntryPoint problemDetailAuthenticationEntryPoint() {
-        return (request, response, ex) -> writeProblemDetail(
-                response,
-                ApiErrorTaxonomy.AUTHN,
-                "Authentication required",
-                request
-        );
+        return (request, response, ex) -> {
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE, bearerChallenge(ex));
+            writeProblemDetail(
+                    response,
+                    ApiErrorTaxonomy.AUTHN,
+                    "Authentication required",
+                    request
+            );
+        };
     }
 
+    /**
+     * Computes the RFC 6750 §3 Bearer challenge for an authentication failure,
+     * mirroring {@code BearerTokenAuthenticationEntryPoint} (Spring Security 7):
+     * error attributes only when the exception reports a failed <em>supplied</em>
+     * token ({@link OAuth2AuthenticationException} carrying the framework's
+     * {@code BearerTokenErrors} details), otherwise the bare realm challenge.
+     *
+     * @param ex the authentication failure reported by the filter chain
+     * @return the {@code WWW-Authenticate} header value
+     */
+    private static String bearerChallenge(AuthenticationException ex) {
+        if (ex instanceof OAuth2AuthenticationException oauth2) {
+            OAuth2Error error = oauth2.getError();
+            if (error.getDescription() != null && !error.getDescription().isBlank()) {
+                return "Bearer realm=\"marketplace\", error=\"" + error.getErrorCode()
+                        + "\", error_description=\"" + error.getDescription() + "\"";
+            }
+            return "Bearer realm=\"marketplace\", error=\"" + error.getErrorCode() + "\"";
+        }
+        return "Bearer realm=\"marketplace\"";
+    }
+
+    /**
+     * The 403 handler: an authenticated request that lacks sufficient
+     * privileges is challenged with {@code error="insufficient_scope"}
+     * (RFC 6750 §3.1) alongside the problem body (A3).
+     *
+     * @return the problem-detail access-denied handler
+     */
     @Bean
     AccessDeniedHandler problemDetailAccessDeniedHandler() {
-        return (request, response, ex) -> writeProblemDetail(
-                response,
-                ApiErrorTaxonomy.AUTHZ,
-                "Access denied",
-                request
-        );
+        return (request, response, ex) -> {
+            response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
+                    "Bearer realm=\"marketplace\", error=\"insufficient_scope\"");
+            writeProblemDetail(
+                    response,
+                    ApiErrorTaxonomy.AUTHZ,
+                    "Access denied",
+                    request
+            );
+        };
     }
 
     private void writeProblemDetail(HttpServletResponse response,
@@ -412,6 +496,25 @@ public class SecurityConfig {
         return decoder;
     }
 
+    /**
+     * Enforces the JWT audience contract per RFC 7519 §4.1.3:
+     * <blockquote>
+     * "The 'aud' (audience) claim identifies the recipients that the JWT is
+     * intended for. Each principal intended to process the JWT MUST identify
+     * itself with a value in the audience claim. If the principal processing
+     * the claim does not identify itself with a value in the 'aud' claim when
+     * this claim is present, then the JWT MUST be rejected."
+     * </blockquote>
+     *
+     * <p>The spec's check is "the principal finds ITS OWN identifier among
+     * {@code aud}" — for a single configured audience ({@code marketplace-api})
+     * {@code anyMatch} is exactly {@code contains}, and it stays the correct
+     * form if the configured list ever grows (each token is accepted when it
+     * names this resource server among its recipients). A strict
+     * {@code allMatch} would deviate from the RFC by demanding the token name
+     * every configured audience. (codex-review-fixes-plan A8: document, do not
+     * change.)
+     */
     private static OAuth2TokenValidator<Jwt> requiredAudiencesValidator(List<String> audiences) {
         return jwt -> jwt.getAudience() != null && jwt.getAudience().stream().anyMatch(audiences::contains)
                 ? OAuth2TokenValidatorResult.success()

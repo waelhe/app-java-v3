@@ -84,6 +84,47 @@ class ListingSummaryCacheContractFilesTest {
                 .doesNotContain("catalog-active,", "search-results,", "catalog-search,");
     }
 
+    /**
+     * L27 (feature-expansion roadmap §5): the stay window rides the
+     * search-results-v2 cache key, and the freshness contract extends with
+     * it — availability writes must evict the search cache, exactly like
+     * listing writes already do. Pinned at the source level (the house
+     * files-guard pattern): the criteria path uses the dedicated injective
+     * key generator (PR #256 round 1 — the record's toString() concatenated
+     * values unescaped and could collide across different criteria), and
+     * the generator appends the window components as first-class segments.
+     * A future refactor that drops the generator (or the window segments,
+     * or "search-results-v2" from the availability invalidation set) would
+     * silently let different criteria share one cached entry — or let
+     * window-filtered pages go stale after bookings — with no failing test
+     * at the unit level.
+     */
+    @Test
+    void searchResultsKeyCarriesTheWindow_andAvailabilityWritesEvictIt() throws IOException {
+        String searchService = read("marketplace-search/src/main/java/com/marketplace/search/SearchService.java");
+
+        assertThat(searchService)
+                .as("the criteria path keys the cache through the dedicated injective generator")
+                .contains("keyGenerator = \"searchCriteriaKeyGenerator\"");
+
+        String keyGenerator = read(
+                "marketplace-search/src/main/java/com/marketplace/search/SearchCriteriaCacheKeyGenerator.java");
+
+        assertThat(keyGenerator)
+                .as("the window components are first-class key segments")
+                .contains("append(key, criteria.checkIn());")
+                .contains("append(key, criteria.checkOut());");
+
+        String availabilityService = read(
+                "marketplace-availability/src/main/java/com/marketplace/availability/AvailabilityService.java");
+
+        assertThat(availabilityService)
+                .as("L27 freshness contract: availability writes evict the window-filtered "
+                        + "search-results-v2 pages through the AFTER_COMMIT relay, the same way "
+                        + "listing writes evict CATALOG_CACHE_NAMES")
+                .contains("Set.of(\"availability\", \"search-results-v2\")");
+    }
+
     private java.util.Set<String> cacheableNames(String source) {
         java.util.Set<String> names = new java.util.LinkedHashSet<>();
         Matcher matcher = CACHEABLE_NAME.matcher(source);

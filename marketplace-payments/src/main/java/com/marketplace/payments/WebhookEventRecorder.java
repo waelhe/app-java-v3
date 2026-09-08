@@ -9,10 +9,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Deduplication gate for provider webhook events (CodeRabbit #241: the
- * findByEventId-then-save sequence was check-then-act — two concurrent
- * deliveries of the same event could both pass the lookup and both dispatch
- * the payment transition, the loser then failing on the unique
- * {@code event_id} write with a 5xx).
+ * findByProviderAndEventId-then-save sequence was check-then-act — two
+ * concurrent deliveries of the same event could both pass the lookup and both
+ * dispatch the payment transition, the loser then failing on the unique
+ * {@code (provider, event_id)} write with a 5xx).
+ *
+ * <p>Gate scope (B5): the unique key is provider-scoped (V42) — dedup applies
+ * per channel, so migrate/postgreSQL-scoped lookups carry the provider.</p>
  *
  * <p>{@link #record} runs in its own transaction ({@code REQUIRES_NEW}) and
  * flushes the insert immediately, so the unique index — not a post-commit
@@ -44,8 +47,8 @@ class WebhookEventRecorder {
 
     /**
      * Inserts the event row and COMMITS it before returning — the caller may
-     * only dispatch after this succeeds. The unique event_id index makes the
-     * insert the serialization point between concurrent deliveries.
+     * only dispatch after this succeeds. The unique (provider, event_id) index
+     * makes the insert the serialization point between concurrent deliveries.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String provider, String eventId, String eventType) {
@@ -55,13 +58,14 @@ class WebhookEventRecorder {
 
     /**
      * Compensating delete for a dispatch that failed after the row committed.
-     * Runs in its own transaction: the caller's transaction is already
-     * rollback-only at this point.
+     * Provider-scoped like the gate it compensates (B5). Runs in its own
+     * transaction: the caller's transaction is already rollback-only at this
+     * point.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void delete(String eventId) {
-        repository.deleteByEventId(eventId);
-        log.info("Removed webhook event {} after a failed dispatch — the provider retry re-processes it",
-                eventId);
+    public void delete(String provider, String eventId) {
+        repository.deleteByProviderAndEventId(provider, eventId);
+        log.info("Removed webhook event {} ({}) after a failed dispatch — the provider retry re-processes it",
+                eventId, provider);
     }
 }

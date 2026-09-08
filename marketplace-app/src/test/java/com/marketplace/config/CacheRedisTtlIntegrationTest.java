@@ -114,7 +114,7 @@ class CacheRedisTtlIntegrationTest {
     }
 
     @Test
-    void writtenCacheEntriesCarryAFrameworkTtl() {
+    void writtenCacheEntriesCarryAFrameworkTtl() throws InterruptedException {
         Cache cache = cacheManager.getCache("users");
         assertThat(cache).as("the 'users' cache must exist").isNotNull();
 
@@ -126,10 +126,7 @@ class CacheRedisTtlIntegrationTest {
         // "users::" guess wrong: the probe key was absent, TTL -2). SCAN for
         // the unique probe uuid; on the isolated container this is cheap and
         // exact. The discovered key doubles as the cleanup target.
-        java.util.Set<String> written = redisTemplate.keys("*" + key + "*");
-        if (written == null) {
-            written = java.util.Set.of();
-        }
+        java.util.Set<String> written = discoverWrittenKeys(key);
         assertThat(written)
                 .as("the framework must have written a cache entry holding key %s (found keys are the evidence)", key)
                 .isNotEmpty();
@@ -153,5 +150,67 @@ class CacheRedisTtlIntegrationTest {
         Cache.ValueWrapper wrapper = cache.get(key);
         assertThat(wrapper).isNotNull();
         assertThat(wrapper.get()).isEqualTo("probe-value");
+    }
+
+    @Test
+    void providerStatsCacheCarriesTheShortOverrideTtl() throws InterruptedException {
+        // L25 (feature-expansion roadmap §5): the roadmap's "مخبأة قصيرة TTL"
+        // — the provider-stats cache alone overrides the global 1h with 5m
+        // through the official RedisCacheManagerBuilderCustomizer
+        // (ProviderStatsCacheConfig). Same probe pattern as the global TTL
+        // test: write through the cache manager, read the TTL Redis itself
+        // carries. Bound: (0, 300] seconds.
+        Cache cache = cacheManager.getCache("provider-stats");
+        assertThat(cache).as("the 'provider-stats' cache must exist").isNotNull();
+
+        String key = "stats-ttl-probe:" + UUID.randomUUID();
+        cache.put(key, "probe-value");
+
+        java.util.Set<String> written = discoverWrittenKeys(key);
+        assertThat(written)
+                .as("the framework must have written the provider-stats probe entry")
+                .isNotEmpty();
+        String actualKey = written.iterator().next();
+        probeRedisKey = actualKey;
+
+        Long ttl = redisTemplate.getExpire(actualKey);
+        assertThat(ttl)
+                .as("provider-stats entries carry the 5m override, not the global 1h")
+                .isNotNull()
+                .isPositive()
+                .isLessThanOrEqualTo(300L);
+    }
+
+    /**
+     * Async-aware discovery of the raw key the framework wrote for a probe
+     * (root cause, PR #257 CI rounds — bytecode evidence from the
+     * spring-data-redis 4.1.1 jar itself):
+     * {@code DefaultRedisCacheWriter.create(...)} passes
+     * {@code !configurer.immediateWrites} into the writer's
+     * {@code asynchronousWrites} flag, and {@code immediateWrites} defaults
+     * to {@code false} — so <b>cache writes are asynchronous by
+     * default</b>: {@code cache.put(key, value)} returns when the
+     * CompletableFuture is dispatched, not when Redis has persisted the
+     * entry. A SCAN issued immediately after the put races that future —
+     * under CI load (cold JIT right after context boot) the scan can lose
+     * and the probe appears absent (the same symptom this test's own
+     * history comment documents from its first CI round). The bounded
+     * retry waits for the framework's eventual write — production keeps
+     * the framework's async default deliberately (throughput; convergence
+     * is bounded by the TTL and the AFTER_COMMIT relay).
+     */
+    private java.util.Set<String> discoverWrittenKeys(String key) throws InterruptedException {
+        java.util.Set<String> written = scanFor(key);
+        long deadline = System.nanoTime() + 5_000_000_000L; // 5s bound
+        while ((written == null || written.isEmpty()) && System.nanoTime() < deadline) {
+            Thread.sleep(25);
+            written = scanFor(key);
+        }
+        return written == null ? java.util.Set.of() : written;
+    }
+
+    private java.util.Set<String> scanFor(String key) {
+        java.util.Set<String> keys = redisTemplate.keys("*" + key + "*");
+        return keys == null ? java.util.Set.of() : keys;
     }
 }

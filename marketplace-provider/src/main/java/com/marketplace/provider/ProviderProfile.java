@@ -32,6 +32,14 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "user_id")
     private UUID userId;
 
+    /**
+     * L21 (roadmap §5): the stored rating average, recomputed from the
+     * reviews table by the review events and exposed on the provider read.
+     * Null until the first review lands.
+     */
+    @Column(name = "rating_average")
+    private Double ratingAverage;
+
     protected ProviderProfile() {}
 
     private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status, UUID userId) {
@@ -65,6 +73,15 @@ public class ProviderProfile extends BaseEntity {
 
     public UUID getUserId() {
         return userId;
+    }
+
+    public Double getRatingAverage() {
+        return ratingAverage;
+    }
+
+    /** L21: stores the event-recomputed average (a plain assignment — the source of truth is the aggregate query). */
+    public void applyRatingAverage(double ratingAverage) {
+        this.ratingAverage = ratingAverage;
     }
 
     public void update(String newDisplayName, String newBio) {

@@ -51,18 +51,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>catalog — create.listing</li>
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
- *   <li>ledger — credit.payment, debit.commission (money movement)</li>
+ *   <li>ledger — credit.payment, debit.commission, debit.refund (money
+ *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
  *       http.server.requests)</li>
  *   <li>messaging — send</li>
- *   <li>notifications — mark.read</li>
+ *   <li>notifications — mark.read, preferences.update (L22 — the
+ *       per-channel unsubscribe switch write)</li>
  *   <li>payments — process, confirm, cancel; psp.create + psp.webhook
  *       (layer 9 — the real PSP channel; the webhook observation lives on
  *       the Stripe entry point, not the shared dispatch helper, so the
  *       legacy HMAC channel keeps its exact legacy behavior)</li>
- *   <li>pricing — calculate, rule.create, rule.activate, rule.deactivate,
- *       rule.delete</li>
+ *   <li>pricing — calculate (+ calculate.window — the L26 day-sliced
+ *       quote engine, the same read exception as the flat quote),
+ *       rule.create, rule.activate, rule.deactivate, rule.delete;
+ *       calendar.weekend.upsert, calendar.weekend.delete,
+ *       calendar.seasonal.create, calendar.seasonal.update,
+ *       calendar.seasonal.delete (L26 — the host's price-calendar commands;
+ *       the calendar READ stays unobserved per policy)</li>
  *   <li>provider — create, update, verify, suspend</li>
  *   <li>reviews — create, update</li>
  *   <li>shared infra — email.send (the open MAIL-provider gate: whatever the
@@ -86,25 +93,34 @@ class ObservationCoverageFilesTest {
                     "booking.confirm", "booking.create")),
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
-            Map.entry("marketplace-identity", List.of("user.role.update", "user.sync.oidc")),
+            Map.entry("marketplace-identity", List.of(
+                    "user.role.update", "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
-                    "ledger.credit.payment", "ledger.debit.commission")),
+                    "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.upload.confirm", "media.upload.request")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
-            Map.entry("marketplace-notifications", List.of("notification.mark.read")),
+            Map.entry("marketplace-notifications", List.of(
+                    "notification.mark.read", "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
-                    "payment.cancel", "payment.confirm", "payment.process",
-                    "payment.psp.create", "payment.psp.webhook")),
+                    "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
+                    "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),
             Map.entry("marketplace-pricing", List.of(
-                    "pricing.calculate", "pricing.currency.convert",
+                    "pricing.calculate", "pricing.calculate.window",
+                    "pricing.calendar.seasonal.create",
+                    "pricing.calendar.seasonal.delete",
+                    "pricing.calendar.seasonal.update",
+                    "pricing.calendar.weekend.delete",
+                    "pricing.calendar.weekend.upsert",
+                    "pricing.currency.convert",
                     "pricing.rule.activate",
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.create", "provider.suspend", "provider.update",
-                    "provider.verify")),
-            Map.entry("marketplace-reviews", List.of("review.create", "review.update")),
+                    "provider.create", "provider.rating.stats", "provider.suspend",
+                    "provider.update", "provider.verify")),
+            Map.entry("marketplace-reviews", List.of(
+                    "review.create", "review.reply", "review.update")),
             Map.entry("marketplace-platform-infra", List.of("email.send")));
 
     private Path repoRoot() {

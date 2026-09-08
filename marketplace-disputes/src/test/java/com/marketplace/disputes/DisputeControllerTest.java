@@ -36,7 +36,8 @@ class DisputeControllerTest {
         String reason = "late arrival";
         Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), reason);
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+                dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.open(bookingId, reason, authentication)).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
@@ -51,7 +52,8 @@ class DisputeControllerTest {
         UUID bookingId = UUID.randomUUID();
         Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+                dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.listForBooking(bookingId, authentication)).thenReturn(List.of(dispute));
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
@@ -65,14 +67,32 @@ class DisputeControllerTest {
     void resolve_returnsOk() {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        dispute.resolve(DisputeResolution.NO_ACTION);
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getReason(), null, null);
-        when(disputeService.resolve(disputeId, authentication)).thenReturn(dispute);
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+                dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
+        when(disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication)).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
-        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId, authentication);
+        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId,
+                new ResolveDisputeRequest(DisputeResolution.NO_ACTION), authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isEqualTo(response);
+    }
+
+    @Test
+    void resolve_withoutBody_defaultsToNoAction() {
+        // L24 backward compatibility: a body-less call resolves with
+        // NO_ACTION — the endpoint's pre-L24 semantics, kept byte-compatible
+        // for existing callers (the OpenAPI gate).
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        when(disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication)).thenReturn(dispute);
+
+        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId, null, authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(disputeService).resolve(disputeId, DisputeResolution.NO_ACTION, authentication);
     }
 }

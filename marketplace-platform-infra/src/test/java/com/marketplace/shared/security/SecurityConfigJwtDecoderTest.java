@@ -65,6 +65,29 @@ class SecurityConfigJwtDecoderTest {
     }
 
     @Test
+    void acceptsSignedJwtWhenAudienceContainsExpectedAmongOthers() throws Exception {
+        // RFC 7519 §4.1.3: each principal MUST identify itself with a value in
+        // the audience claim — the token naming this resource server among its
+        // recipients is valid. This pins the anyMatch contract (A8).
+        String token = signedJwt(ISSUER, List.of("another-client", AUDIENCE, "mobile-app"));
+
+        var jwt = jwtDecoder.decode(token);
+
+        assertThat(jwt.getAudience()).contains(AUDIENCE);
+    }
+
+    @Test
+    void rejectsSignedJwtWhenAudienceListContainsNoExpectedValue() throws Exception {
+        // Complement to rejectsSignedJwtWithWrongAudience: even a multi-valued
+        // aud claim must name this resource server, or the token is rejected.
+        String token = signedJwt(ISSUER, List.of("another-client", "mobile-app"));
+
+        assertThatThrownBy(() -> jwtDecoder.decode(token))
+                .isInstanceOf(JwtException.class)
+                .hasMessageContaining("audience");
+    }
+
+    @Test
     void acceptsSignedJwtWithExpectedIssuerAndAudience() throws Exception {
         String token = signedJwt(ISSUER, AUDIENCE);
 

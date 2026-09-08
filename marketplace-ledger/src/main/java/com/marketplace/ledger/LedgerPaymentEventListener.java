@@ -36,11 +36,19 @@ public class LedgerPaymentEventListener {
 
     @ApplicationModuleListener
     public void onPaymentCompleted(PaymentStateChangedEvent event) {
-        if (!"COMPLETED".equals(event.state())) {
-            return;
+        if ("COMPLETED".equals(event.state())) {
+            paymentIntentLookupPort.findById(event.paymentIntentId())
+                    .ifPresent(this::processLedgerEntry);
+        } else if ("REFUNDED".equals(event.state())) {
+            // L24 — the full refund's debit mirrors the original credit:
+            // the same booking's priceCents the credit used, so the
+            // provider's balance reflects the dispute's (or any full
+            // refund's) decision. PARTIALLY_REFUNDED stays out — the
+            // roadmap's dispute decision is the full-refund shape and
+            // partial PSP refunds are the payments side's own bookkeeping.
+            paymentIntentLookupPort.findById(event.paymentIntentId())
+                    .ifPresent(this::processRefundDebit);
         }
-        paymentIntentLookupPort.findById(event.paymentIntentId())
-                .ifPresent(this::processLedgerEntry);
     }
 
     private void processLedgerEntry(PaymentIntentDetails intent) {
@@ -54,5 +62,13 @@ public class LedgerPaymentEventListener {
         ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents);
         log.info("Ledger processed: credited {} to provider {}, debited {} as commission",
                 priceCents, bookingInfo.providerId(), commissionCents);
+    }
+
+    private void processRefundDebit(PaymentIntentDetails intent) {
+        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
+        long priceCents = bookingInfo.priceCents();
+        ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents);
+        log.info("Ledger processed: debited {} from provider {} — the refund mirrors the original credit",
+                priceCents, bookingInfo.providerId());
     }
 }

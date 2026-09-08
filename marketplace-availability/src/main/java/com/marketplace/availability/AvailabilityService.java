@@ -34,7 +34,19 @@ public class AvailabilityService implements AvailabilityPort {
     private final ApplicationEventPublisher eventPublisher;
 
     private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
-    private static final Set<String> AVAILABILITY_CACHE_NAMES = Set.of("availability");
+
+    /**
+     * Caches whose content depends on availability state. L27: the
+     * window-filtered {@code search-results-v2} pages (SearchService) now
+     * derive from slots and time-offs, so every availability write evicts
+     * them through the existing AFTER_COMMIT relay — the same freshness
+     * contract listing writes already follow for
+     * {@code CatalogService.CATALOG_CACHE_NAMES}. The name is shared with
+     * the catalog's invalidation set and the yml {@code spring.cache.cache-names}
+     * list (pinned by {@code ListingSummaryCacheContractFilesTest}).
+     */
+    private static final Set<String> AVAILABILITY_DEPENDENT_CACHE_NAMES =
+            Set.of("availability", "search-results-v2");
 
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,
@@ -49,7 +61,7 @@ public class AvailabilityService implements AvailabilityPort {
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public AvailabilitySlot createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         AvailabilitySlot saved = repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
-        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
         return saved;
     }
 
@@ -65,6 +77,16 @@ public class AvailabilityService implements AvailabilityPort {
         boolean slotAvailable = repository.existsByProviderIdAndBookedFalseAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);
         boolean hasTimeOffConflict = timeOffRepository.existsByProviderIdAndStartsAtLessThanAndEndsAtGreaterThan(providerId, endsAt, startsAt);
         return slotAvailable && !hasTimeOffConflict;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasExactAvailableSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+        // Same lookup as bookSlot (findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse)
+        // so create() rejects a window that confirm() could never book — the
+        // sub-window case passes isAvailable (overlap) but fails here (exact).
+        return repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
+                .isPresent();
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
@@ -135,7 +157,7 @@ public class AvailabilityService implements AvailabilityPort {
     @Observed(name = "availability.timeoff.create")
     public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
         ProviderTimeOff saved = timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
-        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
         return saved;
     }
 
@@ -145,7 +167,7 @@ public class AvailabilityService implements AvailabilityPort {
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
                 .orElseThrow(() -> new ConflictException("No available slot for provider " + providerId));
         slot.markBooked();
-        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
     }
 
     @Override
@@ -153,6 +175,6 @@ public class AvailabilityService implements AvailabilityPort {
         repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt)
                 .ifPresent(AvailabilitySlot::markAvailable);
-        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_CACHE_NAMES));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
     }
 }

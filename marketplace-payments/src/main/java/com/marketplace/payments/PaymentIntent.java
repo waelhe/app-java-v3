@@ -139,4 +139,15 @@ public class PaymentIntent extends BaseEntity {
         this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;
         this.refundedAmountCents += refundAmountCents;
     }
+
+    /**
+     * L19: partial refund whose amount is the remote provider's cumulative
+     * actual — SET (not summed) to the remote total, mirroring
+     * {@code Payment.markPartiallyRefundedTotal}.
+     */
+    public void markPartiallyRefundedTotal(long refundedTotalCents) {
+        this.status.validateTransitionTo(PaymentIntentStatus.PARTIALLY_REFUNDED);
+        this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;
+        this.refundedAmountCents = refundedTotalCents;
+    }
 }
