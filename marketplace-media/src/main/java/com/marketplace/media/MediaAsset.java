@@ -60,6 +60,16 @@ public class MediaAsset extends BaseEntity {
     @Column(name = "position", nullable = false)
     private Integer position;
 
+    /**
+     * L28 (feature-expansion roadmap §5): the deterministic thumbnail key
+     * {@code {objectKey}/thumb} once background processing has run. NULL =
+     * processing pending (or failed and awaiting the documented resubmission
+     * retry); non-null and equal to {@code objectKey} = non-processable or
+     * already-small original — the thumbnail IS the original by design.
+     */
+    @Column(name = "thumb_object_key", length = 500)
+    private String thumbObjectKey;
+
     protected MediaAsset() {
     }
 
@@ -94,6 +104,15 @@ public class MediaAsset extends BaseEntity {
         this.status = MediaAssetStatus.UPLOADED;
     }
 
+    /**
+     * L28: pins the thumbnail key after processing — write-once: an existing
+     * value makes the whole processing idempotent (the listener re-running
+     * after a resubmission must not re-store or flip the pointer).
+     */
+    public void recordThumbKey(String thumbKey) {
+        this.thumbObjectKey = thumbKey;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getListingId() { return listingId; }
@@ -103,4 +122,5 @@ public class MediaAsset extends BaseEntity {
     public Long getSizeBytes() { return sizeBytes; }
     public MediaAssetStatus getStatus() { return status; }
     public Integer getPosition() { return position; }
+    public String getThumbObjectKey() { return thumbObjectKey; }
 }

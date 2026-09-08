@@ -49,7 +49,7 @@ class MediaControllerTest {
         UUID id = UUID.randomUUID();
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
         var view = new MediaService.MediaAssetView(id, UUID.randomUUID(), "image/jpeg", 1L,
-                "UPLOADED", 1, "https://u", null);
+                "UPLOADED", 1, "https://u", null, null);
         when(mediaService.confirmUpload(id, auth)).thenReturn(view);
 
         assertEquals(HttpStatus.OK, controller.confirmUpload(id, auth).getStatusCode());

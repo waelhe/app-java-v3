@@ -33,7 +33,7 @@ class MediaConfigProdInsecureEndpointGuardTest {
         return new MediaProperties(
                 new MediaProperties.Storage("https://media.example.local", "auto", "b", "ak", "sk", allowInsecure),
                 new MediaProperties.Limits(10_485_760L, java.util.Set.of("image/jpeg"),
-                        Duration.ofMinutes(15)));
+                        Duration.ofMinutes(15), 640));
     }
 
     @Test

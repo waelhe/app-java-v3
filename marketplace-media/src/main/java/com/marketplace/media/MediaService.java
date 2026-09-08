@@ -2,6 +2,7 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.MediaUploadedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
@@ -10,6 +11,7 @@ import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -59,19 +61,22 @@ public class MediaService {
     private final ListingPriceProvider listingPriceProvider;
     private final ProviderLookupPort providerLookupPort;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public MediaService(MediaAssetRepository mediaAssetRepository,
                         ObjectProvider<S3MediaStorage> storage,
                         MediaProperties properties,
                         ListingPriceProvider listingPriceProvider,
                         ProviderLookupPort providerLookupPort,
-                        CurrentUserProvider currentUserProvider) {
+                        CurrentUserProvider currentUserProvider,
+                        ApplicationEventPublisher eventPublisher) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.storage = storage;
         this.properties = properties;
         this.listingPriceProvider = listingPriceProvider;
         this.providerLookupPort = providerLookupPort;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -111,8 +116,11 @@ public class MediaService {
 
     /**
      * Confirms an upload: verifies via HeadObject that the object exists with
-     * exactly the declared type and size, then moves the asset to UPLOADED.
-     * A failed verification leaves the asset PENDING — confirmable again.
+     * exactly the declared type and size, then moves the asset to UPLOADED
+     * and publishes {@link MediaUploadedEvent} (L28) — the thumbnail pipeline
+     * listens AFTER_COMMIT, so the event only exists once this state is
+     * durable. A failed verification leaves the asset PENDING — confirmable
+     * again.
      */
     @Observed(name = "media.upload.confirm")
     @PreAuthorize("hasRole('PROVIDER')")
@@ -127,12 +135,15 @@ public class MediaService {
                     "Object not found in storage (or type/size mismatch) for media: " + mediaId);
         }
         asset.markUploaded();
+        eventPublisher.publishEvent(new MediaUploadedEvent(asset.getId()));
         return toView(asset, s3.presignDownload(asset.getObjectKey()));
     }
 
     /**
      * Read path: presigned GET URLs for every UPLOADED asset of the listing,
-     * in display order. Presigning is local computation — no cache, no network.
+     * in display order — original plus thumbnail (L28). The thumbnail link
+     * is null until background processing has run; clients fall back to the
+     * original. Presigning is local computation — no cache, no network.
      */
     @Transactional(readOnly = true)
     public List<MediaAssetView> listByListing(UUID listingId) {
@@ -140,17 +151,22 @@ public class MediaService {
         return mediaAssetRepository
                 .findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED)
                 .stream()
-                .map(asset -> toView(asset, s3.presignDownload(asset.getObjectKey())))
+                .map(asset -> toView(asset,
+                        s3.presignDownload(asset.getObjectKey()),
+                        asset.getThumbObjectKey() == null
+                                ? null
+                                : s3.presignDownload(asset.getThumbObjectKey())))
                 .toList();
     }
 
     /**
-     * Soft-deletes the asset record and best-effort removes the storage object
-     * — only AFTER the database delete commits (CodeRabbit #241): the
-     * repository delete is just scheduled until commit, so removing the object
-     * first would leave the row pointing at a vanished object whenever the
-     * transaction rolls back. A storage-side removal failure is logged, never
-     * fatal — bucket lifecycle rules own orphans.
+     * Soft-deletes the asset record and best-effort removes the storage
+     * objects (original + thumbnail) — only AFTER the database delete
+     * commits (CodeRabbit #241): the repository delete is just scheduled
+     * until commit, so removing the object first would leave the row
+     * pointing at a vanished object whenever the transaction rolls back.
+     * A storage-side removal failure is logged, never fatal — bucket
+     * lifecycle rules own orphans.
      */
     @Observed(name = "media.asset.delete")
     @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
@@ -161,16 +177,28 @@ public class MediaService {
 
         mediaAssetRepository.delete(asset);
         String objectKey = asset.getObjectKey();
+        String thumbKey = asset.getThumbObjectKey();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    removeStorageObject(s3, objectKey);
+                    removeStorageObjects(s3, objectKey, thumbKey);
                 }
             });
         } else {
             // No active transaction (unit tests) — remove immediately.
-            removeStorageObject(s3, objectKey);
+            removeStorageObjects(s3, objectKey, thumbKey);
+        }
+    }
+
+    /**
+     * L28: removes the original and — when a distinct thumbnail object
+     * exists — the thumbnail. Same best-effort contract as the original.
+     */
+    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String thumbKey) {
+        removeStorageObject(s3, objectKey);
+        if (thumbKey != null && !thumbKey.equals(objectKey)) {
+            removeStorageObject(s3, thumbKey);
         }
     }
 
@@ -187,6 +215,68 @@ public class MediaService {
     public MediaAsset getById(UUID id) {
         return mediaAssetRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + id));
+    }
+
+    /**
+     * L28 (feature-expansion roadmap §5): the thumbnail pipeline's core —
+     * invoked by {@link MediaThumbnailListener} AFTER the confirm transaction
+     * committed. Deliberately NOT {@code @PreAuthorize}-guarded: it is an
+     * internal command with no caller authentication context (the async
+     * listener thread) — the ownership was already enforced on the confirm
+     * call that published the event.
+     *
+     * <p>Decision matrix (the roadmap's acceptance criteria, made explicit):
+     * <ul>
+     *   <li>already processed ({@code thumbObjectKey != null}) — idempotent
+     *       return (a resubmission re-run stores nothing twice);</li>
+     *   <li>JPEG/PNG wider than {@code thumbMaxWidth} — fetch, scale, store
+     *       under the deterministic {@code {objectKey}/thumb}, pin the key;</li>
+     *   <li>JPEG/PNG already within the bound — thumb = original (no
+     *       duplicate object);</li>
+     *   <li>any other allowlisted MIME (webp has no JDK ImageIO writer, gif
+     *       would collapse to a static frame) — thumb = original, by design
+     *       (roadmap acceptance 4).</li>
+     * </ul>
+     * A processing failure (unreadable bytes, storage error) propagates — the
+     * Modulith publication goes FAILED and the documented resubmission
+     * machinery retries it later (debt D3: bounded, logged, no silent drop);
+     * the upload itself already succeeded and stays UPLOADED.
+     */
+    @Observed(name = "media.thumbnail.process")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void processThumbnail(UUID mediaId) {
+        S3MediaStorage s3 = requireStorage();
+        MediaAsset asset = getById(mediaId);
+        if (asset.getThumbObjectKey() != null) {
+            // Idempotent: a resubmission re-running the listener must not
+            // re-store the object or flip the pointer.
+            return;
+        }
+        String thumbKey = asset.getObjectKey() + "/thumb";
+        if (Thumbnails.isProcessable(asset.getContentType())) {
+            byte[] original = s3.getObject(asset.getObjectKey());
+            try {
+                byte[] scaled = Thumbnails.scaleToMaxWidth(
+                        original, properties.limits().thumbMaxWidth(), asset.getContentType());
+                if (scaled != null) {
+                    s3.putObject(thumbKey, asset.getContentType(), scaled);
+                    asset.recordThumbKey(thumbKey);
+                } else {
+                    // Already within the width bound — no duplicate object.
+                    asset.recordThumbKey(asset.getObjectKey());
+                }
+            } catch (java.io.IOException ex) {
+                // Unreadable image bytes — a processing failure by contract
+                // (publication FAILED, retried; the original stays UPLOADED).
+                throw new IllegalStateException(
+                        "Thumbnail processing failed for media " + mediaId + ": " + ex.getMessage(), ex);
+            }
+        } else {
+            // webp/gif (or future allowlist additions without a JDK writer):
+            // the thumbnail IS the original — documented, no failure.
+            asset.recordThumbKey(asset.getObjectKey());
+        }
+        mediaAssetRepository.save(asset);
     }
 
     private S3MediaStorage requireStorage() {
@@ -252,7 +342,19 @@ public class MediaService {
         return "listings/" + listingId + "/" + UUID.randomUUID() + "." + extension;
     }
 
+    /**
+     * Confirm-time view: the thumbnail has not been processed yet (the
+     * listener runs AFTER_COMMIT) — {@code thumbUrl} is null by contract.
+     */
     private MediaAssetView toView(MediaAsset asset, String downloadUrl) {
+        return toView(asset, downloadUrl, null);
+    }
+
+    /**
+     * L28: the read-side view carries both links — original plus thumbnail
+     * (null until processing has run; equal URLs when thumb = original).
+     */
+    private MediaAssetView toView(MediaAsset asset, String downloadUrl, String thumbUrl) {
         return new MediaAssetView(
                 asset.getId(),
                 asset.getListingId(),
@@ -261,6 +363,7 @@ public class MediaService {
                 asset.getStatus().name(),
                 asset.getPosition(),
                 downloadUrl,
+                thumbUrl,
                 asset.getCreatedAt()
         );
     }
@@ -269,13 +372,60 @@ public class MediaService {
      * Response of {@link #requestUpload} — everything a client needs to upload
      * directly to storage.
      */
-    public record MediaUploadView(UUID mediaId, String objectKey, String uploadUrl,
-                                  java.time.Duration urlLifetime) {}
+    @io.swagger.v3.oas.annotations.media.Schema(
+            description = "Presigned upload response — the client PUTs its bytes to uploadUrl with the "
+                    + "declared Content-Type, then calls the complete endpoint")
+    public record MediaUploadView(
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The persisted media asset id",
+                    example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
+            UUID mediaId,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Server-generated object key",
+                    example = "listings/7c9e6679-7425-40de-944b-e07fc1f90ae7/1b2c3d4e-....jpg")
+            String objectKey,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Presigned PUT URL (the TTL is urlLifetime)",
+                    example = "https://bucket.r2.cloudflarestorage.com/listings/...?X-Amz-Signature=...")
+            String uploadUrl,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "How long the presigned URL stays valid",
+                    example = "PT15M")
+            java.time.Duration urlLifetime) {}
 
     /**
-     * Read/confirm response — the presigned GET URL is freshly signed per call.
+     * Read/confirm response — the presigned GET URLs are freshly signed per
+     * call. L28: {@code thumbUrl} is null until background processing has
+     * run (fall back to {@code downloadUrl}); it equals {@code downloadUrl}
+     * when the thumbnail is the original by design.
      */
-    public record MediaAssetView(UUID id, UUID listingId, String contentType, long sizeBytes,
-                                 String status, int position, String downloadUrl,
-                                 java.time.Instant createdAt) {}
+    @io.swagger.v3.oas.annotations.media.Schema(
+            description = "Media asset with presigned read links — original plus thumbnail when processed")
+    public record MediaAssetView(
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The media asset id",
+                    example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
+            UUID id,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The listing this asset belongs to",
+                    example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+            UUID listingId,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Image content type",
+                    example = "image/jpeg")
+            String contentType,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Object size in bytes",
+                    example = "418381")
+            long sizeBytes,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Asset lifecycle status",
+                    example = "UPLOADED")
+            String status,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Display order within the listing (1-based)",
+                    example = "1")
+            int position,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Presigned GET URL of the original object",
+                    example = "https://bucket.r2.cloudflarestorage.com/listings/...?X-Amz-Signature=...")
+            String downloadUrl,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Presigned GET URL of the thumbnail — "
+                    + "null until processing completes (L28), equal to downloadUrl when the "
+                    + "thumbnail is the original by design",
+                    nullable = true,
+                    example = "https://bucket.r2.cloudflarestorage.com/listings/.../thumb?X-Amz-Signature=...")
+            String thumbUrl,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Creation timestamp",
+                    example = "2026-10-01T12:00:00Z")
+            java.time.Instant createdAt) {}
 }

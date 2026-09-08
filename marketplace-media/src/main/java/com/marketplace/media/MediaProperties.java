@@ -59,6 +59,14 @@ public record MediaProperties(
              * URLs. Official bounds: 1 second to 7 days (R2 doc + S3Presigner
              * javadoc, "cannot be longer than 7 days").
              */
-            @DefaultValue("15m") Duration presignTtl
+            @DefaultValue("15m") Duration presignTtl,
+            /**
+             * L28 (feature-expansion roadmap §5): the maximum width in pixels of
+             * the generated thumbnail — environment-tunable per the roadmap
+             * ("مفتاح جديد قابل للبيئة"). JPEG/PNG sources wider than this are
+             * scaled down (aspect preserved); anything narrower keeps the
+             * original as its own thumbnail (no duplicate stored).
+             */
+            @DefaultValue("640") int thumbMaxWidth
     ) {}
 }

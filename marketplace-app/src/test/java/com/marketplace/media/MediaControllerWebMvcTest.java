@@ -104,7 +104,7 @@ class MediaControllerWebMvcTest {
         when(mediaService.confirmUpload(eq(id), any()))
                 .thenReturn(new MediaService.MediaAssetView(
                         id, UUID.randomUUID(), "image/jpeg", 1024L, "UPLOADED", 1,
-                        "https://signed-get", null));
+                        "https://signed-get", null, null));
 
         mockMvc.perform(post("/api/v1/media/{id}/complete", id))
                 .andExpect(status().isOk())

@@ -73,6 +73,22 @@ class MediaUploadFlowIntegrationTest {
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
     }
 
+    /**
+     * L28: a small (320×200) valid JPEG — within the default 640 bound, so
+     * the thumbnail pipeline keeps the original as its own thumb.
+     */
+    private static byte[] smallJpeg() {
+        try {
+            java.awt.image.BufferedImage image =
+                    new java.awt.image.BufferedImage(320, 200, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "jpeg", out);
+            return out.toByteArray();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("test fixture failed to encode a JPEG", ex);
+        }
+    }
+
     @Test
     void requestConfirmListDelete_fullLifecycle() {
         UUID userId = UUID.randomUUID();
@@ -84,6 +100,11 @@ class MediaUploadFlowIntegrationTest {
         when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(true);
         when(storage.presignDownload(anyString()))
                 .thenReturn("https://storage.example/signed-get");
+        // L28: the confirm call now publishes MediaUploadedEvent — the async
+        // listener will fetch the object; stub it with a small valid JPEG so
+        // the background pipeline succeeds quietly (no duplicate stored,
+        // thumb = original within the bound).
+        when(storage.getObject(anyString())).thenReturn(smallJpeg());
 
         // 1) request: row persisted PENDING with server-generated key
         var view = mediaService.requestUpload(listingId, "image/jpeg", 2048L, null);
@@ -96,17 +117,31 @@ class MediaUploadFlowIntegrationTest {
         assertThat(persisted.getListingId()).isEqualTo(listingId);
         assertThat(persisted.getPosition()).isEqualTo(1);
 
-        // 2) confirm: verified by storage, transitions to UPLOADED
+        // 2) confirm: verified by storage, transitions to UPLOADED — the
+        // response's thumbUrl is null by contract (the listener runs AFTER_COMMIT)
         var confirmed = mediaService.confirmUpload(view.mediaId(), null);
         assertThat(confirmed.status()).isEqualTo("UPLOADED");
         assertThat(confirmed.downloadUrl()).isEqualTo("https://storage.example/signed-get");
+        assertThat(confirmed.thumbUrl()).isNull();
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow().getStatus())
                 .isEqualTo(MediaAssetStatus.UPLOADED);
 
-        // 3) read path: only UPLOADED assets, presigned per call
+        // 3) read path: only UPLOADED assets, presigned per call — thumbUrl
+        // still null until processing runs (L28)
         var listing = mediaService.listByListing(listingId);
         assertThat(listing).hasSize(1);
         assertThat(listing.get(0).id()).isEqualTo(view.mediaId());
+        assertThat(listing.get(0).thumbUrl()).isNull();
+
+        // 3b) L28: process the thumbnail (the listener's command, called
+        // directly for determinism) — the small original keeps itself as
+        // thumb, and the read then returns both links.
+        mediaService.processThumbnail(view.mediaId());
+        var afterProcessing = mediaService.listByListing(listingId);
+        assertThat(afterProcessing.get(0).thumbUrl())
+                .isEqualTo("https://storage.example/signed-get");
+        assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow()
+                .getThumbObjectKey()).isEqualTo(view.objectKey());
 
         // 4) delete: soft-deleted record, storage object removed best-effort
         mediaService.delete(view.mediaId(), null);
