@@ -1,13 +1,16 @@
 package com.marketplace.config;
 
+import com.marketplace.identity.User;
+import com.marketplace.identity.UserRepository;
+import com.marketplace.identity.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -15,7 +18,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +44,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * calibration would otherwise break them); the timeout 0 matches the
  * fail-fast production design for write endpoints (no queueing).
  *
+ * <p>Requests authenticate the way the real public client does — a JWT on
+ * the resource-server surface. The {@code jwt()} request post-processor
+ * places the {@code JwtAuthenticationToken} the resource server produces,
+ * and a user row for the subject exists (the identity provider resolves the
+ * user by subject — the first diagnostic round proved the @WithMockUser
+ * token type is rejected with "Unsupported authentication type" before any
+ * business logic, which is itself the honest contract of
+ * {@code IdentityUserProvider}); the authorities come from the post-
+ * processor per test, mirroring the converter's claim mapping.
+ *
  * <p>Request bodies are well-formed on purpose: {@code @Valid} rejects
  * malformed bodies during argument resolution — BEFORE the controller
  * method (and the limiter) runs — so an invalid first call would consume
@@ -63,8 +75,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class RateLimitProblemDetailIntegrationTest {
 
+    /** The JWT subject all three tests authenticate as (user row below). */
+    private static final String TEST_SUBJECT = "rate-limit-contract-test-subject";
+
     @Autowired
     private WebApplicationContext wac;
+
+    @Autowired
+    private UserRepository userRepository;
 
     private MockMvc mockMvc;
 
@@ -74,11 +92,16 @@ class RateLimitProblemDetailIntegrationTest {
                 .webAppContextSetup(wac)
                 .apply(SecurityMockMvcConfigurers.springSecurity())
                 .build();
+        // The identity provider resolves the user id by JWT subject — the
+        // row must exist for the business logic to reach its domain answer
+        // (404 unknown listing/booking) instead of failing at the user lookup.
+        userRepository.findBySubject(TEST_SUBJECT)
+                .orElseGet(() -> userRepository.save(User.create(
+                        TEST_SUBJECT, "rate-limit@test.local", "Rate Limit Contract", UserRole.CONSUMER)));
     }
 
     @Test
     @DisplayName("bookingCreate: second call inside the window answers 429 RL-001 problem+json")
-    @WithMockUser(roles = "CONSUMER")
     void bookingCreate_secondCallIsRateLimited() throws Exception {
         String body = """
                 {
@@ -92,19 +115,19 @@ class RateLimitProblemDetailIntegrationTest {
         // First call: the business logic itself answers (unknown listing → 404
         // NF-001) — the limiter must not mask the domain answer.
         mockMvc.perform(post("/api/v1/bookings")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_CONSUMER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
-                .andDo(result -> { // TEMP: full stack of the resolved exception
-                    if (result.getResolvedException() != null) {
-                        result.getResolvedException().printStackTrace();
-                    }
-                })
                 .andExpect(status().isNotFound());
 
         // Second call inside the 60s window: limiter rejection BEFORE any
         // business code, with the documented problem contract.
         mockMvc.perform(post("/api/v1/bookings")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_CONSUMER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isTooManyRequests())
@@ -122,7 +145,6 @@ class RateLimitProblemDetailIntegrationTest {
 
     @Test
     @DisplayName("reviewCreate: second call inside the window answers 429 RL-001 problem+json")
-    @WithMockUser(roles = "CONSUMER")
     void reviewCreate_secondCallIsRateLimited() throws Exception {
         String body = """
                 {
@@ -133,17 +155,17 @@ class RateLimitProblemDetailIntegrationTest {
                 """;
 
         mockMvc.perform(post("/api/v1/reviews")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_CONSUMER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
-                .andDo(result -> { // TEMP: full stack of the resolved exception
-                    if (result.getResolvedException() != null) {
-                        result.getResolvedException().printStackTrace();
-                    }
-                })
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/reviews")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_CONSUMER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isTooManyRequests())
@@ -159,7 +181,6 @@ class RateLimitProblemDetailIntegrationTest {
 
     @Test
     @DisplayName("mediaUpload: second call inside the window answers 429 RL-001 problem+json")
-    @WithMockUser(roles = "PROVIDER")
     void mediaUpload_secondCallIsRateLimited() throws Exception {
         String body = """
                 {
@@ -172,11 +193,17 @@ class RateLimitProblemDetailIntegrationTest {
         // First call: storage is unconfigured in the test profile → the
         // documented 503 SU-001 (the module's inert-by-design answer).
         mockMvc.perform(post("/api/v1/media/uploads")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_PROVIDER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isServiceUnavailable());
 
         mockMvc.perform(post("/api/v1/media/uploads")
+                        .with(SecurityMockMvcRequestPostProcessors.jwt()
+                                .jwt(j -> j.subject(TEST_SUBJECT))
+                                .authorities(new SimpleGrantedAuthority("ROLE_PROVIDER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isTooManyRequests())
