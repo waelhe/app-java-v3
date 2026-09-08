@@ -496,6 +496,25 @@ public class SecurityConfig {
         return decoder;
     }
 
+    /**
+     * Enforces the JWT audience contract per RFC 7519 §4.1.3:
+     * <blockquote>
+     * "The 'aud' (audience) claim identifies the recipients that the JWT is
+     * intended for. Each principal intended to process the JWT MUST identify
+     * itself with a value in the audience claim. If the principal processing
+     * the claim does not identify itself with a value in the 'aud' claim when
+     * this claim is present, then the JWT MUST be rejected."
+     * </blockquote>
+     *
+     * <p>The spec's check is "the principal finds ITS OWN identifier among
+     * {@code aud}" — for a single configured audience ({@code marketplace-api})
+     * {@code anyMatch} is exactly {@code contains}, and it stays the correct
+     * form if the configured list ever grows (each token is accepted when it
+     * names this resource server among its recipients). A strict
+     * {@code allMatch} would deviate from the RFC by demanding the token name
+     * every configured audience. (codex-review-fixes-plan A8: document, do not
+     * change.)
+     */
     private static OAuth2TokenValidator<Jwt> requiredAudiencesValidator(List<String> audiences) {
         return jwt -> jwt.getAudience() != null && jwt.getAudience().stream().anyMatch(audiences::contains)
                 ? OAuth2TokenValidatorResult.success()

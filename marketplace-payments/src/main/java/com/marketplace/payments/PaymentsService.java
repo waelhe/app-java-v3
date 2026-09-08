@@ -88,12 +88,12 @@ public class PaymentsService implements PaymentsSpi {
      * channel itself (Stripe: SDK constructEvent with DEFAULT_TOLERANCE), so
      * only deduplication and dispatch remain. The event row is inserted and
      * committed FIRST (in its own transaction, {@link WebhookEventRecorder})
-     * — the unique event_id index is the serialization point, so a concurrent
-     * delivery of the same event loses cleanly here and is answered as
-     * already-processed instead of failing later with a 5xx (CodeRabbit
-     * #241). A dispatch that fails rolls this transaction back AND removes
-     * the committed row, so the provider's retry re-processes the event
-     * instead of hitting the dedup gate forever.
+     * — the unique (provider, event_id) index is the serialization point, so a
+     * concurrent delivery of the same event loses cleanly here and is answered
+     * as already-processed instead of failing later with a 5xx (CodeRabbit
+     * #241, B5 provider-scoped). A dispatch that fails rolls this transaction
+     * back AND removes the committed row, so the provider's retry re-processes
+     * the event instead of hitting the dedup gate forever.
      */
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId) {
@@ -108,7 +108,7 @@ public class PaymentsService implements PaymentsSpi {
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId,
                                   PspChannel.RefundSnapshot refund) {
-        if (webhookEventRepository.findByEventId(eventId).isPresent()) {
+        if (webhookEventRepository.findByProviderAndEventId(provider, eventId).isPresent()) {
             return false;
         }
         try {
@@ -119,9 +119,9 @@ public class PaymentsService implements PaymentsSpi {
             // provider/eventId/eventType on the legacy route makes the insert
             // fail on column limits — that is NOT "already processed", and
             // acknowledging it with 200 would swallow the event). Only a row
-            // that actually exists under this eventId is the concurrent
-            // duplicate; anything else must surface.
-            if (webhookEventRepository.findByEventId(eventId).isEmpty()) {
+            // that actually exists under this provider+eventId is the
+            // concurrent duplicate; anything else must surface.
+            if (webhookEventRepository.findByProviderAndEventId(provider, eventId).isEmpty()) {
                 throw ex;
             }
             log.info("Webhook event {} concurrently recorded by another delivery — answering already-processed: {}",
@@ -135,7 +135,7 @@ public class PaymentsService implements PaymentsSpi {
             // so the provider retry re-processes instead of being deduplicated
             // against a tombstone (recorded-and-lost).
             try {
-                webhookEventRecorder.delete(eventId);
+                webhookEventRecorder.delete(provider, eventId);
             } catch (RuntimeException cleanupEx) {
                 // Never mask the ORIGINAL dispatch failure — but the surviving
                 // dedup row would acknowledge the provider's retry without

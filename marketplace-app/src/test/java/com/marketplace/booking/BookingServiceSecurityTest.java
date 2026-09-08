@@ -93,6 +93,7 @@ class BookingServiceSecurityTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
         when(availabilityPort.isAvailable(providerId, startsAt, endsAt)).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, startsAt, endsAt)).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Booking result = bookingService.create(consumerId, listingId, startsAt, endsAt, "notes");

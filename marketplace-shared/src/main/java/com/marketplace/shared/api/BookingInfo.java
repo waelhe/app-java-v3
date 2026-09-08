@@ -16,7 +16,10 @@ public record BookingInfo(
 ) {
 
     public BookingInfo {
-        if (priceCents == null || priceCents <= 0) {
+        // The catalog schema (V2__catalog.sql) allows price_cents >= 0 — a zero
+        // price is a free listing, not an invalid booking. Only a negative
+        // price is unreachable through the schema's CHECK and rejected here.
+        if (priceCents == null || priceCents < 0) {
             throw new IllegalStateException("Booking has invalid price: " + priceCents + " cents");
         }
         if (currency == null || currency.isBlank()) {

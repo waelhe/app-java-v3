@@ -79,6 +79,16 @@ public class AvailabilityService implements AvailabilityPort {
         return slotAvailable && !hasTimeOffConflict;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasExactAvailableSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+        // Same lookup as bookSlot (findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse)
+        // so create() rejects a window that confirm() could never book — the
+        // sub-window case passes isAvailable (overlap) but fails here (exact).
+        return repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
+                .isPresent();
+    }
+
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     public ProviderAvailabilityRule createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
         return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));

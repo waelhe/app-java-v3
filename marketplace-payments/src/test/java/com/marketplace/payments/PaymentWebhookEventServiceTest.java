@@ -29,7 +29,7 @@ class PaymentWebhookEventServiceTest {
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
-        when(webhookRepository.findByEventId("evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
+        when(webhookRepository.findByProviderAndEventId("mock", "evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
         boolean created = service.processWebhookEvent("mock", "evt_1", "payment_intent.succeeded", "sig");
 
@@ -40,8 +40,9 @@ class PaymentWebhookEventServiceTest {
     @Test
     void concurrentDuplicateInsertIsAnsweredAlreadyProcessedNever5xx() {
         // CodeRabbit #241: two concurrent deliveries of the same event both
-        // pass the findByEventId lookup; the unique event_id index must make
-        // the recorder's insert the serialization point — the loser is
+        // pass the provider-scoped findByProviderAndEventId lookup (B5); the
+        // composite UNIQUE(provider, event_id) index (V42) must make the
+        // recorder's insert the serialization point — the loser is
         // answered false (already processed, HTTP 200), never a 5xx.
         PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
         PaymentRepository paymentRepository = mock(PaymentRepository.class);
@@ -56,7 +57,7 @@ class PaymentWebhookEventServiceTest {
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
         // Pre-check: absent; post-DIVE re-check: the concurrent winner's row
         // now exists — that (and only that) is the already-processed case.
-        when(webhookRepository.findByEventId("evt_2"))
+        when(webhookRepository.findByProviderAndEventId("mock", "evt_2"))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
@@ -88,7 +89,7 @@ class PaymentWebhookEventServiceTest {
 
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
         // Absent before AND after the failed insert — no concurrent winner.
-        when(webhookRepository.findByEventId("evt_4")).thenReturn(Optional.empty());
+        when(webhookRepository.findByProviderAndEventId("mock", "evt_4")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
                         "value too long for type character varying(100)"));
@@ -114,7 +115,7 @@ class PaymentWebhookEventServiceTest {
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
-        when(webhookRepository.findByEventId("evt_3")).thenReturn(Optional.empty());
+        when(webhookRepository.findByProviderAndEventId("mock", "evt_3")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         // Dispatch fails: confirmIntent cannot find the local intent (an
         // unstubbed Optional-returning mock answers empty).
@@ -124,7 +125,7 @@ class PaymentWebhookEventServiceTest {
                         service.processWebhookEvent("mock", "evt_3", "payment_intent.succeeded", "sig", intentId, null))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         // The compensating delete ran — the retry re-processes the event.
-        verify(webhookRepository).deleteByEventId("evt_3");
+        verify(webhookRepository).deleteByProviderAndEventId("mock", "evt_3");
     }
 
     @Test
@@ -143,15 +144,47 @@ class PaymentWebhookEventServiceTest {
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
         PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
-        when(webhookRepository.findByEventId("evt_5")).thenReturn(Optional.empty());
+        when(webhookRepository.findByProviderAndEventId("mock", "evt_5")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new IllegalStateException("delete failed too"))
-                .when(webhookRepository).deleteByEventId("evt_5");
+                .when(webhookRepository).deleteByProviderAndEventId("mock", "evt_5");
 
         UUID intentId = UUID.randomUUID();
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                         service.processWebhookEvent("mock", "evt_5", "payment_intent.succeeded", "sig", intentId, null))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class)
                 .as("the original dispatch failure, not the cleanup failure");
+    }
+
+    @Test
+    void sameEventIdAcrossProviders_isNotDeduplicated() {
+        // B5 (codex-review-fixes-plan §4): the dedup scope is per provider —
+        // UNIQUE(provider, event_id) (V42). The same event_id under a second
+        // channel is a NEW event and must be processed, not acknowledged as
+        // already-processed.
+        PaymentIntentRepository intentRepository = mock(PaymentIntentRepository.class);
+        PaymentRepository paymentRepository = mock(PaymentRepository.class);
+        PaymentWebhookEventRepository webhookRepository = mock(PaymentWebhookEventRepository.class);
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
+        PaymentWebhookSecurity webhookSecurity = mock(PaymentWebhookSecurity.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
+
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), pspChannel);
+        String sharedEventId = "evt_shared_1";
+        when(webhookRepository.findByProviderAndEventId("stripe", sharedEventId)).thenReturn(Optional.empty());
+        when(webhookRepository.findByProviderAndEventId("adyen", sharedEventId)).thenReturn(Optional.empty());
+        when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean first = service.processWebhookEvent("stripe", sharedEventId, "payment_intent.succeeded", "sig");
+        boolean second = service.processWebhookEvent("adyen", sharedEventId, "payment_intent.succeeded", "sig");
+
+        assertThat(first).isTrue();
+        assertThat(second).as("same event_id under a different provider is a new event (B5)").isTrue();
+        verify(webhookRepository).findByProviderAndEventId("stripe", sharedEventId);
+        verify(webhookRepository).findByProviderAndEventId("adyen", sharedEventId);
+        verify(webhookRepository, times(2)).saveAndFlush(any(PaymentWebhookEvent.class));
     }
 }

@@ -124,6 +124,15 @@ public class BookingService implements BookingSpi {
         if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {
             throw new BadRequestException("The provider is not available at the requested time");
         }
+        if (!availabilityPort.hasExactAvailableSlot(info.providerId(), startsAt, endsAt)) {
+            // codex-review-fixes-plan B4 (Option M): isAvailable() is an overlap
+            // check (search semantics); bookSlot() needs an exact open slot. A
+            // sub-window would pass create and only fail at confirm — reject it
+            // here with an early 400 instead. The gate runs BEFORE the L26
+            // effective-price computation (fail fast — no pricing for a window
+            // confirm could never book).
+            throw new BadRequestException("The requested time window must match an available slot exactly");
+        }
         // L26 (feature-expansion roadmap §5): the booking total is the EFFECTIVE
         // price of the stay window, derived through the pricing module's
         // EffectivePricePort (the roadmap's change contract: BookingService

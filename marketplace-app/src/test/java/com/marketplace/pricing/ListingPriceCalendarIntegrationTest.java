@@ -137,12 +137,15 @@ class ListingPriceCalendarIntegrationTest {
     }
 
     /**
-     * A free slot covering the stay window — the REAL availability path
-     * (V15): booked=false and a strict overlap with [CHECK_IN, CHECK_OUT);
-     * no time-off rows are seeded, so isAvailable answers true. The instants
-     * are passed as {@code Timestamp.from} — the JDBC driver cannot infer
-     * the SQL type of a raw {@code Instant} (the CI round's
-     * BadSqlGrammarException).
+     * A free slot matching the stay window EXACTLY — the REAL availability
+     * path (V15): booked=false with [CHECK_IN, CHECK_OUT); no time-off rows
+     * are seeded, so isAvailable answers true. The exact (not merely
+     * covering) window also satisfies the B4 create() gate
+     * (hasExactAvailableSlot — the bookSlot contract) merged from the
+     * decisions branch: create now rejects a sub-window/covering mismatch
+     * with an early 400. The instants are passed as {@code Timestamp.from}
+     * — the JDBC driver cannot infer the SQL type of a raw {@code Instant}
+     * (the CI round's BadSqlGrammarException).
      */
     private void seedFreeAvailabilitySlot(UUID providerId) {
         jdbc.update("""
@@ -150,8 +153,8 @@ class ListingPriceCalendarIntegrationTest {
                 VALUES (?, ?, ?, ?, FALSE, now(), now(), 0)
                 ON CONFLICT (id) DO NOTHING
                 """, UUID.randomUUID(), providerId,
-                java.sql.Timestamp.from(Instant.parse("2026-01-15T00:00:00Z")),
-                java.sql.Timestamp.from(Instant.parse("2026-01-19T00:00:00Z")));
+                java.sql.Timestamp.from(CHECK_IN),
+                java.sql.Timestamp.from(CHECK_OUT));
     }
 
     private UUID seedVerifiedProviderOwner() {

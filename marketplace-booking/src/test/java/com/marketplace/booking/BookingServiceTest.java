@@ -63,6 +63,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -83,6 +84,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L, "USD"));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -100,6 +102,7 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Booking booking = service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes");
@@ -125,6 +128,11 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, startsAt, endsAt)).thenReturn(true);
+        // B4 (merged on top of L26): create() now also requires an exact open
+        // slot — same stub every other create-path test carries, so the L26
+        // assertion (total = the port's window answer) stays the contract
+        // under test, unaffected by the B4 gate.
+        when(availabilityPort.hasExactAvailableSlot(providerId, startsAt, endsAt)).thenReturn(true);
         when(effectivePricePort.calculateBookingTotalCents(listingId, 5000L, startsAt, endsAt))
                 .thenReturn(17_300L);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -133,6 +141,27 @@ class BookingServiceTest {
 
         assertEquals(17_300L, booking.getPriceCents());
         verify(effectivePricePort).calculateBookingTotalCents(listingId, 5000L, startsAt, endsAt);
+    }
+
+    @Test
+    void create_rejectsWindowThatDoesNotMatchAnExactSlot() {
+        // codex-review-fixes-plan B4 (Option M): isAvailable is an overlap
+        // check; the booking must match an open slot exactly. A sub-window that
+        // is "available" still must not pass create — it would only fail at
+        // confirm's bookSlot. Fail early with BadRequestException (400).
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID listingId = Instancio.create(UUID.class);
+        Instant now = Instant.now();
+
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingInfo(providerId, 5000L));
+        when(availabilityPort.isAvailable(providerId, now, now.plusSeconds(3600))).thenReturn(true);
+        when(availabilityPort.hasExactAvailableSlot(providerId, now, now.plusSeconds(3600))).thenReturn(false);
+
+        assertThrows(BadRequestException.class,
+                () -> service.create(consumerId, listingId, now, now.plusSeconds(3600), "test notes"));
+        verify(bookingRepository, never()).save(any(Booking.class));
     }
 
     @Test
