@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -93,6 +94,7 @@ class RateLimitProblemDetailIntegrationTest {
         mockMvc.perform(post("/api/v1/bookings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
+                .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
                 .andExpect(status().isNotFound());
 
         // Second call inside the 60s window: limiter rejection BEFORE any
@@ -128,6 +130,7 @@ class RateLimitProblemDetailIntegrationTest {
         mockMvc.perform(post("/api/v1/reviews")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
+                .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/reviews")
