@@ -128,6 +128,11 @@ class BookingServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingInfo(providerId, 5000L));
         when(availabilityPort.isAvailable(providerId, startsAt, endsAt)).thenReturn(true);
+        // B4 (merged on top of L26): create() now also requires an exact open
+        // slot — same stub every other create-path test carries, so the L26
+        // assertion (total = the port's window answer) stays the contract
+        // under test, unaffected by the B4 gate.
+        when(availabilityPort.hasExactAvailableSlot(providerId, startsAt, endsAt)).thenReturn(true);
         when(effectivePricePort.calculateBookingTotalCents(listingId, 5000L, startsAt, endsAt))
                 .thenReturn(17_300L);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
