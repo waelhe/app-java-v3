@@ -145,8 +145,17 @@ public class ListingPriceCalendarService {
                                                 long priceCents, Authentication authentication) {
         requireOwnedListing(listingId, authentication);
         SeasonalRate candidate = SeasonalRate.create(listingId, fromDate, toDate, priceCents);
-        assertNoOverlap(listingId, candidate, null);
-        SeasonalRate saved = saveSeasonalRate(candidate);
+        SeasonalRate saved;
+        try {
+            assertNoOverlap(listingId, candidate, null);
+            saved = seasonalRateRepository.save(candidate);
+            // Force the INSERT (and the exclusion-constraint check) INSIDE
+            // this frame — a deferred flush would raise the violation at
+            // COMMIT time, past the translation seam.
+            seasonalRateRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw overlapConflictOrRethrow(ex, listingId);
+        }
         eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
         return toSeasonalRateResponse(saved);
     }
@@ -164,8 +173,18 @@ public class ListingPriceCalendarService {
                 .filter(r -> listingId.equals(r.getListingId()))
                 .orElseThrow(() -> new ResourceNotFoundException("SeasonalRate", rateId));
         rate.change(fromDate, toDate, priceCents);
-        assertNoOverlap(listingId, rate, rateId);
-        SeasonalRate saved = saveSeasonalRate(rate);
+        SeasonalRate saved;
+        try {
+            // The walk's SELECT AUTO-FLUSHES the dirty UPDATE first
+            // (FlushMode.AUTO: a query over the same table flushes pending
+            // changes) — the constraint can therefore fire at the WALK, not
+            // only at the save; both sit inside the translation frame.
+            assertNoOverlap(listingId, rate, rateId);
+            saved = seasonalRateRepository.save(rate);
+            seasonalRateRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw overlapConflictOrRethrow(ex, listingId);
+        }
         eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
         return toSeasonalRateResponse(saved);
     }
@@ -201,23 +220,20 @@ public class ListingPriceCalendarService {
     }
 
     /**
-     * Persists a seasonal range, translating a violation of the V41 live-range
-     * EXCLUDE constraint (the race backstop — a concurrent writer committed
-     * an overlapping live range between our walk and our flush) into the same
-     * 409 ConflictException the sequential rejection answers with. Any OTHER
-     * integrity violation (a different constraint) surfaces unchanged — the
-     * translation must not mask unrelated database errors.
+     * Persists nothing by itself — the translation seam: a violation of the
+     * V41 live-range EXCLUDE constraint (the race backstop — a concurrent
+     * writer committed an overlapping live range between our walk and our
+     * flush, or the AUTO-FLUSH of a dirty update hit it at the walk) becomes
+     * the SAME 409 ConflictException the sequential rejection answers with.
+     * Any OTHER integrity violation (a different constraint) is rethrown
+     * unchanged — the translation must not mask unrelated database errors.
      */
-    private SeasonalRate saveSeasonalRate(SeasonalRate rate) {
-        try {
-            return seasonalRateRepository.save(rate);
-        } catch (DataIntegrityViolationException ex) {
-            if (ex.getCause() instanceof ConstraintViolationException violation
-                    && LIVE_RANGE_EXCLUSION_CONSTRAINT.equals(violation.getConstraintName())) {
-                throw SeasonalRate.overlapConflict(rate.getListingId());
-            }
-            throw ex;
+    private RuntimeException overlapConflictOrRethrow(DataIntegrityViolationException ex, UUID listingId) {
+        if (ex.getCause() instanceof ConstraintViolationException violation
+                && LIVE_RANGE_EXCLUSION_CONSTRAINT.equals(violation.getConstraintName())) {
+            return SeasonalRate.overlapConflict(listingId);
         }
+        return ex;
     }
 
     /**

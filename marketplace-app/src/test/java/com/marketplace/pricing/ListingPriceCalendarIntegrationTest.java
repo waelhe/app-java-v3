@@ -139,7 +139,10 @@ class ListingPriceCalendarIntegrationTest {
     /**
      * A free slot covering the stay window — the REAL availability path
      * (V15): booked=false and a strict overlap with [CHECK_IN, CHECK_OUT);
-     * no time-off rows are seeded, so isAvailable answers true.
+     * no time-off rows are seeded, so isAvailable answers true. The instants
+     * are passed as {@code Timestamp.from} — the JDBC driver cannot infer
+     * the SQL type of a raw {@code Instant} (the CI round's
+     * BadSqlGrammarException).
      */
     private void seedFreeAvailabilitySlot(UUID providerId) {
         jdbc.update("""
@@ -147,7 +150,8 @@ class ListingPriceCalendarIntegrationTest {
                 VALUES (?, ?, ?, ?, FALSE, now(), now(), 0)
                 ON CONFLICT (id) DO NOTHING
                 """, UUID.randomUUID(), providerId,
-                Instant.parse("2026-01-15T00:00:00Z"), Instant.parse("2026-01-19T00:00:00Z"));
+                java.sql.Timestamp.from(Instant.parse("2026-01-15T00:00:00Z")),
+                java.sql.Timestamp.from(Instant.parse("2026-01-19T00:00:00Z")));
     }
 
     private UUID seedVerifiedProviderOwner() {

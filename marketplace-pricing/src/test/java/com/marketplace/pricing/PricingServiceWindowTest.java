@@ -212,7 +212,12 @@ class PricingServiceWindowTest {
         assertThrows(com.marketplace.shared.api.BadRequestException.class,
                 () -> service.calculatePrice(LISTING, BASE, "services", reversedIn, reversedOut));
 
-        // The gate fires before the repository reads — no calendar query happened.
+        // The gate fires before ANY repository read — no calendar query, no
+        // seasonal-rates query, and the tax-rule lookup (which happens only
+        // after the effective total) never started either (CodeRabbit
+        // round 2: the single never() didn't prove the gate precedes them all).
         verify(weekendRuleRepository, never()).findByListingId(any());
+        verify(seasonalRateRepository, never()).findByListingIdOrderByFromDateAsc(any());
+        verify(ruleRepository, never()).findByCategoryAndActiveTrue(any());
     }
 }
