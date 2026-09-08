@@ -13,7 +13,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -52,6 +55,16 @@ import java.util.UUID;
  * <p>Deletion semantics: the {@code BaseEntity} @SoftDelete rule — the
  * row is hidden ({@code is_deleted = true}), never physically removed,
  * and Envers keeps the full revision history (V41 {@code _aud} tables).
+ *
+ * <p>Weekend-rule upsert concurrency (CodeRabbit round 2, the L22
+ * precedent applied): the write runs inside a dedicated
+ * {@code TransactionTemplate(REQUIRES_NEW)} — when two concurrent PUTs
+ * both find no live rule and both try to INSERT, the V41 partial unique
+ * index lets exactly one win; the loser's single bounded retry re-runs in
+ * a FRESH transaction (the failed one already rolled back), finds the
+ * winner's live row, and re-tunes it — the PUT is idempotent, so the
+ * losing request completes as the update it semantically was. A second
+ * race within the retry surfaces as the honest final exception.
  */
 @Service
 @Transactional
@@ -63,6 +76,8 @@ public class ListingPriceCalendarService {
     private final CurrentUserProvider currentUserProvider;
     private final ProviderLookupPort providerLookupPort;
     private final ApplicationEventPublisher eventPublisher;
+    /** The L22 upsert transaction: REQUIRES_NEW, one retry on a lost insert race. */
+    private final TransactionTemplate upsertTransaction;
 
     private static final Set<String> PRICING_CACHE_NAMES = Set.of("pricing-calculations");
 
@@ -71,13 +86,16 @@ public class ListingPriceCalendarService {
                                        ListingPriceProvider listingPriceProvider,
                                        CurrentUserProvider currentUserProvider,
                                        ProviderLookupPort providerLookupPort,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       PlatformTransactionManager transactionManager) {
         this.weekendRuleRepository = weekendRuleRepository;
         this.seasonalRateRepository = seasonalRateRepository;
         this.listingPriceProvider = listingPriceProvider;
         this.currentUserProvider = currentUserProvider;
         this.providerLookupPort = providerLookupPort;
         this.eventPublisher = eventPublisher;
+        this.upsertTransaction = new TransactionTemplate(transactionManager);
+        this.upsertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -102,20 +120,56 @@ public class ListingPriceCalendarService {
      * Upsert: the single weekend rule of the listing — created when absent,
      * re-tuned when present (the partial unique index of V41 keeps exactly
      * one LIVE row; a soft-deleted predecessor never blocks re-creation).
+     * The write runs in its own REQUIRES_NEW transaction with one bounded
+     * retry on a lost insert race (the class javadoc's L22 pattern).
      */
     @Observed(name = "pricing.calendar.weekend.upsert")
     public WeekendRuleResponse upsertWeekendRule(UUID listingId, BigDecimal multiplier,
                                                  Authentication authentication) {
         requireOwnedListing(listingId, authentication);
-        ListingWeekendRule rule = weekendRuleRepository.findByListingId(listingId).orElse(null);
-        if (rule == null) {
-            rule = ListingWeekendRule.create(listingId, multiplier);
-        } else {
-            rule.changeMultiplier(multiplier);
+        try {
+            return upsertWeekendRuleInNewTransaction(listingId, multiplier);
+        } catch (DataIntegrityViolationException lostInsertRace) {
+            if (!isWeekendRuleInsertRace(lostInsertRace)) {
+                throw lostInsertRace;
+            }
+            // A concurrent PUT inserted the single live rule first: the
+            // partial unique index already rolled this inner transaction
+            // back. Retry ONCE in a fresh transaction — the winner's row now
+            // exists, so the same request takes the re-tune path.
+            return upsertWeekendRuleInNewTransaction(listingId, multiplier);
         }
-        ListingWeekendRule saved = weekendRuleRepository.save(rule);
-        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
-        return toWeekendRuleResponse(saved);
+    }
+
+    private WeekendRuleResponse upsertWeekendRuleInNewTransaction(UUID listingId, BigDecimal multiplier) {
+        return upsertTransaction.execute(status -> {
+            ListingWeekendRule rule = weekendRuleRepository.findByListingId(listingId).orElse(null);
+            if (rule == null) {
+                rule = ListingWeekendRule.create(listingId, multiplier);
+            } else {
+                rule.changeMultiplier(multiplier);
+            }
+            ListingWeekendRule saved = weekendRuleRepository.save(rule);
+            // Force the INSERT (and the unique-index check) INSIDE this
+            // frame — a deferred flush would raise the race past the retry.
+            weekendRuleRepository.flush();
+            eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
+            return toWeekendRuleResponse(saved);
+        });
+    }
+
+    /**
+     * The V41 partial unique index's identity — the pair (23505 unique
+     * violation + this index's name in the message); Hibernate 7 leaves
+     * getConstraintName() null (measured live), the SQLState carries the class.
+     */
+    private boolean isWeekendRuleInsertRace(DataIntegrityViolationException ex) {
+        if (ex.getCause() instanceof ConstraintViolationException violation) {
+            return "23505".equals(violation.getSQLState())
+                    && ex.getMessage() != null
+                    && ex.getMessage().contains("uq_listing_weekend_rules_live_listing");
+        }
+        return false;
     }
 
     /**

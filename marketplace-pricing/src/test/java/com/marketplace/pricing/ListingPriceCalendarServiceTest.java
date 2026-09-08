@@ -14,6 +14,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,10 +56,12 @@ class ListingPriceCalendarServiceTest {
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    /** The L22 unit-test convention: a mocked manager lets the REQUIRES_NEW template run callbacks inline. */
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
     private final ListingPriceCalendarService service = new ListingPriceCalendarService(
             weekendRuleRepository, seasonalRateRepository, listingPriceProvider,
-            currentUserProvider, providerLookupPort, eventPublisher);
+            currentUserProvider, providerLookupPort, eventPublisher, transactionManager);
 
     private final Authentication authentication = mock(Authentication.class);
 
@@ -123,6 +126,58 @@ class ListingPriceCalendarServiceTest {
         assertEquals(new BigDecimal("1.2"), response.multiplier());
         assertEquals(LISTING, response.listingId());
         assertEvicted();
+    }
+
+    /**
+     * The weekend-rule INSERT race (CodeRabbit round 2, the L22 precedent):
+     * two concurrent PUTs both find no live rule; the partial unique index
+     * lets one INSERT win — the loser's SINGLE bounded retry re-reads in a
+     * fresh transaction, finds the winner's row, and re-tunes it: the PUT
+     * completes as the update it semantically was.
+     */
+    @Test
+    void upsertWeekendRule_lostInsertRace_retriesOnceAndCompletesAsUpdate() {
+        ListingWeekendRule winner = ListingWeekendRule.create(LISTING, new BigDecimal("1.0"));
+        // First read: no live rule (the race's starting state); after the
+        // failed insert: the winner's row.
+        when(weekendRuleRepository.findByListingId(LISTING))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        String raceMessage = "could not execute statement [ERROR: duplicate key value violates "
+                + "unique constraint \"uq_listing_weekend_rules_live_listing\"\n"
+                + "  Detail: Key (listing_id)=(" + LISTING + ") already exists.]";
+        when(weekendRuleRepository.save(any(ListingWeekendRule.class)))
+                .thenThrow(new DataIntegrityViolationException(raceMessage,
+                        new org.hibernate.exception.ConstraintViolationException(
+                                "could not execute statement",
+                                new java.sql.SQLException(raceMessage, "23505"), null)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        WeekendRuleResponse response = service.upsertWeekendRule(LISTING, new BigDecimal("1.5"), authentication);
+
+        assertEquals(winner.getId(), response.id(), "the retry re-tuned the winner's row");
+        assertEquals(new BigDecimal("1.5"), response.multiplier());
+        assertEvicted();
+    }
+
+    /**
+     * A second race within the retry (the documented L22 boundary) — or an
+     * unrelated integrity violation — surfaces as the honest final
+     * exception, never silently swallowed.
+     */
+    @Test
+    void upsertWeekendRule_secondRaceOrUnrelatedViolation_surfacesHonestly() {
+        when(weekendRuleRepository.findByListingId(LISTING)).thenReturn(Optional.empty());
+        String raceMessage = "could not execute statement [ERROR: duplicate key value violates "
+                + "unique constraint \"uq_listing_weekend_rules_live_listing\"]";
+        DataIntegrityViolationException race = new DataIntegrityViolationException(raceMessage,
+                new org.hibernate.exception.ConstraintViolationException(
+                        "could not execute statement",
+                        new java.sql.SQLException(raceMessage, "23505"), null));
+        when(weekendRuleRepository.save(any(ListingWeekendRule.class))).thenThrow(race);
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> service.upsertWeekendRule(LISTING, new BigDecimal("1.5"), authentication));
     }
 
     @Test
