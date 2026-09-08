@@ -54,6 +54,16 @@ class MediaUploadFlowIntegrationTest {
     @MockitoBean
     S3MediaStorage storage;
 
+    /**
+     * L28: the listener bean is replaced with a mock so the async AFTER_COMMIT
+     * processing never races this test — the pipeline runs via the direct
+     * processThumbnail call in step 3b below (deterministic), and background
+     * listeners can no longer interact with the shared storage mock or trip
+     * optimistic locks on rows this test soft-deletes.
+     */
+    @MockitoBean
+    MediaThumbnailListener thumbnailListener;
+
     @Autowired
     private MediaService mediaService;
 

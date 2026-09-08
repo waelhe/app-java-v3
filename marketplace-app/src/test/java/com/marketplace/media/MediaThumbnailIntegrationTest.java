@@ -71,6 +71,19 @@ class MediaThumbnailIntegrationTest {
     @MockitoBean
     S3MediaStorage storage;
 
+    /**
+     * The listener bean is REPLACED with a mock so the async AFTER_COMMIT
+     * dispatch never races these tests: the pipeline command
+     * (processThumbnail) is invoked directly for determinism, and the
+     * listener's delegation is proven by its own constructed-instance test
+     * below. The dispatch itself (registry, async, REQUIRES_NEW) is
+     * framework-owned machinery — covered by the existing event-publication
+     * integration tests on real Flyway, the house precedent for every other
+     * @ApplicationModuleListener.
+     */
+    @MockitoBean
+    MediaThumbnailListener thumbnailListener;
+
     @Autowired
     private MediaService mediaService;
 
