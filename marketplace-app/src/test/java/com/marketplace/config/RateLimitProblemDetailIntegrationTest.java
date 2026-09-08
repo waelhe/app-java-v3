@@ -95,6 +95,11 @@ class RateLimitProblemDetailIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
+                .andDo(result -> { // TEMP: full stack of the resolved exception
+                    if (result.getResolvedException() != null) {
+                        result.getResolvedException().printStackTrace();
+                    }
+                })
                 .andExpect(status().isNotFound());
 
         // Second call inside the 60s window: limiter rejection BEFORE any
@@ -131,6 +136,11 @@ class RateLimitProblemDetailIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andDo(print()) // TEMP: capture the first-call response for the 400 diagnosis
+                .andDo(result -> { // TEMP: full stack of the resolved exception
+                    if (result.getResolvedException() != null) {
+                        result.getResolvedException().printStackTrace();
+                    }
+                })
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/reviews")
