@@ -187,7 +187,21 @@ class MediaThumbnailIntegrationTest {
     @DisplayName("(2) processing failure propagates (publication FAILED, retried) and the upload stays UPLOADED")
     void failurePropagatesThenRetrySucceeds() throws Exception {
         MediaAsset asset = confirmedAsset("image/jpeg");
-        when(storage.getObject(asset.getObjectKey())).thenThrow(new RuntimeException("storage read failed"));
+        // ONE stateful stub for the whole scenario: null bytes = storage read
+        // failure; setting the bytes = the storage "recovered" for the
+        // documented retry. (Re-stubbing the same method+args with when()
+        // would execute the previous thenThrow inside the second when() call
+        // itself — the known Mockito re-stubbing gotcha; the Answer keeps the
+        // scenario deterministic.)
+        java.util.concurrent.atomic.AtomicReference<byte[]> storedBytes =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(storage.getObject(anyString())).thenAnswer(invocation -> {
+            byte[] bytes = storedBytes.get();
+            if (bytes == null) {
+                throw new RuntimeException("storage read failed");
+            }
+            return bytes;
+        });
 
         assertThatThrownBy(() -> mediaService.processThumbnail(asset.getId()))
                 .isInstanceOf(RuntimeException.class);
@@ -200,7 +214,7 @@ class MediaThumbnailIntegrationTest {
 
         // The documented resubmission semantics: the next attempt (storage
         // recovered) completes the pipeline — debt D3's bounded retry.
-        when(storage.getObject(asset.getObjectKey())).thenReturn(wideJpeg());
+        storedBytes.set(wideJpeg());
         mediaService.processThumbnail(asset.getId());
         assertThat(mediaAssetRepository.findById(asset.getId()).orElseThrow().getThumbObjectKey())
                 .isEqualTo(asset.getObjectKey() + "/thumb");
