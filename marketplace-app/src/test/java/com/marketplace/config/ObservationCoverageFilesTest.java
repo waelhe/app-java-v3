@@ -63,8 +63,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       (layer 9 — the real PSP channel; the webhook observation lives on
  *       the Stripe entry point, not the shared dispatch helper, so the
  *       legacy HMAC channel keeps its exact legacy behavior)</li>
- *   <li>pricing — calculate, rule.create, rule.activate, rule.deactivate,
- *       rule.delete</li>
+ *   <li>pricing — calculate (+ calculate.window — the L26 day-sliced
+ *       quote engine, the same read exception as the flat quote),
+ *       rule.create, rule.activate, rule.deactivate, rule.delete;
+ *       calendar.weekend.upsert, calendar.weekend.delete,
+ *       calendar.seasonal.create, calendar.seasonal.update,
+ *       calendar.seasonal.delete (L26 — the host's price-calendar commands;
+ *       the calendar READ stays unobserved per policy)</li>
  *   <li>provider — create, update, verify, suspend</li>
  *   <li>reviews — create, update</li>
  *   <li>shared infra — email.send (the open MAIL-provider gate: whatever the
@@ -101,7 +106,13 @@ class ObservationCoverageFilesTest {
                     "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
                     "payment.psp.create", "payment.psp.refund", "payment.psp.webhook")),
             Map.entry("marketplace-pricing", List.of(
-                    "pricing.calculate", "pricing.currency.convert",
+                    "pricing.calculate", "pricing.calculate.window",
+                    "pricing.calendar.seasonal.create",
+                    "pricing.calendar.seasonal.delete",
+                    "pricing.calendar.seasonal.update",
+                    "pricing.calendar.weekend.delete",
+                    "pricing.calendar.weekend.upsert",
+                    "pricing.currency.convert",
                     "pricing.rule.activate",
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
