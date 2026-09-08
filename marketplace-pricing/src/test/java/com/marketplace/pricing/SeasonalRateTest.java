@@ -103,4 +103,27 @@ class SeasonalRateTest {
         assertThrows(IllegalArgumentException.class,
                 () -> rule.changeMultiplier(new BigDecimal("0")));
     }
+
+    /**
+     * Scale honesty (CodeRabbit round 1): NUMERIC(6,3) would SILENTLY round
+     * 1.2349 to 1.235, so a reload prices differently from the submitted
+     * rule — the factory rejects values not exactly representable at scale
+     * 3, while trailing zeros (1.2340) and scale-3 values stay legal.
+     */
+    @Test
+    void weekendRuleFactory_rejectsScaleBeyondThreeDigits() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ListingWeekendRule.create(LISTING, new BigDecimal("1.2349")),
+                "would be silently rounded by NUMERIC(6,3)");
+        assertThrows(IllegalArgumentException.class,
+                () -> ListingWeekendRule.create(LISTING, new BigDecimal("0.0009")));
+        assertThrows(IllegalArgumentException.class,
+                () -> ListingWeekendRule.create(LISTING, new BigDecimal("1.23450")));
+
+        // Exactly representable at scale 3 — legal.
+        assertEquals(new BigDecimal("1.234"),
+                ListingWeekendRule.create(LISTING, new BigDecimal("1.234")).getMultiplier());
+        assertTrue(ListingWeekendRule.create(LISTING, new BigDecimal("1.2340")).getMultiplier()
+                .compareTo(new BigDecimal("1.234")) == 0);
+    }
 }

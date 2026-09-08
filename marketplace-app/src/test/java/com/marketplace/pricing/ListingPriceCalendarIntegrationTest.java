@@ -389,6 +389,43 @@ class ListingPriceCalendarIntegrationTest {
     }
 
     /**
+     * The V41 race backstop itself (CodeRabbit round 1): the live-range
+     * EXCLUDE constraint rejects an overlapping row at the DATABASE level
+     * (a concurrent writer that slipped past the service walk), while two
+     * adjacent ranges sharing a boundary stay legal — the same interval
+     * algebra as {@code SeasonalRate.overlaps}, enforced by daterange &&.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void theExclusionConstraint_rejectsOverlapAtDatabaseLevel_adjacencyLegal() {
+        UUID owner = seedVerifiedProviderOwner();
+        UUID listingId = seedListing(owner);
+        actingAs(owner, false);
+
+        // A live range through the service (the honest writer).
+        calendarService.addSeasonalRate(listingId,
+                LocalDate.parse("2026-03-10"), LocalDate.parse("2026-03-15"), 25_000L,
+                currentAuthentication());
+
+        // A raw overlapping INSERT — bypassing the service walk — is rejected
+        // by the constraint itself (the race loser's path).
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> jdbc.update("""
+                        INSERT INTO seasonal_rates (id, listing_id, from_date, to_date, price_cents, is_deleted, version, created_at, updated_at)
+                        VALUES (?, ?, DATE '2026-03-14', DATE '2026-03-20', 18000, FALSE, 0, now(), now())
+                        """, UUID.randomUUID(), listingId))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("ex_seasonal_rates_live_listing_range");
+
+        // Adjacent on the shared boundary (Mar 15) — legal at the DB level too.
+        jdbc.update("""
+                INSERT INTO seasonal_rates (id, listing_id, from_date, to_date, price_cents, is_deleted, version, created_at, updated_at)
+                VALUES (?, ?, DATE '2026-03-15', DATE '2026-03-20', 22000, FALSE, 0, now(), now())
+                """, UUID.randomUUID(), listingId);
+        assertThat(calendarService.getCalendar(listingId, currentAuthentication()).seasonalRates())
+                .hasSize(2);
+    }
+
+    /**
      * Acceptance 4 — the cache eviction: every calendar write publishes
      * CacheInvalidationRequested (AFTER_COMMIT), so a warmed
      * pricing-calculations entry never outlives a calendar change. The

@@ -10,6 +10,7 @@ import jakarta.validation.constraints.DecimalMin;
 import org.hibernate.envers.Audited;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 /**
@@ -57,9 +58,13 @@ public class ListingWeekendRule extends BaseEntity {
 
     /**
      * @throws IllegalArgumentException when the listing id or multiplier is
-     *                                  null, or the multiplier is outside
-     *                                  {@code (0, 10]} — the callers map it
-     *                                  to the 400 taxonomy
+     *                                  null, the multiplier is outside
+     *                                  {@code (0, 10]}, or it carries more
+     *                                  than three decimal digits (V41's
+     *                                  NUMERIC(6,3) would silently round it —
+     *                                  the stored rule would then price
+     *                                  differently from the submitted one) —
+     *                                  the callers map it to the 400 taxonomy
      */
     public static ListingWeekendRule create(UUID listingId, BigDecimal multiplier) {
         validateMultiplier(multiplier);
@@ -81,6 +86,17 @@ public class ListingWeekendRule extends BaseEntity {
         }
         if (multiplier.signum() <= 0 || multiplier.compareTo(MAX_MULTIPLIER) > 0) {
             throw new IllegalArgumentException("Weekend multiplier must be > 0 and <= 10");
+        }
+        try {
+            // Scale honesty (CodeRabbit round 1): the column is NUMERIC(6,3) — a
+            // value like 1.2349 would be SILENTLY rounded to 1.235 by the
+            // database, so a later reload prices differently from the submitted
+            // rule. UNNECESSARY rejects any value that is not exactly
+            // representable at scale 3 (trailing zeros like 1.2340 stay legal).
+            multiplier.setScale(3, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException(
+                    "Weekend multiplier supports at most 3 decimal digits (column NUMERIC(6,3))");
         }
     }
 

@@ -161,6 +161,11 @@ public class PricingService implements EffectivePricePort {
      * same-date window (an intra-day stay, e.g. 10:00→14:00) prices its
      * single check-in date — never zero (a free booking would be a defect,
      * and rejecting the window would break pre-L26 intra-day bookings).
+     * A REVERSED window (check-out strictly before check-in) is rejected
+     * with 400 BEFORE the repository reads — the SearchCriteria gate
+     * convention (a reversed window is never a window, not a degenerate
+     * one-night stay; CodeRabbit round 1: the no-calendar fallback used to
+     * mask it by answering the flat price).
      */
     @Override
     @Transactional(readOnly = true)
@@ -174,6 +179,13 @@ public class PricingService implements EffectivePricePort {
      * quote and the port implementation (one code path, two surfaces).
      */
     long effectiveTotalCents(UUID listingId, long basePriceCents, Instant checkIn, Instant checkOut) {
+        if (checkOut.isBefore(checkIn)) {
+            // The window gate (the SearchCriteria convention) — BEFORE any
+            // repository read, so a reversed window is 400 on BOTH surfaces
+            // (quote and booking seam), flat model or not.
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "Check-out must not be before check-in");
+        }
         ListingWeekendRule weekendRule = weekendRuleRepository == null
                 ? null
                 : weekendRuleRepository.findByListingId(listingId).orElse(null);

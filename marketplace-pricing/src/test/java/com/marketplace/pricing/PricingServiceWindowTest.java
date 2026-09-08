@@ -12,8 +12,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.instancio.Select.field;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * L26 (feature-expansion roadmap §5, Week 3) — the roadmap's two numeric
@@ -175,7 +182,6 @@ class PricingServiceWindowTest {
     @Test
     void rangesAreHalfOpen_endsWithCheckInDayNeverCovers() {
         givenWeekendMultiplier("1.2");
-        // [Jan 12, Jan 15) ends exactly at check-in; [Jan 17, Jan 19) covers Sat 17 only.
         givenSeasonalRanges(
                 range("2026-01-12", "2026-01-15", 30_000L),
                 range("2026-01-17", "2026-01-19", 8_000L));
@@ -184,5 +190,29 @@ class PricingServiceWindowTest {
 
         // Thu 15 and Fri 16 at base (the first range ends there), Sat 17 at 8 000:
         assertEquals(10_000L + 10_000L + 8_000L, total);
+    }
+
+    /**
+     * A REVERSED window (check-out strictly before check-in) is 400 on BOTH
+     * surfaces — the SearchCriteria gate convention, BEFORE any repository
+     * read (the no-calendar flat fallback must not mask it — CodeRabbit
+     * round 1). Same-date stays stay legal (the intra-day contract).
+     */
+    @Test
+    void reversedWindow_isRejectedBeforeAnyRead_flatModelOrNot() {
+        givenNoActiveRule();
+        when(weekendRuleRepository.findByListingId(LISTING)).thenReturn(Optional.empty());
+        givenSeasonalRanges();
+
+        Instant reversedIn = Instant.parse("2026-01-18T11:00:00Z");
+        Instant reversedOut = Instant.parse("2026-01-15T14:00:00Z");
+
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculateBookingTotalCents(LISTING, BASE, reversedIn, reversedOut));
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> service.calculatePrice(LISTING, BASE, "services", reversedIn, reversedOut));
+
+        // The gate fires before the repository reads — no calendar query happened.
+        verify(weekendRuleRepository, never()).findByListingId(any());
     }
 }

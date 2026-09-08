@@ -1,12 +1,15 @@
 package com.marketplace.pricing;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -34,8 +37,12 @@ import java.util.UUID;
  * ({@link SeasonalRate#overlaps}); two ADJACENT ranges sharing a boundary
  * (first {@code toDate ==} second {@code fromDate}) are legal — open
  * intervals. The check walks the sibling rows at the service seam in the
- * same transaction (the V41 header documents why the schema carries no
- * exclusion constraint).
+ * same transaction; the V41 {@code ex_seasonal_rates_live_listing_range}
+ * EXCLUDE constraint is the RACE backstop (two concurrent writers both
+ * passing the walk) — a violation of THAT constraint is translated into
+ * the same 409 here while every other database error surfaces unchanged
+ * (the losing request of a true race and the rejected sequential one get
+ * the identical taxonomy).
  *
  * <p>Cache (roadmap criterion 4): every calendar write publishes
  * {@link CacheInvalidationRequested} for the {@code pricing-calculations}
@@ -125,6 +132,11 @@ public class ListingPriceCalendarService {
     }
 
     /**
+     * The exclusion constraint of V41 — the race backstop's identity.
+     */
+    static final String LIVE_RANGE_EXCLUSION_CONSTRAINT = "ex_seasonal_rates_live_listing_range";
+
+    /**
      * Adds a seasonal range. Rejected with 409 when it actually overlaps a
      * live sibling range; adjacent-on-a-boundary ranges are legal.
      */
@@ -134,7 +146,7 @@ public class ListingPriceCalendarService {
         requireOwnedListing(listingId, authentication);
         SeasonalRate candidate = SeasonalRate.create(listingId, fromDate, toDate, priceCents);
         assertNoOverlap(listingId, candidate, null);
-        SeasonalRate saved = seasonalRateRepository.save(candidate);
+        SeasonalRate saved = saveSeasonalRate(candidate);
         eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
         return toSeasonalRateResponse(saved);
     }
@@ -153,7 +165,7 @@ public class ListingPriceCalendarService {
                 .orElseThrow(() -> new ResourceNotFoundException("SeasonalRate", rateId));
         rate.change(fromDate, toDate, priceCents);
         assertNoOverlap(listingId, rate, rateId);
-        SeasonalRate saved = seasonalRateRepository.save(rate);
+        SeasonalRate saved = saveSeasonalRate(rate);
         eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
         return toSeasonalRateResponse(saved);
     }
@@ -185,6 +197,26 @@ public class ListingPriceCalendarService {
             if (sibling.overlaps(candidate)) {
                 throw SeasonalRate.overlapConflict(listingId);
             }
+        }
+    }
+
+    /**
+     * Persists a seasonal range, translating a violation of the V41 live-range
+     * EXCLUDE constraint (the race backstop — a concurrent writer committed
+     * an overlapping live range between our walk and our flush) into the same
+     * 409 ConflictException the sequential rejection answers with. Any OTHER
+     * integrity violation (a different constraint) surfaces unchanged — the
+     * translation must not mask unrelated database errors.
+     */
+    private SeasonalRate saveSeasonalRate(SeasonalRate rate) {
+        try {
+            return seasonalRateRepository.save(rate);
+        } catch (DataIntegrityViolationException ex) {
+            if (ex.getCause() instanceof ConstraintViolationException violation
+                    && LIVE_RANGE_EXCLUSION_CONSTRAINT.equals(violation.getConstraintName())) {
+                throw SeasonalRate.overlapConflict(rate.getListingId());
+            }
+            throw ex;
         }
     }
 

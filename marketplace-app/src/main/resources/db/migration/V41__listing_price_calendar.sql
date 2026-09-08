@@ -11,8 +11,14 @@
 -- the weekend multiplier never stacks on top of it; outside the ranges the
 -- multiplier applies to the base price. Overlap of seasonal ranges for one
 -- listing is rejected with 409 at the service seam (adjacent ranges sharing
--- a boundary are legal — open intervals); the schema therefore carries no
--- exclusion constraint, only the shape checks.
+-- a boundary are legal — open intervals); the EXCLUDE constraint below is
+-- the RACE BACKSTOP for that check, not its replacement (CodeRabbit round
+-- 1): two concurrent writers can both observe no overlap and commit — the
+-- PostgreSQL EXCLUDE constraint is the serialization point (it conflicts
+-- with committed AND in-flight rows, blocking then raising 23P01 on the
+-- loser), and ListingPriceCalendarService translates a violation of THIS
+-- constraint into the same 409 taxonomy while every other database error
+-- surfaces unchanged.
 --
 -- Soft-delete interplay (the BaseEntity @SoftDelete rule — Hibernate 7
 -- converts DELETE to UPDATE is_deleted=true and hides such rows from every
@@ -74,6 +80,31 @@ CREATE TABLE seasonal_rates (
 CREATE INDEX idx_seasonal_rates_listing_range
     ON seasonal_rates (listing_id, from_date, to_date)
     WHERE is_deleted = FALSE;
+
+-- Availability evidence (the V34 pg_trgm pattern, same verification method):
+--   * btree_gist ships in the official postgres contrib (the docker library
+--     postgres:18-alpine and the CI service container both carry it) and is a
+--     *trusted* extension since PostgreSQL 13 (official docs: Extensions
+--     table) — the database owner installs it without superuser rights,
+--     exactly like pg_trgm in V34.
+--   * daterange(from_date, to_date, '[)') matches the entity's interval
+--     algebra EXACTLY: `overlaps` is the strict open-interval intersection
+--     (this.from < other.to && other.from < this.to) — the daterange &&
+--     operator verbatim; two ranges sharing a boundary
+--     (first.to_date == second.from_date) are ADJACENT, not overlapping, and
+--     stay legal — the acceptance criterion's own example.
+--   * The predicate (is_deleted = FALSE) keeps soft-deleted history rows
+--     outside the constraint — a deleted range never blocks re-creation,
+--     mirroring the weekend-rule partial unique index above.
+create extension if not exists btree_gist;
+
+ALTER TABLE seasonal_rates
+    ADD CONSTRAINT ex_seasonal_rates_live_listing_range
+    EXCLUDE USING gist (
+        listing_id WITH =,
+        daterange(from_date, to_date, '[)') WITH &&
+    )
+    WHERE (is_deleted = FALSE);
 
 -- Envers audit history (V24 convention).
 CREATE TABLE listing_weekend_rules_aud (

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
@@ -294,5 +295,43 @@ class ListingPriceCalendarServiceTest {
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.getCalendar(LISTING, authentication));
+    }
+
+    /**
+     * The race backstop's translation (CodeRabbit round 1): a violation of
+     * the V41 live-range EXCLUDE constraint — the loser of two concurrent
+     * overlapping writers — surfaces as the SAME 409 ConflictException the
+     * sequential rejection answers with.
+     */
+    @Test
+    void exclusionConstraintViolation_translatesToThe409Taxonomy() {
+        when(seasonalRateRepository.findByListingIdOrderByFromDateAsc(LISTING)).thenReturn(List.of());
+        when(seasonalRateRepository.save(any(SeasonalRate.class))).thenThrow(
+                new DataIntegrityViolationException("race loser",
+                        new org.hibernate.exception.ConstraintViolationException(
+                                "exclusion violation", null,
+                                ListingPriceCalendarService.LIVE_RANGE_EXCLUSION_CONSTRAINT)));
+
+        assertThrows(ConflictException.class, () -> service.addSeasonalRate(LISTING,
+                LocalDate.parse("2026-01-15"), LocalDate.parse("2026-01-16"), 20_000L, authentication));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * The translation must NOT mask unrelated database errors — a different
+     * constraint's violation surfaces unchanged (CodeRabbit round 1: "while
+     * preserving other database errors").
+     */
+    @Test
+    void otherIntegrityViolations_surfaceUnchanged() {
+        when(seasonalRateRepository.findByListingIdOrderByFromDateAsc(LISTING)).thenReturn(List.of());
+        when(seasonalRateRepository.save(any(SeasonalRate.class))).thenThrow(
+                new DataIntegrityViolationException("unrelated",
+                        new org.hibernate.exception.ConstraintViolationException(
+                                "check violation", null, "chk_seasonal_rates_range")));
+
+        assertThrows(DataIntegrityViolationException.class, () -> service.addSeasonalRate(LISTING,
+                LocalDate.parse("2026-01-15"), LocalDate.parse("2026-01-16"), 20_000L, authentication));
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
