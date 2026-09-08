@@ -7,6 +7,8 @@ import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,10 +23,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -57,10 +61,18 @@ class MediaServiceTest {
     private final UUID providerId = UUID.randomUUID();
     private final UUID listingId = UUID.randomUUID();
 
+    /**
+     * D3: a real registry so the thumbnail failure counter's increments are
+     * assertable in these unit tests — the same contract the integration
+     * test pins against the module slice.
+     */
+    private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     @BeforeEach
     void setUp() {
         service = new MediaService(repository, storageProvider, mediaProperties(),
-                listingPriceProvider, providerLookupPort, currentUserProvider, eventPublisher);
+                listingPriceProvider, providerLookupPort, currentUserProvider, eventPublisher,
+                new MediaThumbnailMetrics(meterRegistry));
     }
 
     /**
@@ -275,5 +287,123 @@ class MediaServiceTest {
         service.delete(asset.getId(), authentication);
 
         verify(repository).delete(asset);
+    }
+
+    // ------------------------------------------------------------------
+    // D3 closure (roadmap §8, internal-free-work-plan §4): the thumbnail
+    // failure counter — every failure is counted by its measured source
+    // and ALWAYS propagates (the framework-owned FAILED marking and retry
+    // are untouched; counting never swallows).
+    // ------------------------------------------------------------------
+
+    /** A real JPEG wider than the 640 default bound (induces a real scale). */
+    private static byte[] wideJpeg() throws Exception {
+        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                800, 400, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "jpeg", out);
+        return out.toByteArray();
+    }
+
+    /**
+     * Real PNG-with-alpha bytes: under a jpeg declaration the decode
+     * succeeds, the scale succeeds, and the JPEG writer rejects the ARGB
+     * raster ("Bogus input colorspace", measured) — the realistic
+     * encode-stage failure of a declared-type/actual-bytes mismatch.
+     */
+    private static byte[] pngWithAlpha() throws Exception {
+        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                800, 400, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "png", out);
+        return out.toByteArray();
+    }
+
+    private MediaAsset uploadedAsset() {
+        MediaAsset asset = pendingAsset();
+        asset.markUploaded();
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        return asset;
+    }
+
+    @Test
+    void processThumbnail_whenStorageFetchFails_countsFetchAndPropagates() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = uploadedAsset();
+        when(storage.getObject(asset.getObjectKey())).thenThrow(new RuntimeException("storage read failed"));
+
+        assertThrows(RuntimeException.class, () -> service.processThumbnail(asset.getId()));
+
+        assertThat(meterRegistry.get(MediaThumbnailMetrics.FAILURE_COUNTER)
+                .tag(MediaThumbnailMetrics.REASON_TAG, "storage-fetch").counter().count())
+                .as("the fetch-stage failure is counted")
+                .isEqualTo(1.0);
+        assertThat(asset.getThumbObjectKey())
+                .as("no thumb pointer is pinned on failure — the retry owns it")
+                .isNull();
+    }
+
+    @Test
+    void processThumbnail_whenBytesAreUndecodable_countsDecodeAndPropagates() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = uploadedAsset();
+        when(storage.getObject(asset.getObjectKey())).thenReturn("not an image".getBytes());
+
+        assertThrows(IllegalStateException.class, () -> service.processThumbnail(asset.getId()));
+
+        assertThat(meterRegistry.get(MediaThumbnailMetrics.FAILURE_COUNTER)
+                .tag(MediaThumbnailMetrics.REASON_TAG, "decode").counter().count())
+                .as("the decode-stage failure is counted")
+                .isEqualTo(1.0);
+        assertThat(asset.getThumbObjectKey()).isNull();
+    }
+
+    @Test
+    void processThumbnail_whenContentTypeMismatchesBytes_countsEncodeAndPropagates() throws Exception {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = uploadedAsset();
+        // declared image/jpeg, actual bytes PNG-with-alpha — decodes fine,
+        // dies at the JPEG writer: the measured encode-stage failure.
+        when(storage.getObject(asset.getObjectKey())).thenReturn(pngWithAlpha());
+
+        assertThrows(IllegalStateException.class, () -> service.processThumbnail(asset.getId()));
+
+        assertThat(meterRegistry.get(MediaThumbnailMetrics.FAILURE_COUNTER)
+                .tag(MediaThumbnailMetrics.REASON_TAG, "encode").counter().count())
+                .as("the encode-stage failure is counted")
+                .isEqualTo(1.0);
+        assertThat(asset.getThumbObjectKey()).isNull();
+    }
+
+    @Test
+    void processThumbnail_whenThumbnailStoreFails_countsStoreAndPropagates() throws Exception {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = uploadedAsset();
+        when(storage.getObject(asset.getObjectKey())).thenReturn(wideJpeg());
+        doThrow(new RuntimeException("storage write failed"))
+                .when(storage).putObject(anyString(), anyString(), any(byte[].class));
+
+        assertThrows(RuntimeException.class, () -> service.processThumbnail(asset.getId()));
+
+        assertThat(meterRegistry.get(MediaThumbnailMetrics.FAILURE_COUNTER)
+                .tag(MediaThumbnailMetrics.REASON_TAG, "store").counter().count())
+                .as("the store-stage failure is counted")
+                .isEqualTo(1.0);
+        assertThat(asset.getThumbObjectKey()).isNull();
+    }
+
+    @Test
+    void processThumbnail_onSuccess_countsNoFailure() throws Exception {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = uploadedAsset();
+        when(storage.getObject(asset.getObjectKey())).thenReturn(wideJpeg());
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.processThumbnail(asset.getId());
+
+        assertThat(meterRegistry.getMeters())
+                .as("success registers no failure counter at all")
+                .isEmpty();
+        assertThat(asset.getThumbObjectKey()).isEqualTo(asset.getObjectKey() + "/thumb");
     }
 }

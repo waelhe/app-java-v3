@@ -132,10 +132,26 @@ class ThumbnailsTest {
     }
 
     @Test
-    @DisplayName("Bytes no ImageIO reader accepts are a processing failure, not a silent fallback")
+    @DisplayName("corrupt bytes fail at the DECODE stage — plain IOException")
     void corruptBytesThrow() {
         assertThatThrownBy(() -> Thumbnails.scaleToMaxWidth("not-an-image".getBytes(), 640, "image/jpeg", UNLIMITED))
-                .isInstanceOf(IOException.class);
+                .isInstanceOf(IOException.class)
+                .isNotInstanceOf(ThumbnailEncodingException.class);
+    }
+
+    @Test
+    @DisplayName("A declared-type/actual-bytes mismatch fails at the ENCODE stage — ThumbnailEncodingException")
+    void typeMismatchFailsAtEncodeStage() throws Exception {
+        // PNG-with-alpha bytes under a jpeg declaration: the header read and
+        // raster decode succeed (ImageIO picks the reader from the stream,
+        // not the declared type), the scale succeeds, and the JPEG writer
+        // rejects the ARGB raster ("Bogus input colorspace", measured
+        // against the exact production write path) — the stage-carrying
+        // subclass lets the D3 counter distinguish encode from decode.
+        byte[] pngWithAlpha = render(800, 400, "image/png", true);
+
+        assertThatThrownBy(() -> Thumbnails.scaleToMaxWidth(pngWithAlpha, 640, "image/jpeg", UNLIMITED))
+                .isInstanceOf(ThumbnailEncodingException.class);
     }
 
     @Test
