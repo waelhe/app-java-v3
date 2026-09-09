@@ -213,12 +213,14 @@ class SearchGuestsFilterIntegrationTest {
         // guests composes with price exactly like category does.
         Page<ListingSummary> page = searchService.search(
                 new SearchCriteria(null, null,
-                        java.math.BigDecimal.valueOf(PRICE_CENTS - 1, 2), null, null, null, 2),
+                        java.math.BigDecimal.valueOf(PRICE_CENTS + 1, 2), null, null, null, 2),
                 Pageable.ofSize(10));
 
-        // priceCents - 1 cent excludes every seeded listing (all priced
-        // exactly PRICE_CENTS) — an honest empty page, not a bypass of the
-        // guests predicate.
+        // A min price ONE CENT above every seeded listing (all priced
+        // exactly PRICE_CENTS) excludes them all — even though guests=2
+        // alone would match three. The empty page proves the price
+        // predicate rides the SAME criteria query as guests; neither
+        // bypasses the other.
         assertThat(page.getTotalElements()).isZero();
     }
 
