@@ -27,7 +27,10 @@ public class SearchController {
             description = "Full-text search with typo tolerance (pg_trgm) and optional filters. "
                     + "When both stay-window dates are present, the window must be a valid "
                     + "half-open interval [checkIn, checkOut) and results are restricted to "
-                    + "providers with an available slot overlapping it.")
+                    + "providers with an available slot overlapping it. A guests value, when "
+                    + "present, must be positive and restricts results to listings whose "
+                    + "declared capacity accommodates it (undeclared-capacity listings never "
+                    + "match — I6/roadmap D1).")
     public ResponseEntity<PagedResponse<ListingSummary>> searchWithCriteria(
             @Parameter(description = "Free-text query (websearch syntax: quoted phrases, OR, -exclusions)",
                     example = "\"sea view\" jeddah")
@@ -49,8 +52,13 @@ public class SearchController {
             @Parameter(description = "Stay window end (EXCLUSIVE), ISO-8601 instant — must be "
                     + "paired with checkIn", example = "2026-10-04T10:00:00Z")
             @RequestParam(required = false) java.time.Instant checkOut,
+            // I6: the guest-capacity criterion — the same record gate rejects
+            // non-positive values (400 before any query).
+            @Parameter(description = "Guest count the listing must accommodate (positive); "
+                    + "listings without declared capacity never match", example = "4")
+            @RequestParam(required = false) Integer guests,
             Pageable pageable) {
-        SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice, checkIn, checkOut);
+        SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice, checkIn, checkOut, guests);
         return ResponseEntity.ok(PagedResponse.of(searchService.search(criteria, pageable)));
     }
 

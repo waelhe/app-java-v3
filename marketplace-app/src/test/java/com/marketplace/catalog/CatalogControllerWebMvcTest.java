@@ -64,7 +64,7 @@ class CatalogControllerWebMvcTest {
         var response = mockResponse(listingId);
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerId);
-        when(catalogService.create(any(), any(), any(), any(), any(), any())).thenReturn(listing);
+        when(catalogService.create(any(), any(), any(), any(), any(), any(), any())).thenReturn(listing);
         when(listingMapper.toResponse(listing)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/listings")
@@ -84,7 +84,7 @@ class CatalogControllerWebMvcTest {
         var response = mockResponse(listingId);
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerId);
-        when(catalogService.create(any(), any(), any(), any(), any(), eq("USD"))).thenReturn(listing);
+        when(catalogService.create(any(), any(), any(), any(), any(), eq("USD"), any())).thenReturn(listing);
         when(listingMapper.toResponse(listing)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/listings")
@@ -94,7 +94,7 @@ class CatalogControllerWebMvcTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        verify(catalogService).create(any(), any(), any(), any(), any(), eq("USD"));
+        verify(catalogService).create(any(), any(), any(), any(), any(), eq("USD"), any());
     }
 
     @Test
@@ -106,7 +106,7 @@ class CatalogControllerWebMvcTest {
         var response = mockResponse(listingId);
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerId);
-        when(catalogService.create(any(), any(), any(), any(), any(), any())).thenReturn(listing);
+        when(catalogService.create(any(), any(), any(), any(), any(), any(), any())).thenReturn(listing);
         when(listingMapper.toResponse(listing)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/listings")
@@ -117,8 +117,52 @@ class CatalogControllerWebMvcTest {
                 .andExpect(status().isCreated());
 
         // omitted currency arrives as null — the house default SAR is applied
-        // by the entity layer (the pre-B4 contract byte-for-byte)
-        verify(catalogService).create(any(), any(), any(), any(), any(), eq((String) null));
+        // by the entity layer (the pre-B4 contract byte-for-byte); omitted
+        // maxGuests arrives as null too (capacity undeclared — I6)
+        verify(catalogService).create(any(), any(), any(), any(), any(), eq((String) null), eq((Integer) null));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void create_withMaxGuests_passesCapacityToService() throws Exception {
+        UUID providerId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        var listing = mockView(listingId);
+        var response = mockResponse(listingId);
+
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerId);
+        when(catalogService.create(any(), any(), any(), any(), any(), any(), eq(4))).thenReturn(listing);
+        when(listingMapper.toResponse(listing)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/listings")
+                        .contentType("application/json")
+                        .content("""
+                                {"title": "Test", "category": "cat", "priceCents": 1000, "maxGuests": 4}
+                                """))
+                .andExpect(status().isCreated());
+
+        verify(catalogService).create(any(), any(), any(), any(), any(), any(), eq(4));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void create_withNonPositiveMaxGuests_answers400AtBeanValidation() throws Exception {
+        // The write-side gate layer 1: @Positive on the request record — a
+        // zero/negative capacity is a 400 before the service is ever
+        // called (the I6 type-gate philosophy, mirrored from SearchCriteria).
+        mockMvc.perform(post("/api/v1/listings")
+                        .contentType("application/json")
+                        .content("""
+                                {"title": "Test", "category": "cat", "priceCents": 1000, "maxGuests": 0}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/listings")
+                        .contentType("application/json")
+                        .content("""
+                                {"title": "Test", "category": "cat", "priceCents": 1000, "maxGuests": -3}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -147,10 +191,10 @@ class CatalogControllerWebMvcTest {
     }
 
     private static ProviderListingView mockView(UUID id) {
-        return new ProviderListingView(id, null, null, null, null, null, null, null, null, null);
+        return new ProviderListingView(id, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static ListingResponse mockResponse(UUID id) {
-        return new ListingResponse(id, null, null, null, null, null, null, null);
+        return new ListingResponse(id, null, null, null, null, null, null, null, null);
     }
 }

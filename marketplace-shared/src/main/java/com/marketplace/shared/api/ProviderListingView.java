@@ -18,6 +18,7 @@ public record ProviderListingView(
         String currency,
         UUID providerId,
         String status,
+        Integer maxGuests,
         Instant createdAt,
         Instant updatedAt
 ) {

@@ -88,6 +88,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
+            ORDER BY id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -96,11 +98,13 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchByCriteria(@Param("category") String category,
                                            @Param("minPrice") Long minPrice,
                                            @Param("maxPrice") Long maxPrice,
+                                           @Param("guests") Integer guests,
                                            Pageable pageable);
 
     // L27 (feature-expansion roadmap §5) — window-restricted variants. The
@@ -120,6 +124,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY id
             """,
             countQuery = """
@@ -130,11 +135,13 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchByCriteriaRestricted(@Param("category") String category,
                                                      @Param("minPrice") Long minPrice,
                                                      @Param("maxPrice") Long maxPrice,
+                                                     @Param("guests") Integer guests,
                                                      @Param("providerIds") java.util.Collection<UUID> providerIds,
                                                      Pageable pageable);
 

@@ -84,7 +84,7 @@ class ServiceGraphQlMutationIntegrationTest {
     private static ProviderListingView view(UUID id, String title, String description,
                                             String category, Long priceCents, String status) {
         return new ProviderListingView(id, title, description, category, priceCents, "SAR",
-                UUID.randomUUID(), status, null, null);
+                UUID.randomUUID(), status, null, null, null);
     }
 
     private static Map<String, Object> input(String name, String description, Object priceCents) {

@@ -111,7 +111,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
         Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
         Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
-        Page<ProviderListing> page = listingRepository.searchByCriteria(criteria.category(), minPrice, maxPrice, pageable);
+        Page<ProviderListing> page = listingRepository.searchByCriteria(
+                criteria.category(), minPrice, maxPrice, criteria.guests(), pageable);
         return toSummaryPage(page);
     }
 
@@ -132,7 +133,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
         Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
-                criteria.category(), minPrice, maxPrice, providerIds, pageable);
+                criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, pageable);
         return toSummaryPage(page);
     }
 
@@ -214,16 +215,43 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * {@code providerId} argument lives in the users.id space (V2
      * references users(id)) and is resolved through {@code findByUserId}
      * (A1) so the VERIFIED gate matches the profile owned by that user id.
+     *
+     * <p>{@code @Observed} is on BOTH proxy-visible entry forms (the CodeRabbit
+     * #270 Major, adopted): this six-argument overload is the GraphQL/SPI
+     * entry point and the seven-argument form is the REST entry point. The
+     * official AOP proxying rule (Spring Framework Reference, Proxying
+     * Mechanisms — "self invocation ... will bypass the advice") means the
+     * delegation from this overload to the full form runs unproxied, so the
+     * full form's annotation alone leaves the GraphQL {@code createService}
+     * mutation unobserved (it was observed before the I6 split — one
+     * six-argument method). Each external call now crosses the proxy exactly
+     * once at ITS entry form: exactly one observation per create, no
+     * double-counting — the same inventory name {@code catalog.create.listing}
+     * on both forms (the pin counts names, not methods).
      */
     @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency) {
+        return create(providerId, title, description, category, priceCents, currency, null);
+    }
+
+    /**
+     * I6: full creation form with the optional guest capacity — {@code null}
+     * leaves capacity undeclared. The value is already gated at the API
+     * surface ({@code @Positive} Bean Validation); the entity floor and the
+     * V44 CHECK constraint back it.
+     */
+    @Observed(name = "catalog.create.listing")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListingView create(UUID providerId, String title, String description,
+                                      String category, Long priceCents, String currency,
+                                      Integer maxGuests) {
         providerLookupPort.findByUserId(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
         ProviderListing listing = ProviderListing.create(providerId, title, description, category,
-                priceCents, currency);
+                priceCents, currency, maxGuests);
         ProviderListing saved = listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
@@ -244,9 +272,21 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, String currency,
                                   Authentication authentication) {
+        return update(id, title, description, category, priceCents, currency, null, authentication);
+    }
+
+    /**
+     * I6: full update form — capacity follows the currency contract
+     * (omitted keeps the stored value; an explicit positive value
+     * re-declares it).
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing update(UUID id, String title, String description,
+                                  String category, Long priceCents, String currency,
+                                  Integer maxGuests, Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
-        listing.update(title, description, category, priceCents, currency);
+        listing.update(title, description, category, priceCents, currency, maxGuests);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }
@@ -343,6 +383,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 listing.getCurrency(),
                 listing.getProviderId(),
                 listing.getStatus().name(),
+                listing.getMaxGuests(),
                 listing.getCreatedAt(),
                 listing.getUpdatedAt()
         );
