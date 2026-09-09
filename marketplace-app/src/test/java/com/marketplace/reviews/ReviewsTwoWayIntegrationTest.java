@@ -179,38 +179,34 @@ class ReviewsTwoWayIntegrationTest {
         ProviderProfile profile = providerRepository.save(ProviderProfile.create(
                 "I8 Provider", "bio", ownerUserId));
         UUID providerId = profile.getId();
-        UUID bookingId = UUID.randomUUID();
+        UUID bookingReverse = UUID.randomUUID();
+        UUID bookingForward = UUID.randomUUID();
         stubCompletedBooking(consumerId, providerId);
 
-        // The forward review lands THROUGH THE SERVICE — the events fire and
-        // the async listener lands the aggregate (a repository-planted row
-        // fires no event: the CI round-1 lesson — the average stayed null).
-        // Dual roles: the forward gate reads CONSUMER, the reverse gate reads
-        // PROVIDER; the ownership checks read the explicit arguments.
-        reviewsService.create(bookingId, consumerId, 3, "okay stay");
-        awaitAverage(providerId, 3.0);
-        long versionAfterForward = providerRepository.findById(providerId).orElseThrow().getVersion();
-
-        // The reverse review on the SAME booking: the provider rates the
-        // consumer 1 (would drag any unfiltered average to 2.0).
-        Review reverse = reviewsService.createReverse(bookingId, 1, "difficult guest",
+        // (1) The REVERSE review lands FIRST (rating 1) — through the REAL
+        // service (the events fire). Its event's recompute finds no forward
+        // reviews yet and skips (the empty-Optional contract). Dual roles:
+        // the forward gate reads CONSUMER, the reverse gate reads PROVIDER;
+        // the ownership checks read the explicit arguments.
+        Review reverse = reviewsService.createReverse(bookingReverse, 1, "difficult guest",
                 jwtAuthentication("i8-host-subject", "ROLE_PROVIDER"));
 
         assertThat(reverse.getDirection()).isEqualTo(ReviewDirection.PROVIDER_TO_CONSUMER);
         assertThat(reverse.getRevieweeId()).isEqualTo(consumerId);
         assertThat(reverse.getReviewerId()).isEqualTo(ownerUserId);
 
-        // The reverse review fires the SAME event, so the listener recomputes
-        // — the profile version bumps EVEN WHEN the value is unchanged. Wait
-        // for that bump: it PROVES the recompute ran before the value assert
-        // (no race between the two awaits), then the average must STILL be
-        // 3.0 — never 2.0.
-        awaitVersionBump(providerId, versionAfterForward);
-        assertThat(providerRepository.findById(providerId).orElseThrow().getRatingAverage())
-                .as("the provider average counts forward reviews only — a provider-authored "
-                        + "rating of the consumer never pollutes it (the recompute provably "
-                        + "ran: the version bumped)")
-                .isEqualTo(3.0);
+        // (2) The FORWARD review lands SECOND (rating 5) — through the REAL
+        // service. Its event's recompute is the ONLY thing that can ever
+        // produce a stored average (null -> value). THE PROOF, race-free:
+        // an UNFILTERED aggregate would land (1+5)/2 = 3.0 and this await
+        // would time out (3.0 never returns to 5.0); the direction-filtered
+        // aggregate lands 5.0 — the recompute provably ran AND provably
+        // excluded the reverse review. (The completion-signal round-2
+        // lesson: Hibernate skips the UPDATE for a clean entity — the
+        // version does not bump on an unchanged value — so the value
+        // transition itself is the only honest signal.)
+        reviewsService.create(bookingForward, consumerId, 5, "great stay");
+        awaitAverage(providerId, 5.0);
 
         // The read surfaces split by direction.
         assertThat(reviewsService.listByProvider(providerId, org.springframework.data.domain.Pageable.ofSize(10))
@@ -222,12 +218,12 @@ class ReviewsTwoWayIntegrationTest {
                 .as("the consumer's trust surface shows only reviews about THEM")
                 .containsExactly(ReviewDirection.PROVIDER_TO_CONSUMER);
 
-        // Per-direction uniqueness on the one booking: the forward create
-        // still works (the reverse exists, the forward does not).
-        // (Exercised by the unit suite; asserted here as data facts.)
-        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+        // Per-direction uniqueness as data facts: each direction present,
+        // each on its own booking (the application-level guard is pinned by
+        // the unit suite; the V45 partial unique index by the migration).
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingReverse, ReviewDirection.PROVIDER_TO_CONSUMER))
                 .isTrue();
-        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER))
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingForward, ReviewDirection.CONSUMER_TO_PROVIDER))
                 .isTrue();
 
         providerRepository.findById(providerId).ifPresent(providerRepository::delete);
@@ -283,33 +279,6 @@ class ReviewsTwoWayIntegrationTest {
                 .expiresAt(Instant.now().plusSeconds(60))
                 .build();
         return new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority(role)));
-    }
-
-    /**
-     * Plain poll loop (30s / 200ms) for the profile's optimistic version —
-     * the recompute's {@code applyRatingAverage} bumps it even when the
-     * value is unchanged, which proves the async listener RAN (ordering,
-     * without racing the value poll).
-     */
-    private void awaitVersionBump(UUID providerId, long atLeast) {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        Long last = null;
-        while (System.nanoTime() < deadline) {
-            last = providerRepository.findById(providerId).map(ProviderProfile::getVersion).orElse(null);
-            if (last != null && last > atLeast) {
-                return;
-            }
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        throw new AssertionError(String.format(
-                "Provider %s version never moved past %s (last seen: %s) — the reverse "
-                        + "review's event did not trigger the stats recompute.",
-                providerId, atLeast, last));
     }
 
     /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */
