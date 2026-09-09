@@ -30,6 +30,20 @@ ALTER TABLE reviews
     ADD CONSTRAINT chk_reviews_direction_kind
     CHECK (direction IN ('CONSUMER_TO_PROVIDER', 'PROVIDER_TO_CONSUMER'));
 
+-- CodeRabbit #270 Major (adopted from the root): V6's uq_review_booking_active
+-- enforced ONE review per booking in total — incompatible with the two-way
+-- review (a booking carries one forward AND one reverse entry). Swap it for
+-- the per-direction partial unique index: one ACTIVE review per
+-- (booking, direction), concurrent-insert-proof at the database level — the
+-- same defense depth as the application-level existsByBookingIdAndDirection.
+-- Compatibility: every pre-V45 row carries direction 'CONSUMER_TO_PROVIDER'
+-- (the DEFAULT above), so (booking_id, direction) uniqueness holds exactly
+-- where booking_id uniqueness held — a lossless, atomic index swap inside
+-- this transaction.
+DROP INDEX IF EXISTS uq_review_booking_active;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_booking_direction_active
+    ON reviews (booking_id, direction) WHERE is_deleted = false;
+
 ALTER TABLE reviews_aud
     ADD COLUMN IF NOT EXISTS direction VARCHAR(20) DEFAULT 'CONSUMER_TO_PROVIDER';
 
