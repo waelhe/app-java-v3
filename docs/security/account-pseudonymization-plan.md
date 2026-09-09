@@ -4,7 +4,7 @@
 | البند | القيمة |
 |------|--------|
 | الحالة | **مسودة معروضة للاعتماد — لم تُنفَّذ**؛ البند I7 من الخطة الداخلية، المرحلة ج من `post-window-execution-plan.md` المرفقة (حرفها: «الأثقل — يبدأ بPR خطة» — هذا هو ذاك الـPR) |
-| التاريخ | 2026-09-10 (المسودة)، قياسات الحقيقة على main `c39aab4` |
+| التاريخ | **2026-09-10 (ت. السعودية) = 2026-09-09 UTC** (المسودة)، قياسات الحقيقة على main `c39aab4` |
 | الأساس | أمر المستخدم الحاكم: «نفذ الخطة المرفقة … لا اريد ماتراه انت صحيح اريد التصميم الرسمي حسب الاطار والنظام وحقائق من الكود» + تثبيت `docs/feature-expansion-roadmap.md` §7: «حذف حساب/بيانات قابلة للنقل (GDPR-style) — قرار منتج قانوني (مستخدم) … مساس متعدد الوحدات يستحق طبقته» |
 | الحوكمة | Source Mandate (اقتباس رسمي مُجلب ومطابق نصياً → مطابقة حقائق الكود → حل معروض) — نفس بروتوكول `auth-system-redesign-plan.md` و`client-hosting-strategy-plan.md` |
 | المرجع الحاكم السابق | `docs/security/secrets-policy.md` (§1 قناة الأسرار: env حصراً) + `docs/feature-expansion-roadmap.md` §6-§8 (دورة الطبقة + الديون) + L23 (`UserService.updateUserStatus` — قناة التعطيل الموجودة) |
@@ -77,11 +77,11 @@
 
 | الخيار | الأثر |
 |--------|-------|
-| **(أ) لا-سر نهائي** — استبدال بمعرّف عشوائي وإتلاف أي ربط | إسناد مستحيل حتى داخلياً (أقوى من Art. 4(5))؛ يفقد القناة قدرة ربط احتيال/نزاع مشروعة للأبد |
-| **(ب) HMAC بمفتاح env** — `subject := "anon-" + HMAC-SHA256(K_env, subject)` مقتطعاً | من صنف «الخوارزميات التشفيرية» (EDPB §87)؛ حتمي → idempotent (إعادة التشغيل = نفس المُعرَّف المُشتق)؛ المفتاح **خارج القاعدة** في env (يفي بـ«kept separately» — §85-86) ويتبع secrets-policy §1 حرفياً؛ دوران المفتاح يغيّر المُعرَّف (يوثَّق) |
+| **(أ) لا-سر نهائي** — استبدال بمعرّف عشوائي وإتلاف أي ربط | إسناد مستحيل حتى داخلياً (أقوى من Art. 4(5))؛ يفقد القناة قدرة ربط احتيال/نزاع مشروعة للأبد؛ **عاقبة مقيسة: إعادة التسجيل بنفس السلسلة الخام لا تُميَّز عن هوية جديدة كلياً** (لا اشتقاقاً قابلًا للفحص — حارس الخطوة 8 في §5-أ يتعذّر) |
+| **(ب) HMAC بمفتاح env** — `subject := "anon-" + hex(HMAC-SHA256(K_env, subject))` | من صنف «الخوارزميات التشفيرية» (EDPB §87). **الصيغة المحددة كاملة قبل أي تنفيذ:** المُدخل = بايتات UTF-8 للسلسلة المخزّنة كما هي بلا أي تطبيع حالة (الموضوعات مُعرّفات معتمة ومطابقتها حرفية — `IdentityUserProvider.java:24-27`)؛ الخرج = **البصمة الكاملة 256-بت بترميز hex** (64 محرفاً؛ الطول الإجمالي 5+1+64=70 ≤ حد العمود 200)؛ **لا اقتطاع** فلا سياسة تصادم لازمة (حد عيد الميلاد 2^128 دون أي دلالة عملية، وقيد `unique` على العمود يفرض الانفراد أصلاً)؛ حتمي → idempotent (إعادة التشغيل = نفس المُعرَّف المُشتق)؛ المفتاح **خارج القاعدة** في env (يفي بـ«kept separately» — §85-86) ويتبع secrets-policy §1 حرفياً؛ دوران المفتاح يغيّر المُعرَّف (يوثَّق) |
 | **(ج) جدول مطابقة** — pseudonym + جدول ربط بصلاحية مقصورة | من صنف «جداول المطابقة» (EDPB §87)؛ الجدول نفسه = «معلومات إضافية» يجب عزلها (§86) — أصعب تشغيلياً لأنه يسكن قاعدة البيانات |
 
-**التوصية المعروضة:** (ب) — يوافق سياسة الأسرار القائمة (env حصراً) وسلوك idempotence المطلوب لعملية إدارية، ويُبقي الإسناد ممكناً حصراً بيد من يملك المفتاح (TOM: قناة النشر/التشغيل وحدها).
+**التوصية المعروضة:** (ب) — يوافق سياسة الأسرار القائمة (env حصراً) وسلوك idempotence المطلوب لعملية إدارية، ويُبقي الإسناد ممكناً حصراً بيد من يملك المفتاح (TOM: قناة النشر/التشغيل وحدها)، **وهو الخيار الوحيد الذي يجعل حارس منع إعادة التسجيل (§5-أ خطوة 8) قابلاً للفحص بالاشتقاق الحتمي نفسه**.
 
 ### ب-3: سعة المس على النصوص الحرة (P9-P15)
 
@@ -124,7 +124,7 @@
 
 ## 4) المرفوض صراحةً (لا ترقيع ولا ديون — قاعدة المستخدم الدائمة)
 
-1. **الحذف الصلب للصفوف المرجعية** (users/الحجوزات/الدفتر/النزاعات): يكسر سلامة FK، يُفرغ الدفتر من مصادره المحاسبية (V19 تثبيت الخارطة §7)، ويمس حقوق الأطراف المقابلة — **مرفوض**؛ الإخفاء يحفظ النظام كله (المرجعية UUID تبقى، الإسناد يموت).
+1. **الحذف الصلب للصفوف المرجعية** (users/الحجوزات/الدفتر/النزاعات): يكسر سلامة FK، يُفرغ الدفتر من مصادره المحاسبية (V19 تثبيت الخارطة §7)، ويمس حقوق الأطراف المقابلة — **مرفوض**؛ الإخفاء يحفظ النظام كله (المرجعية UUID تبقى، الإسناد عبر صف الحساب يموت).
 2. **سر التحويل داخل قاعدة البيانات**: مخالفة نصية لـ«kept separately» (Art. 4(5)/EDPB §86) — مرفوض في كل الخيارات.
 3. **«إخفاء» يجعل الصف يبدو محذوفاً دون لمس قناة الدخول**: تعطيل `auth_users` فقط (قناة L23) هو تجميد لا محو — البند يعالج **هوية الدخول نفسها** (P3) وإلا كان ترقيقاً يترك أثر الإسناد حياً.
 4. **ترك مخبآت `users`/`userSubjects` بلا إبطال**: الجلسة القائمة (CacheInvalidationRequested بعد الالتزام) هي القناة الرسمية (R7) — أي انحراف عنها دين صامت.
@@ -147,20 +147,29 @@
 5. **هوية الدخول (P3):** حذف `auth_authorities` ثم `auth_users` لاسم المستخدم (ترتيب FK — `V13:11-13`). **الأثر الموثَّق:** منحة `refresh_token` تموت فوراً (تقرأ `enabled`/الصف)، توكنات الوصول المصدَرة تموت بـ**TTL 900s** (نافذة أمان معلنة — عينها نوثّقها كما وثّقها L23: «JWTs are self-contained and die by their 900s TTL» — `UserService.java:180-182`).
 6. **التصاريح (P4):** حذف صفوف `oauth2_authorization` للموضوع **فوراً** (لا انتظار نقّاء 7 أيام — المحو بلا «undue delay»)، عدا ذلك فالنقّاء الدوري موجود للبقية.
 7. **المخبآت (P17):** نشر `CacheInvalidationRequested({"users","userSubjects"})` — حدث Modulith عبر `ApplicationEventPublisher` داخل المعاملة، والترحيل إلى Redis في AFTER_COMMIT (`CacheInvalidationRelay` — النمط الذي حرسته I5 باختبار النسختين): المتزامنات ترى الحقيقة خلال نافذة 30 ثانية المحروسة.
-8. **سجل الفعل:** سطر سجل مهيكل (actor/target/old→new/reason) — عُرف المدفوعات (P8: `audit_log` مرفوض بإسناد L23 القائم).
+8. **حارس منع إعادة التسجيل (دخول التزويد):** مسار `syncFromOidc` (`UserService.java:126-146`) ينشئ حساباً جديداً إذا لم تُوجد السلسلة الخام — **الفراغ الذي يكسر ثابتة الـ401**: مصدر هوية يعيد إصدار نفس السلسلة يعيد المستخدم حياً. **الحل المحدد (خيار ب-2 ب حصراً):** قبل الإنشاء، افحص `findBySubject(derive(rawSubject))` — وجود صف مُخفى يحمل المُشتق = رفض التزويد (المُشتق الحتمي نفسه هو شاهد القبر، بلا عمود أو جدول جديد). **مع خيار (أ):** لا اشتقاق قابل للفحص — العاقبة موثّقة في ب-2 (إعادة التسجيل لا تُميّز عن هوية جديدة)؛ إن أردت الحارس مع (أ) فلا بد من عمود علامة منفصل لا رجعة فيه — قرار يُحسم مع البوابة.
+9. **سجل الفعل:** سطر سجل مهيكل (actor/target/old→new/reason) — عُرف المدفوعات (P8: `audit_log` مرفوض بإسناد L23 القائم).
 
-**ما لا تفعله العملية عمداً (وأساسه القانوني):** لا تحذف أي صف مرجعي (P9-P16: سلامة FK + Art. 17(3)(b) + Art. 20(4)) — المرجعية `users.id` (UUID) تبقى مستقرة والسلاسل المرجعية كلها تشتغل، لكن **الإسناد يموت**: دون سر التحويل لا يوجد ما يربط UUID بإنسان.
+**ما لا تفعله العملية عمداً (وأساسه القانوني):** لا تحذف أي صف مرجعي (P9-P16: سلامة FK + Art. 17(3)(b) + Art. 20(4)) — المرجعية `users.id` (UUID) تبقى مستقرة والسلاسل المرجعية كلها تشتغل.
+
+**حدود الضمان بدقة (تصحيح نطاق الإسناد):** ما يموت هو الإسناد **عبر صف الحساب الحي** — قناة الدخول والتزويد والمخبآت وكل ما يمر عبر `users.subject` ← الشخص. **البواقي المصرَّح بها (لا تُدَّعى مغفلة):** سلسلة الموضوع الخام باقية في `created_by`/`updated_by` (P5 — كل الجداول) ومرايا `users_aud` (P6) والنصوص الحرة (ب-3) — هذه تبقى قابلة للربط بالسلسلة الخام نفسها دون مفتاح، ومعالجتها **هي بوابة ب-4 بعينها** (استبقاء بنافذة معلنة أو تطهير). الإطار الرسمي يسمّي هذا «تقييم خطر الإسناد المتبقي» (EDPB §131: على المتحكم أن يستوثق أنه غير جوهري) — والخطة تعلن البواقي وتحصر ضمانها بدل المبالغة.
 
 ### (ب) قيمة الإخفاء في وحدة «الصيغة القانونية»
 
-كل مطالبات الإسناد المتبقية بعد العملية تتطلب «المعلومات الإضافية»:
+كل مطالبات الإسناد **عبر صف الحساب** بعد العملية تتطلب «المعلومات الإضافية» (البواقي المصرَّح بها خارج هذا الضمان — أعمدة التدقيق والتاريخ والنصوص — موثّقة في حدّ الضمان بنهاية §5-أ):
 - مع خيار (أ): المعلومات الإضافية = **لا شيء محفوظ** → الإسناد مستحيل من داخل النظام حصراً.
 - مع خيار (ب): المعلومات الإضافية = مفتاح env حصراً → الإسناد ممكن فقط من قناة التشغيل (TOM: صلاحيات Railway env محصورة بيد المشغل — وهو مبدئياً المستخدم نفسه) — وربط الاحتيال (نفس الاسم يعيد التسجيل → نفس المُشتق الحتمي) يبقى قادراً للمحقق المشروع دون أن يكون متاحاً لقناة المعطيات نفسها.
 - مع خيار (ج): المعلومات الإضافية = جدول معزول بصلاحية مقصورة (التكلفة التشغيلية أعلى — §2).
 
 ### (ج) التصدير (Art. 20 — «بيانات قابلة للنقل»، نصف البند في الخارطة §7)
 
-قبل الإخفاء (ومنفصلاً عنه): `GET /api/v1/users/me/export` يعيد JSON مهيكل (profile + الحجوزات + التقييمات المرسلة + الرسائل المرسلة + الإشعارات + وصف الوسائط) — «structured, commonly used and machine-readable» نصاً (Art. 20(1)). **سطح ذاتي خلف بوابة ب-5** — جسده الفني جاهز بالكامل من القارئات القائمة دون استعلام عابر للحدود (كل وحدة تُصدِّر نصيبها عبر منافذها/أحداثها، والتجمع في identity عبر SPI — R3).
+قبل الإخفاء (ومنفصلاً عنه): `GET /api/v1/users/me/export` يعيد JSON مهيكل — «structured, commonly used and machine-readable» نصاً (Art. 20(1)). **سطح ذاتي خلف بوابة ب-5** — جسده الفني جاهز بالكامل من القارئات القائمة دون استعلام عابر للحدود (كل وحدة تُصدِّر نصيبها عبر منافذها/أحداثها، والتجمع في identity عبر SPI — R3).
+
+**عقد حدود التصدير (يُعرَّف الآن لا عند التنفيذ — إغلاق فجوة من المراجعة):**
+- **مصدر الحقول (provenance):** ما «قدّمه» صاحب البيانات حصراً (نص المادة 20(1)): ملفه الشخصي + **ما ألّفه بنفسه** (تقييماته المرسلة، رسائله المرسلة) + حجوزاته بصفته الطرف الأول (حالة/تواريخ/مبالغه) + وصف وسائطه (بيانات وصفية لا بايتات الملفات) + إشعاراته (الجدول محصور بالمستلم أصلاً — `recipient_id` — V18).
+- **إخضاع بيانات الأطراف الأخرى لقاعدة التدقيق الحقل:** السجلات المشتركة تُصدَّر بأقل تمثيل للطرف المقابل: معرّف UUID معتم فقط (لا اسمه/بريده/ملفه) — معطيات الطرف الآخر ليست معطيات الطالب ولا تُنقل بحكم كونها في سجل مشترك.
+- **الاستثناءات الصريحة:** أعمدة النظام الداخلية (version/is_deleted/created_by/updated_by — سلاسل مدقّقين لا معطيات مُقدَّمة)، بيانات التشغيل (أرشيف الأحداث)، وكل سجل لا يكون الطالب طرفاً أولى فيه.
+- **إشعار الحدود في الرد نفسه:** رأس تعريفي يوثّق نطاق التصدير وتاريخه (سجل قابل للتدقيق لتنفيذ المادة 20).
 
 ### (د) أثر الحدود (R3 — Modulith)
 
@@ -244,30 +253,32 @@ ALTER TABLE users_aud ADD COLUMN IF NOT EXISTS pseudonymized_at TIMESTAMPTZ;  --
 
 ## 10) الاستشهادات الرسمية (Verbatim — من الوثائق المجلبة `scripts/gdpr-docs/`)
 
-**GDPR (EUR-Lex, النص الموحد CELEX:02016R0679-20160504):**
+**GDPR (EUR-Lex, النص الموحد CELEX:02016R0679-20160504) — المتطلبات المعيارية المُلزِمة:**
 
 > **Art. 4(5):** "'pseudonymisation' means the processing of personal data in such a manner that the personal data can no longer be attributed to a specific data subject without the use of additional information, provided that such additional information is kept separately and is subject to technical and organisational measures to ensure that the personal data are not attributed to an identified or identifiable natural person."
-
+>
 > **Art. 5(1)(e):** "personal data shall be kept in a form which permits identification of data subjects for no longer than is necessary for the purposes for which the personal data are processed ('storage limitation')…"
-
+>
 > **Art. 17(1):** "The data subject shall have the right to obtain from the controller the erasure of personal data concerning him or her without undue delay…"
-
+>
 > **Art. 17(3)(b):** "Paragraphs 1 and 2 shall not apply to the extent that processing is necessary: … for compliance with a legal obligation which requires processing by Union or Member State law to which the controller is subject…"
-
+>
 > **Art. 20(1):** "The data subject shall have the right to receive the personal data concerning him or her, which he or she has provided to a controller, in a structured, commonly used and machine-readable format…"
-
+>
 > **Art. 25(1):** "…the controller shall … implement appropriate technical and organisational measures, such as pseudonymisation, which are designed to implement data-protection principles, such as data minimisation, in an effective manner…"
-
+>
 > **Art. 32(1)(a):** "…including inter alia as appropriate: (a) the pseudonymisation and encryption of personal data;"
 
-**EDPB Guidelines 01/2025 on Pseudonymisation (Adopted – version for public consultation):**
+**EDPB Guidelines 01/2025 on Pseudonymisation — إرشاد غير مُلزِم بنسخته المعتمدة للاستشارة العامة (أُغلقت 2025-03-14)؛ المواد المقتبسة أعلاه هي وحدها المتطلبات المعيارية، وإرشادات المجلس تُستأنس بها كتوضيح منهجي مُوثّق الصياغة:**
 
 > **§3:** "There are three actions controllers should take to achieve the desired effect. First, they need to modify or transform the data. Second, they need to keep additional information for attributing the personal data to a specific data subject separately… Last, they need to apply technical and organisational measures to ensure that the personal data are not attributed to an identified or identifiable natural person."
-
+>
 > **§86:** "Since the pseudonymised secrets allow attribution of the pseudonymised data, they form part of the additional information in the sense of Art. 4(5) GDPR. Hence, controllers need to keep them separately and subject them to technical and organisational measures…"
-
+>
 > **§87:** "Two classes of replacement procedures are commonly applied as pseudonymising transformations: cryptographic algorithms and lookup tables."
-
+>
 > **§132:** "…replace the chosen attributes that identify the data subjects and the unique identifier added before (if any was inserted) with pseudonyms by applying the method established previously, removes all other identifiers and stores separately from the pseudonymised data any pseudonymisation secrets generated in or derived from this process…"
+>
+> **§131 (تقييم الخطر المتبقي — إحالة §5):** "Importantly, after the pseudonymising transformation is defined, the controller also needs to assess the risk of attribution in the pseudonymisation domain, and ascertain that it is insignificant."
 
 *(الوثيقتان محفوظتان كاملتين بمساحة الجلسة: `gdpr-consolidated.html` + `edpb-pseudonymisation-guidelines.pdf` والنص المستخرج `gdpr-key-articles.txt`/`edpb-guidelines.txt` — قابلة للمطابقة النصية عند أي مراجعة).*
