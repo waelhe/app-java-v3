@@ -176,9 +176,14 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
     }
 
     @AfterAll
-    static void stopReplicaB() {
+    static void stopReplicaB() throws Exception {
         if (replicaB != null) {
             replicaB.close();
+        }
+        // CodeRabbit #270 nitpick (adopted): the generated JKS holds an RSA
+        // private key — do not let it accumulate in the temp directory.
+        if (keystoreFile != null) {
+            Files.deleteIfExists(keystoreFile);
         }
     }
 
