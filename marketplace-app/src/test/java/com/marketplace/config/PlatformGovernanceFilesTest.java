@@ -263,7 +263,7 @@ class PlatformGovernanceFilesTest {
         assertThat(runtimeFrom)
                 .as("the runtime stage base must stay the jre-alpine official image")
                 .isGreaterThan(-1);
-        int upgrade = dockerfile.indexOf("RUN apk upgrade --no-cache", runtimeFrom);
+        int upgrade = osUpgradeInstructionIndex(dockerfile, runtimeFrom);
         assertThat(upgrade)
                 .as("the runtime stage runs the official in-branch package upgrade "
                         + "(apk-upgrade(8): apk upgrade upgrades installed packages "
@@ -286,6 +286,31 @@ class PlatformGovernanceFilesTest {
     }
 
     @Test
+    void osUpgradeGuardMatchesOnlyRealInstructions() {
+        // Mutation coverage for the line anchor (CodeRabbit r1, PR #273): the
+        // guard must be satisfied by an actual RUN instruction — a
+        // commented-out line or prose mention is the "config that lies"
+        // class this guard family exists to catch.
+        String base = "FROM eclipse-temurin:25-jre-alpine";
+        int from = base.lastIndexOf("FROM eclipse-temurin:25-jre-alpine");
+
+        String commented = base + "\n# RUN apk upgrade --no-cache\nUSER app\n";
+        assertThat(osUpgradeInstructionIndex(commented, from))
+                .as("a commented-out upgrade line is not an instruction")
+                .isEqualTo(-1);
+
+        String prose = base + "\n# the stage runs `apk upgrade --no-cache` here\nUSER app\n";
+        assertThat(osUpgradeInstructionIndex(prose, from))
+                .as("prose does not satisfy the guard")
+                .isEqualTo(-1);
+
+        String real = base + "\nRUN apk upgrade --no-cache # token\nUSER app\n";
+        assertThat(osUpgradeInstructionIndex(real, from))
+                .as("the real instruction matches (trailing comment included)")
+                .isGreaterThan(-1);
+    }
+
+    @Test
     void rootPomCarriesTheTomcatSecurityOverride() throws IOException {
         String pom = read("pom.xml");
         // The official version-property override (Boot appendix "Version
@@ -304,6 +329,13 @@ class PlatformGovernanceFilesTest {
                 .contains("CVE-2026-65182")
                 .contains("CVE-2026-65905")
                 .contains("CVE-2026-68525");
+    }
+
+    private static int osUpgradeInstructionIndex(String dockerfile, int runtimeFrom) {
+        // Line-anchored: RUN must START the line (an actual instruction) —
+        // "RUN apk upgrade --no-cache" inside a comment or prose must not
+        // satisfy the guard (same contract as the USER-app anchor above).
+        return dockerfile.indexOf("\nRUN apk upgrade --no-cache", runtimeFrom);
     }
 
     private static int countIgnoreEntries(String ignoreFile) {
