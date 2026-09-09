@@ -80,5 +80,16 @@ class MarketplacePropertiesBindingTest {
         // session: the one bound key, with the documented default shape.
         assertThat(properties.security().session()).as("session section").isNotNull();
         assertThat(properties.security().session().maxSessions()).isEqualTo(2);
+
+        // I7 (account-pseudonymization-plan §5-أ): the pseudonymization
+        // section is primed non-null when absent — UserService and
+        // SubjectPseudonymizer dereference security().pseudonymization()
+        // unconditionally on every call path (the CodeRabbit #241 lesson
+        // applied to the new section), and the key binds blank = the
+        // capability is OFF (503 SU-001), never null.
+        assertThat(properties.security().pseudonymization())
+                .as("pseudonymization section (absent keys — SubjectPseudonymizer dereferences it)")
+                .isNotNull();
+        assertThat(properties.security().pseudonymization().subjectHmacKey()).isEmpty();
     }
 }

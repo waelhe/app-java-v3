@@ -3,7 +3,9 @@ package com.marketplace.identity;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.api.UserSummary;
+import com.marketplace.shared.security.SubjectPseudonymizer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -45,6 +48,9 @@ class UserServiceTest {
 
     @Mock
     private JdbcTemplate jdbcTemplate;
+
+    @Mock
+    private SubjectPseudonymizer subjectPseudonymizer;
 
     @InjectMocks
     private UserService userService;
@@ -354,5 +360,193 @@ class UserServiceTest {
         userService.updateUserStatus(id, "DISABLED", "handover", "admin-actor");
 
         verify(userDetailsManager).updateUser(any());
+    }
+
+    // -- I7: pseudonymizeAccount (plan §5-أ) --------------------------------
+
+    /** The derivation result the mocked SubjectPseudonymizer hands back. */
+    private static final String DERIVED_SUBJECT =
+            "anon-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    @Test
+    void pseudonymizeAccount_transformsDeletesIdentityAndPublishesCacheInvalidation() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-subject"))
+                .thenReturn(userDetails(true, "USER"));
+        when(subjectPseudonymizer.derive("target-subject")).thenReturn(DERIVED_SUBJECT);
+
+        userService.pseudonymizeAccount(id, "data-subject request", "admin-actor");
+
+        // §5-أ step 3 + 4: the transformation on the domain object.
+        assertThat(user.getSubject()).isEqualTo(DERIVED_SUBJECT);
+        assertThat(user.getEmail()).isNull();
+        assertThat(user.getDisplayName()).isNull();
+        assertThat(user.getPseudonymizedAt()).isNotNull();
+
+        // Step 5: the login identity dies through the framework manager's
+        // deleteUser (authorities first, then the row — the official order).
+        verify(userDetailsManager).deleteUser("target-subject");
+        // The L23 flip channel is never touched (pseudonymization deletes,
+        // it does not disable).
+        verify(userDetailsManager, never()).updateUser(any());
+        // Step 6: the issued authorizations die immediately.
+        verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-subject"));
+        // The admin-count query never ran (a non-admin target).
+        verify(jdbcTemplate, never()).queryForList(anyString(), eq(String.class));
+        // Step 7: the standing AFTER_COMMIT cache channel with BOTH cache names.
+        ArgumentCaptor<CacheInvalidationRequested> event =
+                ArgumentCaptor.forClass(CacheInvalidationRequested.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().cacheNames()).containsExactlyInAnyOrder("users", "userSubjects");
+    }
+
+    @Test
+    void pseudonymizeAccount_isIdempotent_noOpOnAnAlreadyPseudonymizedRow() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
+        user.applyPseudonymization(DERIVED_SUBJECT);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+
+        userService.pseudonymizeAccount(id, "re-run", "admin-actor");
+
+        // Nothing happens: no auth deletion, no authorization sweep, no event.
+        // The subject is unchanged (the same derivation anyway — determinism).
+        assertThat(user.getSubject()).isEqualTo(DERIVED_SUBJECT);
+        verifyNoInteractions(userDetailsManager, jdbcTemplate, eventPublisher, subjectPseudonymizer);
+    }
+
+    @Test
+    void pseudonymizeAccount_unboundSecretChannelIsOffNotBroken() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-subject"))
+                .thenReturn(userDetails(true, "USER"));
+        when(subjectPseudonymizer.derive("target-subject"))
+                .thenThrow(new ServiceUnavailableException("Account pseudonymization is not configured."));
+
+        assertThrows(ServiceUnavailableException.class,
+                () -> userService.pseudonymizeAccount(id, "x", "admin-actor"));
+
+        // The 503 fires BEFORE any mutation: the row, the auth identity, the
+        // authorizations and the caches are all untouched.
+        assertThat(user.getSubject()).isEqualTo("target-subject");
+        verify(userDetailsManager, never()).deleteUser(any());
+        verify(jdbcTemplate, never()).update(anyString(), (Object) any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void pseudonymizeAccount_throwsWhenAuthenticationAccountMissing() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.of(
+                User.create("ghost-subject", "g@b.com", "Ghost", UserRole.CONSUMER)));
+        when(userDetailsManager.loadUserByUsername("ghost-subject"))
+                .thenThrow(new UsernameNotFoundException("ghost-subject"));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> userService.pseudonymizeAccount(id, "x", "admin-actor"));
+        verify(userDetailsManager, never()).deleteUser(any());
+    }
+
+    @Test
+    void pseudonymizeAccount_rejectsTheLastActiveAdmin() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("admin-user", "a@b.com", "Admin", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("admin-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-user"));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> userService.pseudonymizeAccount(id, "x", "admin-actor"));
+
+        assertThat(ex.getMessage()).contains("last active ADMIN");
+        verify(userDetailsManager, never()).deleteUser(any());
+        verify(jdbcTemplate, never()).update(anyString(), (Object) any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void pseudonymizeAccount_skipsTheAdminCountForNonAdminTargets() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-subject", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-subject"))
+                .thenReturn(userDetails(true, "USER"));
+        when(subjectPseudonymizer.derive("target-subject")).thenReturn(DERIVED_SUBJECT);
+
+        userService.pseudonymizeAccount(id, "request", "admin-actor");
+
+        // No admin counting query for a non-admin target (the guard only
+        // locks rows when the target carries the authority).
+        verify(jdbcTemplate, never()).queryForList(anyString(), eq(String.class));
+        verify(userDetailsManager).deleteUser("target-subject");
+    }
+
+    // -- I7 §5-أ step 8: the re-registration tombstone guard --------------
+
+    @Test
+    void syncFromOidc_rejectsProvisioningWhenTheDerivedTombstoneExists() {
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("resurrected-subject");
+        when(jwt.getClaimAsString("email")).thenReturn("r@b.com");
+        when(jwt.getClaimAsString("name")).thenReturn("Re-issued Identity");
+        when(userRepository.findBySubject("resurrected-subject")).thenReturn(Optional.empty());
+        when(subjectPseudonymizer.isConfigured()).thenReturn(true);
+        when(subjectPseudonymizer.derive("resurrected-subject")).thenReturn(DERIVED_SUBJECT);
+        // The tombstone: a row already carries the derived replacement.
+        when(userRepository.findBySubject(DERIVED_SUBJECT)).thenReturn(Optional.of(
+                User.create(DERIVED_SUBJECT, null, null, UserRole.CONSUMER)));
+
+        ConflictException ex = assertThrows(ConflictException.class, () -> userService.syncFromOidc(token));
+
+        assertThat(ex.getMessage()).contains("pseudonymized");
+        // Provisioning never happens — no new row, no cache event.
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void syncFromOidc_guardIsInertWhileTheSecretChannelIsUnbound() {
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("fresh-subject");
+        when(jwt.getClaimAsString("email")).thenReturn("f@b.com");
+        when(jwt.getClaimAsString("name")).thenReturn("Fresh User");
+        when(jwt.getClaimAsStringList("roles")).thenReturn(null);
+        when(userRepository.findBySubject("fresh-subject")).thenReturn(Optional.empty());
+        when(subjectPseudonymizer.isConfigured()).thenReturn(false);
+        when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        User result = userService.syncFromOidc(token);
+
+        // No tombstone can exist while the key never existed — the probe is
+        // skipped entirely (no derive() call), and provisioning proceeds.
+        verify(subjectPseudonymizer, never()).derive(any());
+        assertThat(result.getSubject()).isEqualTo("fresh-subject");
+    }
+
+    @Test
+    void findAllSummaries_rendersTheNeutralLabelForPseudonymizedAccounts() {
+        UUID id = UUID.randomUUID();
+        User live = new User(id, "live-subject", "l@b.com", "Live", UserRole.CONSUMER);
+        User gone = User.create("gone-subject", "g@b.com", "Gone", UserRole.CONSUMER);
+        gone.applyPseudonymization(DERIVED_SUBJECT);
+        when(userRepository.findAll(PageRequest.of(0, 10)))
+                .thenReturn(new PageImpl<>(List.of(live, gone)));
+
+        Page<UserSummary> result = userService.findAllSummaries(PageRequest.of(0, 10));
+
+        assertThat(result.getContent().get(0).displayName()).isEqualTo("Live");
+        assertThat(result.getContent().get(1).displayName())
+                .isEqualTo(UserService.FORMER_MEMBER_LABEL);
+        assertThat(result.getContent().get(1).email()).isNull();
     }
 }

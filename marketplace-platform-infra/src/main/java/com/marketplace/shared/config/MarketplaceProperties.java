@@ -38,8 +38,29 @@ public record MarketplaceProperties(
     public record Security(
         @DefaultValue Jwt jwt,
         @DefaultValue Session session,
-        @DefaultValue OAuth2 oauth2
+        @DefaultValue OAuth2 oauth2,
+        @DefaultValue Pseudonymization pseudonymization
     ) {
+        /**
+         * I7 (account-pseudonymization-plan §5-أ / gate b-2(b)): the HMAC
+         * secret for account-subject pseudonymization — the "additional
+         * information" that GDPR Art. 4(5) requires to be "kept separately"
+         * from the pseudonymized data. The channel is environment-only per
+         * secrets-policy §1 ({@code PSEUDONYMIZATION_HMAC_KEY}): the value
+         * never defaults, never lands in Git, and is never logged.
+         *
+         * <p>Optional until bound, exactly like the PSP/MAIL gates: blank =
+         * the administrative pseudonymize surface answers 503 SU-001 (the
+         * capability is OFF, not broken) and the re-registration probe in
+         * {@code syncFromOidc} stays inert — no tombstone can exist while the
+         * key never existed. Rotation consequence (documented, plan §9): a
+         * different key derives different replacement subjects, so existing
+         * tombstones stop matching the probe.
+         */
+        public record Pseudonymization(
+            @DefaultValue("") String subjectHmacKey
+        ) {}
+
         public record Jwt(
             @DefaultValue KeyStore keystore,
             @DefaultValue("marketplace-api") String audience

@@ -4,7 +4,9 @@ import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.api.UserSummary;
+import com.marketplace.shared.security.SubjectPseudonymizer;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,8 +38,16 @@ public class UserService implements IdentitySpi {
     private final ApplicationEventPublisher eventPublisher;
     private final UserDetailsManager userDetailsManager;
     private final JdbcTemplate jdbcTemplate;
+    private final SubjectPseudonymizer subjectPseudonymizer;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
+
+    /**
+     * I7 §5-أ step 3 — the neutral label read surfaces render for a
+     * pseudonymized account, at the response-DTO level only (never stored:
+     * the storage columns are NULL, the label is the API's honest rendering).
+     */
+    static final String FORMER_MEMBER_LABEL = "Former member";
 
     /** Authorization rows in the SAS store (V13) are keyed by the principal name. */
     static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
@@ -65,11 +75,13 @@ public class UserService implements IdentitySpi {
     public UserService(UserRepository userRepository,
                        ApplicationEventPublisher eventPublisher,
                        UserDetailsManager userDetailsManager,
-                       JdbcTemplate jdbcTemplate) {
+                       JdbcTemplate jdbcTemplate,
+                       SubjectPseudonymizer subjectPseudonymizer) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsManager = userDetailsManager;
         this.jdbcTemplate = jdbcTemplate;
+        this.subjectPseudonymizer = subjectPseudonymizer;
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +147,22 @@ public class UserService implements IdentitySpi {
                     return existing;
                 })
                 .orElseGet(() -> {
+                    // I7 §5-أ step 8 — the pre-provisioning deny check: the
+                    // identity's raw subject was pseudonymized under the
+                    // configured key, and the deterministic derivation is the
+                    // tombstone. Probing the DERIVED replacement before any
+                    // creation closes the account-recreation hole: a
+                    // re-issued raw sub (an identity provider re-issuing the
+                    // same subject, or a live access token's 900s window)
+                    // must not resurrect the identity. Inert while the secret
+                    // channel is unbound — no tombstone can exist then.
+                    if (subjectPseudonymizer.isConfigured()
+                            && userRepository.findBySubject(
+                                    subjectPseudonymizer.derive(subject)).isPresent()) {
+                        throw new ConflictException(
+                                "Account for this subject was pseudonymized and cannot be "
+                                        + "re-provisioned: " + subject);
+                    }
                     UserRole role = resolveRole(token);
                     User newUser = User.create(subject, email, name, role);
                     profileChanged.set(true);
@@ -155,7 +183,14 @@ public class UserService implements IdentitySpi {
 
     @Observed(name = "user.role.update")
     public void updateUserRole(UUID userId, String newRole) {
-        User user = getById(userId);
+        // The write path reads the source of truth directly — NOT the
+        // @Cacheable getById (a cache hit hands back a JDK-deserialized
+        // DETACHED copy, and dirty checking never sees its mutations: the
+        // role change would be silently lost while the response looks
+        // applied). Same-class fix discovered while building I7's
+        // pseudonymizeAccount write path; the read cache stays for readers.
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         user.changeRole(UserRole.valueOf(newRole));
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
     }
@@ -252,11 +287,141 @@ public class UserService implements IdentitySpi {
                 .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 
+    /**
+     * I7 Phase 1 (account-pseudonymization-plan §5-أ — the plan adopted by
+     * PR #276): account pseudonymization — the one-transaction operation that
+     * erases the login identity and replaces the direct identifiers, then
+     * lets the existing channels finish the job (cache eviction after the
+     * commit, tokens by their TTL). Official basis: GDPR Art. 4(5) (the
+     * pseudonymisation definition — replacement + separately-kept additional
+     * information), Art. 17(1)(a) (erasure of direct identifiers), EDPB
+     * 01/2025 §3 (the controller's three actions: transform / keep the secret
+     * separately / restrict access — the key is env-only, secrets-policy §1).
+     *
+     * <p><b>Sequence (§5-أ, one transaction, strict order):</b></p>
+     * <ol>
+     *   <li>Last-active-ADMIN guard — the counting constraint reused verbatim
+     *       from L23 (the row-locking rationale documented on
+     *       {@link #LOCK_ACTIVE_ADMINS} applies unchanged: two concurrent
+     *       attempts must not both pass a count of 2).</li>
+     *   <li>Idempotence — a row carrying {@code pseudonymized_at} is a
+     *       documented no-op: re-running the operation must never collide
+     *       with the {@code unique} constraint on {@code users.subject}.</li>
+     *   <li>The transformation (b-2(b)): {@code subject} becomes the derived
+     *       replacement, {@code email}/{@code display_name} become NULL.
+     *       Read surfaces render the neutral label at the DTO level only.</li>
+     *   <li>The status column stamps {@code pseudonymized_at} (V46).</li>
+     *   <li>The login identity (P3) dies through the framework's own
+     *       {@link UserDetailsManager#deleteUser(String)} — the official
+     *       JdbcUserDetailsManager order (verified against the 7.1.1 bytecode)
+     *       deletes {@code auth_authorities} first, then the
+     *       {@code auth_users} row: exactly the FK-safe order of V13.</li>
+     *   <li>The issued authorizations (P4) are removed immediately — no
+     *       "undue delay" (Art. 17(1)): the refresh grant dies with its
+     *       {@code oauth2_authorization} rows; already-minted access JWTs are
+     *       self-contained and die by their 900s TTL (the same documented L23
+     *       basis). The periodic cleanup keeps sweeping the rest.</li>
+     *   <li>The {@code users}/{@code userSubjects} caches are invalidated
+     *       through the standing AFTER_COMMIT channel
+     *       ({@code CacheInvalidationRequested} → {@code CacheInvalidationRelay})
+     *       — the I5-guarded mechanism, not a new one.</li>
+     * </ol>
+     *
+     * <p><b>What this deliberately never touches (§5-أ closing + §4):</b> the
+     * UUID primary key and every referencing row (P9–P16) stay — reference
+     * integrity, the accounting source of truth, and the counterparties'
+     * rights (Art. 17(3)(b), Art. 20(4)) keep the records alive in
+     * pseudonymized form. The raw subject strings remaining in the audit
+     * columns ({@code created_by}/{@code updated_by}), the Envers history and
+     * the free texts are the declared residuals of gate b-4/b-3 — declared,
+     * not claimed erased (EDPB §131 residual-risk scope, plan §5-أ closing).
+     *
+     * <p><b>The audit record (§5-أ step 9, CodeRabbit round 1 adopted):</b> a
+     * structured log line — actor, target (userId), replacement subject,
+     * reason — the payments module's record convention. The raw old→new
+     * mapping is deliberately NOT logged (CWE-532: the log line would
+     * re-store the direct identifier in yet another store outside the
+     * pseudonymized domain); the mapping remains recoverable exactly where
+     * the plan declares it — the Envers revision history (P6, gate b-4's
+     * windowed residual). The {@code audit_log} table stays rejected on the
+     * standing L23 evidence.
+     *
+     * @throws ServiceUnavailableException the secret channel is unbound —
+     *         the capability is OFF (503 SU-001), never a silent fallback
+     * @throws ConflictException            the target is the last active ADMIN
+     * @throws ResourceNotFoundException    no live authentication account for
+     *         the projection row (the L23 defensive shape)
+     */
+    @Observed(name = "user.pseudonymize")
+    @Override
+    public void pseudonymizeAccount(UUID userId, String reason, String actor) {
+        // The write path reads the source of truth directly — NOT the
+        // @Cacheable getById: a cache hit returns a JDK-deserialized DETACHED
+        // copy, and applyPseudonymization on it would be invisible to dirty
+        // checking (the transformation silently lost while the transaction
+        // commits green). The read cache stays exactly where it belongs —
+        // on the readers; the AFTER_COMMIT invalidation clears their copies.
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        // Step 2 — idempotence: a pseudonymized row is a documented no-op.
+        if (user.getPseudonymizedAt() != null) {
+            log.info("Account pseudonymization idempotent no-op: userId={}, actor={}, reason='{}'",
+                    userId, actor, reason);
+            return;
+        }
+
+        String originalSubject = user.getSubject();
+        UserDetails stored;
+        try {
+            stored = userDetailsManager.loadUserByUsername(originalSubject);
+        } catch (UsernameNotFoundException ex) {
+            throw new ResourceNotFoundException(
+                    "No authentication account for user: " + userId
+                            + " (subject: " + originalSubject + ")");
+        }
+
+        // Step 1 — the last-active-ADMIN counting constraint (L23 verbatim;
+        // the lock rationale on LOCK_ACTIVE_ADMINS applies unchanged).
+        if (stored.isEnabled() && hasAdminAuthority(stored)) {
+            List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
+            if (activeAdmins.size() <= 1) {
+                throw new ConflictException("Cannot pseudonymize the last active ADMIN account");
+            }
+        }
+
+        // Step 3 + 4 — the derived replacement (b-2(b)), then the domain
+        // transform: subject := replacement, email/displayName := NULL,
+        // pseudonymized_at := now (V46 column).
+        String replacementSubject = subjectPseudonymizer.derive(originalSubject);
+        user.applyPseudonymization(replacementSubject);
+
+        // Step 5 — the login identity dies through the framework manager: the
+        // official JdbcUserDetailsManager.deleteUser order (7.1.1 bytecode)
+        // is auth_authorities first, then auth_users — the FK-safe order.
+        userDetailsManager.deleteUser(originalSubject);
+
+        // Step 6 — issued authorizations die immediately (no 7-day wait).
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, originalSubject);
+
+        // Step 7 — the standing AFTER_COMMIT cache channel (I5-guarded).
+        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+
+        // Step 9 — the structured audit line (payments convention). The raw
+        // old subject is deliberately absent (CWE-532, CodeRabbit round 1):
+        // the old→new mapping lives in the Envers history — the declared b-4
+        // residual — not duplicated into log storage.
+        log.info("Account pseudonymization audit: userId={}, subject -> {}, "
+                        + "email -> null, displayName -> null, actor={}, reason='{}'",
+                userId, replacementSubject, actor, reason);
+    }
+
     private UserSummary toUserSummary(User user) {
+        boolean pseudonymized = user.getPseudonymizedAt() != null;
         return new UserSummary(
                 user.getId(),
                 user.getEmail(),
-                user.getDisplayName(),
+                pseudonymized ? UserService.FORMER_MEMBER_LABEL : user.getDisplayName(),
                 user.getRole().name(),
                 user.getCreatedAt(),
                 user.getUpdatedAt()

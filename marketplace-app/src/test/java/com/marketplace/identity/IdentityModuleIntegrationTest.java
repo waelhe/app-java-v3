@@ -32,6 +32,13 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     UserDetailsManager userDetailsManager;
 
+    // I7 Phase 1: UserService also consumes SubjectPseudonymizer — a
+    // platform-infra shared-security component, likewise outside this module
+    // slice. The mock's default (isConfigured() = false) is the honest slice
+    // shape: the tombstone probe is inert when the secret channel is unbound.
+    @MockitoBean
+    com.marketplace.shared.security.SubjectPseudonymizer subjectPseudonymizer;
+
     @Autowired
     private UserService userService;
 

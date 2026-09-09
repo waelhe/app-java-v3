@@ -141,8 +141,8 @@ class JwtRolesRoundTripTest {
                         new MarketplaceProperties.Security.Session(2),
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", ""),
-                                new MarketplaceProperties.Security.OAuth2.PublicClient("", ""))
-                )
+                                new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
+                        new MarketplaceProperties.Security.Pseudonymization(""))
         );
     }
 }
