@@ -309,7 +309,7 @@ class AccountPseudonymizationIntegrationTest {
      */
     @Test
     void lastActiveAdminCannotBePseudonymized() throws Exception {
-        GateResult adminGate = loginGate(ADMIN_USERNAME, PASSWORD);
+        GateResult adminGate = adminGate();
         UUID adminId = syncProjectionIdViaMe(adminGate.accessToken());
 
         UserDetails seededAdmin = silenceSeededAdminIfPresent();
@@ -425,48 +425,79 @@ class AccountPseudonymizationIntegrationTest {
         registeredClientRepository.save(loginGateClient);
     }
 
+    /**
+     * The real browser-less login gate — the L23 gate's proven five-step
+     * sequence, verbatim: (1) unauthenticated authorize &rarr; 302 /login with
+     * the session; (2) the login form's CSRF token (bound to the session);
+     * (3) credentials POST &rarr; 302 to the SAVED authorization request;
+     * (4) re-issuing the authorize request as the authenticated principal
+     * &rarr; 302 to the client with the code; (5) the token exchange
+     * (client_secret_basic + the PKCE verifier).
+     */
     private GateResult loginGate(String username, String password) throws Exception {
         registerLoginGateClient();
-        // PKCE (RFC 7636): the SAME verifier backs the authorize challenge and
-        // the token exchange — captured here and threaded through both calls.
-        String verifier = randomCodeVerifier();
+        String state = UUID.randomUUID().toString();
+        String codeVerifier = randomCodeVerifier();
+        String codeChallenge = base64Url(sha256(codeVerifier));
         String authorizeUrl = baseUrl() + AUTHORIZE_PATH
                 + "?response_type=code"
                 + "&client_id=" + CLIENT_ID
                 + "&scope=openid"
-                + "&state=" + UUID.randomUUID()
+                + "&state=" + state
                 + "&redirect_uri=" + encode(REDIRECT_URI)
-                + "&code_challenge=" + base64Url(sha256(verifier))
+                + "&code_challenge=" + codeChallenge
                 + "&code_challenge_method=S256";
+
+        // (1) Unauthenticated authorization request -> redirect to the login page.
         HttpResponse<String> authorizeFirst = get(authorizeUrl, null);
-        assertThat(authorizeFirst.statusCode()).as("authorize: %s", body(authorizeFirst)).isEqualTo(302);
+        assertThat(authorizeFirst.statusCode()).as("authorize should redirect to login: %s", body(authorizeFirst)).isEqualTo(302);
+        assertThat(authorizeFirst.headers().firstValue("Location").orElse("")).contains(LOGIN_PATH);
         String sessionCookie = sessionCookie(authorizeFirst);
+        assertThat(sessionCookie).as("spring-session cookie expected").isNotBlank();
+
+        // (2) Fetch the login form; the CSRF token is bound to the session.
         HttpResponse<String> loginPage = get(baseUrl() + LOGIN_PATH, sessionCookie);
+        assertThat(loginPage.statusCode()).as("login page: %s", body(loginPage)).isEqualTo(200);
         String csrfToken = csrfTokenFrom(loginPage.body());
-        assertThat(csrfToken).isNotBlank();
+        assertThat(csrfToken).as("CSRF token must be rendered by the default login page").isNotBlank();
         sessionCookie = latestSessionCookie(loginPage, sessionCookie);
+
+        // (3) Submit credentials -> redirect back to the saved authorization request.
         HttpResponse<String> loginPost = postForm(LOGIN_PATH,
                 "username=" + username + "&password=" + password + "&_csrf=" + encode(csrfToken), sessionCookie);
-        assertThat(loginPost.statusCode()).as("login POST: %s", body(loginPost)).isEqualTo(302);
-        String location = loginPost.headers().firstValue("Location").orElse("");
-        assertThat(location).as("login must redirect onward, not to /login?error").doesNotContain("/login?error");
-        String code = queryParam(location, "code");
-        assertThat(code).as("the authorization code must be present").isNotBlank();
-        return exchangeCode(code, verifier);
+        assertThat(loginPost.statusCode()).as("login should succeed: %s", body(loginPost)).isEqualTo(302);
+        String savedRequest = loginPost.headers().firstValue("Location").orElse("");
+        assertThat(savedRequest).as("login must resume the saved authorization request, not /login?error")
+                .contains(AUTHORIZE_PATH);
+        sessionCookie = latestSessionCookie(loginPost, sessionCookie);
+
+        // (4) Re-issue the authorization request as an authenticated principal -> code.
+        HttpResponse<String> authorizeSecond = get(absolute(savedRequest), sessionCookie);
+        assertThat(authorizeSecond.statusCode())
+                .as("authorize should redirect back to the client: %s", body(authorizeSecond)).isEqualTo(302);
+        String redirect = authorizeSecond.headers().firstValue("Location").orElse("");
+        assertThat(redirect).startsWith(REDIRECT_URI);
+        assertThat(redirect).contains("code=");
+        String authorizationCode = queryParam(redirect, "code");
+
+        // (5) Exchange the code for tokens (client_secret_basic + PKCE verifier).
+        HttpResponse<String> tokenResponse = postFormWithBasicAuth(TOKEN_PATH,
+                "grant_type=authorization_code"
+                        + "&code=" + encode(authorizationCode)
+                        + "&redirect_uri=" + encode(REDIRECT_URI)
+                        + "&code_verifier=" + codeVerifier);
+        assertThat(tokenResponse.statusCode()).as("token endpoint: %s", body(tokenResponse)).isEqualTo(200);
+
+        JsonNode tokens = objectMapper.readTree(tokenResponse.body());
+        return new GateResult(
+                tokens.path("access_token").asString(),
+                tokens.path("refresh_token").asString(),
+                tokens.path("token_type").asString(),
+                tokens.path("id_token").asString());
     }
 
-    private GateResult exchangeCode(String code, String verifier) throws Exception {
-        HttpResponse<String> response = postFormWithBasicAuth(TOKEN_PATH,
-                "grant_type=authorization_code&code=" + encode(code)
-                        + "&redirect_uri=" + encode(REDIRECT_URI)
-                        + "&code_verifier=" + verifier);
-        assertThat(response.statusCode()).as("token exchange: %s", body(response)).isEqualTo(200);
-        JsonNode token = objectMapper.readTree(response.body());
-        return new GateResult(
-                token.path("access_token").asString(),
-                token.path("refresh_token").asString(),
-                token.path("token_type").asString(),
-                token.path("id_token").asString());
+    private String absolute(String location) {
+        return location.startsWith("http") ? location : baseUrl() + location;
     }
 
     /** PKCE verifier per the official RFC 7636 flow shape (login-gate test). */
