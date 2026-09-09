@@ -54,7 +54,7 @@ jobs:
         if: steps.preflight.outputs.enabled == 'true'
         run: |
           testsprite test run --all --project "$TESTSPRITE_PROJECT_ID" \
-            --wait --output json --report junit
+            --wait --output json --report junit --report-file ./junit.xml
         env:
           TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
           TESTSPRITE_PROJECT_ID: ${{ secrets.TESTSPRITE_PROJECT_ID }}
