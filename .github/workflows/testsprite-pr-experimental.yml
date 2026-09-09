@@ -1,0 +1,68 @@
+name: TestSprite PR (experimental)
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  verify:
+    # Opt-in gate: only runs when the manual "testsprite-experiment" label
+    # is applied to the PR. The cloud runs are a paid external provider, so
+    # they must never fire by default (post-window E-item gate principle).
+    if: contains(github.event.pull_request.labels.*.name, 'testsprite-experiment')
+    name: TestSprite verify (experimental)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure CLI
+        run: npm install -g @testsprite/testsprite-cli
+
+      - name: Preflight (skip cleanly when not configured)
+        id: preflight
+        run: |
+          if [ -z "$TESTSPRITE_API_KEY" ] || [ -z "$TESTSPRITE_PROJECT_ID" ]; then
+            echo "::warning::TestSprite secrets are not configured - skipping the experimental run."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+          TESTSPRITE_PROJECT_ID: ${{ secrets.TESTSPRITE_PROJECT_ID }}
+
+      - name: Doctor
+        if: steps.preflight.outputs.enabled == 'true'
+        run: testsprite doctor
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+
+      - name: Run suite (annotations + job summary)
+        if: steps.preflight.outputs.enabled == 'true'
+        run: |
+          testsprite test run --all --project "$TESTSPRITE_PROJECT_ID" \
+            --wait --output json --report junit
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+          TESTSPRITE_PROJECT_ID: ${{ secrets.TESTSPRITE_PROJECT_ID }}
+
+      - name: Upload JUnit sidecar
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testsprite-junit
+          path: "**/*junit*.xml"
+          retention-days: 7
