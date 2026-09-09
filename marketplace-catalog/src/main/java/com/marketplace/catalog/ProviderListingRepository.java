@@ -89,6 +89,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
+            ORDER BY id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings

@@ -233,11 +233,11 @@ class CatalogServiceTest {
         when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
         stubOwnership(stored);
 
+        Integer before = stored.getMaxGuests(); // captured BEFORE (no tautology)
         catalogService.update(stored.getId(), "Loft 2", "desc", "stay", 12_000L, null, null, null);
 
         // omitted (null) — the entity keeps whatever it had (Instancio's
         // random value survives; nothing was overwritten with null).
-        Integer before = stored.getMaxGuests();
         assertThat(stored.getMaxGuests()).isEqualTo(before);
     }
 
@@ -258,11 +258,11 @@ class CatalogServiceTest {
         when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
         stubOwnership(stored);
 
+        Integer before = stored.getMaxGuests(); // captured BEFORE (no tautology)
         assertThatThrownBy(() -> catalogService.update(stored.getId(), "Loft 2", "desc", "stay",
                 12_000L, null, -1, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("max guests must be positive");
-        Integer before = stored.getMaxGuests();
         assertThat(stored.getMaxGuests()).isEqualTo(before);
     }
 
