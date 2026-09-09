@@ -265,8 +265,9 @@ class AccountPseudonymizationIntegrationTest {
         // Records stay: the booking still references the stable UUID and is
         // readable through the administrative surface (reference integrity —
         // Art. 17(3)(b)/20(4), the plan's §4 refusal of hard deletion).
-        HttpResponse<String> bookings = getJson(portA,
-                "/api/v1/admin/bookings?status=PENDING&size=50");
+        // Authenticated read (the surface's own gate) with the admin token.
+        HttpResponse<String> bookings = getWithBearer(
+                "/api/v1/admin/bookings?status=PENDING&size=50", admin.accessToken());
         assertThat(bookings.statusCode()).as("admin bookings read: %s", body(bookings)).isEqualTo(200);
         assertThat(bookings.body()).contains(targetId.toString());
 
@@ -633,15 +634,6 @@ class AccountPseudonymizationIntegrationTest {
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private HttpResponse<String> getJson(int port, String path) throws Exception {
-        return httpClient.send(
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + (path.startsWith("/") ? path : "/" + path)))
-                        .header("Accept", "application/json")
-                        .timeout(Duration.ofSeconds(30))
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-    }
 
     private HttpResponse<String> getWithBearer(String path, String accessToken) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl() + path))
