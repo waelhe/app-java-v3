@@ -31,4 +31,26 @@ public interface IdentitySpi {
      *               {@code changed_by}
      */
     void updateUserStatus(UUID userId, String status, String reason, String actor);
+
+    /**
+     * I7 Phase 1 (account-pseudonymization-plan §5-أ, the plan adopted by
+     * PR #276): account pseudonymization — erases the login identity and
+     * replaces the direct identifiers in one transaction, then lets the
+     * existing channels finish (cache eviction AFTER_COMMIT, access tokens
+     * by their 900s TTL). The UUID and every referencing row stay (Art.
+     * 17(3)(b) / 20(4) — records persist in pseudonymized form); the audit
+     * columns and free texts are the declared residuals of the plan's gates
+     * b-4/b-3.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param reason the administrative reason, recorded with the action
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action
+     * @throws com.marketplace.shared.api.ServiceUnavailableException
+     *         the HMAC secret channel is unbound (503 SU-001 — the
+     *         capability is OFF, not broken)
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the target is the last active ADMIN account
+     */
+    void pseudonymizeAccount(UUID userId, String reason, String actor);
 }

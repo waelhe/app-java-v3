@@ -179,4 +179,17 @@ class AdminControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         verify(identitySpi).updateUserStatus(userId, "DISABLED", "policy violation", "admin-actor");
     }
+
+    @Test
+    void pseudonymizeUser_callsSpiWithActorAndReturnsOk() {
+        UUID userId = UUID.randomUUID();
+        var request = new AdminController.PseudonymizeRequest("data-subject erasure request");
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn("admin-actor");
+
+        ResponseEntity<Void> result = controller.pseudonymizeUser(userId, request, authentication);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        verify(identitySpi).pseudonymizeAccount(userId, "data-subject erasure request", "admin-actor");
+    }
 }

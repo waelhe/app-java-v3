@@ -84,6 +84,30 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * I7 Phase 1 (account-pseudonymization-plan §7 — the administrative
+     * surface, gate b-5's adopted recommendation): one-way account
+     * pseudonymization. The reason is part of the contract exactly like the
+     * L23 status surface — it is recorded with the action in the identity
+     * module's structured audit line. POST (an action, not a resource-state
+     * PUT — the plan's own verb); idempotence is the service's documented
+     * no-op on an already-pseudonymized row.
+     *
+     * <p>Answers 503 SU-001 while the HMAC secret channel is unbound
+     * ({@code PSEUDONYMIZATION_HMAC_KEY}) — the capability is OFF, not
+     * broken (the PSP/MAIL gate semantics).
+     */
+    public record PseudonymizeRequest(@NotBlank String reason) {}
+
+    @PostMapping("/users/{id}/pseudonymize")
+    public ResponseEntity<Void> pseudonymizeUser(@PathVariable UUID id,
+                                                 @Valid @RequestBody PseudonymizeRequest request,
+                                                 Authentication authentication) {
+        identitySpi.pseudonymizeAccount(id, request.reason(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
     // -- Listings -------------------------------------------------------
 
     @GetMapping("/listings")

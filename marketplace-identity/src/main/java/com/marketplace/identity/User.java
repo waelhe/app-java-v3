@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -33,6 +34,17 @@ public class User extends BaseEntity {
     @Column(name = "role", nullable = false, length = 30)
     private UserRole role;
 
+    /**
+     * I7 (account-pseudonymization-plan §5-أ step 4 / V46): the account's
+     * pseudonymization marker. {@code null} = a live account; non-null = the
+     * one-transaction operation ran — direct identifiers replaced, login
+     * identity rows deleted. Doubles as the idempotence marker (the second
+     * call is a documented no-op) and the "former member" switch for read
+     * DTOs (the neutral label is rendered at the response level only).
+     */
+    @Column(name = "pseudonymized_at")
+    private Instant pseudonymizedAt;
+
     protected User() {
     }
 
@@ -55,6 +67,7 @@ public class User extends BaseEntity {
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }
     public UserRole getRole() { return role; }
+    public Instant getPseudonymizedAt() { return pseudonymizedAt; }
 
     public boolean updateProfile(String email, String displayName) {
         boolean changed = !Objects.equals(this.email, email)
@@ -66,5 +79,30 @@ public class User extends BaseEntity {
 
     public void changeRole(UserRole newRole) {
         this.role = newRole;
+    }
+
+    /**
+     * I7 (account-pseudonymization-plan §5-أ step 3): replaces the direct
+     * identifiers on the account row — the subject becomes the derived
+     * replacement ({@code "anon-" + hex(HMAC-SHA256(K_env, subject))}, the
+     * b-2(b) transformation), and the two profile columns (P2) go to
+     * {@code null} (Art. 17(1)(a): identification is no longer necessary for
+     * the marketplace purposes once the membership ends). The UUID primary
+     * key and every referencing row are untouched on purpose — reference
+     * integrity and the other parties' rights (Art. 17(3)(b) / 20(4)) keep
+     * the records alive in pseudonymized form.
+     *
+     * <p>The read surfaces render the neutral "former member" label at the
+     * response-DTO level ({@code UserMapper} / {@code toUserSummary}) — never
+     * stored here: storage stays {@code null}.
+     *
+     * @param replacementSubject the deterministic HMAC-derived replacement
+     *                            (produced by {@code SubjectPseudonymizer})
+     */
+    void applyPseudonymization(String replacementSubject) {
+        this.subject = replacementSubject;
+        this.email = null;
+        this.displayName = null;
+        this.pseudonymizedAt = Instant.now();
     }
 }

@@ -290,6 +290,7 @@ class OAuth2ClientSecretInitializerTest {
                         null,
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client(clientId, secret, redirectUris),
-                                new MarketplaceProperties.Security.OAuth2.PublicClient("", ""))));
+                                new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
+                        new MarketplaceProperties.Security.Pseudonymization("")));
     }
 }

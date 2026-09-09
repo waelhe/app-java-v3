@@ -394,3 +394,15 @@ marketplace:
         key-password: ${JWT_KEY_PASSWORD:}
     session:
       max-sessions: ${SESSION_MAX_SESSIONS:2}
+    # I7 (account-pseudonymization-plan §5-أ, gate b-2(b)) — the HMAC secret
+    # for account-subject pseudonymization: the "additional information" GDPR
+    # Art. 4(5) requires to be kept separately. Optional until bound exactly
+    # like the PSP/MAIL gates: blank = the administrative pseudonymize
+    # surface answers 503 SU-001 (capability OFF, not broken) and the
+    # re-registration probe in syncFromOidc stays inert (no tombstone can
+    # exist while the key never existed). Env channel per secrets-policy §1
+    # (env-only, never in Git, never logged). Rotation consequence (plan §9):
+    # a new key derives different replacement subjects — existing tombstones
+    # stop matching the probe.
+    pseudonymization:
+      subject-hmac-key: ${PSEUDONYMIZATION_HMAC_KEY:}
