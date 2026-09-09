@@ -26,21 +26,59 @@
 
 ## 3. الخطوات (نمط النقل الرسمي الموثق — `docs/railway-deployment-reference.md` §0.5)
 
-> المسار أدناه هو حرفياً نمط النقل المتحقق مرتين على الإنتاج (57/57 جدولاً صفر فرق، 2026-09-04) — يُعاد استخدامه هنا للنسخ لا للنقل.
+> المسار أدناه هو نمط النقل المتحقق مرتين على الإنتاج (57/57 جدولاً صفر فرق، 2026-09-04) — يُعاد استخدامه هنا للنسخ لا للنقل — بعد تحصين مراجعة CodeRabbit #266 (٦ ملاحظات 🟠 Major مُتبنّاة من الجذر: قناة كلمة المرور، مستوى TLS، حالة خروج التحقق، ضوابط التخزين، صراحة هدف الاسترجاع وأرشيفه الواحد).
 
-1. **بيانات الاتصال:** من لوحة Railway → خدمة `postgres-18` → تبويب **Connect** → «Public Database URL» (أو متغيرات الاتصال العامة الثلاثة: HOST/PORT + USERNAME + PASSWORD). **لا تُخزَّن في المستودع قط** (سياسة الأسرار: `docs/security/secrets-policy.md`).
-2. **النسخ إلى ملف مضغوط واحد (صيغة custom الرسمية):**
+1. **بيانات الاتصال (مكونات، لا URL كامل بسطر الأوامر):** من لوحة Railway → خدمة `postgres-18` → تبويب **Connect** — Public Access يبث `DATABASE_PUBLIC_URL` عبر TCP Proxy (وثيقة Railway PostgreSQL الرسمية §Connecting externally)؛ خذ منه المكونات: `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`. **الأربعة الأولى غير سرية** (تدخل أوامر الجلسة بحرية)؛ **كلمة المرور وحدها سرية** — قناتها الرسمية أدناه ملف كلمة مرور libpq، **لا سطر أوامر ولا تاريخ صدفة ولا `ps`** (خطر CWE-522 — موضع كلمة المرور في وسائط العملية). **لا تُخزَّن أي منها في المستودع قط** (سياسة الأسرار: `docs/security/secrets-policy.md`).
+
+2. **قناة كلمة المرور الرسمية — ملف libpq المحمي (PostgreSQL 18 §32.16 «The Password File»):**
    ```bash
-   pg_dump -Fc --no-acl --no-owner -f "marketplace-prod-$(date -u +%Y%m%dT%H%MZ).dump" "<PUBLIC_DATABASE_URL>"
+   # (أ) المكونات غير السرية كمتغيرات جلسة:
+   export PGHOST="<من Connect>" PGPORT="<...>" PGDATABASE="<...>" PGUSER="<...>"
+   # (ب) كلمة المرور بلا صدى ولا تاريخ (read -s) ثم ملف 0600 (صيغة السطر حرفياً عقد الوثيقة: hostname:port:database:username:password):
+   read -rs PGPASSWORD            # الصق كلمة المرور من لوحة Railway ثم Enter
+   umask 077
+   printf '%s:%s:%s:%s:%s\n' "$PGHOST" "$PGPORT" "$PGDATABASE" "$PGUSER" "$PGPASSWORD" > "$HOME/.pgpass.backup"
+   unset PGPASSWORD               # لا تبقَ كمتغير جلسة
+   export PGPASSFILE="$HOME/.pgpass.backup"   # القناة الرسمية: «the password file to use can be specified using … the environment variable PGPASSFILE»
+   ```
+   - الوثيقة الرسمية تشترط: «On Unix systems, the permissions on a password file must disallow any access to world or group … If the permissions are less strict than this, the file will be ignored» — `umask 077` يضمنها.
+   - `printf` و`read` أوامر صدفة مدمجة (builtins) — كلمة المرور لا تظهر في `ps` أبداً؛ القناة تنطبق على كل عملاء libpq ومنهم `pg_dump`/`pg_restore`.
+
+3. **النسخ إلى ملف مضغوط واحد (صيغة custom الرسمية) — قناة مشفرة وموثقة المستوى:**
+   ```bash
+   pg_dump -Fc --no-acl --no-owner \
+     -f "marketplace-prod-$(date -u +%Y%m%dT%H%MZ).dump" \
+     "postgresql://$PGUSER@$PGHOST:$PGPORT/$PGDATABASE?sslmode=require"
    ```
    - `-Fc` = صيغة custom المضغوطة (مخرج واحد، تدعم `-j` المتوازي عند الاسترجاع — نفس صيغة النقل الموثق).
    - `--no-acl --no-owner` = يتخطى امتيازات/ملكية المرتفع (أذونات المنصة ملك Railway — إعادة إنشائها في استرجاع خارج المنصة تعطل الترميم).
-3. **الحفظ محلياً خارج المنصة** (جهازك) — مع التحقق الفوري من قابلية قراءة الأرشيف قبل اعتباره نسخة:
+   - كلمة المرور تُقرأ من `PGPASSFILE` حصراً — الـURL أعلاه بلا كلمة مرور، فيرجع libpq إلى الملف (أول سطر يطابق معاملات الاتصال).
+   - **قرار TLS موثق (مستوى `require`):** صورة PostgreSQL لدى Railway «SSL-enabled» (وثيقة Railway PostgreSQL الرسمية)؛ و`sslmode=require` في جدول libpq الرسمي §32.18 = **تشفير ضد التنصت (Eavesdropping: Yes) بلا تحقق هوية الخادم (MITM: No)**. الترقية إلى `verify-full` تتطلب شهادة جذر الخادم في `~/.postgresql/root.crt` (نص الوثيقة) — وشهادة قالب postgres-18 المولّدة داخلياً (متغير القالب `SSL_CERT_DAYS` — مرجع النشر §البنية الحية) ليست من CA عمومي، فتصديرها قرار نشر بيد المشغل — موثق هنا كمسار ترقية اختياري صريح لا افتراضي.
+
+4. **إغلاق قناة كلمة المرور فور انتهاء النسخ (لا بقايا):**
    ```bash
-   ls -lh marketplace-prod-*.dump        # حجم > 0
-   pg_restore --list marketplace-prod-*.dump | head   # قابل للفهرسة = قابل للاسترجاع
+   unset PGPASSFILE && rm -f "$HOME/.pgpass.backup"
    ```
-4. **عند الحاجة إلى الاسترجاع** (نمط النقل الحرفي): `pg_restore --clean --if-exists -j 4 "<TARGET>" marketplace-prod-*.dump` ثم `ANALYZE` ثم **تحقق الأعداد** (عدد الجداول والصفوف المفصلية مقابل ما قبل الحدث — نفس بروتوكول تحقق النقل 57/57).
+
+5. **الحفظ محلياً خارج المنصة (ضوابط تخزين) + التحقق الفوري:**
+   ```bash
+   DUMP="marketplace-prod-<الطابع الزمني الذي أنتجه أعلاه>.dump"   # ملف واحد معيّن بلا بطاقة wildcards
+   ls -lh "$DUMP"                              # حجم > 0
+   pg_restore --list "$DUMP" > /dev/null && echo "الأرشيف سليم البنية"
+   ```
+   - التحقق يقضي **بحالة الخروج لا بأنبوب `| head`** (الأنبوب يحجب حالة `pg_restore` بحالة `head` — عرف أدوات PostgreSQL: الصفر = نجاح، غيره = خطأ)؛ `--list` = «List the table of contents of the archive» (المرجع الرسمي).
+   - ما يثبته هذا الفحص هو **سلامة بنية الأرشيف**؛ إثبات الاسترجاعية الكاملة يحتاج استرجاعاً فعلياً إلى هدف يُرمى بعدها — وهو نفسه مسار الخطوة 6 عند أول حدث مؤهّل (لا خطوة إضافية لهذا الـrunbook المؤقت).
+   - **ضوابط التخزين المحلي (النسخة تحمل كامل بيانات الإنتاج):** تخزين مشفر (قرص مشفر أو أرشيف مشفر)؛ وصول مقصور على المشغل وحده (لا مجلدات مشتركة)؛ **مستبعد من مزامنة السحابة** (لا Dropbox/Drive/OneDrive)؛ عمر محفوظ معلن (الاحتفاظ بآخر نسختين — الأقدم تُحذف حذفاً آمناً عند تجاوزها) — المرجع الأمني للبيت: `docs/security/secrets-policy.md` §1 (روحه: لا بيانات حساسة في وضع غير محمي).
+
+6. **عند الحاجة إلى الاسترجاع (نمط النقل الحرفي — أرشيف واحد وهدف صريح):**
+   ```bash
+   # (أ) تحقق أن هناك ملف نسخة واحداً بالضبط (صفر أو أكثر = توقف وحدّد بنفسك):
+   set -- marketplace-prod-*.dump
+   if [ "$#" -ne 1 ]; then echo "المطلوب ملف نسخة واحداً بعينه — وجدت $#"; else DUMP="$1"; fi
+   # (ب) الهدف صريح باسم قاعدة البيانات (المرجع الرسمي: --dbname «Connect to database dbname and restore directly into the database»):
+   pg_restore --clean --if-exists -j 4 --dbname="$TARGET" "$DUMP"
+   ```
+   ثم `ANALYZE` ثم **تحقق الأعداد** (عدد الجداول والصفوف المفصلية مقابل ما قبل الحدث — نفس بروتوكول تحقق النقل 57/57).
    - على هدف Railway: استرجع إلى قاعدة/خدمة جديدة أولاً ثم بدّل (نمط نافذة الاسترجاع الموثق في نقل postgres-17→18) — لا تسترجع فوق الحية إلا بقرار صريح.
 
 ## 4. عقد صادق — ما لا يفعله هذا الـrunbook
