@@ -18,11 +18,24 @@
 # saved: scripts/cve-gate-docs/trivy-action-readme.md@v0.36.0). Fixable
 # severities are actionable by a version bump; unfixed ones are recorded in the
 # SARIF step below but cannot be acted on, so they do not block merges.
-# Documented, time-bounded exceptions live in .trivyignore.yaml (expired_at is
-# enforced by trivy itself — verified live against v0.74.0 both directions on
-# 2026-09-06: past date => finding returns, future date => silenced; the
-# classic .trivyignore text format does NOT enforce expiry, hence the yaml
-# form — trivy docs/guide/configuration/filtering.md, saved copy:
+#
+# The version bump for the OS surface is implemented at image build time:
+# the runtime stage of the Dockerfile runs `apk upgrade --no-cache` against
+# the v3.24 stable branch (the base image's /etc/apk/repositories, measured
+# live 2026-09-09), so every alpine fix published for the branch lands in the
+# shipped artifact on the next build. That closed the first two gate
+# failures this mechanism caught: the alpine libexpat pair CVE-2026-76956/
+# CVE-2026-76957 (2.8.3-r0 -> 2.8.4-r0, fork run 34343664520 2026-09-09 —
+# new Trivy DB entries matched the same pinned image, the documented
+# no-code-change case) and, via the same upgrade line, CVE-2026-14456
+# (openssl 3.5.7-r0 -> 3.5.8-r0 — whose time-bounded ignore entry was
+# removed in the same batch, so .trivyignore.yaml is now empty by design:
+# entries are reserved for findings with NO fix published for the branch
+# yet, each time-bounded: expired_at enforced by trivy itself — verified
+# live against v0.74.0 both directions on 2026-09-06: past date => finding
+# returns, future date => silenced; the classic .trivyignore text format
+# does NOT enforce expiry, hence the yaml form — trivy docs/guide/
+# configuration/filtering.md, saved copy:
 # scripts/cve-gate-docs/trivy-filtering-docs.md).
 #
 # The layer that introduced this gate also fixed the defect it caught:

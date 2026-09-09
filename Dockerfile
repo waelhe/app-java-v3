@@ -91,6 +91,52 @@ RUN java -XX:AOTCacheOutput=/app/app.aot \
 
 # ── Runtime stage ────────────────────────────────────
 FROM eclipse-temurin:25-jre-alpine
+# OS package security upgrades — the version-bump response the container-scan
+# gate prescribes for fixable HIGH/CRITICAL findings in alpine packages
+# (container-scan.yml: "Fixable severities are actionable by a version bump").
+# This is the runtime stage ONLY: it is the shipped OS layer, the surface the
+# gate scans (os packages); the build/extractor/trainer stages never ship.
+#
+# Why the base image cannot fix itself (measured 2026-09-09, evidence bundle:
+# session-workspace scripts/cve-gate-docs/): Docker Hub library/eclipse-temurin
+# tag 25-jre-alpine was last pushed 2026-08-21T20:16:32Z, before either CVE
+# below was published, and the tag is not digest-pinned — so no published build
+# carries the fixes and waiting for an Adoptium rebuild is an unbounded-time
+# debt. The gate failure this closes (fork run 34343664520, 2026-09-09T11:07Z,
+# same head that passed upstream 4 minutes earlier on the older Trivy DB):
+#   - CVE-2026-76956 (HIGH, fixed): libexpat 2.8.3-r0 → 2.8.4-r0 — hash-flood
+#     DoS via crafted XML
+#   - CVE-2026-76957 (HIGH, fixed): libexpat 2.8.3-r0 → 2.8.4-r0 — memory
+#     corruption, arbitrary code execution
+#   - CVE-2026-14456 (HIGH, fixed): openssl/libssl3/libcrypto3 3.5.7-r0 →
+#     3.5.8-r0 — the entry .trivyignore.yaml carried "awaiting the
+#     eclipse-temurin rebuild"; the same upgrade line delivers it now, so the
+#     ignore entry is removed in the same batch (gate back to zero exceptions).
+#
+# Official mechanics (apk-upgrade(8) man page, Alpine project): "apk upgrade
+# upgrades installed packages to the latest version available from configured
+# package repositories. When no packages are specified, all packages are
+# upgraded if possible." --no-cache (apk(8) global option: "Do not use any
+# local cache path") fetches the fresh index instead of the image-baked one.
+# The image's /etc/apk/repositories (extracted from the live amd64 manifest,
+# sha256:ce6b91d9… layer 0) pins exactly:
+#   https://dl-cdn.alpinelinux.org/alpine/v3.24/main
+#   https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+# so the upgrade stays strictly inside the v3.24 stable branch. Alpine's own
+# security tracker (security.alpinelinux.org) confirms both fixes shipped for
+# 3.24-main: srcpkg/expat/2.8.4-r0 and srcpkg/openssl/3.5.8-r0 — matching the
+# live APKINDEX measurement. Runs as root (before USER app; apk requires it),
+# before any COPY so the shipped app layers are untouched.
+#
+# Layer-cache note (future CVEs): this RUN's cache key is its command string;
+# base-image digest moves bust it too (new base = new parent layer). If the
+# weekly scheduled scan fails on a NEW alpine CVE whose fix is already in
+# v3.24, bump the date token below (any instruction-string change re-runs the
+# upgrade against the fresh index). If the fix is not yet published for the
+# branch, use a time-bounded .trivyignore.yaml entry (expired_at + statement —
+# the policy the file documents). Guard-pinned by
+# PlatformGovernanceFilesTest.dockerfileRuntimeStageUpgradesOsPackages.
+RUN apk upgrade --no-cache # os-pkgs-refresh 2026-09-09
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
