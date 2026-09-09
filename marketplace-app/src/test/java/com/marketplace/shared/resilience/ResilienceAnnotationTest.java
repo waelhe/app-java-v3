@@ -202,6 +202,22 @@ class ResilienceAnnotationTest {
         }
 
         @Test
+        @DisplayName("ReviewsController.createReverse should have @RateLimiter(reviewCreate) — I8")
+        void reviewCreateReverse_hasRateLimiter() throws NoSuchMethodException {
+            // I8: the reverse write shares the reviewCreate budget — a review
+            // write is a review write (the L29 three-instance policy extended
+            // by the fourth surface on the same instance).
+            Method method = com.marketplace.reviews.ReviewsController.class.getMethod("createReverse",
+                    com.marketplace.reviews.ReviewsController.CreateReviewRequest.class,
+                    Authentication.class);
+
+            RateLimiter rl = method.getAnnotation(RateLimiter.class);
+            assertNotNull(rl, "createReverse should have @RateLimiter");
+            assertEquals("reviewCreate", rl.name(),
+                    "RateLimiter should share the reviewCreate instance");
+        }
+
+        @Test
         @DisplayName("MediaController.requestUpload should have @RateLimiter(mediaUpload)")
         void mediaUpload_hasRateLimiter() throws NoSuchMethodException {
             Method method = com.marketplace.media.MediaController.class.getMethod("requestUpload",

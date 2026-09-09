@@ -75,6 +75,35 @@ class ReviewsServiceSecurityTest {
                 () -> reviewsService.update(UUID.randomUUID(), 5, "Great", null));
     }
 
+    /**
+     * I8: update's role gate is the coarse pre-filter; the real guard is
+     * ownership. A PROVIDER (a reverse-review author in principle) who is
+     * NOT the review's author is still denied — by the ownership check.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
+    void update_whenProviderButNotAuthor_thenAccessDeniedByOwnership() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        UUID reviewerId = UUID.randomUUID();
+        Review review = Review.create(UUID.randomUUID(), reviewerId, UUID.randomUUID(), 5, "Great");
+        when(reviewRepository.findById(review.getId())).thenReturn(Optional.of(review));
+        when(currentUserProvider.getCurrentUserId(any(Authentication.class)))
+                .thenReturn(UUID.randomUUID()); // not the author
+        when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
+
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> reviewsService.update(review.getId(), 4, "hijack", authentication));
+    }
+
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void createReverse_whenNotProvider_thenAccessDenied() {
+        // I8: the reverse write is the provider's surface — a CONSUMER
+        // principal never reaches the ownership logic.
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> reviewsService.createReverse(UUID.randomUUID(), 5, "Great", null));
+    }
+
     @Test
     @WithMockUser(roles = "CONSUMER", username = "consumer")
     void create_whenConsumer_thenInvokes() {
@@ -82,7 +111,7 @@ class ReviewsServiceSecurityTest {
         UUID reviewerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
         Instant at = Instant.parse("2026-09-01T10:00:00Z");
-        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(false);
         when(bookingParticipantProvider.getBookingInfo(bookingId))
                 .thenReturn(new BookingInfo(providerId, reviewerId, "COMPLETED", 1000L, "SAR", at, at));
         when(reviewRepository.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));

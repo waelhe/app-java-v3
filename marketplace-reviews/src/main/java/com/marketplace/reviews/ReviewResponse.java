@@ -9,6 +9,7 @@ public record ReviewResponse(
         Integer rating,
         String comment,
         String reply,
+        String direction,
         Instant repliedAt,
         Instant createdAt,
         Instant updatedAt

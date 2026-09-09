@@ -160,6 +160,111 @@ class ReviewsTwoWayIntegrationTest {
     }
 
     /**
+     * I8 (internal free plan §6, roadmap §7) — the reverse direction through
+     * the REAL event flow: the provider rates the booking's consumer, the
+     * same ReviewCreatedEvent fires, the real listener resolves the
+     * authoring provider and recomputes its average — and the average MUST
+     * NOT move, because the aggregate counts forward reviews only (the
+     * direction filter). Then the read surfaces split correctly:
+     * listByProvider shows the forward review alone; listByReviewee shows
+     * the reverse review alone; both directions coexist on ONE booking.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void reverseReview_neverPollutesTheProviderAverage_andSplitsTheReadSurfaces() {
+        UUID consumerId = userRepository.save(User.create("i8-guest-subject",
+                "i8-guest@b.com", "Guest", UserRole.CONSUMER)).getId();
+        UUID ownerUserId = userRepository.save(User.create("i8-host-subject",
+                "i8-host@b.com", "Host", UserRole.PROVIDER)).getId();
+        ProviderProfile profile = providerRepository.save(ProviderProfile.create(
+                "I8 Provider", "bio", ownerUserId));
+        UUID providerId = profile.getId();
+        UUID bookingId = UUID.randomUUID();
+        stubCompletedBooking(consumerId, providerId);
+
+        // A forward review lands first — planted directly (this test's
+        // subject is the PROVIDER; the forward create path is the stats
+        // test above): rating 3.
+        reviewRepository.save(Review.create(bookingId, consumerId, providerId, 3, "okay stay"));
+        awaitAverage(providerId, 3.0);
+
+        // The reverse review on the SAME booking: the provider rates the
+        // consumer 1 (would drag any unfiltered average to 2.0).
+        Review reverse = reviewsService.createReverse(bookingId, 1, "difficult guest",
+                jwtAuthentication("i8-host-subject", "ROLE_PROVIDER"));
+
+        assertThat(reverse.getDirection()).isEqualTo(ReviewDirection.PROVIDER_TO_CONSUMER);
+        assertThat(reverse.getRevieweeId()).isEqualTo(consumerId);
+        assertThat(reverse.getReviewerId()).isEqualTo(ownerUserId);
+
+        // The stored provider average is UNCHANGED at 3.0 — the async
+        // listener recomputed it (the same event fired) and the aggregate
+        // excluded the reverse review. Wait for the recompute to land, then
+        // assert it landed on the SAME value (never 2.0).
+        awaitAverage(providerId, 3.0);
+        assertThat(providerRepository.findById(providerId).orElseThrow().getRatingAverage())
+                .as("the provider average counts forward reviews only — a provider-authored "
+                        + "rating of the consumer never pollutes it")
+                .isEqualTo(3.0);
+
+        // The read surfaces split by direction.
+        assertThat(reviewsService.listByProvider(providerId, org.springframework.data.domain.Pageable.ofSize(10))
+                .map(Review::getDirection))
+                .as("the provider's public surface shows only reviews ABOUT them")
+                .containsExactly(ReviewDirection.CONSUMER_TO_PROVIDER);
+        assertThat(reviewsService.listByReviewee(consumerId, org.springframework.data.domain.Pageable.ofSize(10))
+                .map(Review::getDirection))
+                .as("the consumer's trust surface shows only reviews about THEM")
+                .containsExactly(ReviewDirection.PROVIDER_TO_CONSUMER);
+
+        // Per-direction uniqueness on the one booking: the forward create
+        // still works (the reverse exists, the forward does not).
+        // (Exercised by the unit suite; asserted here as data facts.)
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .isTrue();
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER))
+                .isTrue();
+
+        providerRepository.findById(providerId).ifPresent(providerRepository::delete);
+    }
+
+    /**
+     * I8: the reverse-review gates, through the real service: a provider
+     * who is not the booking's provider is rejected; a duplicate reverse
+     * review on one booking is a conflict.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void reverseReview_gatesOwnershipAndUniqueness() {
+        UUID consumerId = userRepository.save(User.create("i8-guest2-subject",
+                "i8-guest2@b.com", "Guest2", UserRole.CONSUMER)).getId();
+        UUID ownerUserId = userRepository.save(User.create("i8-host2-subject",
+                "i8-host2@b.com", "Host2", UserRole.PROVIDER)).getId();
+        UUID outsiderUserId = userRepository.save(User.create("i8-outsider-subject",
+                "i8-outsider@b.com", "Outsider", UserRole.PROVIDER)).getId();
+        ProviderProfile owned = providerRepository.save(ProviderProfile.create(
+                "I8 Owner", "bio", ownerUserId));
+        providerRepository.save(ProviderProfile.create("I8 Outsider", "bio", outsiderUserId));
+        UUID providerId = owned.getId();
+        UUID bookingId = UUID.randomUUID();
+        stubCompletedBooking(consumerId, providerId);
+
+        // The outsider provider (with a real profile) does not own the booking.
+        assertThrows(AccessDeniedException.class,
+                () -> reviewsService.createReverse(bookingId, 5, "not my booking",
+                        jwtAuthentication("i8-outsider-subject", "ROLE_PROVIDER")));
+
+        // The owner creates the reverse review, then a second one conflicts.
+        reviewsService.createReverse(bookingId, 4, "great guest",
+                jwtAuthentication("i8-host2-subject", "ROLE_PROVIDER"));
+        assertThrows(ConflictException.class,
+                () -> reviewsService.createReverse(bookingId, 2, "second attempt",
+                        jwtAuthentication("i8-host2-subject", "ROLE_PROVIDER")));
+
+        providerRepository.delete(owned);
+    }
+
+    /**
      * The method-parameter principal: a {@code JwtAuthenticationToken} whose
      * subject is a real users row — the shape {@code IdentityUserProvider}
      * resolves. The role rides the authorities for any parameter-level

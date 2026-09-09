@@ -52,7 +52,7 @@ class ReviewsServiceTest {
                 .create();
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
-        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(false);
         when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Review review = service.create(bookingId, consumerId, 4, "Great service");
@@ -70,7 +70,7 @@ class ReviewsServiceTest {
     @Test
     void create_rejectsDuplicateReview() {
         UUID bookingId = Instancio.create(UUID.class);
-        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(true);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(true);
         assertThrows(ConflictException.class,
                 () -> service.create(bookingId, Instancio.create(UUID.class), 3, "dup"));
     }
@@ -88,7 +88,7 @@ class ReviewsServiceTest {
                 .create();
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
-        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(false);
 
         assertThrows(AccessDeniedException.class,
                 () -> service.create(bookingId, differentUserId, 3, "hacked"));
@@ -106,7 +106,7 @@ class ReviewsServiceTest {
                 .create();
 
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
-        when(reviewRepository.existsByBookingId(bookingId)).thenReturn(false);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER)).thenReturn(false);
 
         assertThrows(BadRequestException.class,
                 () -> service.create(bookingId, consumerId, 3, "too early"));
@@ -176,7 +176,7 @@ class ReviewsServiceTest {
                 .set(field(Review::getProviderId), providerId)
                 .set(field(Review::getRating), 4)
                 .create();
-        when(reviewRepository.findByProviderId(providerId, pageable))
+        when(reviewRepository.findByProviderIdAndDirection(providerId, ReviewDirection.CONSUMER_TO_PROVIDER, pageable))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
 
         var result = service.listByProvider(providerId, pageable);
@@ -282,5 +282,153 @@ class ReviewsServiceTest {
 
         assertThrows(com.marketplace.shared.api.ResourceNotFoundException.class,
                 () -> service.reply(reviewId, "x", authentication));
+    }
+
+    // -- I8: the reverse review (provider -> consumer) ------------------------
+
+    private BookingInfo completedBooking(UUID consumerId, UUID providerId) {
+        return Instancio.of(BookingInfo.class)
+                .set(field(BookingInfo::providerId), providerId)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "COMPLETED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+    }
+
+    @Test
+    void createReverse_byTheBookingProvider_storesTheReviewee() {
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID ownerUserId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(bookingParticipantProvider.getBookingInfo(bookingId))
+                .thenReturn(completedBooking(consumerId, providerId));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Review review = service.createReverse(bookingId, 4, "great guest", authentication);
+
+        assertEquals(ReviewDirection.PROVIDER_TO_CONSUMER, review.getDirection());
+        assertEquals(consumerId, review.getRevieweeId());
+        assertEquals(ownerUserId, review.getReviewerId());
+        assertEquals(providerId, review.getProviderId());
+        // The SAME events as the forward path (the plan: same events).
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.ReviewCreatedEvent.class));
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void createReverse_rejectsDuplicatePerBooking() {
+        UUID bookingId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .thenReturn(true);
+
+        assertThrows(ConflictException.class,
+                () -> service.createReverse(bookingId, 3, "dup", authentication));
+        verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void createReverse_rejectsCallerWithoutAProviderProfile() {
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(providerLookupPort.findByUserId(userId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.createReverse(bookingId, 3, "no profile", authentication));
+        verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void createReverse_rejectsAProviderWhoIsNotTheBookingProvider() {
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID bookingProviderId = Instancio.create(UUID.class);
+        UUID otherProviderId = Instancio.create(UUID.class);
+        UUID otherOwnerUserId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherOwnerUserId);
+        when(providerLookupPort.findByUserId(otherOwnerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(otherProviderId, "Other", "VERIFIED", otherOwnerUserId)));
+        when(bookingParticipantProvider.getBookingInfo(bookingId))
+                .thenReturn(completedBooking(Instancio.create(UUID.class), bookingProviderId));
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.createReverse(bookingId, 3, "not my booking", authentication));
+        verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void createReverse_rejectsNonCompletedBooking() {
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        UUID ownerUserId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(
+                Instancio.of(BookingInfo.class)
+                        .set(field(BookingInfo::providerId), providerId)
+                        .set(field(BookingInfo::consumerId), Instancio.create(UUID.class))
+                        .set(field(BookingInfo::status), "CONFIRMED")
+                        .set(field(BookingInfo::priceCents), 5000L)
+                        .set(field(BookingInfo::currency), "SAR")
+                        .create());
+
+        assertThrows(BadRequestException.class,
+                () -> service.createReverse(bookingId, 3, "too early", authentication));
+        verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void create_allowsForwardWhenAReverseReviewAlreadyExists() {
+        // Per-direction uniqueness: the SAME booking carries both directions,
+        // one entry each — the forward create only conflicts with a forward
+        // review, never with the reverse one.
+        UUID bookingId = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.CONSUMER_TO_PROVIDER))
+                .thenReturn(false);
+        when(bookingParticipantProvider.getBookingInfo(bookingId))
+                .thenReturn(completedBooking(consumerId, providerId));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Review review = service.create(bookingId, consumerId, 5, "after the reverse exists");
+
+        assertEquals(ReviewDirection.CONSUMER_TO_PROVIDER, review.getDirection());
+        assertNull(review.getRevieweeId());
+    }
+
+    @Test
+    void createReverse_ratingFloorSharedWithTheForwardPath() {
+        assertThrows(IllegalArgumentException.class, () -> Review.createReverse(
+                Instancio.create(UUID.class), Instancio.create(UUID.class),
+                Instancio.create(UUID.class), Instancio.create(UUID.class), 0, "bad"));
+    }
+
+    @Test
+    void listByReviewee_returnsTheReverseReviewsAboutTheConsumer() {
+        UUID consumerId = Instancio.create(UUID.class);
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Review review = Review.createReverse(Instancio.create(UUID.class), Instancio.create(UUID.class),
+                Instancio.create(UUID.class), consumerId, 4, "great guest");
+        when(reviewRepository.findByRevieweeIdAndDirection(consumerId, ReviewDirection.PROVIDER_TO_CONSUMER, pageable))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
+
+        var result = service.listByReviewee(consumerId, pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals(ReviewDirection.PROVIDER_TO_CONSUMER, result.getContent().get(0).getDirection());
     }
 }

@@ -131,6 +131,56 @@ class ReviewsControllerWebMvcTest {
     }
 
     private static ReviewResponse mockResponse(UUID id) {
-        return new ReviewResponse(id, null, null, null, null, null, null, null);
+        return new ReviewResponse(id, null, null, null, null, null, null, null, null);
+    }
+
+    // -- I8: the reverse review -------------------------------------------
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void createReverse_returnsCreated() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        var review = mockReview(id);
+        var response = mockResponse(id);
+
+        when(reviewsService.createReverse(any(), any(), any(), any())).thenReturn(review);
+        when(reviewMapper.toResponse(review)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/reviews/reverse")
+                        .contentType("application/json")
+                        .content("""
+                                {"bookingId": "%s", "rating": 4}
+                                """.formatted(bookingId)))
+                .andExpect(status().isCreated());
+
+        org.mockito.Mockito.verify(reviewsService)
+                .createReverse(org.mockito.ArgumentMatchers.eq(bookingId),
+                        org.mockito.ArgumentMatchers.eq(4), any(), any());
+    }
+
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void createReverse_withInvalidRating_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/reviews/reverse")
+                        .contentType("application/json")
+                        .content("""
+                                {"bookingId": "%s", "rating": 0}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void listByReviewee_returnsOk() throws Exception {
+        UUID consumerId = UUID.randomUUID();
+        var review = mockReview(UUID.randomUUID());
+        var response = mockResponse(UUID.randomUUID());
+
+        when(reviewsService.listByReviewee(org.mockito.ArgumentMatchers.eq(consumerId), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
+        when(reviewMapper.toResponse(review)).thenReturn(response);
+
+        mockMvc.perform(get("/api/v1/reviews/consumer/{consumerId}", consumerId))
+                .andExpect(status().isOk());
     }
 }
