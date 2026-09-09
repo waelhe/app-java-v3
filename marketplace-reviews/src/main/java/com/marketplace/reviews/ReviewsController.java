@@ -42,7 +42,7 @@ public class ReviewsController {
 
     @GetMapping("/provider/{providerId}")
     @Operation(summary = "List a provider's reviews", description = "Paginated public reviews of a "
-            + "provider, newest first.")
+            + "provider (consumer-to-provider direction), newest first.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable).map(reviewMapper::toResponse)));
@@ -50,10 +50,24 @@ public class ReviewsController {
 
     @GetMapping("/reviewer/{reviewerId}")
     @Operation(summary = "List a reviewer's reviews", description = "Paginated reviews written by "
-            + "one consumer (public profile surface).")
+            + "one user (public profile surface — both directions).")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewer(
             @PathVariable UUID reviewerId, Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable).map(reviewMapper::toResponse)));
+    }
+
+    /**
+     * I8 (internal free plan §6, roadmap §7): the reverse-direction read
+     * surface — the reviews providers wrote about one consumer (the trust
+     * view).
+     */
+    @GetMapping("/consumer/{consumerId}")
+    @Operation(summary = "List the reviews written about a consumer", description = "Paginated "
+            + "provider-to-consumer reviews (I8 reverse direction) — the consumer's "
+            + "trust surface: what providers said about them after completed bookings.")
+    public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewee(
+            @PathVariable UUID consumerId, Pageable pageable) {
+        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewee(consumerId, pageable).map(reviewMapper::toResponse)));
     }
 
     /**
@@ -72,6 +86,26 @@ public class ReviewsController {
         Review review = reviewsService.create(
                 request.bookingId(), reviewerId,
                 request.rating(), request.comment());
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewMapper.toResponse(review));
+    }
+
+    /**
+     * I8 (internal free plan §6, roadmap §7): the reverse write — the
+     * booking's provider rates its consumer. Same request shape, same
+     * reviewCreate rate-limiter budget (a review write is a review write),
+     * gates at the service: provider profile ownership of the booking +
+     * COMPLETED + one reverse review per booking.
+     */
+    @PostMapping("/reverse")
+    @RateLimiter(name = "reviewCreate")
+    @Operation(summary = "Create a reverse review (provider)",
+            description = "The booking's provider rates its consumer after a COMPLETED booking — "
+                    + "one reverse review per booking. The provider's own rating average is "
+                    + "unaffected (it aggregates consumer reviews only).")
+    public ResponseEntity<ReviewResponse> createReverse(@Valid @RequestBody CreateReviewRequest request,
+                                                         Authentication authentication) {
+        Review review = reviewsService.createReverse(
+                request.bookingId(), request.rating(), request.comment(), authentication);
         return ResponseEntity.status(HttpStatus.CREATED).body(reviewMapper.toResponse(review));
     }
 

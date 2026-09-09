@@ -160,6 +160,112 @@ class ReviewsTwoWayIntegrationTest {
     }
 
     /**
+     * I8 (internal free plan §6, roadmap §7) — the reverse direction through
+     * the REAL event flow: the provider rates the booking's consumer, the
+     * same ReviewCreatedEvent fires, the real listener resolves the
+     * authoring provider and recomputes its average — and the average MUST
+     * NOT move, because the aggregate counts forward reviews only (the
+     * direction filter). Then the read surfaces split correctly:
+     * listByProvider shows the forward review alone; listByReviewee shows
+     * the reverse review alone; both directions coexist on ONE booking.
+     */
+    @Test
+    @WithMockUser(roles = {"CONSUMER", "PROVIDER"})
+    void reverseReview_neverPollutesTheProviderAverage_andSplitsTheReadSurfaces() {
+        UUID consumerId = userRepository.save(User.create("i8-guest-subject",
+                "i8-guest@b.com", "Guest", UserRole.CONSUMER)).getId();
+        UUID ownerUserId = userRepository.save(User.create("i8-host-subject",
+                "i8-host@b.com", "Host", UserRole.PROVIDER)).getId();
+        ProviderProfile profile = providerRepository.save(ProviderProfile.create(
+                "I8 Provider", "bio", ownerUserId));
+        UUID providerId = profile.getId();
+        UUID bookingReverse = UUID.randomUUID();
+        UUID bookingForward = UUID.randomUUID();
+        stubCompletedBooking(consumerId, providerId);
+
+        // (1) The REVERSE review lands FIRST (rating 1) — through the REAL
+        // service (the events fire). Its event's recompute finds no forward
+        // reviews yet and skips (the empty-Optional contract). Dual roles:
+        // the forward gate reads CONSUMER, the reverse gate reads PROVIDER;
+        // the ownership checks read the explicit arguments.
+        Review reverse = reviewsService.createReverse(bookingReverse, 1, "difficult guest",
+                jwtAuthentication("i8-host-subject", "ROLE_PROVIDER"));
+
+        assertThat(reverse.getDirection()).isEqualTo(ReviewDirection.PROVIDER_TO_CONSUMER);
+        assertThat(reverse.getRevieweeId()).isEqualTo(consumerId);
+        assertThat(reverse.getReviewerId()).isEqualTo(ownerUserId);
+
+        // (2) The FORWARD review lands SECOND (rating 5) — through the REAL
+        // service. Its event's recompute is the ONLY thing that can ever
+        // produce a stored average (null -> value). THE PROOF, race-free:
+        // an UNFILTERED aggregate would land (1+5)/2 = 3.0 and this await
+        // would time out (3.0 never returns to 5.0); the direction-filtered
+        // aggregate lands 5.0 — the recompute provably ran AND provably
+        // excluded the reverse review. (The completion-signal round-2
+        // lesson: Hibernate skips the UPDATE for a clean entity — the
+        // version does not bump on an unchanged value — so the value
+        // transition itself is the only honest signal.)
+        reviewsService.create(bookingForward, consumerId, 5, "great stay");
+        awaitAverage(providerId, 5.0);
+
+        // The read surfaces split by direction.
+        assertThat(reviewsService.listByProvider(providerId, org.springframework.data.domain.Pageable.ofSize(10))
+                .map(Review::getDirection))
+                .as("the provider's public surface shows only reviews ABOUT them")
+                .containsExactly(ReviewDirection.CONSUMER_TO_PROVIDER);
+        assertThat(reviewsService.listByReviewee(consumerId, org.springframework.data.domain.Pageable.ofSize(10))
+                .map(Review::getDirection))
+                .as("the consumer's trust surface shows only reviews about THEM")
+                .containsExactly(ReviewDirection.PROVIDER_TO_CONSUMER);
+
+        // Per-direction uniqueness as data facts: each direction present,
+        // each on its own booking (the application-level guard is pinned by
+        // the unit suite; the V45 partial unique index by the migration).
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingReverse, ReviewDirection.PROVIDER_TO_CONSUMER))
+                .isTrue();
+        assertThat(reviewRepository.existsByBookingIdAndDirection(bookingForward, ReviewDirection.CONSUMER_TO_PROVIDER))
+                .isTrue();
+
+        providerRepository.findById(providerId).ifPresent(providerRepository::delete);
+    }
+
+    /**
+     * I8: the reverse-review gates, through the real service: a provider
+     * who is not the booking's provider is rejected; a duplicate reverse
+     * review on one booking is a conflict.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void reverseReview_gatesOwnershipAndUniqueness() {
+        UUID consumerId = userRepository.save(User.create("i8-guest2-subject",
+                "i8-guest2@b.com", "Guest2", UserRole.CONSUMER)).getId();
+        UUID ownerUserId = userRepository.save(User.create("i8-host2-subject",
+                "i8-host2@b.com", "Host2", UserRole.PROVIDER)).getId();
+        UUID outsiderUserId = userRepository.save(User.create("i8-outsider-subject",
+                "i8-outsider@b.com", "Outsider", UserRole.PROVIDER)).getId();
+        ProviderProfile owned = providerRepository.save(ProviderProfile.create(
+                "I8 Owner", "bio", ownerUserId));
+        providerRepository.save(ProviderProfile.create("I8 Outsider", "bio", outsiderUserId));
+        UUID providerId = owned.getId();
+        UUID bookingId = UUID.randomUUID();
+        stubCompletedBooking(consumerId, providerId);
+
+        // The outsider provider (with a real profile) does not own the booking.
+        assertThrows(AccessDeniedException.class,
+                () -> reviewsService.createReverse(bookingId, 5, "not my booking",
+                        jwtAuthentication("i8-outsider-subject", "ROLE_PROVIDER")));
+
+        // The owner creates the reverse review, then a second one conflicts.
+        reviewsService.createReverse(bookingId, 4, "great guest",
+                jwtAuthentication("i8-host2-subject", "ROLE_PROVIDER"));
+        assertThrows(ConflictException.class,
+                () -> reviewsService.createReverse(bookingId, 2, "second attempt",
+                        jwtAuthentication("i8-host2-subject", "ROLE_PROVIDER")));
+
+        providerRepository.delete(owned);
+    }
+
+    /**
      * The method-parameter principal: a {@code JwtAuthenticationToken} whose
      * subject is a real users row — the shape {@code IdentityUserProvider}
      * resolves. The role rides the authorities for any parameter-level

@@ -40,7 +40,7 @@ class ReviewsControllerTest {
     void getById_returnsReview() {
         UUID id = UUID.randomUUID();
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Good");
-        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good", null, null, null, null);
+        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good", null, "CONSUMER_TO_PROVIDER", null, null, null);
 
         when(reviewsService.getById(id)).thenReturn(review);
         when(reviewMapper.toResponse(review)).thenReturn(response);
@@ -84,7 +84,7 @@ class ReviewsControllerTest {
         UUID bookingId = UUID.randomUUID();
         var request = new ReviewsController.CreateReviewRequest(bookingId, 5, "Perfect");
         Review review = Review.create(bookingId, reviewerId, UUID.randomUUID(), 5, "Perfect");
-        ReviewResponse response = new ReviewResponse(UUID.randomUUID(), bookingId, 5, "Perfect", null, null, null, null);
+        ReviewResponse response = new ReviewResponse(UUID.randomUUID(), bookingId, 5, "Perfect", null, "CONSUMER_TO_PROVIDER", null, null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(reviewerId);
         when(reviewsService.create(bookingId, reviewerId, 5, "Perfect")).thenReturn(review);
@@ -102,7 +102,7 @@ class ReviewsControllerTest {
         Authentication auth = mock(Authentication.class);
         var request = new ReviewsController.UpdateReviewRequest(4, "Updated");
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Updated");
-        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Updated", null, null, null, null);
+        ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Updated", null, "CONSUMER_TO_PROVIDER", null, null, null);
 
         when(reviewsService.update(id, 4, "Updated", auth)).thenReturn(review);
         when(reviewMapper.toResponse(review)).thenReturn(response);
@@ -120,7 +120,7 @@ class ReviewsControllerTest {
         var request = new ReviewsController.ReplyRequest("Thanks for the feedback");
         Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Good");
         ReviewResponse response = new ReviewResponse(id, UUID.randomUUID(), 4, "Good",
-                "Thanks for the feedback", null, null, null);
+                "Thanks for the feedback", "CONSUMER_TO_PROVIDER", null, null, null);
 
         when(reviewsService.reply(id, "Thanks for the feedback", auth)).thenReturn(review);
         when(reviewMapper.toResponse(review)).thenReturn(response);
@@ -130,5 +130,39 @@ class ReviewsControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(response, result.getBody());
         verify(reviewsService).reply(id, "Thanks for the feedback", auth);
+    }
+
+    @Test
+    void createReverse_delegatesToServiceAndReturns201() {
+        Authentication auth = mock(Authentication.class);
+        UUID bookingId = UUID.randomUUID();
+        var request = new ReviewsController.CreateReviewRequest(bookingId, 4, "Great guest");
+        Review review = Review.createReverse(bookingId, UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), 4, "Great guest");
+        ReviewResponse response = new ReviewResponse(UUID.randomUUID(), bookingId, 4, "Great guest",
+                null, "PROVIDER_TO_CONSUMER", null, null, null);
+
+        when(reviewsService.createReverse(bookingId, 4, "Great guest", auth)).thenReturn(review);
+        when(reviewMapper.toResponse(review)).thenReturn(response);
+
+        ResponseEntity<ReviewResponse> result = controller.createReverse(request, auth);
+
+        assertEquals(HttpStatus.CREATED, result.getStatusCode());
+        assertEquals(response, result.getBody());
+        verify(reviewsService).createReverse(bookingId, 4, "Great guest", auth);
+    }
+
+    @Test
+    void listByReviewee_delegatesToServiceAndReturns200() {
+        UUID consumerId = UUID.randomUUID();
+        PageRequest pageable = PageRequest.of(0, 10);
+        Review review = Review.createReverse(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                consumerId, 4, "Great guest");
+        Page<Review> page = new PageImpl<>(List.of(review));
+        when(reviewsService.listByReviewee(consumerId, pageable)).thenReturn(page);
+
+        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByReviewee(consumerId, pageable);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
     }
 }
