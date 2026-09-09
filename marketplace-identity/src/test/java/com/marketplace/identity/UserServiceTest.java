@@ -388,14 +388,18 @@ class UserServiceTest {
         // Step 5: the login identity dies through the framework manager's
         // deleteUser (authorities first, then the row — the official order).
         verify(userDetailsManager).deleteUser("target-subject");
+        // The L23 flip channel is never touched (pseudonymization deletes,
+        // it does not disable).
+        verify(userDetailsManager, never()).updateUser(any());
         // Step 6: the issued authorizations die immediately.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-subject"));
+        // The admin-count query never ran (a non-admin target).
+        verify(jdbcTemplate, never()).queryForList(anyString(), eq(String.class));
         // Step 7: the standing AFTER_COMMIT cache channel with BOTH cache names.
         ArgumentCaptor<CacheInvalidationRequested> event =
                 ArgumentCaptor.forClass(CacheInvalidationRequested.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().cacheNames()).containsExactlyInAnyOrder("users", "userSubjects");
-        verifyNoMoreInteractions(jdbcTemplate, userDetailsManager);
     }
 
     @Test

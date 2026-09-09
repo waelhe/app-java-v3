@@ -336,10 +336,15 @@ public class UserService implements IdentitySpi {
      * the free texts are the declared residuals of gate b-4/b-3 — declared,
      * not claimed erased (EDPB §131 residual-risk scope, plan §5-أ closing).
      *
-     * <p><b>The audit record (§5-أ step 9):</b> a structured log line — actor,
-     * target, old→new subject, reason — the payments module's record
-     * convention (the {@code audit_log} table stays rejected on the standing
-     * L23 evidence).
+     * <p><b>The audit record (§5-أ step 9, CodeRabbit round 1 adopted):</b> a
+     * structured log line — actor, target (userId), replacement subject,
+     * reason — the payments module's record convention. The raw old→new
+     * mapping is deliberately NOT logged (CWE-532: the log line would
+     * re-store the direct identifier in yet another store outside the
+     * pseudonymized domain); the mapping remains recoverable exactly where
+     * the plan declares it — the Envers revision history (P6, gate b-4's
+     * windowed residual). The {@code audit_log} table stays rejected on the
+     * standing L23 evidence.
      *
      * @throws ServiceUnavailableException the secret channel is unbound —
      *         the capability is OFF (503 SU-001), never a silent fallback
@@ -402,10 +407,13 @@ public class UserService implements IdentitySpi {
         // Step 7 — the standing AFTER_COMMIT cache channel (I5-guarded).
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
 
-        // Step 9 — the structured audit line (payments convention).
-        log.info("Account pseudonymization audit: userId={}, subject: {} -> {}, "
+        // Step 9 — the structured audit line (payments convention). The raw
+        // old subject is deliberately absent (CWE-532, CodeRabbit round 1):
+        // the old→new mapping lives in the Envers history — the declared b-4
+        // residual — not duplicated into log storage.
+        log.info("Account pseudonymization audit: userId={}, subject -> {}, "
                         + "email -> null, displayName -> null, actor={}, reason='{}'",
-                userId, originalSubject, replacementSubject, actor, reason);
+                userId, replacementSubject, actor, reason);
     }
 
     private UserSummary toUserSummary(User user) {
