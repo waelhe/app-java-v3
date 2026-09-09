@@ -216,11 +216,20 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * references users(id)) and is resolved through {@code findByUserId}
      * (A1) so the VERIFIED gate matches the profile owned by that user id.
      *
-     * <p>No {@code @Observed} here: this overload only delegates to the
-     * full form (I6) — the observation lives on the external entry point
-     * exactly once (self-invocation is not re-proxied; the observation
-     * inventory pin counts entry points, not overloads).
+     * <p>{@code @Observed} is on BOTH proxy-visible entry forms (the CodeRabbit
+     * #270 Major, adopted): this six-argument overload is the GraphQL/SPI
+     * entry point and the seven-argument form is the REST entry point. The
+     * official AOP proxying rule (Spring Framework Reference, Proxying
+     * Mechanisms — "self invocation ... will bypass the advice") means the
+     * delegation from this overload to the full form runs unproxied, so the
+     * full form's annotation alone leaves the GraphQL {@code createService}
+     * mutation unobserved (it was observed before the I6 split — one
+     * six-argument method). Each external call now crosses the proxy exactly
+     * once at ITS entry form: exactly one observation per create, no
+     * double-counting — the same inventory name {@code catalog.create.listing}
+     * on both forms (the pin counts names, not methods).
      */
+    @Observed(name = "catalog.create.listing")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency) {

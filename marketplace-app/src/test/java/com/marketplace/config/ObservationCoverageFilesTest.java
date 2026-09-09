@@ -184,6 +184,16 @@ class ObservationCoverageFilesTest {
     /**
      * Scans every module's main sources for @Observed(name="...") and groups
      * the names by Maven module. testFixtures and test sources are excluded.
+     *
+     * <p>Names are deduplicated: the inventory is a set of observation NAMES
+     * per module, not a count of annotated methods. One command may expose
+     * several proxy-visible entry forms (e.g. {@code catalog.create.listing}
+     * — the six-argument SPI/GraphQL form and the seven-argument REST form
+     * after I6): every external call crosses the proxy exactly once at its
+     * own entry form (the official AOP self-invocation rule — the delegation
+     * between the forms runs unproxied and cannot double-count), so both
+     * forms legitimately carry the SAME name. A duplicate NAME in the scan
+     * is that pattern, not a new observation.
      */
     private Map<String, List<String>> scanInventory() throws IOException {
         Map<String, List<String>> byModule = new HashMap<>();
@@ -207,7 +217,7 @@ class ObservationCoverageFilesTest {
                         }
                     });
         }
-        byModule.replaceAll((k, v) -> v.stream().sorted().toList());
+        byModule.replaceAll((k, v) -> v.stream().sorted().distinct().toList());
         return byModule;
     }
 
