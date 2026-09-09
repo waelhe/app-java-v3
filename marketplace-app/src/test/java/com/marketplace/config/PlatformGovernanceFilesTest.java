@@ -50,18 +50,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       GitHub Packages repository declared under {@code distributionManagement}
  *       (server id {@code github}); the poms on main stay
  *       {@code 0.1.0-SNAPSHOT}.</li>
- *   <li><b>container-scan.yml + .trivyignore.yaml + root pom tomcat.version</b> —
+ *   <li><b>container-scan.yml + .trivyignore.yaml + root pom tomcat.version +
+ *       Dockerfile runtime stage</b> —
  *       the container-image CVE gate (roadmap G-ENG-1): the workflow must keep
  *       scanning the REAL production artifact (docker build of the repo
  *       Dockerfile, image mode), must fail on HIGH/CRITICAL fixed findings
  *       (exit-code 1), and must honor the yaml ignore file whose entries are
  *       time-bounded ({@code expired_at}) — an ignore entry that silently
- *       loses its expiry would weaken the gate forever. The root pom carries
+ *       loses its expiry would weaken the gate forever. The ignore list is
+ *       EMPTY by design: the runtime stage's {@code apk upgrade --no-cache}
+ *       closes every fixable alpine finding at build time (the version-bump
+ *       response the gate policy prescribes), so an entry exists only while
+ *       a fix is not yet published for the v3.24 branch. The root pom carries
  *       the {@code <tomcat.version>11.0.25</tomcat.version>} override that
  *       closed the three CRITICAL Tomcat 11.0.24 auth bypasses this layer
  *       caught; the pin forces the override's removal to be a deliberate,
  *       visible act (it becomes stale the moment the Boot parent manages
- *       {@literal >=} 11.0.25).</li>
+ *       {@literal >=} 11.0.25). The Dockerfile pin is the same contract for
+ *       the OS layer: silently dropping the upgrade line returns the shipped
+ *       image to stale alpine packages until the weekly scan catches it.</li>
  * </ul>
  *
  * <p>File-location note: surefire runs with the module basedir
@@ -219,22 +226,63 @@ class PlatformGovernanceFilesTest {
         // Every entry must be time-bounded: expired_at is enforced by trivy
         // itself (verified live: past date => the finding returns). An entry
         // without it would silence the gate indefinitely.
-        assertThat(ignore).as("the ignore entry must carry an expiry")
-                .contains("expired_at:");
-        // And justified: the statement documents why the finding is accepted.
-        assertThat(ignore).as("the ignore entry must carry a justification")
-                .contains("statement:");
-        // Exactly one bounded entry today. Counting "- id:" keeps the file
-        // honest: a silently widened list (someone pasting more CVEs) trips
-        // this pin and forces a deliberate, review-visible change.
-        int entries = ignore.split("(?m)^\s*-\s*id:", -1).length - 1;
+        int entries = countIgnoreEntries(ignore);
+        if (entries > 0) {
+            assertThat(ignore).as("any ignore entry must carry an expiry")
+                    .contains("expired_at:");
+            // And justified: the statement documents why the finding is accepted.
+            assertThat(ignore).as("any ignore entry must carry a justification")
+                    .contains("statement:");
+        }
+        // Zero entries today. Counting "- id:" keeps the file honest: a
+        // silently widened list (someone pasting more CVEs) trips this pin
+        // and forces a deliberate, review-visible change.
         assertThat(entries)
-                .as("exactly one documented ignore entry (CVE-2026-14456, "
-                        + "alpine openssl QUIC DoS — unreachable: the JVM serves "
-                        + "HTTP over JSSE, not system OpenSSL; awaiting the "
-                        + "eclipse-temurin rebuild)")
-                .isEqualTo(1);
-        assertThat(ignore).contains("id: CVE-2026-14456");
+                .as("zero ignore entries — the runtime stage's OS package upgrade "
+                        + "(Dockerfile: RUN apk upgrade --no-cache against the v3.24 "
+                        + "stable branch) closes every fixable alpine finding at "
+                        + "image build time (2026-09-09: libexpat 2.8.4-r0 for "
+                        + "CVE-2026-76956/76957 and openssl 3.5.8-r0 for "
+                        + "CVE-2026-14456 — the entry this file carried while its "
+                        + "fix awaited an eclipse-temurin rebuild that never "
+                        + "shipped). An ignore entry is only for findings with no "
+                        + "fix published for the branch; adding one is a deliberate "
+                        + "act that must update this pin")
+                .isZero();
+    }
+
+    @Test
+    void dockerfileRuntimeStageUpgradesOsPackages() throws IOException {
+        String dockerfile = read("Dockerfile");
+        // The runtime stage is the shipped OS layer — the only surface the
+        // image-mode gate scans for alpine packages. Its last FROM is the
+        // runtime base (the trainer stage uses the same base but never
+        // ships); the upgrade line must run there, as root, before USER app
+        // (apk requires root).
+        int runtimeFrom = dockerfile.lastIndexOf("FROM eclipse-temurin:25-jre-alpine");
+        assertThat(runtimeFrom)
+                .as("the runtime stage base must stay the jre-alpine official image")
+                .isGreaterThan(-1);
+        int upgrade = dockerfile.indexOf("RUN apk upgrade --no-cache", runtimeFrom);
+        assertThat(upgrade)
+                .as("the runtime stage runs the official in-branch package upgrade "
+                        + "(apk-upgrade(8): apk upgrade upgrades installed packages "
+                        + "to the latest version available from configured package "
+                        + "repositories) — the version-bump response the gate "
+                        + "prescribes for fixable findings. Removal returns the "
+                        + "shipped image to stale alpine packages (base tag last "
+                        + "pushed 2026-08-21 while both fixes already shipped in "
+                        + "v3.24-main — measured 2026-09-09)")
+                .isGreaterThan(runtimeFrom);
+        // Line-start match: the Dockerfile comment above the upgrade line
+        // mentions "USER app" in prose — the instruction is what must be found.
+        int user = dockerfile.indexOf("\nUSER app", runtimeFrom);
+        assertThat(user)
+                .as("the runtime stage must still switch to the non-root user")
+                .isGreaterThan(-1);
+        assertThat(upgrade)
+                .as("the upgrade runs as root (before USER app)")
+                .isLessThan(user);
     }
 
     @Test
@@ -256,6 +304,12 @@ class PlatformGovernanceFilesTest {
                 .contains("CVE-2026-65182")
                 .contains("CVE-2026-65905")
                 .contains("CVE-2026-68525");
+    }
+
+    private static int countIgnoreEntries(String ignoreFile) {
+        // "- id:" at line start marks one vulnerability entry in the yaml
+        // ignore policy (vulnerabilities: list items).
+        return ignoreFile.split("(?m)^\\s*-\\s*id:", -1).length - 1;
     }
 
     private static String read(String... segments) throws IOException {
