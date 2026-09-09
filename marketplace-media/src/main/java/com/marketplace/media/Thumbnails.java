@@ -79,6 +79,13 @@ final class Thumbnails {
      * @throws IOException when the bytes cannot be read as an image — the
      *         caller treats this as a processing failure (publication FAILED,
      *         retried by the documented resubmission machinery, debt D3).
+     * @throws ThumbnailEncodingException when the scaled image cannot be
+     *         re-encoded — an IOException subclass that carries the stage
+     *         (the write half of the image math) so the caller's D3 failure
+     *         counter can distinguish {@code encode} from {@code decode}
+     *         failures. The realistic case is a declared-content-type /
+     *         actual-bytes mismatch (PNG-with-alpha bytes under a jpeg
+     *         declaration die at the JPEG writer — measured).
      */
     static byte[] scaleToMaxWidth(byte[] encoded, int maxWidth, String contentType,
                                   long maxSourcePixels) throws IOException {
@@ -168,7 +175,7 @@ final class Thumbnails {
         };
         Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
         if (!writers.hasNext()) {
-            throw new IOException("No ImageIO writer for " + contentType);
+            throw new ThumbnailEncodingException("No ImageIO writer for " + contentType);
         }
         ImageWriter writer = writers.next();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -188,6 +195,13 @@ final class Thumbnails {
                     param.setCompressionQuality(0.85f);
                 }
                 writer.write(null, new IIOImage(image, null, null), param);
+            } catch (IOException ex) {
+                // ENCODE-stage failure (D3 counter): the writer rejected the
+                // image — e.g. an ARGB raster under the JPEG writer, the
+                // measured "Bogus input colorspace" of a declared-type /
+                // actual-bytes mismatch — or the output stream failed.
+                throw new ThumbnailEncodingException(
+                        "Encoding the scaled thumbnail failed: " + ex.getMessage(), ex);
             }
         } finally {
             writer.dispose();

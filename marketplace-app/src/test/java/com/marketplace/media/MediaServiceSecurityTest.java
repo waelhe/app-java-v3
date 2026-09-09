@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +64,17 @@ class MediaServiceSecurityTest {
                     new MediaProperties.Storage("", "auto", "", "", "", false),
                     new MediaProperties.Limits(10_485_760L,
                             Set.of("image/jpeg", "image/png"), Duration.ofMinutes(15), 640, 25_000_000L));
+        }
+
+        /**
+         * D3 (I4): the failure counter is a pure observer over a real
+         * in-memory registry — nothing to mock (same construction as
+         * MediaServiceTest). This narrow context deliberately loads no
+         * component scan, so the @Component must be provided explicitly.
+         */
+        @Bean
+        MediaThumbnailMetrics mediaThumbnailMetrics() {
+            return new MediaThumbnailMetrics(new SimpleMeterRegistry());
         }
     }
 

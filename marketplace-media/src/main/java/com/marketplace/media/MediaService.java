@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -62,6 +63,7 @@ public class MediaService {
     private final ProviderLookupPort providerLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final MediaThumbnailMetrics thumbnailMetrics;
 
     public MediaService(MediaAssetRepository mediaAssetRepository,
                         ObjectProvider<S3MediaStorage> storage,
@@ -69,7 +71,8 @@ public class MediaService {
                         ListingPriceProvider listingPriceProvider,
                         ProviderLookupPort providerLookupPort,
                         CurrentUserProvider currentUserProvider,
-                        ApplicationEventPublisher eventPublisher) {
+                        ApplicationEventPublisher eventPublisher,
+                        MediaThumbnailMetrics thumbnailMetrics) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.storage = storage;
         this.properties = properties;
@@ -77,6 +80,7 @@ public class MediaService {
         this.providerLookupPort = providerLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.thumbnailMetrics = thumbnailMetrics;
     }
 
     /**
@@ -241,6 +245,12 @@ public class MediaService {
      * Modulith publication goes FAILED and the documented resubmission
      * machinery retries it later (debt D3: bounded, logged, no silent drop);
      * the upload itself already succeeded and stays UPLOADED.
+     *
+     * <p>D3 closure (roadmap §8): every failure is counted by its measured
+     * source BEFORE rethrowing ({@code marketplace.media.thumbnail.failure}
+     * with a {@code reason} tag — fetch/decode/encode/store) so operations
+     * can see what the retry machinery is working on. Counting never changes
+     * the failure semantics: the exception always propagates.
      */
     @Observed(name = "media.thumbnail.process")
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -254,13 +264,22 @@ public class MediaService {
         }
         String thumbKey = asset.getObjectKey() + "/thumb";
         if (Thumbnails.isProcessable(asset.getContentType())) {
-            byte[] original = s3.getObject(asset.getObjectKey());
+            byte[] original;
+            try {
+                original = s3.getObject(asset.getObjectKey());
+            } catch (RuntimeException ex) {
+                // D3: count the fetch-stage failure, then let it propagate —
+                // the publication goes FAILED and the framework-owned
+                // resubmission machinery owns the retry. Never swallowed.
+                thumbnailMetrics.incrementFailure(MediaThumbnailMetrics.FailureReason.FETCH);
+                throw ex;
+            }
             try {
                 byte[] scaled = Thumbnails.scaleToMaxWidth(
                         original, properties.limits().thumbMaxWidth(), asset.getContentType(),
                         properties.limits().thumbSourceMaxPixels());
                 if (scaled != null) {
-                    s3.putObject(thumbKey, asset.getContentType(), scaled);
+                    storeThumbnail(s3, thumbKey, asset.getContentType(), scaled);
                     asset.recordThumbKey(thumbKey);
                 } else {
                     // Within the width bound, or over the raster budget
@@ -268,9 +287,18 @@ public class MediaService {
                     // never decoded) — the original is its own thumbnail.
                     asset.recordThumbKey(asset.getObjectKey());
                 }
-            } catch (java.io.IOException ex) {
-                // Unreadable image bytes — a processing failure by contract
-                // (publication FAILED, retried; the original stays UPLOADED).
+            } catch (ThumbnailEncodingException ex) {
+                // Encode stage (the write half of the image math) — counted
+                // before the rethrow; the ISE wrap keeps the pipeline's
+                // external failure contract exactly as it was.
+                thumbnailMetrics.incrementFailure(MediaThumbnailMetrics.FailureReason.ENCODE);
+                throw new IllegalStateException(
+                        "Thumbnail processing failed for media " + mediaId + ": " + ex.getMessage(), ex);
+            } catch (IOException ex) {
+                // Decode stage (the read half of the image math) — unreadable
+                // image bytes. A processing failure by contract (publication
+                // FAILED, retried; the original stays UPLOADED).
+                thumbnailMetrics.incrementFailure(MediaThumbnailMetrics.FailureReason.DECODE);
                 throw new IllegalStateException(
                         "Thumbnail processing failed for media " + mediaId + ": " + ex.getMessage(), ex);
             }
@@ -280,6 +308,20 @@ public class MediaService {
             asset.recordThumbKey(asset.getObjectKey());
         }
         mediaAssetRepository.save(asset);
+    }
+
+    /**
+     * D3: the thumbnail store half — counted separately from the fetch half
+     * so the failure counter tells operations which side of the storage
+     * channel failed. Same never-swallow rule: count, then rethrow.
+     */
+    private void storeThumbnail(S3MediaStorage s3, String thumbKey, String contentType, byte[] scaled) {
+        try {
+            s3.putObject(thumbKey, contentType, scaled);
+        } catch (RuntimeException ex) {
+            thumbnailMetrics.incrementFailure(MediaThumbnailMetrics.FailureReason.STORE);
+            throw ex;
+        }
     }
 
     private S3MediaStorage requireStorage() {

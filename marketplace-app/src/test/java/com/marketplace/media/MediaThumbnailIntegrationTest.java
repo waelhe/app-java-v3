@@ -5,6 +5,7 @@ import com.marketplace.shared.api.MediaUploadedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -89,6 +90,22 @@ class MediaThumbnailIntegrationTest {
 
     @Autowired
     private MediaAssetRepository mediaAssetRepository;
+
+    /**
+     * D3: the module slice's live MeterRegistry — the failure counter's
+     * channel. Shared by the cached slice context, so assertions read
+     * deltas, never absolute counts.
+     */
+    @Autowired
+    private MeterRegistry meterRegistry;
+
+    private double thumbnailFailureCount(String reason) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry
+                .find(MediaThumbnailMetrics.FAILURE_COUNTER)
+                .tag(MediaThumbnailMetrics.REASON_TAG, reason)
+                .counter();
+        return counter == null ? 0.0 : counter.count();
+    }
 
     private void mockOwner(UUID userId, UUID providerId, UUID listingId) {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
@@ -216,6 +233,38 @@ class MediaThumbnailIntegrationTest {
         // recovered) completes the pipeline — debt D3's bounded retry.
         storedBytes.set(wideJpeg());
         mediaService.processThumbnail(asset.getId());
+        assertThat(mediaAssetRepository.findById(asset.getId()).orElseThrow().getThumbObjectKey())
+                .isEqualTo(asset.getObjectKey() + "/thumb");
+    }
+
+    @Test
+    @DisplayName("D3 closure: a pipeline failure is counted by source; the successful retry adds no count")
+    void failureIsCountedBySourceAndRetryDoesNotDoubleCount() throws Exception {
+        MediaAsset asset = confirmedAsset("image/jpeg");
+        double fetchBefore = thumbnailFailureCount("storage-fetch");
+        double decodeBefore = thumbnailFailureCount("decode");
+        java.util.concurrent.atomic.AtomicReference<byte[]> storedBytes =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(storage.getObject(anyString())).thenAnswer(invocation -> {
+            byte[] bytes = storedBytes.get();
+            if (bytes == null) {
+                throw new RuntimeException("storage read failed");
+            }
+            return bytes;
+        });
+
+        assertThatThrownBy(() -> mediaService.processThumbnail(asset.getId()))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(thumbnailFailureCount("storage-fetch"))
+                .as("the fetch-stage failure is counted exactly once")
+                .isEqualTo(fetchBefore + 1.0);
+
+        // The documented resubmission semantics: the retry (storage
+        // recovered) completes the pipeline without touching the counter.
+        storedBytes.set(wideJpeg());
+        mediaService.processThumbnail(asset.getId());
+        assertThat(thumbnailFailureCount("storage-fetch")).isEqualTo(fetchBefore + 1.0);
+        assertThat(thumbnailFailureCount("decode")).isEqualTo(decodeBefore);
         assertThat(mediaAssetRepository.findById(asset.getId()).orElseThrow().getThumbObjectKey())
                 .isEqualTo(asset.getObjectKey() + "/thumb");
     }
