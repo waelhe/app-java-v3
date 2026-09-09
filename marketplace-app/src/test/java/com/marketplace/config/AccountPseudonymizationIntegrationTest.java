@@ -216,7 +216,10 @@ class AccountPseudonymizationIntegrationTest {
         var row = jdbcTemplate.queryForMap(
                 "SELECT subject, email, display_name, pseudonymized_at FROM users WHERE id = ?", targetId);
         String derivedSubject = (String) row.get("subject");
-        assertThat(derivedSubject).startsWith("anon-").hasSize(70);
+        // "anon-" (5) + the full 64-char hex fingerprint = 69 — the plan's
+        // corrected arithmetic (the original 5+1+64=70 double-counted the
+        // hyphen; pinned by SubjectPseudonymizerTest too).
+        assertThat(derivedSubject).startsWith("anon-").hasSize(69);
         assertThat(row.get("email")).isNull();
         assertThat(row.get("display_name")).isNull();
         assertThat(row.get("pseudonymized_at")).isNotNull();
