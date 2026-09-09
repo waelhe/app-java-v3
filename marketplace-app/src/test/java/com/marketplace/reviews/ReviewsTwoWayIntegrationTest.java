@@ -170,7 +170,7 @@ class ReviewsTwoWayIntegrationTest {
      * the reverse review alone; both directions coexist on ONE booking.
      */
     @Test
-    @WithMockUser(roles = "PROVIDER")
+    @WithMockUser(roles = {"CONSUMER", "PROVIDER"})
     void reverseReview_neverPollutesTheProviderAverage_andSplitsTheReadSurfaces() {
         UUID consumerId = userRepository.save(User.create("i8-guest-subject",
                 "i8-guest@b.com", "Guest", UserRole.CONSUMER)).getId();
@@ -182,11 +182,14 @@ class ReviewsTwoWayIntegrationTest {
         UUID bookingId = UUID.randomUUID();
         stubCompletedBooking(consumerId, providerId);
 
-        // A forward review lands first — planted directly (this test's
-        // subject is the PROVIDER; the forward create path is the stats
-        // test above): rating 3.
-        reviewRepository.save(Review.create(bookingId, consumerId, providerId, 3, "okay stay"));
+        // The forward review lands THROUGH THE SERVICE — the events fire and
+        // the async listener lands the aggregate (a repository-planted row
+        // fires no event: the CI round-1 lesson — the average stayed null).
+        // Dual roles: the forward gate reads CONSUMER, the reverse gate reads
+        // PROVIDER; the ownership checks read the explicit arguments.
+        reviewsService.create(bookingId, consumerId, 3, "okay stay");
         awaitAverage(providerId, 3.0);
+        long versionAfterForward = providerRepository.findById(providerId).orElseThrow().getVersion();
 
         // The reverse review on the SAME booking: the provider rates the
         // consumer 1 (would drag any unfiltered average to 2.0).
@@ -197,14 +200,16 @@ class ReviewsTwoWayIntegrationTest {
         assertThat(reverse.getRevieweeId()).isEqualTo(consumerId);
         assertThat(reverse.getReviewerId()).isEqualTo(ownerUserId);
 
-        // The stored provider average is UNCHANGED at 3.0 — the async
-        // listener recomputed it (the same event fired) and the aggregate
-        // excluded the reverse review. Wait for the recompute to land, then
-        // assert it landed on the SAME value (never 2.0).
-        awaitAverage(providerId, 3.0);
+        // The reverse review fires the SAME event, so the listener recomputes
+        // — the profile version bumps EVEN WHEN the value is unchanged. Wait
+        // for that bump: it PROVES the recompute ran before the value assert
+        // (no race between the two awaits), then the average must STILL be
+        // 3.0 — never 2.0.
+        awaitVersionBump(providerId, versionAfterForward);
         assertThat(providerRepository.findById(providerId).orElseThrow().getRatingAverage())
                 .as("the provider average counts forward reviews only — a provider-authored "
-                        + "rating of the consumer never pollutes it")
+                        + "rating of the consumer never pollutes it (the recompute provably "
+                        + "ran: the version bumped)")
                 .isEqualTo(3.0);
 
         // The read surfaces split by direction.
@@ -278,6 +283,33 @@ class ReviewsTwoWayIntegrationTest {
                 .expiresAt(Instant.now().plusSeconds(60))
                 .build();
         return new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority(role)));
+    }
+
+    /**
+     * Plain poll loop (30s / 200ms) for the profile's optimistic version —
+     * the recompute's {@code applyRatingAverage} bumps it even when the
+     * value is unchanged, which proves the async listener RAN (ordering,
+     * without racing the value poll).
+     */
+    private void awaitVersionBump(UUID providerId, long atLeast) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        Long last = null;
+        while (System.nanoTime() < deadline) {
+            last = providerRepository.findById(providerId).map(ProviderProfile::getVersion).orElse(null);
+            if (last != null && last > atLeast) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError(String.format(
+                "Provider %s version never moved past %s (last seen: %s) — the reverse "
+                        + "review's event did not trigger the stats recompute.",
+                providerId, atLeast, last));
     }
 
     /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */
