@@ -238,12 +238,17 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
 
         // (3) The REAL transactional write ON REPLICA A — the service path
         // that publishes CacheInvalidationRequested and runs the AFTER_COMMIT
-        // relay in A's JVM (the ADMIN authority bypasses ownership — the
-        // L14/L21 fabricated-principal pattern; the write itself is the
-        // production code path under test). The call returning the updated
-        // entity is ALSO the «فشل الناشر لا يُسقط الطلب الأصلي» fact: the
-        // eviction runs after the transaction, by design.
-        Authentication admin = SecurityContextHolder.getContext().getAuthentication();
+        // relay in A's JVM. The method PARAMETER is the production principal
+        // shape (a JwtAuthenticationToken whose subject resolves to the
+        // seeded provider's users row — the CI round-1 lesson: the REAL
+        // IdentityUserProvider accepts only JWT tokens, "Unsupported
+        // authentication type" otherwise) with ROLE_ADMIN so ownership is
+        // bypassed after resolution; the method-security gate reads the
+        // @WithMockUser context. The write itself is the production code
+        // path under test, and the call returning the updated entity is
+        // ALSO the «فشل الناشر لا يُسقط الطلب الأصلي» fact: the eviction
+        // runs after the transaction, by design.
+        Authentication admin = jwtAuthentication("i5-invalidation-provider@example.com");
         ProviderListing updated = catalogService.update(LISTING_ID, TITLE_AFTER,
                 "Cross-instance invalidation proof listing", "home", 100_00L, null, admin);
         assertThat(updated.getTitle()).isEqualTo(TITLE_AFTER);
@@ -296,6 +301,24 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
                 """,
                 LISTING_ID, PROVIDER_ID, title,
                 "Cross-instance invalidation proof listing", "home", 100_00L);
+    }
+
+    /**
+     * The method-parameter principal: a {@code JwtAuthenticationToken} whose
+     * subject is a real users row — the production resource-server shape the
+     * real {@code IdentityUserProvider} resolves (the ReviewsTwoWay pattern).
+     */
+    private static org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwtAuthentication(
+            String subject) {
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt
+                .withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(subject)
+                .issuedAt(java.time.Instant.now())
+                .expiresAt(java.time.Instant.now().plusSeconds(60))
+                .build();
+        return new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                jwt, java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
     }
 
     // -- HTTP helpers (the MultiReplicaReadinessIntegrationTest shape) --
