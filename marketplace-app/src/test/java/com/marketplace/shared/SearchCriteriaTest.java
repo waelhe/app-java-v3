@@ -72,4 +72,67 @@ class SearchCriteriaTest {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_IN))
                 .isInstanceOf(BadRequestException.class);
     }
+
+    // ---- I6: the guests criterion gate (criterion 0) -------------------------
+
+    @Test
+    void nullGuests_isTheCriterionLessForm() {
+        SearchCriteria criteria = new SearchCriteria(null, null, null, null, null, null, null);
+
+        assertThat(criteria.guests()).isNull();
+        assertThat(criteria.hasWindow()).isFalse();
+    }
+
+    @Test
+    void positiveGuests_isAccepted() {
+        SearchCriteria criteria = new SearchCriteria("loft", "stay", null, null, null, null, 4);
+
+        assertThat(criteria.guests()).isEqualTo(4);
+    }
+
+    @Test
+    void zeroGuests_isRejectedBeforeAnyQuery() {
+        // A guest count of zero is meaningless — a 400 at construction,
+        // never a silently-empty page (the same lesson as the window).
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, null, null, 0))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("guests must be positive");
+    }
+
+    @Test
+    void negativeGuests_isRejectedBeforeAnyQuery() {
+        assertThatThrownBy(() -> new SearchCriteria("loft", null, null, null, null, null, -2))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("guests must be positive");
+    }
+
+    @Test
+    void guestsGate_isIndependentOfTheWindowGate() {
+        // A valid window does NOT smuggle an invalid guests value past the
+        // gate — and vice versa (an invalid window still fails even when
+        // guests is fine).
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, 0))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("guests must be positive");
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, CHECK_IN, null, 3))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("provided together");
+    }
+
+    @Test
+    void windowAndPositiveGuests_compose() {
+        SearchCriteria criteria = new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, 2);
+
+        assertThat(criteria.hasWindow()).isTrue();
+        assertThat(criteria.guests()).isEqualTo(2);
+    }
+
+    @Test
+    void sixComponentForm_keepsGuestsNull() {
+        // The L27-era construction sites compile unchanged — guests stays
+        // criterion-less.
+        SearchCriteria criteria = new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT);
+
+        assertThat(criteria.guests()).isNull();
+    }
 }

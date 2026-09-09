@@ -11,6 +11,7 @@ public record ListingResponse(
         String category,
         BigDecimal price,
         String currency,
+        Integer maxGuests,
         Instant createdAt,
         Instant updatedAt
 ) {

@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -69,25 +70,28 @@ public class CatalogController {
 
     @PostMapping
     @Operation(summary = "Create a listing (provider)", description = "Publishes a new service "
-            + "listing with a base nightly price in minor units.")
+            + "listing with a base nightly price in minor units and an optional guest capacity.")
     public ResponseEntity<ListingResponse> create(@Valid @RequestBody CreateListingRequest request,
                                                   Authentication authentication) {
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
         ProviderListingView listing = catalogService.create(
                 providerId, request.title(), request.description(),
-                request.category(), request.priceCents(), request.currency());
+                request.category(), request.priceCents(), request.currency(),
+                request.maxGuests());
         return ResponseEntity.status(HttpStatus.CREATED).body(listingMapper.toResponse(listing));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Update my listing (provider)", description = "Owner-scoped update of "
-            + "title/description/category/base price; the stored currency is kept when omitted.")
+            + "title/description/category/base price; the stored currency is kept when omitted, "
+            + "and the stored guest capacity is kept when omitted (the currency contract).")
     public ResponseEntity<ListingResponse> update(@PathVariable UUID id,
                                                   @Valid @RequestBody UpdateListingRequest request,
                                                   Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.update(
                 id, request.title(), request.description(),
-                request.category(), request.priceCents(), request.currency(), authentication)));
+                request.category(), request.priceCents(), request.currency(),
+                request.maxGuests(), authentication)));
     }
 
     @PostMapping("/{id}/activate")
@@ -117,7 +121,7 @@ public class CatalogController {
      * exact previous contract.
      */
     @Schema(description = "Listing creation: title, category, base nightly price in minor units; "
-            + "optional ISO 4217 currency (SAR default)")
+            + "optional ISO 4217 currency (SAR default); optional guest capacity (searchable)")
     public record CreateListingRequest(
             @Schema(description = "Listing title", example = "Sea-view studio in Jeddah")
             @NotBlank String title,
@@ -131,7 +135,10 @@ public class CatalogController {
             @NotNull Long priceCents,
             @Schema(description = "ISO 4217 currency of the price (optional, SAR default)",
                     example = "SAR")
-            @IsoCurrencyCode String currency
+            @IsoCurrencyCode String currency,
+            @Schema(description = "Maximum guests the listing accommodates (optional, "
+                    + "positive; undeclared when omitted — I6/roadmap D1)", example = "4")
+            @Positive Integer maxGuests
     ) {
     }
 
@@ -140,7 +147,7 @@ public class CatalogController {
      * (an update that omits the field does not reset money semantics).
      */
     @Schema(description = "Listing update: the same creation shape; an omitted currency keeps "
-            + "the stored one")
+            + "the stored one, an omitted maxGuests keeps the stored capacity")
     public record UpdateListingRequest(
             @Schema(description = "Listing title", example = "Sea-view studio in Jeddah (renovated)")
             @NotBlank String title,
@@ -153,7 +160,10 @@ public class CatalogController {
             @NotNull Long priceCents,
             @Schema(description = "ISO 4217 currency of the price (optional — keeps stored)",
                     example = "SAR")
-            @IsoCurrencyCode String currency
+            @IsoCurrencyCode String currency,
+            @Schema(description = "Maximum guests (optional, positive — keeps stored when "
+                    + "omitted; I6/roadmap D1)", example = "6")
+            @Positive Integer maxGuests
     ) {
     }
 }

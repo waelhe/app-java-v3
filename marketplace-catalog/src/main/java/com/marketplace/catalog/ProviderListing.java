@@ -45,6 +45,16 @@ public class ProviderListing extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private ListingStatus status = ListingStatus.DRAFT;
 
+    /**
+     * I6 (internal free plan §6, roadmap D1): guest capacity of the listing.
+     * {@code null} = capacity not declared — such a listing never matches a
+     * guests search criterion (NULL >= N is not true). Positivity is a
+     * three-layer gate: request Bean Validation ({@code @Positive}), this
+     * entity's factory/update validation, and the V44 CHECK constraint.
+     */
+    @Column(name = "max_guests")
+    private Integer maxGuests;
+
     protected ProviderListing() {
     }
 
@@ -55,6 +65,11 @@ public class ProviderListing extends BaseEntity {
 
     ProviderListing(UUID id, UUID providerId, String title, String description,
                     String category, Long priceCents, String currency) {
+        this(id, providerId, title, description, category, priceCents, currency, null);
+    }
+
+    ProviderListing(UUID id, UUID providerId, String title, String description,
+                    String category, Long priceCents, String currency, Integer maxGuests) {
         this.id = id;
         this.providerId = providerId;
         this.title = title;
@@ -62,6 +77,7 @@ public class ProviderListing extends BaseEntity {
         this.category = category;
         this.priceCents = priceCents;
         this.currency = Currencies.normalizeOrDefault(currency, DEFAULT_CURRENCY);
+        this.maxGuests = requirePositiveGuests(maxGuests);
     }
 
     public static ProviderListing create(UUID providerId, String title, String description,
@@ -77,8 +93,20 @@ public class ProviderListing extends BaseEntity {
      */
     public static ProviderListing create(UUID providerId, String title, String description,
                                          String category, Long priceCents, String currency) {
+        return create(providerId, title, description, category, priceCents, currency, null);
+    }
+
+    /**
+     * I6: full creation form with the optional guest capacity —
+     * {@code null} leaves capacity undeclared; a non-positive value is
+     * rejected here (the entity's own floor, behind the request-level
+     * {@code @Positive} and above the V44 CHECK constraint).
+     */
+    public static ProviderListing create(UUID providerId, String title, String description,
+                                         String category, Long priceCents, String currency,
+                                         Integer maxGuests) {
         return new ProviderListing(UUID.randomUUID(), providerId, title, description, category,
-                priceCents, currency);
+                priceCents, currency, maxGuests);
     }
 
     @Override
@@ -90,6 +118,7 @@ public class ProviderListing extends BaseEntity {
     public Long getPriceCents() { return priceCents; }
     public String getCurrency() { return currency; }
     public ListingStatus getStatus() { return status; }
+    public Integer getMaxGuests() { return maxGuests; }
 
     public void update(String title, String description, String category, Long priceCents) {
         update(title, description, category, priceCents, null);
@@ -102,6 +131,18 @@ public class ProviderListing extends BaseEntity {
      */
     public void update(String title, String description, String category, Long priceCents,
                        String currency) {
+        update(title, description, category, priceCents, currency, null);
+    }
+
+    /**
+     * I6: the full update form. Capacity follows the currency contract
+     * verbatim: {@code null} keeps the stored capacity (an update that
+     * omits the field does not reset it); an explicit positive value
+     * re-declares it; a non-positive value is rejected here (the entity
+     * floor).
+     */
+    public void update(String title, String description, String category, Long priceCents,
+                       String currency, Integer maxGuests) {
         this.title = title;
         this.description = description;
         this.category = category;
@@ -109,6 +150,21 @@ public class ProviderListing extends BaseEntity {
         if (currency != null && !currency.isBlank()) {
             this.currency = Currencies.normalize(currency);
         }
+        if (maxGuests != null) {
+            this.maxGuests = requirePositiveGuests(maxGuests);
+        }
+    }
+
+    /**
+     * The capacity floor shared by construction and update: {@code null}
+     * passes (undeclared), any non-positive value is rejected — the same
+     * value contract the V44 CHECK constraint enforces at the database.
+     */
+    private static Integer requirePositiveGuests(Integer guests) {
+        if (guests != null && guests <= 0) {
+            throw new IllegalArgumentException("max guests must be positive when provided");
+        }
+        return guests;
     }
 
     public void activate() {

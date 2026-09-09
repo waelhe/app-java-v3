@@ -38,7 +38,7 @@ class ServiceGraphQlControllerTest {
 
     private static ProviderListingView view(UUID id, String title, String description, Long priceCents, String status) {
         return new ProviderListingView(id, title, description, "general", priceCents, "SAR",
-                UUID.randomUUID(), status, null, null);
+                UUID.randomUUID(), status, null, null, null);
     }
 
     @Test

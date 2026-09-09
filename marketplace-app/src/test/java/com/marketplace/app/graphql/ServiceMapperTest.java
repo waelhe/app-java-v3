@@ -35,6 +35,6 @@ class ServiceMapperTest {
 
     private static ProviderListingView view(String title, String description, Long priceCents, String status) {
         return new ProviderListingView(UUID.randomUUID(), title, description, "cat", priceCents, "SAR",
-                UUID.randomUUID(), status, null, null);
+                UUID.randomUUID(), status, null, null, null);
     }
 }

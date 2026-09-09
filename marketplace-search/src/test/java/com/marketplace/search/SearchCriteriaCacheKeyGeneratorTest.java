@@ -109,4 +109,34 @@ class SearchCriteriaCacheKeyGeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("SearchCriteria");
     }
+
+    // ---- I6: the guests segment -----------------------------------------------
+
+    @Test
+    void differentGuests_neverShareAKey() {
+        // The I6 contract: the guests criterion rides the key — two searches
+        // differing only in guests count are different cache entries (an
+        // entry cached for guests=2 must never serve guests=5).
+        SearchCriteria two = new SearchCriteria("loft", null, null, null, null, null, 2);
+        SearchCriteria five = new SearchCriteria("loft", null, null, null, null, null, 5);
+
+        assertThat(key(two, PageRequest.of(0, 10)))
+                .isNotEqualTo(key(five, PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void guestsNull_neverCollidesWithGuestsOne_orTheLiteralString() {
+        // Criterion-less (null) vs criterion=1 — distinct entries (the
+        // legacy behavior is byte-identical only because null rides its own
+        // segment, never borrowed from a neighboring component).
+        SearchCriteria noGuests = new SearchCriteria("loft", null, null, null);
+        SearchCriteria oneGuest = new SearchCriteria("loft", null, null, null, null, null, 1);
+
+        assertThat(key(noGuests, PageRequest.of(0, 10)))
+                .isNotEqualTo(key(oneGuest, PageRequest.of(0, 10)));
+
+        // The prefix bump (l27v1 → l27v2) means no pre-I6 entry can be read:
+        // the new schema carries the guests segment, old keys do not.
+        assertThat(key(noGuests, PageRequest.of(0, 10)).toString()).startsWith("l27v2|");
+    }
 }

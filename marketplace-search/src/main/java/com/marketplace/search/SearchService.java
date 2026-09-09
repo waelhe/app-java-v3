@@ -102,7 +102,10 @@ public class SearchService {
             // (SQL exception -> HTTP 500).
             return catalogSearchPort.searchFullText(query.trim(), pageable);
         }
-        if (criteria.minPrice() != null || criteria.maxPrice() != null) {
+        if (criteria.minPrice() != null || criteria.maxPrice() != null || criteria.guests() != null) {
+            // I6: guests joins price as an optional predicate of the criteria
+            // query — a guests-only criterion routes here too (NOT listActive,
+            // which would silently bypass the capacity filter).
             return catalogSearchPort.searchByCriteria(criteria, pageable);
         }
         if (category != null && !category.isBlank()) {

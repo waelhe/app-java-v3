@@ -24,11 +24,18 @@ import java.lang.reflect.Method;
  * whatever the user types. The window components (checkIn/checkOut) are
  * first-class segments, which is the roadmap's "extend the search-results-v2
  * key with the window".
+ *
+ * <p>I6 (internal free plan §6): the guests criterion rides as a first-class
+ * segment too — two searches differing only in guests never share a cached
+ * entry. The PREFIX is bumped {@code l27v1 → l27v2} because the key schema
+ * itself gained a component: l27v1 keys (9 segments) and l27v2 keys (10
+ * segments) are disjoint by prefix, so no pre-change entry can be read as a
+ * post-change hit — the one-time cold cycle is bounded by the 1h TTL.
  */
 @Component("searchCriteriaKeyGenerator")
 public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
 
-    private static final String PREFIX = "l27v1";
+    private static final String PREFIX = "l27v2";
 
     @Override
     public Object generate(Object target, Method method, Object... params) {
@@ -46,6 +53,7 @@ public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
         append(key, criteria.maxPrice());
         append(key, criteria.checkIn());
         append(key, criteria.checkOut());
+        append(key, criteria.guests());
         append(key, pageable.getPageNumber());
         append(key, pageable.getPageSize());
         append(key, pageable.getSort());
