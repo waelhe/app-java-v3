@@ -184,10 +184,14 @@ class AuthoredContentPurgeIntegrationTest {
                 .as("purge call: %s", body(purge)).isEqualTo(200);
         JsonNode purgeBody = objectMapper.readTree(purge.body());
         assertThat(purgeBody.path("purgedRows").asInt())
-                .as("the exact fan-out count: 2 bookings + 4 messages + 4 review "
-                        + "comments + 4 review replies + 4 profile fields + 2 disputes "
-                        + "+ 2 notifications (base + mirror each)")
-                .isEqualTo(22);
+                .as("the exact fan-out count, measured against the seeded "
+                        + "fixture (CodeRabbit's round-1 arithmetic, adopted): "
+                        + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
+                        + "the seed plants ONE subject message mirror) + 4 review "
+                        + "comments + 4 review replies (2 base + 2 mirror each) "
+                        + "+ 4 profile fields (name+bio, base+mirror) + 2 disputes "
+                        + "+ 2 notifications")
+                .isEqualTo(21);
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
@@ -515,7 +519,7 @@ class AuthoredContentPurgeIntegrationTest {
         // B + reverse C legally share one booking on the subject's listing.
         // Both carry NULL notes: they satisfy the FK, contribute no authored
         // text, and match no purge predicate (notes IS NOT NULL) — the exact
-        // 22-row count stays exact.
+        // 21-row count stays exact.
         UUID reviewBookingA = UUID.randomUUID();
         UUID reviewBookingBC = UUID.randomUUID();
         jdbcTemplate.update(
