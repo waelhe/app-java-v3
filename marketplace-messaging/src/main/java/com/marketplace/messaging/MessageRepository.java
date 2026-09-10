@@ -8,11 +8,20 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<Message, UUID>, RevisionRepository<Message, UUID, Integer> {
 
     Page<Message> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
+
+    /**
+     * I7 Phase 2 (account-pseudonymization-plan §5-ج): every live message
+     * the user SENT (the plan's provenance rule — his authored content
+     * only), in creation order for a deterministic export — backs
+     * {@code MessagingExportAdapter}.
+     */
+    List<Message> findAllBySenderIdOrderByCreatedAtAsc(UUID senderId);
 
     long countByConversationIdAndReadFalse(UUID conversationId);
 

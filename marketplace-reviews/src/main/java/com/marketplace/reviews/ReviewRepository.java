@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,6 +21,13 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     Page<Review> findByProviderIdAndDirection(UUID providerId, ReviewDirection direction, Pageable pageable);
 
     Page<Review> findByReviewerId(UUID reviewerId, Pageable pageable);
+
+    /**
+     * I7 Phase 2 (account-pseudonymization-plan §5-ج): every live review
+     * the user authored (both directions), in creation order for a
+     * deterministic export — backs {@code ReviewExportAdapter}.
+     */
+    List<Review> findAllByReviewerIdOrderByCreatedAtAsc(UUID reviewerId);
 
     /** I8: the reverse reviews about one reviewed consumer (the trust view). */
     Page<Review> findByRevieweeIdAndDirection(UUID revieweeId, ReviewDirection direction, Pageable pageable);

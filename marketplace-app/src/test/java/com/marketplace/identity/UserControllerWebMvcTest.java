@@ -33,6 +33,9 @@ class UserControllerWebMvcTest {
     @MockitoBean
     private UserMapper userMapper;
 
+    @MockitoBean
+    private UserDataExportService userDataExportService;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
@@ -48,6 +51,30 @@ class UserControllerWebMvcTest {
         when(userMapper.toResponse(user)).thenReturn(response);
 
         mockMvc.perform(get("/api/v1/users/me"))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * I7 Phase 2 (§5-ج): the export surface answers an authenticated
+     * principal through the same slice — the aggregation is the mocked
+     * boundary (the full contract is the integration guard's job).
+     */
+    @Test
+    @WithMockUser
+    void exportMyData_returnsOk() throws Exception {
+        var user = org.mockito.Mockito.mock(User.class);
+        var export = new UserDataExportResponse(
+                new UserDataExportResponse.ExportMetadata(java.time.Instant.now(),
+                        UserDataExportResponse.SCOPE_NOTICE),
+                new UserDataExportResponse.Profile(UUID.randomUUID(), "sub", null, null,
+                        "CONSUMER", null, null),
+                java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+
+        when(userService.syncFromOidc(any())).thenReturn(user);
+        when(userDataExportService.exportFor(user)).thenReturn(export);
+
+        mockMvc.perform(get("/api/v1/users/me/export"))
                 .andExpect(status().isOk());
     }
 
