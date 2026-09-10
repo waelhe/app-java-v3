@@ -574,19 +574,22 @@ class AuthoredContentPurgeIntegrationTest {
                 "the subject's reverse comment", "the subject's reverse reply");
 
         // Provider personas (V14/V22): the subject's + the counterparty's.
+        // V14's measured fact: created_at/updated_at are NOT NULL with NO
+        // DEFAULT (unlike V1/V3/V6/V7) — the seed sets them explicitly (the
+        // Phase 2 V18 lesson, applied to both no-default tables here).
         UUID subjectProfileId = UUID.randomUUID();
         UUID counterpartyProfileId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id)
-                VALUES (?, ?, ?, 'ACTIVE', ?)
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
+                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 subjectProfileId, "Subject The Provider", "the subject's bio", subjectId);
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id)
-                VALUES (?, ?, ?, 'ACTIVE', ?)
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
+                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 counterpartyProfileId, "Counterparty Stays", "counterparty keeps his bio",
@@ -622,19 +625,21 @@ class AuthoredContentPurgeIntegrationTest {
                 "counterparty keeps his reason");
 
         // Notifications (V18): the subject's feed + the counterparty's.
+        // V18's measured fact (the Phase 2 lesson): created_at/updated_at
+        // are NOT NULL with NO DEFAULT — set explicitly, like the disputes.
         UUID subjectNotificationId = UUID.randomUUID();
         UUID counterpartyNotificationId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
-                INSERT INTO notifications (id, recipient_id, type, message, is_read)
-                VALUES (?, ?, 'BOOKING_CREATED', ?, false)
+                INSERT INTO notifications (id, recipient_id, type, message, is_read, created_at, updated_at)
+                VALUES (?, ?, 'BOOKING_CREATED', ?, false, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 subjectNotificationId, subjectId, "the subject's notification body");
         jdbcTemplate.update(
                 """
-                INSERT INTO notifications (id, recipient_id, type, message, is_read)
-                VALUES (?, ?, 'BOOKING_CREATED', ?, false)
+                INSERT INTO notifications (id, recipient_id, type, message, is_read, created_at, updated_at)
+                VALUES (?, ?, 'BOOKING_CREATED', ?, false, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 counterpartyNotificationId, counterpartyId,
