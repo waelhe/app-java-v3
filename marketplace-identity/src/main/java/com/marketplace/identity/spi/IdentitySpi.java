@@ -53,4 +53,27 @@ public interface IdentitySpi {
      *         the target is the last active ADMIN account
      */
     void pseudonymizeAccount(UUID userId, String reason, String actor);
+
+    /**
+     * I7 Phase 3 (account-pseudonymization-plan §2 gate b-3 — the
+     * extended purges, the plan's §7 Phase 3 row): the free-text purge —
+     * every text the (already-pseudonymized) subject authored across the
+     * owning modules, base tables and Envers mirrors, UPDATE-only (the
+     * plan's letter: "UPDATE عبر الجداول"); shared records keep their
+     * structure and non-text columns (Art. 17(3)(b) / 20(4) — the plan's
+     * §4). Idempotent by the port contract: a re-run purges zero rows.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param reason the administrative reason, recorded with the action
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action
+     * @return the total number of rows whose text was actually purged
+     *         (base + Envers mirrors) — zero on a re-run
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the account is not pseudonymized — the purge completes an
+     *         erasure flow (pseudonymize first)
+     */
+    int purgeAuthoredContent(UUID userId, String reason, String actor);
 }

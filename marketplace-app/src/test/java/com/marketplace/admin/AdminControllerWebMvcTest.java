@@ -124,4 +124,40 @@ class AdminControllerWebMvcTest {
                                 """))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void purgeUserContent_returnsOk() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(identitySpi.purgeAuthoredContent(any(), any(), any())).thenReturn(12);
+
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-content", id)
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": "legal erasure demand"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .json("{\"purgedRows\": 12}"));
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void purgeUserContent_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-content", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": "must be rejected"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void purgeUserContent_withBlankReason_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-content", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": "  "}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
 }

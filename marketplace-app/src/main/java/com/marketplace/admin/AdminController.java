@@ -108,6 +108,32 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * I7 Phase 3 (account-pseudonymization-plan §2 gate b-3 — the extended
+     * purges, the plan's §7 Phase 3 row): the free-text purge maintenance
+     * surface. UPDATE-only across the owning modules (base tables + Envers
+     * mirrors); shared records keep their structure and non-text columns
+     * (Art. 17(3)(b) / 20(4) — the plan's §4). POST (an action, not a
+     * resource-state change — the plan's own verb convention); idempotent
+     * by the port contract (a re-run purges zero rows and reports zero).
+     *
+     * <p>The guard is the service's own: the target must already be
+     * pseudonymized (409 otherwise — the purge completes an erasure flow,
+     * it never operates on a live account's active content).
+     */
+    public record ContentPurgeRequest(@NotBlank String reason) {}
+
+    public record ContentPurgeResponse(int purgedRows) {}
+
+    @PostMapping("/users/{id}/purge-content")
+    public ResponseEntity<ContentPurgeResponse> purgeUserContent(@PathVariable UUID id,
+                                                                 @Valid @RequestBody ContentPurgeRequest request,
+                                                                 Authentication authentication) {
+        int purgedRows = identitySpi.purgeAuthoredContent(id, request.reason(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(new ContentPurgeResponse(purgedRows));
+    }
+
     // -- Listings -------------------------------------------------------
 
     @GetMapping("/listings")

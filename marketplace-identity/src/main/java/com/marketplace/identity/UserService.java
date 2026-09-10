@@ -21,6 +21,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -39,6 +40,7 @@ public class UserService implements IdentitySpi {
     private final UserDetailsManager userDetailsManager;
     private final JdbcTemplate jdbcTemplate;
     private final SubjectPseudonymizer subjectPseudonymizer;
+    private final AuthoredContentPurgeService authoredContentPurgeService;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
 
@@ -76,12 +78,14 @@ public class UserService implements IdentitySpi {
                        ApplicationEventPublisher eventPublisher,
                        UserDetailsManager userDetailsManager,
                        JdbcTemplate jdbcTemplate,
-                       SubjectPseudonymizer subjectPseudonymizer) {
+                       SubjectPseudonymizer subjectPseudonymizer,
+                       AuthoredContentPurgeService authoredContentPurgeService) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsManager = userDetailsManager;
         this.jdbcTemplate = jdbcTemplate;
         this.subjectPseudonymizer = subjectPseudonymizer;
+        this.authoredContentPurgeService = authoredContentPurgeService;
     }
 
     @Transactional(readOnly = true)
@@ -414,6 +418,27 @@ public class UserService implements IdentitySpi {
         log.info("Account pseudonymization audit: userId={}, subject -> {}, "
                         + "email -> null, displayName -> null, actor={}, reason='{}'",
                 userId, replacementSubject, actor, reason);
+    }
+
+    /**
+     * I7 Phase 3 (gate b-3 — the free-text purge): the module surface the
+     * admin API calls. Thin delegation to {@link AuthoredContentPurgeService}
+     * — the orchestration (guard + the per-module purge ports + the audit
+     * line) lives there; this method exists so the cross-module surface
+     * stays the single named interface ({@code IdentitySpi}, the Modulith
+     * discipline the {@code AdminController} already consumes).
+     *
+     * <p>Deliberately suspends the class-level transaction
+     * ({@code NOT_SUPPORTED}): the purge runs one transaction per module
+     * adapter (the plan's §2 b-3 gradualism shape) — letting this level
+     * open a transaction would make every adapter's {@code REQUIRED}
+     * join it and rebuild the single heavy transaction the plan keeps the
+     * purge out of.
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public int purgeAuthoredContent(UUID userId, String reason, String actor) {
+        return authoredContentPurgeService.purge(userId, reason, actor);
     }
 
     private UserSummary toUserSummary(User user) {
