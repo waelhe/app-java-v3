@@ -16,6 +16,11 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
 //     re-break the JDK 25 build, the documented 9dbbbb5 failure mode)
 //   - env: all 33 runtime variables via preserve() — the official mechanism
 //     that keeps values managed in Railway (secrets never materialize here).
+//     Scope: the app-java-v3 service-scoped names in the production
+//     environment's flat variable collection (measured enumeration
+//     2026-09-10 — SYSTEM.md §15). The 18 data-service variables
+//     (postgres-18/redis) are outside this partial by design (image-based,
+//     Railway-managed); zero shared/unscoped names exist.
 //     Reconciled 2026-09-10 against the live GraphQL enumeration (SYSTEM.md
 //     §15): added the I2 currency bundle (EXCHANGE_BASE_CURRENCY + 6
 //     MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_*) and
@@ -24,7 +29,8 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
 //     from the platform in I1 (2026-09-09, documented trap-closure: the b64
 //     channel is the only keystore path; a stale PATH silently resurrects
 //     the old key if b64 is ever emptied). The declared set now mirrors the
-//     measured live set exactly.
+//     measured live set exactly (set-equality verified this session, BEFORE
+//     this file was ever applied — no config apply has run to date).
 //   - volumeMounts: the existing app-java-v3-volume at /data (the documented
 //     residue — its separation/removal stays a user-gated decision, not an
 //     omission side effect)
