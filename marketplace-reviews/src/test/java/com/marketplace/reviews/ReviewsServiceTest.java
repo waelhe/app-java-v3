@@ -4,8 +4,6 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ConflictException;
-import com.marketplace.shared.api.ProviderLookupPort;
-import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.instancio.Instancio;
@@ -28,14 +26,13 @@ class ReviewsServiceTest {
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
-    private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
     private final Authentication authentication = mock(Authentication.class);
     private ReviewsService service;
 
     @BeforeEach
     void setUp() {
         service = new ReviewsService(reviewRepository, currentUserProvider, eventPublisher,
-                bookingParticipantProvider, providerLookupPort);
+                bookingParticipantProvider);
     }
 
     @Test
@@ -201,22 +198,27 @@ class ReviewsServiceTest {
     }
 
     // -- L21: reply ------------------------------------------------------
+    // A1 (the §9 surgical gate fix): the review's provider_id carries the
+    // provider's USER id (V6: references users(id)) — the gate compares it
+    // directly against the caller's user id, the verifyProviderOwnership
+    // pattern. NO profile resolution: the old tests coincided the two id
+    // spaces through the lookup mock (the false confidence §9 measured —
+    // the production write path stores users.id, so the resolved
+    // provider_profiles.id never matched and the legitimate owner was
+    // always denied). These seeds use the production space.
 
-    private Review reviewFor(UUID providerId) {
+    private Review reviewFor(UUID providerUserId) {
         return Review.create(Instancio.create(UUID.class), Instancio.create(UUID.class),
-                providerId, 4, "Good");
+                providerUserId, 4, "Good");
     }
 
     @Test
     void reply_targetProviderSetsReplyAndInvalidatesCache() {
         UUID reviewId = Instancio.create(UUID.class);
-        UUID providerId = Instancio.create(UUID.class);
-        UUID ownerUserId = Instancio.create(UUID.class);
-        Review review = reviewFor(providerId);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
         when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
-        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
 
         Review result = service.reply(reviewId, "Thanks for the feedback", authentication);
 
@@ -228,29 +230,27 @@ class ReviewsServiceTest {
     }
 
     @Test
-    void reply_throwsWhenCallerHasNoProviderProfile() {
+    void reply_throwsForUserWhoIsNotTheStoredProvider() {
         UUID reviewId = Instancio.create(UUID.class);
-        UUID userId = Instancio.create(UUID.class);
-        when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(reviewFor(Instancio.create(UUID.class))));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
-        when(providerLookupPort.findByUserId(userId)).thenReturn(Optional.empty());
+        UUID providerUserId = Instancio.create(UUID.class);
+        UUID otherUserId = Instancio.create(UUID.class);
+        when(reviewRepository.findById(reviewId))
+                .thenReturn(Optional.of(reviewFor(providerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherUserId);
 
         assertThrows(AccessDeniedException.class,
-                () -> service.reply(reviewId, "x", authentication));
+                () -> service.reply(reviewId, "not mine", authentication));
         verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
     void reply_throwsForDifferentProvider() {
         UUID reviewId = Instancio.create(UUID.class);
-        UUID reviewedProviderId = Instancio.create(UUID.class);
-        UUID otherProviderId = Instancio.create(UUID.class);
-        UUID otherOwnerUserId = Instancio.create(UUID.class);
+        UUID storedProviderUserId = Instancio.create(UUID.class);
+        UUID otherProviderUserId = Instancio.create(UUID.class);
         when(reviewRepository.findById(reviewId))
-                .thenReturn(Optional.of(reviewFor(reviewedProviderId)));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherOwnerUserId);
-        when(providerLookupPort.findByUserId(otherOwnerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(otherProviderId, "Other", "VERIFIED", otherOwnerUserId)));
+                .thenReturn(Optional.of(reviewFor(storedProviderUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherProviderUserId);
 
         AccessDeniedException ex = assertThrows(AccessDeniedException.class,
                 () -> service.reply(reviewId, "not mine", authentication));
@@ -262,14 +262,11 @@ class ReviewsServiceTest {
     @Test
     void reply_throwsWhenAlreadyReplied() {
         UUID reviewId = Instancio.create(UUID.class);
-        UUID providerId = Instancio.create(UUID.class);
-        UUID ownerUserId = Instancio.create(UUID.class);
-        Review review = reviewFor(providerId);
+        UUID providerUserId = Instancio.create(UUID.class);
+        Review review = reviewFor(providerUserId);
         review.reply("first");
         when(reviewRepository.findById(reviewId)).thenReturn(Optional.of(review));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
-        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
 
         assertThrows(ConflictException.class, () -> service.reply(reviewId, "second", authentication));
         assertEquals("first", review.getReply());
@@ -285,10 +282,15 @@ class ReviewsServiceTest {
     }
 
     // -- I8: the reverse review (provider -> consumer) ------------------------
+    // A1: the booking's provider_id carries the provider's USER id (V3:
+    // references users(id)) — the createReverse gate compares it directly
+    // against the caller's user id (the verifyProviderOwnership pattern,
+    // the §9 surgical fix). The completedBooking seeds below use the
+    // production space: providerId = the provider's USER id.
 
-    private BookingInfo completedBooking(UUID consumerId, UUID providerId) {
+    private BookingInfo completedBooking(UUID consumerId, UUID providerUserId) {
         return Instancio.of(BookingInfo.class)
-                .set(field(BookingInfo::providerId), providerId)
+                .set(field(BookingInfo::providerId), providerUserId)
                 .set(field(BookingInfo::consumerId), consumerId)
                 .set(field(BookingInfo::status), "COMPLETED")
                 .set(field(BookingInfo::priceCents), 5000L)
@@ -300,23 +302,20 @@ class ReviewsServiceTest {
     void createReverse_byTheBookingProvider_storesTheReviewee() {
         UUID bookingId = Instancio.create(UUID.class);
         UUID consumerId = Instancio.create(UUID.class);
-        UUID providerId = Instancio.create(UUID.class);
-        UUID ownerUserId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
         when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
                 .thenReturn(false);
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
-        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
         when(bookingParticipantProvider.getBookingInfo(bookingId))
-                .thenReturn(completedBooking(consumerId, providerId));
+                .thenReturn(completedBooking(consumerId, providerUserId));
         when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Review review = service.createReverse(bookingId, 4, "great guest", authentication);
 
         assertEquals(ReviewDirection.PROVIDER_TO_CONSUMER, review.getDirection());
         assertEquals(consumerId, review.getRevieweeId());
-        assertEquals(ownerUserId, review.getReviewerId());
-        assertEquals(providerId, review.getProviderId());
+        assertEquals(providerUserId, review.getReviewerId());
+        assertEquals(providerUserId, review.getProviderId());
         // The SAME events as the forward path (the plan: same events).
         verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.ReviewCreatedEvent.class));
         verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
@@ -334,32 +333,20 @@ class ReviewsServiceTest {
     }
 
     @Test
-    void createReverse_rejectsCallerWithoutAProviderProfile() {
-        UUID bookingId = Instancio.create(UUID.class);
-        UUID userId = Instancio.create(UUID.class);
-        when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
-                .thenReturn(false);
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
-        when(providerLookupPort.findByUserId(userId)).thenReturn(Optional.empty());
-
-        assertThrows(AccessDeniedException.class,
-                () -> service.createReverse(bookingId, 3, "no profile", authentication));
-        verify(reviewRepository, never()).save(any());
-    }
-
-    @Test
     void createReverse_rejectsAProviderWhoIsNotTheBookingProvider() {
+        // The profile-existence gate is GONE with the profile resolution (the
+        // §9 fix): the booking row is the ruling — a caller whose user id is
+        // not the stored booking provider is denied, profile or no profile.
+        // The no-profile caller is subsumed: his user id never matches the
+        // booking's stored provider user id.
         UUID bookingId = Instancio.create(UUID.class);
-        UUID bookingProviderId = Instancio.create(UUID.class);
-        UUID otherProviderId = Instancio.create(UUID.class);
-        UUID otherOwnerUserId = Instancio.create(UUID.class);
+        UUID bookingProviderUserId = Instancio.create(UUID.class);
+        UUID otherProviderUserId = Instancio.create(UUID.class);
         when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
                 .thenReturn(false);
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherOwnerUserId);
-        when(providerLookupPort.findByUserId(otherOwnerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(otherProviderId, "Other", "VERIFIED", otherOwnerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(otherProviderUserId);
         when(bookingParticipantProvider.getBookingInfo(bookingId))
-                .thenReturn(completedBooking(Instancio.create(UUID.class), bookingProviderId));
+                .thenReturn(completedBooking(Instancio.create(UUID.class), bookingProviderUserId));
 
         assertThrows(AccessDeniedException.class,
                 () -> service.createReverse(bookingId, 3, "not my booking", authentication));
@@ -369,16 +356,13 @@ class ReviewsServiceTest {
     @Test
     void createReverse_rejectsNonCompletedBooking() {
         UUID bookingId = Instancio.create(UUID.class);
-        UUID providerId = Instancio.create(UUID.class);
-        UUID ownerUserId = Instancio.create(UUID.class);
+        UUID providerUserId = Instancio.create(UUID.class);
         when(reviewRepository.existsByBookingIdAndDirection(bookingId, ReviewDirection.PROVIDER_TO_CONSUMER))
                 .thenReturn(false);
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerUserId);
-        when(providerLookupPort.findByUserId(ownerUserId)).thenReturn(Optional.of(
-                new ProviderSummary(providerId, "Owner", "VERIFIED", ownerUserId)));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerUserId);
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(
                 Instancio.of(BookingInfo.class)
-                        .set(field(BookingInfo::providerId), providerId)
+                        .set(field(BookingInfo::providerId), providerUserId)
                         .set(field(BookingInfo::consumerId), Instancio.create(UUID.class))
                         .set(field(BookingInfo::status), "CONFIRMED")
                         .set(field(BookingInfo::priceCents), 5000L)

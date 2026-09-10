@@ -16,13 +16,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * I8 note (internal free plan §6): the provider_id column means "the
- * provider profile this review belongs to" — for
- * {@code CONSUMER_TO_PROVIDER} reviews that is the REVIEWED provider (the
- * historical semantics, unchanged); for {@code PROVIDER_TO_CONSUMER}
- * reviews it is the AUTHORING provider (the L21 stats resolution resolves
- * the review to its provider either way). The reviewed CONSUMER of a
- * reverse review lives in {@code reviewee_id} (users.id space).
+ * I8 note (internal free plan §6): the provider_id column carries the
+ * provider's USER id — the A1 convention, the physically measured fact
+ * (V6: {@code provider_id uuid not null references users(id)}; documented
+ * in {@code AuthHelper.ownsProvider} and the Phase 2/3 export/purge
+ * contracts). For {@code CONSUMER_TO_PROVIDER} reviews it is the REVIEWED
+ * provider's user id (the historical semantics, unchanged); for
+ * {@code PROVIDER_TO_CONSUMER} reviews it is the AUTHORING provider's
+ * user id. The reviewed CONSUMER of a reverse review lives in
+ * {@code reviewee_id} (users.id space).
  */
 @Entity
 @Table(name = "reviews")
@@ -69,8 +71,10 @@ public class Review extends BaseEntity {
     /**
      * I8: the reviewed party of a REVERSE review — the consumer's user id
      * (users.id space). {@code null} on forward reviews, whose reviewed
-     * provider already lives in {@code providerId} (profiles.id space — no
-     * mixed id spaces, no denormalization).
+     * provider's user id already lives in {@code provider_id} (users.id
+     * space — the V6 FK; one space across both columns, no denormalization).
+     * The old "profiles.id space" claim was the documented false
+     * assumption the §9 surgical gate fix corrected.
      */
     @Column(name = "reviewee_id")
     private UUID revieweeId;
@@ -101,8 +105,10 @@ public class Review extends BaseEntity {
     /**
      * I8: the reverse review — the provider (reviewerId, users.id space)
      * rates the booking's consumer (revieweeId, users.id space);
-     * providerId is the AUTHORING provider's profile id (the L21 stats
-     * resolution key). The same rating floor as the forward direction.
+     * providerId stores the AUTHORING provider's USER id (A1 — V6's FK:
+     * {@code references users(id)}; the write path stores the booking's
+     * {@code providerInfo.providerId()}, itself a users.id). The same
+     * rating floor as the forward direction.
      */
     public static Review createReverse(UUID bookingId, UUID reviewerId,
                                         UUID providerId, UUID revieweeId,

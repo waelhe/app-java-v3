@@ -38,17 +38,19 @@ import org.springframework.transaction.annotation.Transactional;
  *       ({@code reviewee_id}).</li>
  * </ul>
  *
- * <p><b>Measured live defect, out of this gate's scope (documented, not
- * patched here):</b> {@code ReviewsService.reply}/{@code createReverse}
- * compare the stored {@code users.id} (A1 convention) against the
- * resolved {@code provider_profiles.id}
- * ({@code providerLookupPort.findByUserId(...).id()}) — the exact
- * cross-space mismatch A1 fixed for catalog/media/availability, at two
- * sites A1's sweep did not list. Until that defect is fixed by its own
- * surgical PR, no reply or reverse review can be written through the API
- * (the legitimate caller is always denied), so the reply predicate guards
- * zero live rows today and encodes the gate's authorship model for the
- * fixed path.</p>
+ * <p><b>The live defect is CLOSED (the §9 surgical gate fix):</b>
+ * {@code ReviewsService.reply}/{@code createReverse} now read the ruling
+ * from the row itself — the stored {@code users.id} (A1 convention)
+ * compared directly against the caller's user id, the
+ * {@code verifyProviderOwnership} pattern (no profile resolution: the
+ * {@code providerLookupPort.findByUserId(...).id()} resolution compared
+ * users.id against {@code provider_profiles.id} — the cross-space
+ * mismatch that denied the legitimate owner on every call). Replies and
+ * reverse reviews are writable through the API again, and this
+ * adapter's reply predicate guards live rows written through the fixed
+ * path — the authorship model below is unchanged and remains the
+ * contract: the reply author is {@code provider_id}'s user on every
+ * row.</p>
  *
  * <p><b>Schema facts (measured, V6/V37/V45):</b> {@code comment} and
  * {@code reply} are nullable {@code text} — the purge writes NULL (the
