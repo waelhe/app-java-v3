@@ -56,8 +56,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * honest when the mirror rows are the real ones — the /me sync writes
  * the ADD revision (subject = the raw subject), the pseudonymization
  * writes the MOD revision (subject = the derived replacement). Seeded
- * audit cells on a booking row and a mirror row prove the scrub's reach
- * and the counterparty's isolation.
+ * audit cells on a booking row and a mirror row prove the scrub's
+ * reach; the counterparty carries his own seeded {@code users_aud}
+ * mirror row, so the wholesale deletion's scope guard is non-vacuous
+ * (an unscoped DELETE would eat it and fail the count assertion).
  *
  * <p><b>Why the PKCE login gate (the L23 pattern):</b> the purge surface
  * is administrative — the guard proves the real authorization path: a
@@ -170,6 +172,30 @@ class AuditHistoryPurgeIntegrationTest {
                 """,
                 providerId, "it-aud-provider@example.com",
                 "it-aud-provider@example.com", "I7 Audit Purge Provider");
+        // The counterparty's own mirror history (the CodeRabbit round-1
+        // adoption: without it the isolation proof was VACUOUS — a raw-seeded
+        // provider had no users_aud rows, so the count was zero on both
+        // sides of the purge and an unscoped DELETE could not fail this
+        // guard). One ADD revision carries the provider's columns and the
+        // counterparty's audit cells; the disjoint rev base (9.3M vs 9.2M)
+        // cannot collide with the subject-mirror seed or the sequence-born
+        // real revisions.
+        int providerRev = 9_300_000 + (int) (System.currentTimeMillis() % 100_000);
+        jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (?, ?)",
+                providerRev, System.currentTimeMillis());
+        jdbcTemplate.update(
+                """
+                INSERT INTO users_aud (id, rev, revtype, subject, email, display_name, role, created_by, updated_by)
+                VALUES (?, ?, 0, ?, ?, ?, 'PROVIDER', ?, ?)
+                """,
+                providerId, providerRev, "it-aud-provider@example.com",
+                "it-aud-provider@example.com", "I7 Audit Purge Provider",
+                COUNTERPARTY_AUDITOR, COUNTERPARTY_AUDITOR);
+        int providerAudBefore = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, providerId);
+        assertThat(providerAudBefore)
+                .as("the counterparty's seeded mirror row exists (the guard's input)")
+                .isPositive();
         UUID listingId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
@@ -264,8 +290,16 @@ class AuditHistoryPurgeIntegrationTest {
                 .isZero();
         Integer counterpartyAud = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, providerId);
-        assertThat(counterpartyAud).as("other users' mirror history is untouched (zero here — "
-                + "the provider row was seeded raw, never through the entity path)").isZero();
+        assertThat(counterpartyAud).as("the counterparty's mirror history count is unchanged "
+                + "— the wholesale DELETE is scoped to the subject alone")
+                .isEqualTo(providerAudBefore);
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT created_by, updated_by FROM users_aud WHERE id = ? AND rev = ?",
+                providerId, providerRev))
+                .as("the counterparty's mirror cells survive — users_aud is the deletion's "
+                        + "table, never the scrub's (the plan's exclusion)")
+                .containsEntry("created_by", COUNTERPARTY_AUDITOR)
+                .containsEntry("updated_by", COUNTERPARTY_AUDITOR);
 
         // Idempotence: the re-run answers zero on both counts — the
         // closure is the current subject alone (the mirror history is
@@ -277,6 +311,10 @@ class AuditHistoryPurgeIntegrationTest {
         JsonNode againBody = objectMapper.readTree(again.body());
         assertThat(againBody.path("scrubbedRows").asInt()).isZero();
         assertThat(againBody.path("usersAudRowsDeleted").asInt()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, providerId))
+                .as("the counterparty's mirror history survives the re-run untouched")
+                .isEqualTo(providerAudBefore);
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT created_by, updated_by FROM bookings WHERE id = ?", counterpartyBookingId)
                 .get("created_by")).as("the re-run never touches the counterparty").isEqualTo(COUNTERPARTY_AUDITOR);
