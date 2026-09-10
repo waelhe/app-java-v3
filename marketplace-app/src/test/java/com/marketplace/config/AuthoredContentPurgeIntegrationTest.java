@@ -433,6 +433,21 @@ class AuthoredContentPurgeIntegrationTest {
                 """,
                 listingId, counterpartyId, "I7 Purge Listing",
                 "purge guard listing", "home", 100_00L);
+        // The subject-as-provider's own listing (V2: provider_id -> users.id)
+        // — the FK parent of the booking that carries his forward+reverse
+        // review pair below (the faithful production shape: his listing,
+        // booked by the counterparty). Provider listings are OUTSIDE the
+        // purge's six-adapter scope (the plan's letter — the §9 decision
+        // row), so this row contributes zero to every purge count.
+        UUID subjectListingId = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                subjectListingId, subjectId, "I7 Purge Subject Listing",
+                "purge guard subject listing", "home", 100_00L);
         UUID subjectBookingId = UUID.randomUUID();
         UUID counterpartyBookingId = UUID.randomUUID();
         jdbcTemplate.update(
@@ -491,18 +506,44 @@ class AuthoredContentPurgeIntegrationTest {
         seedMessagesAud(counterpartyMessageId, revBase, counterpartyId,
                 "counterparty keeps his message");
 
+        // The review-carrying bookings — V6's measured fact: reviews.booking_id
+        // is NOT NULL REFERENCES bookings(id) (an FK the seed must satisfy);
+        // the write path (ReviewsService.create/createReverse) reviews
+        // COMPLETED bookings only, and V45's uq_reviews_booking_direction_active
+        // admits one ACTIVE review per (booking, direction) — so A rides its
+        // own booking (the subject as consumer, completed), while the forward
+        // B + reverse C legally share one booking on the subject's listing.
+        // Both carry NULL notes: they satisfy the FK, contribute no authored
+        // text, and match no purge predicate (notes IS NOT NULL) — the exact
+        // 22-row count stays exact.
+        UUID reviewBookingA = UUID.randomUUID();
+        UUID reviewBookingBC = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
+                VALUES (?, ?, ?, ?, 'COMPLETED', 100_00, 'SAR', NULL)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                reviewBookingA, subjectId, counterpartyId, listingId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
+                VALUES (?, ?, ?, ?, 'COMPLETED', 100_00, 'SAR', NULL)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                reviewBookingBC, counterpartyId, subjectId, subjectListingId);
+
         // Reviews (V6/V37/V45) — three rows pin every predicate:
         UUID subjectReviewId = UUID.randomUUID();          // A: he authored the review
         UUID subjectAsProviderReviewId = UUID.randomUUID(); // B: he is the reviewed provider
         UUID subjectReverseReviewId = UUID.randomUUID();   // C: reverse, he authored both
-        UUID bookingRef = UUID.randomUUID();               // V20: plain UUID, no FK
         jdbcTemplate.update(
                 """
                 INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, reply)
                 VALUES (?, ?, ?, ?, 5, ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectReviewId, bookingRef, subjectId, counterpartyId,
+                subjectReviewId, reviewBookingA, subjectId, counterpartyId,
                 "the subject's review comment", "counterparty keeps his reply");
         jdbcTemplate.update(
                 """
@@ -510,7 +551,7 @@ class AuthoredContentPurgeIntegrationTest {
                 VALUES (?, ?, ?, ?, 4, ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectAsProviderReviewId, bookingRef, counterpartyId, subjectId,
+                subjectAsProviderReviewId, reviewBookingBC, counterpartyId, subjectId,
                 "counterparty keeps his review", "the subject's own reply");
         jdbcTemplate.update(
                 """
@@ -518,7 +559,7 @@ class AuthoredContentPurgeIntegrationTest {
                 VALUES (?, ?, ?, ?, 3, ?, ?, 'PROVIDER_TO_CONSUMER', ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectReverseReviewId, bookingRef, subjectId, subjectId,
+                subjectReverseReviewId, reviewBookingBC, subjectId, subjectId,
                 "the subject's reverse comment", "the subject's reverse reply",
                 counterpartyId);
         seedReviewsAud(subjectReviewId, revBase, subjectId, counterpartyId,
@@ -551,7 +592,10 @@ class AuthoredContentPurgeIntegrationTest {
         seedProfilesAud(counterpartyProfileId, revBase, counterpartyId,
                 "Counterparty Stays", "counterparty keeps his bio");
 
-        // Disputes (V20/V38): the subject's + the counterparty's.
+        // Disputes (V20/V38): the subject's + the counterparty's. V20's
+        // disputes.booking_id carries no FK — but the production write path
+        // opens a dispute ON a real booking, so both anchor to the fixture's
+        // real booking rows (no invented identifiers anywhere in the seed).
         UUID subjectDisputeId = UUID.randomUUID();
         UUID counterpartyDisputeId = UUID.randomUUID();
         jdbcTemplate.update(
@@ -560,14 +604,14 @@ class AuthoredContentPurgeIntegrationTest {
                 VALUES (?, ?, ?, 'OPEN', ?, now(), now(), 0)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectDisputeId, bookingRef, subjectId, "the subject's dispute reason");
+                subjectDisputeId, subjectBookingId, subjectId, "the subject's dispute reason");
         jdbcTemplate.update(
                 """
                 INSERT INTO disputes (id, booking_id, opened_by, status, reason, created_at, updated_at, version)
                 VALUES (?, ?, ?, 'OPEN', ?, now(), now(), 0)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                counterpartyDisputeId, bookingRef, counterpartyId,
+                counterpartyDisputeId, counterpartyBookingId, counterpartyId,
                 "counterparty keeps his reason");
         seedDisputesAud(subjectDisputeId, revBase, subjectId, "the subject's dispute reason");
         seedDisputesAud(counterpartyDisputeId, revBase, counterpartyId,
