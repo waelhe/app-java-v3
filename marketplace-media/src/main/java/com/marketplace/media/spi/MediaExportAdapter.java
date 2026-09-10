@@ -35,7 +35,7 @@ public class MediaExportAdapter implements MediaExportPort {
 
     @Override
     public List<MediaExportEntry> exportForOwner(UUID userId) {
-        return mediaAssetRepository.findAllByProviderIdOrderByCreatedAtAsc(userId)
+        return mediaAssetRepository.findAllByProviderIdOrderByCreatedAtAscIdAsc(userId)
                 .stream()
                 .map(MediaExportAdapter::toEntry)
                 .toList();

@@ -14,8 +14,9 @@ import java.util.UUID;
 public interface NotificationExportPort {
 
     /**
-     * Every live notification addressed to {@code userId} (the module's own
-     * surface ordering — newest first).
+     * Every live notification addressed to {@code userId} (newest first,
+     * the id as the stable secondary key — a total order so tied
+     * timestamps keep a deterministic document order).
      */
     List<NotificationExportEntry> exportForRecipient(UUID userId);
 }

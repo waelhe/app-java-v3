@@ -27,7 +27,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
      * the user authored (both directions), in creation order for a
      * deterministic export — backs {@code ReviewExportAdapter}.
      */
-    List<Review> findAllByReviewerIdOrderByCreatedAtAsc(UUID reviewerId);
+    List<Review> findAllByReviewerIdOrderByCreatedAtAscIdAsc(UUID reviewerId);
 
     /** I8: the reverse reviews about one reviewed consumer (the trust view). */
     Page<Review> findByRevieweeIdAndDirection(UUID revieweeId, ReviewDirection direction, Pageable pageable);

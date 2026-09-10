@@ -29,7 +29,7 @@ class BookingExportAdapterTest {
                 10_000L, "SAR", null, null, null);
         Booking asProvider = Booking.create(otherConsumer, me, listing,
                 5_000L, "SAR", null, null, null);
-        when(bookingRepository.findAllByConsumerIdOrProviderIdOrderByCreatedAtAsc(me, me))
+        when(bookingRepository.findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(me, me))
                 .thenReturn(List.of(asConsumer, asProvider));
 
         List<BookingExportEntry> entries = adapter.exportForParticipant(me);
@@ -63,7 +63,7 @@ class BookingExportAdapterTest {
         UUID me = UUID.randomUUID();
         Booking booking = Booking.create(me, UUID.randomUUID(), UUID.randomUUID(),
                 1_000L, "SAR", null, null, "notes stay out");
-        when(bookingRepository.findAllByConsumerIdOrProviderIdOrderByCreatedAtAsc(me, me))
+        when(bookingRepository.findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(me, me))
                 .thenReturn(List.of(booking));
 
         BookingExportEntry entry = adapter.exportForParticipant(me).get(0);

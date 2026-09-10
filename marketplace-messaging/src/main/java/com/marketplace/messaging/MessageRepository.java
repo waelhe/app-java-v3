@@ -21,7 +21,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID>, Revisio
      * only), in creation order for a deterministic export — backs
      * {@code MessagingExportAdapter}.
      */
-    List<Message> findAllBySenderIdOrderByCreatedAtAsc(UUID senderId);
+    List<Message> findAllBySenderIdOrderByCreatedAtAscIdAsc(UUID senderId);
 
     long countByConversationIdAndReadFalse(UUID conversationId);
 

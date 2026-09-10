@@ -23,7 +23,7 @@ class NotificationExportAdapterTest {
         UUID me = UUID.randomUUID();
         Notification notification = Notification.create(me, "BOOKING_CREATED",
                 "Booking created: 123");
-        when(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(me))
+        when(notificationRepository.findAllByRecipientIdOrderByCreatedAtDescIdDesc(me))
                 .thenReturn(List.of(notification));
 
         List<NotificationExportEntry> entries = adapter.exportForRecipient(me);

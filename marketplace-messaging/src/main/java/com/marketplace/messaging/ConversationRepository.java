@@ -17,6 +17,6 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
      * order for a deterministic export — backs
      * {@code MessagingExportAdapter}.
      */
-    List<Conversation> findAllByParticipantAOrParticipantBOrderByCreatedAtAsc(
+    List<Conversation> findAllByParticipantAOrParticipantBOrderByCreatedAtAscIdAsc(
             UUID participantA, UUID participantB);
 }

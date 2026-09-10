@@ -14,7 +14,9 @@ public interface ReviewExportPort {
 
     /**
      * Every live review authored by {@code userId} (both directions — his
-     * sent reviews), ordered by creation time for a deterministic export.
+     * sent reviews), in creation order with the id as the stable secondary
+     * key (a total order — tied timestamps keep a deterministic document
+     * order).
      */
     List<ReviewExportEntry> exportForAuthor(UUID userId);
 }

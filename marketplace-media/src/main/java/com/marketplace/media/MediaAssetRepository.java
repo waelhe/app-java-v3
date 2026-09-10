@@ -19,7 +19,7 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
      * in creation order for a deterministic export — backs
      * {@code MediaExportAdapter}.
      */
-    List<MediaAsset> findAllByProviderIdOrderByCreatedAtAsc(UUID providerId);
+    List<MediaAsset> findAllByProviderIdOrderByCreatedAtAscIdAsc(UUID providerId);
 
     long countByListingId(UUID listingId);
 

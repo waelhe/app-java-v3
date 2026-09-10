@@ -14,8 +14,9 @@ public interface MessagingExportPort {
 
     /**
      * The conversations the user participates in plus the messages he sent
-     * (both ordered by creation time for a deterministic export); the
-     * counterparty's messages are never included.
+     * (both in creation order with the id as the stable secondary key — a
+     * total order so tied timestamps keep a deterministic document order);
+     * the counterparty's messages are never included.
      */
     MessagingExportData exportForParticipant(UUID userId);
 }

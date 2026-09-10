@@ -14,7 +14,9 @@ import java.util.UUID;
  * contract, gate b-5): the notifications module's implementation of the
  * {@link NotificationExportPort} cross-module contract. A read-only
  * delegation to the module's own recipient-scoped read (the table is
- * recipient-only by design, V18) — the plan's own provenance note.
+ * recipient-only by design, V18) — the plan's own provenance note. The
+ * export query carries the total order (id as the secondary key) so tied
+ * timestamps keep a deterministic document order.
  */
 @Component
 @Transactional(readOnly = true)
@@ -28,7 +30,7 @@ public class NotificationExportAdapter implements NotificationExportPort {
 
     @Override
     public List<NotificationExportEntry> exportForRecipient(UUID userId) {
-        return notificationRepository.findByRecipientIdOrderByCreatedAtDesc(userId)
+        return notificationRepository.findAllByRecipientIdOrderByCreatedAtDescIdDesc(userId)
                 .stream()
                 .map(notification -> new NotificationExportEntry(
                         notification.getId(),

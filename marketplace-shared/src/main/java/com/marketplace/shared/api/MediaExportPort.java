@@ -17,8 +17,9 @@ import java.util.UUID;
 public interface MediaExportPort {
 
     /**
-     * Every live media asset owned by {@code userId}, ordered by creation
-     * time for a deterministic export.
+     * Every live media asset owned by {@code userId}, in creation order with
+     * the id as the stable secondary key (a total order — tied timestamps
+     * keep a deterministic document order).
      */
     List<MediaExportEntry> exportForOwner(UUID userId);
 }

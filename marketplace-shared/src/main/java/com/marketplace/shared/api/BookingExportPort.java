@@ -19,7 +19,9 @@ public interface BookingExportPort {
 
     /**
      * Every live booking where {@code userId} is the consumer or the
-     * provider, ordered by creation time for a deterministic export.
+     * provider, in creation order with the id as the stable secondary key
+     * (a total order — tied timestamps keep a deterministic document
+     * order).
      */
     List<BookingExportEntry> exportForParticipant(UUID userId);
 }

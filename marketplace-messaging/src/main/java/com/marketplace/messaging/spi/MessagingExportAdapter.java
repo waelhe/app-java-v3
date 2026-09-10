@@ -45,12 +45,12 @@ public class MessagingExportAdapter implements MessagingExportPort {
     @Override
     public MessagingExportData exportForParticipant(UUID userId) {
         List<ConversationExportEntry> conversations = conversationRepository
-                .findAllByParticipantAOrParticipantBOrderByCreatedAtAsc(userId, userId)
+                .findAllByParticipantAOrParticipantBOrderByCreatedAtAscIdAsc(userId, userId)
                 .stream()
                 .map(conversation -> toEntry(conversation, userId))
                 .toList();
         List<MessageExportEntry> messages = messageRepository
-                .findAllBySenderIdOrderByCreatedAtAsc(userId)
+                .findAllBySenderIdOrderByCreatedAtAscIdAsc(userId)
                 .stream()
                 .map(MessagingExportAdapter::toEntry)
                 .toList();

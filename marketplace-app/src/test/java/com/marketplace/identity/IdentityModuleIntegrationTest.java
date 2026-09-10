@@ -39,6 +39,27 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.security.SubjectPseudonymizer subjectPseudonymizer;
 
+    // I7 Phase 2: UserController's aggregation service consumes the five
+    // cross-module export ports (shared-api contracts implemented by the
+    // booking/reviews/messaging/media/notifications modules — outside this
+    // module slice). The house @MockitoBean pattern for outside-slice ports,
+    // exactly like SubjectPseudonymizer above; the full aggregation contract
+    // is the integration guard's job, not the slice's.
+    @MockitoBean
+    com.marketplace.shared.api.BookingExportPort bookingExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ReviewExportPort reviewExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.MessagingExportPort messagingExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.MediaExportPort mediaExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.NotificationExportPort notificationExportPort;
+
     @Autowired
     private UserService userService;
 

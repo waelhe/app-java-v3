@@ -32,7 +32,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
      * creation order for a deterministic export — backs
      * {@code BookingExportAdapter}.
      */
-    List<Booking> findAllByConsumerIdOrProviderIdOrderByCreatedAtAsc(
+    List<Booking> findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(
             UUID consumerId, UUID providerId);
 
     /**

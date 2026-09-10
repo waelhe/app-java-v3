@@ -33,7 +33,7 @@ public class BookingExportAdapter implements BookingExportPort {
     @Override
     public List<BookingExportEntry> exportForParticipant(UUID userId) {
         return bookingRepository
-                .findAllByConsumerIdOrProviderIdOrderByCreatedAtAsc(userId, userId)
+                .findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(userId, userId)
                 .stream()
                 .map(booking -> toEntry(booking, userId))
                 .toList();

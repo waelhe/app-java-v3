@@ -27,7 +27,7 @@ class MediaExportAdapterTest {
         // provided data, so it is absent from the entry contract).
         MediaAsset asset = new MediaAsset(UUID.randomUUID(), listing, me,
                 "listings/" + listing + "/photo.jpg", "image/jpeg", 2048L, 1);
-        when(mediaAssetRepository.findAllByProviderIdOrderByCreatedAtAsc(me))
+        when(mediaAssetRepository.findAllByProviderIdOrderByCreatedAtAscIdAsc(me))
                 .thenReturn(List.of(asset));
 
         List<MediaExportEntry> entries = adapter.exportForOwner(me);

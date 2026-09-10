@@ -34,7 +34,7 @@ public class ReviewExportAdapter implements ReviewExportPort {
 
     @Override
     public List<ReviewExportEntry> exportForAuthor(UUID userId) {
-        return reviewRepository.findAllByReviewerIdOrderByCreatedAtAsc(userId)
+        return reviewRepository.findAllByReviewerIdOrderByCreatedAtAscIdAsc(userId)
                 .stream()
                 .map(ReviewExportAdapter::toEntry)
                 .toList();

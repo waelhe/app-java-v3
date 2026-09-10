@@ -24,7 +24,7 @@ class ReviewExportAdapterTest {
         UUID reviewedProviderUser = UUID.randomUUID();
         Review forward = Review.create(UUID.randomUUID(), me,
                 reviewedProviderUser, 5, "punctual and thorough");
-        when(reviewRepository.findAllByReviewerIdOrderByCreatedAtAsc(me))
+        when(reviewRepository.findAllByReviewerIdOrderByCreatedAtAscIdAsc(me))
                 .thenReturn(List.of(forward));
 
         List<ReviewExportEntry> entries = adapter.exportForAuthor(me);
@@ -50,7 +50,7 @@ class ReviewExportAdapterTest {
         // and the reply the counterparty left on his forward review is
         // excluded by the mapping (the entry record has no reply field at
         // all — compile-time guarantee).
-        when(reviewRepository.findAllByReviewerIdOrderByCreatedAtAsc(me))
+        when(reviewRepository.findAllByReviewerIdOrderByCreatedAtAscIdAsc(me))
                 .thenReturn(List.of(reverse));
 
         List<ReviewExportEntry> entries = adapter.exportForAuthor(me);

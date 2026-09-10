@@ -31,9 +31,9 @@ class MessagingExportAdapterTest {
         // I am participant B in the first, participant A in the second.
         Conversation onBSide = Conversation.create(otherA, me, booking);
         Conversation onASide = Conversation.create(me, otherB, null);
-        when(conversationRepository.findAllByParticipantAOrParticipantBOrderByCreatedAtAsc(me, me))
+        when(conversationRepository.findAllByParticipantAOrParticipantBOrderByCreatedAtAscIdAsc(me, me))
                 .thenReturn(List.of(onBSide, onASide));
-        when(messageRepository.findAllBySenderIdOrderByCreatedAtAsc(me)).thenReturn(List.of());
+        when(messageRepository.findAllBySenderIdOrderByCreatedAtAscIdAsc(me)).thenReturn(List.of());
 
         MessagingExportData data = adapter.exportForParticipant(me);
 
@@ -54,9 +54,9 @@ class MessagingExportAdapterTest {
         Message mine = Message.create(conversation.getId(), me, "my own words");
         // The repository query is sender-scoped by construction — the
         // counterparty's message never reaches the mapping.
-        when(conversationRepository.findAllByParticipantAOrParticipantBOrderByCreatedAtAsc(me, me))
+        when(conversationRepository.findAllByParticipantAOrParticipantBOrderByCreatedAtAscIdAsc(me, me))
                 .thenReturn(List.of(conversation));
-        when(messageRepository.findAllBySenderIdOrderByCreatedAtAsc(me))
+        when(messageRepository.findAllBySenderIdOrderByCreatedAtAscIdAsc(me))
                 .thenReturn(List.of(mine));
 
         MessagingExportData data = adapter.exportForParticipant(me);

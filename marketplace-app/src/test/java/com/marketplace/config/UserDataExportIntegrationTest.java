@@ -147,6 +147,17 @@ class UserDataExportIntegrationTest {
     private static final String REQUESTER_REVIEW_COMMENT = "punctual and thorough (requester words)";
     private static final String COUNTERPARTY_NOTIFICATION = "New booking request (counterparty's notification)";
 
+    /** The third-party island — records of users with no relationship to either export caller. */
+    private static final String THIRD_PARTY_SUBJECT = "it-export-third-party";
+    private static final String THIRD_PARTY_MESSAGE = "third-party-only words";
+    private static final String THIRD_PARTY_REVIEW_COMMENT = "third-party review words";
+    private static final String THIRD_PARTY_NOTIFICATION = "third-party notification";
+    private static final String THIRD_PARTY_OBJECT_KEY_PREFIX = "listings/third-party/";
+
+    /** The tie base for the ordering regression — both reviews carry this exact instant. */
+    private static final java.time.OffsetDateTime TIE_INSTANT =
+            java.time.OffsetDateTime.parse("2026-01-01T00:00:00Z");
+
     @Test
     void fullContract_provenanceMinimalityExclusionsNoticeSecurityIsolation() throws Exception {
         // The two live identities, through the real gate + the real sync.
@@ -159,7 +170,13 @@ class UserDataExportIntegrationTest {
 
         // The shared records, seeded on the real Flyway schema (FK parents
         // exist: both users rows came from the real sync).
-        UUID bookingId = seedSharedHistory(requesterId, counterpartyId);
+        SeededHistory seeded = seedSharedHistory(requesterId, counterpartyId);
+        UUID bookingId = seeded.bookingId();
+        UUID requesterTieReviewA = seeded.requesterTieReview();
+        // CodeRabbit r1 (adopted): a third-party island outside the
+        // requester/counterparty relationship — the exclusion guard for
+        // unscoped queries (CWE-200 reachability analysis).
+        seedThirdPartyIsland();
 
         // -- The requester's export (the surface under test) ----------------
 
@@ -181,13 +198,14 @@ class UserDataExportIntegrationTest {
         assertThat(profile.path("role").asString()).isEqualTo("CONSUMER");
         assertThat(profile.path("createdAt").asString()).isNotBlank();
 
-        // Bookings: exactly his first-party booking, the plan's enumeration,
-        // the counterparty as an opaque UUID, and NO notes key.
+        // Bookings: exactly his first-party bookings (the pair with the tie
+        // fixture), the plan's enumeration, the counterparty as an opaque
+        // UUID, and NO notes key — matched by id, not index.
         JsonNode bookings = export.path("bookings");
         assertThat(bookings.isArray()).isTrue();
-        assertThat(bookings.size()).isEqualTo(1);
-        JsonNode booking = bookings.get(0);
-        assertThat(booking.path("id").asString()).isEqualTo(bookingId.toString());
+        assertThat(bookings.size()).isEqualTo(2);
+        JsonNode booking = findById(bookings, bookingId);
+        assertThat(booking).isNotNull();
         assertThat(booking.path("role").asString()).isEqualTo("CONSUMER");
         assertThat(booking.path("counterpartyId").asString()).isEqualTo(counterpartyId.toString());
         assertThat(booking.path("status").asString()).isEqualTo("PENDING");
@@ -197,11 +215,15 @@ class UserDataExportIntegrationTest {
         assertThat(booking.has("notes"))
                 .as("free texts are gate b-3's residual — never exported").isFalse();
 
-        // Reviews: only the review HE authored, counterparty as opaque UUID.
+        // Reviews: only the reviews HE authored (the tie pair), counterparty
+        // as an opaque UUID — matched by id, plus the ordering regression:
+        // tied createdAt resolves by the id secondary key (CodeRabbit r1,
+        // adopted from the root).
         JsonNode reviews = export.path("reviews");
         assertThat(reviews.isArray()).isTrue();
-        assertThat(reviews.size()).isEqualTo(1);
-        JsonNode review = reviews.get(0);
+        assertThat(reviews.size()).isEqualTo(2);
+        JsonNode review = findById(reviews, requesterTieReviewA);
+        assertThat(review).isNotNull();
         assertThat(review.path("direction").asString()).isEqualTo("CONSUMER_TO_PROVIDER");
         assertThat(review.path("rating").asInt()).isEqualTo(5);
         assertThat(review.path("comment").asString()).isEqualTo(REQUESTER_REVIEW_COMMENT);
@@ -211,6 +233,14 @@ class UserDataExportIntegrationTest {
         assertThat(review.has("reply"))
                 .as("the counterparty's reply is his counterpart's content").isFalse();
         assertThat(exportResponse.body()).doesNotContain(COUNTERPARTY_REVIEW_COMMENT);
+
+        // The ordering regression: both reviews carry the SAME created_at
+        // (the tie fixture), so the document order must be the id secondary
+        // key — ascending, the total-order contract.
+        assertThat(UUID.fromString(reviews.get(0).path("id").asString()))
+                .isLessThan(UUID.fromString(reviews.get(1).path("id").asString()));
+        assertThat(reviews.get(0).path("createdAt").asString())
+                .isEqualTo(reviews.get(1).path("createdAt").asString());
 
         // Conversations: the shared record with the counterparty as an
         // opaque UUID only.
@@ -228,7 +258,8 @@ class UserDataExportIntegrationTest {
                 .isEqualTo("requester's own words");
         assertThat(exportResponse.body()).doesNotContain(COUNTERPARTY_MESSAGE);
 
-        // Media: descriptive metadata only, never the thumbnail key.
+        // Media: descriptive metadata only, never the thumbnail key — and
+        // never the third party's asset.
         JsonNode media = export.path("media");
         assertThat(media.isArray()).isTrue();
         assertThat(media.size()).isEqualTo(1);
@@ -237,6 +268,7 @@ class UserDataExportIntegrationTest {
         assertThat(asset.path("sizeBytes").asLong()).isEqualTo(2048L);
         assertThat(asset.path("status").asString()).isEqualTo("PENDING_UPLOAD");
         assertThat(asset.path("objectKey").asString()).contains("listings/");
+        assertThat(asset.path("objectKey").asString()).doesNotContain("third-party");
         assertThat(asset.has("thumbObjectKey")).isFalse();
 
         // Notifications: recipient-scoped only.
@@ -246,6 +278,14 @@ class UserDataExportIntegrationTest {
         assertThat(notifications.get(0).path("message").asString())
                 .isEqualTo("Your booking was created");
         assertThat(exportResponse.body()).doesNotContain(COUNTERPARTY_NOTIFICATION);
+
+        // The third-party island (CodeRabbit r1, adopted): no relationship to
+        // either caller — none of its records may ride either export.
+        assertThat(exportResponse.body())
+                .doesNotContain(THIRD_PARTY_MESSAGE)
+                .doesNotContain(THIRD_PARTY_REVIEW_COMMENT)
+                .doesNotContain(THIRD_PARTY_NOTIFICATION)
+                .doesNotContain(THIRD_PARTY_OBJECT_KEY_PREFIX);
 
         // The exclusion rule (recursive): no audit/system column key anywhere
         // in the machine-readable document.
@@ -270,15 +310,15 @@ class UserDataExportIntegrationTest {
         JsonNode counterpartyExport = objectMapper.readTree(counterpartyResponse.body());
 
         // HIS authored content IS there: the reverse review, his message,
-        // his notification — and the same booking from the PROVIDER side.
+        // his notification — and both bookings from the PROVIDER side.
         assertThat(counterpartyResponse.body()).contains(COUNTERPARTY_REVIEW_COMMENT);
         assertThat(counterpartyResponse.body()).contains(COUNTERPARTY_MESSAGE);
         assertThat(counterpartyResponse.body()).contains(COUNTERPARTY_NOTIFICATION);
         JsonNode theirBooking = counterpartyExport.path("bookings");
         assertThat(theirBooking.isArray()).isTrue();
-        assertThat(theirBooking.size()).isEqualTo(1);
-        assertThat(theirBooking.get(0).path("role").asString()).isEqualTo("PROVIDER");
-        assertThat(theirBooking.get(0).path("counterpartyId").asString())
+        assertThat(theirBooking.size()).isEqualTo(2);
+        assertThat(findById(theirBooking, bookingId).path("role").asString()).isEqualTo("PROVIDER");
+        assertThat(findById(theirBooking, bookingId).path("counterpartyId").asString())
                 .isEqualTo(requesterId.toString());
         assertThat(counterpartyExport.path("reviews").size()).isEqualTo(1);
         assertThat(counterpartyExport.path("reviews").get(0).path("direction").asString())
@@ -290,19 +330,33 @@ class UserDataExportIntegrationTest {
         assertThat(counterpartyResponse.body())
                 .doesNotContain(REQUESTER_REVIEW_COMMENT)
                 .doesNotContain("requester's own words");
+        // The third-party island is absent from HIS export too — and his
+        // media section is empty (the fixture gives him no assets; the
+        // third party's asset must not leak into it — CodeRabbit r1).
+        assertThat(counterpartyResponse.body())
+                .doesNotContain(THIRD_PARTY_MESSAGE)
+                .doesNotContain(THIRD_PARTY_REVIEW_COMMENT)
+                .doesNotContain(THIRD_PARTY_NOTIFICATION)
+                .doesNotContain(THIRD_PARTY_OBJECT_KEY_PREFIX);
+        assertThat(counterpartyExport.path("media").isArray()).isTrue();
+        assertThat(counterpartyExport.path("media").size()).isZero();
         assertNoForbiddenKeys(counterpartyExport);
     }
 
     /**
      * Seeds the shared history on the real schema (the Phase 1 seeding
-     * convention — direct JDBC against the Flyway-owned tables): one
-     * booking (requester = consumer), one forward review by the requester
-     * and one reverse review by the counterparty (per-direction uniqueness,
-     * V45), one conversation with one message from each side, one media
-     * asset owned by the requester (provider_id is a user id — A1), and one
-     * notification each.
+     * convention — direct JDBC against the Flyway-owned tables): the booking
+     * (requester = consumer) plus the tie fixture's second booking, the tie
+     * pair of the requester's forward reviews (identical explicit
+     * created_at — the ordering regression) and one reverse review by the
+     * counterparty (per-direction uniqueness, V45), one conversation with
+     * one message from each side, one media asset owned by the requester
+     * (provider_id is a user id — A1), and one notification each.
      */
-    private UUID seedSharedHistory(UUID requesterId, UUID counterpartyId) {
+    private record SeededHistory(UUID bookingId, UUID requesterTieReview) {
+    }
+
+    private SeededHistory seedSharedHistory(UUID requesterId, UUID counterpartyId) {
         UUID listingId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         jdbcTemplate.update(
@@ -319,14 +373,37 @@ class UserDataExportIntegrationTest {
                 ON CONFLICT (id) DO NOTHING
                 """,
                 bookingId, requesterId, counterpartyId, listingId);
-        // His forward review (reviewer = requester).
+        // His forward review (reviewer = requester) — the tie fixture's first
+        // half: the explicit TIE created_at is identical on both reviews, so
+        // the document order must resolve by the id secondary key.
+        UUID tieReviewA = UUID.randomUUID();
         jdbcTemplate.update(
                 """
-                INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, direction)
-                VALUES (?, ?, ?, ?, 5, ?, 'CONSUMER_TO_PROVIDER')
+                INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, direction, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 5, ?, 'CONSUMER_TO_PROVIDER', ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                UUID.randomUUID(), bookingId, requesterId, counterpartyId, REQUESTER_REVIEW_COMMENT);
+                tieReviewA, bookingId, requesterId, counterpartyId, REQUESTER_REVIEW_COMMENT,
+                TIE_INSTANT, TIE_INSTANT);
+        // The tie fixture's second half: a second booking + a second review
+        // carrying the SAME instant — the ordering regression's pair.
+        UUID tieBookingId = UUID.randomUUID();
+        UUID tieReviewB = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
+                VALUES (?, ?, ?, ?, 'PENDING', 100_00, 'SAR', 'tie fixture notes stay out')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                tieBookingId, requesterId, counterpartyId, listingId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, direction, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 4, ?, 'CONSUMER_TO_PROVIDER', ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                tieReviewB, tieBookingId, requesterId, counterpartyId, "tie review (requester words)",
+                TIE_INSTANT, TIE_INSTANT);
         // The counterparty's reverse review about the requester — his
         // authored content, never the requester's export.
         jdbcTemplate.update(
@@ -369,19 +446,99 @@ class UserDataExportIntegrationTest {
                 "listings/" + listingId + "/export-fixture.jpg");
         jdbcTemplate.update(
                 """
-                INSERT INTO notifications (id, recipient_id, type, message)
-                VALUES (?, ?, 'BOOKING_CREATED', 'Your booking was created')
+                INSERT INTO notifications (id, recipient_id, type, message, created_at, updated_at)
+                VALUES (?, ?, 'BOOKING_CREATED', 'Your booking was created', now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 UUID.randomUUID(), requesterId);
         jdbcTemplate.update(
                 """
-                INSERT INTO notifications (id, recipient_id, type, message)
-                VALUES (?, ?, 'BOOKING_CREATED', ?)
+                INSERT INTO notifications (id, recipient_id, type, message, created_at, updated_at)
+                VALUES (?, ?, 'BOOKING_CREATED', ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 UUID.randomUUID(), counterpartyId, COUNTERPARTY_NOTIFICATION);
-        return bookingId;
+        return new SeededHistory(bookingId, tieReviewA);
+    }
+
+    /**
+     * The third-party island (CodeRabbit r1, adopted — the CWE-200
+     * reachability guard): two users with NO relationship to either export
+     * caller and their full record set — booking, review, conversation,
+     * message, media, notification. An unscoped query anywhere in the five
+     * sections would leak these into either export; the assertions hold
+     * both documents to zero leakage.
+     */
+    private void seedThirdPartyIsland() {
+        UUID third = UUID.randomUUID();
+        UUID fourth = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, 'third@example.com', 'Third Party', 'CONSUMER')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                third, THIRD_PARTY_SUBJECT);
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, 'fourth@example.com', 'Fourth Party', 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                fourth, "it-export-fourth-party");
+        UUID islandListing = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
+                VALUES (?, ?, 'Third-Party Island Listing', 'Isolation fixture', 'home', 50_00, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                islandListing, fourth);
+        UUID islandBooking = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
+                VALUES (?, ?, ?, ?, 'PENDING', 50_00, 'SAR', 'island notes')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                islandBooking, third, fourth, islandListing);
+        jdbcTemplate.update(
+                """
+                INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, direction)
+                VALUES (?, ?, ?, ?, 3, ?, 'CONSUMER_TO_PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), islandBooking, third, fourth, THIRD_PARTY_REVIEW_COMMENT);
+        UUID islandConversation = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO conversations (id, booking_id, participant_a, participant_b)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                islandConversation, islandBooking, third, fourth);
+        jdbcTemplate.update(
+                """
+                INSERT INTO messages (id, conversation_id, sender_id, content)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), islandConversation, third, THIRD_PARTY_MESSAGE);
+        jdbcTemplate.update(
+                """
+                INSERT INTO media_assets (id, listing_id, provider_id, object_key, content_type, size_bytes, status, position)
+                VALUES (?, ?, ?, ?, 'image/png', 512, 'PENDING_UPLOAD', 1)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), islandListing, third,
+                THIRD_PARTY_OBJECT_KEY_PREFIX + "island.png");
+        jdbcTemplate.update(
+                """
+                INSERT INTO notifications (id, recipient_id, type, message, created_at, updated_at)
+                VALUES (?, ?, 'BOOKING_CREATED', ?, now(), now())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), third, THIRD_PARTY_NOTIFICATION);
     }
 
     /** The plan's exclusion rule, enforced on the document itself (recursive). */
@@ -390,12 +547,22 @@ class UserDataExportIntegrationTest {
             node.propertyNames().forEach(field ->
                     assertThat(field)
                             .as("internal system column must never ride the export: %s", field)
-                            .isNotIn("createdBy", "updatedBy", "version", "isDeleted",
+                            .isNotIn("createdBy", "updatedBy", "version", "isDeleted", "is_deleted",
                                     "created_by", "updated_by"));
             node.propertyNames().forEach(field -> assertNoForbiddenKeys(node.get(field)));
         } else if (node.isArray()) {
             node.forEach(this::assertNoForbiddenKeys);
         }
+    }
+
+    /** Finds the array entry whose "id" equals the given UUID (null when absent). */
+    private static JsonNode findById(JsonNode array, UUID id) {
+        for (JsonNode entry : array) {
+            if (id.toString().equals(entry.path("id").asString())) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     // -- fixtures & helpers (the L23 gate shapes, verbatim) ----------------
