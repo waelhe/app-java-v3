@@ -14,8 +14,17 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
 //     the DSL types — the migrate tool emitted them as comments only; losing
 //     builder=DOCKERFILE would drop builds to Railpack's Java 21 default and
 //     re-break the JDK 25 build, the documented 9dbbbb5 failure mode)
-//   - env: all 26 runtime variables via preserve() — the official mechanism
-//     that keeps values managed in Railway (secrets never materialize here)
+//   - env: all 33 runtime variables via preserve() — the official mechanism
+//     that keeps values managed in Railway (secrets never materialize here).
+//     Reconciled 2026-09-10 against the live GraphQL enumeration (SYSTEM.md
+//     §15): added the I2 currency bundle (EXCHANGE_BASE_CURRENCY + 6
+//     MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_*) and
+//     PSEUDONYMIZATION_HMAC_KEY (I7 Phase 1), and REMOVED the
+//     JWT_KEYSTORE_PATH declaration — that channel was deliberately deleted
+//     from the platform in I1 (2026-09-09, documented trap-closure: the b64
+//     channel is the only keystore path; a stale PATH silently resurrects
+//     the old key if b64 is ever emptied). The declared set now mirrors the
+//     measured live set exactly.
 //   - volumeMounts: the existing app-java-v3-volume at /data (the documented
 //     residue — its separation/removal stays a user-gated decision, not an
 //     omission side effect)
@@ -44,9 +53,9 @@ export default defineRailway(() => {
       DB_PASSWORD: preserve(),
       DB_URL: preserve(),
       DB_USERNAME: preserve(),
+      EXCHANGE_BASE_CURRENCY: preserve(),
       JWT_KEYSTORE_B64: preserve(),
       JWT_KEYSTORE_PASSWORD: preserve(),
-      JWT_KEYSTORE_PATH: preserve(),
       JWT_KEY_ALIAS: preserve(),
       JWT_KEY_PASSWORD: preserve(),
       MAIL_HOST: preserve(),
@@ -54,6 +63,12 @@ export default defineRailway(() => {
       MAIL_USERNAME: preserve(),
       MANAGEMENT_SERVER_PORT: preserve(),
       MARKETPLACE_PAYMENTS_WEBHOOK_SHARED_SECRET: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_AED: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_EGP: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_EUR: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_GBP: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_KWD: preserve(),
+      MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_USD: preserve(),
       OAUTH_CLIENT_ID: preserve(),
       OAUTH_CLIENT_REDIRECT_URIS: preserve(),
       OAUTH_CLIENT_SECRET: preserve(),
@@ -61,6 +76,7 @@ export default defineRailway(() => {
       OAUTH_PUBLIC_CLIENT_REDIRECT_URIS: preserve(),
       OTEL_METRICS_EXPORT_URL: preserve(),
       OTEL_TRACES_EXPORT_URL: preserve(),
+      PSEUDONYMIZATION_HMAC_KEY: preserve(),
       REDIS_HOST: preserve(),
       REDIS_PORT: preserve(),
       SPRING_DATA_REDIS_PASSWORD: preserve(),
