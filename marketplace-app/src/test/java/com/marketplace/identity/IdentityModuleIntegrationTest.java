@@ -71,6 +71,17 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.AuthoredContentPurgePort authoredContentPurgePort;
 
+    // I7 Phase 3 gate b-4: the audit-history orchestration
+    // (AuditHistoryPurgeService, in this module slice) consumes the
+    // infrastructure-level scrub adapter — a com.marketplace.shared.jpa
+    // component in platform-infra (the audit columns' own convention
+    // home). The slice scans this module's package only, so the adapter
+    // is not a bean here — the standard @MockitoBean pattern for
+    // outside-slice dependencies (exactly like SubjectPseudonymizer
+    // above). The full scrub contract is the integration guard's job.
+    @MockitoBean
+    com.marketplace.shared.jpa.AuditColumnScrubAdapter auditColumnScrubAdapter;
+
     @Autowired
     private UserService userService;
 

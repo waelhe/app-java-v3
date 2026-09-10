@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.identity.spi.AuditHistoryPurgeResult;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
@@ -41,6 +42,7 @@ public class UserService implements IdentitySpi {
     private final JdbcTemplate jdbcTemplate;
     private final SubjectPseudonymizer subjectPseudonymizer;
     private final AuthoredContentPurgeService authoredContentPurgeService;
+    private final AuditHistoryPurgeService auditHistoryPurgeService;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
 
@@ -79,13 +81,15 @@ public class UserService implements IdentitySpi {
                        UserDetailsManager userDetailsManager,
                        JdbcTemplate jdbcTemplate,
                        SubjectPseudonymizer subjectPseudonymizer,
-                       AuthoredContentPurgeService authoredContentPurgeService) {
+                       AuthoredContentPurgeService authoredContentPurgeService,
+                       AuditHistoryPurgeService auditHistoryPurgeService) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsManager = userDetailsManager;
         this.jdbcTemplate = jdbcTemplate;
         this.subjectPseudonymizer = subjectPseudonymizer;
         this.authoredContentPurgeService = authoredContentPurgeService;
+        this.auditHistoryPurgeService = auditHistoryPurgeService;
     }
 
     @Transactional(readOnly = true)
@@ -439,6 +443,27 @@ public class UserService implements IdentitySpi {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int purgeAuthoredContent(UUID userId, String reason, String actor) {
         return authoredContentPurgeService.purge(userId, reason, actor);
+    }
+
+    /**
+     * I7 Phase 3 (gate b-4 — the audit history purge): the module surface
+     * the admin API calls. Thin delegation to
+     * {@link AuditHistoryPurgeService} — the orchestration (the 409 guard,
+     * the subject-closure recovery from the mirror history, the column
+     * scrub, the wholesale mirror deletion, the audit line) lives there.
+     *
+     * <p>Deliberately suspends the class-level transaction
+     * ({@code NOT_SUPPORTED}) — the plan's b-4 letter: "عملية ثقيلة
+     * تُشغَّل خارج المعاملة" (a heavy operation run OUTSIDE the
+     * transaction). Letting this level open one would wrap every
+     * autocommitted scrub statement and the deletion into a single giant
+     * transaction — the exact shape the plan keeps the purge out of (the
+     * gradation: a partial failure resumes on re-run).
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor) {
+        return auditHistoryPurgeService.purge(userId, reason, actor);
     }
 
     private UserSummary toUserSummary(User user) {

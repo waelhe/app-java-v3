@@ -160,4 +160,41 @@ class AdminControllerWebMvcTest {
                                 """))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void purgeUserAuditHistory_returnsOk() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(identitySpi.purgeAuditHistory(any(), any(), any()))
+                .thenReturn(new com.marketplace.identity.spi.AuditHistoryPurgeResult(15, 3));
+
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-audit-history", id)
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": "legal erasure demand"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .json("{\"scrubbedRows\": 15, \"usersAudRowsDeleted\": 3}"));
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void purgeUserAuditHistory_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-audit-history", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": "must be rejected"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void purgeUserAuditHistory_withBlankReason_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/users/{id}/purge-audit-history", UUID.randomUUID())
+                        .contentType("application/json")
+                        .content("""
+                                {"reason": ""}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
 }

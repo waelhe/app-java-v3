@@ -52,6 +52,12 @@ class UserServiceTest {
     @Mock
     private SubjectPseudonymizer subjectPseudonymizer;
 
+    @Mock
+    private AuthoredContentPurgeService authoredContentPurgeService;
+
+    @Mock
+    private AuditHistoryPurgeService auditHistoryPurgeService;
+
     @InjectMocks
     private UserService userService;
 

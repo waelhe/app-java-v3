@@ -134,6 +134,33 @@ public class AdminController {
         return ResponseEntity.ok(new ContentPurgeResponse(purgedRows));
     }
 
+    /**
+     * I7 Phase 3 (account-pseudonymization-plan §2 gate b-4 — the audit
+     * history purge): the audit-identity purge maintenance surface. The
+     * plan's purge option, verbatim: users_aud rows deleted for the user
+     * + the created_by/updated_by columns nulled across every table
+     * carrying them — a heavy operation run OUTSIDE any transaction, one
+     * autocommitted statement per (table, column), idempotent (a re-run
+     * answers zero on both counts). POST (an action, not a
+     * resource-state change — the plan's own verb convention).
+     *
+     * <p>The guard is the service's own: the target must already be
+     * pseudonymized (409 otherwise — the purge completes an erasure flow;
+     * a live account's audit trail is active history).
+     */
+    public record AuditPurgeRequest(@NotBlank String reason) {}
+
+    public record AuditPurgeResponse(int scrubbedRows, int usersAudRowsDeleted) {}
+
+    @PostMapping("/users/{id}/purge-audit-history")
+    public ResponseEntity<AuditPurgeResponse> purgeUserAuditHistory(@PathVariable UUID id,
+                                                                    @Valid @RequestBody AuditPurgeRequest request,
+                                                                    Authentication authentication) {
+        var result = identitySpi.purgeAuditHistory(id, request.reason(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(new AuditPurgeResponse(result.scrubbedRows(), result.usersAudRowsDeleted()));
+    }
+
     // -- Listings -------------------------------------------------------
 
     @GetMapping("/listings")
