@@ -13,6 +13,14 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 
     List<MediaAsset> findByListingIdOrderByPositionAsc(UUID listingId);
 
+    /**
+     * I7 Phase 2 (account-pseudonymization-plan §5-ج): every live asset the
+     * user owns ({@code provider_id} is a user id — the A1 measured fact),
+     * in creation order for a deterministic export — backs
+     * {@code MediaExportAdapter}.
+     */
+    List<MediaAsset> findAllByProviderIdOrderByCreatedAtAscIdAsc(UUID providerId);
+
     long countByListingId(UUID listingId);
 
     /**

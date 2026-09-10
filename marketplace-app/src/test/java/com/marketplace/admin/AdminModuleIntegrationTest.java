@@ -53,6 +53,26 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     ProviderNameResolver providerNameResolver;
 
+    // I7 Phase 2: this slice's ALL_DEPENDENCIES bootstrap pulls in the
+    // identity module (UserController's aggregation service consumes the
+    // five export ports), but the ports' implementations live in modules
+    // outside the closure — the same house @MockitoBean pattern as the
+    // other outside-slice ports above.
+    @MockitoBean
+    com.marketplace.shared.api.BookingExportPort bookingExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ReviewExportPort reviewExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.MessagingExportPort messagingExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.MediaExportPort mediaExportPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.NotificationExportPort notificationExportPort;
+
     @Autowired
     private RevisionService revisionService;
 

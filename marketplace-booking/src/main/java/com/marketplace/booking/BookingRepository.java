@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpecificationExecutor<Booking>, RevisionRepository<Booking, UUID, Integer> {
@@ -24,6 +25,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     Page<BookingSummaryView> findAllByProviderId(UUID providerId, Pageable pageable);
 
     Page<BookingSummaryView> findAllByStatus(BookingStatus status, Pageable pageable);
+
+    /**
+     * I7 Phase 2 (account-pseudonymization-plan §5-ج): every live booking
+     * where the user is a first party (consumer or provider side), in
+     * creation order for a deterministic export — backs
+     * {@code BookingExportAdapter}.
+     */
+    List<Booking> findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(
+            UUID consumerId, UUID providerId);
 
     /**
      * L25 (feature-expansion roadmap §5): the provider's COMPLETED-booking
