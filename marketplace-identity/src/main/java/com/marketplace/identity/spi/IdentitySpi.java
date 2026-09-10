@@ -76,4 +76,31 @@ public interface IdentitySpi {
      *         erasure flow (pseudonymize first)
      */
     int purgeAuthoredContent(UUID userId, String reason, String actor);
+
+    /**
+     * I7 Phase 3 (account-pseudonymization-plan §2 gate b-4 — the audit
+     * history purge, the plan's §7 Phase 3 row): purges the
+     * (already-pseudonymized) subject's audit identity — the plan's purge
+     * option, verbatim: "حذف صفوف {@code users_aud} للمستخدم (WHERE
+     * id=…) + كنس {@code created_by}/{@code updated_by} عبر نحو 20
+     * جدولاً — عملية ثقيلة تُشغَّل خارج المعاملة، تقبل التدرّج". The
+     * subject closure is recovered from the mirror history FIRST (the
+     * original raw subject survives only there), the column scrub runs
+     * one autocommitted statement per (table, column) across every table
+     * the live schema reports carrying the columns, then the mirror rows
+     * die wholesale. Idempotent: a re-run answers zero on both counts.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param reason the administrative reason, recorded with the action
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action
+     * @return the measured outcome — audit cells nulled and mirror
+     *         revisions deleted
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the account is not pseudonymized — the purge completes an
+     *         erasure flow (pseudonymize first)
+     */
+    AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor);
 }
