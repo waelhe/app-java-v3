@@ -302,7 +302,8 @@ class UserDataExportIntegrationTest {
 
         // -- The security contract ------------------------------------------
 
-        HttpResponse<String> anonymous = get("/api/v1/users/me/export", null);
+        // The get() helper takes absolute URLs (the login-gate convention).
+        HttpResponse<String> anonymous = get(baseUrl() + "/api/v1/users/me/export", null);
         assertThat(anonymous.statusCode())
                 .as("401 without a token — the standing /api/v1 contract").isEqualTo(401);
 
