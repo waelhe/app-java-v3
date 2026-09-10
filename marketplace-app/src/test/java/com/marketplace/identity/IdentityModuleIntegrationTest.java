@@ -60,6 +60,17 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.NotificationExportPort notificationExportPort;
 
+    // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
+    // this module slice) consumes the cross-module purge port as a List —
+    // the shared-api contract implemented by the six owning modules'
+    // adapters (booking/messaging/reviews/disputes/notifications/provider,
+    // outside this module slice). One mock satisfies the list injection
+    // (the Phase 2 five-port precedent, collapsed by the List shape); the
+    // full fan-out contract is the integration guard's job, not the
+    // slice's.
+    @MockitoBean
+    com.marketplace.shared.api.AuthoredContentPurgePort authoredContentPurgePort;
+
     @Autowired
     private UserService userService;
 

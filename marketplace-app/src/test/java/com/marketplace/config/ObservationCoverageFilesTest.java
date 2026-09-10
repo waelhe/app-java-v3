@@ -94,7 +94,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
-                    "user.pseudonymize", "user.role.update", "user.status.update", "user.sync.oidc")),
+                    "user.content.purge", "user.pseudonymize", "user.role.update",
+                    "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
