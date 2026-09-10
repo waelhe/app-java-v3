@@ -236,9 +236,13 @@ class UserDataExportIntegrationTest {
 
         // The ordering regression: both reviews carry the SAME created_at
         // (the tie fixture), so the document order must be the id secondary
-        // key — ascending, the total-order contract.
-        assertThat(UUID.fromString(reviews.get(0).path("id").asString()))
-                .isLessThan(UUID.fromString(reviews.get(1).path("id").asString()));
+        // key — ascending, the total-order contract. The comparison uses
+        // the canonical hex STRINGS: PostgreSQL orders uuid bytewise
+        // (unsigned), while java.util.UUID.compareTo is a signed-64-bit
+        // comparison — a UUID with the high bit set would disagree with the
+        // database's order (the round-2 CI measurement).
+        assertThat(reviews.get(0).path("id").asString())
+                .isLessThan(reviews.get(1).path("id").asString());
         assertThat(reviews.get(0).path("createdAt").asString())
                 .isEqualTo(reviews.get(1).path("createdAt").asString());
 
