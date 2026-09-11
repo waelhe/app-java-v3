@@ -185,13 +185,15 @@ class AuthoredContentPurgeIntegrationTest {
         JsonNode purgeBody = objectMapper.readTree(purge.body());
         assertThat(purgeBody.path("purgedRows").asInt())
                 .as("the exact fan-out count, measured against the seeded "
-                        + "fixture (CodeRabbit's round-1 arithmetic, adopted): "
+                        + "fixture (CodeRabbit's round-1 arithmetic, adopted; "
+                        + "extended by the §9 listings row's eighth converter): "
                         + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
                         + "the seed plants ONE subject message mirror) + 4 review "
                         + "comments + 4 review replies (2 base + 2 mirror each) "
-                        + "+ 4 profile fields (name+bio, base+mirror) + 2 disputes "
-                        + "+ 2 notifications")
-                .isEqualTo(21);
+                        + "+ 4 profile fields (name+bio, base+mirror) + 4 listing "
+                        + "fields (title+description, base+mirror — the catalog "
+                        + "adapter) + 2 disputes + 2 notifications")
+                .isEqualTo(25);
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
@@ -349,6 +351,38 @@ class AuthoredContentPurgeIntegrationTest {
                 .as("the counterparty's notification mirror survives")
                 .isEqualTo("counterparty keeps his notification");
 
+        // -- provider_listings (V2/V24 — the §9 listings row's eighth
+        //    converter: title NOT NULL -> the marker; description nullable
+        //    -> NULL; base + mirror) ---------------------------------------
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT title, description, category, price_cents, status FROM provider_listings "
+                        + "WHERE id = ?", f.subjectListingId()))
+                .as("the subject's listing texts die; the operational columns "
+                        + "stay (the shared-record structure)")
+                .containsEntry("title", PURGED_MARKER)
+                .containsEntry("description", null)
+                .containsEntry("category", "home")
+                .containsEntry("price_cents", 100_00L)
+                .containsEntry("status", "ACTIVE");
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT title, description FROM provider_listings WHERE id = ?",
+                f.counterpartyListingId()))
+                .as("the counterparty's listing survives untouched")
+                .containsEntry("title", "I7 Purge Listing")
+                .containsEntry("description", "purge guard listing");
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT title, description FROM provider_listings_aud WHERE id = ? AND rev = ?",
+                f.subjectListingId(), f.revBase()))
+                .as("the subject's listing mirror dies (title marker, description NULL)")
+                .containsEntry("title", PURGED_MARKER)
+                .containsEntry("description", null);
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT title, description FROM provider_listings_aud WHERE id = ? AND rev = ?",
+                f.counterpartyListingId(), f.revBase()))
+                .as("the counterparty's listing mirror survives")
+                .containsEntry("title", "I7 Purge Listing")
+                .containsEntry("description", "purge guard listing");
+
         // Idempotence (the port contract): the re-run purges exactly zero.
         HttpResponse<String> again = postJsonWithBearer(
                 "/api/v1/admin/users/" + subjectId + "/purge-content", admin.accessToken(),
@@ -428,21 +462,23 @@ class AuthoredContentPurgeIntegrationTest {
         // Bookings (V3): the subject's requested booking + the
         // counterparty's own booking — both reference one listing owned by
         // the counterparty (V2 FK parents).
-        UUID listingId = UUID.randomUUID();
+        UUID counterpartyListingId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
                 INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
                 VALUES (?, ?, ?, ?, ?, ?, 'SAR', 'ACTIVE')
                 ON CONFLICT (id) DO NOTHING
                 """,
-                listingId, counterpartyId, "I7 Purge Listing",
+                counterpartyListingId, counterpartyId, "I7 Purge Listing",
                 "purge guard listing", "home", 100_00L);
         // The subject-as-provider's own listing (V2: provider_id -> users.id)
         // — the FK parent of the booking that carries his forward+reverse
         // review pair below (the faithful production shape: his listing,
-        // booked by the counterparty). Provider listings are OUTSIDE the
-        // purge's six-adapter scope (the plan's letter — the §9 decision
-        // row), so this row contributes zero to every purge count.
+        // booked by the counterparty). Since the §9 listings row's
+        // resolution (the eighth converter) this row IS in the purge's
+        // scope: its title and description die (title is NOT NULL -> the
+        // marker, description -> NULL, base + Envers mirror) — exactly 4
+        // of the 25-row fan-out count.
         UUID subjectListingId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
@@ -452,6 +488,10 @@ class AuthoredContentPurgeIntegrationTest {
                 """,
                 subjectListingId, subjectId, "I7 Purge Subject Listing",
                 "purge guard subject listing", "home", 100_00L);
+        seedListingsAud(subjectListingId, revBase, subjectId,
+                "I7 Purge Subject Listing", "purge guard subject listing");
+        seedListingsAud(counterpartyListingId, revBase, counterpartyId,
+                "I7 Purge Listing", "purge guard listing");
         UUID subjectBookingId = UUID.randomUUID();
         UUID counterpartyBookingId = UUID.randomUUID();
         jdbcTemplate.update(
@@ -460,14 +500,14 @@ class AuthoredContentPurgeIntegrationTest {
                 VALUES (?, ?, ?, ?, 'PENDING', 100_00, 'SAR', ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectBookingId, subjectId, counterpartyId, listingId, "please bring towels");
+                subjectBookingId, subjectId, counterpartyId, counterpartyListingId, "please bring towels");
         jdbcTemplate.update(
                 """
                 INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
                 VALUES (?, ?, ?, ?, 'CONFIRMED', 100_00, 'SAR', ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                counterpartyBookingId, counterpartyId, counterpartyId, listingId,
+                counterpartyBookingId, counterpartyId, counterpartyId, counterpartyListingId,
                 "counterparty keeps his notes");
         seedBookingsAud(subjectBookingId, revBase, subjectId, "please bring towels");
         seedBookingsAud(counterpartyBookingId, revBase, counterpartyId, "counterparty keeps his notes");
@@ -528,7 +568,7 @@ class AuthoredContentPurgeIntegrationTest {
                 VALUES (?, ?, ?, ?, 'COMPLETED', 100_00, 'SAR', NULL)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                reviewBookingA, subjectId, counterpartyId, listingId);
+                reviewBookingA, subjectId, counterpartyId, counterpartyListingId);
         jdbcTemplate.update(
                 """
                 INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, price_cents, currency, notes)
@@ -654,12 +694,19 @@ class AuthoredContentPurgeIntegrationTest {
                 counterpartyMessageId, subjectReviewId, subjectAsProviderReviewId,
                 subjectReverseReviewId, subjectProfileId, counterpartyProfileId,
                 subjectDisputeId, counterpartyDisputeId, subjectNotificationId,
-                counterpartyNotificationId);
+                counterpartyNotificationId, subjectListingId, counterpartyListingId);
     }
 
     private void seedRevinfo(int rev) {
         jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (?, ?)",
                 rev, System.currentTimeMillis());
+    }
+
+    private void seedListingsAud(UUID id, int rev, UUID providerId, String title, String description) {
+        jdbcTemplate.update(
+                "INSERT INTO provider_listings_aud (id, rev, revtype, provider_id, title, description) "
+                        + "VALUES (?, ?, 0, ?, ?, ?)",
+                id, rev, providerId, title, description);
     }
 
     private void seedBookingsAud(UUID id, int rev, UUID consumerId, String notes) {
@@ -958,6 +1005,8 @@ class AuthoredContentPurgeIntegrationTest {
             UUID subjectDisputeId,
             UUID counterpartyDisputeId,
             UUID subjectNotificationId,
-            UUID counterpartyNotificationId) {
+            UUID counterpartyNotificationId,
+            UUID subjectListingId,
+            UUID counterpartyListingId) {
     }
 }
