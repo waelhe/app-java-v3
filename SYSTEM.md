@@ -5,6 +5,8 @@
 > **قاعدة الذهب:** كل حقيقة هنا تحمل دليلها `ملف:سطر` من هذا المستودع أو من مصدر رسمي محفوظ. لا يُضاف ادعاء بلا دليل، ولا يُعدَّل دليل بلا إعادة تحقق من الكود.
 >
 > **نظام الحوكمة (§14):** من يقرر ماذا وعلى أي دليل — قواعد العمل الدائمة (§14.1) + آليات الخطة الحاكمة (§14.2) + أعراف الدمج والفروع (§14.3).
+>
+> **ملكية القواعد:** هذا الملف خريطة الآلة فقط. السلوك الحاكم في `AGENTS.md` (الدستور)؛ القانون التنفيذي في `docs/governance/ai-persona-and-rules.en.md`؛ القانون المرجعي الرسمي في `docs/governance/codex/framework.md`.
 
 ---
 
@@ -21,7 +23,7 @@
 | قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers) **وفي الإنتاج** (خدمة `postgres-18` = postgres-ssl:18 الرسمية + فوليوم، 18.6، نقل 57 جدولاً صفر فرق 2026-09-04 — §15)؛ Flyway 12.4.0 (BOM) يقبلها — `handlesDatabaseProductNameAndVersion` يفحص البادئة لا النطاق | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` + سجل الإقلاع الحي (§15) |
 | الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose) **وفي الإنتاج** (8.2: ترقية في المكان + فوليوم + requirepass + RDB 2026-09-04 — §15)؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
 | الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) | `pom.xml:44-45` |
-| الوحدات | **16** وحدة Maven في Reactor الجذر | `pom.xml:22-37` |
+| الوحدات | **17** وحدة Maven في Reactor الجذر | `pom.xml:22-39` |
 | النشر | Dockerfile + `.railway/railway.ts` (IaC — إعدادات خدمة-مستوى) + docker-compose.yml | جذر المستودع |
 
 ---
@@ -44,7 +46,7 @@
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 16 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 17 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 
@@ -78,7 +80,7 @@
 
 ---
 
-## 5. البنية النمطية — 16 وحدة تحت Modulith
+## 5. البنية النمطية — 17 وحدة تحت Modulith
 
 **القسمة (من `pom.xml:22-37`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **13 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes.
 

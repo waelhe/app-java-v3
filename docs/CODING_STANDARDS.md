@@ -226,6 +226,7 @@ public void onBookingConfirmed(BookingConfirmedEvent event) {
 | `@ApplicationModuleListener` for **cross-module** events | Module-scoped, transactional, retryable | [Spring Modulith — Events](https://docs.spring.io/spring-modulith/reference/events.html) |
 | `@TransactionalEventListener` for **same-module** events | Fine-grained control | Spring docs |
 | **Never** `catch (Exception)` in event listeners | Defeats Event Publication Log retry | Spring Modulith docs |
+| Time is **explicit, not implicit**: use the event/context time when available, else `Instant.now()`; apply `ZoneOffset.UTC` when needed | Event time drives ordering and moments; `Instant.now()` at consume-time can disagree with the stored time | [Java Time](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/time/Instant.html) |
 | **Catch `DataAccessException` only** for "best-effort per item" patterns | Lets programming errors propagate for retry | [Spring — DataAccessException](https://docs.spring.io/spring-framework/reference/data-access/dao.html) |
 
 ---
