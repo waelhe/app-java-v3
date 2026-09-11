@@ -156,17 +156,20 @@ public class UserService implements IdentitySpi {
                 })
                 .orElseGet(() -> {
                     // I7 §5-أ step 8 — the pre-provisioning deny check: the
-                    // identity's raw subject was pseudonymized under the
-                    // configured key, and the deterministic derivation is the
-                    // tombstone. Probing the DERIVED replacement before any
-                    // creation closes the account-recreation hole: a
-                    // re-issued raw sub (an identity provider re-issuing the
-                    // same subject, or a live access token's 900s window)
-                    // must not resurrect the identity. Inert while the secret
-                    // channel is unbound — no tombstone can exist then.
-                    if (subjectPseudonymizer.isConfigured()
-                            && userRepository.findBySubject(
-                                    subjectPseudonymizer.derive(subject)).isPresent()) {
+                    // identity's raw subject was pseudonymized under one of
+                    // the configured keys, and the deterministic derivation
+                    // is the tombstone. Probing EVERY derivation the keyring
+                    // can produce (active + retained previous keys — §9
+                    // rotation row, resolved option 1) before any creation
+                    // closes the account-recreation hole: a re-issued raw
+                    // sub (an identity provider re-issuing the same subject,
+                    // or a live access token's 900s window) must not
+                    // resurrect the identity — including tombstones written
+                    // before a key rotation. Inert while the ring is empty —
+                    // no tombstone can exist while no key ever existed.
+                    List<String> candidateTombstones = subjectPseudonymizer.deriveAll(subject);
+                    if (!candidateTombstones.isEmpty()
+                            && userRepository.existsBySubjectIn(candidateTombstones)) {
                         throw new ConflictException(
                                 "Account for this subject was pseudonymized and cannot be "
                                         + "re-provisioned: " + subject);

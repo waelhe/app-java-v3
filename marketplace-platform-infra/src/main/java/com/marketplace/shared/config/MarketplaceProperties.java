@@ -56,9 +56,36 @@ public record MarketplaceProperties(
          * key never existed. Rotation consequence (documented, plan §9): a
          * different key derives different replacement subjects, so existing
          * tombstones stop matching the probe.
+         *
+         * <p><b>The keyring (plan §9 rotation row — resolved option 1):</b>
+         * {@link #subjectHmacPreviousKeys()} retains the retired keys so the
+         * re-registration probe verifies derivations under <em>every</em> key
+         * the system ever wrote tombstones with — the official
+         * overlap-window rotation shape (secrets-policy §3 "dual key /
+         * overlap window"; the same retention pattern Spring Security's JWKS
+         * rotation applies: one active signing key, retained keys still
+         * verifying). The write path ({@code derive}) uses the active key
+         * only; the probe path ({@code deriveAll}) covers the whole ring.
+         * A key must never be dropped from the ring while tombstones derived
+         * under it can still exist in {@code users.subject}.</p>
+         *
+         * <p><b>Binding shape (measured against Boot 4.1.1):</b> this record
+         * deliberately declares the implicit canonical constructor ONLY —
+         * implicit constructor binding deduces from a
+         * single-declared-constructor shape, and an extra (even delegating)
+         * constructor leaves the section unresolvable while the
+         * component-level {@code @DefaultValue} primes propagate to the
+         * implicit constructor's parameters (an explicit canonical
+         * constructor would NOT receive them). The empty
+         * {@code @DefaultValue} on the list component binds an empty
+         * collection, comma-separated values split into elements, and an
+         * empty-string value (the yml placeholder default when the env var
+         * is unset) binds empty — all three pinned by
+         * {@code MarketplacePropertiesBindingTest}.
          */
         public record Pseudonymization(
-            @DefaultValue("") String subjectHmacKey
+            @DefaultValue("") String subjectHmacKey,
+            @DefaultValue List<String> subjectHmacPreviousKeys
         ) {}
 
         public record Jwt(

@@ -401,8 +401,21 @@ marketplace:
     # surface answers 503 SU-001 (capability OFF, not broken) and the
     # re-registration probe in syncFromOidc stays inert (no tombstone can
     # exist while the key never existed). Env channel per secrets-policy §1
-    # (env-only, never in Git, never logged). Rotation consequence (plan §9):
-    # a new key derives different replacement subjects — existing tombstones
-    # stop matching the probe.
+    # (env-only, never in Git, never logged).
     pseudonymization:
       subject-hmac-key: ${PSEUDONYMIZATION_HMAC_KEY:}
+      # I7 §9 (rotation row — resolved option 1, the keyring): the retired
+      # keys, comma-separated, in the env-only channel (secrets-policy §1 +
+      # §3 "dual key / overlap window" — the retention shape Spring
+      # Security's own JWKS rotation applies: one active key writes,
+      # retained keys keep verifying). The re-registration probe derives
+      # under the active key AND every key listed here, so tombstones
+      # written before a rotation keep blocking re-provisioning.
+      # Operational rule: never drop a key from this list while tombstones
+      # derived under it can still exist in users.subject. Rotation
+      # procedure: set the new key in PSEUDONYMIZATION_HMAC_KEY, append the
+      # old key here, redeploy — new tombstones derive under the new key
+      # from that moment. Keys are opaque UTF-8 strings like the active key;
+      # a key containing a comma cannot be expressed in this channel
+      # (base64/hex secrets never do).
+      subject-hmac-previous-keys: ${PSEUDONYMIZATION_HMAC_PREVIOUS_KEYS:}

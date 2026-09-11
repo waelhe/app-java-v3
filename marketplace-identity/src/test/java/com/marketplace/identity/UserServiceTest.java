@@ -504,11 +504,10 @@ class UserServiceTest {
         when(jwt.getClaimAsString("email")).thenReturn("r@b.com");
         when(jwt.getClaimAsString("name")).thenReturn("Re-issued Identity");
         when(userRepository.findBySubject("resurrected-subject")).thenReturn(Optional.empty());
-        when(subjectPseudonymizer.isConfigured()).thenReturn(true);
-        when(subjectPseudonymizer.derive("resurrected-subject")).thenReturn(DERIVED_SUBJECT);
+        when(subjectPseudonymizer.deriveAll("resurrected-subject"))
+                .thenReturn(List.of(DERIVED_SUBJECT));
         // The tombstone: a row already carries the derived replacement.
-        when(userRepository.findBySubject(DERIVED_SUBJECT)).thenReturn(Optional.of(
-                User.create(DERIVED_SUBJECT, null, null, UserRole.CONSUMER)));
+        when(userRepository.existsBySubjectIn(List.of(DERIVED_SUBJECT))).thenReturn(true);
 
         ConflictException ex = assertThrows(ConflictException.class, () -> userService.syncFromOidc(token));
 
@@ -516,6 +515,46 @@ class UserServiceTest {
         // Provisioning never happens — no new row, no cache event.
         verify(userRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void syncFromOidc_rejectsProvisioningWhenOnlyARetiredKeysTombstoneMatches() {
+        // I7 §9 rotation row, resolved option 1 (the keyring) — the exact
+        // regression the row describes: the tombstone was written under K1,
+        // the active key is now K2. The active derivation matches nothing;
+        // the retained K1 derivation matches the historical stock — the
+        // probe must consult the WHOLE candidate set, so provisioning is
+        // still denied (the pre-keyring guard probed the active key only
+        // and let exactly this resurrection through).
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("pre-rotation-subject");
+        when(jwt.getClaimAsString("email")).thenReturn("r@b.com");
+        when(jwt.getClaimAsString("name")).thenReturn("Pre-Rotation Identity");
+        when(userRepository.findBySubject("pre-rotation-subject")).thenReturn(Optional.empty());
+        String activeDerivation = "anon-" + "a".repeat(64);
+        String retiredDerivation = "anon-" + "b".repeat(64);
+        when(subjectPseudonymizer.deriveAll("pre-rotation-subject"))
+                .thenReturn(List.of(activeDerivation, retiredDerivation));
+        // The stock tombstone matches ONLY the retired derivation — the
+        // repository is honest about the whole set: it answers existence,
+        // and here the true reason is the retired key's row.
+        when(userRepository.existsBySubjectIn(List.of(activeDerivation, retiredDerivation)))
+                .thenReturn(true);
+
+        ConflictException ex = assertThrows(ConflictException.class, () -> userService.syncFromOidc(token));
+
+        assertThat(ex.getMessage()).contains("pseudonymized");
+        // The probe consulted the full ring, not the active derivation
+        // alone — the candidate list passed to the existence check carries
+        // the retained key's derivation.
+        @SuppressWarnings("unchecked") // forClass's raw List.class shape
+        ArgumentCaptor<List<String>> candidates = ArgumentCaptor.forClass(List.class);
+        verify(userRepository).existsBySubjectIn(candidates.capture());
+        assertThat(candidates.getValue())
+                .containsExactly(activeDerivation, retiredDerivation);
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -528,13 +567,16 @@ class UserServiceTest {
         when(jwt.getClaimAsString("name")).thenReturn("Fresh User");
         when(jwt.getClaimAsStringList("roles")).thenReturn(null);
         when(userRepository.findBySubject("fresh-subject")).thenReturn(Optional.empty());
-        when(subjectPseudonymizer.isConfigured()).thenReturn(false);
+        // An empty ring (no key ever bound) — the probe's inert state.
+        when(subjectPseudonymizer.deriveAll("fresh-subject")).thenReturn(List.of());
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         User result = userService.syncFromOidc(token);
 
         // No tombstone can exist while the key never existed — the probe is
-        // skipped entirely (no derive() call), and provisioning proceeds.
+        // skipped entirely (empty candidate set, no existence query), and
+        // provisioning proceeds.
+        verify(userRepository, never()).existsBySubjectIn(any());
         verify(subjectPseudonymizer, never()).derive(any());
         assertThat(result.getSubject()).isEqualTo("fresh-subject");
     }

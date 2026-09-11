@@ -191,6 +191,6 @@ class OAuth2PublicClientInitializerTest {
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient(clientId, redirectUris)),
-                        new MarketplaceProperties.Security.Pseudonymization("")));
+                        new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of())));
     }
 }
