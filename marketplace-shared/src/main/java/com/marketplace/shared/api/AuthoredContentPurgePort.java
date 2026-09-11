@@ -29,10 +29,12 @@ import java.util.UUID;
  *       measured schema facts: {@code messages.content} (V7),
  *       {@code provider_profiles.display_name} (V14),
  *       {@code disputes.reason} (V20), {@code notifications.message}
- *       (V18) are NOT NULL, so the tombstone marker is the honest
- *       representation the column constraint admits. The marker is what
- *       the counterparty sees on the shared record — the plan's declared
- *       Art. 20(4) trade-off made visible, not hidden.</li>
+ *       (V18), {@code provider_listings.title} (V2 — the §9 listings
+ *       row's resolution, the eighth converter) are NOT NULL, so the
+ *       tombstone marker is the honest representation the column
+ *       constraint admits. The marker is what the counterparty sees on
+ *       the shared record — the plan's declared Art. 20(4) trade-off made
+ *       visible, not hidden.</li>
  *   <li><b>The Envers mirrors purge with the same shape</b> — every
  *       {@code *_aud} mirror of a purged text column carries the original
  *       text in its historical revisions (V24 convention: the mirrors keep
@@ -62,14 +64,16 @@ import java.util.UUID;
  * requested, the review comments he wrote, the review replies he
  * authored as the review's provider ({@code ReviewsService}: "Only the
  * reviewed provider can reply" — the gate's authorship model), his
- * provider persona's public name and bio, the disputes he opened, his
- * notification feed's message bodies. The counterparty's texts never
- * match the predicates.
+ * provider persona's public name and bio, the listings he authored as a
+ * provider (their titles and descriptions — {@code provider_listings}
+ * via {@code CatalogController.create}'s stored user id, the §9 listings
+ * row's resolution), the disputes he opened, his notification feed's
+ * message bodies. The counterparty's texts never match the predicates.
  */
 public interface AuthoredContentPurgePort {
 
     /**
-     * The tombstone for NOT NULL text columns (measured: V7/V14/V18/V20).
+     * The tombstone for NOT NULL text columns (measured: V7/V14/V18/V20/V2).
      * Bracketed so it is visually and programmatically distinguishable
      * from user-authored content; documented here as the single constant
      * every adapter and every reader shares.
