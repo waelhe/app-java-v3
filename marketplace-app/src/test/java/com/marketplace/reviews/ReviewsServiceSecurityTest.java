@@ -2,7 +2,6 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
-import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,10 +46,9 @@ class ReviewsServiceSecurityTest {
     @MockitoBean
     private BookingParticipantProvider bookingParticipantProvider;
 
-    // L21: the reply ownership check resolves the caller's provider profile
-    // through the cross-module port.
-    @MockitoBean
-    private ProviderLookupPort providerLookupPort;
+    // The ProviderLookupPort bean is GONE (the §9 surgical gate fix): the
+    // reply/createReverse gates read the ruling from the row itself
+    // (users.id, A1) — no profile resolution anywhere in the service.
 
     @Test
     @WithMockUser(roles = "USER")

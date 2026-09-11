@@ -8,7 +8,6 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewCreatedEvent;
 import com.marketplace.shared.api.ReviewUpdatedEvent;
-import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
@@ -32,18 +31,15 @@ public class ReviewsService {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final BookingParticipantProvider bookingParticipantProvider;
-    private final ProviderLookupPort providerLookupPort;
 
     public ReviewsService(ReviewRepository reviewRepository,
                           CurrentUserProvider currentUserProvider,
                           ApplicationEventPublisher eventPublisher,
-                          BookingParticipantProvider bookingParticipantProvider,
-                          ProviderLookupPort providerLookupPort) {
+                          BookingParticipantProvider bookingParticipantProvider) {
         this.reviewRepository = reviewRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.bookingParticipantProvider = bookingParticipantProvider;
-        this.providerLookupPort = providerLookupPort;
     }
 
     @Transactional(readOnly = true)
@@ -109,19 +105,30 @@ public class ReviewsService {
      * I8 (internal free plan §6, roadmap §7 — the deferred product decision
      * "تقييم المزوّد للمستهلك (اتجاه معاكس)" executed on the user's order):
      * the reverse review — the booking's provider rates its consumer. The
-     * gates mirror the forward path one-for-one: the caller must own the
-     * provider profile that IS the booking's provider (the L20/L21 seam —
-     * {@code ProviderLookupPort.findByUserId}, the same ownership pattern
-     * {@link #reply} applies), the booking must be COMPLETED, and at most
-     * one reverse review exists per booking (per-direction uniqueness).
+     * gates mirror the forward path one-for-one: the caller must BE the
+     * booking's provider, the booking must be COMPLETED, and at most one
+     * reverse review exists per booking (per-direction uniqueness).
+     *
+     * <p><b>Ownership reads the ruling from the row itself (the A1
+     * convention — the {@code verifyProviderOwnership} pattern in
+     * BookingService):</b> {@code bookings.provider_id} physically carries
+     * a <b>users.id</b> (V3: {@code references users(id)}; measured and
+     * documented in {@code AuthHelper.ownsProvider}: «every cross-module
+     * {@code provider_id} column carries a user id»). The gate therefore
+     * compares the stored {@code bookingInfo.providerId()} directly
+     * against the caller's user id — NO profile resolution: resolving
+     * through {@code providerLookupPort.findByUserId(...).id()}
+     * ({@code provider_profiles.id} space) is exactly the cross-space
+     * mismatch that made this surface unusable live (the §9 surgical fix;
+     * the same defect class A1 swept out of catalog/media/availability).
      *
      * <p>The reviewer is the provider's USER id; the reviewee is the
      * booking's consumer (stored in {@code reviewee_id}); the review's
-     * providerId is the AUTHORING provider's profile id. The same events
-     * fire (ReviewCreatedEvent + the reviews cache invalidation) — the L21
-     * stats listener resolves the authoring provider and recomputes its
-     * average from FORWARD reviews only, so the reverse review never
-     * pollutes it (the aggregate's direction filter, same PR).
+     * providerId stores the AUTHORING provider's user id (A1). The same
+     * events fire (ReviewCreatedEvent + the reviews cache invalidation) —
+     * the L21 stats listener recomputes its average from FORWARD reviews
+     * only, so the reverse review never pollutes it (the aggregate's
+     * direction filter, same PR).
      */
     @Observed(name = "review.create.reverse")
     @PreAuthorize("hasRole('PROVIDER')")
@@ -132,13 +139,13 @@ public class ReviewsService {
         }
 
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
-        UUID callerProviderId = providerLookupPort.findByUserId(currentUserId)
-                .orElseThrow(() -> new AccessDeniedException("You do not own a provider profile"))
-                .id();
 
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);
 
-        if (!bookingInfo.providerId().equals(callerProviderId)) {
+        // A1: the stored booking row is the ruling — its provider_id IS the
+        // booking provider's user id (V3 FK), compared directly against the
+        // caller (the verifyProviderOwnership pattern; no profile lookup).
+        if (!bookingInfo.providerId().equals(currentUserId)) {
             throw new AccessDeniedException("Only the booking provider can submit a reverse review");
         }
 
@@ -177,22 +184,30 @@ public class ReviewsService {
 
     /**
      * L21 (roadmap §5) — the provider side of the two-way review: the target
-     * provider replies to its own review. Ownership follows the L20 seam:
-     * the caller's user id resolves to their provider profile
-     * ({@code ProviderLookupPort.findByUserId}) and that profile must BE the
-     * review's provider — «المزوّد المستهدف حصراً يملك الرد» (no admin bypass,
-     * the scope names the provider exclusively). Uniqueness is by
-     * construction: {@link Review#reply(String)} rejects a second reply.
+     * provider replies to its own review. <b>Ownership reads the ruling
+     * from the row itself (the A1 convention — the
+     * {@code verifyProviderOwnership} pattern in BookingService):</b>
+     * {@code reviews.provider_id} physically carries a <b>users.id</b>
+     * (V6: {@code references users(id)}) — the reviewed provider's user id
+     * on forward rows, the authoring provider's user id on reverse rows.
+     * The gate compares it directly against the caller's user id — NO
+     * profile resolution: {@code providerLookupPort.findByUserId(...).id()}
+     * resolves into the {@code provider_profiles.id} space, which never
+     * equals the stored users.id — the cross-space mismatch that made the
+     * reply surface unusable live (the §9 surgical fix). «المزوّد المستهدف
+     * حصراً يملك الرد» — no admin bypass, the scope names the provider
+     * exclusively. Uniqueness is by construction: {@link Review#reply(String)}
+     * rejects a second reply.
      */
     @Observed(name = "review.reply")
     @PreAuthorize("hasRole('PROVIDER')")
     public Review reply(UUID id, String reply, Authentication authentication) {
         Review review = getById(id);
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
-        UUID callerProviderId = providerLookupPort.findByUserId(currentUserId)
-                .orElseThrow(() -> new AccessDeniedException("You do not own a provider profile"))
-                .id();
-        if (!review.getProviderId().equals(callerProviderId)) {
+        // A1: the stored review row is the ruling — its provider_id IS the
+        // reviewed provider's user id (V6 FK), compared directly against the
+        // caller (the verifyProviderOwnership pattern; no profile lookup).
+        if (!review.getProviderId().equals(currentUserId)) {
             throw new AccessDeniedException("Only the reviewed provider can reply");
         }
         review.reply(reply);

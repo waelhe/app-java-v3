@@ -116,16 +116,21 @@ class ReviewsTwoWayIntegrationTest {
         userRepository.save(User.create("l21-outsider", "outsider@b.com", "Outsider", UserRole.PROVIDER));
         UUID noProfileUserId = userRepository.save(
                 User.create("l21-noprofile", "np@b.com", "NoProfile", UserRole.PROVIDER)).getId();
+        UUID ownerUserId = userRepository.findBySubject("l21-owner").orElseThrow().getId();
         ProviderProfile owned = providerRepository.save(ProviderProfile.create("Owned", "bio",
-                userRepository.findBySubject("l21-owner").orElseThrow().getId()));
+                ownerUserId));
         providerRepository.save(ProviderProfile.create("Outsider", "bio",
                 userRepository.findBySubject("l21-outsider").orElseThrow().getId()));
 
-        // The review is planted directly: this test exercises the reply path,
-        // whose guard is PROVIDER — the create path (CONSUMER) is covered by
-        // the stats test above and the unit suite.
+        // The review is planted directly in the PRODUCTION space (A1 — V6:
+        // provider_id references users(id)): the reviewed provider's USER
+        // id. The §9 gate fix compares this stored value directly against
+        // the caller's user id — the row is the ruling (no profile
+        // resolution: the old seed planted the profile id and coincided
+        // the two spaces through the lookup, the exact false confidence
+        // §9 measured).
         Review review = reviewRepository.save(Review.create(
-                UUID.randomUUID(), UUID.randomUUID(), owned.getId(), 5, "excellent"));
+                UUID.randomUUID(), UUID.randomUUID(), ownerUserId, 5, "excellent"));
 
         // The reviewed provider replies.
         reviewsService.reply(review.getId(), "Thanks!", jwtAuthentication("l21-owner", "ROLE_PROVIDER"));
@@ -139,11 +144,12 @@ class ReviewsTwoWayIntegrationTest {
                 .isEqualTo("Thanks!");
 
         // A different provider cannot reply to someone else's review
-        // (acceptance 1 — ownership exclusivity)...
+        // (acceptance 1 — ownership exclusivity): his user id is not the
+        // stored provider user id... and neither can a provider-less
+        // user (subsumed: no user id matches the stored ruling).
         assertThrows(AccessDeniedException.class,
                 () -> reviewsService.reply(review.getId(), "not mine",
                         jwtAuthentication("l21-outsider", "ROLE_PROVIDER")));
-        // ...and neither can a provider-less user.
         assertThrows(AccessDeniedException.class,
                 () -> reviewsService.reply(review.getId(), "no profile",
                         jwtAuthentication("l21-noprofile", "ROLE_PROVIDER")));
@@ -155,6 +161,22 @@ class ReviewsTwoWayIntegrationTest {
 
     private void stubCompletedBooking(UUID consumerId, UUID providerId) {
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(new BookingInfo(
+                providerId, consumerId, "COMPLETED", 5000L, "SAR",
+                Instant.now(), Instant.now()));
+    }
+
+    /**
+     * The §9 surgical gate fix re-seeding: the reverse-path booking's
+     * {@code provider_id} carries the provider's USER id (A1 — V3:
+     * {@code references users(id)}); the gate compares it directly against
+     * the caller. The forward-path booking keeps the profile id the stats
+     * flow resolves by ({@code refreshRatingAverage} →
+     * {@code findByIdForUpdate} — the documented profiles.id-space stats
+     * deviation, measured in Phase 2 and deliberately untouched here:
+     * this PR's scope is the two write gates, §9's pin).
+     */
+    private void stubCompletedBookingFor(UUID bookingId, UUID consumerId, UUID providerId) {
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "COMPLETED", 5000L, "SAR",
                 Instant.now(), Instant.now()));
     }
@@ -181,13 +203,19 @@ class ReviewsTwoWayIntegrationTest {
         UUID providerId = profile.getId();
         UUID bookingReverse = UUID.randomUUID();
         UUID bookingForward = UUID.randomUUID();
-        stubCompletedBooking(consumerId, providerId);
+        // The §9 re-seed: the REVERSE booking carries the provider's USER
+        // id (A1 — the gate's ruling); the FORWARD booking keeps the
+        // profile id (the stats flow's own resolution key, the documented
+        // deviation — see stubCompletedBookingFor's Javadoc).
+        stubCompletedBookingFor(bookingReverse, consumerId, ownerUserId);
+        stubCompletedBookingFor(bookingForward, consumerId, providerId);
 
         // (1) The REVERSE review lands FIRST (rating 1) — through the REAL
-        // service (the events fire). Its event's recompute finds no forward
-        // reviews yet and skips (the empty-Optional contract). Dual roles:
-        // the forward gate reads CONSUMER, the reverse gate reads PROVIDER;
-        // the ownership checks read the explicit arguments.
+        // service (the events fire). Its event's recompute resolves no
+        // profile in the forward-booking space and skips (the
+        // empty-Optional contract). Dual roles: the forward gate reads
+        // CONSUMER, the reverse gate reads PROVIDER; the ownership checks
+        // read the explicit arguments.
         Review reverse = reviewsService.createReverse(bookingReverse, 1, "difficult guest",
                 jwtAuthentication("i8-host-subject", "ROLE_PROVIDER"));
 
@@ -246,9 +274,10 @@ class ReviewsTwoWayIntegrationTest {
         ProviderProfile owned = providerRepository.save(ProviderProfile.create(
                 "I8 Owner", "bio", ownerUserId));
         providerRepository.save(ProviderProfile.create("I8 Outsider", "bio", outsiderUserId));
-        UUID providerId = owned.getId();
         UUID bookingId = UUID.randomUUID();
-        stubCompletedBooking(consumerId, providerId);
+        // The §9 re-seed: the booking's provider_id carries the provider's
+        // USER id (A1 — the gate's ruling, V3's FK truth).
+        stubCompletedBookingFor(bookingId, consumerId, ownerUserId);
 
         // The outsider provider (with a real profile) does not own the booking.
         assertThrows(AccessDeniedException.class,
