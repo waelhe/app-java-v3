@@ -4,6 +4,19 @@
 
 ---
 
+## Session 2026-09-11 — Governance Rebuild from Zero (D-011)
+- **Study**: read SYSTEM.md (363/363), old kernel (453 lines), companion registers, METHODOLOGY structure (17 sections, exact lines), CODING_STANDARDS head.
+- **Live official research (2026-09-11)**: webfetch Boot/Spring/Security/Modulith pages + delegated extraction of auto-config, `@SpringBootApplication`, graceful shutdown, proxy transactions, test slices, Maven lifecycle, Modulith events — all verified current.
+- **Design (user: full creative authority, systems thinking)**: Constitution → Codex → Records. Modulith-style: short always-on constitution (`AGENTS.md`), per-domain rule files loaded on trigger, records as pure state. Zero duplication; monolithic kernel retired.
+- **Files written**: `AGENTS.md` (constitution), `docs/governance/codex/framework.md` (NEW official corpus, cited URLs), `docs/governance/ai-persona-and-rules.en.md` (Governance & Workflow Codex), `docs/governance/ai-persona-and-rules.md` (Arabic mirror), `SYSTEM.md` § header pointer added.
+- **Records**: D-011 accepted; supersedes the old 19-section kernel and its cross-file duplicates.
+- **Practical evaluation vs old (measured)**: always-on surface 517→186 lines (−64%); consistency: zero duplication vs 3-way duplication in old; authority: old kernel uncited vs framework §2.1 official quote. Coverage audit of all 18 old sections found 6 losses → healed below.
+- **Healing pass (user: absorb every useful part, rephrase in official-docs style, keep new design governor)**: added to Governance Codex (EN+AR mirror) — §1 mirror-drift rule, §3.1 systems-thinking instruments A/B/C (six-fold, impact microscope, design Qs, integration matrix), §4.1 round-trip economy, §4.2 task-brief template, §6 full security gate (9-item checklist, verification, incident response §6.3, revert matrix §6.4), §8 report-in-3-lines; added to framework.md — §9 source-routing table (task→URL→section) + consult-before-execute rules; added to CODING_STANDARDS.md — "explicit time" rule row.
+- **Next**: user to revoke leaked tokens `ghp_nxCN...` and `ghp_TPki...`; PROJECT_MAP sync at session end.
+- **Practical test (batteries)**: 1a deep-links resolve (same-dir refs valid; 2 paths qualified `docs/…`), 1b EN/AR parity green (top 9=9, sub 7=7), 1c pom reality green (17 modules, Boot 4.1.1). 2a fan-out probe → real listener list, 9 modules, 13 prod listeners; 2b live-routing URLs 5/5 HTTP 200; 2c `mvnw validate -N` BUILD SUCCESS exit 0. **Defects found & fixed**: inconsistent heading level (`## 3.1/4.1/4.2` vs `### 6.x`) unified to `###`; AR mirror got corrupted by a PowerShell `Set-Content -Encoding utf8` (Win32 console pitfall) → rebuilt clean (BOM+UTF-8 verified, 0 U+FFFD); test harness lesson recorded: never read/write Arabic docs via PowerShell 5.1 text cmdlets (console codepage + default encoding risks).
+
+---
+
 ## Last Session
 - **Date**: 2026-09-11
 - **Branch**: feat/governance-operating-system
