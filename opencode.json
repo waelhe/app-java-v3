@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "docs/governance/ai-persona-and-rules.en.md"
+  ],
+  "permission": {
+    "edit": "ask",
+    "write": "ask",
+    "task": "ask",
+    "bash": {
+      "*": "ask",
+      "git status*": "allow",
+      "git log*": "allow",
+      "git diff*": "allow",
+      "git show*": "allow",
+      "git branch*": "allow",
+      "Get-ChildItem*": "allow",
+      "Select-String*": "allow",
+      "rg*": "allow",
+      "Write-Output*": "allow"
+    }
+  }
+}

@@ -7,6 +7,23 @@ This file adds project-specific conventions.
 
 > **هذا القسم جبري (enforced) بأمر المستخدم المستمر: «اعتمد فهمك للبنية في كل إجراء قادم» و«لا تقل فقط بل اجعله جبرياً». لا يُتخَطَّى.** مقتضاه: أي إجراء (تعديل ملف، أمر bash يغيّر شيئاً، إنشاء/دفع/دمج PR، قرار معماري) **لا يبدأ** حتى يُحمَّل الفهم النظامي ويُسنَد إلى الملف الحاكم — وإلا توقف تلقائياً. (هذا القسم مكرر في `skill protocol-enforcer` §0.)
 
+### 0.0 سجل النظام (System Registry)
+```yaml
+# كل ملف بدوره — لا ملف بلا دور، لا دور بلا ملف
+files:
+  protocol-enforcer (skill):   { role: enforcement-gate, load: backend-action, refresh: never }
+  ai-persona-and-rules.en.md: { role: ai-kernel,      load: first,      refresh: always-on }
+  session-log.md:             { role: handover,       load: first,      refresh: session-end }
+  SYSTEM.md:                  { role: machinery-map,  load: first,      refresh: session-entry }
+  PROJECT_MAP.md:             { role: state-log,      load: first,      refresh: session-entry }
+  AGENTS.md (global+project): { role: enforced-rules, load: always-on,  refresh: never }
+  METHODOLOGY.md:             { role: workflow,       load: level-3+,   refresh: task-change }
+  CODING_STANDARDS.md:        { role: code-style,     load: level-2+,   refresh: task-change }
+  debt-register.md:           { role: debt-registry,  load: level-3+,   refresh: session-end }
+  decisions-log.md:           { role: decisions,      load: level-3+,   refresh: session-end }
+  docs/governance/*.md:       { role: governance,     load: level-3+,   refresh: session-end }
+```
+
 ### 0.1 التسلسل الإجباري قبل أي إجراء (Mandatory load order)
 ```text
 1. SYSTEM.md     — الخريطة المرجعية للآلية (§1-§13) + خريطة التعمق §10
