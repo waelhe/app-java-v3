@@ -19,6 +19,8 @@
 - Verified: both OS files structurally clean (§1, §2, §4…§19; zero `## 3.` orphans; §1.1 subsections present)
 - **New enforcement system (D-007):** approval-return mechanism now EXCLUSIVELY in two places — `opencode.json` (project permission: edit/write/task/bash-ask; read free) + `protocol-enforcer` skill (moved to its official home `~/.config/opencode/skills/`, old `~/.claude/skills/` deleted). Global AGENTS.md enforcement text replaced by one-line pointer. Zero mechanism text in OS/AGENTS docs — single source of truth.
 - **Forced boot (D-008):** `opencode.json` `instructions: ["docs/governance/ai-persona-and-rules.en.md"]` — the OS kernel (§1–§19) is now injected into EVERY session's context at load, zero-effort activation for any AI tool. AGENTS.md stays auto-loaded by opencode (never duplicated in instructions).
+- **GitHub independent push (D-009):** governance system pushed as standalone branch `governance/unified-system` — 8 files committed, no merge with origin/main, no code changes. Credentials via Windows Credential Manager (old token revoked, new fine-grained token stored encrypted).
+- **Repo description recovery (D-010):** API PATCH test accidentally changed repo description; recovered from pom.xml: `Two-sided Marketplace Backend - Multi-module Maven + Spring Boot 4 + Spring Modulith`.
 
 ## Pending (next session)
 - [ ] **First security audit** against §19.1 checklist (application-level)
