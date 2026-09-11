@@ -59,3 +59,13 @@
 - `mvnw.cmd` not `mvn` on Windows
 - websearch returns 403 → use webfetch/curl for official doc verification
 - Self-check at DoD (§13) is a *working* mechanism: it caught the §19A→19.1 defect before this handover was written
+
+---
+
+## Session 2026-09-11 (cont.) — Comprehensive Code Review 0→100%: R1/R4/R5 done
+
+- **Target branch**: `governance/d011-main` (= main `2a92e0a` + D-011 governance merge + architecture docs).
+- **R1 — Modulith boundaries: DONE, clean.** All `spi/*` imports internal to their module (implement shared-api ports); app module is composition root (root package `com.marketplace`), exempt from `verify()`. `ModulithVerificationTest` skips only on JDK 26+ (ArchUnit major-specific); CI green on JDK 25.
+- **R4 — Flyway integrity: DONE.** 45 versioned files, contiguous V1..V46, no duplicates, no post-apply edits. `R__seed_oauth2_client.sql` idempotent (`ON CONFLICT DO NOTHING` ×2). **One documented deviation `[debt: yes - documented]` (low):** `V35` is a silent gap — the sequence jumps V34→V36; historical records say "V1..V35 clean" (PROJECT_MAP + SYSTEM.md §214, roadmap B2) but no `V35__*.sql` ever existed in any commit (deep rev-list scan = zero). The number was evidently allocated to a B2 draft migration dropped before PR #232 merged. No prod impact (never applied; Railway §15 records reach only V34-era). Close path: correct the two historical references to V34 — **user decision, not guessed.**
+- **R5 — Test coverage matrix: DONE.** 229 test classes total (app 109, infra 18, payments 15, pricing 11, media 10, booking/provider 9, identity 8, messaging/notifications/reviews 6, availability 5, disputes/ledger 4, shared 6, search 3). **`marketplace-catalog` has 0 classes in its own `src/test`** but is covered by app-level tests: `CatalogServiceTest` (live `CatalogService` via `@ExtendWith`+MockitoBean+Instancio), `CatalogSearchFullTextIntegrationTest` (B2 search), `CatalogModuleIntegrationTest`, `CatalogServiceSecurityTest`, `CatalogControllerWebMvcTest`. Deliberate placement (JaCoCo BUNDLE threshold ≥70% per module, `pom.xml:44-45`); not a gap.
+- **Next**: R3 deep security reads (payments webhook signature, rate limiting, SAS config) + high-risk module dives (media S3, identity OAuth2/JWT, reviews IDOR).
