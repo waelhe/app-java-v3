@@ -16,7 +16,11 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.List;
@@ -56,13 +60,29 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * id (V3's FK truth — what {@code BookingParticipantProviderAdapter}
  * returns through the port at runtime).
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+        // The production-shaped schema (the CatalogSearchFullText / b-3 house
+        // pattern): real Flyway V1..V46, no ddl-auto — the default test
+        // profile's create-drop schema lacks the migration DEFAULTS the
+        // JDBC seeds rely on (V2's is_deleted default false) and V30's
+        // revinfo sequence alignment; the §7 "test schema != production
+        // schema" class, measured in CI round 1.
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class ReviewsOwnershipGateIntegrationTest {
 
     // NO @MockitoBean BookingParticipantProvider — the REAL adapter reads
     // the real booking rows this test seeds. The §9 letter.
+
+    @Container
+    @ServiceConnection
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
+            DockerImageName.parse("postgres:18-alpine"))
+            .withDatabaseName("marketplace");
 
     @Autowired
     private ReviewsService reviewsService;
@@ -125,6 +145,15 @@ class ReviewsOwnershipGateIntegrationTest {
     void createReverse_gateThroughTheRealAdapter_theBookingProviderPasses() {
         GateFixture fx = seedCompletedBooking("gatefix-r2");
 
+        // A provider who is not the booking's provider is denied by the
+        // row's ruling — asserted BEFORE the successful call: the service
+        // checks the duplicate guard first, so after a reverse review
+        // exists every caller would get the Conflict instead (CodeRabbit
+        // round-1, adopted from the root).
+        assertThrows(AccessDeniedException.class,
+                () -> reviewsService.createReverse(fx.bookingId(), 5, "not my booking",
+                        jwtAuthentication(fx.outsiderSubject(), "ROLE_PROVIDER")));
+
         // THE DEFECT'S COUNTER-PROOF: the booking's provider (whose USER id
         // the booking row carries, read through the REAL adapter) writes
         // the reverse review — always 403 before the fix.
@@ -139,12 +168,6 @@ class ReviewsOwnershipGateIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT direction FROM reviews WHERE id = ?", String.class, reverse.getId()))
                 .isEqualTo("PROVIDER_TO_CONSUMER");
-
-        // A provider who is not the booking's provider is denied by the
-        // row's ruling (his user id is not the stored provider user id).
-        assertThrows(AccessDeniedException.class,
-                () -> reviewsService.createReverse(fx.bookingId(), 5, "not my booking",
-                        jwtAuthentication(fx.outsiderSubject(), "ROLE_PROVIDER")));
 
         // Per-direction uniqueness on the REAL booking row.
         assertThrows(ConflictException.class,

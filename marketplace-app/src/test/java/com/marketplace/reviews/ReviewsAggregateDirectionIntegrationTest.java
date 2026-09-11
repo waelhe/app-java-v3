@@ -9,7 +9,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -40,10 +44,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * consumer's forward review (rating 5) and the provider's reverse review
  * (rating 1) — both carrying the provider's user id, both live rows.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+        // The production-shaped schema (the CatalogSearchFullText / b-3 house
+        // pattern): real Flyway V1..V46, no ddl-auto — the default test
+        // profile's create-drop schema lacks the migration DEFAULTS the
+        // JDBC seeds rely on (V2's is_deleted default false) and V30's
+        // revinfo sequence alignment; the §7 "test schema != production
+        // schema" class, measured in CI round 1.
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class ReviewsAggregateDirectionIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
+            DockerImageName.parse("postgres:18-alpine"))
+            .withDatabaseName("marketplace");
 
     @Autowired
     private ReviewRepository reviewRepository;
