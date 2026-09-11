@@ -198,7 +198,7 @@ class PlatformGovernanceFilesTest {
         // Railway builds (serviceManifest), driven through BuildKit (the
         // Dockerfile needs RUN --mount=type=cache).
         assertThat(yml).as("scans the image built from the repo Dockerfile")
-                .contains("uses: docker/build-push-action@v6")
+                .contains("uses: docker/build-push-action@v7")
                 .contains("load: true")
                 .contains("scan-type: image");
         // Pinned tooling — no floating @master (drift = different gate).
