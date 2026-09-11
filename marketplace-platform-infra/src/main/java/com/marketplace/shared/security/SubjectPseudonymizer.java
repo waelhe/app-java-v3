@@ -9,7 +9,10 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.List;
 
 /**
  * I7 (account-pseudonymization-plan §5-أ / gate b-2(b)): the deterministic
@@ -43,9 +46,13 @@ import java.util.HexFormat;
  *       idempotent and makes the pre-provisioning tombstone probe
  *       verifiable: a re-issued raw subject derives the same replacement and
  *       is caught before a new account is created.</li>
- *   <li>Key rotation — a different key derives a different replacement; the
- *       consequence (existing tombstones stop matching the probe) is
- *       documented in the plan's risk register (§9).</li>
+ *   <li>Key rotation — a different key derives a different replacement. The
+ *       <em>write</em> path ({@link #derive}) always uses the active key; the
+ *       <em>probe</em> path ({@link #deriveAll}) derives under the active key
+ *       plus every retained previous key (the keyring, plan §9 rotation row
+ *       resolved option 1 — secrets-policy §3 "dual key / overlap window"),
+ *       so tombstones written before a rotation keep matching the
+ *       re-registration guard for as long as their key stays in the ring.</li>
  * </ul>
  *
  * <p>Lives in {@code shared :: shared-security} so the identity module
@@ -75,7 +82,9 @@ public class SubjectPseudonymizer {
     }
 
     /**
-     * Derives the replacement subject for a raw subject string.
+     * Derives the replacement subject for a raw subject string — the <b>write
+     * path</b>, always under the active key (new tombstones are written in
+     * today's key; a rotation changes the replacements going forward).
      *
      * @throws ServiceUnavailableException when the secret channel is not
      *         bound — the capability answers 503 SU-001, the house pattern
@@ -90,11 +99,73 @@ public class SubjectPseudonymizer {
                             + "Bind PSEUDONYMIZATION_HMAC_KEY (secrets-policy §1: environment-only) "
                             + "to enable the administrative surface.");
         }
+        return ANON_PREFIX + hmacHex(key, rawSubject);
+    }
+
+    /**
+     * Derives <b>every</b> replacement subject the system could ever have
+     * written for this raw subject — the <b>probe path</b> (I7 §9 rotation
+     * row, resolved option 1: the keyring). The active key's derivation
+     * covers fresh tombstones; every retained previous key's derivation
+     * covers the tombstones written before a rotation — so the
+     * re-registration guard in {@code syncFromOidc} keeps matching the
+     * historical stock exactly as it matches new rows (the overlap window
+     * secrets-policy §3 requires, with no service stop).
+     *
+     * <p>Contract details, pinned by {@code SubjectPseudonymizerTest}:</p>
+     * <ul>
+     *   <li>Order — the active key's derivation first, then the retained
+     *       keys in their configured order (deterministic, readable in
+     *       diagnostics).</li>
+     *   <li>Blank keys are filtered and duplicate keys collapse to one
+     *       derivation (re-listing the active key in the previous-keys ring
+     *       is a harmless operator slip, not a doubled probe).</li>
+     *   <li>Empty when no key is bound at all — the probe's inert state
+     *       (no tombstone can exist while no key ever existed). Unlike
+     *       {@link #derive} this never throws: a probe is a read, not a
+     *       capability — a ring of previous keys with a blank active key
+     *       still returns the historical derivations (those tombstones
+     *       exist even though new pseudonymizations are OFF).</li>
+     *   <li>Dropping a key from the ring while tombstones derived under it
+     *       still exist re-opens the re-registration hole for exactly that
+     *       stock — the operational rule the plan's §9 row states: never
+     *       remove the last copy of a key that ever wrote a tombstone.</li>
+     * </ul>
+     */
+    public List<String> deriveAll(String rawSubject) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        MarketplaceProperties.Security.Pseudonymization pseudonymization =
+                properties.security().pseudonymization();
+        if (!pseudonymization.subjectHmacKey().isBlank()) {
+            keys.add(pseudonymization.subjectHmacKey());
+        }
+        List<String> previousKeys = pseudonymization.subjectHmacPreviousKeys();
+        if (previousKeys != null) {
+            for (String key : previousKeys) {
+                if (key != null && !key.isBlank()) {
+                    keys.add(key);
+                }
+            }
+        }
+        List<String> derivations = new ArrayList<>(keys.size());
+        for (String key : keys) {
+            derivations.add(ANON_PREFIX + hmacHex(key, rawSubject));
+        }
+        return List.copyOf(derivations);
+    }
+
+    /**
+     * The shared transformation core: the full 256-bit HMAC-SHA256
+     * fingerprint of the raw subject's UTF-8 bytes, hex-encoded — the exact
+     * byte-level contract {@code SubjectPseudonymizerTest} recomputes
+     * independently with the JDK's own {@code javax.crypto}.
+     */
+    private static String hmacHex(String key, String rawSubject) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
             byte[] fingerprint = mac.doFinal(rawSubject.getBytes(StandardCharsets.UTF_8));
-            return ANON_PREFIX + HexFormat.of().formatHex(fingerprint);
+            return HexFormat.of().formatHex(fingerprint);
         } catch (NoSuchAlgorithmException | InvalidKeyException ex) {
             // HmacSHA256 is mandated by every JDK vendor; reaching here means
             // a broken runtime, not a configuration problem.

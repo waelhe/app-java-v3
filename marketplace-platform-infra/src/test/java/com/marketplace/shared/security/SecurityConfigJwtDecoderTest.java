@@ -146,7 +146,7 @@ class SecurityConfigJwtDecoderTest {
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
-                        new MarketplaceProperties.Security.Pseudonymization(""))
+                        new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()))
         );
     }
 }

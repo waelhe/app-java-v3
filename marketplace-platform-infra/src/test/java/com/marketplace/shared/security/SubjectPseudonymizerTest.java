@@ -8,6 +8,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +30,7 @@ class SubjectPseudonymizerTest {
 
     private static final String KEY = "it-pseudonymization-key";
     private static final String OTHER_KEY = "a-different-channel-key";
+    private static final String RETIRED_KEY = "the-retired-rotation-key";
     private static final Pattern HEX_64 = Pattern.compile("[0-9a-f]{64}");
 
     private SubjectPseudonymizer pseudonymizer(String key) {
@@ -36,7 +38,18 @@ class SubjectPseudonymizerTest {
                 null,
                 new MarketplaceProperties.Security(
                         null, null, null,
-                        new MarketplaceProperties.Security.Pseudonymization(key)));
+                        new MarketplaceProperties.Security.Pseudonymization(key, java.util.List.of())));
+        return new SubjectPseudonymizer(properties);
+    }
+
+    /** The keyring shape: an active key plus retained previous keys. */
+    private SubjectPseudonymizer keyring(String activeKey, String... previousKeys) {
+        MarketplaceProperties properties = new MarketplaceProperties(
+                null,
+                new MarketplaceProperties.Security(
+                        null, null, null,
+                        new MarketplaceProperties.Security.Pseudonymization(
+                                activeKey, List.of(previousKeys))));
         return new SubjectPseudonymizer(properties);
     }
 
@@ -115,6 +128,72 @@ class SubjectPseudonymizerTest {
     @Test
     void boundChannel_reportsConfigured() {
         assertThat(pseudonymizer(KEY).isConfigured()).isTrue();
+    }
+
+    // -- I7 §9 rotation row, resolved option 1: the keyring probe contract --
+
+    @Test
+    void deriveAll_coversTheActiveKeyAndEveryRetainedKey() {
+        String subject = "rotated-subject-1";
+        SubjectPseudonymizer ring = keyring(KEY, RETIRED_KEY, OTHER_KEY);
+
+        List<String> candidates = ring.deriveAll(subject);
+
+        // Active-first, then the retained keys in their configured order —
+        // every element recomputed independently with the JDK's own HMAC.
+        assertThat(candidates).containsExactly(
+                SubjectPseudonymizer.ANON_PREFIX + HexFormat.of().formatHex(hmacSha256(KEY, subject)),
+                SubjectPseudonymizer.ANON_PREFIX + HexFormat.of().formatHex(hmacSha256(RETIRED_KEY, subject)),
+                SubjectPseudonymizer.ANON_PREFIX + HexFormat.of().formatHex(hmacSha256(OTHER_KEY, subject)));
+        // The write path stays the active key's derivation — the first
+        // candidate, the one pseudonymizeAccount writes today.
+        assertThat(candidates).contains(ring.derive(subject));
+        assertThat(candidates.get(0)).isEqualTo(ring.derive(subject));
+    }
+
+    @Test
+    void deriveAll_deduplicatesAndFiltersBlankKeys() {
+        // Re-listing the active key among the previous keys is a harmless
+        // operator slip; blank entries (e.g. a trailing comma) are noise.
+        List<String> candidates = keyring(KEY, KEY, "", " ", RETIRED_KEY)
+                .deriveAll("sub-1");
+
+        assertThat(candidates).hasSize(2);
+        assertThat(candidates.stream().distinct().count()).isEqualTo(2);
+    }
+
+    @Test
+    void deriveAll_isEmptyWhenNoKeyIsEverBound() {
+        assertThat(keyring("").deriveAll("sub-1")).isEmpty();
+        assertThat(keyring("", "").deriveAll("sub-1")).isEmpty();
+        // The probe's inert state: no derivation, nothing to check.
+    }
+
+    @Test
+    void deriveAll_neverThrows_blankActiveKeyWithARetainedRing() {
+        // A probe is a read, not a capability: with the active key blank
+        // (new pseudonymizations OFF, 503 on derive) and a retired ring
+        // bound, the historical derivations still return — those tombstones
+        // exist even though new ones cannot be written.
+        List<String> candidates = keyring("", RETIRED_KEY).deriveAll("sub-1");
+
+        assertThat(candidates).containsExactly(SubjectPseudonymizer.ANON_PREFIX
+                + HexFormat.of().formatHex(hmacSha256(RETIRED_KEY, "sub-1")));
+        ServiceUnavailableException ex = assertThrows(ServiceUnavailableException.class,
+                () -> keyring("", RETIRED_KEY).derive("sub-1"));
+        assertThat(ex.getMessage()).contains("PSEUDONYMIZATION_HMAC_KEY");
+    }
+
+    @Test
+    void deriveAll_derivationMatchesTheWritePathUnderTheSameKey() {
+        // The rotation invariant the guard relies on: a tombstone written
+        // under a key that is later retired still appears in the probe's
+        // candidate set as long as the key stays in the ring.
+        String subject = "rotation-invariant-subject";
+        String writtenBeforeRotation = pseudonymizer(RETIRED_KEY).derive(subject);
+
+        assertThat(keyring(KEY, RETIRED_KEY).deriveAll(subject))
+                .contains(writtenBeforeRotation);
     }
 
     private static byte[] hmacSha256(String key, String value) {

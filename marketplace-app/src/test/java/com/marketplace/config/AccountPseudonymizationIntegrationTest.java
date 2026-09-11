@@ -94,6 +94,13 @@ import static org.assertj.core.api.Assertions.assertThat;
         // The b-2(b) secret channel for THIS guard — a test value, never a
         // production secret (secrets-policy §1: real secrets never touch Git).
         "marketplace.security.pseudonymization.subject-hmac-key=it-pseudonymization-key",
+        // I7 §9 (rotation row — resolved option 1, the keyring): the
+        // production-shaped RING — one active key plus one retained retired
+        // key — so the context under test carries the rotated configuration
+        // the keyring probe guards (the retired key's tombstones still
+        // block re-provisioning; new tombstones derive under the active
+        // key). Test values only, same rule as the active key.
+        "marketplace.security.pseudonymization.subject-hmac-previous-keys=it-retired-pseudonymization-key",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -286,6 +293,65 @@ class AccountPseudonymizationIntegrationTest {
         String subjectAfterRerun = jdbcTemplate.queryForObject(
                 "SELECT subject FROM users WHERE id = ?", String.class, targetId);
         assertThat(subjectAfterRerun).isEqualTo(derivedSubject);
+    }
+
+    /**
+     * I7 §9 rotation row, resolved option 1 (the keyring) — the end-to-end
+     * rotation regression on the real schema, real HTTP and the real ring:
+     * a tombstone written under the RETIRED key (the state every rotation
+     * leaves behind) still blocks /me re-provisioning while the context
+     * runs with the NEW active key. The pre-keyring guard probed the active
+     * key's derivation only — for exactly this stock it answered "no
+     * tombstone" and let the resurrection through (the row's measured risk:
+     * K1→K2 re-opens the provisioning channel for the K1 graves). The
+     * keyring probe derives under every retained key, so the same stock
+     * keeps answering 409.
+     *
+     * <p>The tombstone is seeded directly in the Phase 1 post-pseudonymization
+     * shape (subject = the retired derivation, email/display_name NULL,
+     * pseudonymized_at stamped) — the honest data-level truth of "a
+     * pseudonymization executed before the rotation" (the Phase 1 seed
+     * pattern; no second application context is needed to reproduce the
+     * pre-rotation write, the derivation is deterministic and recomputed
+     * with the JDK independently).
+     */
+    @Test
+    void keyringProbe_blocksReProvisioningUnderARetiredKey() throws Exception {
+        String rotatedAway = "it-pseud-rotated-user";
+        String retiredDerivation = deriveWithJdkHmac("it-retired-pseudonymization-key", rotatedAway);
+
+        // The measured regression itself, pinned first: the retired-key
+        // tombstone does NOT equal the active key's derivation — the old
+        // single-key probe would have missed exactly this row.
+        assertThat(retiredDerivation)
+                .isNotEqualTo(deriveWithJdkHmac(rotatedAway));
+
+        // The pre-rotation tombstone: the Phase 1 end-state under the old
+        // key, seeded at the data level (deterministic derivation).
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role, pseudonymized_at)
+                VALUES (?, ?, NULL, NULL, 'CONSUMER', now())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), retiredDerivation);
+
+        registerUser(rotatedAway, "USER");
+        GateResult reIssued = loginGate(rotatedAway, PASSWORD);
+
+        // The identity provider re-issues the same raw subject (a fresh
+        // login + token after the rotation): the ring's retained-key
+        // derivation matches the stock tombstone — 409, the hole closed.
+        HttpResponse<String> me = getWithBearer("/api/v1/users/me", reIssued.accessToken());
+        assertThat(me.statusCode())
+                .as("/me with a retired-key tombstone (the keyring probe): %s", body(me))
+                .isEqualTo(409);
+        assertThat(me.body()).contains("pseudonymized");
+
+        // Provisioning never happened — no new row for the raw subject.
+        Integer resurrected = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM users WHERE subject = ?", Integer.class, rotatedAway);
+        assertThat(resurrected).as("the raw subject must not be provisioned").isZero();
     }
 
     /**
@@ -587,10 +653,16 @@ class AccountPseudonymizationIntegrationTest {
 
     /** The b-2(b) arithmetic recomputed with the JDK — the byte-level truth. */
     private static String deriveWithJdkHmac(String subject) {
+        return deriveWithJdkHmac("it-pseudonymization-key", subject);
+    }
+
+    /** The same arithmetic under an explicit key — the keyring's retired
+     * derivations recomputed independently of the production code path. */
+    private static String deriveWithJdkHmac(String key, String subject) {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
             mac.init(new javax.crypto.spec.SecretKeySpec(
-                    "it-pseudonymization-key".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                    key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] fingerprint = mac.doFinal(subject.getBytes(StandardCharsets.UTF_8));
             return "anon-" + java.util.HexFormat.of().formatHex(fingerprint);
         } catch (Exception ex) {

@@ -91,5 +91,38 @@ class MarketplacePropertiesBindingTest {
                 .as("pseudonymization section (absent keys — SubjectPseudonymizer dereferences it)")
                 .isNotNull();
         assertThat(properties.security().pseudonymization().subjectHmacKey()).isEmpty();
+        // I7 §9 (rotation row — the keyring): the retained-keys list is
+        // primed empty when the section is absent (the empty @DefaultValue
+        // on a collection component — the same non-null guarantee, list
+        // shape), so deriveAll's ring iterates nothing, never null.
+        assertThat(properties.security().pseudonymization().subjectHmacPreviousKeys())
+                .as("previous-keys ring (absent keys — deriveAll dereferences it)")
+                .isNotNull()
+                .isEmpty();
+    }
+
+    /**
+     * I7 §9 (rotation row — resolved option 1, the keyring): the retained
+     * previous keys bind from a comma-separated property value into the
+     * {@code List<String>} component — the shape the environment channel
+     * delivers ({@code PSEUDONYMIZATION_HMAC_PREVIOUS_KEYS} resolving through
+     * the application.yml placeholder).
+     */
+    @Test
+    void bindsCommaSeparatedPreviousKeysIntoTheRingList() {
+        Map<String, Object> source = Map.of(
+                "marketplace.security.pseudonymization.subject-hmac-previous-keys",
+                "retired-key-1,retired-key-2,retired-key-3");
+
+        MarketplaceProperties properties = new Binder(ConfigurationPropertySources
+                .from(new MapPropertySource("test", source)))
+                .bind("marketplace", Bindable.of(MarketplaceProperties.class))
+                .get();
+
+        assertThat(properties.security().pseudonymization().subjectHmacPreviousKeys())
+                .containsExactly("retired-key-1", "retired-key-2", "retired-key-3");
+        // The active key stays absent = blank — the write capability OFF
+        // while the retained ring still binds (the honest mixed state).
+        assertThat(properties.security().pseudonymization().subjectHmacKey()).isEmpty();
     }
 }
