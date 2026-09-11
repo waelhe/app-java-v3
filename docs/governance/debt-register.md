@@ -9,6 +9,8 @@
 
 | ID | Description | File:Line | Reason | Date | Severity | Owner | Repay plan | Status |
 |----|-------------|-----------|--------|------|----------|-------|------------|--------|
+| D-009 | Legacy webhook HMAC binds only `eventId + eventType`; `provider`, `paymentIntentId`, `externalId` unsigned — authenticated replay/field-tamper across providers | `PaymentsService.processWebhookEvent`: `validateSignature(eventId + eventType, signature)` | A captured valid signature lets an attacker rotate `provider` (dedup key `(provider, event_id)` — provider unbounded by MAC) and replay `confirmIntent` against any `paymentIntentId` (`getIntent` lacks ownership check on this internal path) | 2026-09-11 | **critical** (security: payment-state tamper on legacy channel) | w-co | Extend signed payload to `provider+eventId+eventType+paymentIntentId+externalId` (+ timestamp window for replay protection) inside `PaymentWebhookSecurity`; add rejection tests | open |
+| D-010 | Flyway `V35` silent gap — sequence V34→V36; records say "V1..V35 clean" (PROJECT_MAP + SYSTEM.md §214) but no `V35__*.sql` exists in any commit | `db/migration/` | Number evidently allocated to a B2 draft dropped before PR #232; never applied (no prod impact) | 2026-09-11 | data (documentation reference misalignment) | w-co | Correct the two historical references to V34 — **user decision** | open |
 
 > _No open debts yet. New entries are added at the bottom of this table._
 
