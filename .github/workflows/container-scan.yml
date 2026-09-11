@@ -85,10 +85,10 @@ jobs:
       # builder-local, so cold .m2 downloads are the price of scanning the
       # real recipe (budgeted in the 45-minute timeout).
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build the production image (the Dockerfile Railway builds)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
