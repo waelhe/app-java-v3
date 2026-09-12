@@ -252,8 +252,13 @@ class SearchPropertyFilterIntegrationTest {
                 facets(QUDSAYYA, null, null, null), PageRequest.of(0, 10));
 
         // the spec path's default = ORDER BY id ASC (byte-identical to the
-        // native criteria path's order)
-        assertThat(page.getContent()).extracting(ListingSummary::id)
-                .isSortedAccordingTo(java.util.Comparator.<UUID>naturalOrder());
+        // native criteria path's order). The comparison rides the STRING
+        // form: PostgreSQL orders UUIDs byte-wise (unsigned), while
+        // UUID.compareTo compares the 64-bit halves as SIGNED longs — the
+        // two orders disagree for ids with the high bit set (never-run
+        // test bug, found by the first failsafe execution).
+        assertThat(page.getContent())
+                .extracting(listing -> listing.id().toString())
+                .isSorted();
     }
 }

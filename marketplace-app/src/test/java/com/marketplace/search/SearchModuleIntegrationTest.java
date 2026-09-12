@@ -47,6 +47,12 @@ class SearchModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.GeoLookupPort geoLookupPort;
 
+    // L32: and the realestate filter port (the property facets resolve
+    // through it) — same slice-boundary pattern (the real adapter is the
+    // realestate module).
+    @MockitoBean
+    com.marketplace.shared.api.RealestatePropertyFilterPort realestatePropertyFilterPort;
+
     @Autowired
     private SearchService searchService;
 

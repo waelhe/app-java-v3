@@ -98,6 +98,15 @@ class PropertyModuleIntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     private CurrentUserProvider currentUserProvider;
 
+    // The ownership check resolves the listing's provider through
+    // ProviderLookupPort (the media module's verification, verbatim) — the
+    // real adapter reads the providers table, and this test seeds only the
+    // users row: the port is mocked at the boundary and asOwner() stubs
+    // the lookup to the seed user (the ownership CONTRACT is what the
+    // tests assert, not the providers table).
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
     /** FK parent (V2: provider_listings.provider_id references users(id)). */
     private static final UUID PROVIDER_USER_ID = UUID.fromString("11111111-2222-4333-8444-555555555501");
 
@@ -118,6 +127,9 @@ class PropertyModuleIntegrationTest {
     private void asOwner() {
         org.mockito.Mockito.when(currentUserProvider.getCurrentUserId(providerAuthentication))
                 .thenReturn(PROVIDER_USER_ID);
+        org.mockito.Mockito.when(providerLookupPort.findByUserId(PROVIDER_USER_ID))
+                .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ProviderSummary(
+                        PROVIDER_USER_ID, "Realestate IT Provider", "ACTIVE", PROVIDER_USER_ID)));
     }
 
     @Test
