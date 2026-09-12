@@ -51,7 +51,8 @@ class SearchPropertyFilterIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired
@@ -131,7 +132,7 @@ class SearchPropertyFilterIntegrationTest {
     private static SearchCriteria facets(UUID locationId, PropertyPurpose purpose,
                                          Integer minRooms, Integer minAreaM2) {
         return new SearchCriteria(null, null, null, null, null, null, null,
-                locationId, purpose, null, minRooms, null, minAreaM2);
+                locationId, purpose, null, minRooms, null, minAreaM2, null, null, null);
     }
 
     @Test
@@ -228,7 +229,7 @@ class SearchPropertyFilterIntegrationTest {
     void textQuery_withPropertyCriteria_ranksAndFilters() {
         Page<ListingSummary> page = searchService.search(
                 new SearchCriteria("فيلا", null, null, null, null, null, null,
-                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null),
+                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         assertThat(page.getContent()).extracting(ListingSummary::id)

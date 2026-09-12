@@ -60,7 +60,8 @@ class PropertyModuleIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired

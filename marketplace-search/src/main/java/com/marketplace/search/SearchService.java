@@ -86,7 +86,12 @@ public class SearchService {
     // prefix bump l27v2 → l32v1 keeps the key spaces disjoint too — no
     // pre-change entry can be read as a post-change hit; the one-time cold
     // cycle is bounded by the 1h TTL).
-    @Cacheable(cacheNames = "search-results-v3", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    // P1 (postgis integration plan §D-P12): the radius criteria extension
+    // bumps it again — search-results-v3 → v4 (the deploy-time eviction of
+    // the schema extension; the key generator's prefix bump l32v1 → l34v1
+    // keeps the key spaces disjoint too — the "bump together with the
+    // other three names" house discipline, #241).
+    @Cacheable(cacheNames = "search-results-v4", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> search(String query, String category, Pageable pageable) {
         // CodeRabbit PR #299 round 1 (normalize ONCE): this legacy entry has
         // no production caller, but its contract is the same as the
@@ -110,17 +115,40 @@ public class SearchService {
      * geo-tree (the tree read, not the search pages — location criteria are
      * resolved per request, see below) and property writes evict through
      * the realestate module's relay registration.
+     *
+     * <p>P1 (postgis plan): the radius triple rides as first-class key
+     * segments too (the generator's l34v1 schema — canonical scale-6
+     * coordinates and whole-meter radius); the radius resolution (the
+     * ST_DWithin set and the distance-ordered pages) happens INSIDE the
+     * cached method — deterministic from the criteria, same completeness
+     * discipline as the L32 facets. Property-coordinate writes evict
+     * through the realestate module's relay registration (the same
+     * registration the L32 facets use — a coordinate change is a property
+     * change).
      */
-    @Cacheable(cacheNames = "search-results-v3", keyGenerator = "searchCriteriaKeyGenerator")
+    @Cacheable(cacheNames = "search-results-v4", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
-        // CodeRabbit PR #299 round 1 (two findings, one root):
+        // P1 (postgis plan): the radius branch — hasRadius() pushes to the
+        // dedicated dispatch exactly like hasPropertyCriteria() does for
+        // the L32 facets. sort=distance without the radius criteria is a
+        // 400 HERE (before any query): a distance order is meaningless
+        // without a center, and the marker must never leak into a legacy
+        // path (the L32 lesson — an unconsumed sort marker is a SQL error
+        // waiting downstream, not a sort).
+        if (criteria.hasRadius() || SearchSorts.isDistanceSorted(pageable)) {
+            if (!criteria.hasRadius()) {
+                throw new com.marketplace.shared.api.BadRequestException(
+                        "sort=distance requires the radius criteria (lat, lng, radiusKm)");
+            }
+            return dispatchRadius(criteria, pageable);
+        }
+        // CodeRabbit PR #299 round 1 (two findings, one root), reconciled
+        // with the P1 radius branch:
         // (a) the property flow was selected for an IGNORED text-search
         //     sort — a text query with sort=area restricted the full-text
         //     search to property-bearing listings although the documented
         //     behavior is "text searches ignore the sort": the area marker
-        //     selects the property flow ONLY for blank queries; property
-        //     CRITERIA keep selecting it for text searches (their set
-        //     restriction is real filtering, not sorting);
+        //     selects the property flow ONLY for blank queries;
         // (b) the controller is the SINGLE normalization point — the
         //     pageable arrives MAPPED (priceCents/createdAt + the id
         //     tiebreak), so the branch checks and every downstream call
@@ -236,6 +264,123 @@ public class SearchService {
         List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(orderedIds);
         // order already preserved by findSummariesByIds; total from the
         // property side (the restriction that defines the page)
+        return new PageImpl<>(summaries, pageable, matches.getTotalElements());
+    }
+
+    /**
+     * P1 (postgis plan): the radius dispatch — hasRadius() pushed here (or
+     * the distance-sort marker did, which always implies the radius). The
+     * composition mirrors dispatchProperty: the window whitelist first
+     * (an empty whitelist is an honest empty page, no query), then either
+     * the distance-ordered paged flow (non-text) or the set flow — the
+     * ST_DWithin listing-id set INTERSECTED with the facet set when
+     * real-estate facets ride along (D-P10: the radius is an ADDITIONAL
+     * criterion that ANDs with the geo hierarchy and the rest), then the
+     * restricted catalog queries in the existing shapes. Text queries rank
+     * by relevance — the distance sort is ignored for them (the documented
+     * scope boundary, same as the area sort).
+     */
+    private Page<ListingSummary> dispatchRadius(SearchCriteria criteria, Pageable pageable) {
+        Set<UUID> providerIds = null;
+        if (criteria.hasWindow()) {
+            providerIds = availabilityLookupPort.findAvailableProviderIds(
+                    criteria.checkIn(), criteria.checkOut());
+            if (providerIds.isEmpty()) {
+                return Page.empty(pageable); // honest empty page, no query
+            }
+        }
+        String query = criteria.query();
+        boolean textQuery = query != null && !query.isBlank();
+
+        if (SearchSorts.isDistanceSorted(pageable) && !textQuery) {
+            return searchDistanceSorted(criteria, providerIds, pageable);
+        }
+
+        Set<UUID> listingIds = providerIds != null
+                ? realestatePropertyFilterPort.findListingIdsWithinRadiusRestricted(
+                        criteria.latitude(), criteria.longitude(), criteria.radiusMeters(), providerIds)
+                : realestatePropertyFilterPort.findListingIdsWithinRadius(
+                        criteria.latitude(), criteria.longitude(), criteria.radiusMeters());
+        if (listingIds.isEmpty()) {
+            return Page.empty(pageable); // honest empty page, no catalog query
+        }
+
+        // D-P10: the radius ANDs with the geo hierarchy and the facets —
+        // the set-restriction composition (the facet set resolved the same
+        // way dispatchProperty resolves it, provider-restricted on the
+        // window path, then intersected).
+        if (criteria.hasPropertyCriteria()) {
+            Set<UUID> locationIds = criteria.locationId() != null
+                    ? geoLookupPort.findSelfAndDescendants(criteria.locationId())
+                    : null;
+            PropertyCriteria propertyCriteria = toPropertyCriteria(criteria, locationIds);
+            Set<UUID> facetIds = providerIds != null
+                    ? realestatePropertyFilterPort.findListingIdsMatchingRestricted(propertyCriteria, providerIds)
+                    : realestatePropertyFilterPort.findListingIdsMatching(propertyCriteria);
+            listingIds = listingIds.stream()
+                    .filter(facetIds::contains)
+                    .collect(Collectors.toSet());
+            if (listingIds.isEmpty()) {
+                return Page.empty(pageable); // honest empty page, no catalog query
+            }
+        }
+
+        if (textQuery) {
+            return catalogSearchPort.searchFullTextRestrictedToListings(
+                    query.trim(), listingIds, pageable);
+        }
+        return catalogSearchPort.searchByCriteriaRestrictedToListings(
+                criteria, listingIds, SearchSorts.normalize(pageable));
+    }
+
+    /**
+     * The distance-sorted flow ({@code sort=distance}, non-text): the
+     * searchAreaSorted composition adapted to the native radius ordering —
+     * the facet set (when facets ride along) resolves first through the
+     * port's Specification forms, the catalog's ACTIVE id set intersects
+     * it, and the realestate port pages through its own ST_Distance
+     * ordering restricted to that intersection; the summaries are fetched
+     * in that order and the page total is the radius flow's own (the
+     * counts cannot lie). The distance itself never leaves the port
+     * (D-P11) — the answer is listing ids in nearest-first order.
+     */
+    private Page<ListingSummary> searchDistanceSorted(SearchCriteria criteria,
+                                                      Set<UUID> providerIds, Pageable pageable) {
+        Set<UUID> facetIds = null;
+        if (criteria.hasPropertyCriteria()) {
+            Set<UUID> locationIds = criteria.locationId() != null
+                    ? geoLookupPort.findSelfAndDescendants(criteria.locationId())
+                    : null;
+            PropertyCriteria propertyCriteria = toPropertyCriteria(criteria, locationIds);
+            facetIds = providerIds != null
+                    ? realestatePropertyFilterPort.findListingIdsMatchingRestricted(propertyCriteria, providerIds)
+                    : realestatePropertyFilterPort.findListingIdsMatching(propertyCriteria);
+            if (facetIds.isEmpty()) {
+                return Page.empty(pageable); // honest empty page, no query
+            }
+        }
+        Set<UUID> activeIds = catalogSearchPort.findActiveListingIds();
+        Set<UUID> restrictTo = facetIds != null
+                ? activeIds.stream().filter(facetIds::contains).collect(Collectors.toSet())
+                : activeIds;
+        if (restrictTo.isEmpty()) {
+            return Page.empty(pageable); // honest empty page, no query
+        }
+
+        Page<UUID> matches = providerIds != null
+                ? realestatePropertyFilterPort.findWithinRadiusPagedRestricted(
+                        criteria.latitude(), criteria.longitude(), criteria.radiusMeters(),
+                        restrictTo, providerIds, pageable)
+                : realestatePropertyFilterPort.findWithinRadiusPaged(
+                        criteria.latitude(), criteria.longitude(), criteria.radiusMeters(),
+                        restrictTo, pageable);
+
+        if (matches.isEmpty()) {
+            return new PageImpl<>(List.of(), pageable, matches.getTotalElements());
+        }
+        List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(matches.getContent());
+        // order already preserved by findSummariesByIds; total from the
+        // radius flow's side (the restriction that defines the page)
         return new PageImpl<>(summaries, pageable, matches.getTotalElements());
     }
 

@@ -35,7 +35,7 @@ class SearchControllerTest {
         Page<ListingSummary> page = new PageImpl<>(List.of());
         when(searchService.search(any(SearchCriteria.class), eq(pageable))).thenReturn(page);
 
-        ResponseEntity<PagedResponse<ListingSummary>> result = controller.searchWithCriteria(null, null, null, null, null, null, null, null, null, null, null, null, null, pageable);
+        ResponseEntity<PagedResponse<ListingSummary>> result = controller.searchWithCriteria(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, pageable);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
@@ -47,7 +47,7 @@ class SearchControllerTest {
         java.time.Instant checkIn = java.time.Instant.parse("2026-10-05T10:00:00Z");
         java.time.Instant checkOut = java.time.Instant.parse("2026-10-08T10:00:00Z");
 
-        controller.searchWithCriteria(null, null, null, null, checkIn, checkOut, null, null, null, null, null, null, null, pageable);
+        controller.searchWithCriteria(null, null, null, null, checkIn, checkOut, null, null, null, null, null, null, null, null, null, null, pageable);
 
         org.mockito.ArgumentCaptor<SearchCriteria> captor = org.mockito.ArgumentCaptor.forClass(SearchCriteria.class);
         verify(searchService).search(captor.capture(), eq(pageable));
@@ -61,7 +61,7 @@ class SearchControllerTest {
         PageRequest pageable = PageRequest.of(0, 10);
         when(searchService.search(any(SearchCriteria.class), eq(pageable))).thenReturn(new PageImpl<>(List.of()));
 
-        controller.searchWithCriteria(null, null, null, null, null, null, 4, null, null, null, null, null, null, pageable);
+        controller.searchWithCriteria(null, null, null, null, null, null, 4, null, null, null, null, null, null, null, null, null, pageable);
 
         org.mockito.ArgumentCaptor<SearchCriteria> captor = org.mockito.ArgumentCaptor.forClass(SearchCriteria.class);
         verify(searchService).search(captor.capture(), eq(pageable));

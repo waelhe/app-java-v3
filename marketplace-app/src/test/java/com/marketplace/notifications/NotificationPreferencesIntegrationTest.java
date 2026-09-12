@@ -76,7 +76,8 @@ class NotificationPreferencesIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches AuditedWritesIntegrationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @MockitoBean

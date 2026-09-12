@@ -41,11 +41,20 @@ import java.lang.reflect.Method;
  * {@code search-results-v3} — see SearchService — the deploy-time eviction
  * of the schema extension; both mechanisms are the documented D-E6
  * decision.)
+ *
+ * <p>P1 (postgis integration plan §D-P12): the radius triple rides as
+ * first-class segments — the two coordinates (already scale-6 NORMALIZED
+ * at construction, so equivalent centers share one entry) and the radius
+ * as WHOLE METERS (the criteria's meter-granularity gate makes the value
+ * exact — two radii equal in meters share one entry whatever their km
+ * spelling). The PREFIX bumps {@code l32v1 → l34v1} and the cache NAME
+ * bumps {@code search-results-v3 → v4} — the schema extension's disjoint
+ * spaces, the same one-time cold cycle bounded by the 1h TTL.
  */
 @Component("searchCriteriaKeyGenerator")
 public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
 
-    private static final String PREFIX = "l32v1";
+    private static final String PREFIX = "l34v1";
 
     @Override
     public Object generate(Object target, Method method, Object... params) {
@@ -71,6 +80,14 @@ public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
         append(key, criteria.minRooms());
         append(key, criteria.minBathrooms());
         append(key, criteria.minAreaM2());
+        // P1: the radius triple — canonical segments (the coordinates are
+        // scale-6 normalized at construction; the radius rides as whole
+        // meters — the exact ST_DWithin argument)
+        append(key, criteria.latitude());
+        append(key, criteria.longitude());
+        append(key, criteria.radiusKm() == null
+                ? null
+                : criteria.radiusKm().movePointRight(3).longValueExact());
         append(key, pageable.getPageNumber());
         append(key, pageable.getPageSize());
         append(key, pageable.getSort());

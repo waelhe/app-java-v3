@@ -10,6 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -65,6 +66,68 @@ public class PropertyFilterAdapter implements RealestatePropertyFilterPort {
         return repository
                 .findAll(toSpecification(criteria, providerIds, activeListingIds, true), areaOrdered(pageable))
                 .map(details -> new PropertyMatch(details.getListingId(), details.getAreaM2()));
+    }
+
+    // ------------------------------------------------------------------
+    // P1 (postgis integration plan §D-P3): the radius operations. The set
+    // forms delegate to the native ST_DWithin queries; the paged forms
+    // page through the native distance ordering restricted to the
+    // catalog-resolved ACTIVE set (the searchAreaSorted composition — each
+    // module owns its schema, the search owns the composition). The
+    // distance never leaves this module: the paged answers carry listing
+    // ids only (D-P11 — the client computes the display distance from the
+    // listing coordinates it already holds).
+    // ------------------------------------------------------------------
+
+    @Override
+    public Set<UUID> findListingIdsWithinRadius(BigDecimal latitude, BigDecimal longitude,
+                                                long radiusMeters) {
+        return repository.findListingIdsWithinRadius(latitude, longitude, radiusMeters);
+    }
+
+    @Override
+    public Set<UUID> findListingIdsWithinRadiusRestricted(BigDecimal latitude, BigDecimal longitude,
+                                                          long radiusMeters, Set<UUID> providerIds) {
+        return repository.findListingIdsWithinRadiusRestricted(latitude, longitude, radiusMeters, providerIds);
+    }
+
+    @Override
+    public Page<UUID> findWithinRadiusPaged(BigDecimal latitude, BigDecimal longitude, long radiusMeters,
+                                            Set<UUID> activeListingIds, Pageable pageable) {
+        if (activeListingIds.isEmpty()) {
+            // The Specification path's disjunction analog: an empty ACTIVE
+            // set is an honest empty page — never a native IN () (invalid
+            // SQL, not a semantics question).
+            return Page.empty(pageable);
+        }
+        return repository
+                .findWithinRadiusPaged(latitude, longitude, radiusMeters, activeListingIds, distancePaged(pageable))
+                .map(PropertyDetails::getListingId);
+    }
+
+    @Override
+    public Page<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude, BigDecimal longitude,
+                                                      long radiusMeters, Set<UUID> activeListingIds,
+                                                      Set<UUID> providerIds, Pageable pageable) {
+        if (activeListingIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return repository
+                .findWithinRadiusPagedRestricted(latitude, longitude, radiusMeters,
+                        activeListingIds, providerIds, distancePaged(pageable))
+                .map(PropertyDetails::getListingId);
+    }
+
+    /**
+     * The distance flow's page: the ORDER BY is baked in the native query
+     * (ST_Distance ASC, listing_id ASC — nearest first with the
+     * deterministic tiebreak), so the pageable arrives for LIMIT/OFFSET
+     * only and the {@code distance} marker sort is consumed here — the
+     * {@link #areaOrdered(Pageable)} analog: the entity-side remapping
+     * that keeps the native query's baked order intact.
+     */
+    private static Pageable distancePaged(Pageable pageable) {
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
     /** The optional-predicate Specification over property_details. */

@@ -38,11 +38,19 @@ public class SearchController {
                     + " L32: the real-estate facets — location (a geo node: the searched node "
                     + "and all its descendants), purpose (RENT/SALE), propertyType, minRooms, "
                     + "minBathrooms, minAreaM2 — resolve through the realestate filter port; "
-                    + "invalid values are rejected before any query. Sorting: price/newest "
+                    + "invalid values are rejected before any query."
+                    + " P1 (PostGIS): the radius triple — lat/lng/radiusKm (all three together "
+                    + "or none; the radius ceiling is 50 km; whole-meter precision) — matches "
+                    + "listings with declared coordinates within the radius (ST_DWithin), "
+                    + "composing WITH the geo hierarchy and the facets; listings without "
+                    + "coordinates never match. "
+                    + "Sorting: price/newest "
                     + "apply to filter searches, area orders by the declared square meters "
                     + "(listings with an undeclared area are excluded from the area view); "
                     + "text searches always rank by relevance — the sort whitelist is ignored "
-                    + "for them. Unsupported sort properties answer 400.")
+                    + "for them. sort=distance (nearest-first, requires the radius triple) "
+                    + "orders by the server-side ST_Distance. Unsupported sort properties "
+                    + "answer 400.")
     public ResponseEntity<PagedResponse<ListingSummary>> searchWithCriteria(
             @Parameter(description = "Free-text query (websearch syntax: quoted phrases, OR, -exclusions)",
                     example = "\"sea view\" jeddah")
@@ -87,10 +95,25 @@ public class SearchController {
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer minBathrooms,
             @Parameter(description = "Minimum area in square meters (positive)", example = "80")
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer minAreaM2,
+            // P1 (postgis integration plan): the radius triple — all
+            // optional, all type-gated by the SearchCriteria record (the
+            // stay window's group discipline: a partial presence is a 400
+            // at construction, before any query; the ranges mirror V48;
+            // the radius ceiling is the plan's calibration). The radius
+            // composes WITH the geo hierarchy and the facets (AND).
+            @Parameter(description = "Radius search center latitude (within [-90, 90]) — must be "
+                    + "paired with lng and radiusKm", example = "33.558889")
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.math.BigDecimal lat,
+            @Parameter(description = "Radius search center longitude (within [-180, 180]) — must be "
+                    + "paired with lat and radiusKm", example = "36.056944")
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.math.BigDecimal lng,
+            @Parameter(description = "Search radius in kilometers, (0, 50], whole-meter precision — "
+                    + "must be paired with lat and lng", example = "10")
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.math.BigDecimal radiusKm,
             Pageable pageable) {
         SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice,
                 checkIn, checkOut, guests, locationId, purpose, propertyType,
-                minRooms, minBathrooms, minAreaM2);
+                minRooms, minBathrooms, minAreaM2, lat, lng, radiusKm);
         // L32: the sort whitelist is normalized HERE (before the cache key —
         // the effective sort rides the key) — unsupported properties are 400.
         Pageable effective = SearchSorts.normalize(pageable);
