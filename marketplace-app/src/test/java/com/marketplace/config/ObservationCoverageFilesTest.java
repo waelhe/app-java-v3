@@ -121,6 +121,7 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-provider", List.of(
                     "provider.create", "provider.rating.stats", "provider.suspend",
                     "provider.update", "provider.verify")),
+            Map.entry("marketplace-realestate", List.of("realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
                     "review.create", "review.create.reverse", "review.reply", "review.update")),
             Map.entry("marketplace-platform-infra", List.of("email.send")));
