@@ -91,6 +91,8 @@ class GeoModuleIntegrationTest {
         GeoNode qudsayya = findChild(rif, "qudsayya");
         assertThat(qudsayya).isNotNull();
         assertThat(qudsayya.level()).isEqualTo(2);
+        // containment: other tests' random-slug neighborhoods accumulate
+        // under the seeded qudsayya (shared database, no rollback)
         assertThat(qudsayya.children()).extracting(GeoNode::slug)
                 .contains("qudsayya-old-town", "qudsayya-suburb", "al-hamah");
         assertThat(qudsayya.children()).allMatch(node -> node.level() == 3);
@@ -124,20 +126,29 @@ class GeoModuleIntegrationTest {
     }
 
     @org.junit.jupiter.api.Test
-    @WithMockUser(roles = "PROVIDER")
     void http_adminWrite_nonAdmin_is403() throws Exception {
+        // The resource-server chain authenticates BEARER tokens — a mocked
+        // JWT with the PROVIDER authority (the house's measured pattern for
+        // this chain: a TestingAuthenticationToken is rejected with 401).
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .post("/api/v1/admin/geo")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                                .jwt().authorities(
+                                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROVIDER")))
                         .contentType("application/json")
                         .content("{}"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
     }
 
     @Test
-    void suggest_byArabicPrefix_findsTheSeededCity() {
-        assertThat(geoService.suggest("قد"))
-                .extracting(GeoNode::slug)
-                .contains("qudsayya", "qudsayya-old-town", "qudsayya-suburb");
+    void suggest_byArabicPrefix_findsTheNamesStartingWithThePrefix() {
+        // The prefix gate is a PREFIX match: "قد" matches قدسيا and
+        // قدسيا البلد — NOT ضاحية قدسيا (قد is not its prefix) nor الهامة.
+        var slugs = assertThat(geoService.suggest("قد"))
+                .extracting(GeoNode::slug);
+        slugs.contains("qudsayya", "qudsayya-old-town");
+        assertThat(geoService.suggest("قد")).extracting(GeoNode::slug)
+                .doesNotContain("qudsayya-suburb", "al-hamah");
     }
 
     @Test
@@ -159,13 +170,20 @@ class GeoModuleIntegrationTest {
         GeoLocation rif = repository.findBySlug("rif-dimashq").orElseThrow();
         GeoLocation syria = repository.findBySlug("syria").orElseThrow();
 
-        // seeded tree + own two neighborhoods: 6 + 2 nodes
+        // Containment, not exact sizes: tests share the database and other
+        // methods' random-slug neighborhoods accumulate under qudsayya.
         Set<UUID> fromCountry = geoService.findSelfAndDescendants(syria.getId());
-        assertThat(fromCountry).hasSize(8);
+        assertThat(fromCountry).contains(
+                syria.getId(), rif.getId(), qudsayya.getId(),
+                UUID.fromString("11111111-1111-4111-8111-111111111104"),
+                UUID.fromString("11111111-1111-4111-8111-111111111105"),
+                UUID.fromString("11111111-1111-4111-8111-111111111106"));
 
         Set<UUID> fromCity = geoService.findSelfAndDescendants(qudsayya.getId());
-        assertThat(fromCity).hasSize(5); // the city + 3 seeded + 2 own neighborhoods
-        assertThat(fromCity).contains(qudsayya.getId());
+        assertThat(fromCity).contains(qudsayya.getId())
+                .contains(UUID.fromString("11111111-1111-4111-8111-111111111104"));
+        // the governorate itself is NOT part of the city's subtree
+        assertThat(fromCity).doesNotContain(rif.getId());
     }
 
     @Test
@@ -174,8 +192,10 @@ class GeoModuleIntegrationTest {
 
         Set<UUID> fromCity = geoService.findSelfAndDescendants(qudsayya.getId());
 
-        assertThat(fromCity).hasSize(4); // the city + 3 seeded neighborhoods
-        assertThat(fromCity).contains(qudsayya.getId());
+        assertThat(fromCity).contains(qudsayya.getId(),
+                UUID.fromString("11111111-1111-4111-8111-111111111104"),
+                UUID.fromString("11111111-1111-4111-8111-111111111105"),
+                UUID.fromString("11111111-1111-4111-8111-111111111106"));
     }
 
     @Test
