@@ -234,12 +234,21 @@ class GeoModuleIntegrationTest {
     @WithMockUser(roles = "ADMIN")
     void delete_childless_softDeletes() {
         GeoLocation city = seedOwnNeighborhoods();
-        GeoLocation neighborhood = repository
-                .findByParentIdOrderBySlugAsc(city.getId()).get(0);
+        // The deletion target is the test's OWN child, never a seed row: the
+        // class contract is "every test seeds its own random-slug subtree"
+        // on the shared database (no rollback, random method order). The
+        // slug-ordered first child is the SEEDED al-hamah — soft-deleting it
+        // corrupts the shared state and breaks whichever seed-chain assertion
+        // runs later (measured: findSelfAndDescendants_seededCity missing
+        // 111…1106, CI job 103579365330, 2026-09-12). The own-child pattern
+        // is the one deletedSlug_isReusable already uses.
+        String salt = UUID.randomUUID().toString().substring(0, 8);
+        GeoLocation own = repository.save(GeoLocation.createChild(
+                city, "حي قابل للحذف", null, "del-" + salt));
 
-        geoService.delete(neighborhood.getId());
+        geoService.delete(own.getId());
 
-        assertThat(repository.findById(neighborhood.getId())).isEmpty();
+        assertThat(repository.findById(own.getId())).isEmpty();
     }
 
     @Test
