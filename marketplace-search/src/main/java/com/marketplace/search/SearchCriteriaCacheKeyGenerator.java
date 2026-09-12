@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 
 /**
  * L27 (feature-expansion roadmap §5): the dedicated cache key generator for
- * the criteria path of {@code search-results-v2} (the reviewer's Major
+ * the criteria path of {@code search-results-v3} (the reviewer's Major
  * finding, PR #256 round 1): the record's {@code toString()} concatenates
  * component values without escaping, so two DIFFERENT criteria can produce
  * the SAME string — e.g. {@code query="foo, category=bar"} +
@@ -22,7 +22,7 @@ import java.lang.reflect.Method;
  * separator). The authoritative length makes forged component boundaries
  * impossible — two distinct component tuples cannot produce the same key,
  * whatever the user types. The window components (checkIn/checkOut) are
- * first-class segments, which is the roadmap's "extend the search-results-v2
+ * first-class segments, which is the roadmap's "extend the search-results-v3
  * key with the window".
  *
  * <p>I6 (internal free plan §6): the guests criterion rides as a first-class
@@ -31,11 +31,21 @@ import java.lang.reflect.Method;
  * itself gained a component: l27v1 keys (9 segments) and l27v2 keys (10
  * segments) are disjoint by prefix, so no pre-change entry can be read as a
  * post-change hit — the one-time cold cycle is bounded by the 1h TTL.
+ *
+ * <p>L32 (realestate systems plan §5): the six real-estate facet criteria
+ * ride as first-class segments (locationId, purpose, propertyType,
+ * minRooms, minBathrooms, minAreaM2) and the PREFIX bumps
+ * {@code l27v2 → l32v1} for the same reason — the key schema gained
+ * components, so the spaces are disjoint by prefix and no pre-L32 entry
+ * can be read as an L32 hit. (The cache NAME also bumps to
+ * {@code search-results-v3} — see SearchService — the deploy-time eviction
+ * of the schema extension; both mechanisms are the documented D-E6
+ * decision.)
  */
 @Component("searchCriteriaKeyGenerator")
 public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
 
-    private static final String PREFIX = "l27v2";
+    private static final String PREFIX = "l32v1";
 
     @Override
     public Object generate(Object target, Method method, Object... params) {
@@ -54,6 +64,13 @@ public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
         append(key, criteria.checkIn());
         append(key, criteria.checkOut());
         append(key, criteria.guests());
+        // L32: the six real-estate facets — first-class segments
+        append(key, criteria.locationId());
+        append(key, criteria.purpose());
+        append(key, criteria.propertyType());
+        append(key, criteria.minRooms());
+        append(key, criteria.minBathrooms());
+        append(key, criteria.minAreaM2());
         append(key, pageable.getPageNumber());
         append(key, pageable.getPageSize());
         append(key, pageable.getSort());

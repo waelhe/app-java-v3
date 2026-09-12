@@ -1,6 +1,7 @@
 package com.marketplace.realestate;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PropertyDetailsPort;
@@ -9,6 +10,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import io.micrometer.observation.annotation.Observed;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -43,25 +45,37 @@ import java.util.stream.Collectors;
 @Transactional
 public class RealestateService implements PropertyDetailsPort {
 
+    /**
+     * A property write changes the faceted-search matching set — the cached
+     * {@code search-results-v3} pages must evict through the existing
+     * AFTER_COMMIT relay (the same freshness contract every catalog write
+     * already carries; L32's facet results are as stale-prone as price).
+     */
+    public static final java.util.Set<String> REALESTATE_CACHE_NAMES =
+            java.util.Set.of("search-results-v3");
+
     private final PropertyDetailsRepository repository;
     private final ListingPriceProvider listingPriceProvider;
     private final CatalogSpi catalogSpi;
     private final GeoLookupPort geoLookupPort;
     private final ProviderLookupPort providerLookupPort;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public RealestateService(PropertyDetailsRepository repository,
                              ListingPriceProvider listingPriceProvider,
                              CatalogSpi catalogSpi,
                              GeoLookupPort geoLookupPort,
                              ProviderLookupPort providerLookupPort,
-                             CurrentUserProvider currentUserProvider) {
+                             CurrentUserProvider currentUserProvider,
+                             ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.listingPriceProvider = listingPriceProvider;
         this.catalogSpi = catalogSpi;
         this.geoLookupPort = geoLookupPort;
         this.providerLookupPort = providerLookupPort;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -83,6 +97,7 @@ public class RealestateService implements PropertyDetailsPort {
                 .orElseGet(() -> PropertyDetails.create(listingId, listing.providerId(), request));
         details.apply(request);
         PropertyDetails saved = repository.save(details);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(REALESTATE_CACHE_NAMES));
         return toView(saved);
     }
 

@@ -135,4 +135,45 @@ class SearchCriteriaTest {
 
         assertThat(criteria.guests()).isNull();
     }
+
+    // ---- L32: the real-estate facet gates -------------------------------
+
+    @Test
+    void facetNumericCriteria_zeroOrNegative_isRejectedBeforeAnyQuery() {
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
+                null, null, null, null, null, null, 0, null, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minRooms");
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
+                null, null, null, null, null, null, null, -1, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minBathrooms");
+        assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
+                null, null, null, null, null, null, null, null, -50))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minAreaM2");
+    }
+
+    @Test
+    void facetCriteria_positiveValues_constructCleanly() {
+        SearchCriteria criteria = new SearchCriteria(null, null, null, null,
+                null, null, null, java.util.UUID.randomUUID(),
+                com.marketplace.shared.api.PropertyPurpose.RENT,
+                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80);
+
+        assertThat(criteria.minRooms()).isEqualTo(2);
+        assertThat(criteria.minBathrooms()).isEqualTo(1);
+        assertThat(criteria.minAreaM2()).isEqualTo(80);
+        assertThat(criteria.hasPropertyCriteria()).isTrue();
+    }
+
+    @Test
+    void legacyForms_haveNoPropertyCriteria_andBehaviorIsUnchanged() {
+        assertThat(new SearchCriteria("q", "cat", null, null).hasPropertyCriteria()).isFalse();
+        assertThat(new SearchCriteria(null, null, null, null, null, null).hasPropertyCriteria()).isFalse();
+        assertThat(new SearchCriteria(null, null, null, null, null, null, null).hasPropertyCriteria()).isFalse();
+        // the canonical 13-arg form with all facets null is the legacy form too
+        assertThat(new SearchCriteria("q", "cat", null, null, null, null, null,
+                null, null, null, null, null, null).hasPropertyCriteria()).isFalse();
+    }
 }

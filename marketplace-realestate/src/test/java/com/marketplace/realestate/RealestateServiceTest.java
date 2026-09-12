@@ -12,8 +12,10 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
@@ -51,6 +53,8 @@ class RealestateServiceTest {
     @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
+    private ApplicationEventPublisher eventPublisher;
+    @Mock
     private Authentication authentication;
 
     private RealestateService service;
@@ -62,7 +66,7 @@ class RealestateServiceTest {
     @BeforeEach
     void setUp() {
         service = new RealestateService(repository, listingPriceProvider, catalogSpi,
-                geoLookupPort, providerLookupPort, currentUserProvider);
+                geoLookupPort, providerLookupPort, currentUserProvider, eventPublisher);
         lenient().when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 35000L, "SAR"));
         lenient().when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(currentUserId);
@@ -188,5 +192,19 @@ class RealestateServiceTest {
         var map = service.findByListingIds(java.util.Set.of(listingId, other));
 
         assertThat(map).containsKey(listingId).doesNotContainKey(other);
+    }
+
+    @Test
+    void upsert_publishesSearchCacheInvalidation_afterTheFacetSetChanged() {
+        when(repository.findByListingId(listingId)).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.upsert(listingId, request(), authentication);
+
+        ArgumentCaptor<com.marketplace.shared.api.CacheInvalidationRequested> captor =
+                ArgumentCaptor.forClass(com.marketplace.shared.api.CacheInvalidationRequested.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().cacheNames())
+                .containsExactlyInAnyOrderElementsOf(RealestateService.REALESTATE_CACHE_NAMES);
     }
 }

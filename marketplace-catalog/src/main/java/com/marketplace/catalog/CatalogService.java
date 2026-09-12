@@ -1,6 +1,8 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.ProviderListingSpecifications;
 import com.marketplace.catalog.spi.CatalogSpi;
+import org.springframework.data.jpa.domain.Specification;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.CacheInvalidationRequested;
@@ -10,6 +12,8 @@ import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.SearchCriteria;
 import com.marketplace.shared.api.BadRequestException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderLookupPort;
@@ -28,7 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.observation.annotation.Observed;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -109,8 +115,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
-        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
-        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Long minPrice = toMinorUnits(criteria.minPrice());
+        Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteria(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), pageable);
         return toSummaryPage(page);
@@ -124,14 +130,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
      * whitelist varies per request, and the search module's
-     * {@code search-results-v2} cache (criteria-keyed, window included) is
+     * {@code search-results-v3} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
      */
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
-        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
-        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Long minPrice = toMinorUnits(criteria.minPrice());
+        Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, pageable);
         return toSummaryPage(page);
@@ -198,6 +204,114 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents(), listing.getCurrency());
     }
 
+    /**
+     * L32: the criteria search restricted to the realestate module's
+     * matching-id set — the property-facet flow. Backed by the official
+     * Specifications (hasStatus + hasCategory + priceBetween + minGuests +
+     * hasListingIdIn), so it honors the Pageable sort (the price/newest
+     * whitelist mapped by the search surface) with the id tiebreak — and
+     * the UNSORTED default is {@code id ASC}, byte-identical to the native
+     * criteria path's ORDER BY id.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
+                                                                     Set<UUID> listingIds,
+                                                                     Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.findAll(
+                criteriaSpecification(criteria).and(
+                        ProviderListingSpecifications.hasListingIdIn(listingIds)),
+                deterministic(pageable));
+        return toSummaryPage(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.findAll(
+                criteriaSpecification(criteria), deterministic(pageable));
+        return toSummaryPage(page);
+    }
+
+    /** The shared optional-predicate specification of the faceted paths. */
+    private static Specification<ProviderListing> criteriaSpecification(SearchCriteria criteria) {
+        return ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)
+                .and(ProviderListingSpecifications.hasCategory(criteria.category()))
+                .and(ProviderListingSpecifications.priceBetween(
+                        toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice())))
+                .and(ProviderListingSpecifications.minGuests(criteria.guests()));
+    }
+
+    /**
+     * L32: the full-text search restricted to the given listing ids —
+     * official websearch_to_tsquery ranking + the pg_trgm typo-tolerance
+     * fallback, with the id restriction in both the content and count
+     * queries. Text searches rank by relevance (documented: the facet sort
+     * whitelist does not apply).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, pageable);
+        if (page.getTotalElements() == 0) {
+            page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, pageable);
+        }
+        return toSummaryPage(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> findActiveListingIds() {
+        return listingRepository.findIdsByStatus(ListingStatus.ACTIVE);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder) {
+        if (idsInOrder.isEmpty()) {
+            return List.of();
+        }
+        // resolve only ACTIVE listings (the area-flow ids are already
+        // active-restricted; this keeps the projection honest regardless)
+        Map<UUID, ProviderListing> byId = listingRepository.findAllById(idsInOrder).stream()
+                .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .collect(Collectors.toMap(ProviderListing::getId, listing -> listing));
+        // batch-resolve provider names (the toSummaryPage discipline)
+        Map<UUID, String> providerNames = providerNameResolver.resolveNames(
+                byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));
+        // restore the caller's order (the area-sorted page assembly)
+        return idsInOrder.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(listing -> new ListingSummary(
+                        listing.getId(),
+                        listing.getTitle(),
+                        listing.getCategory(),
+                        BigDecimal.valueOf(listing.getPriceCents(), 2),
+                        listing.getCurrency(),
+                        providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")))
+                .toList();
+    }
+
+    /**
+     * L32: the deterministic effective sort — the requested sort (the
+     * price/newest whitelist, already mapped by the search surface) with
+     * the id ASC tiebreak; unsorted requests default to id ASC
+     * (byte-identical to the native criteria path's ORDER BY id — offset
+     * pagination requires a total order, "no deceptive pages").
+     */
+    private static Pageable deterministic(Pageable pageable) {
+        Sort effective = pageable.getSort().isUnsorted()
+                ? Sort.by(Sort.Direction.ASC, "id")
+                : pageable.getSort().and(Sort.by(Sort.Direction.ASC, "id"));
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), effective);
+    }
+
+    /** The min/max price mapping shared by the criteria paths. */
+    private static Long toMinorUnits(BigDecimal price) {
+        return price != null ? price.movePointRight(2).longValue() : null;
+    }
+
     // Cache names are NAMESPACED BY SCHEMA VERSION (CodeRabbit #241): the four
     // ListingSummary caches hold JDK-serialized records — a record-component
     // change (currency was added by the B4 layer) lets a stale pre-change entry
@@ -207,8 +321,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // itself (old entries become unreachable and expire via the 1h TTL). Any
     // future change to ListingSummary MUST bump this suffix — pinned by
     // ListingSummaryCacheContractFilesTest.
+    // L32: search-results bumps to -v3 with the criteria schema extension
+    // (the plan's D-E6 decision — the criteria record gained six components;
+    // the key generator's prefix bump keeps the key spaces disjoint AND the
+    // name bump evicts at deploy time through the deploy itself).
     private static final Set<String> CATALOG_CACHE_NAMES =
-            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v2");
+            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v3");
 
     /**
      * Creates a listing for the caller-owned provider profile. The

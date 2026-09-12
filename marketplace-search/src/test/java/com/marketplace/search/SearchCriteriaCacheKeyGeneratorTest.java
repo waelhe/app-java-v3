@@ -135,8 +135,28 @@ class SearchCriteriaCacheKeyGeneratorTest {
         assertThat(key(noGuests, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(oneGuest, PageRequest.of(0, 10)));
 
-        // The prefix bump (l27v1 → l27v2) means no pre-I6 entry can be read:
+        // The prefix bump (l27v2 → l32v1) means no pre-L32 entry can be read:
         // the new schema carries the guests segment, old keys do not.
-        assertThat(key(noGuests, PageRequest.of(0, 10)).toString()).startsWith("l27v2|");
+        assertThat(key(noGuests, PageRequest.of(0, 10)).toString()).startsWith("l32v1|");
+    }
+
+    // ---- L32: the six real-estate facets ride as first-class segments ----
+
+    @Test
+    void propertyFacets_neverShareEntriesWithFacetlessCriteria() {
+        SearchCriteria faceted = new SearchCriteria(null, null, null, null, null, null, null,
+                java.util.UUID.randomUUID(),
+                com.marketplace.shared.api.PropertyPurpose.RENT,
+                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80);
+        SearchCriteria facetless = new SearchCriteria(null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
+
+        assertThat(key(faceted, PageRequest.of(0, 10)))
+                .isNotEqualTo(key(facetless, PageRequest.of(0, 10)));
+        // differing in a single facet only — still disjoint
+        SearchCriteria otherRooms = new SearchCriteria(null, null, null, null, null, null, null,
+                faceted.locationId(), faceted.purpose(), faceted.propertyType(), 3, 1, 80);
+        assertThat(key(faceted, PageRequest.of(0, 10)))
+                .isNotEqualTo(key(otherRooms, PageRequest.of(0, 10)));
     }
 }
