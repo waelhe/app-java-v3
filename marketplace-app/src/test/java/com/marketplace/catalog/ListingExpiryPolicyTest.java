@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,6 +91,40 @@ class ListingExpiryPolicyTest {
         service.activate(draft.getId(), explicit, authentication);
 
         assertThat(draft.getExpiresAt()).isEqualTo(explicit);
+    }
+
+    @Test
+    void activate_withPastOrCurrentExplicitDate_is400() {
+        // CodeRabbit PR #299 round 1: a past or current expiry would make
+        // the listing publicly ACTIVE until the next job tick — the
+        // boundary is strictly future (the same rule renewal enforces).
+        ProviderListing draft = draftListing();
+
+        assertThatThrownBy(() -> service.activate(draft.getId(), NOW.minusSeconds(60), authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("future");
+        assertThatThrownBy(() -> service.activate(draft.getId(), NOW, authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("future");
+        // and nothing changed — the draft is untouched
+        assertThat(draft.getStatus()).isEqualTo(ListingStatus.DRAFT);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void activate_onTheExpiredPause_is409_theRenewalPathOwnsIt() {
+        // CodeRabbit PR #299 round 1: activating an EXPIRED pause would
+        // bypass the renewal cooldown and renewedAt tracking — renew owns
+        // that transition.
+        ProviderListing expired = draftListing();
+        expired.activate(NOW.minusSeconds(90 * 24 * 3600L));
+        expired.pauseForExpiry();
+
+        assertThatThrownBy(() -> service.activate(expired.getId(), NOW.plusSeconds(3600), authentication))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("renewal path");
+        assertThat(expired.getStatus()).isEqualTo(ListingStatus.PAUSED);
+        assertThat(expired.getPausedReason()).isEqualTo("EXPIRED");
     }
 
     @Test

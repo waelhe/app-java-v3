@@ -335,17 +335,21 @@ class SearchServiceTest {
 
     @Test
     void areaSort_withTextQuery_ranksByRelevanceInstead() {
-        when(filterPort.findListingIdsMatching(any())).thenReturn(java.util.Set.of(UUID.randomUUID()));
-        when(port.searchFullTextRestrictedToListings(anyString(), any(), any())).thenReturn(emptyPage());
+        when(port.searchFullText(anyString(), any())).thenReturn(emptyPage());
 
+        // CodeRabbit PR #299 round 1: the area marker selects the property
+        // flow ONLY for blank queries — a text query rides the LEGACY text
+        // path unrestrained (listings without property details stay
+        // eligible; the documented "text searches ignore the sort").
         service.search(
                 new SearchCriteria("loft", null, null, null, null, null, null,
                         null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
 
-        // text wins over the area sort (documented at the surface)
-        verify(port).searchFullTextRestrictedToListings(eq("loft"), any(), any());
+        verify(port).searchFullText(eq("loft"), any());
+        verify(port, never()).searchFullTextRestrictedToListings(anyString(), any(), any());
         verify(port, never()).findActiveListingIds();
+        verify(filterPort, never()).findListingIdsMatching(any());
         verify(filterPort, never()).findMatchingPaged(any(), any(), any());
     }
 
@@ -353,12 +357,17 @@ class SearchServiceTest {
     void priceSort_onPlainFilterSearch_ridesTheFacetedPath_withIdTiebreak() {
         when(port.searchByCriteriaFaceted(any(), any())).thenReturn(emptyPage());
 
+        // CodeRabbit PR #299 round 1 (normalize ONCE): the service consumes
+        // the controller-normalized representation — the mapped name
+        // (priceCents) is what arrives; the tiebreak is appended by the
+        // same normalization.
         service.search(
                 new SearchCriteria(null, "realestate", null, null, null, null, null,
                         null, null, null, null, null, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "price")));
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
 
-        // price -> priceCents + id ASC tiebreak rides the FACET call (no
+        // the normalized sort rides the FACET call unchanged (no
         // property criteria — no realestate round trip at all)
         verify(filterPort, never()).findListingIdsMatching(any());
         verify(port).searchByCriteriaFaceted(any(),
@@ -376,7 +385,8 @@ class SearchServiceTest {
         service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
                         null, PropertyPurpose.RENT, null, null, null, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "price")));
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
 
         verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(matched)),
                 argThat((org.springframework.data.domain.Pageable pageable) ->

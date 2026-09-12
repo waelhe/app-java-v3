@@ -216,6 +216,14 @@ class PropertyModuleIntegrationTest {
         asOwner();
 
         realestateService.upsert(listing.getId(), request(), providerAuthentication);
+        // CodeRabbit PR #299 round 1: the test class AND the service are both
+        // @Transactional, so both upserts joined ONE transaction and Envers
+        // assigned both changes to ONE revision — the +1 assertion failed.
+        // The first upsert is COMMITTED here (its own revision); the second
+        // runs in the test's new transaction (its own revision).
+        org.springframework.test.context.transaction.TestTransaction.flagForCommit();
+        org.springframework.test.context.transaction.TestTransaction.end();
+        org.springframework.test.context.transaction.TestTransaction.start();
         PropertyDetails stored = propertyRepository.findByListingId(listing.getId()).orElseThrow();
         var revisions = propertyRepository.findRevisions(stored.getId(),
                 org.springframework.data.domain.Pageable.unpaged());
@@ -233,11 +241,15 @@ class PropertyModuleIntegrationTest {
     @Test
     @WithMockUser(roles = "PROVIDER")
     void uniqueListingIdConstraint_twoBlocksForOneListingAreImpossible() {
+        // CodeRabbit PR #299 round 1: the FIRST row must be persisted before
+        // a duplicate exists — the previous shape expected the very first
+        // save to violate the UNIQUE constraint, but the listing started
+        // with no property row, so the first insert succeeds and the
+        // assertion failed before ever creating a duplicate.
         ProviderListing listing = activeListing();
+        propertyRepository.saveAndFlush(
+                PropertyDetails.create(listing.getId(), PROVIDER_USER_ID, request()));
 
-        assertThatThrownBy(() -> propertyRepository.saveAndFlush(
-                PropertyDetails.create(listing.getId(), PROVIDER_USER_ID, request())))
-                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThatThrownBy(() -> propertyRepository.saveAndFlush(
                 PropertyDetails.create(listing.getId(), PROVIDER_USER_ID, request())))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);

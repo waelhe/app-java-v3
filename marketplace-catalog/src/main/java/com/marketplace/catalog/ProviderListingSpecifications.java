@@ -21,8 +21,17 @@ public final class ProviderListingSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    /**
+     * The optional category predicate — null is ABSENT (the official
+     * Specifications model, the same contract priceBetween and minGuests
+     * implement; CodeRabbit PR #299 round 1: {@code cb.equal} with a null
+     * argument is not portable — a provider may translate it into a null
+     * comparison that matches nothing for a non-null column).
+     */
     public static Specification<ProviderListing> hasCategory(String category) {
-        return (root, query, cb) -> cb.equal(root.get("category"), category);
+        return (root, query, cb) -> category == null
+                ? cb.conjunction()
+                : cb.equal(root.get("category"), category);
     }
 
     public static Specification<ProviderListing> priceBetween(Long min, Long max) {

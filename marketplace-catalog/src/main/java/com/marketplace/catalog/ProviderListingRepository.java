@@ -17,6 +17,14 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
 
     Page<ProviderListing> findByProviderId(UUID providerId, Pageable pageable);
 
+    /**
+     * The public provider-profile surface's page — ACTIVE listings only
+     * (the documented contract of {@code GET /api/v1/catalog/provider/{id}}
+     * and the guard for the L31 property embed; CodeRabbit PR #299 round 1).
+     */
+    Page<ProviderListing> findByProviderIdAndStatus(UUID providerId, ListingStatus status,
+                                                    Pageable pageable);
+
     Page<ProviderListing> findByCategoryAndStatus(String category, ListingStatus status, Pageable pageable);
 
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);

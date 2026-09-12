@@ -88,7 +88,12 @@ public class SearchService {
     // cycle is bounded by the 1h TTL).
     @Cacheable(cacheNames = "search-results-v3", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> search(String query, String category, Pageable pageable) {
-        return search(new SearchCriteria(query, category, null, null), pageable);
+        // CodeRabbit PR #299 round 1 (normalize ONCE): this legacy entry has
+        // no production caller, but its contract is the same as the
+        // controller's — the pageable is normalized at the service boundary
+        // so every downstream branch consumes one representation.
+        return search(new SearchCriteria(query, category, null, null),
+                SearchSorts.normalize(pageable));
     }
 
     /**
@@ -108,8 +113,22 @@ public class SearchService {
      */
     @Cacheable(cacheNames = "search-results-v3", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
+        // CodeRabbit PR #299 round 1 (two findings, one root):
+        // (a) the property flow was selected for an IGNORED text-search
+        //     sort — a text query with sort=area restricted the full-text
+        //     search to property-bearing listings although the documented
+        //     behavior is "text searches ignore the sort": the area marker
+        //     selects the property flow ONLY for blank queries; property
+        //     CRITERIA keep selecting it for text searches (their set
+        //     restriction is real filtering, not sorting);
+        // (b) the controller is the SINGLE normalization point — the
+        //     pageable arrives MAPPED (priceCents/createdAt + the id
+        //     tiebreak), so the branch checks and every downstream call
+        //     consume that one representation (a second normalize() call
+        //     would reject the already-mapped names — 400).
+        boolean textQuery = criteria.query() != null && !criteria.query().isBlank();
         boolean propertyFlow = criteria.hasPropertyCriteria()
-                || SearchSorts.isAreaSorted(pageable);
+                || (SearchSorts.isAreaSorted(pageable) && !textQuery);
         if (propertyFlow) {
             return dispatchProperty(criteria, pageable);
         }
@@ -121,8 +140,8 @@ public class SearchService {
             // the L27 restricted path (documented scope boundary).
             String query = criteria.query();
             if (query == null || query.isBlank()) {
-                return catalogSearchPort.searchByCriteriaFaceted(
-                        criteria, SearchSorts.normalize(pageable));
+                // already normalized at the controller — consumed as-is
+                return catalogSearchPort.searchByCriteriaFaceted(criteria, pageable);
             }
             // text queries rank by relevance — the sort is ignored (documented)
         }
@@ -130,11 +149,15 @@ public class SearchService {
         return dispatchLegacy(criteria, pageable);
     }
 
-    /** Whether the (raw) sort requests a mapped property (price/newest). */
+    /**
+     * Whether the (controller-normalized) sort requests a mapped property —
+     * the MAPPED names (priceCents/createdAt), the representation the
+     * controller's single normalize() delivers.
+     */
     private static boolean hasMappedSort(Pageable pageable) {
         return pageable.getSort().stream()
-                .anyMatch(order -> "price".equals(order.getProperty())
-                        || "newest".equals(order.getProperty()));
+                .anyMatch(order -> "priceCents".equals(order.getProperty())
+                        || "createdAt".equals(order.getProperty()));
     }
 
     /** The pre-L32 dispatch — verbatim. */
@@ -185,7 +208,7 @@ public class SearchService {
                     query.trim(), listingIds, pageable);
         }
         return catalogSearchPort.searchByCriteriaRestrictedToListings(
-                criteria, listingIds, SearchSorts.normalize(pageable));
+                criteria, listingIds, pageable);
     }
 
     /**

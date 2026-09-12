@@ -149,10 +149,18 @@ class ResilienceAnnotationTest {
             // — the guard follows the live contract, exactly as it did for the
             // B4 currency-era signature changes. I6: it gained the guests param
             // — same rule: the guard tracks the live controller surface.
+            // L32: the signature gained the real-estate facet params
+            // (locationId/purpose/propertyType/minRooms/minBathrooms/
+            // minAreaM2) — the guard follows the live contract (the same
+            // rule as the B4/I6/L27 signature changes before it).
             Method method = SearchController.class.getMethod("searchWithCriteria",
                     String.class, String.class, java.math.BigDecimal.class, java.math.BigDecimal.class,
                     java.time.Instant.class, java.time.Instant.class,
                     Integer.class,
+                    java.util.UUID.class,
+                    com.marketplace.shared.api.PropertyPurpose.class,
+                    com.marketplace.shared.api.PropertyType.class,
+                    Integer.class, Integer.class, Integer.class,
                     org.springframework.data.domain.Pageable.class);
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);

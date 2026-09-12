@@ -34,10 +34,23 @@ final class SearchSorts {
      * (400 otherwise); mapped properties replace their API names; the id
      * tiebreak is appended. An unsorted pageable passes through unchanged
      * (the legacy byte-identical path — no synthetic sort in the key).
+     *
+     * <p>CodeRabbit PR #299 round 1: the {@code area} marker cannot COMBINE
+     * with another sort property — the property flow routes on the marker
+     * and owns the whole ordering, so a mixed request would silently apply
+     * only the area part. The boundary rejects it loudly instead.
      */
     static Pageable normalize(Pageable pageable) {
         if (pageable.getSort().isUnsorted()) {
             return pageable;
+        }
+        long areaOrders = pageable.getSort().stream()
+                .filter(order -> AREA.equals(order.getProperty()))
+                .count();
+        if (areaOrders > 0 && pageable.getSort().stream().count() > areaOrders) {
+            throw new BadRequestException(
+                    "sort=area cannot combine with other sort properties"
+                            + " (the property flow owns the whole ordering)");
         }
         List<Sort.Order> mapped = pageable.getSort().stream()
                 .map(SearchSorts::mapOrder)

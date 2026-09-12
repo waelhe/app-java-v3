@@ -92,7 +92,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Transactional(readOnly = true)
     public Page<ProviderListing> listByProvider(UUID providerId, Pageable pageable) {
-        return listingRepository.findByProviderId(providerId, pageable);
+        // CodeRabbit PR #299 round 1 (CWE-200): this is the PUBLIC provider
+        // profile surface ("Browse one provider's active listings") — the
+        // status filter is the documented contract, and it also guards the
+        // L31 property embed from ever carrying non-ACTIVE listings' data.
+        return listingRepository.findByProviderIdAndStatus(
+                providerId, ListingStatus.ACTIVE, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -430,9 +435,17 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                                     Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
+        java.time.Instant now = clock.instant();
         java.time.Instant resolved = expiresAt != null
                 ? expiresAt
-                : policyExpiry(clock.instant());
+                : policyExpiry(now);
+        // CodeRabbit PR #299 round 1: a past or current expiry would make
+        // the listing publicly ACTIVE until the next job tick — the
+        // boundary is strictly future (the same rule renewal enforces).
+        if (!resolved.isAfter(now)) {
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "expiresAt must be strictly in the future");
+        }
         listing.activate(resolved);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;

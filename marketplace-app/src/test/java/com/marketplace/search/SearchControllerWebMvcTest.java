@@ -164,4 +164,16 @@ class SearchControllerWebMvcTest {
         mockMvc.perform(get("/api/v1/search").param("sort", "newest,asc")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/search").param("sort", "area,desc")).andExpect(status().isOk());
     }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_mixedAreaAndCatalogSorts_is400() throws Exception {
+        // CodeRabbit PR #299 round 1: the area marker owns the WHOLE
+        // ordering in the property flow — a mixed request would silently
+        // drop the other part, so the boundary rejects it loudly.
+        mockMvc.perform(get("/api/v1/search")
+                        .param("sort", "area,asc")
+                        .param("sort", "price,desc"))
+                .andExpect(status().isBadRequest());
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
 }

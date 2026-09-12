@@ -206,6 +206,13 @@ public class ProviderListing extends BaseEntity {
             throw new ConflictException(
                     "Listing activation requires an expiry date (expiry policy is not configured)");
         }
+        // L33 + CodeRabbit PR #299 round 1: an EXPIRED pause renews through
+        // the renewal path alone — the cooldown and renewedAt tracking own
+        // that transition; activate here would bypass both.
+        if (this.status == ListingStatus.PAUSED && "EXPIRED".equals(this.pausedReason)) {
+            throw new ConflictException(
+                    "An expired listing renews through the renewal path (paused_reason=EXPIRED)");
+        }
         this.status.validateTransitionTo(ListingStatus.ACTIVE);
         this.status = ListingStatus.ACTIVE;
         this.expiresAt = expiresAt;
