@@ -218,7 +218,7 @@ class SearchPropertyFilterIntegrationTest {
     void priceSort_onThePropertyFlow_ridesTheFacetedPath() {
         Page<ListingSummary> page = searchService.search(
                 facets(QUDSAYYA, null, null, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "price")));
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")));
 
         assertThat(page.getContent()).extracting(ListingSummary::id)
                 .containsExactlyInAnyOrder(rentSmallQudsayya, saleBigSuburb);

@@ -32,6 +32,12 @@ class CatalogModuleIntegrationTest {
     @MockitoBean
     ProviderLookupPort providerLookupPort;
 
+    // L31: CatalogController embeds the property block through
+    // PropertyDetailsPort — the realestate module is outside this slice
+    // (the full-context integration tests cover the real adapter).
+    @MockitoBean
+    com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
+
     @Autowired
     private CatalogService catalogService;
 

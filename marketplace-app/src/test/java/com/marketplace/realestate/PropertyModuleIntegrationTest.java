@@ -5,7 +5,6 @@ import com.marketplace.catalog.ProviderListingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.marketplace.shared.api.BadRequestException;
-import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.PropertyPurpose;
@@ -97,9 +96,6 @@ class PropertyModuleIntegrationTest {
     }
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
-    private GeoLookupPort geoLookupPort;
-
-    @org.springframework.test.context.bean.override.mockito.MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     /** FK parent (V2: provider_listings.provider_id references users(id)). */
@@ -165,10 +161,12 @@ class PropertyModuleIntegrationTest {
     @Test
     @WithMockUser(roles = "PROVIDER")
     void upsert_unknownLocation_is404BeforeAnyWrite() {
+        // The REAL GeoService rides this full-context test (the previous
+        // @MockitoBean GeoLookupPort replaced the concrete geoService bean
+        // and broke GeoAdminController's dependency — the full context wires
+        // the real port, and the 404 contract is the real service's own).
         ProviderListing listing = activeListing();
         UUID unknown = UUID.randomUUID();
-        org.mockito.Mockito.when(geoLookupPort.getLocation(unknown))
-                .thenThrow(new ResourceNotFoundException("GeoLocation", unknown));
         asOwner();
 
         assertThatThrownBy(() -> realestateService.upsert(listing.getId(),

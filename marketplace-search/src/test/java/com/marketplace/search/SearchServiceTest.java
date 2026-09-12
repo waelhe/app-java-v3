@@ -402,7 +402,7 @@ class SearchServiceTest {
 
         service.search(
                 new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "price")));
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")));
 
         // documented scope boundary: windowed searches keep the L27
         // restricted path (id order); the sort is ignored

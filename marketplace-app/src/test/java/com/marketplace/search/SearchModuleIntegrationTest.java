@@ -40,6 +40,13 @@ class SearchModuleIntegrationTest {
     @MockitoBean
     AvailabilityLookupPort availabilityLookupPort;
 
+    // L32: the seam grew the geo port too (the location facet resolves
+    // through it) — mocked at the slice boundary exactly like the other
+    // two (the real adapter is the geo module, exercised by its own
+    // module test and the full-context integration tests).
+    @MockitoBean
+    com.marketplace.shared.api.GeoLookupPort geoLookupPort;
+
     @Autowired
     private SearchService searchService;
 

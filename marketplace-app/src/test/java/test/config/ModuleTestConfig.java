@@ -61,6 +61,19 @@ public class ModuleTestConfig {
         return Optional::empty;
     }
 
+    /**
+     * L33 (CodeRabbit PR #299 adoption, the never-run slice tests): the
+     * catalog module's lifecycle now depends on {@link Clock} — the
+     * production bean lives in platform-infra's ClockConfig, which the
+     * module slices do not scan. The slices get the system clock here
+     * (the full-context tests keep the production wiring).
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    java.time.Clock clock() {
+        return java.time.Clock.systemUTC();
+    }
+
     @Bean
     @Primary
     MarketplaceProperties marketplaceProperties() {
