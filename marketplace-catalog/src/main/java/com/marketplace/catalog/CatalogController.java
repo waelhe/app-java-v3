@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.IsoCurrencyCode;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -19,7 +20,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping(value = ApiConstants.CATALOG, version = "1.0")
@@ -28,11 +31,16 @@ public class CatalogController {
     private final CatalogService catalogService;
     private final CurrentUserProvider currentUserProvider;
     private final ListingMapper listingMapper;
+    private final PropertyDetailsPort propertyDetailsPort;
 
-    public CatalogController(CatalogService catalogService, CurrentUserProvider currentUserProvider, ListingMapper listingMapper) {
+    public CatalogController(CatalogService catalogService,
+                             CurrentUserProvider currentUserProvider,
+                             ListingMapper listingMapper,
+                             PropertyDetailsPort propertyDetailsPort) {
         this.catalogService = catalogService;
         this.currentUserProvider = currentUserProvider;
         this.listingMapper = listingMapper;
+        this.propertyDetailsPort = propertyDetailsPort;
     }
 
     @GetMapping
@@ -54,18 +62,38 @@ public class CatalogController {
 
     @GetMapping("/provider/{providerId}")
     @Operation(summary = "Browse one provider's active listings",
-            description = "Paginated ACTIVE listings of a provider (public provider profile surface).")
+            description = "Paginated ACTIVE listings of a provider (public provider profile surface). "
+                    + "L31: each listing embeds its real-estate property block when present "
+                    + "(one batch association per page).")
     public ResponseEntity<PagedResponse<ListingResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(catalogService.listByProvider(providerId, pageable).map(listingMapper::toResponse)));
+        var page = catalogService.listByProvider(providerId, pageable).map(listingMapper::toResponse);
+        Map<UUID, PropertyDetailsPort.PropertyView> properties =
+                propertyDetailsPort.findByListingIds(
+                        page.getContent().stream().map(ListingResponse::id).collect(Collectors.toSet()));
+        return ResponseEntity.ok(PagedResponse.of(page.map(response ->
+                properties.containsKey(response.id())
+                        ? response.withProperty(properties.get(response.id()))
+                        : response)));
     }
 
     @GetMapping("/{id}")
     @RateLimiter(name = "catalog")
     @Operation(summary = "Get one active listing", description = "The public listing detail — "
-            + "INACTIVE/ARCHIVED listings answer 404 on this surface.")
+            + "INACTIVE/ARCHIVED listings answer 404 on this surface. L31: the real-estate "
+            + "property block is embedded when the listing has one.")
     public ResponseEntity<ListingResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(listingMapper.toResponse(catalogService.getActiveById(id)));
+        ListingResponse response = listingMapper.toResponse(catalogService.getActiveById(id));
+        return ResponseEntity.ok(withProperty(response));
+    }
+
+    /**
+     * L31 embed: the property block of one response, when present.
+     */
+    private ListingResponse withProperty(ListingResponse response) {
+        return propertyDetailsPort.findByListingId(response.id())
+                .map(response::withProperty)
+                .orElse(response);
     }
 
     @PostMapping

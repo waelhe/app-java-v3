@@ -36,6 +36,7 @@
         <module>marketplace-disputes</module>
         <module>marketplace-media</module>
         <module>marketplace-geo</module>
+        <module>marketplace-realestate</module>
         <module>marketplace-app</module>
     </modules>
 
@@ -276,6 +277,11 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-geo</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-realestate</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

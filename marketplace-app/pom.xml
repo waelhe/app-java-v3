@@ -88,6 +88,12 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-geo</artifactId>
         </dependency>
+        <!-- L31 (realestate systems plan): the realestate vertical module —
+             same aggregation rule. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-realestate</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>
