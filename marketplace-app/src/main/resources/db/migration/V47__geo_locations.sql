@@ -33,7 +33,6 @@ CREATE TABLE geo_locations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by VARCHAR(200),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_geo_locations_slug UNIQUE (slug),
     CONSTRAINT chk_geo_locations_level_range CHECK (level BETWEEN 0 AND 3),
     CONSTRAINT chk_geo_locations_root_shape
         CHECK ((level = 0 AND parent_id IS NULL) OR (level > 0 AND parent_id IS NOT NULL))
@@ -43,7 +42,14 @@ CREATE TABLE geo_locations (
 -- Child lookups (the children endpoint) and autocomplete prefix scans.
 CREATE INDEX idx_geo_locations_parent ON geo_locations (parent_id) WHERE is_deleted = FALSE;
 CREATE INDEX idx_geo_locations_name_ar ON geo_locations (name_ar) WHERE is_deleted = FALSE;
-CREATE INDEX idx_geo_locations_slug ON geo_locations (slug) WHERE is_deleted = FALSE;
+
+-- Slug uniqueness is PARTIAL (CodeRabbit round 1 adoption): a soft-deleted
+-- location releases its slug for reuse (the admin correction path — delete a
+-- misnamed node, recreate with the same slug), while ACTIVE rows stay unique.
+-- This also keeps the soft-delete-aware existsBySlug precheck and the
+-- constraint perfectly aligned — no TOCTOU window between them on deleted rows.
+CREATE UNIQUE INDEX uq_geo_locations_slug_active
+    ON geo_locations (slug) WHERE is_deleted = FALSE;
 
 ALTER TABLE geo_locations VALIDATE CONSTRAINT chk_geo_locations_root_shape;
 

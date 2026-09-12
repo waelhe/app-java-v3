@@ -58,6 +58,12 @@ class GeoControllerWebMvcTest {
 
     @Test
     void suggest_belowThePrefixFloor_is400() throws Exception {
+        // The service is the gate (400 before any query); the slice stubs
+        // the throw to pin the HTTP problem-detail mapping.
+        when(geoService.suggest("ق"))
+                .thenThrow(new com.marketplace.shared.api.BadRequestException(
+                        "suggest prefix must be at least 2 characters"));
+
         mockMvc.perform(get("/api/v1/geo/suggest").param("q", "ق"))
                 .andExpect(status().isBadRequest());
     }
@@ -75,13 +81,21 @@ class GeoControllerWebMvcTest {
 
     @Test
     void adminCreate_anonymous_is401() throws Exception {
+        // A VALID body (argument validation runs before method security),
+        // no authentication: the security chain answers 401 — the media
+        // WebMvc-test precedent relies on @WithMockUser for authenticated
+        // cases and leaves the anonymous 401 to the chain.
+        UUID parentId = UUID.randomUUID();
         mockMvc.perform(post("/api/v1/admin/geo")
                         .contentType("application/json")
-                        .content("{}"))
+                        .content("""
+                                {"parentId": "%s", "nameAr": "حي", "slug": "some-neighborhood"}
+                                """.formatted(parentId)))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
     void adminCreate_asAdmin_isAccepted() throws Exception {
         UUID parentId = UUID.randomUUID();
         when(geoService.createChild(parentId, "حي جديد", null, "new-neighborhood"))
@@ -89,8 +103,6 @@ class GeoControllerWebMvcTest {
                         UUID.randomUUID(), parentId, 3, "حي جديد", null, "new-neighborhood"));
 
         mockMvc.perform(post("/api/v1/admin/geo")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
-                                .user("admin").roles("ADMIN"))
                         .contentType("application/json")
                         .content("""
                                 {"parentId": "%s", "nameAr": "حي جديد", "slug": "new-neighborhood"}

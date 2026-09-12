@@ -122,7 +122,7 @@ class GeoServiceTest {
         UUID parentId = governorate.getId();
         when(repository.findById(parentId)).thenReturn(Optional.of(governorate));
         when(repository.existsBySlug("qudsayya")).thenReturn(false);
-        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         GeoNode created = service.createChild(parentId, "قدسيا", null, "qudsayya");
 

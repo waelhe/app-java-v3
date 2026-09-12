@@ -75,6 +75,16 @@ public interface GeoLookupPort {
             String slug,
             List<GeoNode> children
     ) {
+        /**
+         * The tree is cached (geo-tree); a consumer mutating the children
+         * list would corrupt every later cached read until invalidation.
+         * Defensive copy in the canonical constructor (CodeRabbit round 1
+         * adoption) — the record is effectively immutable.
+         */
+        public GeoNode {
+            children = children == null ? List.of() : List.copyOf(children);
+        }
+
         /** Flat form (leaf views): no children carried. */
         public GeoNode(UUID id, UUID parentId, int level,
                        String nameAr, String nameEn, String slug) {

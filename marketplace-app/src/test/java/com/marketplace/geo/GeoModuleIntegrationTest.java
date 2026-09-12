@@ -3,6 +3,7 @@ package com.marketplace.geo;
 import com.marketplace.shared.api.GeoLookupPort.GeoNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
 })
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 @TestMethodOrder(MethodOrderer.Random.class) // order-independence is part of the contract
@@ -55,27 +57,32 @@ class GeoModuleIntegrationTest {
     private GeoService geoService;
 
     @Autowired
+    private org.springframework.test.web.servlet.MockMvc mockMvc;
+
+    @Autowired
     private GeoLocationRepository repository;
 
-    /** A random-slug subtree (never collides with the seed or other tests). */
-    private GeoLocation seedOwnSubtree() {
+    /**
+     * A random-slug pair of NEIGHBORHOODS under the SEEDED Qudsayya city
+     * (CodeRabbit round 1 adoption: no second country root is ever created —
+     * getTree() reads the single seeded root, unordered findFirst would be
+     * ambiguous otherwise). Random slugs never collide across tests.
+     */
+    private GeoLocation seedOwnNeighborhoods() {
         String salt = UUID.randomUUID().toString().substring(0, 8);
-        GeoLocation country = repository.save(GeoLocation.createRoot(
-                "بلد-" + salt, "Country-" + salt, "c-" + salt));
-        GeoLocation governorate = repository.save(GeoLocation.createChild(
-                country, "محافظة-" + salt, null, "g-" + salt));
-        GeoLocation city = repository.save(GeoLocation.createChild(
-                governorate, "مدينة-" + salt, null, "ci-" + salt));
-        repository.save(GeoLocation.createChild(city, "حي1-" + salt, null, "n1-" + salt));
-        repository.save(GeoLocation.createChild(city, "حي2-" + salt, null, "n2-" + salt));
-        return city;
+        GeoLocation qudsayya = repository.findBySlug("qudsayya").orElseThrow();
+        repository.save(GeoLocation.createChild(qudsayya, "حي1-" + salt, null, "n1-" + salt));
+        repository.save(GeoLocation.createChild(qudsayya, "حي2-" + salt, null, "n2-" + salt));
+        return qudsayya;
     }
 
     @Test
     void tree_containsTheSeedChainRootToNeighborhoods() {
         GeoNode tree = geoService.getTree();
 
-        GeoNode syria = findChild(tree, "syria");
+        // The ROOT itself is Syria (level 0) — the single-root contract.
+        assertThat(tree.slug()).isEqualTo("syria");
+        GeoNode syria = tree;
         assertThat(syria).isNotNull();
         assertThat(syria.level()).isZero();
         GeoNode rif = findChild(syria, "rif-dimashq");
@@ -93,6 +100,37 @@ class GeoModuleIntegrationTest {
         return parent.children().stream()
                 .filter(child -> child.slug().equals(slug))
                 .findFirst().orElse(null);
+    }
+
+    // ---- HTTP-level security chain (CodeRabbit round 1 adoption: the
+    // production SecurityConfig rules — anonymous geo reads, ADMIN-only
+    // writes — exercised on the real filter chain, not a slice mock) ----
+
+    @org.junit.jupiter.api.Test
+    void http_tree_isAnonymouslyReadable() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/v1/geo/tree"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.slug").value("syria"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void http_adminWrite_anonymous_is401() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/admin/geo")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized());
+    }
+
+    @org.junit.jupiter.api.Test
+    @WithMockUser(roles = "PROVIDER")
+    void http_adminWrite_nonAdmin_is403() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/admin/geo")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
     }
 
     @Test
@@ -117,16 +155,17 @@ class GeoModuleIntegrationTest {
 
     @Test
     void findSelfAndDescendants_coversTheWholeSubtree() {
-        GeoLocation city = seedOwnSubtree();
-        GeoLocation governorate = repository.findById(city.getParentId()).orElseThrow();
-        GeoLocation country = repository.findById(governorate.getParentId()).orElseThrow();
+        GeoLocation qudsayya = seedOwnNeighborhoods();
+        GeoLocation rif = repository.findBySlug("rif-dimashq").orElseThrow();
+        GeoLocation syria = repository.findBySlug("syria").orElseThrow();
 
-        Set<UUID> fromCountry = geoService.findSelfAndDescendants(country.getId());
-        assertThat(fromCountry).hasSize(5);
+        // seeded tree + own two neighborhoods: 6 + 2 nodes
+        Set<UUID> fromCountry = geoService.findSelfAndDescendants(syria.getId());
+        assertThat(fromCountry).hasSize(8);
 
-        Set<UUID> fromCity = geoService.findSelfAndDescendants(city.getId());
-        assertThat(fromCity).hasSize(3);
-        assertThat(fromCity).contains(city.getId());
+        Set<UUID> fromCity = geoService.findSelfAndDescendants(qudsayya.getId());
+        assertThat(fromCity).hasSize(5); // the city + 3 seeded + 2 own neighborhoods
+        assertThat(fromCity).contains(qudsayya.getId());
     }
 
     @Test
@@ -148,7 +187,7 @@ class GeoModuleIntegrationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void adminCreate_appendsTheChildAndLeavesAnAuditTrail() {
-        GeoLocation city = seedOwnSubtree();
+        GeoLocation city = seedOwnNeighborhoods();
 
         GeoNode created = geoService.createChild(
                 city.getId(), "حي جديد", null, "n3-" + UUID.randomUUID().toString().substring(0, 8));
@@ -164,17 +203,17 @@ class GeoModuleIntegrationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void delete_withChildren_is409() {
-        GeoLocation city = seedOwnSubtree();
+        GeoLocation qudsayya = seedOwnNeighborhoods();
 
-        assertThatThrownBy(() -> geoService.delete(city.getId()))
+        assertThatThrownBy(() -> geoService.delete(qudsayya.getId()))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
-        assertThat(repository.findById(city.getId())).isPresent();
+        assertThat(repository.findById(qudsayya.getId())).isPresent();
     }
 
     @Test
     @WithMockUser(roles = "ADMIN")
     void delete_childless_softDeletes() {
-        GeoLocation city = seedOwnSubtree();
+        GeoLocation city = seedOwnNeighborhoods();
         GeoLocation neighborhood = repository
                 .findByParentIdOrderBySlugAsc(city.getId()).get(0);
 
@@ -186,7 +225,8 @@ class GeoModuleIntegrationTest {
     @Test
     @WithMockUser(roles = "PROVIDER")
     void adminCommands_asNonAdmin_are403() {
-        GeoLocation city = seedOwnSubtree();
+        GeoLocation city = seedOwnNeighborhoods();
+
 
         assertThatThrownBy(() -> geoService.createChild(city.getId(), "حي", null,
                 "x-" + UUID.randomUUID().toString().substring(0, 8)))
@@ -198,9 +238,26 @@ class GeoModuleIntegrationTest {
     }
 
     @Test
-    void uniqueSlugConstraint_rejectsDuplicatesAtTheDatabase() {
+    void uniqueSlugConstraint_rejectsActiveDuplicatesAtTheDatabase() {
         assertThatThrownBy(() -> repository.saveAndFlush(
-                GeoLocation.createRoot("سوريا", "Syria", "syria")))
+                GeoLocation.createChild(repository.findBySlug("qudsayya").orElseThrow(),
+                        "قدسيا ثانية", null, "qudsayya")))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void deletedSlug_isReusable_thePartialIndexContract() {
+        GeoLocation qudsayya = seedOwnNeighborhoods();
+        String salt = UUID.randomUUID().toString().substring(0, 8);
+        GeoLocation own = repository.save(GeoLocation.createChild(
+                qudsayya, "حي مؤقت", null, "tmp-" + salt));
+
+        geoService.delete(own.getId());
+        GeoLocation recreated = repository.saveAndFlush(GeoLocation.createChild(
+                qudsayya, "حي معاد", null, "tmp-" + salt));
+
+        assertThat(recreated.getSlug()).isEqualTo("tmp-" + salt);
+        assertThat(repository.findBySlug("tmp-" + salt)).isPresent();
     }
 }
