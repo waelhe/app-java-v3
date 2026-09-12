@@ -91,7 +91,7 @@ public class GeoService implements GeoLookupPort {
             throw new BadRequestException(
                     "suggest prefix must be at least " + MIN_SUGGEST_PREFIX + " characters");
         }
-        return repository.suggestByPrefix(trimmed + "%", SUGGEST_LIMIT)
+        return repository.suggestByPrefix(escapeLikePrefix(trimmed) + "%", SUGGEST_LIMIT)
                 .stream().map(GeoService::toNode).toList();
     }
 
@@ -126,7 +126,10 @@ public class GeoService implements GeoLookupPort {
         if (repository.existsBySlug(slug)) {
             throw new ConflictException("slug already exists: " + slug);
         }
-        GeoLocation saved = repository.save(
+        // Flush inside the method (CodeRabbit round 1 adoption): a losing
+        // concurrent slug write surfaces HERE as DataIntegrityViolationException
+        // and the shared handler maps 23505 to 409 — not at commit-time wrapping.
+        GeoLocation saved = repository.saveAndFlush(
                 GeoLocation.createChild(parent, nameAr, nameEn, slug));
         eventPublisher.publishEvent(new CacheInvalidationRequested(GEO_CACHE_NAMES));
         return toNode(saved);
@@ -139,6 +142,7 @@ public class GeoService implements GeoLookupPort {
             throw new ConflictException("slug already exists: " + slug);
         }
         location.update(nameAr, nameEn, slug);
+        repository.saveAndFlush(location); // slug race surfaces here -> 409
         eventPublisher.publishEvent(new CacheInvalidationRequested(GEO_CACHE_NAMES));
         return toNode(location);
     }
@@ -157,6 +161,18 @@ public class GeoService implements GeoLookupPort {
         }
         repository.delete(location); // soft delete via @SoftDelete
         eventPublisher.publishEvent(new CacheInvalidationRequested(GEO_CACHE_NAMES));
+    }
+
+    /**
+     * Escapes the SQL LIKE wildcards in the user's prefix (CodeRabbit round
+     * 1 adoption): {@code %} and {@code _} are literals in a prefix search,
+     * never patterns — {@code q=%%} must not match everything. The repository
+     * query carries the matching {@code ESCAPE '\'} clause.
+     */
+    private static String escapeLikePrefix(String prefix) {
+        return prefix.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private GeoLocation requireExisting(UUID id) {

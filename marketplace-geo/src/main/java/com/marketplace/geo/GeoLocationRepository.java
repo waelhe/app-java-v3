@@ -30,14 +30,17 @@ public interface GeoLocationRepository
      * trimmed as authored and matched case-sensitively (Latin names are
      * conventionally capitalized consistently in the seed); {@code slug}
      * is lowercase by validation. The service gates the prefix to >= 2
-     * characters before any query runs.
+     * characters and ESCAPES the LIKE wildcards ({@code %}/{@code _}) in the
+     * prefix before any query runs (CodeRabbit round 1 adoption — {@code
+     * q=%%} must not match everything); the ESCAPE clause below matches the
+     * service's escaping.
      */
     @Query(value = """
             SELECT * FROM geo_locations
             WHERE is_deleted = false
-              AND (name_ar LIKE :prefixPattern
-                   OR name_en LIKE :prefixPattern
-                   OR slug LIKE :prefixPattern)
+              AND (name_ar LIKE :prefixPattern ESCAPE '\\'
+                   OR name_en LIKE :prefixPattern ESCAPE '\\'
+                   OR slug LIKE :prefixPattern ESCAPE '\\')
             ORDER BY level, slug
             LIMIT :limit
             """,
