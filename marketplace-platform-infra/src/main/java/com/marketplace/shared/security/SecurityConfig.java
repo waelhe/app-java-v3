@@ -138,6 +138,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/listings/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
+                        // L30 (realestate systems plan): the administrative
+                        // hierarchy is public reference data — the anonymous
+                        // browse pattern, one line, same chain.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/geo/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
