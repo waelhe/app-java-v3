@@ -14,6 +14,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -155,6 +156,58 @@ public class GlobalExceptionHandler {
         // A5: an illegal state in a well-formed request is a domain conflict (409),
         // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.
         return problem(ApiErrorTaxonomy.CONFLICT, ex.getMessage(), request, null, "detail");
+    }
+
+    /**
+     * L31 (realestate systems plan): a UNIQUE-constraint race at the
+     * database (official PostgreSQL SQLSTATE 23505 — unique_violation,
+     * Appendix A. Error Codes) is a 409 CONFLICT, never a 500. The service
+     * upsert makes duplicates impossible on the happy path; this is the
+     * backstop for concurrent writers racing between find and insert (the
+     * acceptance criterion "two property blocks for one listing are
+     * impossible — DB constraint + 409"). Every other integrity violation
+     * (NOT NULL, FK, CHECK) is a server-side anomaly and keeps falling to
+     * {@link #handleGeneral}.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleUniqueViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+        if (uniqueViolation(ex)) {
+            log.warn("Unique constraint conflict for {}: {}", request.getRequestURI(), rootMessage(ex));
+            return problem(ApiErrorTaxonomy.CONFLICT,
+                    "The resource already exists (unique constraint conflict)", request, null, "detail");
+        }
+        log.error("Unhandled integrity violation for {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return problem(ApiErrorTaxonomy.INTERNAL, "An unexpected error occurred", request, null, "detail");
+    }
+
+    /**
+     * Official PostgreSQL unique-violation SQLSTATE 23505 — read from
+     * {@link java.sql.SQLException#getSQLState()} of any cause in the
+     * chain (the pgjdbc contract: the state rides the exception, not the
+     * message text), with a message fallback for wrappers that stringify
+     * it instead.
+     */
+    private static boolean uniqueViolation(Throwable ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            if (cause instanceof java.sql.SQLException sql
+                    && "23505".equals(sql.getSQLState())) {
+                return true;
+            }
+            if (cause.getMessage() != null && cause.getMessage().contains("23505")) {
+                return true;
+            }
+            cause = cause.getCause() == cause ? null : cause.getCause();
+        }
+        return false;
+    }
+
+    private static String rootMessage(Throwable ex) {
+        Throwable cause = ex;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage();
     }
 
     @ExceptionHandler(Exception.class)

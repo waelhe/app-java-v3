@@ -80,6 +80,14 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-media</artifactId>
         </dependency>
+        <!-- L30 (realestate systems plan): the geo module joins the
+             aggregation exactly like media — the app is the assembly
+             root where every domain module meets Spring's component
+             scanning and the Modulith boundary check. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-geo</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>

@@ -273,4 +273,39 @@ class GlobalExceptionHandlerTest {
         public void submit(String email) {
         }
     }
+
+    // ---- L31: the unique-violation (23505) backstop → 409 CONFLICT ----
+
+    @Test
+    void handleUniqueViolation_mapsPostgresUniqueRaceToConflict() {
+        // The pgjdbc contract: SQLSTATE 23505 (unique_violation) rides
+        // getSQLState() of the SQLException in the cause chain.
+        java.sql.SQLException pgCause = new java.sql.SQLException(
+                "ERROR: duplicate key value violates unique constraint"
+                        + " \"uq_property_details_listing_id\"", "23505");
+        org.springframework.dao.DataIntegrityViolationException ex =
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement", pgCause);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/listings/1/property");
+        var response = handler.handleUniqueViolation(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/conflict"));
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("CONFLICT-001");
+    }
+
+    @Test
+    void handleUniqueViolation_otherIntegrityViolationsStayInternal() {
+        java.sql.SQLException pgCause = new java.sql.SQLException(
+                "ERROR: null value in column \"rooms\" violates not-null constraint", "23502");
+        org.springframework.dao.DataIntegrityViolationException ex =
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement", pgCause);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/listings/1/property");
+        var response = handler.handleUniqueViolation(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    }
 }
