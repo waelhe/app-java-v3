@@ -243,6 +243,12 @@ class PropertyModuleIntegrationTest {
                 new PropertyDetailsRequest(PropertyPurpose.SALE, PropertyType.VILLA,
                         null, null, null, null, null, null, null, null, null, null, null, null),
                 providerAuthentication);
+        // the second upsert's revision also commits before the count — the
+        // test transaction rolls back by default, and Envers' audit row
+        // rides its transaction's commit
+        org.springframework.test.context.transaction.TestTransaction.flagForCommit();
+        org.springframework.test.context.transaction.TestTransaction.end();
+        org.springframework.test.context.transaction.TestTransaction.start();
         var afterUpdate = propertyRepository.findRevisions(stored.getId(),
                 org.springframework.data.domain.Pageable.unpaged());
         assertThat(afterUpdate.getContent()).hasSize(revisions.getContent().size() + 1);
