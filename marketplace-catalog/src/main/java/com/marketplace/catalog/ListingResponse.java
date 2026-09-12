@@ -24,19 +24,30 @@ public record ListingResponse(
         Integer maxGuests,
         Instant createdAt,
         Instant updatedAt,
-        PropertyDetailsPort.PropertyView property
+        PropertyDetailsPort.PropertyView property,
+        Instant expiresAt,
+        String pausedReason
 ) {
     /** The pre-L31 nine-component form — every existing construction site. */
     public ListingResponse(UUID id, String title, String description, String category,
                            BigDecimal price, String currency, Integer maxGuests,
                            Instant createdAt, Instant updatedAt) {
         this(id, title, description, category, price, currency, maxGuests,
-                createdAt, updatedAt, null);
+                createdAt, updatedAt, null, null, null);
+    }
+
+    /** The L31 form (property embed) — the L32-era construction sites. */
+    public ListingResponse(UUID id, String title, String description, String category,
+                           BigDecimal price, String currency, Integer maxGuests,
+                           Instant createdAt, Instant updatedAt,
+                           PropertyDetailsPort.PropertyView property) {
+        this(id, title, description, category, price, currency, maxGuests,
+                createdAt, updatedAt, property, null, null);
     }
 
     /** The embed — the wither of the L31 block. */
     public ListingResponse withProperty(PropertyDetailsPort.PropertyView propertyView) {
         return new ListingResponse(id, title, description, category, price, currency,
-                maxGuests, createdAt, updatedAt, propertyView);
+                maxGuests, createdAt, updatedAt, propertyView, expiresAt, pausedReason);
     }
 }

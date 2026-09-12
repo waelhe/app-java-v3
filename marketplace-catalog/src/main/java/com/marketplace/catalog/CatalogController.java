@@ -124,9 +124,25 @@ public class CatalogController {
 
     @PostMapping("/{id}/activate")
     @Operation(summary = "Activate a listing (provider)", description = "Moves a paused listing "
-            + "back to ACTIVE — visible on the public browse surface.")
-    public ResponseEntity<ListingResponse> activate(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(listingMapper.toResponse(catalogService.activate(id, authentication)));
+            + "back to ACTIVE — visible on the public browse surface. L33: the publication "
+            + "window is resolved from the optional body date or the configured expiry policy "
+            + "(90 days by default); with neither, 409 — no silently-immortal listing.")
+    public ResponseEntity<ListingResponse> activate(
+            @PathVariable UUID id,
+            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            @jakarta.validation.Valid ActivateListingRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.activate(
+                id, request != null ? request.expiresAt() : null, authentication)));
+    }
+
+    @PostMapping("/{id}/renew")
+    @Operation(summary = "Renew an expired listing (provider)", description = "L33: extends the "
+            + "publication window of a listing paused by expiry (EXPIRED pause only — a "
+            + "deliberate MANUAL pause answers 409), from now by the expiry policy. Bounded "
+            + "by the renewal cooldown (409 inside the window).")
+    public ResponseEntity<ListingResponse> renew(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(listingMapper.toResponse(catalogService.renew(id, authentication)));
     }
 
     @PostMapping("/{id}/pause")
@@ -141,6 +157,18 @@ public class CatalogController {
             + "it leaves the public surface permanently (soft delete).")
     public ResponseEntity<ListingResponse> archive(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(listingMapper.toResponse(catalogService.archive(id, authentication)));
+    }
+
+    /**
+     * L33: optional explicit publication end. Absent = the configured
+     * expiry policy applies.
+     */
+    @Schema(description = "Listing activation: optional explicit publication end "
+            + "(ISO-8601 instant; the configured expiry policy applies when omitted)")
+    public record ActivateListingRequest(
+            @Schema(description = "When the listing's publication ends", example = "2026-12-31T23:59:59Z")
+            java.time.Instant expiresAt
+    ) {
     }
 
     /**

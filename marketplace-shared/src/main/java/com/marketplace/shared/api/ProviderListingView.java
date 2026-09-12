@@ -20,6 +20,15 @@ public record ProviderListingView(
         String status,
         Integer maxGuests,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Instant expiresAt,
+        String pausedReason
 ) {
+    /** The pre-L33 eleven-component form — every existing construction site. */
+    public ProviderListingView(UUID id, String title, String description, String category,
+                               Long priceCents, String currency, UUID providerId, String status,
+                               Integer maxGuests, Instant createdAt, Instant updatedAt) {
+        this(id, title, description, category, priceCents, currency, providerId, status,
+                maxGuests, createdAt, updatedAt, null, null);
+    }
 }

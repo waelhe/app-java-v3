@@ -22,6 +22,15 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);
 
     /**
+     * L33: the expiry job's scan — ACTIVE listings whose publication
+     * window passed (strictly before: the boundary instant stays ACTIVE
+     * until the next tick). Deterministic id order for stable paging.
+     */
+    Page<ProviderListing> findByStatusAndExpiresAtBefore(ListingStatus status,
+                                                          java.time.Instant expiresAt,
+                                                          Pageable pageable);
+
+    /**
      * L32 (realestate systems plan): the ACTIVE listing id set — the
      * restriction the area-sorted search flow passes into the realestate
      * filter port. JPQL (the soft-delete filter applies automatically

@@ -334,6 +334,16 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # L33 (realestate systems plan): the classifieds lifecycle policy. 90
+  # days is the global classifieds convention range (Dubizzle ~60, market
+  # standard 60-90); env-tunable (MARKETPLACE_CATALOG_EXPIRY_EXPIRY_DAYS).
+  # Unset means activations without an explicit date answer 409 — the
+  # "no silently-immortal listing" rule; the cooldown bounds renewal
+  # recycling (one renewal per day by default).
+  catalog:
+    expiry:
+      expiry-days: ${MARKETPLACE_CATALOG_EXPIRY_DAYS:90}
+      renewal-cooldown-days: ${MARKETPLACE_CATALOG_RENEWAL_COOLDOWN_DAYS:1}
   # Currency exchange channel (roadmap B4 / gap G-PROD-4) — provider-optional
   # exactly like the PSP/MEDIA_S3/MAIL gates: when no rate is bound, no
   # exchange beans are created (StaticRatesConfiguredCondition) and

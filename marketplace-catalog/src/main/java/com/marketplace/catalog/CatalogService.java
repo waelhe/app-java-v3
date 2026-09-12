@@ -55,17 +55,23 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final ProviderLookupPort providerLookupPort;
+    private final java.time.Clock clock;
+    private final CatalogProperties catalogProperties;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
                           ProviderNameResolver providerNameResolver,
                           ApplicationEventPublisher eventPublisher,
-                          ProviderLookupPort providerLookupPort) {
+                          ProviderLookupPort providerLookupPort,
+                          java.time.Clock clock,
+                          CatalogProperties catalogProperties) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
         this.providerLookupPort = providerLookupPort;
+        this.clock = clock;
+        this.catalogProperties = catalogProperties;
     }
 
     @Override
@@ -325,7 +331,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // (the plan's D-E6 decision — the criteria record gained six components;
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
-    private static final Set<String> CATALOG_CACHE_NAMES =
+    static final Set<String> CATALOG_CACHE_NAMES =
             Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v3");
 
     /**
@@ -409,13 +415,68 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listing;
     }
 
+    /**
+     * L33: activation now resolves the publication window — an explicit
+     * {@code expiresAt} wins; otherwise the configured policy (expiry-days
+     * from now); with neither, a 409 ("no silently-immortal listing").
+     */
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListing activate(UUID id, Authentication authentication) {
+        return activate(id, null, authentication);
+    }
+
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing activate(UUID id, java.time.Instant expiresAt,
+                                    Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
-        listing.activate();
+        java.time.Instant resolved = expiresAt != null
+                ? expiresAt
+                : policyExpiry(clock.instant());
+        listing.activate(resolved);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
+    }
+
+    /**
+     * L33 renewal: works only on the EXPIRED pause (a MANUAL pause answers
+     * 409 — deliberate pauses stay until re-activated), bounded by the
+     * cooldown (the anti-recycling floor: at most one renewal per window).
+     * The new window runs from NOW by the policy.
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing renew(UUID id, Authentication authentication) {
+        ProviderListing listing = getById(id);
+        verifyOwnership(listing, authentication);
+        java.time.Instant now = clock.instant();
+        if (listing.getRenewedAt() != null) {
+            java.time.Instant cooldownEnd = listing.getRenewedAt()
+                    .plus(java.time.Duration.ofDays(cooldownDays()));
+            if (now.isBefore(cooldownEnd)) {
+                throw new com.marketplace.shared.api.ConflictException(
+                        "Listing " + id + " was renewed within the cooldown window ("
+                                + cooldownDays() + " days)");
+            }
+        }
+        listing.renew(now, policyExpiry(now));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
+        return listing;
+    }
+
+    /** The configured publication window, or the 409 policy gap. */
+    private java.time.Instant policyExpiry(java.time.Instant now) {
+        Integer days = catalogProperties.expiry().expiryDays();
+        if (days == null) {
+            throw new com.marketplace.shared.api.ConflictException(
+                    "No expiry policy configured (marketplace.catalog.expiry.expiry-days)"
+                            + " and no explicit expiry date provided");
+        }
+        return now.plus(java.time.Duration.ofDays(days));
+    }
+
+    private long cooldownDays() {
+        Integer days = catalogProperties.expiry().renewalCooldownDays();
+        return days != null && days > 0 ? days : 1;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
@@ -503,7 +564,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 listing.getStatus().name(),
                 listing.getMaxGuests(),
                 listing.getCreatedAt(),
-                listing.getUpdatedAt()
+                listing.getUpdatedAt(),
+                listing.getExpiresAt(),
+                listing.getPausedReason()
         );
     }
 

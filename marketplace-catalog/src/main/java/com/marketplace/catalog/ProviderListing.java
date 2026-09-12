@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
@@ -10,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -54,6 +56,27 @@ public class ProviderListing extends BaseEntity {
      */
     @Column(name = "max_guests")
     private Integer maxGuests;
+
+    /**
+     * L33 (realestate systems plan): when the listing's publication ends.
+     * NULL on legacy rows = never expires (retro-compatible by data); NEW
+     * activations always set it (the entity floor below refuses a null
+     * expiry on activation — "no silently-immortal listing").
+     */
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
+    /**
+     * The DURABLE pause marker (CodeRabbit-adopted plan note): MANUAL
+     * (provider-initiated) vs EXPIRED (the job). Renewal works only on
+     * EXPIRED — the deliberate pause and the expiry are different paths.
+     */
+    @Column(name = "paused_reason", length = 20)
+    private String pausedReason;
+
+    /** The cooldown anchor — when the listing was last renewed (L33). */
+    @Column(name = "renewed_at")
+    private Instant renewedAt;
 
     protected ProviderListing() {
     }
@@ -119,6 +142,9 @@ public class ProviderListing extends BaseEntity {
     public String getCurrency() { return currency; }
     public ListingStatus getStatus() { return status; }
     public Integer getMaxGuests() { return maxGuests; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public String getPausedReason() { return pausedReason; }
+    public Instant getRenewedAt() { return renewedAt; }
 
     public void update(String title, String description, String category, Long priceCents) {
         update(title, description, category, priceCents, null);
@@ -167,16 +193,78 @@ public class ProviderListing extends BaseEntity {
         return guests;
     }
 
+    /**
+     * Activates the listing with its publication window. L33: a null
+     * {@code expiresAt} is the entity floor's 409 — the service resolves
+     * the explicit date or the configured policy first; reaching here with
+     * null means the policy is unconfigured (the "no silently-immortal
+     * listing" rule). Activation also clears any stale pause marker (the
+     * re-activation path is the deliberate-pause exit).
+     */
+    public void activate(Instant expiresAt) {
+        if (expiresAt == null) {
+            throw new ConflictException(
+                    "Listing activation requires an expiry date (expiry policy is not configured)");
+        }
+        this.status.validateTransitionTo(ListingStatus.ACTIVE);
+        this.status = ListingStatus.ACTIVE;
+        this.expiresAt = expiresAt;
+        this.pausedReason = null;
+    }
+
+    /** The pre-L33 transition, kept for the legacy call shape (no expiry). */
     public void activate() {
         this.status.validateTransitionTo(ListingStatus.ACTIVE);
         this.status = ListingStatus.ACTIVE;
     }
+
+    /** The provider-initiated pause — durably marked MANUAL (L33). */
     public void pause() {
         this.status.validateTransitionTo(ListingStatus.PAUSED);
         this.status = ListingStatus.PAUSED;
+        this.pausedReason = "MANUAL";
     }
+
+    /**
+     * The expiry job's pause — durably marked EXPIRED (L33). Same state
+     * machine transition as {@link #pause()}; only the marker differs
+     * (renewal works on this one alone).
+     */
+    public void pauseForExpiry() {
+        this.status.validateTransitionTo(ListingStatus.PAUSED);
+        this.status = ListingStatus.PAUSED;
+        this.pausedReason = "EXPIRED";
+    }
+
     public void archive() {
         this.status.validateTransitionTo(ListingStatus.ARCHIVED);
         this.status = ListingStatus.ARCHIVED;
+    }
+
+    /**
+     * L33 renewal: works ONLY on an EXPIRED pause (a deliberate MANUAL
+     * pause answers 409 — the provider who paused stays paused until they
+     * re-activate through the existing path). Extends the publication
+     * window from NOW by the policy, clears the marker, and records the
+     * renewal timestamp (the cooldown anchor).
+     */
+    public void renew(Instant now, Instant newExpiry) {
+        if (this.status != ListingStatus.PAUSED || !"EXPIRED".equals(this.pausedReason)) {
+            throw new ConflictException(
+                    "Only listings paused by expiry can be renewed (paused_reason=" + pausedReason + ")");
+        }
+        if (newExpiry == null || !newExpiry.isAfter(now)) {
+            throw new ConflictException("Renewal requires a future expiry date");
+        }
+        this.status.validateTransitionTo(ListingStatus.ACTIVE);
+        this.status = ListingStatus.ACTIVE;
+        this.expiresAt = newExpiry;
+        this.pausedReason = null;
+        this.renewedAt = now;
+    }
+
+    /** Whether the listing's publication has passed (ACTIVE rows only, L33). */
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && expiresAt.isBefore(now);
     }
 }
