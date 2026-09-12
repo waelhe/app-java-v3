@@ -52,7 +52,7 @@ class CacheTtlConfigTest {
 
     @Test
     void baseConfigDeclaresAllNamedCaches() throws Exception {
-        // The 14 named caches this TTL governs (L25 added provider-stats —
+        // The 15 named caches this TTL governs (L25 added provider-stats —
         // its own 5m override rides the RedisCacheManagerBuilderCustomizer,
         // pinned by CacheRedisTtlIntegrationTest). A missing name would
         // silently create caches on demand (default RedisCacheManager
@@ -68,7 +68,8 @@ class CacheTtlConfigTest {
                         "catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2",
                         "pricing-calculations", "search-results-v2", "availability",
                         "bookings", "users", "userSubjects", "conversations",
-                        "paymentIntents", "reviews", "providers", "provider-stats");
+                        "paymentIntents", "reviews", "providers", "provider-stats",
+                        "geo-tree");
     }
 
     @Test

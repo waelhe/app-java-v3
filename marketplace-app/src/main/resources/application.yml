@@ -127,8 +127,10 @@ spring:
     # The four *-v2 names are the ListingSummary serialization-schema
     # namespaces (CodeRabbit #241) — bumped with every ListingSummary record
     # component change so stale pre-change entries are never read. See
-    # CatalogService.CATALOG_CACHE_NAMES.
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v2,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats
+    # CatalogService.CATALOG_CACHE_NAMES. geo-tree (L30) is the 14th named
+    # cache — the administrative tree is rebuilt-on-read reference data,
+    # evicted through the same AFTER_COMMIT relay as the rest.
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v2,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache
@@ -314,6 +316,13 @@ resilience4j:
         limit-for-period: 10
         timeout-duration: 0
       mediaUpload:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
+      # L30 (realestate systems plan): the public geo autocomplete endpoint —
+      # a distinct named instance so prefix spam cannot exhaust the shared
+      # catalog/search read budget (same L29 model: fail fast, 429 RL-001).
+      geoSuggest:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
