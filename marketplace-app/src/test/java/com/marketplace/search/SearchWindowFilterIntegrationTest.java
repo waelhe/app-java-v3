@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * no mocks between the criteria and PostgreSQL.
  *
  * <p>Boot pattern follows {@code CatalogSearchFullTextIntegrationTest}:
- * full application context on an ISOLATED {@code postgres:18-alpine}
+ * full application context on an ISOLATED {@code postgis/postgis:18-3.6-alpine}
  * container via {@code @ServiceConnection}, Flyway enabled,
  * {@code ddl-auto=none} — the restricted native queries (with their
  * {@code provider_id IN (...)}) and the bulk availability JPQL predicate run

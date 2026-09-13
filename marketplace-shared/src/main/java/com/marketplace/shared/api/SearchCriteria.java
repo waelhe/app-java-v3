@@ -203,6 +203,22 @@ public record SearchCriteria(
     }
 
     /**
+     * CodeRabbit PR #300 round 1: any CATALOG-side optional predicate is
+     * present (category / price bounds / guests). The paged realestate
+     * flows (the {@code area} and {@code distance} orderings) cannot apply
+     * catalog predicates DB-side — their ordering is realestate-owned and
+     * their predicates live on {@code property_details} — so the search
+     * resolves the criteria-eligible ACTIVE set through the catalog port
+     * first and the port pages through the intersection; without this gate
+     * those flows silently ignored the catalog criteria (the review's
+     * example: {@code guests=4&sort=distance} could return listings that
+     * cannot accommodate four guests).
+     */
+    public boolean hasCatalogCriteria() {
+        return category != null || minPrice != null || maxPrice != null || guests != null;
+    }
+
+    /**
      * P1 (postgis plan): the radius triple is present — the search takes
      * the radius branch (the dedicated dispatch, like the property flow).
      * The canonical constructor guarantees the triple is complete when

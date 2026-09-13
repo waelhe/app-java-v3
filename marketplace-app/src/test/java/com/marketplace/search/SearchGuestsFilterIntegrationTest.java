@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Boot pattern follows {@code SearchWindowFilterIntegrationTest} (the
  * L27 guard): full application context on an isolated
- * {@code postgres:18-alpine} container via {@code @ServiceConnection},
+ * {@code postgis/postgis:18-3.6-alpine} container via {@code @ServiceConnection},
  * Flyway enabled, {@code ddl-auto=none} — the capacity predicate
  * ({@code :guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests)})
  * and V44's column/constraint run against exactly the schema migrations

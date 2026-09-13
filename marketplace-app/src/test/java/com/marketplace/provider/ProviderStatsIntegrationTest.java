@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
  * and the FK parents.
  *
  * <p>Boot pattern follows {@code CatalogSearchFullTextIntegrationTest}:
- * isolated {@code postgres:18-alpine} container via
+ * isolated {@code postgis/postgis:18-3.6-alpine} container via
  * {@code @ServiceConnection}, Flyway enabled, {@code ddl-auto=none}.
  *
  * <p>Acceptance criterion 1 — known dataset, the three numbers match a

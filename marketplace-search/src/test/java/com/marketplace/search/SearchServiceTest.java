@@ -611,4 +611,108 @@ class SearchServiceTest {
                 eq(Set.of(active)), eq(Set.of(available)), any());
         verify(filterPort, never()).findWithinRadiusPaged(any(), any(), anyLong(), any(), any());
     }
+
+    // ---- CodeRabbit PR #300 round 1: the radius flow's sort surface ------
+
+    @Test
+    void priceSort_withRadius_consumesTheControllerMappedSort_noSecondNormalize() {
+        UUID near = UUID.randomUUID();
+        when(filterPort.findListingIdsWithinRadius(LAT, LNG, RADIUS_METERS)).thenReturn(Set.of(near));
+        when(port.searchByCriteriaRestrictedToListings(any(), any(), any())).thenReturn(emptyPage());
+
+        service.search(radiusCriteria(),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
+
+        // CodeRabbit PR #300 round 1 (thread 2 — normalize ONCE): the
+        // controller-mapped sort (priceCents + id) is consumed AS-IS — the
+        // former second normalize() rejected the already-mapped name
+        // ("unsupported sort property: priceCents") and a price-sorted
+        // radius request answered 400 instead of a sorted page
+        verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(near)),
+                argThat((org.springframework.data.domain.Pageable pageable) ->
+                        pageable.getSort().toString().equals("priceCents: DESC,id: ASC")
+                                || pageable.getSort().toString().equals("priceCents: DESC,id:ASC")));
+        verify(filterPort, never()).findMatchingPaged(any(), any(), any());
+    }
+
+    @Test
+    void areaSort_withRadius_routesToThePagedRadiusFlow_composingTheEligibleIntersection() {
+        UUID near = UUID.randomUUID();
+        UUID farther = UUID.randomUUID();
+        when(filterPort.findListingIdsWithinRadius(LAT, LNG, RADIUS_METERS))
+                .thenReturn(Set.of(near, farther));
+        when(port.findActiveListingIds()).thenReturn(Set.of(near, farther));
+        var matchNear = new RealestatePropertyFilterPort.PropertyMatch(near, 70);
+        var matchFarther = new RealestatePropertyFilterPort.PropertyMatch(farther, 120);
+        when(filterPort.findMatchingPaged(any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(matchNear, matchFarther), PageRequest.of(0, 10), 2));
+        when(port.findSummariesByIds(anyList()))
+                .thenReturn(List.of(summaryOf(near), summaryOf(farther)));
+
+        Page<ListingSummary> page = service.search(radiusCriteria(),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
+
+        // CodeRabbit PR #300 round 1 (thread 2): the area marker's radius
+        // flow — the realestate-owned radius SET intersected with the
+        // eligible ACTIVE set, then the paged property form's area ordering
+        // (formerly the set flow's second normalize() rejected marker+id as
+        // a "mixed marker" 400 — the flow did not exist)
+        verify(filterPort).findMatchingPaged(any(), eq(Set.of(near, farther)),
+                argThat((org.springframework.data.domain.Pageable pageable) ->
+                        pageable.getSort().toString().equals("area: ASC")));
+        verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
+        assertThat(page.getContent()).extracting(ListingSummary::id)
+                .containsExactly(near, farther);
+        assertThat(page.getTotalElements()).isEqualTo(2L);
+    }
+
+    @Test
+    void distanceSort_withCatalogCriteria_resolvesTheEligibleSetFirst() {
+        UUID nearest = UUID.randomUUID();
+        UUID eligible = UUID.randomUUID();
+        when(port.findActiveListingIdsMatching(any())).thenReturn(Set.of(eligible));
+        when(filterPort.findWithinRadiusPaged(eq(LAT), eq(LNG), eq(RADIUS_METERS),
+                eq(Set.of(eligible)), any()))
+                .thenReturn(new PageImpl<>(List.of(nearest), PageRequest.of(0, 10), 1));
+        when(port.findSummariesByIds(List.of(nearest))).thenReturn(List.of(summaryOf(nearest)));
+
+        SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
+                null, null, 4, null, null, null, null, null, null,
+                LAT, LNG, new BigDecimal("10"));
+        Page<ListingSummary> page = service.search(withGuests,
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
+
+        // CodeRabbit PR #300 round 1 (thread 3): the criteria-ELIGIBLE set
+        // (ACTIVE + category/price/guests) resolves through the catalog
+        // port and the radius query pages through it — the bare ACTIVE-set
+        // call is never made when a catalog criterion rides along
+        verify(port).findActiveListingIdsMatching(any());
+        verify(port, never()).findActiveListingIds();
+        assertThat(page.getContent()).extracting(ListingSummary::id).containsExactly(nearest);
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+    }
+
+    @Test
+    void areaSort_withCatalogCriteria_resolvesTheEligibleSetFirst() {
+        // CodeRabbit PR #300 round 1 (thread 3's class — the L32 instance):
+        // the same eligibility discipline on the non-radius area flow (the
+        // pre-fix searchAreaSorted restricted to the bare ACTIVE set)
+        UUID eligible = UUID.randomUUID();
+        var match = new RealestatePropertyFilterPort.PropertyMatch(eligible, 90);
+        when(port.findActiveListingIdsMatching(any())).thenReturn(Set.of(eligible));
+        when(filterPort.findMatchingPaged(any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(match), PageRequest.of(0, 10), 1));
+        when(port.findSummariesByIds(anyList())).thenReturn(List.of(summaryOf(eligible)));
+
+        SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
+                null, null, 4, null, null, null, null, null, null, null, null, null);
+        Page<ListingSummary> page = service.search(withGuests,
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
+
+        verify(port).findActiveListingIdsMatching(any());
+        verify(port, never()).findActiveListingIds();
+        verify(filterPort).findMatchingPaged(any(), eq(Set.of(eligible)), any());
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+    }
 }

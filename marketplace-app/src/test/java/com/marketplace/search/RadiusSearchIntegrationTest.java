@@ -126,8 +126,12 @@ class RadiusSearchIntegrationTest {
                 """,
                 PROVIDER_USER_ID, "p1-it@example.com", "p1-it@example.com", "P1 IT Provider");
 
-        ProviderListing a = active("شقة قريبة جدًا");
-        ProviderListing b = active("شقة في الحي المجاور");
+        // CodeRabbit PR #300 round 1: the rows also vary DECLARED CAPACITY
+        // (a=2, b=4, c/d undeclared) and PRICE (a=350, b=280) — the catalog
+        // criteria guards below ride that variance; every pre-existing
+        // assertion is criteria-less and stays byte-identical
+        ProviderListing a = active("شقة قريبة جدًا", 2, 35000L);
+        ProviderListing b = active("شقة في الحي المجاور", 4, 28000L);
         ProviderListing c = active("شقة بعيدة خارج النطاق");
         ProviderListing d = active("شقة بلا إحداثيات");
         listingRepository.saveAll(List.of(a, b, c, d));
@@ -137,23 +141,31 @@ class RadiusSearchIntegrationTest {
         noCoordinates = d.getId();
 
         propertyRepository.save(PropertyDetails.create(nearest, PROVIDER_USER_ID,
-                property(new BigDecimal("33.558700"), new BigDecimal("36.056800"))));
+                property(new BigDecimal("33.558700"), new BigDecimal("36.056800"), 70)));
         propertyRepository.save(PropertyDetails.create(farther, PROVIDER_USER_ID,
-                property(new BigDecimal("33.560000"), new BigDecimal("36.060000"))));
+                property(new BigDecimal("33.560000"), new BigDecimal("36.060000"), 120)));
         propertyRepository.save(PropertyDetails.create(far, PROVIDER_USER_ID,
                 property(new BigDecimal("34.000000"), new BigDecimal("37.000000"))));
         propertyRepository.save(PropertyDetails.create(noCoordinates, PROVIDER_USER_ID,
                 property(null, null)));
     }
 
-    private static PropertyDetailsRequest property(BigDecimal lat, BigDecimal lng) {
+    private static PropertyDetailsRequest property(BigDecimal lat, BigDecimal lng, int areaM2) {
         return new PropertyDetailsRequest(PropertyPurpose.RENT, PropertyType.APARTMENT,
-                90, 2, 1, null, null, null, null, null, null, null, lat, lng);
+                areaM2, 2, 1, null, null, null, null, null, null, null, lat, lng);
+    }
+
+    private static PropertyDetailsRequest property(BigDecimal lat, BigDecimal lng) {
+        return property(lat, lng, 90);
     }
 
     private ProviderListing active(String title) {
+        return active(title, null, 35000L);
+    }
+
+    private ProviderListing active(String title, Integer maxGuests, Long priceCents) {
         ProviderListing listing = ProviderListing.create(
-                PROVIDER_USER_ID, title, title, "realestate", 35000L, "SAR");
+                PROVIDER_USER_ID, title, title, "realestate", priceCents, "SAR", maxGuests);
         listing.activate();
         return listing;
     }
@@ -233,6 +245,60 @@ class RadiusSearchIntegrationTest {
 
         assertThat(page).isEmpty();
         assertThat(page.getTotalElements()).isZero();
+    }
+
+    @Test
+    void distanceSort_withGuestsCriterion_excludesIneligibleListings() {
+        // CodeRabbit PR #300 round 1 (thread 3): the catalog criteria resolve
+        // BEFORE the radius pagination — the nearest row declares 2 guests,
+        // so a guests=4 distance-sorted radius page carries the 4-guest row
+        // alone (previously the criterion was silently ignored and BOTH
+        // rows were returned)
+        SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
+                null, null, 4, null, null, null, null, null, null,
+                CENTER_LAT, CENTER_LNG, new BigDecimal("10"));
+        Page<ListingSummary> page = searchService.search(withGuests,
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
+
+        assertThat(page.getContent()).extracting(ListingSummary::id).containsExactly(farther);
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+    }
+
+    @Test
+    void areaSort_withRadius_pagesThroughThePropertyOrdering_notA400() {
+        // CodeRabbit PR #300 round 1 (thread 2): the area marker's radius
+        // flow — formerly the set flow's second normalize() rejected the
+        // controller-mapped marker+id pair as a "mixed marker" 400; the
+        // flow did not exist. Now: the radius SET intersected with the
+        // eligible ACTIVE set, the paged property form's area ordering (the
+        // marker's direction honored), the coordinate-less row never a
+        // candidate.
+        Page<ListingSummary> page = searchService.search(radius("10"),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "area")));
+
+        // area DESC: the 120 m2 row then the 70 m2 row — both within the
+        // radius; total from the property side (the counts cannot lie)
+        assertThat(page.getContent()).extracting(ListingSummary::id)
+                .containsExactly(farther, nearest);
+        assertThat(page.getTotalElements()).isEqualTo(2L);
+    }
+
+    @Test
+    void priceSort_withRadius_isASortedPage_notA400() {
+        // CodeRabbit PR #300 round 1 (thread 2 — normalize ONCE): the
+        // controller-mapped sort (priceCents ASC + id) is consumed AS-IS by
+        // the restricted Specification path — formerly rejected by the
+        // service's second normalize() ("unsupported sort property:
+        // priceCents") with a 400
+        Page<ListingSummary> page = searchService.search(radius("10"),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
+
+        // 280 SAR (farther) before 350 SAR (nearest) — both within the
+        // radius, ordered by the mapped price property
+        assertThat(page.getContent()).extracting(ListingSummary::id)
+                .containsExactly(farther, nearest);
+        assertThat(page.getTotalElements()).isEqualTo(2L);
     }
 
     @Test

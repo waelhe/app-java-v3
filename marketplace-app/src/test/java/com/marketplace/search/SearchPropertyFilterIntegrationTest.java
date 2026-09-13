@@ -216,6 +216,32 @@ class SearchPropertyFilterIntegrationTest {
     }
 
     @Test
+    void areaSort_withGuestsCriterion_filtersBeforeThePropertyOrdering() {
+        // CodeRabbit PR #300 round 1 (thread 3's class — the L32 instance):
+        // the catalog criteria resolve on the catalog's side BEFORE the
+        // property ordering — the area-sorted page previously ignored them
+        // (a guests criterion changed nothing). The seed's area-bearing
+        // listings declare NO capacity (I6: undeclared capacity never
+        // matches), so a 4-guest 60 m2 apartment is the only eligible row.
+        ProviderListing familyFlat = ProviderListing.create(
+                PROVIDER_USER_ID, "شقة عائلة قرب الساحة", "شقة عائلية", "realestate", 25000L, "SAR", 4);
+        familyFlat.activate();
+        listingRepository.saveAndFlush(familyFlat);
+        propertyRepository.saveAndFlush(PropertyDetails.create(familyFlat.getId(),
+                PROVIDER_USER_ID, property(PropertyPurpose.RENT, PropertyType.APARTMENT,
+                        60, 2, 1, QUDSAYYA)));
+
+        SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
+                null, null, 4, null, null, null, null, null, null, null, null, null);
+        Page<ListingSummary> page = searchService.search(withGuests,
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
+
+        assertThat(page.getContent()).extracting(ListingSummary::id)
+                .containsExactly(familyFlat.getId());
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+    }
+
+    @Test
     void priceSort_onThePropertyFlow_ridesTheFacetedPath() {
         Page<ListingSummary> page = searchService.search(
                 facets(QUDSAYYA, null, null, null),

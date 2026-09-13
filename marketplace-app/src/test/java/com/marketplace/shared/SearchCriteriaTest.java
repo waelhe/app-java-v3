@@ -1,6 +1,7 @@
 package com.marketplace.shared;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.SearchCriteria;
 import org.junit.jupiter.api.Test;
 
@@ -234,6 +235,33 @@ class SearchCriteriaTest {
                 LAT, LNG, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("provided together");
+    }
+
+
+    @Test
+    void catalogCriteria_gateFlagsCategoryPriceAndGuestsOnly() {
+        // CodeRabbit PR #300 round 1 (thread 3): the paged realestate flows'
+        // eligibility gate — CATALOG-side predicates only
+        assertThat(new SearchCriteria(null, "stay", null, null, null, null, null)
+                .hasCatalogCriteria()).isTrue();
+        assertThat(new SearchCriteria(null, null, BigDecimal.ONE, null, null, null, null)
+                .hasCatalogCriteria()).isTrue();
+        assertThat(new SearchCriteria(null, null, null, BigDecimal.TEN, null, null, null)
+                .hasCatalogCriteria()).isTrue();
+        assertThat(new SearchCriteria(null, null, null, null, null, null, 4)
+                .hasCatalogCriteria()).isTrue();
+
+        // the stay window is NOT a catalog predicate (the availability
+        // whitelist composes separately); the property facets and the
+        // radius triple are their own gates
+        assertThat(new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, null)
+                .hasCatalogCriteria()).isFalse();
+        assertThat(new SearchCriteria(null, null, null, null, null, null, null,
+                java.util.UUID.randomUUID(), PropertyPurpose.RENT, null, null, null, null,
+                null, null, null).hasCatalogCriteria()).isFalse();
+        assertThat(new SearchCriteria(null, null, null, null, null, null, null,
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"))
+                .hasCatalogCriteria()).isFalse();
     }
 
     @Test

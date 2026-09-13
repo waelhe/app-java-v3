@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Flyway schema</b> (the recorded lesson: a {@code ddl-auto: create-drop}
  * schema hides what production actually runs — V28 archive table, V11 status
  * columns). Boots the full application context on real PostgreSQL
- * ({@code postgres:18-alpine}, same image as CI services and
+ * ({@code postgis/postgis:18-3.6-alpine}, same image as CI services and
  * docker-compose) with Flyway enabled and {@code ddl-auto=none}, following the
  * {@code EventPublicationArchiveIntegrationTest} pattern.
  *

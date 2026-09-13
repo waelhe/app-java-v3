@@ -276,6 +276,23 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listingRepository.findIdsByStatus(ListingStatus.ACTIVE);
     }
 
+    /**
+     * CodeRabbit PR #300 round 1: the criteria-eligible ACTIVE id set — the
+     * shared criteria specification (ACTIVE + category/price/guests) through
+     * the official Specifications path, mapped to ids in the realestate
+     * adapter's own set-form shape (its {@code findListingIdsMatching} runs
+     * the identical composition over {@code property_details}). A criteria
+     * with every catalog predicate absent degenerates to the ACTIVE set —
+     * the caller gates on {@code hasCatalogCriteria()} and keeps the
+     * cheaper derived-query path for that case.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> findActiveListingIdsMatching(SearchCriteria criteria) {
+        return listingRepository.findAll(criteriaSpecification(criteria))
+                .stream().map(ProviderListing::getId).collect(Collectors.toSet());
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder) {
