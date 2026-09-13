@@ -50,6 +50,21 @@ spring:
     validate-on-migrate: true
     out-of-order: false
     clean-disabled: true
+    # V51 (postgis plan §5 D-I1) runs DROP/CREATE INDEX CONCURRENTLY —
+    # PostgreSQL statements that cannot execute inside a transaction
+    # block. Flyway's default PostgreSQL lock mode is the TRANSACTIONAL
+    # advisory lock (pg_try_advisory_xact_lock inside an open
+    # transaction on the lock connection); a concurrent index build must
+    # wait for pre-existing snapshots, and that open lock transaction
+    # predates them — the wait cannot resolve (indefinite hang at boot).
+    # The official Flyway setting (flyway.postgresql.transactional.lock)
+    # documents this: "If false, session-level locks will be used
+    # instead. This should be set to false for statements such as
+    # CREATE INDEX CONCURRENTLY." Session-level locks still serialize
+    # concurrent migrators (exclusive advisory lock held for the run).
+    # Spring Boot maps the setting to spring.flyway.postgresql.*.
+    postgresql:
+      transactional-lock: false
 
   modulith:
     events:
