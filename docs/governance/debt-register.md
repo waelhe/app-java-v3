@@ -9,8 +9,6 @@
 
 | ID | Description | File:Line | Reason | Date | Severity | Owner | Repay plan | Status |
 |----|-------------|-----------|--------|------|----------|-------|------------|--------|
-| D-009 | Legacy webhook HMAC binds only `eventId + eventType`; `provider`, `paymentIntentId`, `externalId` unsigned — authenticated replay/field-tamper across providers | `PaymentsService.processWebhookEvent`: `validateSignature(eventId + eventType, signature)` | **Latent gate measured:** the secret binding `marketplace.payments.webhook.shared-secret` is NOT present in `PaymentsProperties` nor application.yml — defaults empty, so `PaymentWebhookSecurity` rejects ALL legacy webhook calls today ("not configured"). The gap opens only when a deployer binds the secret explicitly. A captured valid signature would then let an attacker rotate `provider` (dedup key `(provider, event_id)` — provider unbounded by MAC) and replay `confirmIntent` against any `paymentIntentId` (`getIntent` lacks ownership check on this internal path) | 2026-09-11 | **critical** (security: payment-state tamper, latent — dormant until secret bound) | w-co | Extend signed payload to `provider+eventId+eventType+paymentIntentId+externalId` (+ timestamp window for replay protection) inside `PaymentWebhookSecurity`; add rejection tests | open |
-| D-010 | Flyway `V35` silent gap — sequence V34→V36; records say "V1..V35 clean" (PROJECT_MAP + SYSTEM.md §214) but no `V35__*.sql` exists in any commit | `db/migration/` | Number evidently allocated to a B2 draft dropped before PR #232; never applied (no prod impact) | 2026-09-11 | data (documentation reference misalignment) | w-co | Correct the two historical references to V34 — **user decision** | open |
 
 > _No open debts yet. New entries are added at the bottom of this table._
 
@@ -20,6 +18,8 @@
 
 | ID | Description | Closed date | How |
 |----|-------------|-------------|-----|
+| D-009 | Legacy webhook HMAC binds only `eventId + eventType`; `provider`, `paymentIntentId`, `externalId` unsigned — authenticated replay/field-tamper across providers (latent: secret unbound, gate rejects all) | 2026-09-13 | **Repaid by the user's command «عالج الديون، نفذ» — PR #304 → main `e000260`** (squash, CI 6/6 on head `4fd9e93`, CodeRabbit j1: 3/3 notes adopted from the root + threads confirmed). `PaymentWebhookSecurity` rebuilt on the official Stripe scheme measured from the stripe-java 33.4.1 artifact bytecode: header `t=<epoch>,v1=<base64-mac>` (multiple v1 = rotation), signed payload `<timestamp>.<length-prefixed injective five-field envelope with explicit presence markers (CWE-345 adoption)>`, constant-time compare before the window, past-only rejection `timestamp < now-300s`. Retired format rejected; 21 real-MAC guards; Clock from the house `ClockConfig`. Channel latent by design — no live caller broke. |
+| D-010 | Flyway `V35` silent gap — sequence V34→V36; records say "V1..V35 clean" but no `V35__*.sql` exists in any commit | 2026-09-13 | **Repaid by the same command/PR #304**: the two historical references corrected to V1..V34 (the measured count: 34 versioned) + SYSTEM.md §7 now pins V35 as a permanently retired number (allocated to a dropped B2 draft; never in any commit; never applied; reuse would be out-of-order vs the applied history and require the disabled `outOfOrder=true`). |
 
 ---
 

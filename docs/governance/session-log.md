@@ -1,3 +1,11 @@
+---
+
+## Session 2026-09-13 — Debt Register Repayment (D-009 + D-010) — CLOSED
+
+- **User command:** «عالج الديون، نفذ» — the direction this register's last entry was waiting for.
+- **Execution:** PR #304 on main (squash → `e000260`, CI 6/6 on head `4fd9e93`, CodeRabbit j1 = 3 Minor notes all adopted from the root + confirmed resolved): D-009 repaid by rebuilding `PaymentWebhookSecurity` on the official Stripe signature scheme measured from the stripe-java 33.4.1 bytecode (full five-field injective envelope + timestamp + 300s past-only window; retired format rejected; 21 real-MAC guards). D-010 repaid by correcting the two V1..V35 records to V1..V34 and pinning V35 as permanently retired in SYSTEM.md §7.
+- **Register state after this session: zero open debts.**
+
 # Session Log — Current Handover
 
 > Updated at the end of every session. Loaded at entry of every new session (§16).
