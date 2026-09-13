@@ -257,8 +257,12 @@ class RadiusSearchIntegrationTest {
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
                 null, null, 4, null, null, null, null, null, null,
                 CENTER_LAT, CENTER_LNG, new BigDecimal("10"));
+        // CodeRabbit round 2: page size 1 makes the boundary OBSERVABLE —
+        // correct filtering before pagination returns farther (the only
+        // eligible row); the reversed order would page nearest first and
+        // the guests filter would empty it
         Page<ListingSummary> page = searchService.search(withGuests,
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
+                PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "distance")));
 
         assertThat(page.getContent()).extracting(ListingSummary::id).containsExactly(farther);
         assertThat(page.getTotalElements()).isEqualTo(1L);

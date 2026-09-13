@@ -222,19 +222,25 @@ class SearchPropertyFilterIntegrationTest {
         // property ordering — the area-sorted page previously ignored them
         // (a guests criterion changed nothing). The seed's area-bearing
         // listings declare NO capacity (I6: undeclared capacity never
-        // matches), so a 4-guest 60 m2 apartment is the only eligible row.
+        // matches), so a 4-guest apartment is the only eligible row.
+        // CodeRabbit round 2 (same class as the round-2 note on the radius
+        // guard): the INELIGIBLE rows must LEAD the area ordering and the
+        // page size must be 1 — with area 150 the seed's 90/300 rows lead,
+        // so correct filtering before pagination returns the flat, while
+        // the reversed order would page a no-capacity row first and the
+        // guests filter would empty it
         ProviderListing familyFlat = ProviderListing.create(
                 PROVIDER_USER_ID, "شقة عائلة قرب الساحة", "شقة عائلية", "realestate", 25000L, "SAR", 4);
         familyFlat.activate();
         listingRepository.saveAndFlush(familyFlat);
         propertyRepository.saveAndFlush(PropertyDetails.create(familyFlat.getId(),
                 PROVIDER_USER_ID, property(PropertyPurpose.RENT, PropertyType.APARTMENT,
-                        60, 2, 1, QUDSAYYA)));
+                        150, 2, 1, QUDSAYYA)));
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
                 null, null, 4, null, null, null, null, null, null, null, null, null);
         Page<ListingSummary> page = searchService.search(withGuests,
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
+                PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "area")));
 
         assertThat(page.getContent()).extracting(ListingSummary::id)
                 .containsExactly(familyFlat.getId());
