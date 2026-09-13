@@ -31,9 +31,15 @@
 -- precedents; the promotion threshold is a measured 50K rows.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- The cast is parenthesized: PostgreSQL's index_elem grammar accepts a
+-- bare function call or a parenthesized expression — a BARE cast
+-- (expr::type) is a syntax error (measured: CI's first run of this
+-- migration, "syntax error at or near "::"" — the local no-Docker
+-- environment never executes migrations; CI is the authority). The
+-- indexed expression itself is unchanged.
 CREATE INDEX idx_property_details_geog
     ON property_details
-    USING gist (ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography)
+    USING gist ((ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography))
     WHERE latitude IS NOT NULL
       AND longitude IS NOT NULL
       AND is_deleted = FALSE;
