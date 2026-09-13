@@ -27,10 +27,9 @@
 -- migration failed (loud, Flyway records it) and the documented
 -- recovery is this same drop-and-retry path, never a silent skip.
 --
--- FLYWAY OFFICIAL PATTERN (executeInTransaction):
---   PostgreSQL cannot run these statements inside a transaction block,
---   and Flyway documents the script-configuration escape for exactly
---   this class — the sibling file V51__postgis_radius_index_concurrently.sql.conf
+-- FLYWAY OFFICIAL PATTERN (two settings, both required):
+--   PostgreSQL cannot run these statements inside a transaction block.
+--   (1) The sibling file V51__postgis_radius_index_concurrently.sql.conf
 --   sets `executeInTransaction = false` (Redgate Flyway docs, "Execute
 --   In Transaction Setting": "Note that this setting can be set from
 --   Script Configuration in addition to project configuration").
@@ -39,6 +38,32 @@
 --   non-transactional (measured in the flyway-database-postgresql
 --   12.4.0 bytecode) — the explicit .conf makes the intent
 --   deterministic instead of parser-inferred.
+--   (2) The PROJECT setting spring.flyway.postgresql.transactional-lock:
+--   false (application.yml) — the Redgate docs for the PostgreSQL
+--   namespace: "If false, session-level locks will be used instead.
+--   This should be set to false for statements such as CREATE INDEX
+--   CONCURRENTLY." Without it, Flyway's default TRANSACTIONAL advisory
+--   lock (pg_try_advisory_xact_lock held inside an open transaction on
+--   the lock connection) predates the concurrent build's snapshot
+--   waits — the build cannot resolve the wait and boot hangs
+--   indefinitely. Session-level locks still serialize concurrent
+--   migrators. A per-script .sql.conf placement is NOT valid: script
+--   configuration accepts only
+--   executeInTransaction/encoding/placeholderReplacement/shouldExecute
+--   (SqlScriptMetadata rejects unrecognized keys) — hence the project
+--   scope, which is what the official docs prescribe.
+--
+-- RETRY SEMANTICS (PostgreSQL, "Building Indexes Concurrently"): a
+-- failed concurrent build is entered as an INVALID index in the system
+-- catalogs BEFORE the table scans — a failed CREATE still leaves
+-- idx_property_details_geog present (INVALID, ignored for queries), so
+-- the documented recovery ("drop the index and try again to perform
+-- CREATE INDEX CONCURRENTLY") is exactly what a re-run of this
+-- migration after `flyway repair` does: the DROP removes the invalid
+-- leftover, the CREATE retries. No IF EXISTS is used — the
+-- invalid-index-remains contract makes the plain DROP correct on every
+-- documented failure path, and the bare form preserves the parser's
+-- keyword-prefix auto-detection.
 --
 -- The index definition is byte-identical to V50's (same name, same
 -- parenthesized cast form — index_elem grammar accepts a bare function
