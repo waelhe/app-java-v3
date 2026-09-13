@@ -97,6 +97,22 @@ public interface CatalogSearchPort {
     Set<UUID> findActiveListingIds();
 
     /**
+     * CodeRabbit PR #300 round 1: the ids of every ACTIVE listing matching
+     * the criteria's optional CATALOG predicates (category / price bounds /
+     * guests) — the criteria-ELIGIBLE set the paged realestate flows (the
+     * {@code area} and {@code distance} orderings) intersect before paging.
+     * Those flows cannot apply the catalog predicates DB-side: their
+     * ordering and their predicates are realestate-owned
+     * ({@code property_details}), so the catalog side resolves its own
+     * eligibility first. The result is ACTIVE-gated by construction (the
+     * shared criteria specification carries the ACTIVE status predicate),
+     * so it is a subset of {@link #findActiveListingIds()} — the caller
+     * intersects it (with the facet set and any other restriction) instead
+     * of the bare ACTIVE set.
+     */
+    Set<UUID> findActiveListingIdsMatching(SearchCriteria criteria);
+
+    /**
      * The listing summaries for the given ids, returned in the GIVEN order
      * (the area-sorted page assembly). Ids that no longer resolve to an
      * ACTIVE listing are skipped (the page total comes from the property

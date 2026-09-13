@@ -116,10 +116,22 @@ public class PropertyDetails extends BaseEntity {
     @Column(name = "location_id")
     private UUID locationId;
 
-    /** Display-only coordinate (G-R5: client-side maps; never radius search). */
+    /**
+     * The coordinate (G-R5: client-side maps). P1 (postgis plan §D-P1):
+     * also the radius-search source — the V50 expressive GiST index
+     * evaluates {@code ST_SetSRID(ST_MakePoint(longitude, latitude),
+     * 4326)::geography} over these numeric columns, so the stored value
+     * stays the single representation (no geography column, no mirror);
+     * the value is written once and read by both consumers.
+     */
     @Column(name = "latitude", precision = 9, scale = 6)
     private BigDecimal latitude;
 
+    /**
+     * The coordinate (G-R5: client-side maps) — P1: the radius-search
+     * source through the same V50 expressive index (see the latitude
+     * field's javadoc).
+     */
     @Column(name = "longitude", precision = 9, scale = 6)
     private BigDecimal longitude;
 

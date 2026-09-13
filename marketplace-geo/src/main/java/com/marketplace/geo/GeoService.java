@@ -45,9 +45,10 @@ public class GeoService implements GeoLookupPort {
      * changes the qualified location set a cached {@code search-results}
      * page was built from (the set resolves INSIDE the cached method), so
      * the page must evict with the tree (CodeRabbit PR #299 round 1: the
-     * tree alone left stale search pages for the full TTL).
+     * tree alone left stale search pages for the full TTL). P1: the name
+     * rides the search-results cache bump (v3 -> v4).
      */
-    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree", "search-results-v3");
+    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree", "search-results-v4");
 
     /** The plan's autocomplete floor: a 1-character prefix is a 400, not a query. */
     static final int MIN_SUGGEST_PREFIX = 2;

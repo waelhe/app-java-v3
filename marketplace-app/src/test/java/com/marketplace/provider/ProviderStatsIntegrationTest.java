@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
  * and the FK parents.
  *
  * <p>Boot pattern follows {@code CatalogSearchFullTextIntegrationTest}:
- * isolated {@code postgres:18-alpine} container via
+ * isolated {@code postgis/postgis:18-3.6-alpine} container via
  * {@code @ServiceConnection}, Flyway enabled, {@code ddl-auto=none}.
  *
  * <p>Acceptance criterion 1 — known dataset, the three numbers match a
@@ -76,7 +76,8 @@ class ProviderStatsIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired

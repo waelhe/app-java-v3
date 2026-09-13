@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgis/postgis:18-3.6-alpine
         env:
           POSTGRES_DB: marketplace
           POSTGRES_USER: test

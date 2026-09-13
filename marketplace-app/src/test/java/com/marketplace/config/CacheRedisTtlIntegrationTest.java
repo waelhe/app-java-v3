@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Setup follows {@code EventPublicationResubmissionIntegrationTest}:
  * full application context on real PostgreSQL (Flyway enabled,
- * {@code ddl-auto=none}, {@code postgres:18-alpine} — same image as CI
+ * {@code ddl-auto=none}, {@code postgis/postgis:18-3.6-alpine} — same image as CI
  * services and docker-compose). Redis is provided by an isolated
  * {@code redis:8-alpine} container bound via the official
  * {@code RedisContainerConnectionDetailsFactory}
@@ -73,7 +73,8 @@ class CacheRedisTtlIntegrationTest {
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static org.testcontainers.postgresql.PostgreSQLContainer postgres =
             new org.testcontainers.postgresql.PostgreSQLContainer(
-                    DockerImageName.parse("postgres:18-alpine"))
+                    DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Container

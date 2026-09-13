@@ -65,7 +65,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Setup follows {@code CacheRedisTtlIntegrationTest}: full application
  * context on real PostgreSQL (Flyway enabled, {@code ddl-auto=none},
- * {@code postgres:18-alpine}) + an isolated {@code redis:8-alpine}
+ * {@code postgis/postgis:18-3.6-alpine}) + an isolated {@code redis:8-alpine}
  * container via {@code @ServiceConnection}, cache type forced to
  * {@code redis} (the test profile otherwise overrides it to
  * {@code simple}). Seeds follow the {@code CatalogSearchFullTextIntegrationTest}
@@ -90,7 +90,8 @@ class ColdCacheRedisSerializationIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches the established container pattern (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Container

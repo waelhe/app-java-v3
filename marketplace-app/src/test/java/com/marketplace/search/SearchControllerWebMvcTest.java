@@ -165,14 +165,94 @@ class SearchControllerWebMvcTest {
         mockMvc.perform(get("/api/v1/search").param("sort", "area,desc")).andExpect(status().isOk());
     }
 
+    // ---- P1 (postgis plan): the radius triple at the HTTP boundary ----
+
     @org.junit.jupiter.api.Test
-    void searchWithCriteria_mixedAreaAndCatalogSorts_is400() throws Exception {
-        // CodeRabbit PR #299 round 1: the area marker owns the WHOLE
-        // ordering in the property flow — a mixed request would silently
-        // drop the other part, so the boundary rejects it loudly.
+    void searchWithCriteria_radiusParams_bindAndReachTheService() throws Exception {
+        when(searchService.search(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
+
         mockMvc.perform(get("/api/v1/search")
-                        .param("sort", "area,asc")
-                        .param("sort", "price,desc"))
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "10"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<SearchCriteria> captor = ArgumentCaptor.forClass(SearchCriteria.class);
+        verify(searchService).search(captor.capture(), any());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().hasRadius()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().radiusMeters()).isEqualTo(10_000L);
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_partialRadiusPresence_is400BeforeAnyQuery() throws Exception {
+        // one coordinate without the rest — the stay window's group lesson
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/search")
+                        .param("radiusKm", "10"))
+                .andExpect(status().isBadRequest());
+
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_latitudeOutsideRange_is400() throws Exception {
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "91")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "10"))
+                .andExpect(status().isBadRequest());
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_zeroOrOverCeilingRadius_is400() throws Exception {
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "0"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "50.001"))
+                .andExpect(status().isBadRequest());
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_subMeterRadiusPrecision_is400() throws Exception {
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "0.0004"))
+                .andExpect(status().isBadRequest());
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_sortDistance_ascending_isAccepted() throws Exception {
+        when(searchService.search(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/search")
+                        .param("lat", "33.558889")
+                        .param("lng", "36.056944")
+                        .param("radiusKm", "10")
+                        .param("sort", "distance,asc"))
+                .andExpect(status().isOk());
+    }
+
+    @org.junit.jupiter.api.Test
+    void searchWithCriteria_sortDistanceDescending_is400AtTheWhitelist() throws Exception {
+        // nearest-first is the whole distance contract — a farthest-first
+        // request is rejected loudly, never silently flipped
+        mockMvc.perform(get("/api/v1/search")
+                        .param("sort", "distance,desc"))
                 .andExpect(status().isBadRequest());
         verify(searchService, org.mockito.Mockito.never()).search(any(), any());
     }

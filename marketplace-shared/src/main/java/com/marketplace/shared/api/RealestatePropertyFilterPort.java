@@ -3,6 +3,7 @@ package com.marketplace.shared.api;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.math.BigDecimal;
 import java.util.Set;
 import java.util.UUID;
 
@@ -64,6 +65,69 @@ public interface RealestatePropertyFilterPort {
     Page<PropertyMatch> findMatchingPagedRestricted(PropertyCriteria criteria,
                                                     Set<UUID> activeListingIds,
                                                     Set<UUID> providerIds, Pageable pageable);
+
+    // ------------------------------------------------------------------
+    // P1 (postgis integration plan §D-P3/D-P4): the radius operations.
+    // The same four-form symmetry the port already documents for the facet
+    // path — set, provider-restricted set, paged, provider-restricted paged
+    // — because a windowed distance-sorted radius search is a legal
+    // surface combination and {@code providerIds} keeps its contract
+    // (arrives only in the restricted forms, always non-empty). The plan's
+    // touch map counted three; the port's own discipline makes four (the
+    // measured correction rides the P1 truth batch).
+    // ------------------------------------------------------------------
+
+    /**
+     * Listing ids whose property coordinates lie within the radius —
+     * ST_DWithin over geography(4326), the official radius predicate (it
+     * uses the spatial index; ST_Distance/ST_Buffer filtering does not).
+     * The radius is in METERS (the geography unit). Rows without
+     * coordinates never match (the partial-index predicate is the query's
+     * predicate); soft-deleted rows never match.
+     *
+     * @param latitude    the search center latitude (already scale-6
+     *                    normalized by the {@code SearchCriteria} gate)
+     * @param longitude   the search center longitude (scale-6)
+     * @param radiusMeters the search radius in whole meters (the criteria
+     *                    gate guarantees whole-meter precision)
+     */
+    Set<UUID> findListingIdsWithinRadius(BigDecimal latitude,
+                                         BigDecimal longitude,
+                                         long radiusMeters);
+
+    /**
+     * The window path's radius form: within the radius AND written by one
+     * of the given providers (the availability whitelist — always
+     * non-empty, the caller handled the empty case).
+     */
+    Set<UUID> findListingIdsWithinRadiusRestricted(BigDecimal latitude,
+                                                   BigDecimal longitude,
+                                                   long radiusMeters,
+                                                   Set<UUID> providerIds);
+
+    /**
+     * The distance-ordered paged form ({@code sort=distance}): a DB-side
+     * slice of the within-radius matches ordered by ST_Distance with the
+     * listing-id ASC tiebreak — the direction follows the requested sort.
+     * {@code activeListingIds} is the catalog-resolved ACTIVE set (the
+     * realestate table does not know listing status by design, so the
+     * caller supplies it — the {@code searchAreaSorted} composition). The
+     * page carries the distance flow's own total (the counts cannot lie).
+     * The distance itself never leaves this module (D-P11: the client
+     * computes display distance from the listing coordinates it already
+     * holds; the server orders by it, that is all).
+     */
+    Page<UUID> findWithinRadiusPaged(BigDecimal latitude,
+                                     BigDecimal longitude,
+                                     long radiusMeters,
+                                     Set<UUID> activeListingIds, Pageable pageable);
+
+    /** The provider-restricted paged form (window + distance sort). */
+    Page<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude,
+                                               BigDecimal longitude,
+                                               long radiusMeters,
+                                               Set<UUID> activeListingIds,
+                                               Set<UUID> providerIds, Pageable pageable);
 
     /**
      * One matching listing with the sort-relevant field (the area). The

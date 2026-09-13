@@ -141,7 +141,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
      * whitelist varies per request, and the search module's
-     * {@code search-results-v3} cache (criteria-keyed, window included) is
+     * {@code search-results-v4} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
      */
     @Override
@@ -276,6 +276,23 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listingRepository.findIdsByStatus(ListingStatus.ACTIVE);
     }
 
+    /**
+     * CodeRabbit PR #300 round 1: the criteria-eligible ACTIVE id set — the
+     * shared criteria specification (ACTIVE + category/price/guests) through
+     * the official Specifications path, mapped to ids in the realestate
+     * adapter's own set-form shape (its {@code findListingIdsMatching} runs
+     * the identical composition over {@code property_details}). A criteria
+     * with every catalog predicate absent degenerates to the ACTIVE set —
+     * the caller gates on {@code hasCatalogCriteria()} and keeps the
+     * cheaper derived-query path for that case.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> findActiveListingIdsMatching(SearchCriteria criteria) {
+        return listingRepository.findAll(criteriaSpecification(criteria))
+                .stream().map(ProviderListing::getId).collect(Collectors.toSet());
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder) {
@@ -337,7 +354,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
     static final Set<String> CATALOG_CACHE_NAMES =
-            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v3");
+            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v4");
 
     /**
      * Creates a listing for the caller-owned provider profile. The

@@ -51,7 +51,8 @@ class SearchPropertyFilterIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired
@@ -131,7 +132,7 @@ class SearchPropertyFilterIntegrationTest {
     private static SearchCriteria facets(UUID locationId, PropertyPurpose purpose,
                                          Integer minRooms, Integer minAreaM2) {
         return new SearchCriteria(null, null, null, null, null, null, null,
-                locationId, purpose, null, minRooms, null, minAreaM2);
+                locationId, purpose, null, minRooms, null, minAreaM2, null, null, null);
     }
 
     @Test
@@ -215,6 +216,38 @@ class SearchPropertyFilterIntegrationTest {
     }
 
     @Test
+    void areaSort_withGuestsCriterion_filtersBeforeThePropertyOrdering() {
+        // CodeRabbit PR #300 round 1 (thread 3's class — the L32 instance):
+        // the catalog criteria resolve on the catalog's side BEFORE the
+        // property ordering — the area-sorted page previously ignored them
+        // (a guests criterion changed nothing). The seed's area-bearing
+        // listings declare NO capacity (I6: undeclared capacity never
+        // matches), so a 4-guest apartment is the only eligible row.
+        // CodeRabbit round 2 (same class as the round-2 note on the radius
+        // guard): the INELIGIBLE rows must LEAD the area ordering and the
+        // page size must be 1 — with area 150 the seed's 90/300 rows lead,
+        // so correct filtering before pagination returns the flat, while
+        // the reversed order would page a no-capacity row first and the
+        // guests filter would empty it
+        ProviderListing familyFlat = ProviderListing.create(
+                PROVIDER_USER_ID, "شقة عائلة قرب الساحة", "شقة عائلية", "realestate", 25000L, "SAR", 4);
+        familyFlat.activate();
+        listingRepository.saveAndFlush(familyFlat);
+        propertyRepository.saveAndFlush(PropertyDetails.create(familyFlat.getId(),
+                PROVIDER_USER_ID, property(PropertyPurpose.RENT, PropertyType.APARTMENT,
+                        150, 2, 1, QUDSAYYA)));
+
+        SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
+                null, null, 4, null, null, null, null, null, null, null, null, null);
+        Page<ListingSummary> page = searchService.search(withGuests,
+                PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "area")));
+
+        assertThat(page.getContent()).extracting(ListingSummary::id)
+                .containsExactly(familyFlat.getId());
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+    }
+
+    @Test
     void priceSort_onThePropertyFlow_ridesTheFacetedPath() {
         Page<ListingSummary> page = searchService.search(
                 facets(QUDSAYYA, null, null, null),
@@ -228,7 +261,7 @@ class SearchPropertyFilterIntegrationTest {
     void textQuery_withPropertyCriteria_ranksAndFilters() {
         Page<ListingSummary> page = searchService.search(
                 new SearchCriteria("فيلا", null, null, null, null, null, null,
-                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null),
+                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         assertThat(page.getContent()).extracting(ListingSummary::id)

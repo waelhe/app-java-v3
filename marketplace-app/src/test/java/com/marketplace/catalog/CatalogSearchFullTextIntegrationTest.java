@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * {@code DeadQuartzStoreRemovalIntegrationTest} (formerly
  * {@code QuartzJdbcJobStoreConfigTest}, retired with the Quartz store it
  * guarded): full application context on
- * an ISOLATED {@code postgres:18-alpine} container via {@code @ServiceConnection},
+ * an ISOLATED {@code postgis/postgis:18-3.6-alpine} container via {@code @ServiceConnection},
  * with Flyway enabled and {@code ddl-auto=none} — so the native query runs
  * against exactly the schema migrations produce (V1..V34, including V29's
  * matview drop, V30's Envers revision sequence, V31's Quartz store drop and
@@ -83,7 +83,8 @@ class CatalogSearchFullTextIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired

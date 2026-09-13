@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>This test follows the {@code DeadQuartzStoreRemovalIntegrationTest}
  * pattern (formerly {@code QuartzJdbcJobStoreConfigTest}, retired with the
  * Quartz store it guarded): boot
- * the full application context on real PostgreSQL ({@code postgres:18-alpine},
+ * the full application context on real PostgreSQL ({@code postgis/postgis:18-3.6-alpine},
  * same image as CI services and docker-compose) with Flyway enabled and
  * {@code ddl-auto=none}, so the registry runs against exactly the schema
  * migrations produce. Publishing a {@code DayHasPassed} (the production
@@ -66,7 +66,8 @@ class EventPublicationArchiveIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @Autowired

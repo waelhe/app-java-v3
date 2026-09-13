@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  * over the REAL modules: V41 is the schema the loop runs on (Flyway
  * enabled, {@code ddl-auto=none} — the {@code AuditedWrites} /
  * {@code NotificationPreferences} boot convention on an isolated
- * {@code postgres:18-alpine} container), the calendar CRUD is the real
+ * {@code postgis/postgis:18-3.6-alpine} container), the calendar CRUD is the real
  * {@code ListingPriceCalendarService} against the real tables, and the
  * booking seam is the REAL {@code BookingService} wired to the REAL
  * {@code PricingService} through the shared {@code EffectivePricePort}
@@ -88,7 +88,8 @@ class ListingPriceCalendarIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches the house convention (this testcontainers version ships a non-generic PostgreSQLContainer).
     static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgres:18-alpine"))
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
     @MockitoBean

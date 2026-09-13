@@ -1,6 +1,20 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    # P1 (postgis integration plan §D-P7): the one image family across
+    # environments — postgis/postgis:18-3.6-alpine here (CI/compose/
+    # Testcontainers ride alpine as before; production rides the Debian
+    # 18-3.6 tag — the difference is the base OS alone, the schema and
+    # migrations are one). postgres:18-alpine moved the cluster to
+    # /var/lib/postgresql/18/docker and declares /var/lib/postgresql as its
+    # volume (CodeRabbit #241): the named volume covers the versioned data
+    # root. The postgis image keeps the same layout.
+    # NOTE: the image's initdb-postgis creates the extension in
+    # POSTGRES_DB only on FIRST initialization ("Initialize Only on Empty
+    # Data Directory") — an existing pgdata18 volume from the plain
+    # postgres image carries no extension, and recreating the local volume
+    # (docker compose down -v) starts a fresh init that carries it. V50's
+    # CREATE EXTENSION IF NOT EXISTS covers both shapes either way.
+    image: postgis/postgis:18-3.6-alpine
     container_name: marketplace-db
     environment:
       POSTGRES_DB: marketplace
@@ -9,10 +23,6 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      # postgres:18 moved the cluster to /var/lib/postgresql/18/docker and
-      # declares /var/lib/postgresql as its volume (CodeRabbit #241): mounting
-      # at the old PG<=17 path /var/lib/postgresql/data persisted NOTHING.
-      # The named volume now covers the versioned data root.
       - pgdata18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U marketplace"]
