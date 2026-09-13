@@ -54,10 +54,11 @@ class CacheTtlConfigTest {
     void baseConfigDeclaresAllNamedCaches() throws Exception {
         // The 15 named caches this TTL governs (L25 added provider-stats —
         // its own 5m override rides the RedisCacheManagerBuilderCustomizer,
-        // pinned by CacheRedisTtlIntegrationTest). A missing name would
-        // silently create caches on demand (default RedisCacheManager
-        // behavior) — the list is the contract between yml and the
-        // @Cacheable annotations.
+        // pinned by CacheRedisTtlIntegrationTest; L30 added geo-tree; L32
+        // bumped search-results -v2 → -v3 with the criteria schema
+        // extension). A missing name would silently create caches on demand
+        // (default RedisCacheManager behavior) — the list is the contract
+        // between yml and the @Cacheable annotations.
         String names = property("application.yml", "spring.cache.cache-names");
         assertThat(names).isNotNull();
         java.util.List<String> declared = java.util.Arrays.stream(names.split(","))
@@ -66,7 +67,7 @@ class CacheTtlConfigTest {
         assertThat(declared)
                 .containsExactlyInAnyOrder(
                         "catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2",
-                        "pricing-calculations", "search-results-v2", "availability",
+                        "pricing-calculations", "search-results-v3", "availability",
                         "bookings", "users", "userSubjects", "conversations",
                         "paymentIntents", "reviews", "providers", "provider-stats",
                         "geo-tree");

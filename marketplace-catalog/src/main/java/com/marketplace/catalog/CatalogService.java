@@ -1,6 +1,8 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.ProviderListingSpecifications;
 import com.marketplace.catalog.spi.CatalogSpi;
+import org.springframework.data.jpa.domain.Specification;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.CacheInvalidationRequested;
@@ -10,6 +12,8 @@ import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.SearchCriteria;
 import com.marketplace.shared.api.BadRequestException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ProviderLookupPort;
@@ -28,7 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.observation.annotation.Observed;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -49,17 +55,23 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final ProviderLookupPort providerLookupPort;
+    private final java.time.Clock clock;
+    private final CatalogProperties catalogProperties;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
                           ProviderNameResolver providerNameResolver,
                           ApplicationEventPublisher eventPublisher,
-                          ProviderLookupPort providerLookupPort) {
+                          ProviderLookupPort providerLookupPort,
+                          java.time.Clock clock,
+                          CatalogProperties catalogProperties) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
         this.providerLookupPort = providerLookupPort;
+        this.clock = clock;
+        this.catalogProperties = catalogProperties;
     }
 
     @Override
@@ -80,7 +92,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Transactional(readOnly = true)
     public Page<ProviderListing> listByProvider(UUID providerId, Pageable pageable) {
-        return listingRepository.findByProviderId(providerId, pageable);
+        // CodeRabbit PR #299 round 1 (CWE-200): this is the PUBLIC provider
+        // profile surface ("Browse one provider's active listings") — the
+        // status filter is the documented contract, and it also guards the
+        // L31 property embed from ever carrying non-ACTIVE listings' data.
+        return listingRepository.findByProviderIdAndStatus(
+                providerId, ListingStatus.ACTIVE, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -109,8 +126,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
-        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
-        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Long minPrice = toMinorUnits(criteria.minPrice());
+        Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteria(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), pageable);
         return toSummaryPage(page);
@@ -124,14 +141,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
      * whitelist varies per request, and the search module's
-     * {@code search-results-v2} cache (criteria-keyed, window included) is
+     * {@code search-results-v3} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
      */
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
-        Long minPrice = criteria.minPrice() != null ? criteria.minPrice().movePointRight(2).longValue() : null;
-        Long maxPrice = criteria.maxPrice() != null ? criteria.maxPrice().movePointRight(2).longValue() : null;
+        Long minPrice = toMinorUnits(criteria.minPrice());
+        Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, pageable);
         return toSummaryPage(page);
@@ -198,6 +215,114 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents(), listing.getCurrency());
     }
 
+    /**
+     * L32: the criteria search restricted to the realestate module's
+     * matching-id set — the property-facet flow. Backed by the official
+     * Specifications (hasStatus + hasCategory + priceBetween + minGuests +
+     * hasListingIdIn), so it honors the Pageable sort (the price/newest
+     * whitelist mapped by the search surface) with the id tiebreak — and
+     * the UNSORTED default is {@code id ASC}, byte-identical to the native
+     * criteria path's ORDER BY id.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
+                                                                     Set<UUID> listingIds,
+                                                                     Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.findAll(
+                criteriaSpecification(criteria).and(
+                        ProviderListingSpecifications.hasListingIdIn(listingIds)),
+                deterministic(pageable));
+        return toSummaryPage(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.findAll(
+                criteriaSpecification(criteria), deterministic(pageable));
+        return toSummaryPage(page);
+    }
+
+    /** The shared optional-predicate specification of the faceted paths. */
+    private static Specification<ProviderListing> criteriaSpecification(SearchCriteria criteria) {
+        return ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)
+                .and(ProviderListingSpecifications.hasCategory(criteria.category()))
+                .and(ProviderListingSpecifications.priceBetween(
+                        toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice())))
+                .and(ProviderListingSpecifications.minGuests(criteria.guests()));
+    }
+
+    /**
+     * L32: the full-text search restricted to the given listing ids —
+     * official websearch_to_tsquery ranking + the pg_trgm typo-tolerance
+     * fallback, with the id restriction in both the content and count
+     * queries. Text searches rank by relevance (documented: the facet sort
+     * whitelist does not apply).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable) {
+        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, pageable);
+        if (page.getTotalElements() == 0) {
+            page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, pageable);
+        }
+        return toSummaryPage(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> findActiveListingIds() {
+        return listingRepository.findIdsByStatus(ListingStatus.ACTIVE);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder) {
+        if (idsInOrder.isEmpty()) {
+            return List.of();
+        }
+        // resolve only ACTIVE listings (the area-flow ids are already
+        // active-restricted; this keeps the projection honest regardless)
+        Map<UUID, ProviderListing> byId = listingRepository.findAllById(idsInOrder).stream()
+                .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .collect(Collectors.toMap(ProviderListing::getId, listing -> listing));
+        // batch-resolve provider names (the toSummaryPage discipline)
+        Map<UUID, String> providerNames = providerNameResolver.resolveNames(
+                byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));
+        // restore the caller's order (the area-sorted page assembly)
+        return idsInOrder.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(listing -> new ListingSummary(
+                        listing.getId(),
+                        listing.getTitle(),
+                        listing.getCategory(),
+                        BigDecimal.valueOf(listing.getPriceCents(), 2),
+                        listing.getCurrency(),
+                        providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")))
+                .toList();
+    }
+
+    /**
+     * L32: the deterministic effective sort — the requested sort (the
+     * price/newest whitelist, already mapped by the search surface) with
+     * the id ASC tiebreak; unsorted requests default to id ASC
+     * (byte-identical to the native criteria path's ORDER BY id — offset
+     * pagination requires a total order, "no deceptive pages").
+     */
+    private static Pageable deterministic(Pageable pageable) {
+        Sort effective = pageable.getSort().isUnsorted()
+                ? Sort.by(Sort.Direction.ASC, "id")
+                : pageable.getSort().and(Sort.by(Sort.Direction.ASC, "id"));
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), effective);
+    }
+
+    /** The min/max price mapping shared by the criteria paths. */
+    private static Long toMinorUnits(BigDecimal price) {
+        return price != null ? price.movePointRight(2).longValue() : null;
+    }
+
     // Cache names are NAMESPACED BY SCHEMA VERSION (CodeRabbit #241): the four
     // ListingSummary caches hold JDK-serialized records — a record-component
     // change (currency was added by the B4 layer) lets a stale pre-change entry
@@ -207,8 +332,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // itself (old entries become unreachable and expire via the 1h TTL). Any
     // future change to ListingSummary MUST bump this suffix — pinned by
     // ListingSummaryCacheContractFilesTest.
-    private static final Set<String> CATALOG_CACHE_NAMES =
-            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v2");
+    // L32: search-results bumps to -v3 with the criteria schema extension
+    // (the plan's D-E6 decision — the criteria record gained six components;
+    // the key generator's prefix bump keeps the key spaces disjoint AND the
+    // name bump evicts at deploy time through the deploy itself).
+    static final Set<String> CATALOG_CACHE_NAMES =
+            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v3");
 
     /**
      * Creates a listing for the caller-owned provider profile. The
@@ -291,13 +420,76 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         return listing;
     }
 
+    /**
+     * L33: activation now resolves the publication window — an explicit
+     * {@code expiresAt} wins; otherwise the configured policy (expiry-days
+     * from now); with neither, a 409 ("no silently-immortal listing").
+     */
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderListing activate(UUID id, Authentication authentication) {
+        return activate(id, null, authentication);
+    }
+
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing activate(UUID id, java.time.Instant expiresAt,
+                                    Authentication authentication) {
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
-        listing.activate();
+        java.time.Instant now = clock.instant();
+        java.time.Instant resolved = expiresAt != null
+                ? expiresAt
+                : policyExpiry(now);
+        // CodeRabbit PR #299 round 1: a past or current expiry would make
+        // the listing publicly ACTIVE until the next job tick — the
+        // boundary is strictly future (the same rule renewal enforces).
+        if (!resolved.isAfter(now)) {
+            throw new com.marketplace.shared.api.BadRequestException(
+                    "expiresAt must be strictly in the future");
+        }
+        listing.activate(resolved);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
+    }
+
+    /**
+     * L33 renewal: works only on the EXPIRED pause (a MANUAL pause answers
+     * 409 — deliberate pauses stay until re-activated), bounded by the
+     * cooldown (the anti-recycling floor: at most one renewal per window).
+     * The new window runs from NOW by the policy.
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderListing renew(UUID id, Authentication authentication) {
+        ProviderListing listing = getById(id);
+        verifyOwnership(listing, authentication);
+        java.time.Instant now = clock.instant();
+        if (listing.getRenewedAt() != null) {
+            java.time.Instant cooldownEnd = listing.getRenewedAt()
+                    .plus(java.time.Duration.ofDays(cooldownDays()));
+            if (now.isBefore(cooldownEnd)) {
+                throw new com.marketplace.shared.api.ConflictException(
+                        "Listing " + id + " was renewed within the cooldown window ("
+                                + cooldownDays() + " days)");
+            }
+        }
+        listing.renew(now, policyExpiry(now));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
+        return listing;
+    }
+
+    /** The configured publication window, or the 409 policy gap. */
+    private java.time.Instant policyExpiry(java.time.Instant now) {
+        Integer days = catalogProperties.expiry().expiryDays();
+        if (days == null) {
+            throw new com.marketplace.shared.api.ConflictException(
+                    "No expiry policy configured (marketplace.catalog.expiry.expiry-days)"
+                            + " and no explicit expiry date provided");
+        }
+        return now.plus(java.time.Duration.ofDays(days));
+    }
+
+    private long cooldownDays() {
+        Integer days = catalogProperties.expiry().renewalCooldownDays();
+        return days != null && days > 0 ? days : 1;
     }
 
     @PreAuthorize("hasRole('PROVIDER')")
@@ -385,7 +577,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 listing.getStatus().name(),
                 listing.getMaxGuests(),
                 listing.getCreatedAt(),
-                listing.getUpdatedAt()
+                listing.getUpdatedAt(),
+                listing.getExpiresAt(),
+                listing.getPausedReason()
         );
     }
 

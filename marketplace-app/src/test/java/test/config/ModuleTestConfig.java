@@ -61,6 +61,7 @@ public class ModuleTestConfig {
         return Optional::empty;
     }
 
+
     @Bean
     @Primary
     MarketplaceProperties marketplaceProperties() {

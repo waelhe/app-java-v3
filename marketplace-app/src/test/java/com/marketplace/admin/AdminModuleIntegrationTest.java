@@ -73,6 +73,17 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.NotificationExportPort notificationExportPort;
 
+    // L31: the closure pulls CatalogController, whose property embed needs
+    // the realestate module's port — outside this slice (the same house
+    // pattern as the other outside-slice ports above).
+    @MockitoBean
+    com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
+
+    // L32: the closure pulls SearchService, whose location facet needs the
+    // geo module's port — outside this slice.
+    @MockitoBean
+    com.marketplace.shared.api.GeoLookupPort geoLookupPort;
+
     @Autowired
     private RevisionService revisionService;
 

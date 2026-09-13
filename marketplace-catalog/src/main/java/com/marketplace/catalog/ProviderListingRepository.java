@@ -2,21 +2,50 @@ package com.marketplace.catalog;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public interface ProviderListingRepository extends JpaRepository<ProviderListing, UUID>, JpaSpecificationExecutor<ProviderListing>, RevisionRepository<ProviderListing, UUID, Integer> {
 
     Page<ProviderListing> findByProviderId(UUID providerId, Pageable pageable);
 
+    /**
+     * The public provider-profile surface's page — ACTIVE listings only
+     * (the documented contract of {@code GET /api/v1/catalog/provider/{id}}
+     * and the guard for the L31 property embed; CodeRabbit PR #299 round 1).
+     */
+    Page<ProviderListing> findByProviderIdAndStatus(UUID providerId, ListingStatus status,
+                                                    Pageable pageable);
+
     Page<ProviderListing> findByCategoryAndStatus(String category, ListingStatus status, Pageable pageable);
 
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);
+
+    /**
+     * L33: the expiry job's scan — ACTIVE listings whose publication
+     * window passed (strictly before: the boundary instant stays ACTIVE
+     * until the next tick). Deterministic id order for stable paging.
+     */
+    Page<ProviderListing> findByStatusAndExpiresAtBefore(ListingStatus status,
+                                                          java.time.Instant expiresAt,
+                                                          Pageable pageable);
+
+    /**
+     * L32 (realestate systems plan): the ACTIVE listing id set — the
+     * restriction the area-sorted search flow passes into the realestate
+     * filter port. JPQL (the soft-delete filter applies automatically
+     * through the entity's @SoftDelete).
+     */
+    @Query("select l.id from ProviderListing l where l.status = ?1")
+    Set<UUID> findIdsByStatus(ListingStatus status);
 
     /**
      * Full-text search using PostgreSQL tsvector with GIN index.
@@ -189,4 +218,56 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Page<ProviderListing> searchSimilarRestricted(@Param("query") String query,
                                                   @Param("providerIds") java.util.Collection<UUID> providerIds,
                                                   Pageable pageable);
+
+    // L32 (realestate systems plan §5) — listing-id-restricted variants (the
+    // property-facet flow: the realestate module's matching-id set composes
+    // onto the catalog query in the same restricted-branch shape). The
+    // caller guarantees a NON-EMPTY collection (the empty set short-circuits
+    // to an honest empty page before any query). Text queries keep their
+    // relevance ranking with id as the tiebreaker.
+
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false AND status = 'ACTIVE'
+              AND id IN (:listingIds)
+              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('simple', :query)
+            ORDER BY ts_rank(
+                to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
+                websearch_to_tsquery('simple', :query)
+            ) DESC, id
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND id IN (:listingIds)
+                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('simple', :query)
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchFullTextRestrictedToListings(@Param("query") String query,
+                                                             @Param("listingIds") Collection<UUID> listingIds,
+                                                             Pageable pageable);
+
+    /**
+     * Typo-tolerant fallback of the listing-id-restricted FTS — same
+     * contract as {@link #searchSimilar}, plus the listing whitelist.
+     */
+    @Query(value = """
+            SELECT * FROM provider_listings
+            WHERE is_deleted = false AND status = 'ACTIVE'
+              AND id IN (:listingIds)
+              AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
+            """,
+            countQuery = """
+                    SELECT COUNT(*) FROM provider_listings
+                    WHERE is_deleted = false AND status = 'ACTIVE'
+                      AND id IN (:listingIds)
+                      AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                    """,
+            nativeQuery = true)
+    Page<ProviderListing> searchSimilarRestrictedToListings(@Param("query") String query,
+                                                            @Param("listingIds") Collection<UUID> listingIds,
+                                                            Pageable pageable);
 }

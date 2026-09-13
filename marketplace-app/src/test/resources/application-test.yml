@@ -39,6 +39,12 @@ app:
 marketplace:
   cors:
     allowed-origins: http://localhost:3000
+  # L33: the test policy — a short window keeps the expiry tests fast; the
+  # unset-policy case is covered by property-override tests (409).
+  catalog:
+    expiry:
+      expiry-days: 90
+      renewal-cooldown-days: 1
   security:
     jwt:
       audience: marketplace-api

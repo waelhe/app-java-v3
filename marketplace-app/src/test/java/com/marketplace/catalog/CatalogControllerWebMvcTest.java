@@ -42,6 +42,11 @@ class CatalogControllerWebMvcTest {
     @MockitoBean
     private ListingMapper listingMapper;
 
+    // L31: the property embed port (realestate implements it at runtime;
+    // the slice mocks the contract — no property data in this slice).
+    @MockitoBean
+    private com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {

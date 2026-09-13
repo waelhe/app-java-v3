@@ -130,7 +130,7 @@ spring:
     # CatalogService.CATALOG_CACHE_NAMES. geo-tree (L30) is the 14th named
     # cache — the administrative tree is rebuilt-on-read reference data,
     # evicted through the same AFTER_COMMIT relay as the rest.
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v2,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v3,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache
@@ -334,6 +334,16 @@ app:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://marketplace.com}
+  # L33 (realestate systems plan): the classifieds lifecycle policy. 90
+  # days is the global classifieds convention range (Dubizzle ~60, market
+  # standard 60-90); env-tunable (MARKETPLACE_CATALOG_EXPIRY_EXPIRY_DAYS).
+  # Unset means activations without an explicit date answer 409 — the
+  # "no silently-immortal listing" rule; the cooldown bounds renewal
+  # recycling (one renewal per day by default).
+  catalog:
+    expiry:
+      expiry-days: ${MARKETPLACE_CATALOG_EXPIRY_DAYS:90}
+      renewal-cooldown-days: ${MARKETPLACE_CATALOG_RENEWAL_COOLDOWN_DAYS:1}
   # Currency exchange channel (roadmap B4 / gap G-PROD-4) — provider-optional
   # exactly like the PSP/MEDIA_S3/MAIL gates: when no rate is bound, no
   # exchange beans are created (StaticRatesConfiguredCondition) and

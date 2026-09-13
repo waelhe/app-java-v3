@@ -39,8 +39,15 @@ import java.util.stream.Collectors;
 @Transactional
 public class GeoService implements GeoLookupPort {
 
-    /** The single cache this module owns (invalidated through the relay). */
-    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree");
+    /**
+     * The caches this module's writes invalidate: {@code geo-tree} (its own
+     * read cache) AND the location-criteria search pages — a geo amendment
+     * changes the qualified location set a cached {@code search-results}
+     * page was built from (the set resolves INSIDE the cached method), so
+     * the page must evict with the tree (CodeRabbit PR #299 round 1: the
+     * tree alone left stale search pages for the full TTL).
+     */
+    public static final Set<String> GEO_CACHE_NAMES = Set.of("geo-tree", "search-results-v3");
 
     /** The plan's autocomplete floor: a 1-character prefix is a 400, not a query. */
     static final int MIN_SUGGEST_PREFIX = 2;

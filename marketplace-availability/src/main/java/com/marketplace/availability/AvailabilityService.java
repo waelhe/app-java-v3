@@ -37,7 +37,7 @@ public class AvailabilityService implements AvailabilityPort {
 
     /**
      * Caches whose content depends on availability state. L27: the
-     * window-filtered {@code search-results-v2} pages (SearchService) now
+     * window-filtered {@code search-results-v3} pages (SearchService) now
      * derive from slots and time-offs, so every availability write evicts
      * them through the existing AFTER_COMMIT relay — the same freshness
      * contract listing writes already follow for
@@ -46,7 +46,7 @@ public class AvailabilityService implements AvailabilityPort {
      * list (pinned by {@code ListingSummaryCacheContractFilesTest}).
      */
     private static final Set<String> AVAILABILITY_DEPENDENT_CACHE_NAMES =
-            Set.of("availability", "search-results-v2");
+            Set.of("availability", "search-results-v3");
 
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,

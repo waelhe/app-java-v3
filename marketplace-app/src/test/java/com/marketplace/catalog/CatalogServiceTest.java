@@ -32,11 +32,30 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
-@ContextConfiguration(classes = { CatalogService.class })
+@ContextConfiguration(classes = { CatalogService.class, CatalogServiceTest.TestBeans.class })
 class CatalogServiceTest {
 
     @Autowired
     private CatalogService catalogService;
+
+    /**
+     * L33: the service's new constructor dependencies — the real system
+     * clock (the tests that need boundary control inject fixed values
+     * through the service arguments, not the clock) and the lifecycle
+     * policy (90-day window, 1-day cooldown — the house default shape).
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class TestBeans {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+
+        @org.springframework.context.annotation.Bean
+        CatalogProperties catalogProperties() {
+            return new CatalogProperties(new CatalogProperties.Expiry(90, 1));
+        }
+    }
 
     @MockitoBean
     private ProviderListingRepository listingRepository;
@@ -279,4 +298,5 @@ class CatalogServiceTest {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(listing.getProviderId());
         when(providerLookupPort.findByUserId(listing.getProviderId())).thenReturn(Optional.of(owner));
     }
+
 }

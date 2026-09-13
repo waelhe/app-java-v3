@@ -29,12 +29,26 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
-@ContextConfiguration(classes = { CatalogService.class })
+@ContextConfiguration(classes = { CatalogService.class, CatalogServiceSecurityTest.TestBeans.class })
 @EnableMethodSecurity(proxyTargetClass = true)
 class CatalogServiceSecurityTest {
 
     @Autowired
     private CatalogService catalogService;
+
+    /** L33: the service's new constructor dependencies (same fix as CatalogServiceTest). */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class TestBeans {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+
+        @org.springframework.context.annotation.Bean
+        CatalogProperties catalogProperties() {
+            return new CatalogProperties(new CatalogProperties.Expiry(90, 1));
+        }
+    }
 
     @MockitoBean
     private ProviderListingRepository listingRepository;

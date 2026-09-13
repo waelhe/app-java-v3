@@ -3,6 +3,7 @@ package com.marketplace.shared.api;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -50,4 +51,56 @@ public interface CatalogSearchPort {
      * criteria query), plus the {@code provider_id} restriction.
      */
     Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable);
+
+    // L32 (realestate systems plan §5) — the property-restriction branches.
+    // The restricted-to-LISTINGS forms carry the realestate module's
+    // matching-id set (RealestatePropertyFilterPort) in the same shape the
+    // provider-restricted forms carry the availability whitelist: the
+    // caller has already handled the empty-set case (honest empty page, no
+    // query), and the pagination count applies the same restriction as the
+    // content query ("no deceptive pages"). The Specification-backed
+    // implementation also honors the Pageable sort (the plan's price /
+    // newest sort whitelist) with the id tiebreak.
+
+    /**
+     * Criteria search restricted to the given listing ids — the
+     * property-facet flow. Sort-aware: the effective sort (price/newest,
+     * default id ASC) is honored deterministically.
+     */
+    Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, Pageable pageable);
+
+    /**
+     * L32: the sort-aware criteria search WITHOUT a restriction — the
+     * Specification path for plain filter searches that carry a
+     * price/newest sort (the native criteria query's baked ORDER BY id
+     * cannot honor a sort). Same optional predicates (category/price/
+     * guests) as {@link #searchByCriteria}; the unsorted form is NOT
+     * routed here (the legacy native path stays byte-identical).
+     */
+    Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable);
+
+    /**
+     * Full-text search restricted to the given listing ids — same official
+     * ranking ({@code ts_rank} DESC, id tiebreak) and the same pg_trgm
+     * typo-tolerance fallback as {@link #searchFullText}, plus the
+     * {@code id} restriction. Text searches rank by relevance: the facet
+     * sort whitelist does not apply (documented).
+     */
+    Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable);
+
+    /**
+     * The ids of every ACTIVE listing (soft-delete filtered) — the
+     * ACTIVE-set restriction the area-sorted flow passes into the
+     * realestate port (the realestate table does not know listing status
+     * by design).
+     */
+    Set<UUID> findActiveListingIds();
+
+    /**
+     * The listing summaries for the given ids, returned in the GIVEN order
+     * (the area-sorted page assembly). Ids that no longer resolve to an
+     * ACTIVE listing are skipped (the page total comes from the property
+     * side).
+     */
+    List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder);
 }
