@@ -59,14 +59,17 @@ import java.util.UUID;
  * the official one.
  *
  * <p><b>Canonical envelope:</b> the five fields are serialized
- * length-prefixed ({@code <len>:<value>} per field, {@code null} as the
- * empty string, fixed field order). A bare concatenation is ambiguous —
+ * length-prefixed with explicit presence ({@code <len>:<value>} per present
+ * field — the empty string is {@code 0:} — and the lone marker {@code -}
+ * for an absent field, fixed field order). A bare concatenation is ambiguous —
  * {@code eventId="a", eventType="bc"} and {@code eventId="ab",
  * eventType="c"} produce the identical string — so it is not a sound MAC
- * input; the length prefix makes the serialization injective (the reader
- * recovers each field boundary deterministically: digits up to the first
- * {@code :}, then exactly {@code len} characters), so two different field
- * tuples can never collide on one MAC input.
+ * input; the length prefix with the presence marker makes the
+ * serialization injective (the reader recovers each field boundary
+ * deterministically: the marker {@code -} is null; otherwise digits up to
+ * the first {@code :}, then exactly {@code len} characters), so two
+ * different field tuples — including a null-versus-empty swap (CWE-345) —
+ * can never collide on one MAC input.
  *
  * <p><b>The retired contract is rejected:</b> a bare Base64 MAC over
  * {@code eventId + eventType} (the pre-D-009 format — no timestamp, three
@@ -87,6 +90,9 @@ public class PaymentWebhookSecurity {
 
     /** The timestamp key inside the signature header (official Stripe constant). */
     static final String TIMESTAMP_KEY = "t";
+
+    /** Encodes an absent (null) field in the canonical envelope — see {@link #canonicalEnvelope}. */
+    static final String NULL_MARKER = "-";
 
     /**
      * Replay window, seconds — matches the sibling Stripe channel's
@@ -176,28 +182,30 @@ public class PaymentWebhookSecurity {
     }
 
     /**
-     * Injective length-prefixed serialization of the five dispatch fields:
-     * {@code <len>:<value>} per field, {@code null} as the empty string,
-     * fixed order. See the class javadoc for why bare concatenation is not
-     * a sound MAC input.
+     * Injective length-prefixed serialization of the five dispatch fields
+     * with EXPLICIT presence (CWE-345, CodeRabbit j1): {@code null} encodes
+     * as the lone marker {@code -}, while the empty string encodes as
+     * {@code 0:} and any non-empty value as {@code <len>:<value>} — a
+     * signature made for an absent field never verifies for a present-empty
+     * one (the two were indistinguishable under a plain null-to-empty
+     * normalization). The reader recovers each field boundary
+     * deterministically: the marker {@code -} is null; otherwise digits up
+     * to the first {@code :}, then exactly {@code len} characters — so two
+     * different field tuples can never collide on one MAC input. See the
+     * class javadoc for why bare concatenation is not a sound MAC input.
      */
     static String canonicalEnvelope(String provider, String eventId, String eventType,
                                     UUID paymentIntentId, String externalId) {
-        String providerValue = nullToEmpty(provider);
-        String eventIdValue = nullToEmpty(eventId);
-        String eventTypeValue = nullToEmpty(eventType);
-        String intentValue = paymentIntentId == null ? "" : paymentIntentId.toString();
-        String externalValue = nullToEmpty(externalId);
-        return field(providerValue) + field(eventIdValue) + field(eventTypeValue)
-                + field(intentValue) + field(externalValue);
+        return field(provider) + field(eventId) + field(eventType)
+                + field(paymentIntentId == null ? null : paymentIntentId.toString())
+                + field(externalId);
     }
 
     private static String field(String value) {
+        if (value == null) {
+            return NULL_MARKER;
+        }
         return value.length() + ":" + value;
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 
     /**

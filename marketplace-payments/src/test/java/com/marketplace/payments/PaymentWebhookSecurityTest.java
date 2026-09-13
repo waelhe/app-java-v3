@@ -128,6 +128,25 @@ class PaymentWebhookSecurityTest {
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void validateSignature_whenExternalIdIsNullSwappedWithEmpty_throwsAccessDenied() {
+        // CWE-345 (CodeRabbit j1): field PRESENCE rides inside the MAC — a
+        // signature made for an absent externalId must not verify for a
+        // present-empty one (null encodes as the lone marker, "" as "0:")
+        String header = sign(NOW, PROVIDER, EVENT_ID, EVENT_TYPE, null, null);
+        assertThatThrownBy(() ->
+                security.validateSignature(PROVIDER, EVENT_ID, EVENT_TYPE, null, "", header))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void validateSignature_whenExternalIdIsEmptySwappedWithNull_throwsAccessDenied() {
+        String header = sign(NOW, PROVIDER, EVENT_ID, EVENT_TYPE, null, "");
+        assertThatThrownBy(() ->
+                security.validateSignature(PROVIDER, EVENT_ID, EVENT_TYPE, null, null, header))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
     // --- the replay window (official semantics: past-only, edge-inclusive) --
 
     @Test
