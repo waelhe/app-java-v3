@@ -14,7 +14,7 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
 //     the DSL types — the migrate tool emitted them as comments only; losing
 //     builder=DOCKERFILE would drop builds to Railpack's Java 21 default and
 //     re-break the JDK 25 build, the documented 9dbbbb5 failure mode)
-//   - env: all 33 runtime variables via preserve() — the official mechanism
+//   - env: all 35 runtime variables via preserve() — the official mechanism
 //     that keeps values managed in Railway (secrets never materialize here).
 //     Scope: the app-java-v3 service-scoped names in the production
 //     environment's flat variable collection (measured enumeration
@@ -28,9 +28,14 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
 //     JWT_KEYSTORE_PATH declaration — that channel was deliberately deleted
 //     from the platform in I1 (2026-09-09, documented trap-closure: the b64
 //     channel is the only keystore path; a stale PATH silently resurrects
-//     the old key if b64 is ever emptied). The declared set now mirrors the
-//     measured live set exactly (set-equality verified this session, BEFORE
-//     this file was ever applied — no config apply has run to date).
+//     the old key if b64 is ever emptied). Reconciled again 2026-09-13
+//     (D-P13 hardening, docs/postgis-integration-plan.md §4-P3): added
+//     SPRING_FLYWAY_USER / SPRING_FLYWAY_PASSWORD (the migration-identity
+//     pair — values write-only on the platform); DB_USERNAME / DB_PASSWORD
+//     values were rotated platform-side the same day (marketplace_app — the
+//     NOSUPERUSER runtime role; preserve() semantics unchanged). The
+//     declared set mirrors the measured live set (35 names, set-equality
+//     verified) — no config apply has ever run.
 //   - volumeMounts: the existing app-java-v3-volume at /data (the documented
 //     residue — its separation/removal stays a user-gated decision, not an
 //     omission side effect)
@@ -86,6 +91,8 @@ export default defineRailway(() => {
       REDIS_HOST: preserve(),
       REDIS_PORT: preserve(),
       SPRING_DATA_REDIS_PASSWORD: preserve(),
+      SPRING_FLYWAY_PASSWORD: preserve(),
+      SPRING_FLYWAY_USER: preserve(),
       SPRING_PROFILES_ACTIVE: preserve(),
     },
   });
