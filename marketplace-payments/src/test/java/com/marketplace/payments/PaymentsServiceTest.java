@@ -495,7 +495,7 @@ class PaymentsServiceTest {
         boolean created = service.processWebhookEvent("stripe", eventId, "payment_intent.succeeded", "sig");
 
         assertTrue(created);
-        verify(webhookSecurity).validateSignature("evt_newpayment_intent.succeeded", "sig");
+        verify(webhookSecurity).validateSignature("stripe", eventId, "payment_intent.succeeded", null, null, "sig");
     }
 
     @Test
@@ -543,6 +543,6 @@ class PaymentsServiceTest {
         boolean created = service.processWebhookEvent("stripe", eventId, "payment.succeeded", null);
 
         assertTrue(created);
-        verify(webhookSecurity).validateSignature("evt_no_sigpayment.succeeded", null);
+        verify(webhookSecurity).validateSignature("stripe", eventId, "payment.succeeded", null, null, null);
     }
 }

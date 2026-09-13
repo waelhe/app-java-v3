@@ -189,12 +189,15 @@ class PaymentsPspFilesTest {
     void legacyWebhookEndpointStaysByteCompatible() throws IOException {
         String controller = read("marketplace-payments/src/main/java/com/marketplace/payments/PaymentsController.java");
         assertThat(controller)
-                .as("the legacy HMAC channel keeps its exact contract")
+                .as("the legacy HMAC channel keeps its exact endpoint and header")
                 .contains("@PostMapping(\"/webhooks/{provider}\")")
                 .contains("X-Webhook-Signature");
         String service = read("marketplace-payments/src/main/java/com/marketplace/payments/PaymentsService.java");
         assertThat(service)
-                .as("the legacy HMAC validation stays on the processWebhookEvent path")
-                .contains("paymentWebhookSecurity.validateSignature(eventId + eventType, signature)");
+                .as("the D-009-hardened HMAC validation stays on the processWebhookEvent path: "
+                        + "every dispatch field (provider, eventId, eventType, paymentIntentId, "
+                        + "externalId) rides inside the MAC")
+                .contains("paymentWebhookSecurity.validateSignature(provider, eventId, eventType, "
+                        + "paymentIntentId, externalId, signature)");
     }
 }
