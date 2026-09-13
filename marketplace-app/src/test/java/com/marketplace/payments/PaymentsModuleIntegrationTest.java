@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -51,6 +52,21 @@ class PaymentsModuleIntegrationTest {
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
 
+    /**
+     * D-009: the webhook verifier's Clock — the production bean lives in
+     * platform-infra's ClockConfig, which this slice does not scan (the
+     * ClockConfig javadoc's own "tests override the bean" pattern; the
+     * slices that DO load infra keep the production bean — one Clock per
+     * context, never two — the catalog module test's exact precedent).
+     */
+    @TestConfiguration
+    static class ClockBean {
+        @Bean
+        Clock clock() {
+            return Clock.systemUTC();
+        }
+    }
+
     @Autowired
     private PaymentsService paymentsService;
 
@@ -80,7 +96,10 @@ class PaymentsModuleIntegrationTest {
 
     @Test
     void processWebhookEvent_returnsTrue() {
-        String signature = paymentWebhookSecurity.computeSignature("evt_testpayment_intent.succeeded");
+        // D-009: the full envelope (provider+eventId+eventType+intent+external)
+        // rides inside the MAC with a fresh timestamp — through the real bean
+        String signature = paymentWebhookSecurity.computeSignatureHeader(
+                "stripe", "evt_test", "payment_intent.succeeded", null, null, Instant.now().getEpochSecond());
         var result = paymentsService.processWebhookEvent("stripe", "evt_test", "payment_intent.succeeded", signature);
         assertThat(result).isTrue();
     }
@@ -101,7 +120,8 @@ class PaymentsModuleIntegrationTest {
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), 5000L));
         String eventId = "evt_fail_" + UUID.randomUUID();
 
-        String signature = paymentWebhookSecurity.computeSignature(eventId + "payment_intent.payment_failed");
+        String signature = paymentWebhookSecurity.computeSignatureHeader("stripe", eventId,
+                "payment_intent.payment_failed", intent.getId(), null, Instant.now().getEpochSecond());
         boolean created = paymentsService.processWebhookEvent("stripe", eventId,
                 "payment_intent.payment_failed", signature, intent.getId(), null);
 

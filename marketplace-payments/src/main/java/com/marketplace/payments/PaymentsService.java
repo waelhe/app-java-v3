@@ -79,7 +79,11 @@ public class PaymentsService implements PaymentsSpi {
 
     public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature,
                                        UUID paymentIntentId, String externalId) {
-        paymentWebhookSecurity.validateSignature(eventId + eventType, signature);
+        // D-009: every dispatch-relevant field rides inside the MAC — a
+        // captured signature can no longer be re-pointed at another
+        // provider (the dedup key's left half) or another payment intent
+        // (the confirmIntent target on this internal path).
+        paymentWebhookSecurity.validateSignature(provider, eventId, eventType, paymentIntentId, externalId, signature);
         return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId);
     }
 
