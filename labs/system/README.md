@@ -1,7 +1,7 @@
 # labs/system — Deep System Map (isolated, AI must read before touching)
 
 > **Purpose:** so any AI understands EXACTLY what system it touches before any operation — no blindness.
-> **Sources:** the code itself (branch `governance/d012-scope`), verified by reading. Every fact cites `file:line`.
+> **Sources:** the code itself, verified by reading on the current working tree. Every fact cites `file:line`.
 > **Format:** `TYPE | FACT | [evidence] | CITATION`. `[code]`=verified in code · `[doc]`=project doc · `[test]`=test evidence.
 > **Load order:** README (this) → 00-overview → the family you touch (01-modules/02-security/03-data/04-api/05-config/06-testing).
 > **Encoding:** UTF-8. **Isolation:** `labs/` only; never touches `docs/governance/`.

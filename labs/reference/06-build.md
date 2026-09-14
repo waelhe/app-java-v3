@@ -8,9 +8,9 @@
 
 ## 1. Maven Lifecycle (6.1)
 
-- MUST | Built-in lifecycles: default, clean, site; default phases run sequentially: validate → compile → test → package → verify → install → deploy. | [quote] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
-- MUST | Call only the LAST phase you need — `mvn verify` runs everything up to and including verify. | [paraphrase] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
-- AVOID | Invoking hyphenated phases directly (e.g. `integration-test`) — bind goals to phases in the POM instead. | [paraphrase] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+- MUST | Built-in lifecycles: default, clean, site; default phases run sequentially: validate → … → test → package → integration-test → verify → install → deploy. | [quote] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+- MUST | Call only the LAST phase you need — `mvn verify` runs everything up to and including verify (integration tests included). | [paraphrase] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+- ATTEND | Hyphenated phases (`pre-*`/`post-*`/`process-*`/`integration-test`) are part of the default lifecycle but not usually called directly — bind goals to phases in the POM; invoking `integration-test` directly can leave the test environment hanging. | [paraphrase] | maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
 - MUST | Use the reactor for per-module builds: `mvn -pl <module> -am test` builds only the module + its dependencies. | [quote] | maven.apache.org/guides/ (reactor)
 
 ## 2. Dependency Management (6.2)
@@ -36,28 +36,28 @@
 
 ## 6. Flyway (7.x)
 
-- MUST | Name versioned migrations `V{n}__description.sql` (contiguous, forward-only) and repeatable migrations `R{name}__description.sql`. | [paraphrase] | documentation.red-gate.com/flyway/ — Executable Migrations
+- MUST | Name versioned migrations `V{n}__description.sql` (unique, applied in ascending order, forward-only) and repeatable migrations `R{name}__description.sql`. | [paraphrase] | documentation.red-gate.com/flyway/ — Executable Migrations
 - MUST | Never delete or modify an already-applied migration — a change is a new `V{n+1}`; checksums in `flyway_schema_history` guard against tampering. | [quote] | documentation.red-gate.com/flyway/ — Never delete or modify applied migrations
 - MUST | Run `validate` as part of the build (Boot auto-runs it) to catch drift against applied migrations. | [paraphrase] | documentation.red-gate.com/flyway/ — Validate
 - ATTEND | `baseline` is for adopting an existing DB; repeatable migrations re-run when their content/checksum changes. | [paraphrase] | documentation.red-gate.com/flyway/
-- ATTEND | Boot auto-configures Flyway from the `spring-boot-starter` (flyway) — it applies migrations before the app serves traffic and participates in the health/lifecycle. | [paraphrase] | spring-boot data (cross-ref)
+- ATTEND | Boot auto-configures Flyway via `spring-boot-starter-flyway` (+ a database-specific module such as `flyway-database-postgresql`) — it applies migrations before the app serves traffic and participates in the health/lifecycle. | [quote] | spring-boot how-to data-initialization
 
 ---
 
 ## 7. Java 25 (8.x)
 
-- MUST | Java 25 is LTS (2026); use records for immutable carriers (DTOs/events/responses), sealed types + pattern matching for idiomatic dispatch. | [paraphrase] | dev.java
+- MUST | Java 25 is LTS (released 2025-09-16), not 2026; use records for immutable carriers (DTOs/events/responses), sealed types + pattern matching for idiomatic dispatch. | [paraphrase] | dev.java
 - ATTEND | The project toolchain (source/target) is fixed by the root POM; do not raise/lower it without a decision. | [paraphrase] | dev.java
 - ATTEND | Use `Optional` for presence, not for control flow; prefer explicit records for typed configuration (see 01-core.md §1). | [paraphrase] | dev.java
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|
 | Flyway forward-only / immutability | §6 | Never edit applied migrations; fixes are new `V{n+1}`. |
-| Call only the final phase | §1 | `mvn verify`; never `integration-test` directly. |
+| Call only the final phase | §1 | `mvn verify` runs through `integration-test`; don't invoke `integration-test` directly. |
 | Never pin BOM-managed versions | §2 | BOM manages versions; exceptions documented. |
 
 ## Verification note

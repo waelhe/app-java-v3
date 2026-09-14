@@ -102,7 +102,7 @@ Source: `https://docs.spring.io/spring-modulith/reference/`
 | 5.5 | **Moments** | time-based events API | ◐ | deep if scheduling |
 | 5.6 | Documenting Modules | module docs generation | ◐ | on need |
 | 5.7 | Runtime Support | runtime / event delivery / completion modes | ✅ | deep |
-| 5.8 | Production-ready | /actuator/applicationmodules | ✅ | deep |
+| 5.8 | Production-ready | /actuator/modulith | ✅ | deep |
 | 5.9 | Appendix | artifact list | ◐ | on need |
 
 ## 6. Maven 3.9.x — full index
@@ -143,7 +143,7 @@ Source: `https://www.rfc-editor.org/rfc/`
 |---|---|---|---|---|
 | 9.1 | RFC 9457 | Problem Details | ✅ | deep |
 | 9.2 | RFC 7519 | JWT | ✅ | deep |
-| 9.3 | RFC 9470 | Token Revocation | ◐ | deep where SAS |
+| 9.3 | RFC 7009/7662 | Token Revocation / Introspection | ◐ | deep where SAS |
 | 9.4 | OAuth2 | grants / client credentials | ✅ | deep |
 
 ## 10. OWASP Top 10 + cheat sheets + NIST
@@ -159,7 +159,7 @@ Source: `https://owasp.org/` + cheat sheets + NIST
 
 ---
 
-## Cross-cutting lessons (standards-miner targets)
+## Cross-cutting lessons (verification targets)
 
 Linear chapter-scans miss standards; each confirmed gap has a known home in the tree:
 
@@ -177,7 +177,7 @@ Linear chapter-scans miss standards; each confirmed gap has a known home in the 
 | RFC 9457 (7807 replaced) | 9.1 | present |
 | Defense in depth (method+URL+object) | 3.3 | present |
 | Graceful shutdown + timeout | 1.3 | present (default in 4.1) |
-| Money via BigDecimal (precision) | 10.5 + 2.8 | to add |
+| Money via BigDecimal (precision) | 10.5 + 2.8 | present |
 | Flyway immutability | 7.3 | present |
 | Cross-boundary dependency avoidance | 5.1/5.2 | present (refine) |
 

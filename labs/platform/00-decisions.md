@@ -40,4 +40,4 @@
 The chosen architecture (unified backend + BFF per channel) matches the model used by Netflix (BFF coined by Netflix/SoundCloud) and other large platforms — see `02-client-architecture.md`. This is `[industry]` knowledge, not an official Spring doc.
 
 ## 5. Verification note
-- Project facts verified live from the repo (branch `governance/d012-scope`) on 2026-09-12. Official sources as cited in the family files (`labs/reference/`, `labs/client/`, `labs/platform/`).
+- Project facts verified live from the repo (current working tree) on 2026-09-12. Official sources as cited in the family files (`labs/reference/`, `labs/client/`, `labs/platform/`).

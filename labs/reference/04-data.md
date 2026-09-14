@@ -23,9 +23,10 @@
 - MUST | Use non-null `Sort`/`Pageable`/`Limit` — pass `Sort.unsorted()`/`Pageable.unpaged()`/`Limit.unlimited()` instead of null. | [paraphrase] | repositories/query-methods-details.html
 - MUST | Close `Stream<T>` query results (try-with-resources). | [paraphrase] | repositories/query-methods-details.html
 - ATTEND | Derived query predicates (`StartingWith`, etc.) sanitize/escape wildcards to match as literals. | [quote] | jpa/query-methods.html
-- MUST | With `@Modifying`, use `clearAutomatically=true` to clear the EntityManager after execution (otherwise stale entities remain). | [paraphrase] | jpa/query-methods.html
+- ATTEND | With `@Modifying`, `clearAutomatically=true` is needed ONLY when the persistence context must be cleared afterward — decide per query, it is not mandatory everywhere. | [paraphrase] | jpa/query-methods.html
 - ATTEND | Bulk (derived-delete) issues a single JPQL query and skips lifecycle callbacks, but loads all results into memory first. | [paraphrase] | jpa/query-methods.html
-- MUST | Prefer closed projections (interface/record DTOs) — Spring Data optimizes them; use Java Records (value semantics). | [quote] | repositories/projections.html
+- MUST | **Closed interface projections** (getters matching entity properties only) are optimized by Spring Data to select just those columns. | [quote] | repositories/projections.html
+- ATTEND | **Class/DTO projections** (incl. Java Records) are a separate mechanism — constructor-binding DTOs provide value semantics but are NOT the same "closed/optimized" interface projections. | [paraphrase] | repositories/projections.html
 - MUST | For DTO via JPQL, define a constructor expression (`SELECT new com.x.NamesOnly(...)`) and provide an all-args constructor. | [paraphrase] | repositories/projections.html
 - ATTEND | QBE ignores null fields by default, but supports NO nested/grouped constraints, NO collections/maps, NO regex (with JPA). | [quote] | repositories/query-by-example.html
 
@@ -83,7 +84,7 @@
 
 - MUST | Make a repository a `RevisionRepository<Entity, Id, RevisionNumber>`; the entity must be `@Audited`. | [quote] | envers/configuration.html
 - MUST | Enable with `@EnableEnversRepositories`; dependency `spring-data-envers` (brings `hibernate-envers`); revision-number param is `Integer` or `Long`. | [paraphrase] | envers/configuration.html
-- ATTEND | Query revisions with `findRevisions(id)` → `Revisions<Long, Entity>` including INSERT/UPDATE/DELETE. | [quote] | envers/usage.html
+- ATTEND | Query revisions with `findRevisions(id)` → `Revisions<RevisionNumber, Entity>` where `RevisionNumber` is the type declared on the `RevisionRepository` (not a hardcoded `Long`). | [quote] | envers/usage.html
 
 ## 10. AOT (4.3)
 
@@ -93,7 +94,7 @@
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|

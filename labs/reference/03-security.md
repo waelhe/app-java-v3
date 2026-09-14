@@ -90,12 +90,12 @@
 
 - MUST | Use Spring Security's `RequestPostProcessor` static imports: `import static ...SecurityMockMvcRequestPostProcessors.*;`. | [quote] | servlet/test/mockmvc/request-post-processors.html
 - MUST | Associate MockMvc with the Security context via `apply(springSecurity())` so `@WithMockUser`/`user(...)` take effect. | [paraphrase] | servlet/test/mockmvc/request-post-processors.html
-- MUST | Use `.with(csrf())` on POST requests in tests; mock users/CSRF/form-login/http-basic/oauth2 via `user(...)`, `csrf()`, `formLogin()`, `httpBasic(...)`, `oauth2Login()`/`jwt()`/`opaqueToken()`. | [paraphrase] | servlet/test/mockmvc/request-post-processors.html
+- MUST | Use `.with(csrf())` on POST requests in tests when CSRF protection is enabled for that path (it is enabled by default when a session-based filter chain is used) — scope the test rule to the enabled protection rather than applying it unconditionally. | [paraphrase] | servlet/test/mockmvc/request-post-processors.html
 - MUST | Test method security with `@WithMockUser(roles=...)` / `@WithUserDetails` / `@WithAnonymousUser`. | [paraphrase] | servlet/test/method.html
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|

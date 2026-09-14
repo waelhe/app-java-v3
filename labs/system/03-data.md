@@ -11,7 +11,7 @@
 
 ## 2. BaseEntity (every entity)
 
-- MUST | `@MappedSuperclass` + `AuditingEntityListener` + Hibernate 7 `@SoftDelete(is_deleted)`; `UUID` id contract (`getId()` abstract; subclasses declare `@Id UUID`, no generated value). | [code] | BaseEntity.java:38-66
+- MUST | `@MappedSuperclass` + `AuditingEntityListener` + Hibernate 7 `@SoftDelete(columnName = "is_deleted")`; `UUID` id contract (`getId()` abstract; subclasses declare `@Id UUID`, no generated value). | [code] | BaseEntity.java:38-66
 - MUST | `@Version Long version` (optimistic lock) + `@CreatedBy/@CreatedDate/@LastModifiedBy/@LastModifiedDate` on every entity. | [code] | BaseEntity.java:46-64
 - ATTEND | No `is_deleted` Java field — Hibernate rewrites DELETE→UPDATE; `Serializable` required for JDK-serialized Redis caches. | [code] | BaseEntity.java:20-36
 

@@ -7,7 +7,7 @@
 
 - MUST | A shared backend is a unified domain (or set of services) that ALL client channels consume; it is the single source of truth for business logic and data. | [paraphrase] | 02-client-architecture.md
 - MUST | Keep the backend modular: each business capability is a module (Modulith) with a clear public API; modules interact via events + public APIs, not internal bean injection. | [paraphrase] | reference/05-modulith.md
-- MUST | Enforce module boundaries in CI (e.g. `ApplicationModuleVerification`) to prevent illegal cross-module dependencies. | [paraphrase] | reference/05-modulith.md
+- MUST | Enforce module boundaries in CI (e.g. `ApplicationModules.of(MarketplaceApplication.class).verify()`) to prevent illegal cross-module dependencies. | [paraphrase] | reference/05-modulith.md §2
 - MUST | Expose a unified API surface (REST + OpenAPI) that all channels use identically — no per-channel copies of business logic. | [paraphrase] | reference/02-web.md
 
 ## 2. "Backend anchored" principle (§0.3)

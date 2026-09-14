@@ -38,7 +38,7 @@
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|

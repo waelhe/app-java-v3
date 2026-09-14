@@ -23,5 +23,5 @@
 
 ## 4. Revocation & failure
 
-- MUST | On logout/compromise, revoke the token (RFC 9470/7009) and clear the authorized client. | [paraphrase] | servlet/oauth2/client/authorized-clients.html · rfc-editor.org/rfc/rfc7009
+- MUST | On logout/compromise, revoke the token (RFC 7009) and clear the authorized client. | [paraphrase] | servlet/oauth2/client/authorized-clients.html · rfc-editor.org/rfc/rfc7009
 - MUST | On an invalid token, remove the `OAuth2AuthorizedClient` via `OAuth2AuthorizationFailureHandler` so it is not reused. | [quote] | servlet/oauth2/client/authorized-clients.html

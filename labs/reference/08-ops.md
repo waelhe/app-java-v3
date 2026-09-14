@@ -18,7 +18,7 @@
 ## 2. Observability: Metrics, Tracing, Logging (1.10)
 
 - ATTEND | Micrometer provides metrics via `/actuator/metrics`; Prometheus via `/actuator/prometheus` (add micrometer-registry-prometheus). | [paraphrase] | actuator/metrics.html · actuator/prometheus.html
-- ATTEND | Tracing via Micrometer Tracing with Brave/OpenTelemetry — a `Tracer`/spans are auto-configured; expose via `/actuator/httpexchanges` and exporters. | [paraphrase] | actuator/tracing.html
+- ATTEND | Tracing via Micrometer Tracing with Brave/OpenTelemetry — a `Tracer`/spans are auto-configured; export spans via configured `tracing-exporter` (Zipkin, OTLP), not via `/actuator/httpexchanges` (that endpoint records HTTP exchanges, not tracing). | [paraphrase] | actuator/tracing.html
 - MUST | Set logging levels via `logging.level.<logger>=<level>` (TRACE..FATAL, OFF) and `logging.level.root`; env vars like `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG`. | [quote] | features/logging.html
 - MUST | Define logging groups: `logging.group.<name>=<loggers>` then set the level for the whole group: `logging.level.<group>=<level>`. | [quote] | features/logging.html#features.logging.log-groups
 - AVOID | Logging secrets/tokens/JWTs/card data — follow a redaction policy (see 09-api-web.md OWASP logging). | [paraphrase] | features/logging.html + owasp (cross-ref)
@@ -45,7 +45,7 @@
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|
@@ -54,5 +54,5 @@
 | Devtools out of production | §4 | Never package devtools in production images. |
 
 ## Verification note
-- Pages verified live 2026-09-12 at Boot 4.1.1; `/actuator/applicationmodules` is Modulith-owned (see 05-modulith.md §7).
+- Pages verified live 2026-09-12 at Boot 4.1.1; `/actuator/modulith` is Modulith-owned (see 05-modulith.md §7).
 - Tree coverage: 1.10 ◐ · 1.9 ◐ · 1.13 ◐ (per-need endpoints) · 1.14 ◐ · 1.12 ◐ · 1.3 ◐ (graceful).

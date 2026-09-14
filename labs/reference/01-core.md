@@ -67,7 +67,7 @@
 
 - MUST | Implement Spring `Validator` with `supports()` + `validate()` and an `Errors` object; since 6.1 `validateObject(Object).failOnError(...)` for immediate checks. | [paraphrase] | core/validation/validator.html
 - ATTEND | DataBinder modes: constructor binding (single public constructor, or single non-public with args) vs property binding; multiple constructors → default used. | [paraphrase] | core/validation/data-binding.html
-- MUST | Keep `Converter`s thread-safe and null-source-tolerant (`IllegalArgumentException` on invalid source). | [paraphrase] | core/validation/convert.html
+- MUST | Keep `Converter`s thread-safe; `ConversionService` handles `null` sources directly (returns `null` without invoking the converter), so `convert(S)` receives a non-null source and throws `IllegalArgumentException` only for **unsupported/valid but not convertible** values. | [paraphrase] | core/validation/convert.html
 - MUST | Use `TypeDescriptor` for parameterized/collection conversions (e.g. `List<Integer>`). | [paraphrase] | core/validation/convert.html
 - ATTEND | Register a bean named `conversionService`; otherwise the legacy `PropertyEditor` system is used. | [paraphrase] | core/validation/convert.html
 - AVOID | Locale-sensitive style-based date/number formatting on JDK 20+; prefer ISO or an explicit pattern. | [paraphrase] | core/validation/format.html
@@ -132,7 +132,7 @@
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap (missed by a linear scan) | Home | Rule added |
 |---|---|---|

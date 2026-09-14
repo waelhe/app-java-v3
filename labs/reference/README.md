@@ -4,7 +4,6 @@
 > documentation. No internal repo data, no current governance system, no Phase-1 carryover.
 > Foundation: `official-tree.md` — the verified inventory of every family/sub-family for our stack.
 >
-> Branch: `governance/d012-scope` (created from clean `origin/main` `2f43222`).
 > Rules: this folder does NOT depend on anything under `docs/governance/`; it is self-contained.
 
 ## Layout
@@ -28,7 +27,7 @@
 2. Every item carries its official source URL + tree ref (e.g. `2.8`).
 3. Distinguish clearly: **framework rule** (from official docs) vs **project convention** (ours, marked explicitly).
 4. Nothing here is sourced from memory or from the current system — only from official docs + the tree.
-5. Gaps found by the standards-miner (see tree "Cross-cutting lessons") are inserted at their tree home.
+5. Gaps found during verification (see tree "Cross-cutting lessons") are inserted at their tree home.
 
 ## Generate order
 
@@ -42,5 +41,5 @@
 - Maven 3.9.x — maven.apache.org
 - Flyway 12.x — documentation.red-gate.com
 - Java 25 — dev.java (docs.oracle.com 403)
-- RFCs 9457/7519/9470/6749 — rfc-editor.org
+- RFCs 9457/7519/7009/7662/6749 — rfc-editor.org
 - OWASP Top 10 + cheat sheets + NIST — owasp.org / NIST

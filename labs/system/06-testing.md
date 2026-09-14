@@ -28,7 +28,7 @@
 - MUST | `integration-test.yml`: `clean verify` + result analyzer + install + boot + health/Data-REST/GraphQL checks. | [code] | integration-test.yml:53-179
 - MUST | `container-scan.yml`: Trivy image scan CRITICAL/HIGH exit-1 (+weekly); `codeql.yml`: package-extract analyze (+weekly); `maven-publish.yml`: release gate (green CI + tag ancestry) then deploy; `watchdog.yml`: post-deploy probes (not a merge gate); `fork-sync.yml`: delivery (not a gate). | [code] | (workflow files)
 - MUST | Extras: OpenAPI scripts + allowlist; CodeRabbit auto-review all branches; Dependabot weekly (Boot+Modulith grouped, actions grouped); PR template requires `mvn clean verify` + `-pl marketplace-app -am test` + dev run + Modulith/architecture checks. | [code] | .ci/ · .coderabbit.yaml · dependabot.yml · pull_request_template.md:57-68
-- MUST | Commands: CI `./mvnw verify`; local `mvn clean verify -pl <module>` / `./mvnw clean verify -pl <module> -am`; PR `mvn -pl marketplace-app -am test`. Evidenced greens in PROJECT_MAP/SYSTEM. | [doc] | AGENTS.md:44 · SYSTEM.md · PROJECT_MAP.md
+- MUST | Commands: CI `./mvnw verify`; local `mvn clean verify -pl <module> -am` / `./mvnw clean verify -pl <module> -am`; PR `mvn -pl marketplace-app -am test`. Evidenced greens in PROJECT_MAP/SYSTEM. | [doc] | AGENTS.md:44 · SYSTEM.md · PROJECT_MAP.md
 
 ## 5. Known test debt (evidenced only)
 

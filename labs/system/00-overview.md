@@ -25,4 +25,4 @@
 - MUST | Verify with `./mvnw verify` (CI) or `mvn clean verify -pl <module> -am` (local); JaCoCo 70% bundle gate; Modulith verify + ArchUnit in surefire. | [code] | ci.yml:101 · pom.xml:386-395 · ModulithVerificationTest.java:19
 
 ## 4. Verification note
-- Facts read live 2026-09-13 on branch `governance/d012-scope`. Details in 01–06.
+- Facts read live from the working tree (2026-09-13); pinned to `file:line` evidence. Details in 01–06.

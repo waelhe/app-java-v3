@@ -1,6 +1,6 @@
 # 09 — API Contracts & Security: RFCs + OWASP/NIST (isolated official reference)
 
-> **Tree refs:** 9.1 (RFC 9457), 9.2 (RFC 7519 JWT), 9.3 (RFC 9470), 9.4 (OAuth2), 10.1-10.5 (OWASP Top 10 + cheat sheets + NIST).
+> **Tree refs:** 9.1 (RFC 9457), 9.2 (RFC 7519 JWT), 9.3 (RFC 7009/7662), 9.4 (OAuth2), 10.1-10.5 (OWASP Top 10 + cheat sheets + NIST).
 > **Sources:** `https://www.rfc-editor.org/rfc/` + `https://owasp.org/` (cheat sheets) + NIST guidance — verified live 2026-09-12.
 > **Format:** `TYPE | RULE | [quote|paraphrase] | URL`. **Isolation:** no internal repo data. **Encoding:** UTF-8.
 
@@ -9,8 +9,8 @@
 ## 1. RFC 9457 — Problem Details (9.1)
 
 - MUST | Return errors as `application/problem+json` (RFC 9457, the successor of RFC 7807). | [paraphrase] | rfc-editor.org/rfc/rfc9457
-- MUST | Standard fields: `type` (URI), `title`, `status`, `detail`, `instance`; extensions allowed for machine-readable context. | [paraphrase] | rfc-editor.org/rfc/rfc9457
-- MUST | `type` should be a URI that a client can dereference for the problem's semantics. | [paraphrase] | rfc-editor.org/rfc/rfc9457
+- MUST | Standard fields: `type`, `title`, `status`, `detail`, `instance` — all **optional** per RFC 9457; `type` when absent defaults to `about:blank`. | [paraphrase] | rfc-editor.org/rfc/rfc9457
+- MUST | `type` is a URI that a client can dereference for the problem's semantics (e.g. an error catalogue doc). | [paraphrase] | rfc-editor.org/rfc/rfc9457
 - AVOID | Leaking internals (stack traces, SQL, secrets) in `detail`/extensions. | [paraphrase] | rfc-editor.org/rfc/rfc9457 · 02-web.md §6
 
 ## 2. RFC 7519 — JWT (9.2)
@@ -23,7 +23,7 @@
 ## 3. OAuth2 / Token Lifecycle (9.4, 9.3)
 
 - MUST | Use standard grant flows (authorization code + PKCE for clients, client credentials for server-to-server); validate redirect URIs exactly. | [paraphrase] | rfc-editor.org/rfc/rfc6749 · 03-security.md §5
-- MUST | Support token introspection/revocation (RFC 9470/7662) where scope requires; revoke tokens at logout/compromise. | [paraphrase] | rfc-editor.org/rfc/rfc9470
+- MUST | Support token introspection/revocation (RFC 7009/7662) where scope requires; revoke tokens at logout/compromise. | [paraphrase] | rfc-editor.org/rfc/rfc7009 · rfc7662
 - ATTEND | Prefer sign-then-encrypt (JWS then JWE) when both integrity and confidentiality of a token are required. | [paraphrase] | rfc-editor.org/rfc/rfc7516 · 03-security.md §5
 
 ---
@@ -48,11 +48,11 @@
 - MUST | Money/currency MUST use an exact decimal representation (`BigDecimal` in Java) — never binary floating point (`double`/`float`). | [paraphrase] | NIST guidance (exact decimal for currency)
 - MUST | Rounding and precision decisions must be explicit (e.g. monetary scale + rounding mode), not default. | [paraphrase] | NIST guidance
 - AVOID | Storing/deriving monetary values with `double`/`float` — precision loss on accumulation; use `BigDecimal` + a fixed scale in persistence and transport. | [paraphrase] | NIST guidance
-- ATTEND | Cryptographic strength: use current recommended algorithms (e.g. SHA-256+, 2048+ RSA / ECDSA for JWK); avoid deprecated/weak algorithms. | [paraphrase] | NIST SP 800-57 (crypto guidance)
+- ATTEND | Cryptographic strength: use current recommended algorithms (e.g. SHA-256+, RSA with ≥2048-bit modulus or ECDSA on strong named curves such as P-256 for JWK); avoid deprecated/weak algorithms. | [paraphrase] | NIST SP 800-57 (crypto guidance)
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|

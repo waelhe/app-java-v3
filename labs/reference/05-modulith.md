@@ -15,18 +15,18 @@
 
 ## 2. Verifying Module Structure (5.2)
 
-- MUST | Verify module structure in CI with `ApplicationModuleVerification` (spring-modulith-test) — it fails the build on illegal cross-module dependencies. | [paraphrase] | testing.html
+- MUST | Verify module structure in CI with `ApplicationModules.of(Application.class).verify()` (spring-modulith-test) — it fails the build on illegal cross-module dependencies. | [paraphrase] | testing.html
 - ATTEND | The verification also detects circular module dependencies and unnameable public API (allows warning-level instead of error where configured). | [paraphrase] | testing.html
 
 ## 3. Application Events (5.3) — the core rule
 
 - MUST | Publish domain events via `@ApplicationModuleListener` — the official shortcut that enables the triple `@Async + @Transactional(REQUIRES_NEW) + @TransactionalEventListener`; the listener runs in its own transaction, asynchronously. | [quote] | fundamentals.html
 - ATTEND | Events are published synchronously by default in the composer's transaction (composer + listener commit/rollback together) unless using the async annotation. | [paraphrase] | fundamentals.html
-- MUST | Use the **Event Publication Registry**: each publication is written to a log within the original transaction; a staleness monitor auto-fails stuck publications; completion modes UPDATE (default)/DELETE/ARCHIVE. | [paraphrase] | fundamentals.html
+- MUST | Use the **Event Publication Registry**: each publication is written to a log within the original transaction; a staleness monitor (activating only when a non-zero staleness interval is configured) marks stuck publications as **failed** — a failed publication is not resubmitted by the current mechanism. | [paraphrase] | fundamentals.html
 - AVOID | Catching `Exception` broadly in an event listener — it prevents the registry from retrying a failed publication; let the failure surface so the retry mechanism can act. | [paraphrase] | fundamentals.html
 - ATTEND | Quote: "To run a transactional event listener in a transaction itself, it would need to be annotated with @Transactional in turn." | [quote] | fundamentals.html
 - MUST | Name events in the past tense (`OrderPlaced`); the emitter must not know the consumers (decoupling). | [paraphrase] | fundamentals.html
-- ATTEND | Use `@Transactional(propagation=NOT_SUPPORTED)` inside a listener to decouple from the publisher's transaction (standard Spring alternative to REQUIRES_NEW). | [paraphrase] | spring-framework (cross-ref, see 04-data.md §6)
+- ATTEND | Inside a listener, `@Transactional(propagation=NOT_SUPPORTED)` suspends the publisher's transaction and runs non-transactionally — distinct from `REQUIRES_NEW`, which starts a NEW independent transaction (see 04-data.md §6). | [paraphrase] | spring-framework (cross-ref, see 04-data.md §6)
 
 ## 4. Integration Testing Modules (5.4)
 
@@ -45,12 +45,12 @@
 
 ## 7. Production-ready (5.8)
 
-- ATTEND | Expose module structure via actuator: `/actuator/applicationmodules` (module graph + events) and `/actuator/applicationmodules/events` (event catalog). | [paraphrase] | production-ready.html
-- ATTEND | The event catalog lists all published events per module — a cross-reference for event consumers and for the naming/past-tense rule. | [paraphrase] | production-ready.html
+- ATTEND | Expose module structure via actuator: `/actuator/modulith` (module graph with dependencies). | [paraphrase] | production-ready.html
+- ATTEND | The endpoint lists each module's outgoing dependencies including event listeners — a cross-reference for event consumers and for the naming/past-tense rule. | [paraphrase] | production-ready.html
 
 ---
 
-## Cross-cutting gap insertions (from the standards-miner)
+## Cross-cutting gap insertions
 
 | Gap | Home | Rule added |
 |---|---|---|
