@@ -260,7 +260,7 @@ SLO-2 من فئة المال: أي حادث firing = إعلان فوري في ق
 
 ## MarketplaceCacheInvalidationFailures
 
-**القاعدة:** أكثر من 5 إخفاقات إخلاء مخبأة خلال 15 دقيقة (`sum(increase(marketplace_cache_invalidation_evict_failure_total[15m])) > 5` — نص القاعدة الحرفي من `marketplace-alerts.yml:76`، CodeRabbit #245)، نافذة `for: 10m` — الخطورة **warning** — عقد SLO: `docs/observability/slo.md#5-guardrails`.
+**القاعدة:** أكثر من 5 إخفاقات إخلاء مخبأة خلال 15 دقيقة (`sum(increase(marketplace_cache_invalidation_evict_failure_total[15m])) > 5` — نص القاعدة الحرفي من `marketplace-alerts.yml:80`، CodeRabbit #245)، نافذة `for: 10m` — الخطورة **warning** — عقد SLO: `docs/observability/slo.md#5-guardrails`.
 
 ### ماذا يعني هذا الإنذار
 
