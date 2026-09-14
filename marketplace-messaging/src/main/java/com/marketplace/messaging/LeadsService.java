@@ -19,8 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
@@ -41,16 +39,19 @@ import java.util.UUID;
  * the realestate precedent (PR #299: {@code catalog :: catalog-spi} in
  * {@code allowedDependencies}).
  *
- * <p><b>The G-R6 daily cap:</b> the sender fingerprint is the SHA-256 hex
- * of the client IP — never the raw address (privacy by design: the hash
- * exists solely to bound one sender's daily volume and is not a person
- * identifier). The count is checked inside the same transaction as the
- * insert; the concurrent-submission race is bounded by the global
- * {@code leadCreate} rate limiter window (the check-then-act gap is
- * documented here, not hidden — calibrating it is G-R6's own gate at
- * first traffic). A cap rejection raises the house
- * {@link TooManyRequestsException} — the same RL-001 taxonomy entry and
- * 429 problem shape the Resilience4j channel produces, without
+ * <p><b>The G-R6 daily cap:</b> the sender fingerprint is the
+ * <b>keyed</b> HmacSHA256 hex of the client IP — never the raw address,
+ * and never a bare digest either (the CodeRabbit round-1 adoption,
+ * CWE-759: the IPv4 space is enumerable, so an unkeyed SHA-256 is
+ * re-identifiable by anyone who reads the table; the keyed digest is
+ * pseudonymization and the key never leaves the server — prod fails
+ * startup without it, the {@code JwkSourceProdHardening} pattern). The
+ * advisory transaction lock on the fingerprint serializes the
+ * check-then-insert sequence against concurrent submissions from the
+ * same sender (the {@code MediaAssetRepository} position precedent) —
+ * the count is exact, not approximately bounded. A cap rejection raises
+ * the house {@link TooManyRequestsException} — the same RL-001 taxonomy
+ * entry and 429 problem shape the Resilience4j channel produces, without
  * impersonating its exception (whose factory requires a limiter
  * instance this counting policy does not have).
  *
@@ -102,9 +103,13 @@ public class LeadsService {
                                    Authentication authentication, String clientIp) {
         UUID providerId = resolveLiveListingProvider(listingId);
         UUID senderUserId = currentUserProvider.tryGetCurrentUserId(authentication).orElse(null);
-        String senderIpHash = hashIp(clientIp);
+        String senderIpHash = hashIp(properties.leads().ipHashKey(), clientIp);
 
         if (senderIpHash != null) {
+            // Serialize the per-fingerprint window: the second concurrent
+            // submission waits for the first to commit, then counts the
+            // committed row (the advisory-lock adoption above).
+            leadRepository.acquireSenderWindowLock(senderIpHash);
             Instant windowStart = Instant.now().minus(24, ChronoUnit.HOURS);
             long submitted = leadRepository.countBySenderIpHashAndCreatedAtAfter(senderIpHash, windowStart);
             if (submitted >= properties.leads().dailyCapPerSender()) {
@@ -167,17 +172,26 @@ public class LeadsService {
         }
     }
 
-    /** SHA-256 hex of the client IP, or null when no address is present (e.g. a test seam). */
-    static String hashIp(String clientIp) {
+    /**
+     * The keyed fingerprint: HmacSHA256 hex of the client IP under the
+     * configured key (CWE-759 adoption — see the class javadoc), or null
+     * when no address is present (e.g. a test seam). Deterministic per
+     * key, so the 24h window count and the V52 partial index keep
+     * working unchanged across restarts.
+     */
+    static String hashIp(String key, String clientIp) {
         if (clientIp == null || clientIp.isBlank()) {
             return null;
         }
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(clientIp.trim().getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is mandated by the Java platform specification — unreachable.
-            throw new IllegalStateException("SHA-256 unavailable", e);
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(
+                    mac.doFinal(clientIp.trim().getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException e) {
+            // HmacSHA256 is mandated by the Java platform specification — unreachable.
+            throw new IllegalStateException("HmacSHA256 unavailable", e);
         }
     }
 }

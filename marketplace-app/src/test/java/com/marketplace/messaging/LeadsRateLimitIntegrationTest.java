@@ -31,14 +31,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * spending the window answers 429 — for BOTH gates, deterministically.
  *
  * <p><b>The instance-window proof (HTTP level, tiny instance per the
- * {@code RateLimitProblemDetailIntegrationTest} convention):</b> with
- * {@code limit-for-period=2 / refresh=2s}, the first two rapid
- * distinct-IP submissions are guaranteed to pass (whichever absolute
- * refresh cycle they land in starts full — no other traffic consumes),
- * and a 429 is guaranteed to appear within the next four calls (each
- * cycle grants two permits; a one-second call span crosses at most one
- * boundary, so at most four calls can ever pass — the fifth or earlier
- * is rejected). The rejection carries the RL-001 problem+json contract.
+ * {@code RateLimitProblemDetailIntegrationTest} convention — including
+ * its 60s refresh window, which CANNOT expire during the test):</b> with
+ * {@code limit-for-period=2 / refresh=60s}, the first two rapid
+ * distinct-IP submissions pass (whichever cycle they land in starts
+ * full) and the third is deterministically rejected — the CodeRabbit
+ * round-1 adoption: a short refresh period lets a slow CI run cross
+ * boundaries and invalidate the arithmetic. The rejection carries the
+ * RL-001 problem+json contract.
  *
  * <p><b>The G-R6 daily-cap proof (service level, no limiter in the
  * path):</b> with {@code daily-cap-per-sender=1}, the second submission
@@ -51,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         "resilience4j.ratelimiter.instances.leadCreate.limit-for-period=2",
-        "resilience4j.ratelimiter.instances.leadCreate.limit-refresh-period=2s",
+        "resilience4j.ratelimiter.instances.leadCreate.limit-refresh-period=60s",
         "resilience4j.ratelimiter.instances.leadCreate.timeout-duration=0",
         "marketplace.messaging.leads.daily-cap-per-sender=1",
 })
@@ -120,30 +120,18 @@ class LeadsRateLimitIntegrationTest {
 
     @Test
     void instanceWindowAnswers429WithTheHouseProblemShape() throws Exception {
-        // The first two rapid distinct-IP submissions are guaranteed to
-        // pass (whichever absolute cycle they land in starts full).
+        // The first two rapid distinct-IP submissions pass (whichever
+        // absolute cycle they land in starts full); the third is THE
+        // deterministic rejection — the 60s window cannot refresh during
+        // the test, so no boundary arithmetic is involved at all.
         submit("198.51.100.1").andExpect(status().isCreated());
         submit("198.51.100.2").andExpect(status().isCreated());
-
-        // A 429 is guaranteed within the next four calls (at most one
-        // refresh boundary can fall inside a ~1s call span, so at most
-        // four calls can ever be permitted).
-        boolean rejected = false;
-        for (int i = 3; i <= 6 && !rejected; i++) {
-            ResultActions result = submit("198.51.100." + i);
-            if (result.andReturn().getResponse().getStatus() == 429) {
-                result.andExpect(content().contentType("application/problem+json"))
-                        .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/rate-limited"))
-                        .andExpect(jsonPath("$.title").value("Too Many Requests"))
-                        .andExpect(jsonPath("$.status").value(429));
-                rejected = true;
-            } else {
-                result.andExpect(status().isCreated());
-            }
-        }
-        assertThat(rejected)
-                .as("the leadCreate instance window must reject within six rapid calls")
-                .isTrue();
+        submit("198.51.100.3")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/rate-limited"))
+                .andExpect(jsonPath("$.title").value("Too Many Requests"))
+                .andExpect(jsonPath("$.status").value(429));
     }
 
     @Test

@@ -70,6 +70,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
+        // One lead per sender fingerprint: every test here submits from
+        // its own address exactly once — and the concurrent-lock test
+        // NEEDS a cap of 1 to prove the advisory serialization.
+        "marketplace.messaging.leads.daily-cap-per-sender=1",
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -105,6 +109,9 @@ class LeadsIntegrationTest {
 
     @Autowired
     private com.marketplace.messaging.spi.MessagingContentPurgeAdapter purgeAdapter;
+
+    @Autowired
+    private LeadsFingerprintCleanupJob fingerprintCleanupJob;
 
     private UUID providerUserId;
     private UUID otherProviderUserId;
@@ -143,6 +150,10 @@ class LeadsIntegrationTest {
                 {"contactName": "Sami Ahmad", "contactPhone": "+963991234567",
                  "message": "Is the flat still available for October?"}
                 """;
+    }
+
+    private LeadRequest request() {
+        return new LeadRequest("Sami Ahmad", "+963991234567", "Is the flat still available for October?");
     }
 
     private UUID submitLead(String remoteAddr) throws Exception {
@@ -287,6 +298,63 @@ class LeadsIntegrationTest {
 
         // Idempotence — the port contract: a re-run matches nothing.
         assertThat(purgeAdapter.purgeAuthoredTexts(senderId)).isEqualTo(0);
+    }
+
+    @Test
+    void concurrentSubmissionsFromOneFingerprintSerializeOnTheAdvisoryLock() throws Exception {
+        // The CodeRabbit round-1 adoption proof: two threads, one
+        // fingerprint, cap 1 — the advisory transaction lock makes the
+        // second submission WAIT for the first to commit, count the
+        // committed row, and reject. Exactly one lead, exactly one
+        // TooManyRequestsException — deterministic WITH the lock, and a
+        // regression detector without it (both would land).
+        java.util.concurrent.ConcurrentLinkedQueue<Object> results = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        Runnable submit = () -> {
+            try {
+                results.add(leadsService.createLead(listingId, request(), null, "203.0.113.20"));
+            } catch (RuntimeException e) {
+                results.add(e);
+            }
+        };
+        Thread first = new Thread(submit);
+        Thread second = new Thread(submit);
+        first.start();
+        second.start();
+        first.join();
+        second.join();
+
+        long landed = results.stream().filter(r -> r instanceof LeadResponse).count();
+        long rejected = results.stream().filter(r -> r instanceof com.marketplace.shared.api.TooManyRequestsException).count();
+        assertThat(landed).as("exactly one lead wins the window").isEqualTo(1);
+        assertThat(rejected).as("exactly one submission is capped").isEqualTo(1);
+    }
+
+    @Test
+    void fingerprintSweepNullsOnlyClosedWindows() {
+        // The retention adoption: the fingerprint lives for its 24h
+        // window (+1h margin) and no longer — base and mirror alike. A
+        // fresh lead keeps it; a backdated one loses it everywhere.
+        LeadResponse fresh = leadsService.createLead(listingId, request(), null, "203.0.113.30");
+        LeadResponse closed = leadsService.createLead(listingId, request(), null, "203.0.113.31");
+        jdbc.update("UPDATE listing_leads SET created_at = now() - interval '26 hours' WHERE id = ?",
+                closed.id());
+        jdbc.update("UPDATE listing_leads_aud SET created_at = now() - interval '26 hours' WHERE id = ?",
+                closed.id());
+
+        fingerprintCleanupJob.expireClosedWindowFingerprints();
+
+        Integer freshKept = jdbc.queryForObject(
+                "SELECT count(*) FROM listing_leads WHERE id = ? AND sender_ip_hash IS NOT NULL",
+                Integer.class, fresh.id());
+        Integer closedCleared = jdbc.queryForObject(
+                "SELECT count(*) FROM listing_leads WHERE id = ? AND sender_ip_hash IS NOT NULL",
+                Integer.class, closed.id());
+        Integer closedMirrorCleared = jdbc.queryForObject(
+                "SELECT count(*) FROM listing_leads_aud WHERE id = ? AND sender_ip_hash IS NOT NULL",
+                Integer.class, closed.id());
+        assertThat(freshKept).as("the live window keeps its fingerprint").isEqualTo(1);
+        assertThat(closedCleared).as("the closed window loses it (base)").isEqualTo(0);
+        assertThat(closedMirrorCleared).as("the closed window loses it (mirror)").isEqualTo(0);
     }
 
     @Test

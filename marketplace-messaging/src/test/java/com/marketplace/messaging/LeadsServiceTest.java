@@ -45,7 +45,7 @@ class LeadsServiceTest {
     private static final UUID LISTING_ID = UUID.randomUUID();
     private static final UUID PROVIDER_ID = UUID.randomUUID();
     private static final String IP = "203.0.113.7";
-    private static final String IP_HASH = LeadsService.hashIp(IP);
+    private static final String IP_HASH = LeadsService.hashIp("test-hmac-key", IP);
 
     @Mock
     private ListingLeadRepository leadRepository;
@@ -83,7 +83,7 @@ class LeadsServiceTest {
         activeListing();
         when(currentUserProvider.tryGetCurrentUserId(any())).thenReturn(Optional.of(UUID.randomUUID()));
         when(leadRepository.save(any(ListingLead.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(properties.leads()).thenReturn(new MessagingProperties.Leads(5));
+        when(properties.leads()).thenReturn(new MessagingProperties.Leads(5, "test-hmac-key"));
 
         LeadResponse response = service.createLead(LISTING_ID, request(), null, IP);
 
@@ -134,7 +134,7 @@ class LeadsServiceTest {
         // TooManyRequestsException (the house RL-001 taxonomy entry).
         activeListing();
         when(currentUserProvider.tryGetCurrentUserId(any())).thenReturn(Optional.empty());
-        when(properties.leads()).thenReturn(new MessagingProperties.Leads(5));
+        when(properties.leads()).thenReturn(new MessagingProperties.Leads(5, "test-hmac-key"));
         when(leadRepository.countBySenderIpHashAndCreatedAtAfter(eq(IP_HASH), any(Instant.class)))
                 .thenReturn(5L);
 
@@ -149,9 +149,10 @@ class LeadsServiceTest {
         // no cap — the global rate limiter is the only guard.
         activeListing();
         when(currentUserProvider.tryGetCurrentUserId(any())).thenReturn(Optional.empty());
+        when(properties.leads()).thenReturn(new MessagingProperties.Leads(5, "test-hmac-key"));
         when(leadRepository.save(any(ListingLead.class))).thenAnswer(inv -> inv.getArgument(0));
-        // No properties stub: with no client IP the cap block (the only
-        // properties reader) is never entered.
+        // The cap block is entered (the key is read) but the count is not:
+        // the absent IP skips both the lock and the window query.
 
         LeadResponse response = service.createLead(LISTING_ID, request(), null, null);
 

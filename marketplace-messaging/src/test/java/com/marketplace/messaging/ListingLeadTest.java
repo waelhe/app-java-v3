@@ -107,13 +107,19 @@ class ListingLeadTest {
     }
 
     @Test
-    void hashIpIsSha256HexOrAbsent() {
-        assertThat(LeadsService.hashIp("203.0.113.9")).hasSize(64).matches("[0-9a-f]+");
-        assertThat(LeadsService.hashIp("203.0.113.9"))
-                .isEqualTo(LeadsService.hashIp("203.0.113.9"));  // deterministic
-        assertThat(LeadsService.hashIp("203.0.113.10"))
-                .isNotEqualTo(LeadsService.hashIp("203.0.113.9"));  // discriminating
-        assertThat(LeadsService.hashIp(null)).isNull();
-        assertThat(LeadsService.hashIp("  ")).isNull();
+    void hashIpIsKeyedHmacHexOrAbsent() {
+        // The CodeRabbit adoption (CWE-759): a KEYED digest — deterministic
+        // per key, discriminating between addresses, and NOT the bare
+        // SHA-256 anyone could enumerate the IPv4 space against.
+        String key = "test-hmac-key";
+        assertThat(LeadsService.hashIp(key, "203.0.113.9")).hasSize(64).matches("[0-9a-f]+");
+        assertThat(LeadsService.hashIp(key, "203.0.113.9"))
+                .isEqualTo(LeadsService.hashIp(key, "203.0.113.9"));  // deterministic per key
+        assertThat(LeadsService.hashIp(key, "203.0.113.10"))
+                .isNotEqualTo(LeadsService.hashIp(key, "203.0.113.9"));  // discriminating
+        assertThat(LeadsService.hashIp(key, "203.0.113.9"))
+                .isNotEqualTo(LeadsService.hashIp("other-key", "203.0.113.9"));  // keyed
+        assertThat(LeadsService.hashIp(key, null)).isNull();
+        assertThat(LeadsService.hashIp(key, "  ")).isNull();
     }
 }
