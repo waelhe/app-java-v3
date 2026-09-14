@@ -300,7 +300,12 @@ class UserServiceTest {
         verify(userDetailsManager).updateUser(captured.capture());
         assertTrue(captured.getValue().isEnabled(), "the account must be enabled");
         // Enabling emits no token and removes nothing (the user logs in again).
-        verify(jdbcTemplate, never()).update(anyString(), (Object) any());
+        // CodeRabbit #250 (Mockito 5 varargs semantics — adopted): any() on a
+        // varargs position matches exactly one element, so a never() check
+        // with (Object) any() would pass vacuously even if the five-arg
+        // audit update ran. verifyNoInteractions asserts the enable path
+        // touches JdbcTemplate zero times, by construction.
+        verifyNoInteractions(jdbcTemplate);
     }
 
     @Test

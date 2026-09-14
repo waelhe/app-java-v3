@@ -26,8 +26,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * production no HTTP probe exercises this indicator: liveness is {@code ping}-only
  * and readiness is {@code db,redis,diskSpace} (both the Railway healthcheck and the
  * watchdog probe liveness/readiness only; full {@code /actuator/health} is
- * deliberately not probed). On query failure the gauge keeps its last observed
- * value while this indicator reports {@code DOWN} with the exception.
+ * deliberately not probed). On query failure the gauge is set to {@code -1}
+ * (UNKNOWN — CodeRabbit #239, adopted): a stale last-good value would read
+ * as a healthy zero and hide a database outage from the metrics pipeline,
+ * while this indicator reports {@code DOWN} with the exception. The
+ * {@code MarketplaceEventBusStale} rule fires on {@code != 0} so both the
+ * unknown probe (-1) and real backlogs (&gt; 0) page.
  *
  * <p>The {@link MeterRegistry} is injected via {@link ObjectProvider} and is strictly
  * optional: contexts that do not expose one (module test slices) keep the indicator
@@ -81,6 +85,10 @@ public class ModulithEventBusHealthIndicator extends AbstractHealthIndicator {
                 builder.up();
             }
         } catch (Exception e) {
+            // -1 marks UNKNOWN (see class javadoc): the scheduled probe has
+            // no HTTP consumer, so a frozen last-good value would masquerade
+            // as healthy. The alert rule treats any non-zero value as paging.
+            stalePublications.set(-1);
             builder.down(e);
         }
     }

@@ -111,7 +111,9 @@ class ModulithEventBusHealthIndicatorTest {
     }
 
     @Test
-    void scheduledRefreshKeepsLastGaugeValueWhenQueryFails() {
+    void scheduledRefreshMarksGaugeUnknownWhenQueryFails() {
+        // CodeRabbit #239 (adopted): a failed probe must not freeze the
+        // last-good value — -1 (UNKNOWN) pages via the != 0 alert rule.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         var indicator = new ModulithEventBusHealthIndicator(jdbcTemplate, providerOf(registry));
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(21600L)))
@@ -122,7 +124,7 @@ class ModulithEventBusHealthIndicatorTest {
         indicator.refreshStalePublicationsGauge();
 
         assertThat(registry.get(ModulithEventBusHealthIndicator.STALE_PUBLICATIONS_METRIC).gauge().value())
-                .isEqualTo(3.0);
+                .isEqualTo(-1.0);
     }
 
     /**

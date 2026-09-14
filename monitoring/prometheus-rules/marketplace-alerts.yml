@@ -62,13 +62,17 @@ groups:
   - name: marketplace-eventbus
     rules:
       - alert: MarketplaceEventBusStale
-        expr: marketplace_eventbus_stale > 0
+        # Non-zero pages both shapes: a real backlog (> 0 stale rows) and an
+        # UNKNOWN probe (-1 — the indicator sets the gauge on query failure
+        # because no HTTP probe exercises it; CodeRabbit #239). description
+        # branches on the sign so the responder knows which shape fired.
+        expr: marketplace_eventbus_stale != 0
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Modulith event bus has stale publications"
-          description: "{{ $value }} event publications incomplete for over 6h — downstream modules (ledger, booking, notifications) are drifting."
+          description: "Gauge state marketplace_eventbus_stale = {{ $value }}: -1 means the staleness probe itself is failing (database unreachable), not a measured backlog; positive values are event publications incomplete for over 6h — downstream modules (ledger, booking, notifications) are drifting."
           slo: "docs/observability/slo.md#4-slo-3"
   - name: marketplace-guardrails
     rules:
