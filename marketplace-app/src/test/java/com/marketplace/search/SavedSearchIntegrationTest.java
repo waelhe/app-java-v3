@@ -165,8 +165,13 @@ class SavedSearchIntegrationTest {
 
     private void activateListing(UUID listingId) throws Exception {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerUserId);
+        // The role-carrying jwt (the RateLimitProblemDetailIntegrationTest
+        // pattern): activate() is @PreAuthorize("hasRole('PROVIDER')") and
+        // the bare jwt() token carries no authorities — a plain 403.
         mockMvc.perform(post("/api/v1/listings/{id}/activate", listingId)
-                        .with(jwt()))
+                        .with(jwt().jwt(j -> j.subject("l35-provider"))
+                                .authorities(new org.springframework.security.core.authority
+                                        .SimpleGrantedAuthority("ROLE_PROVIDER"))))
                 .andExpect(status().isOk());
     }
 

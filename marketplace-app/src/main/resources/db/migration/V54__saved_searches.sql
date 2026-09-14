@@ -72,16 +72,23 @@ CREATE UNIQUE INDEX uq_saved_search_matches_once
 
 -- Envers mirror (V24 convention) — the saved_searches entity only; the
 -- matches ledger has no entity and no mutable state (see header).
+-- The copied columns are NULLABLE exactly as V24 made them: an Envers DEL
+-- revision row carries only (id, rev, revtype) — the entity state is gone
+-- by the time the delete revision is written (measured live in CI: the
+-- soft-delete of a saved search answered 500 until the NOT NULLs were
+-- dropped — the aud INSERT wrote NULLs). NOT NULL on a DEL-revision
+-- column makes every soft delete a 500; V24's nullable mirrors are the
+-- documented convention this table now follows faithfully.
 CREATE TABLE saved_searches_aud (
     id              UUID NOT NULL,
     rev             BIGINT NOT NULL,
     revtype         SMALLINT,
-    user_id         UUID NOT NULL,
-    criteria        JSONB NOT NULL,
-    alert_enabled   BOOLEAN NOT NULL,
+    user_id         UUID,
+    criteria        JSONB,
+    alert_enabled   BOOLEAN,
     last_matched_at TIMESTAMPTZ,
-    is_deleted      BOOLEAN NOT NULL DEFAULT FALSE,
-    version         BIGINT NOT NULL DEFAULT 0,
+    is_deleted      BOOLEAN,
+    version         BIGINT,
     created_by      VARCHAR(200),
     created_at      TIMESTAMPTZ,
     updated_by      VARCHAR(200),

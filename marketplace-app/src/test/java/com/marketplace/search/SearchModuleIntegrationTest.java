@@ -2,6 +2,7 @@ package com.marketplace.search;
 
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.AvailabilityLookupPort;
+import com.marketplace.shared.config.ClockConfig;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,9 +27,14 @@ import org.springframework.data.domain.Page;
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
-@Import(ModuleTestConfig.class)
+@Import({ModuleTestConfig.class, ClockConfig.class})
 @WithMockUser
 class SearchModuleIntegrationTest {
+
+    // L35: the module's first persistent shape (SavedSearchService) needs
+    // the injectable house clock — the production ClockConfig bean lives
+    // in platform-infra, outside the module slice, so the slice imports it
+    // (the ModuleTestConfig/JpaConfig precedent for production configs).
 
     @MockitoBean
     CatalogSearchPort catalogSearchPort;
