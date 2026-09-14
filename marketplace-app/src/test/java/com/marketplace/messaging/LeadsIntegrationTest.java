@@ -10,7 +10,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,6 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -182,9 +182,12 @@ class LeadsIntegrationTest {
     void existingButNotLiveListingIs409AndMissingIs404() throws Exception {
         // Acceptance 2 — through the REAL liveness semantics: a PAUSED
         // listing resolves in the unfiltered projection (409 — exists but
-        // not live); a missing id misses both (the honest 404).
-        seedListing(listingId, providerUserId, "PAUSED");
-        mockMvc.perform(post("/api/v1/listings/{id}/leads", listingId)
+        // not live); a missing id misses both (the honest 404). A FRESH
+        // id for the paused row — the seed's ON CONFLICT DO NOTHING keeps
+        // the original ACTIVE (the CI round-2 lesson).
+        UUID pausedListingId = UUID.randomUUID();
+        seedListing(pausedListingId, providerUserId, "PAUSED");
+        mockMvc.perform(post("/api/v1/listings/{id}/leads", pausedListingId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(leadBody())
                         .with(req -> {
@@ -205,7 +208,6 @@ class LeadsIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void providerInboxListsMarksReadAndHidesForeignLeads() throws Exception {
         // Acceptance 4 — the inbox: paged read, the one-way READ move, and
         // a foreign provider's lead is a 404 (the read is owner-scoped by
@@ -214,13 +216,18 @@ class LeadsIntegrationTest {
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerUserId);
 
+        // The resource-server chain authenticates BEARER tokens (the
+        // measured house pattern — a TestingAuthenticationToken answers
+        // 401 on this chain): the mocked JWT rides the real filter chain.
         mockMvc.perform(get("/api/v1/providers/me/leads")
+                        .with(jwt())
                         .param("page", "0").param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(leadId.toString()))
                 .andExpect(jsonPath("$.content[0].status").value("NEW"));
 
         mockMvc.perform(patch("/api/v1/providers/me/leads/{leadId}", leadId)
+                        .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"READ\"}"))
                 .andExpect(status().isOk())
@@ -235,6 +242,7 @@ class LeadsIntegrationTest {
         // and the row is untouched.
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(otherProviderUserId);
         mockMvc.perform(patch("/api/v1/providers/me/leads/{leadId}", leadId)
+                        .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"ARCHIVED\"}"))
                 .andExpect(status().isNotFound());

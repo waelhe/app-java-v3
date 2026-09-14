@@ -32,10 +32,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * config uses).
  *
  * <p><b>The two 429s, distinguished deterministically in one sequence:</b>
- * the instance window is {@code limit-for-period=3 / refresh=2s} and the
- * G-R6 daily cap is 1 per sender fingerprint. (1) three rapid submissions
- * from three distinct IPs: the first two land, the third is rejected —
- * the instance window (the IPs are distinct, so no cap is involved);
+ * the instance window is {@code limit-for-period=2 / refresh=2s} (N
+ * permits serve exactly N calls — the third rapid call is the first
+ * blocked one) and the G-R6 daily cap is 1 per sender fingerprint. (1)
+ * three rapid submissions from three distinct IPs: the first two land,
+ * the third is rejected — the instance window (the IPs are distinct, so
+ * no cap is involved);
  * after the window refreshes, (2) two submissions from the SAME IP: the
  * first lands, the second is rejected — the daily cap, proven IP-specific
  * because a third-IP submission immediately after still succeeds on the
@@ -44,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
-        "resilience4j.ratelimiter.instances.leadCreate.limit-for-period=3",
+        "resilience4j.ratelimiter.instances.leadCreate.limit-for-period=2",
         "resilience4j.ratelimiter.instances.leadCreate.limit-refresh-period=2s",
         "resilience4j.ratelimiter.instances.leadCreate.timeout-duration=0",
         "marketplace.messaging.leads.daily-cap-per-sender=1",
@@ -124,7 +126,9 @@ class LeadsRateLimitIntegrationTest {
 
         // (2) The G-R6 daily cap: the same IP twice — the second is 429,
         // and it is the CAP because a distinct-IP submission on the same
-        // window still succeeds right after.
+        // window still succeeds right after (the refreshed window holds
+        // two permits; the fourth call consumed one, the fifth would have
+        // been permitted — only the per-sender count rejects it).
         submit("198.51.100.4").andExpect(status().isCreated());
         submit("198.51.100.4")
                 .andExpect(status().isTooManyRequests())
