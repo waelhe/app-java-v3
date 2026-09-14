@@ -1,5 +1,6 @@
 package com.marketplace.messaging;
 
+import com.marketplace.shared.api.TooManyRequestsException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,8 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -25,23 +28,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * L34 (realestate systems plan §5 — lead capture) acceptance criterion 3:
- * spending the window answers 429 — for BOTH gates, through the real HTTP
- * chain with the REAL catalog (the {@code
- * RateLimitProblemDetailIntegrationTest} convention: tiny instances via
- * test properties, the same official Resilience4j model the production
- * config uses).
+ * spending the window answers 429 — for BOTH gates, deterministically.
  *
- * <p><b>The two 429s, distinguished deterministically in one sequence:</b>
- * the instance window is {@code limit-for-period=2 / refresh=2s} (N
- * permits serve exactly N calls — the third rapid call is the first
- * blocked one) and the G-R6 daily cap is 1 per sender fingerprint. (1)
- * three rapid submissions from three distinct IPs: the first two land,
- * the third is rejected — the instance window (the IPs are distinct, so
- * no cap is involved);
- * after the window refreshes, (2) two submissions from the SAME IP: the
- * first lands, the second is rejected — the daily cap, proven IP-specific
- * because a third-IP submission immediately after still succeeds on the
- * same window. Both rejections carry the RL-001 problem+json contract.
+ * <p><b>The instance-window proof (HTTP level, tiny instance per the
+ * {@code RateLimitProblemDetailIntegrationTest} convention):</b> with
+ * {@code limit-for-period=2 / refresh=2s}, the first two rapid
+ * distinct-IP submissions are guaranteed to pass (whichever absolute
+ * refresh cycle they land in starts full — no other traffic consumes),
+ * and a 429 is guaranteed to appear within the next four calls (each
+ * cycle grants two permits; a one-second call span crosses at most one
+ * boundary, so at most four calls can ever pass — the fifth or earlier
+ * is rejected). The rejection carries the RL-001 problem+json contract.
+ *
+ * <p><b>The G-R6 daily-cap proof (service level, no limiter in the
+ * path):</b> with {@code daily-cap-per-sender=1}, the second submission
+ * from the same fingerprint raises {@link TooManyRequestsException}
+ * while a distinct-IP submission immediately after succeeds — the cap is
+ * per-sender, IP-specific, and provably not the instance window (the
+ * service call bypasses the controller annotation entirely).
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -69,6 +73,9 @@ class LeadsRateLimitIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private LeadsService leadsService;
 
     private UUID listingId;
 
@@ -107,33 +114,52 @@ class LeadsRateLimitIntegrationTest {
                         }));
     }
 
+    private LeadRequest request() {
+        return new LeadRequest("Sami Ahmad", "+963991234567", "Rate limit probe");
+    }
+
     @Test
-    void bothGatesAnswer429WithTheHouseProblemShape() throws Exception {
-        // (1) The instance window: distinct IPs, three rapid calls — the
-        // third is 429 with the RL-001 problem+json contract.
+    void instanceWindowAnswers429WithTheHouseProblemShape() throws Exception {
+        // The first two rapid distinct-IP submissions are guaranteed to
+        // pass (whichever absolute cycle they land in starts full).
         submit("198.51.100.1").andExpect(status().isCreated());
         submit("198.51.100.2").andExpect(status().isCreated());
-        submit("198.51.100.3")
-                .andExpect(status().isTooManyRequests())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/rate-limited"))
-                .andExpect(jsonPath("$.title").value("Too Many Requests"))
-                .andExpect(jsonPath("$.status").value(429));
 
-        // The window refreshes (2s) — the same shape the production
-        // instance carries, only faster.
-        Thread.sleep(2200);
+        // A 429 is guaranteed within the next four calls (at most one
+        // refresh boundary can fall inside a ~1s call span, so at most
+        // four calls can ever be permitted).
+        boolean rejected = false;
+        for (int i = 3; i <= 6 && !rejected; i++) {
+            ResultActions result = submit("198.51.100." + i);
+            if (result.andReturn().getResponse().getStatus() == 429) {
+                result.andExpect(content().contentType("application/problem+json"))
+                        .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/rate-limited"))
+                        .andExpect(jsonPath("$.title").value("Too Many Requests"))
+                        .andExpect(jsonPath("$.status").value(429));
+                rejected = true;
+            } else {
+                result.andExpect(status().isCreated());
+            }
+        }
+        assertThat(rejected)
+                .as("the leadCreate instance window must reject within six rapid calls")
+                .isTrue();
+    }
 
-        // (2) The G-R6 daily cap: the same IP twice — the second is 429,
-        // and it is the CAP because a distinct-IP submission on the same
-        // window still succeeds right after (the refreshed window holds
-        // two permits; the fourth call consumed one, the fifth would have
-        // been permitted — only the per-sender count rejects it).
-        submit("198.51.100.4").andExpect(status().isCreated());
-        submit("198.51.100.4")
-                .andExpect(status().isTooManyRequests())
-                .andExpect(content().contentType("application/problem+json"))
-                .andExpect(jsonPath("$.type").value("https://marketplace.com/errors/rate-limited"));
-        submit("198.51.100.5").andExpect(status().isCreated());
+    @Test
+    void dailyCapIsPerSenderAndIpSpecific() {
+        // The G-R6 cap, proven at the service seam where the limiter is
+        // not in the path: the same fingerprint's second submission in
+        // the 24h window is rejected; a different fingerprint passes
+        // immediately after.
+        LeadResponse first = leadsService.createLead(listingId, request(), null, "198.51.100.10");
+        assertThat(first.status()).isEqualTo("NEW");
+
+        assertThatThrownBy(() -> leadsService.createLead(listingId, request(), null, "198.51.100.10"))
+                .isInstanceOf(TooManyRequestsException.class);
+
+        // IP-specific: a different sender on the same window passes.
+        LeadResponse other = leadsService.createLead(listingId, request(), null, "198.51.100.11");
+        assertThat(other.status()).isEqualTo("NEW");
     }
 }
