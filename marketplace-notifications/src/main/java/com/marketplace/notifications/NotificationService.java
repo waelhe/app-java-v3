@@ -6,6 +6,8 @@ import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -20,6 +22,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class NotificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final NotificationRepository repository;
     private final BookingParticipantProvider bookingParticipantProvider;
@@ -78,6 +82,32 @@ public class NotificationService {
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendWebSocket(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, message);
         });
+    }
+
+    /**
+     * L34 (realestate systems plan §5 — lead capture): the provider's
+     * LEAD_RECEIVED alert — the same delivery shape as the two event
+     * points above (in-app row always lands; WebSocket and email ride
+     * their L22 per-type/channel preferences).
+     *
+     * <p><b>The recipient is the listing's provider id — which lives in
+     * the users.id space (the A1/V2 measured fact:
+     * {@code provider_listings.provider_id references users(id)}, the
+     * same seam {@code onBookingCreated} uses for its BookingInfo
+     * provider): the id IS the recipient, no profile resolution, no
+     * unlinked-profile edge to skip.
+     */
+    public void onLeadReceived(UUID leadId, UUID listingId, UUID providerUserId) {
+        String message = "New lead for your listing: " + listingId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(providerUserId,
+                NotificationType.LEAD_RECEIVED.name(), message));
+        if (preferences.isChannelEnabled(providerUserId,
+                NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(providerUserId, "New Lead",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
     }
 
     private void sendWebSocket(UUID userId, NotificationType type, String message) {

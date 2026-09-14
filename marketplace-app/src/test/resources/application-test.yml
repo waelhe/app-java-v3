@@ -51,6 +51,14 @@ marketplace:
   payments:
     webhook:
       shared-secret: test-sig
+  # L34 (realestate systems plan §5): the sender fingerprint HMAC key for
+  # the test profile — SecretKeySpec rejects an empty key, so every test
+  # context carries this explicit (test-only) value. Prod fails startup
+  # on a blank key instead (MessagingConfig — the JwkSourceProdHardening
+  # pattern); this value never leaves the test classpath.
+  messaging:
+    leads:
+      ip-hash-key: test-profile-fingerprint-key
 
 management:
   otlp:

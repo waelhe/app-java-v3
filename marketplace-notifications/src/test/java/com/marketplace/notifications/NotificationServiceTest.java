@@ -371,4 +371,31 @@ class NotificationServiceTest {
         verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
+
+    @Test
+    void onLeadReceivedAlertsTheListingProviderUserDirectly() {
+        // L34 (realestate systems plan §5): the recipient is the listing's
+        // provider id — which lives in the users.id space (the A1/V2 fact,
+        // the same seam onBookingCreated uses) — on every channel the
+        // default preferences leave on.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID leadId = create(UUID.class);
+        UUID listingId = create(UUID.class);
+
+        service.onLeadReceived(leadId, listingId, PROVIDER_ID);
+
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+    }
 }
