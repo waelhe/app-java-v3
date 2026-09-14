@@ -82,10 +82,11 @@
 -- non-system memberships). The ownership-assignment mechanism in the
 -- Flyway/PostgreSQL path is NOT derived from the artifacts — the truth
 -- files record the measured fact and the plan declares debt D-I7 with a
--- measured closure point: the FIRST V52+ migration that creates an
--- object gets its ownership and marketplace_app grants measured on
--- arrival (a missing grant fails LOUDLY at first DML — a silent break is
--- impossible). Either way index usage needs no index ACL (the planner
+-- measured closure point: the FIRST V52+ migration that creates a
+-- TABLE (a new pg_class relation — an ADD COLUMN inherits the table's
+-- owner/ACL and so discriminates nothing) gets that table's ownership
+-- and marketplace_app grants measured on arrival (a missing grant
+-- fails LOUDLY at first DML — a silent break is impossible). Either way index usage needs no index ACL (the planner
 -- uses indexes implicitly — smoke 5/5 after the rebuild).
 DROP INDEX CONCURRENTLY idx_property_details_geog;
 
