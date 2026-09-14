@@ -18,6 +18,7 @@ This file adds project-specific conventions.
      - feature expansion      → docs/feature-expansion-roadmap.md
      - realestate systems     → docs/realestate-systems-plan.md
      - postgis integration     → docs/postgis-integration-plan.md
+     - community layer        → docs/neighborhood-community-plan.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
 ```
