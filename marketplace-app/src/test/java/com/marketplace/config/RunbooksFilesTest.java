@@ -73,8 +73,15 @@ class RunbooksFilesTest {
                 String alert = (String) rule.get("alert");
                 Map<String, Object> labels = (Map<String, Object>) rule.get("labels");
                 Map<String, Object> annotations = (Map<String, Object>) rule.get("annotations");
-                severityByName.put(alert, (String) labels.get("severity"));
-                sloAnchorByName.put(alert, (String) annotations.get("slo"));
+                // CodeRabbit #245 (adopted): duplicate alert names would
+                // silently overwrite each other in the maps and pass the 1:1
+                // assertion — fail fast on the second occurrence instead.
+                assertThat(severityByName.put(alert, (String) labels.get("severity")))
+                        .as("duplicate alert rule name in %s: %s", RULES_FILE, alert)
+                        .isNull();
+                assertThat(sloAnchorByName.put(alert, (String) annotations.get("slo")))
+                        .as("duplicate alert rule name in %s: %s", RULES_FILE, alert)
+                        .isNull();
             }
         }
         assertThat(severityByName).isNotEmpty();
@@ -127,13 +134,19 @@ class RunbooksFilesTest {
         String previousName = null;
         while (heading.find()) {
             if (previousStart >= 0) {
-                sections.put(previousName, markdown.substring(previousStart, heading.start()));
+                // CodeRabbit #245 (adopted): duplicate runbook headings would
+                // silently overwrite each other and pass the 1:1 assertion.
+                assertThat(sections.put(previousName, markdown.substring(previousStart, heading.start())))
+                        .as("duplicate runbook section heading in %s: %s", RUNBOOKS_FILE, previousName)
+                        .isNull();
             }
             previousStart = heading.start();
             previousName = heading.group(1);
         }
         if (previousStart >= 0) {
-            sections.put(previousName, markdown.substring(previousStart));
+            assertThat(sections.put(previousName, markdown.substring(previousStart)))
+                    .as("duplicate runbook section heading in %s: %s", RUNBOOKS_FILE, previousName)
+                    .isNull();
         }
         return sections;
     }
