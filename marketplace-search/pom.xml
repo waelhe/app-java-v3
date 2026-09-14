@@ -35,8 +35,22 @@
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-api</artifactId>
+        </dependency>
+        <!-- L35 (realestate systems plan §5 — saved searches): the module's
+             first persistent shape (SavedSearch @Audited + the JSONB
+             criteria column) — the messaging module's L34 dependency set:
+             spring-data-envers brings JPA + Envers + the tx manager, and
+             resilience4j rides platform-infra for the @RateLimiter
+             annotation (the L29 named-instance pattern). -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-envers</artifactId>
         </dependency>
 
         <dependency>

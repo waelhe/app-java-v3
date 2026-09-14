@@ -350,6 +350,14 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # L35 (realestate systems plan §5 — saved searches): the fifth
+      # high-impact write endpoint (same L29 model: fail fast, 429 RL-001).
+      # Conservative until real traffic; the stored set is bounded by the
+      # scan's page size, not by this window.
+      savedSearchCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
 
 app:
   commission:

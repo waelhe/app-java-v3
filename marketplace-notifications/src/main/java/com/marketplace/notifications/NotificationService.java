@@ -110,6 +110,30 @@ public class NotificationService {
         sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
     }
 
+    /**
+     * L35 (realestate systems plan §5 — saved searches and alerts): the
+     * SAVED_SEARCH_MATCH alert — the same delivery shape as the event
+     * points above (in-app row always lands; WebSocket and email ride
+     * their L22 per-type/channel preferences). The event arrives
+     * pre-aggregated (the matcher's structural aggregation — one event
+     * per user per listing), so the count reads "N of your saved
+     * searches" without any de-duplication here.
+     */
+    public void onSavedSearchMatch(UUID userId, UUID listingId, int savedSearchCount) {
+        String message = savedSearchCount == 1
+                ? "New listing matching your saved search: " + listingId
+                : "New listing matching " + savedSearchCount + " of your saved searches: " + listingId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(userId,
+                NotificationType.SAVED_SEARCH_MATCH.name(), message));
+        if (preferences.isChannelEnabled(userId,
+                NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(userId, "Saved Search Match",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.

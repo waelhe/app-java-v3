@@ -6,6 +6,7 @@ import com.marketplace.shared.api.MediaExportEntry;
 import com.marketplace.shared.api.MessageExportEntry;
 import com.marketplace.shared.api.NotificationExportEntry;
 import com.marketplace.shared.api.ReviewExportEntry;
+import com.marketplace.shared.api.SavedSearchExportEntry;
 
 import java.time.Instant;
 import java.util.List;
@@ -41,7 +42,8 @@ public record UserDataExportResponse(
         List<ConversationExportEntry> conversations,
         List<MessageExportEntry> messages,
         List<MediaExportEntry> media,
-        List<NotificationExportEntry> notifications
+        List<NotificationExportEntry> notifications,
+        List<SavedSearchExportEntry> savedSearches
 ) {
 
     /**
@@ -78,9 +80,9 @@ public record UserDataExportResponse(
             — exported as structured, machine-readable JSON:
             your account profile; bookings where you are a first party (status, dates, amounts); \
             reviews and messages you authored; descriptive metadata of your media (never file bytes); \
-            and your notifications.
+            your notifications; and your saved searches (criteria as stored, alerts flag).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
-            Excluded: internal system columns, operational data (event archive), audit strings, \
+            Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.
             The provider persona (provider profile) is outside this export contract \
             (account-pseudonymization-plan §5-ج provenance enumeration).""";

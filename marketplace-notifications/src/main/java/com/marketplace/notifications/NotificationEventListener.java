@@ -3,6 +3,7 @@ package com.marketplace.notifications;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -44,6 +45,23 @@ public class NotificationEventListener {
         notificationService.onLeadReceived(event.leadId(), event.listingId(), event.providerId());
         log.info("Notification sent for listing lead: leadId={}, listingId={}",
                 event.leadId(), event.listingId());
+    }
+
+    /**
+     * L35 (realestate systems plan §5 — saved searches and alerts): the
+     * SAVED_SEARCH_MATCH alert. The event is ALREADY aggregated per user
+     * (the matcher's structural aggregation — one event per user per
+     * listing carrying the matched saved-search ids), so one event is one
+     * notification regardless of how many searches matched. Same contract
+     * as the listeners above — after commit, its own transaction, the
+     * framework's retry: a failed delivery never loses the match.
+     */
+    @ApplicationModuleListener
+    public void onSavedSearchMatched(SavedSearchMatchedEvent event) {
+        notificationService.onSavedSearchMatch(event.userId(), event.listingId(),
+                event.savedSearchIds().size());
+        log.info("Notification sent for saved-search match: userId={}, listingId={}, searches={}",
+                event.userId(), event.listingId(), event.savedSearchIds().size());
     }
 
 }
