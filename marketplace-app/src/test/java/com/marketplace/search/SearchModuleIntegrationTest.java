@@ -70,6 +70,12 @@ class SearchModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.RealestatePropertyFilterPort realestatePropertyFilterPort;
 
+    // L35: the /me surface's identity stitch — the shared-security
+    // component is outside this slice (the LeadsController sibling in the
+    // messaging module's slice mocks it the same way).
+    @MockitoBean
+    com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
+
     @Autowired
     private SearchService searchService;
 

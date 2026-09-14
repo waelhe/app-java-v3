@@ -352,8 +352,10 @@ resilience4j:
         timeout-duration: 0
       # L35 (realestate systems plan §5 — saved searches): the fifth
       # high-impact write endpoint (same L29 model: fail fast, 429 RL-001).
-      # Conservative until real traffic; the stored set is bounded by the
-      # scan's page size, not by this window.
+      # Conservative until real traffic. The stored SET is bounded by the
+      # per-user cap (marketplace.search.saved-searches.max-per-user,
+      # default 20 — the scan's page size bounds memory, this window
+      # bounds frequency).
       savedSearchCreate:
         base-config: default
         limit-for-period: 10

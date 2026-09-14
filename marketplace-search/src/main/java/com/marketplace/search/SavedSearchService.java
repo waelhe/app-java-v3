@@ -1,6 +1,7 @@
 package com.marketplace.search;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
@@ -8,9 +9,12 @@ import com.marketplace.shared.api.SearchCriteria;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.EntityManager;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +45,7 @@ import java.util.UUID;
  * dead node.
  *
  * <p><b>The matcher (criteria 1-4):</b> {@link #processListingActivated}
- * scans every alert-enabled saved search in deterministic id pages,
+ * scans every alert-enabled saved search in deterministic KEYSET id batches,
  * delegates the membership question to {@link SavedSearchMatcher} (the
  * dispatch-faithful composition), inserts a ledger row per NEW match
  * with a native {@code INSERT ... ON CONFLICT DO NOTHING} (the skip is a
@@ -73,6 +77,8 @@ public class SavedSearchService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final SearchProperties properties;
+    private final EntityManager entityManager;
 
     public SavedSearchService(SavedSearchRepository repository,
                               SavedSearchMatcher matcher,
@@ -80,7 +86,9 @@ public class SavedSearchService {
                               ApplicationEventPublisher eventPublisher,
                               JdbcTemplate jdbcTemplate,
                               ObjectMapper objectMapper,
-                              Clock clock) {
+                              Clock clock,
+                              SearchProperties properties,
+                              EntityManager entityManager) {
         this.repository = repository;
         this.matcher = matcher;
         this.geoLookupPort = geoLookupPort;
@@ -88,6 +96,11 @@ public class SavedSearchService {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.properties = properties;
+        // constructor injection (not @PersistenceContext) so the unit
+        // tests can mock the flush/clear contract — Spring injects the
+        // shared transactional EntityManager either way.
+        this.entityManager = entityManager;
     }
 
     // ------------------------------------------------------------------
@@ -107,6 +120,14 @@ public class SavedSearchService {
         if (criteria.locationId() != null
                 && geoLookupPort.findSelfAndDescendants(criteria.locationId()).isEmpty()) {
             throw new ResourceNotFoundException("Unknown location: " + criteria.locationId());
+        }
+        // CodeRabbit round-1 adoption: the per-user availability bound —
+        // the rate limiter bounds the write frequency; this bounds the
+        // stored set the matcher scans on every listing activation.
+        int cap = properties.savedSearches().maxPerUser();
+        if (repository.countByUserId(userId) >= cap) {
+            throw new ConflictException(
+                    "Saved-search limit reached (" + cap + ") — delete one before saving another");
         }
         SavedSearch saved = SavedSearch.create(UUID.randomUUID(), userId, criteria, alertEnabled);
         return repository.save(saved);
@@ -144,12 +165,20 @@ public class SavedSearchService {
         int matched = 0;
         Instant now = clock.instant();
 
-        int page = 0;
-        Page<SavedSearch> slice;
+        // CodeRabbit round-1 adoptions: KEYSET pagination (an offset window
+        // recalculation silently skips a saved search when a concurrent
+        // soft delete shifts rows left — a missed alert, not a retry) and a
+        // FLUSH+CLEAR persistence context per batch (the scan's page size
+        // must bound memory, not just the query).
+        UUID lastSeenId = null;
+        Slice<SavedSearch> slice;
         do {
-            slice = repository.findAllAlertEnabled(PageRequest.of(page, SCAN_PAGE_SIZE));
+            slice = lastSeenId == null
+                    ? repository.findFirstAlertEnabledBatch(PageRequest.of(0, SCAN_PAGE_SIZE))
+                    : repository.findAlertEnabledAfter(lastSeenId, PageRequest.of(0, SCAN_PAGE_SIZE));
             for (SavedSearch saved : slice.getContent()) {
                 scanned++;
+                lastSeenId = saved.getId();
                 if (!matcher.matches(saved.getCriteria(), listingId, providerId)) {
                     continue;
                 }
@@ -161,7 +190,8 @@ public class SavedSearchService {
                 newMatchesPerUser.computeIfAbsent(saved.getUserId(), k -> new ArrayList<>())
                         .add(saved.getId());
             }
-            page++;
+            entityManager.flush();
+            entityManager.clear();
         } while (slice.hasNext());
 
         // The structural aggregation (criterion 4): one event per user —

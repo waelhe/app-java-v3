@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,9 +35,11 @@ import static org.mockito.Mockito.when;
 /**
  * L35 (realestate systems plan §5 — saved searches and alerts): the
  * service's gates and the scan's contract in isolation — the save-time
- * type gate (criterion 5), the muted search (criterion 6), the owner
- * scoping, the structural aggregation (criterion 4), the idempotency
- * skip (criterion 3-b) and the no-match silence (criterion 2).
+ * type gate (criterion 5), the per-user availability bound (the CodeRabbit
+ * round-1 adoption), the muted search (criterion 6), the owner scoping,
+ * the structural aggregation (criterion 4), the idempotency skip
+ * (criterion 3-b), the no-match silence (criterion 2) and the keyset
+ * scan's resume contract.
  */
 @ExtendWith(MockitoExtension.class)
 class SavedSearchServiceTest {
@@ -64,13 +67,18 @@ class SavedSearchServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
 
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
 
     private SavedSearchService service;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         service = new SavedSearchService(repository, matcher, geoLookupPort, eventPublisher,
-                jdbcTemplate, mapper, Clock.fixed(Instant.parse("2026-09-14T12:00:00Z"), java.time.ZoneOffset.UTC));
+                jdbcTemplate, mapper,
+                Clock.fixed(Instant.parse("2026-09-14T12:00:00Z"), java.time.ZoneOffset.UTC),
+                new SearchProperties(new SearchProperties.SavedSearches(20)),
+                entityManager);
     }
 
     private static SavedSearch searchOf(UUID userId, boolean alertEnabled) {
@@ -79,7 +87,7 @@ class SavedSearchServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // The save-time gates (criterion 5 + the location 404)
+    // The save-time gates (criterion 5 + the location 404 + the cap)
     // ------------------------------------------------------------------
 
     @Test
@@ -120,6 +128,19 @@ class SavedSearchServiceTest {
     }
 
     @Test
+    void create_atThePerUserCap_answers409() {
+        // The CodeRabbit round-1 adoption: the availability bound — the
+        // rate limiter bounds frequency, this bounds the stored set.
+        when(repository.countByUserId(USER)).thenReturn(20L);
+        var node = mapper.readTree("{}");
+
+        assertThatThrownBy(() -> service.create(USER, node, true))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("Saved-search limit reached");
+        verify(repository, never()).save(any(SavedSearch.class));
+    }
+
+    @Test
     void delete_foreignSavedSearch_isAnHonest404() {
         SavedSearch foreign = searchOf(OTHER_USER, true);
         when(repository.findById(foreign.getId())).thenReturn(java.util.Optional.of(foreign));
@@ -130,7 +151,7 @@ class SavedSearchServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // The scan (criteria 1-4, 3-b)
+    // The scan (criteria 1-4, 3-b + the keyset contract)
     // ------------------------------------------------------------------
 
     @Test
@@ -138,7 +159,7 @@ class SavedSearchServiceTest {
         SavedSearch a = searchOf(USER, true);
         SavedSearch b = searchOf(USER, true);
         SavedSearch other = searchOf(OTHER_USER, true);
-        when(repository.findAllAlertEnabled(any(Pageable.class)))
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a, b, other)));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(true);
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
@@ -163,7 +184,7 @@ class SavedSearchServiceTest {
     @Test
     void scan_noMatch_publishesNothing() {
         SavedSearch a = searchOf(USER, true);
-        when(repository.findAllAlertEnabled(any(Pageable.class)))
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(false);
 
@@ -177,7 +198,7 @@ class SavedSearchServiceTest {
     @Test
     void scan_alreadyReportedPair_isTheDocumentedSkip_noSecondEvent() {
         SavedSearch a = searchOf(USER, true);
-        when(repository.findAllAlertEnabled(any(Pageable.class)))
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(true);
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
@@ -190,15 +211,37 @@ class SavedSearchServiceTest {
     }
 
     @Test
-    void scan_pagesThroughTheAlertEnabledSet() {
+    void scan_followsTheKeyset_noRowIsVisitedTwice() {
+        // The CodeRabbit round-1 adoption: the keyset contract — the next
+        // batch resumes strictly after the LAST SEEN id, never after an
+        // offset window (a concurrent soft delete cannot shift the keyset).
+        // The sequence itself is the assertion: after(a), then after(b),
+        // then the terminal empty batch (hasNext=false) ends the loop.
         SavedSearch a = searchOf(USER, true);
-        when(repository.findAllAlertEnabled(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(a), PageRequest.of(0, 200), 201))
-                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 200), 201));
+        SavedSearch b = searchOf(USER, true);
+        when(repository.findFirstAlertEnabledBatch(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(a), PageRequest.of(0, 200), 201));
+        // PageImpl.hasNext() is derived from totalPages — a [b]-content
+        // page with total=2 fits ONE page of 200 and answers hasNext()
+        // FALSE (the measured trap behind this test's first failure); the
+        // middle batch needs an over-page total (201) to keep the loop
+        // walking, and the terminal empty batch (total=0) ends it.
+        when(repository.findAlertEnabledAfter(eq(a.getId()), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(b), PageRequest.of(0, 200), 201));
+        when(repository.findAlertEnabledAfter(eq(b.getId()), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 200), 0));
         when(matcher.matches(any(SearchCriteria.class), eq(LISTING), eq(PROVIDER))).thenReturn(false);
 
         service.processListingActivated(LISTING, PROVIDER);
 
-        verify(repository, org.mockito.Mockito.times(2)).findAllAlertEnabled(any(Pageable.class));
+        var afterCaptor = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(repository, org.mockito.Mockito.times(2))
+                .findAlertEnabledAfter(afterCaptor.capture(), any(Pageable.class));
+        assertThat(afterCaptor.getAllValues())
+                .as("the keyset resumes strictly after the last seen id, in order")
+                .containsExactly(a.getId(), b.getId());
+        // the persistence context is bounded per batch (flush+clear)
+        verify(entityManager, org.mockito.Mockito.atLeastOnce()).flush();
+        verify(entityManager, org.mockito.Mockito.atLeastOnce()).clear();
     }
 }

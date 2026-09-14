@@ -185,17 +185,17 @@ class SavedSearchIntegrationTest {
      * completed rows are gone, the scans themselves logged).
      */
     private void awaitScanCompleted(UUID listingId) throws InterruptedException {
-        // the row must first be VISIBLE (the commit landed) — then gone
-        boolean seen = false;
+        // Zero pending rows is accepted IMMEDIATELY (the CodeRabbit round-1
+        // adoption — same root as the CI round-3 race): the publication row
+        // is written atomically with the ACTIVATE commit, so once
+        // activateListing() has returned, an absent row can only mean the
+        // listener already completed — "absent but pending" cannot exist.
         for (int i = 0; i < 150; i++) {
             Integer pending = jdbc.queryForObject(
                     "SELECT count(*) FROM event_publication "
                             + "WHERE event_type LIKE '%ListingActivatedEvent%'",
                     Integer.class);
-            if (pending != null && pending > 0) {
-                seen = true;
-            }
-            if (seen && (pending == null || pending == 0)) {
+            if (pending == null || pending == 0) {
                 return;
             }
             Thread.sleep(100);
