@@ -175,21 +175,27 @@ class SavedSearchIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    /** Deterministic async wait: the registry row for our activation listener completes. */
+    /**
+     * Deterministic async wait: the activation's publication row is written
+     * atomically with the listing's ACTIVATE commit (so it EXISTS once
+     * activateListing() returns) and disappears when the listener completes
+     * — the test profile DELETES completed publications (the dev-mode
+     * completion registry), so completion is observable as the row's
+     * ABSENCE, never as a completion_date (measured in CI round 2: the
+     * completed rows are gone, the scans themselves logged).
+     */
     private void awaitScanCompleted(UUID listingId) throws InterruptedException {
-        for (int i = 0; i < 100; i++) {
+        // the row must first be VISIBLE (the commit landed) — then gone
+        boolean seen = false;
+        for (int i = 0; i < 150; i++) {
             Integer pending = jdbc.queryForObject(
-                    "SELECT count(*) FROM event_publication ep "
-                            + "JOIN saved_search_matches m ON m.listing_id = ? "
-                            + "WHERE ep.event_type LIKE '%ListingActivatedEvent%' AND ep.completion_date IS NULL",
-                    Integer.class, listingId);
-            Integer anyActivation = jdbc.queryForObject(
                     "SELECT count(*) FROM event_publication "
-                            + "WHERE event_type LIKE '%ListingActivatedEvent%' AND completion_date IS NOT NULL",
+                            + "WHERE event_type LIKE '%ListingActivatedEvent%'",
                     Integer.class);
-            // the scan for THIS listing either completed (matches exist) or
-            // completed with zero matches (no registry pending at all)
-            if ((pending == null || pending == 0) && anyActivation != null && anyActivation > 0) {
+            if (pending != null && pending > 0) {
+                seen = true;
+            }
+            if (seen && (pending == null || pending == 0)) {
                 return;
             }
             Thread.sleep(100);
