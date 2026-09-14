@@ -50,6 +50,24 @@ class MigrationChecksumGuardTest {
     private static final String MIGRATION_PATTERN = "classpath*:db/migration/*.sql";
     private static final String MANIFEST = "/migration-checksums.properties";
 
+    /**
+     * Asserts every classpath {@code V__*.sql} carries exactly the checksum recorded
+     * in the manifest.
+     *
+     * <p>Three loud failure modes (each with an explanatory message):
+     * <ol>
+     *   <li><b>checksum drift</b> — an already-applied migration was edited (the
+     *       2026-09-14 incident class: comment-only edit, production 502 while CI
+     *       stayed green on its fresh database);</li>
+     *   <li><b>unregistered migration</b> — a new {@code V__} file must add its
+     *       manifest line in the same PR;</li>
+     *   <li><b>orphaned entry</b> — the manifest references a file that no longer
+     *       exists (deleted or renamed).</li>
+     * </ol>
+     * Repeatable {@code R__} migrations are intentionally out of scope: Flyway
+     * re-applies them when their checksum changes, so freezing them would block
+     * legitimate updates.
+     */
     @Test
     void versionedMigrationChecksumsMatchTheAppliedManifest() throws IOException {
         Map<String, Integer> actual = new TreeMap<>();
@@ -102,6 +120,14 @@ class MigrationChecksumGuardTest {
                 .isEmpty();
     }
 
+    /**
+     * Computes the Flyway checksum of a classpath migration resource.
+     *
+     * @param resource a {@code db/migration/*.sql} classpath resource
+     * @return the checksum Flyway stores in {@code flyway_schema_history.checksum}
+     *         (same value, same calculator version — BOM-pinned 12.4.0)
+     * @throws IOException if the resource cannot be read
+     */
     private static Integer checksum(Resource resource) throws IOException {
         String content;
         try (InputStream in = resource.getInputStream()) {
@@ -110,6 +136,13 @@ class MigrationChecksumGuardTest {
         return ChecksumCalculator.calculate(new StringResource(content));
     }
 
+    /**
+     * Loads the expected checksums from {@value #MANIFEST} on the test classpath.
+     *
+     * @return filename to expected-checksum map (never {@code null}; the manifest's
+     *         absence fails the test with a pointer to its location)
+     * @throws IOException if the manifest cannot be read or parsed
+     */
     private static Map<String, Integer> loadManifest() throws IOException {
         Properties props = new Properties();
         try (InputStream in = MigrationChecksumGuardTest.class.getResourceAsStream(MANIFEST)) {
