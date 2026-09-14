@@ -1,6 +1,7 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,6 +92,38 @@ class NotificationEventListenerTest {
     void onPaymentStateChanged_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onPaymentStateChanged", PaymentStateChangedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onListingLeadCreated_callsNotificationService() {
+        UUID leadId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        ListingLeadCreatedEvent event = new ListingLeadCreatedEvent(leadId, listingId, providerId);
+
+        listener.onListingLeadCreated(event);
+
+        verify(notificationService).onLeadReceived(leadId, listingId, providerId);
+    }
+
+    @Test
+    void onListingLeadCreated_propagatesException() {
+        ListingLeadCreatedEvent event = new ListingLeadCreatedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onLeadReceived(any(), any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onListingLeadCreated(event));
+    }
+
+    @Test
+    void onListingLeadCreated_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onListingLeadCreated", ListingLeadCreatedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }

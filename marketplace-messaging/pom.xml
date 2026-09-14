@@ -32,6 +32,16 @@
             <artifactId>marketplace-platform-infra</artifactId>
             
         </dependency>
+        <!-- L34 (realestate systems plan §5 — lead capture): the lead's
+             liveness gate reads catalog through the catalog-spi named
+             interface — the realestate module's reviewed precedent (PR
+             #299: getActiveById for "details are visible exactly with
+             live listings"). -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-catalog</artifactId>
+            
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>

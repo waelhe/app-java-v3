@@ -65,6 +65,17 @@ class MessagingModuleIntegrationTest {
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
 
+    // L34 (realestate systems plan §5 — lead capture): the standalone slice
+    // cannot see the catalog module's implementations of the lead's
+    // liveness seams, so they join the standard @MockitoBean boundary the
+    // two above already form (the slice convention — the FULL-context
+    // tests exercise the real catalog).
+    @MockitoBean
+    com.marketplace.catalog.spi.CatalogSpi catalogSpi;
+
+    @MockitoBean
+    com.marketplace.shared.api.ListingPriceProvider listingPriceProvider;
+
     @Autowired
     private MessagingService messagingService;
 

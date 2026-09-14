@@ -67,8 +67,8 @@ class NotificationPreferenceServiceTest {
 
     @Test
     void getMyPreferencesReturnsTheFullEffectiveMatrix() {
-        // Six rows today (2 types x 3 channels) in stable order, all enabled
-        // except the one stored override.
+        // Nine rows today (3 types x 3 channels — L34 added LEAD_RECEIVED)
+        // in stable order, all enabled except the one stored override.
         NotificationPreference override = NotificationPreference.create(
                 USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.WS, false);
         NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
@@ -77,14 +77,17 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(6);
+        assertThat(matrix).hasSize(9);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.WS, true),
                 new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.WS, false));
+                new NotificationPreferenceView(NotificationType.PAYMENT_STATE, NotificationChannel.WS, false),
+                new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.LEAD_RECEIVED, NotificationChannel.WS, true));
     }
 
     @Test
@@ -108,7 +111,7 @@ class NotificationPreferenceServiceTest {
         assertThat(saved.getValue().getChannel()).isEqualTo(NotificationChannel.EMAIL);
         assertThat(saved.getValue().isEnabled()).isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
-                .containsExactly(true, true, true, true, false, true);
+                .containsExactly(true, true, true, true, false, true, true, true, true);
     }
 
     @Test
@@ -204,6 +207,6 @@ class NotificationPreferenceServiceTest {
                 .as("the retry flips the winner's row to the requested value")
                 .isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
-                .containsExactly(true, true, true, true, false, true);
+                .containsExactly(true, true, true, true, false, true, true, true, true);
     }
 }

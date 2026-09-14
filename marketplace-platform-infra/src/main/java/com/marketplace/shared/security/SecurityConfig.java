@@ -146,6 +146,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
+                        // L34 (realestate systems plan §5): the public lead
+                        // submission — the plan's "بلا مصادقة إلزامية" (the
+                        // guest fills name and phone). A public POST is the
+                        // webhooks precedent one line above; an invalid
+                        // bearer token still answers 401 through the
+                        // resource-server filter, a valid one attributes the
+                        // lead (the optional-identity seam).
+                        .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/leads").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
