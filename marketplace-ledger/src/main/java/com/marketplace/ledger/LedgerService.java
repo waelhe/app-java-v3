@@ -77,6 +77,20 @@ public class LedgerService {
      * concurrent listener, or a repeated decision can never double-debit).
      * B2 amount guard: negative amounts are rejected with VALIDATION (400);
      * zero amounts return the current balance without writing an entry.
+     *
+     * <p><b>Concurrent-delivery contract (CodeRabbit #252, adopted):</b> the
+     * pre-check above is an optimization, not the guarantee — the guarantee
+     * is the {@code UNIQUE} backstop on {@code source_id}. Two deliveries
+     * racing past the pre-check collide on the backstop; the loser's
+     * transaction rolls back <em>in full</em> (entry and balance move
+     * together, so no partial debit can survive), the publication is marked
+     * FAILED, and the documented resubmission loop (#210) replays into the
+     * pre-check no-op. Catch-and-continue inside the same transaction is
+     * deliberately NOT used: after a flush-time constraint violation the
+     * persistence context must roll back (Spring Framework DAO Support:
+     * technology exceptions are translated to the {@code DataAccessException}
+     * hierarchy and non-recoverable persistence failures belong to the
+     * transaction boundary, not to in-transaction recovery).
      */
     @Observed(name = "ledger.debit.refund")
     public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId, long amountCents) {
