@@ -183,6 +183,15 @@ public class LeadsService {
         if (clientIp == null || clientIp.isBlank()) {
             return null;
         }
+        if (key == null || key.isBlank()) {
+            // Prod fails startup on this (MessagingConfig); any other
+            // profile running without the key still fails LOUDLY here
+            // with the property's name — never the cryptic
+            // SecretKeySpec "Empty key".
+            throw new IllegalStateException(
+                    "marketplace.messaging.leads.ip-hash-key must be configured —"
+                            + " the lead sender fingerprint is a keyed HMAC (CWE-759)");
+        }
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
             mac.init(new javax.crypto.spec.SecretKeySpec(
