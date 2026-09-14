@@ -72,14 +72,22 @@
 -- repeated here: V50 already gathered the table statistics and a pure
 -- index swap changes no table data.
 --
--- OWNERSHIP (measured pre-change 2026-09-14 via the one-off psql
--- probe): the current index is owned by `marketplace` (the bootstrap
--- identity that ran V50 on 2026-09-13, before the P3 identity split).
--- V51 executes as `flyway_migrator` (SUPERUSER — ACL checks bypassed,
--- the P3 measured fact), so the DROP succeeds, and the rebuilt index
--- becomes owned by `flyway_migrator` — the identity that owns every
--- V51+ object per the ALTER DEFAULT PRIVILEGES design. Index usage by
--- queries needs no index ACL (the planner uses indexes implicitly).
+-- OWNERSHIP (measured before AND after the change — the honest record):
+-- pre-change the index was owned by `marketplace` (the bootstrap identity
+-- that ran V50 on 2026-09-13, before the P3 identity split). V51 executed
+-- as `flyway_migrator` (flyway_schema_history.v51 installed_by — measured)
+-- yet the rebuilt index is ALSO owned by `marketplace` — the table's
+-- owner, not the executing role (measured post-arrival 2026-09-14;
+-- role-default settings ruled out: rolconfig NULL for both roles, no
+-- non-system memberships). The ownership-assignment mechanism in the
+-- Flyway/PostgreSQL path is NOT derived from the artifacts — the truth
+-- files record the measured fact and the plan declares debt D-I7 with a
+-- measured closure point: the FIRST V52+ migration that creates a
+-- TABLE (a new pg_class relation — an ADD COLUMN inherits the table's
+-- owner/ACL and so discriminates nothing) gets that table's ownership
+-- and marketplace_app grants measured on arrival (a missing grant
+-- fails LOUDLY at first DML — a silent break is impossible). Either way index usage needs no index ACL (the planner
+-- uses indexes implicitly — smoke 5/5 after the rebuild).
 DROP INDEX CONCURRENTLY idx_property_details_geog;
 
 CREATE INDEX CONCURRENTLY idx_property_details_geog
