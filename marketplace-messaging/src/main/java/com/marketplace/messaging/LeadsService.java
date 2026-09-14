@@ -14,7 +14,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,17 +134,18 @@ public class LeadsService {
     }
 
     /**
-     * The inbox move — one-way through the status machine. Ownership is
-     * enforced twice by design: the repository read is scoped to the
-     * owning provider (a foreign lead is a 404 — it is not in your
-     * inbox), and the {@code @authHelper.ownsProvider} guard pins the
-     * provider id to the caller's own profile (the L20 ledger seam).
+     * The inbox move — one-way through the status machine. The lead's
+     * {@code provider_id} lives in the users.id space (the A1/V2 fact),
+     * so the caller's own user id IS the ownership key: the repository
+     * read is scoped to it (a foreign lead is a 404 — it is not in your
+     * inbox), the same identity-scoping the messaging conversations use
+     * for their participants. No profile indirection, no
+     * {@code ownsProvider} detour — the measured id space makes the
+     * caller's identity the direct key.
      */
     @Transactional
-    @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
-    public LeadResponse transitionLead(UUID leadId, UUID providerId, LeadStatus target,
-                                       Authentication authentication) {
-        ListingLead lead = leadRepository.findByIdAndProviderId(leadId, providerId)
+    public LeadResponse transitionLead(UUID leadId, UUID ownerUserId, LeadStatus target) {
+        ListingLead lead = leadRepository.findByIdAndProviderId(leadId, ownerUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("ListingLead", leadId));
         lead.transitionTo(target);
         return LeadResponse.from(lead);

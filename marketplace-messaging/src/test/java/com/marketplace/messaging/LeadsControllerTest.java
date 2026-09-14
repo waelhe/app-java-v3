@@ -1,8 +1,5 @@
 package com.marketplace.messaging;
 
-import com.marketplace.shared.api.ProviderLookupPort;
-import com.marketplace.shared.api.ProviderSummary;
-import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
@@ -45,9 +42,6 @@ class LeadsControllerTest {
     @Mock
     private CurrentUserProvider currentUserProvider;
 
-    @Mock
-    private ProviderLookupPort providerLookupPort;
-
     @InjectMocks
     private LeadsController controller;
 
@@ -70,11 +64,11 @@ class LeadsControllerTest {
     }
 
     @Test
-    void myLeadsResolvesTheCallersOwnProvider() {
+    void myLeadsKeysTheInboxByTheCallersUserId() {
+        // The A1/V2 fact: the lead's provider column lives in the users.id
+        // space — the caller's id IS the key, no profile indirection.
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(USER_ID);
-        when(providerLookupPort.findByUserId(USER_ID)).thenReturn(Optional.of(
-                new ProviderSummary(PROVIDER_ID, "Host", "VERIFIED", USER_ID)));
-        when(leadsService.listLeads(eq(PROVIDER_ID), eq(null), any(Pageable.class)))
+        when(leadsService.listLeads(eq(USER_ID), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         ResponseEntity<?> response = controller.myLeads(null, PageRequest.of(0, 20), null);
@@ -83,23 +77,12 @@ class LeadsControllerTest {
     }
 
     @Test
-    void myLeadsWithoutProviderProfileIsTheHouse404() {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(USER_ID);
-        when(providerLookupPort.findByUserId(USER_ID)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> controller.myLeads(null, PageRequest.of(0, 20), null))
-                .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void transitionLeadDelegatesWithOwnProvider() {
+    void transitionLeadDelegatesWithTheCallerAsOwner() {
         UUID leadId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(USER_ID);
-        when(providerLookupPort.findByUserId(USER_ID)).thenReturn(Optional.of(
-                new ProviderSummary(PROVIDER_ID, "Host", "VERIFIED", USER_ID)));
         LeadResponse expected = new LeadResponse(leadId, UUID.randomUUID(), "Sami",
                 "+963991234567", "hello", "READ", null);
-        when(leadsService.transitionLead(eq(leadId), eq(PROVIDER_ID), eq(LeadStatus.READ), any()))
+        when(leadsService.transitionLead(eq(leadId), eq(USER_ID), eq(LeadStatus.READ)))
                 .thenReturn(expected);
 
         ResponseEntity<LeadResponse> response = controller.transitionLead(leadId,
@@ -107,6 +90,6 @@ class LeadsControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().status()).isEqualTo("READ");
-        verify(leadsService).transitionLead(eq(leadId), eq(PROVIDER_ID), eq(LeadStatus.READ), any());
+        verify(leadsService).transitionLead(eq(leadId), eq(USER_ID), eq(LeadStatus.READ));
     }
 }

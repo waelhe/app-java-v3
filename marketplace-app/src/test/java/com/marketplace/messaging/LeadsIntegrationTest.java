@@ -1,9 +1,5 @@
 package com.marketplace.messaging;
 
-import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.shared.api.ListingPriceProvider;
-import com.marketplace.shared.api.ProviderListingView;
-import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +20,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,31 +38,34 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * L34 (realestate systems plan §5 — lead capture) — the acceptance
- * criteria over the REAL chain: HTTP → security filter chain (the public
- * permitAll line) → controller → service → V52 schema → event → the
- * notifications module's real listener → the real preference machinery
- * (L22) → the LEAD_RECEIVED row and WS push.
+ * criteria over the REAL chain with the REAL catalog: HTTP → security
+ * filter chain (the public permitAll line) → controller → service → the
+ * real {@code CatalogService} liveness semantics → V52 schema → event →
+ * the notifications module's real listener → the real preference
+ * machinery (L22) → the LEAD_RECEIVED row and WS push.
  *
- * <p>Acceptance criteria covered here: (1) a guest submits against a live
- * listing ⇒ 201 + the provider's notification (in-app row + WS observed);
- * (2) an existing-but-not-live listing ⇒ 409, a missing one ⇒ 404; (4) the
- * provider's paged inbox + the READ move + a foreign provider's lead is a
- * 404; (5) the purge: the sender's lead texts die on base + mirror while
- * the row survives (the b-3 contract). Criterion (3) — the 429s — has its
- * own class ({@code LeadsRateLimitIntegrationTest}) with tiny instances,
- * the {@code RateLimitProblemDetailIntegrationTest} convention.
+ * <p><b>Why the real catalog (the CI round-1 lesson):</b> mocking
+ * {@code CatalogSpi} by interface in the full context replaced the
+ * {@code catalogService} bean definition and broke the controller's
+ * concrete-type injection (BeanNotOfRequiredTypeException). The honest
+ * shape is stronger anyway: the liveness gate's semantics (ACTIVE vs
+ * PAUSED vs missing) are catalog's own tested contract, exercised here
+ * through real SQL-seeded listings.
  *
- * <p>Schema honesty (the house convention): Flyway enabled +
- * {@code ddl-auto=none} against the postgis container — V52 is the schema
- * the flow runs on (V50/V51 require the extension, so the image is the
- * CI one). The liveness seam is the documented boundary
- * ({@code CatalogSpi} + {@code ListingPriceProvider}) — catalog's own
- * ACTIVE semantics are its tested contract; the users and provider rows
- * are seeded with raw SQL + ON CONFLICT DO NOTHING (the L22 convention)
- * because the real {@code ProviderLookupPort} and email channel resolve
- * from them. {@code SimpMessagingTemplate} is mocked to OBSERVE the push
- * (the L22 convention — no broker in the test profile). Each test stubs
- * only the seams it exercises (strict-stub clean).
+ * <p><b>The id-space fact (A1/V2):</b> {@code provider_listings.provider_id}
+ * references {@code users(id)} — the listing's provider IS a user, so the
+ * lead's provider column and the inbox key are the user id directly (the
+ * same seam {@code onBookingCreated} uses). The users are seeded with
+ * raw SQL + ON CONFLICT DO NOTHING (the L22 convention);
+ * {@code SimpMessagingTemplate} is mocked to OBSERVE the push.
+ *
+ * <p>Acceptance criteria: (1) a guest submits against a live listing ⇒
+ * 201 + the provider's notification (in-app row + WS observed); (2) an
+ * existing-but-not-live listing ⇒ 409, a missing one ⇒ 404 — through the
+ * REAL liveness semantics; (4) the provider's paged inbox + the READ move
+ * + a foreign provider's lead is a 404; (5) the purge: the sender's lead
+ * texts die on base + mirror while the row survives (the b-3 contract).
+ * Criterion (3) — the 429s — has its own class with tiny instances.
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -89,13 +87,6 @@ class LeadsIntegrationTest {
     @MockitoBean
     CurrentUserProvider currentUserProvider;
 
-    /** The liveness seam at its documented boundary (catalog's own contract). */
-    @MockitoBean
-    CatalogSpi catalogSpi;
-
-    @MockitoBean
-    ListingPriceProvider listingPriceProvider;
-
     /** Delivery observation only — the gating logic under test is production code. */
     @MockitoBean
     SimpMessagingTemplate messagingTemplate;
@@ -116,31 +107,19 @@ class LeadsIntegrationTest {
     private com.marketplace.messaging.spi.MessagingContentPurgeAdapter purgeAdapter;
 
     private UUID providerUserId;
-    private UUID providerId;
     private UUID otherProviderUserId;
-    private UUID otherProviderId;
     private UUID listingId;
 
     @BeforeEach
     void seed() {
         providerUserId = UUID.randomUUID();
-        providerId = UUID.randomUUID();
         otherProviderUserId = UUID.randomUUID();
-        otherProviderId = UUID.randomUUID();
         listingId = UUID.randomUUID();
 
         seedUser(providerUserId, "l34-provider-" + providerUserId + "@example.com");
         seedUser(otherProviderUserId, "l34-other-" + otherProviderUserId + "@example.com");
-        jdbc.update("""
-                INSERT INTO provider_profiles (id, user_id, display_name, bio, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'VERIFIED', now(), now())
-                ON CONFLICT (id) DO NOTHING
-                """, providerId, providerUserId, "L34 Host", "seed");
-        jdbc.update("""
-                INSERT INTO provider_profiles (id, user_id, display_name, bio, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'VERIFIED', now(), now())
-                ON CONFLICT (id) DO NOTHING
-                """, otherProviderId, otherProviderUserId, "L34 Other", "seed");
+        // The A1/V2 fact: the listing's provider_id IS the user id.
+        seedListing(listingId, providerUserId, "ACTIVE");
     }
 
     private void seedUser(UUID id, String email) {
@@ -148,13 +127,15 @@ class LeadsIntegrationTest {
                 INSERT INTO users (id, subject, email, display_name, role)
                 VALUES (?, ?, ?, ?, 'PROVIDER')
                 ON CONFLICT (id) DO NOTHING
-                """, id, email, email, "PROVIDER");
+                """, id, email, email, "L34 user");
     }
 
-    private void liveListing() {
-        when(catalogSpi.getActiveById(listingId)).thenReturn(new ProviderListingView(
-                listingId, "L34 flat", "seed listing", "APARTMENT",
-                100_00L, "SAR", providerId, "ACTIVE", 4, Instant.now(), Instant.now()));
+    private void seedListing(UUID id, UUID providerUserId, String status) {
+        jdbc.update("""
+                INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
+                VALUES (?, ?, 'L34 flat', 'seed listing', 'APARTMENT', 10000, 'SAR', ?)
+                ON CONFLICT (id) DO NOTHING
+                """, id, providerUserId, status);
     }
 
     private String leadBody() {
@@ -181,20 +162,16 @@ class LeadsIntegrationTest {
     @Test
     void guestLeadOnLiveListingCreatesAndAlertsTheProvider() throws Exception {
         // Acceptance 1 — the full chain: anonymous POST (the permitAll
-        // line), the lead row, the event, the listener, the LEAD_RECEIVED
-        // notification for the provider's user, and the WS push behind its
-        // L22 preference (default on).
-        liveListing();
+        // line), the lead row, the real event, the listener, the
+        // LEAD_RECEIVED notification for the provider's user, and the WS
+        // push behind its L22 preference (default on).
         UUID leadId = submitLead("203.0.113.10");
 
         Integer leadCount = jdbc.queryForObject(
-                "SELECT count(*) FROM listing_leads WHERE id = ? AND status = 'NEW'",
-                Integer.class, leadId);
+                "SELECT count(*) FROM listing_leads WHERE id = ? AND status = 'NEW' AND provider_id = ?",
+                Integer.class, leadId, providerUserId);
         assertThat(leadCount).isEqualTo(1);
 
-        // The registry-driven listener ran: the in-app row landed for the
-        // provider's USER (not the provider profile id) and the WS push
-        // targeted the user's topic.
         awaitNotification(providerUserId);
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + providerUserId),
@@ -203,13 +180,10 @@ class LeadsIntegrationTest {
 
     @Test
     void existingButNotLiveListingIs409AndMissingIs404() throws Exception {
-        // Acceptance 2 — the disambiguation: the hot path resolves only
-        // ACTIVE listings; the unfiltered projection separates the two.
-        when(catalogSpi.getActiveById(listingId))
-                .thenThrow(new ResourceNotFoundException("Listing", listingId));
-        // getListingInfo still resolves => exists but not live => 409.
-        when(listingPriceProvider.getListingInfo(listingId)).thenReturn(
-                new ListingPriceProvider.ListingInfo(providerId, 100_00L, "SAR"));
+        // Acceptance 2 — through the REAL liveness semantics: a PAUSED
+        // listing resolves in the unfiltered projection (409 — exists but
+        // not live); a missing id misses both (the honest 404).
+        seedListing(listingId, providerUserId, "PAUSED");
         mockMvc.perform(post("/api/v1/listings/{id}/leads", listingId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(leadBody())
@@ -219,10 +193,8 @@ class LeadsIntegrationTest {
                         }))
                 .andExpect(status().isConflict());
 
-        // Both miss => the honest 404.
-        when(listingPriceProvider.getListingInfo(listingId))
-                .thenThrow(new ResourceNotFoundException("Listing", listingId));
-        mockMvc.perform(post("/api/v1/listings/{id}/leads", listingId)
+        UUID missing = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/listings/{id}/leads", missing)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(leadBody())
                         .with(req -> {
@@ -236,8 +208,8 @@ class LeadsIntegrationTest {
     @WithMockUser
     void providerInboxListsMarksReadAndHidesForeignLeads() throws Exception {
         // Acceptance 4 — the inbox: paged read, the one-way READ move, and
-        // a foreign provider's lead is a 404 (the read is owner-scoped).
-        liveListing();
+        // a foreign provider's lead is a 404 (the read is owner-scoped by
+        // the user id — the A1/V2 key).
         UUID leadId = submitLead("203.0.113.13");
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(providerUserId);
@@ -274,7 +246,6 @@ class LeadsIntegrationTest {
         // real adapter: the sender's contact texts die on the base table
         // AND the Envers mirror, the row itself survives with its
         // structure, and a re-run matches nothing (idempotence).
-        liveListing();
         UUID senderId = UUID.randomUUID();
         seedUser(senderId, "l34-sender-" + senderId + "@example.com");
 

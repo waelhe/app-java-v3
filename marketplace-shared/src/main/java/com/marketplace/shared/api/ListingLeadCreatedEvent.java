@@ -8,6 +8,13 @@ import java.util.UUID;
  * lead, consumed by the notifications module to alert the listing's
  * provider ({@code NotificationType.LEAD_RECEIVED}).
  *
+ * <p><b>The id-space fact (A1/V2, measured):</b> {@code providerId} is
+ * the listing's provider — {@code provider_listings.provider_id} lives in
+ * the <em>users.id</em> space (the same fact {@code CatalogService} pins
+ * at its A1 comment and {@code onBookingCreated}'s BookingInfo provider
+ * relies on), so consumers use it directly as a user-space reference —
+ * no provider-profile resolution.
+ *
  * <p>The Modulith house pattern ({@code BookingCreatedEvent} /
  * {@code MediaUploadedEvent} precedent): a shared-api record carrying
  * identifiers only, published inside the writer's transaction so the

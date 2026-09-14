@@ -1,8 +1,5 @@
 package com.marketplace.messaging;
 
-import com.marketplace.catalog.spi.CatalogSpi;
-import com.marketplace.shared.api.ProviderListingView;
-import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,8 +7,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.junit.jupiter.Container;
@@ -19,11 +16,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.time.Instant;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,9 +26,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * L34 (realestate systems plan §5 — lead capture) acceptance criterion 3:
  * spending the window answers 429 — for BOTH gates, through the real HTTP
- * chain (the {@code RateLimitProblemDetailIntegrationTest} convention:
- * tiny instances via test properties, the same official Resilience4j
- * model the production config uses).
+ * chain with the REAL catalog (the {@code
+ * RateLimitProblemDetailIntegrationTest} convention: tiny instances via
+ * test properties, the same official Resilience4j model the production
+ * config uses).
  *
  * <p><b>The two 429s, distinguished deterministically in one sequence:</b>
  * the instance window is {@code limit-for-period=3 / refresh=2s} and the
@@ -67,24 +62,33 @@ class LeadsRateLimitIntegrationTest {
                     .asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("marketplace");
 
-    @MockitoBean
-    CurrentUserProvider currentUserProvider;
-
-    @MockitoBean
-    CatalogSpi catalogSpi;
-
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private UUID listingId;
 
     @BeforeEach
-    void liveListing() {
+    void seed() {
+        // The A1/V2 fact: the listing's provider_id IS the user id; a real
+        // ACTIVE listing drives the liveness gate (no catalog mocks — the
+        // CI round-1 lesson: interface mocks in the full context break
+        // the controller's concrete-type injection).
         listingId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        when(catalogSpi.getActiveById(listingId)).thenReturn(new ProviderListingView(
-                listingId, "L34 flat", "seed listing", "APARTMENT",
-                100_00L, "SAR", providerId, "ACTIVE", 4, Instant.now(), Instant.now()));
+        UUID providerUserId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """, providerUserId, "l34-rl-" + providerUserId + "@example.com",
+                "l34-rl-" + providerUserId, "PROVIDER");
+        jdbc.update("""
+                INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
+                VALUES (?, ?, 'L34 flat', 'seed listing', 'APARTMENT', 10000, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """, listingId, providerUserId);
     }
 
     private ResultActions submit(String remoteAddr) throws Exception {

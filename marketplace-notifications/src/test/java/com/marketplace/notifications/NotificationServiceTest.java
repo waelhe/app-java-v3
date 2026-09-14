@@ -4,8 +4,6 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
-import com.marketplace.shared.api.ProviderLookupPort;
-import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.api.UserSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -42,40 +40,9 @@ class NotificationServiceTest {
                 defaultPreferences());
     }
 
-    /**
-     * L34 (realestate systems plan §5): the provider lookup seam — resolves
-     * the provider's linked user (the lead alert's recipient). Default mock
-     * maps PROVIDER_ID to PROVIDER_ID-as-user (the tests' convention of
-     * reusing the fixed UUIDs).
-     */
-    private ProviderLookupPort mockProviderLookup() {
-        return mockProviderLookup(PROVIDER_ID);
-    }
-
-    private ProviderLookupPort mockProviderLookup(UUID linkedUserId) {
-        ProviderLookupPort lookup = mock(ProviderLookupPort.class);
-        when(lookup.findById(any())).thenReturn(Optional.empty());
-        when(lookup.findById(PROVIDER_ID)).thenReturn(Optional.of(
-                new ProviderSummary(PROVIDER_ID, "Provider", "VERIFIED", linkedUserId)));
-        return lookup;
-    }
-
     private NotificationService createService(NotificationRepository repository,
                                               BookingParticipantProvider bookingProvider,
                                               PaymentIntentLookupPort paymentIntentLookupPort,
-                                              CurrentUserProvider currentUserProvider,
-                                              UserLookupPort userLookupPort,
-                                              Optional<SimpMessagingTemplate> messagingTemplate,
-                                              Optional<com.marketplace.shared.email.EmailService> emailService,
-                                              NotificationPreferenceService preferences) {
-        return createService(repository, bookingProvider, paymentIntentLookupPort, mockProviderLookup(),
-                currentUserProvider, userLookupPort, messagingTemplate, emailService, preferences);
-    }
-
-    private NotificationService createService(NotificationRepository repository,
-                                              BookingParticipantProvider bookingProvider,
-                                              PaymentIntentLookupPort paymentIntentLookupPort,
-                                              ProviderLookupPort providerLookupPort,
                                               CurrentUserProvider currentUserProvider,
                                               UserLookupPort userLookupPort,
                                               Optional<SimpMessagingTemplate> messagingTemplate,
@@ -83,7 +50,7 @@ class NotificationServiceTest {
                                               NotificationPreferenceService preferences) {
         EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                providerLookupPort, currentUserProvider, emailNotificationService, messagingTemplate, preferences);
+                currentUserProvider, emailNotificationService, messagingTemplate, preferences);
     }
 
     /**
@@ -406,10 +373,11 @@ class NotificationServiceTest {
     }
 
     @Test
-    void onLeadReceivedAlertsTheProvidersLinkedUser() {
-        // L34 (realestate systems plan §5): the lead alert lands for the
-        // provider's USER id (resolved through the provider lookup seam),
-        // on every channel the default preferences leave on.
+    void onLeadReceivedAlertsTheListingProviderUserDirectly() {
+        // L34 (realestate systems plan §5): the recipient is the listing's
+        // provider id — which lives in the users.id space (the A1/V2 fact,
+        // the same seam onBookingCreated uses) — on every channel the
+        // default preferences leave on.
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
@@ -429,26 +397,5 @@ class NotificationServiceTest {
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
-    }
-
-    @Test
-    void onLeadReceivedSkipsSilentlyWhenProviderHasNoLinkedUser() {
-        // A provider profile without a user cannot be alerted — logged and
-        // skipped (the lead itself already committed).
-        NotificationRepository repository = mock(NotificationRepository.class);
-        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
-        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
-        ProviderLookupPort providerLookup = mockProviderLookup(null);
-        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
-        UserLookupPort userLookupPort = mockUserLookup();
-        NotificationPreferenceService preferences = defaultPreferences();
-        EmailNotificationService emailNotificationService = new EmailNotificationService(Optional.empty(), userLookupPort);
-        NotificationService service = new NotificationService(repository, bookingProvider,
-                paymentIntentLookupPort, providerLookup, currentUserProvider,
-                emailNotificationService, Optional.empty(), preferences);
-
-        service.onLeadReceived(create(UUID.class), create(UUID.class), PROVIDER_ID);
-
-        verify(repository, never()).save(any(Notification.class));
     }
 }

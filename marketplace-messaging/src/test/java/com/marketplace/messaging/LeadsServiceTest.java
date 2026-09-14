@@ -161,12 +161,14 @@ class LeadsServiceTest {
 
     @Test
     void inboxListsAndTransitionsOwnLeads() {
+        // The lead's provider column lives in the users.id space (A1/V2) —
+        // the owner key IS the user id, identity-scoped.
         ListingLead lead = ListingLead.create(LISTING_ID, PROVIDER_ID, null, IP_HASH,
                 "Sami", "+963991234567", "hello");
         when(leadRepository.findByIdAndProviderId(lead.getId(), PROVIDER_ID))
                 .thenReturn(Optional.of(lead));
 
-        LeadResponse moved = service.transitionLead(lead.getId(), PROVIDER_ID, LeadStatus.READ, null);
+        LeadResponse moved = service.transitionLead(lead.getId(), PROVIDER_ID, LeadStatus.READ);
 
         assertThat(moved.status()).isEqualTo("READ");
     }
@@ -179,8 +181,7 @@ class LeadsServiceTest {
         when(leadRepository.findByIdAndProviderId(foreignLeadId, PROVIDER_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.transitionLead(foreignLeadId, PROVIDER_ID,
-                LeadStatus.READ, null))
+        assertThatThrownBy(() -> service.transitionLead(foreignLeadId, PROVIDER_ID, LeadStatus.READ))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

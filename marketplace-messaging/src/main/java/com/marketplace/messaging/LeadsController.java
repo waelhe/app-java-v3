@@ -2,9 +2,6 @@ package com.marketplace.messaging;
 
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.api.ProviderLookupPort;
-import com.marketplace.shared.api.ProviderSummary;
-import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,10 +29,10 @@ import java.util.UUID;
  * system); a presented-but-invalid bearer token still answers 401 through
  * the resource-server filter, and a valid one attributes the lead.
  *
- * <p><b>The "me" surface</b> ({@code /api/v1/providers/me/leads}): the L20
- * ledger seam verbatim — the calling user's own provider profile resolves
- * from the JWT, never a client-supplied provider id; no profile is the
- * house 404.
+ * <p><b>The "me" surface</b> ({@code /api/v1/providers/me/leads}): the
+ * lead's provider column lives in the users.id space (the A1/V2 fact),
+ * so the caller's user id IS the inbox key — the plain {@code /me} seam
+ * every authenticated surface here uses, no profile indirection.
  */
 @RestController
 @RequestMapping(value = ApiConstants.API_V1, version = "1.0")
@@ -43,14 +40,11 @@ public class LeadsController {
 
     private final LeadsService leadsService;
     private final CurrentUserProvider currentUserProvider;
-    private final ProviderLookupPort providerLookupPort;
 
     public LeadsController(LeadsService leadsService,
-                           CurrentUserProvider currentUserProvider,
-                           ProviderLookupPort providerLookupPort) {
+                           CurrentUserProvider currentUserProvider) {
         this.leadsService = leadsService;
         this.currentUserProvider = currentUserProvider;
-        this.providerLookupPort = providerLookupPort;
     }
 
     /**
@@ -83,8 +77,8 @@ public class LeadsController {
             @Parameter(description = "Filter by inbox status — omitted returns all.")
             @RequestParam(required = false) LeadStatus status,
             Pageable pageable, Authentication authentication) {
-        UUID providerId = requireOwnProviderId(authentication);
-        return ResponseEntity.ok(PagedResponse.of(leadsService.listLeads(providerId, status, pageable)));
+        UUID ownerUserId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(PagedResponse.of(leadsService.listLeads(ownerUserId, status, pageable)));
     }
 
     @PatchMapping("/providers/me/leads/{leadId}")
@@ -95,17 +89,8 @@ public class LeadsController {
             @PathVariable UUID leadId,
             @Valid @RequestBody LeadTransitionRequest request,
             Authentication authentication) {
-        UUID providerId = requireOwnProviderId(authentication);
-        return ResponseEntity.ok(leadsService.transitionLead(
-                leadId, providerId, request.status(), authentication));
-    }
-
-    /** The L20 "me" seam — identical to the ledger controller's resolution. */
-    private UUID requireOwnProviderId(Authentication authentication) {
-        UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return providerLookupPort.findByUserId(userId)
-                .map(ProviderSummary::id)
-                .orElseThrow(() -> new ResourceNotFoundException("No provider profile for the current user"));
+        UUID ownerUserId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(leadsService.transitionLead(leadId, ownerUserId, request.status()));
     }
 
     /**

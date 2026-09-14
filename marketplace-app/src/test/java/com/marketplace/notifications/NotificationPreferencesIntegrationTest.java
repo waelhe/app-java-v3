@@ -208,7 +208,7 @@ class NotificationPreferencesIntegrationTest {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(6);
+        assertThat(matrix).hasSize(9);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 
