@@ -3,9 +3,13 @@ package com.marketplace.notifications;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -21,9 +25,12 @@ import java.util.UUID;
 @Transactional
 public class NotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
     private final NotificationRepository repository;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final PaymentIntentLookupPort paymentIntentLookupPort;
+    private final ProviderLookupPort providerLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final EmailNotificationService emailNotificationService;
     private final Optional<SimpMessagingTemplate> messagingTemplate;
@@ -32,6 +39,7 @@ public class NotificationService {
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
                                PaymentIntentLookupPort paymentIntentLookupPort,
+                               ProviderLookupPort providerLookupPort,
                                CurrentUserProvider currentUserProvider,
                                EmailNotificationService emailNotificationService,
                                Optional<SimpMessagingTemplate> messagingTemplate,
@@ -39,6 +47,7 @@ public class NotificationService {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
+        this.providerLookupPort = providerLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.emailNotificationService = emailNotificationService;
         this.messagingTemplate = messagingTemplate;
@@ -78,6 +87,36 @@ public class NotificationService {
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendWebSocket(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, message);
         });
+    }
+
+    /**
+     * L34 (realestate systems plan §5 — lead capture): the provider's
+     * LEAD_RECEIVED alert — the same delivery shape as the two event
+     * points above (in-app row always lands; WebSocket and email ride
+     * their L22 per-type/channel preferences). The provider's user id
+     * resolves through {@link ProviderLookupPort} — a provider profile
+     * without a linked user cannot be alerted, which is logged and
+     * skipped (the lead itself already committed; the registry retry
+     * would loop forever on a structural miss).
+     */
+    public void onLeadReceived(UUID leadId, UUID listingId, UUID providerId) {
+        providerLookupPort.findById(providerId)
+                .map(ProviderSummary::userId)
+                .filter(java.util.Objects::nonNull)
+                .ifPresentOrElse(providerUserId -> {
+                    String message = "New lead for your listing: " + listingId;
+                    // L22: the in-app channel is always on (see onBookingCreated).
+                    repository.save(Notification.create(providerUserId,
+                            NotificationType.LEAD_RECEIVED.name(), message));
+                    if (preferences.isChannelEnabled(providerUserId,
+                            NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
+                        emailNotificationService.sendEmail(providerUserId, "New Lead",
+                                "email/notification", Map.of("message", message));
+                    }
+                    sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
+                }, () -> log.warn(
+                        "Lead alert skipped — provider {} has no linked user (leadId={})",
+                        providerId, leadId));
     }
 
     private void sendWebSocket(UUID userId, NotificationType type, String message) {

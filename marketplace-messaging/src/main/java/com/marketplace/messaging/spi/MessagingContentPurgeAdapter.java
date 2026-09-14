@@ -19,6 +19,19 @@ import org.springframework.transaction.annotation.Transactional;
  * and the booking reference only), and the counterparty's messages never
  * match {@code sender_id = ?}.
  *
+ * <p><b>L34 (realestate systems plan §5 — lead capture):</b> the leads the
+ * subject submitted while authenticated join the purge scope — the plan's
+ * acceptance criterion 5 ("بيانات الاتصال تعرض التمويه القائم عند تطهير
+ * حساب — الـlead نص مؤلَّف للمُرسل"). {@code contact_name},
+ * {@code contact_phone} and {@code message} are NOT NULL (V52), so the
+ * shared {@link AuthoredContentPurgePort#PURGED_MARKER} tombstone is the
+ * honest representation; guest-submitted leads (sender_user_id NULL)
+ * belong to no account and are never matched — nothing of an anonymous
+ * submitter can be tied to an erasure subject. The IP fingerprint column
+ * is not free text and not person-identifying (a one-way hash) — it stays
+ * so the G-R6 daily cap keeps bounding the purged account's historic
+ * fingerprint.
+ *
  * <p><b>Schema facts (measured, V7):</b> {@code messages.content} is
  * {@code text NOT NULL} — the nullable-NULL convention is impossible here,
  * so the purge writes the shared {@link AuthoredContentPurgePort#PURGED_MARKER}
@@ -54,7 +67,20 @@ public class MessagingContentPurgeAdapter implements AuthoredContentPurgePort {
         int auditRows = jdbcTemplate.update(
                 "UPDATE messages_aud SET content = ? WHERE sender_id = ? AND content IS NOT NULL AND content <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
-        log.info("Messaging content purge: userId={}, messages={}, auditRows={}", userId, messages, auditRows);
-        return messages + auditRows;
+        // L34: the leads this subject submitted while authenticated — all
+        // three text columns carry his contact data, base and mirror.
+        int leads = jdbcTemplate.update(
+                "UPDATE listing_leads SET contact_name = ?, contact_phone = ?, message = ? "
+                        + "WHERE sender_user_id = ? AND message <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int leadAuditRows = jdbcTemplate.update(
+                "UPDATE listing_leads_aud SET contact_name = ?, contact_phone = ?, message = ? "
+                        + "WHERE sender_user_id = ? AND message <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        log.info("Messaging content purge: userId={}, messages={}, auditRows={}, leads={}, leadAuditRows={}",
+                userId, messages, auditRows, leads, leadAuditRows);
+        return messages + auditRows + leads + leadAuditRows;
     }
 }

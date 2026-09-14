@@ -341,6 +341,15 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # L34 (realestate systems plan §5): the public lead submission —
+      # the fourth high-impact public write endpoint (same L29 model:
+      # fail fast, 429 RL-001). Conservative until real traffic (G-R6
+      # calibration gate); behind it the per-sender daily cap lives in
+      # the service (marketplace.messaging.leads.daily-cap-per-sender).
+      leadCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
 
 app:
   commission:
