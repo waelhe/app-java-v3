@@ -53,7 +53,7 @@ public interface GeoLocationRepository
      * (PostgreSQL Reference, Queries › WITH Queries › Recursive Queries):
      * the non-recursive term anchors on the requested node, the recursive
      * term joins children level by level. B-tree joins only — the plan's
-     * D-R1/D-E3 decision (no PostGIS, no coordinate math).
+     * D-R1/D-R3 decision (no PostGIS, no coordinate math).
      */
     @Query(value = """
             WITH RECURSIVE descendants AS (

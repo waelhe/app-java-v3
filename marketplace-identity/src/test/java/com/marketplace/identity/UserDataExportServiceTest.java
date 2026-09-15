@@ -10,6 +10,8 @@ import com.marketplace.shared.api.MessagingExportData;
 import com.marketplace.shared.api.MessagingExportPort;
 import com.marketplace.shared.api.NotificationExportEntry;
 import com.marketplace.shared.api.NotificationExportPort;
+import com.marketplace.shared.api.SavedSearchExportPort;
+import com.marketplace.shared.api.SavedSearchExportEntry;
 import com.marketplace.shared.api.ReviewExportEntry;
 import com.marketplace.shared.api.ReviewExportPort;
 import org.junit.jupiter.api.Test;
@@ -31,10 +33,11 @@ class UserDataExportServiceTest {
     private final MessagingExportPort messagingExportPort = mock(MessagingExportPort.class);
     private final MediaExportPort mediaExportPort = mock(MediaExportPort.class);
     private final NotificationExportPort notificationExportPort = mock(NotificationExportPort.class);
+    private final SavedSearchExportPort savedSearchExportPort = mock(SavedSearchExportPort.class);
 
     private final UserDataExportService service = new UserDataExportService(
             bookingExportPort, reviewExportPort, messagingExportPort,
-            mediaExportPort, notificationExportPort);
+            mediaExportPort, notificationExportPort, savedSearchExportPort);
 
     @Test
     void aggregatesEveryModuleShareWithTheBoundaryNoticeAndTheProfile() {
@@ -63,6 +66,9 @@ class UserDataExportServiceTest {
                 .thenReturn(new MessagingExportData(conversations, messages));
         when(mediaExportPort.exportForOwner(userId)).thenReturn(media);
         when(notificationExportPort.exportForRecipient(userId)).thenReturn(notifications);
+        var savedSearches = List.of(new SavedSearchExportEntry(UUID.randomUUID(),
+                "{\"minRooms\":2}", true, null, Instant.now()));
+        when(savedSearchExportPort.exportForOwner(userId)).thenReturn(savedSearches);
 
         UserDataExportResponse response = service.exportFor(user);
 
@@ -73,6 +79,7 @@ class UserDataExportServiceTest {
         assertSame(messages, response.messages());
         assertSame(media, response.media());
         assertSame(notifications, response.notifications());
+        assertSame(savedSearches, response.savedSearches()); // L35: the search module's share
 
         // The profile section: the account row's own fields.
         assertEquals(userId, response.profile().id());
@@ -95,6 +102,7 @@ class UserDataExportServiceTest {
         when(messagingExportPort.exportForParticipant(userId))
                 .thenReturn(new MessagingExportData(List.of(), List.of()));
         when(mediaExportPort.exportForOwner(userId)).thenReturn(List.of());
+        when(savedSearchExportPort.exportForOwner(userId)).thenReturn(List.of());
         when(notificationExportPort.exportForRecipient(userId)).thenReturn(List.of());
 
         UserDataExportResponse response = service.exportFor(user);

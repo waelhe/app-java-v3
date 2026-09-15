@@ -6,6 +6,7 @@ import org.springframework.data.jpa.domain.Specification;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springframework.modulith.NamedInterface;
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ListingActivatedEvent;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderListingSummary;
@@ -350,7 +351,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // future change to ListingSummary MUST bump this suffix — pinned by
     // ListingSummaryCacheContractFilesTest.
     // L32: search-results bumps to -v3 with the criteria schema extension
-    // (the plan's D-E6 decision — the criteria record gained six components;
+    // (the plan's D-R6 decision — the criteria record gained six components;
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
     static final Set<String> CATALOG_CACHE_NAMES =
@@ -464,6 +465,16 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                     "expiresAt must be strictly in the future");
         }
         listing.activate(resolved);
+        // L35 (realestate systems plan §5 — saved searches and alerts): the
+        // activation event, published inside the writer's transaction (the
+        // BookingCreatedEvent/MediaUploadedEvent house pattern) so the Event
+        // Publication Registry writes its entries atomically with the state
+        // change. The publisher knows NOTHING about its consumers (the
+        // search module's saved-search matcher today; the community layer's
+        // L46 neighborhood bridge when its window opens — one publisher,
+        // many consumers, the Modulith fan-out). Renewal (renew()) is a
+        // different transition and deliberately does not fire this event.
+        eventPublisher.publishEvent(new ListingActivatedEvent(id, listing.getProviderId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
     }

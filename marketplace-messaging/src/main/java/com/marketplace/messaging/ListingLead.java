@@ -90,7 +90,7 @@ public class ListingLead extends BaseEntity {
     /**
      * The only construction path: every field passes the type gate first —
      * a blank name/phone/message or an overlong value is a 400 before any
-     * write (D-E5: no silent truncation, no defaulting).
+     * write (D-R5: no silent truncation, no defaulting).
      */
     public static ListingLead create(UUID listingId, UUID providerId, UUID senderUserId,
                                      String senderIpHash, String contactName,

@@ -237,5 +237,21 @@ class ResilienceAnnotationTest {
             assertEquals("mediaUpload", rl.name(),
                     "RateLimiter should use the independent mediaUpload instance");
         }
+
+        @Test
+        @DisplayName("SavedSearchController.create should have @RateLimiter(savedSearchCreate) — L35")
+        void savedSearchCreate_hasRateLimiter() throws NoSuchMethodException {
+            // L35 (realestate systems plan §5): the saved-search write joins
+            // the named-instance policy — the fifth high-impact write
+            // surface (the L29 model, the L34 leadCreate sibling).
+            Method method = com.marketplace.search.SavedSearchController.class.getMethod("create",
+                    com.marketplace.search.SavedSearchController.SavedSearchCreateRequest.class,
+                    Authentication.class);
+
+            RateLimiter rl = method.getAnnotation(RateLimiter.class);
+            assertNotNull(rl, "create should have @RateLimiter");
+            assertEquals("savedSearchCreate", rl.name(),
+                    "RateLimiter should use the independent savedSearchCreate instance");
+        }
     }
 }
