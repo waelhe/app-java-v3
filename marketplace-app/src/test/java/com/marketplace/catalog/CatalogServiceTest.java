@@ -20,6 +20,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,6 +92,27 @@ class CatalogServiceTest {
         assertThat(summaries).hasSize(3);
         assertThat(summaries.map(ProviderListingSummary::status))
                 .containsExactly("DRAFT", "ACTIVE", "ARCHIVED");
+    }
+
+    /**
+     * L36 (realestate systems plan §5): the shared-api port form of the
+     * public provider-listings read — the same ACTIVE-only repository
+     * contract as the REST surface, mapped to the summaries the provider
+     * module's public page composes.
+     */
+    @Test
+    void listActiveByProvider_queriesActiveOnlyAndMapsSummaries() {
+        UUID providerUserId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        ProviderListing active = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findByProviderIdAndStatus(providerUserId, ListingStatus.ACTIVE, pageable))
+                .thenReturn(new PageImpl<>(List.of(active)));
+
+        var page = catalogService.listActiveByProvider(providerUserId, pageable);
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+        assertThat(page.getContent()).singleElement()
+                .satisfies(summary -> assertThat(summary.id()).isEqualTo(active.getId()));
     }
 
     @Test

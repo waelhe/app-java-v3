@@ -119,4 +119,21 @@ public interface CatalogSearchPort {
      * side).
      */
     List<ListingSummary> findSummariesByIds(List<UUID> idsInOrder);
+
+    /**
+     * L36 (realestate systems plan §5 — agent/office pages): one provider's
+     * ACTIVE listings, paginated — the public provider page's listings
+     * block. The provider status gate is the CALLER's rule (the provider
+     * module hides the block for non-VERIFIED profiles); this port serves
+     * the same documented public contract as the REST surface
+     * {@code GET /api/v1/listings/provider/{providerId}} (the CWE-200
+     * adoption: ACTIVE only, soft-delete filtered).
+     *
+     * <p><b>Id space (the AuthHelper A1 contract):</b> the argument is the
+     * provider's USER id — {@code provider_listings.provider_id} carries
+     * {@code users.id}, exactly like every cross-module provider_id column
+     * (availability, ledger, booking). The caller resolves the profile row
+     * and passes {@code profile.getUserId()}.
+     */
+    Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable);
 }

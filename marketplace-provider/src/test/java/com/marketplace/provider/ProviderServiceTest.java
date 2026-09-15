@@ -124,6 +124,55 @@ class ProviderServiceTest {
         assertThat(result.getBio()).isEqualTo("new bio");
     }
 
+    // -- L36: the persona fields ------------------------------------------
+
+    @Test
+    void create_fullForm_carriesThePersona() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class), eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+        UUID userId = UUID.randomUUID();
+        when(repository.save(any(ProviderProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ProviderProfile result = service.create("Qudsia Prime", "desc", userId,
+                ProviderActorType.AGENCY, "Qudsia Prime Estates", "BR-2026-1149");
+
+        assertThat(result.getActorType()).isEqualTo(ProviderActorType.AGENCY);
+        assertThat(result.getAgencyName()).isEqualTo("Qudsia Prime Estates");
+        assertThat(result.getLicenseNumber()).isEqualTo("BR-2026-1149");
+    }
+
+    @Test
+    void update_fullForm_appliesPersonaSemanticsAndInvalidatesCache() {
+        ProviderRepository repository = mock(ProviderRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        Authentication authentication = mock(Authentication.class);
+        ProviderService service = new ProviderService(repository, currentUserProvider, eventPublisher,
+                mock(com.marketplace.shared.api.ReviewStatsPort.class));
+        UUID id = Instancio.create(UUID.class);
+        UUID userId = UUID.randomUUID();
+        ProviderProfile profile = Instancio.of(ProviderProfile.class)
+                .set(field(ProviderProfile::getId), id)
+                .set(field(ProviderProfile::getDisplayName), "Old")
+                .set(field(ProviderProfile::getBio), "old bio")
+                .set(field(ProviderProfile::getUserId), userId)
+                .set(field(ProviderProfile::getActorType), ProviderActorType.INDEPENDENT_BROKER)
+                .create();
+        when(repository.findById(id)).thenReturn(java.util.Optional.of(profile));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+
+        // Omitted actor type keeps the stored classification (the currency
+        // rule) while the omitted display strings clear (the bio contract).
+        ProviderProfile result = service.update(id, "New Name", "new bio", null, null, null,
+                authentication);
+
+        assertThat(result.getDisplayName()).isEqualTo("New Name");
+        assertThat(result.getActorType()).isEqualTo(ProviderActorType.INDEPENDENT_BROKER);
+        assertThat(result.getAgencyName()).isNull();
+        assertThat(result.getLicenseNumber()).isNull();
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
+    }
+
     // -- L21: stored rating average ---------------------------------------
 
     @Test

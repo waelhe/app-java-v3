@@ -54,6 +54,14 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
                 "UPDATE provider_profiles SET display_name = ? WHERE user_id = ? "
                         + "AND display_name IS NOT NULL AND display_name <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        // L36: the persona display fields are the same authored-text class
+        // as bio (nullable public persona texts) — the existing masking
+        // applies to them verbatim (the plan's acceptance criterion 3:
+        // "التمويه القائم يسري"). NULL writes, the bio storage convention.
+        int personas = jdbcTemplate.update(
+                "UPDATE provider_profiles SET agency_name = NULL, license_number = NULL "
+                        + "WHERE user_id = ? AND (agency_name IS NOT NULL OR license_number IS NOT NULL)",
+                userId);
         int auditRows = jdbcTemplate.update(
                 "UPDATE provider_profiles_aud SET bio = NULL WHERE user_id = ? AND bio IS NOT NULL",
                 userId);
@@ -61,8 +69,12 @@ public class ProviderProfileContentPurgeAdapter implements AuthoredContentPurgeP
                 "UPDATE provider_profiles_aud SET display_name = ? WHERE user_id = ? "
                         + "AND display_name IS NOT NULL AND display_name <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
-        log.info("Provider profile content purge: userId={}, bios={}, names={}, auditRows={}",
-                userId, bios, names, auditRows + nameAudits);
-        return bios + names + auditRows + nameAudits;
+        int personaAudits = jdbcTemplate.update(
+                "UPDATE provider_profiles_aud SET agency_name = NULL, license_number = NULL "
+                        + "WHERE user_id = ? AND (agency_name IS NOT NULL OR license_number IS NOT NULL)",
+                userId);
+        log.info("Provider profile content purge: userId={}, bios={}, names={}, personas={}, auditRows={}",
+                userId, bios, names, personas, auditRows + nameAudits + personaAudits);
+        return bios + names + personas + auditRows + nameAudits + personaAudits;
     }
 }

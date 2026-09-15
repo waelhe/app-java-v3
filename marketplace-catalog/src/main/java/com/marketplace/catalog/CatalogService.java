@@ -101,6 +101,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 providerId, ListingStatus.ACTIVE, pageable);
     }
 
+    /**
+     * L36 (realestate systems plan §5): the shared-api port form of the
+     * same public read — the provider module's public page composes its
+     * listings block through this method. Same repository query, same
+     * ACTIVE-only documented contract as the REST surface; the summaries
+     * mapping is the port's contract (the property embed stays a REST-side
+     * concern of the catalog controller). Uncached like the REST path —
+     * the profile block rides the provider module's own "providers" cache.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable) {
+        return toSummaryPage(listingRepository.findByProviderIdAndStatus(
+                providerUserId, ListingStatus.ACTIVE, pageable));
+    }
+
     @Transactional(readOnly = true)
     public Page<ProviderListingView> findAll(Pageable pageable) {
         return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable)

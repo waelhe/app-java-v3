@@ -18,6 +18,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -50,11 +52,19 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.BookingStatsPort bookingStatsPort;
 
+    // L36: the public page composes through the catalog search port —
+    // outside this module slice, same @MockitoBean convention.
+    @MockitoBean
+    com.marketplace.shared.api.CatalogSearchPort catalogSearchPort;
+
     @Autowired
     private ProviderService providerService;
 
     @Autowired
     private ProviderStatsService providerStatsService;
+
+    @Autowired
+    private ProviderPublicPageService providerPublicPageService;
 
     @Test
     void contextLoads() {
@@ -62,9 +72,50 @@ class ProviderModuleIntegrationTest {
 
     @Test
     void createProvider_persists() {
-        var profile = providerService.create("Test Provider", "A test provider", UUID.randomUUID());
+        var profile = providerService.create("Test Provider", "A test provider", UUID.randomUUID(),
+                com.marketplace.provider.ProviderActorType.AGENCY, "Qudsia Prime", "BR-1");
         assertThat(profile.getId()).isNotNull();
         assertThat(profile.getDisplayName()).isEqualTo("Test Provider");
+        assertThat(profile.getActorType()).isEqualTo(com.marketplace.provider.ProviderActorType.AGENCY);
+        assertThat(profile.getAgencyName()).isEqualTo("Qudsia Prime");
+    }
+
+    @Test
+    void publicPage_servesVerifiedProviderListingsThroughThePort() {
+        // L36 through the module slice: the ports are the slice boundary;
+        // the VERIFIED gate and the composite assembly are the module's own.
+        var profile = providerService.create("Broker", "bio", UUID.randomUUID(),
+                com.marketplace.provider.ProviderActorType.INDEPENDENT_BROKER, null, "BR-9");
+        providerService.verify(profile.getId());
+        when(reviewStatsPort.findStatsByProviderId(profile.getId()))
+                .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ReviewStats(
+                        profile.getId(), 4.5, 12)));
+        when(catalogSearchPort.listActiveByProvider(any(), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(
+                        java.util.List.of(new com.marketplace.shared.api.ListingSummary(
+                                UUID.randomUUID(), "Flat", "APARTMENT",
+                                java.math.BigDecimal.TEN, "SAR", "Broker"))));
+
+        var page = providerPublicPageService.getPublicPage(profile.getId(),
+                org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.VERIFIED);
+        assertThat(page.ratingAverage()).isEqualTo(4.5);
+        assertThat(page.listings().totalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void publicPage_hidesSuspendedProviderListings() {
+        var profile = providerService.create("Broker", "bio", UUID.randomUUID());
+        providerService.verify(profile.getId());
+        providerService.suspend(profile.getId());
+
+        var page = providerPublicPageService.getPublicPage(profile.getId(),
+                org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.SUSPENDED);
+        assertThat(page.listings().totalElements()).isZero();
+        verify(catalogSearchPort, never()).listActiveByProvider(any(), any());
     }
 
     @Test

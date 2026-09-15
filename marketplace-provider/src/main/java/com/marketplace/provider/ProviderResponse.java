@@ -8,6 +8,9 @@ public record ProviderResponse(
         String displayName,
         String bio,
         ProviderStatus status,
+        ProviderActorType actorType,
+        String agencyName,
+        String licenseNumber,
         Double ratingAverage,
         Instant createdAt,
         Instant updatedAt

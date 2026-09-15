@@ -288,24 +288,29 @@ class AuthoredContentPurgeIntegrationTest {
         // -- provider_profiles (V14/V22: bio nullable -> NULL;
         //    display_name NOT NULL -> the marker) -------------------------
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio, status FROM provider_profiles WHERE id = ?",
+                "SELECT display_name, bio, agency_name, license_number, status FROM provider_profiles WHERE id = ?",
                 f.subjectProfileId()))
-                .as("the subject's persona: name -> marker, bio -> NULL, status stays")
+                .as("the subject's persona: name -> marker, bio -> NULL, L36 persona fields -> NULL, status stays")
                 .containsEntry("display_name", PURGED_MARKER)
                 .containsEntry("bio", null)
+                .containsEntry("agency_name", null)
+                .containsEntry("license_number", null)
                 .containsEntry("status", "ACTIVE");
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio FROM provider_profiles WHERE id = ?",
+                "SELECT display_name, bio, agency_name, license_number FROM provider_profiles WHERE id = ?",
                 f.counterpartyProfileId()))
                 .as("the counterparty's persona survives untouched")
                 .containsEntry("display_name", "Counterparty Stays")
-                .containsEntry("bio", "counterparty keeps his bio");
+                .containsEntry("bio", "counterparty keeps his bio")
+                .containsEntry("agency_name", "Counterparty Agency")
+                .containsEntry("license_number", "BR-2026-0002");
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio FROM provider_profiles_aud WHERE id = ? AND rev = ?",
+                "SELECT display_name, bio, agency_name FROM provider_profiles_aud WHERE id = ? AND rev = ?",
                 f.subjectProfileId(), f.revBase()))
                 .as("the subject's persona mirror dies")
                 .containsEntry("display_name", PURGED_MARKER)
-                .containsEntry("bio", null);
+                .containsEntry("bio", null)
+                .containsEntry("agency_name", null);
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT display_name FROM provider_profiles_aud WHERE id = ? AND rev = ?",
                 f.counterpartyProfileId(), f.revBase()).get("display_name"))
@@ -620,25 +625,29 @@ class AuthoredContentPurgeIntegrationTest {
         // Phase 2 V18 lesson, applied to both no-default tables here).
         UUID subjectProfileId = UUID.randomUUID();
         UUID counterpartyProfileId = UUID.randomUUID();
+        // L36: the persona fields ride both seeds — the subject's agency
+        // name and license number must die with the purge (the existing
+        // masking applies to them verbatim), the counterparty's survive.
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
+                VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectProfileId, "Subject The Provider", "the subject's bio", subjectId);
+                subjectProfileId, "Subject The Provider", "the subject's bio", subjectId,
+                "Subject Agency LLC", "BR-2026-0001");
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
+                VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 counterpartyProfileId, "Counterparty Stays", "counterparty keeps his bio",
-                counterpartyId);
+                counterpartyId, "Counterparty Agency", "BR-2026-0002");
         seedProfilesAud(subjectProfileId, revBase, subjectId,
-                "Subject The Provider", "the subject's bio");
+                "Subject The Provider", "the subject's bio", "Subject Agency LLC", "BR-2026-0001");
         seedProfilesAud(counterpartyProfileId, revBase, counterpartyId,
-                "Counterparty Stays", "counterparty keeps his bio");
+                "Counterparty Stays", "counterparty keeps his bio", "Counterparty Agency", "BR-2026-0002");
 
         // Disputes (V20/V38): the subject's + the counterparty's. V20's
         // disputes.booking_id carries no FK — but the production write path
@@ -730,11 +739,12 @@ class AuthoredContentPurgeIntegrationTest {
                 id, rev, reviewerId, providerId, comment, reply);
     }
 
-    private void seedProfilesAud(UUID id, int rev, UUID userId, String displayName, String bio) {
+    private void seedProfilesAud(UUID id, int rev, UUID userId, String displayName, String bio,
+                                 String agencyName, String licenseNumber) {
         jdbcTemplate.update(
-                "INSERT INTO provider_profiles_aud (id, rev, revtype, user_id, display_name, bio) "
-                        + "VALUES (?, ?, 0, ?, ?, ?)",
-                id, rev, userId, displayName, bio);
+                "INSERT INTO provider_profiles_aud (id, rev, revtype, user_id, display_name, bio, agency_name, license_number) "
+                        + "VALUES (?, ?, 0, ?, ?, ?, ?, ?)",
+                id, rev, userId, displayName, bio, agencyName, licenseNumber);
     }
 
     private void seedDisputesAud(UUID id, int rev, UUID openedBy, String reason) {
