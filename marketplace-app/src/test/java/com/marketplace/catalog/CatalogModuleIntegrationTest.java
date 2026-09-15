@@ -38,6 +38,13 @@ class CatalogModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
 
+    // L38: CatalogController composes the completeness score through
+    // MediaLookupPort — the media module is outside this slice too (the
+    // same house pattern; the full-context integration tests cover the
+    // real MediaLookupAdapter).
+    @MockitoBean
+    com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
+
     /**
      * L33: the catalog lifecycle's Clock — the production bean lives in
      * platform-infra's ClockConfig, which this slice does not scan (the
