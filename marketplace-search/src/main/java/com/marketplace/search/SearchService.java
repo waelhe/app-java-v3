@@ -82,7 +82,7 @@ public class SearchService {
 
     // The -v3 suffix is the ListingSummary serialization-schema namespace —
     // see CatalogService.CATALOG_CACHE_NAMES: the L32 criteria schema
-    // extension bumps it (the plan's D-E6 decision; the key generator's
+    // extension bumps it (the plan's D-R6 decision; the key generator's
     // prefix bump l27v2 → l32v1 keeps the key spaces disjoint too — no
     // pre-change entry can be read as a post-change hit; the one-time cold
     // cycle is bounded by the 1h TTL).

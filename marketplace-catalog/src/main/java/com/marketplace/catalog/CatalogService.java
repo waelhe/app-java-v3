@@ -351,7 +351,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // future change to ListingSummary MUST bump this suffix — pinned by
     // ListingSummaryCacheContractFilesTest.
     // L32: search-results bumps to -v3 with the criteria schema extension
-    // (the plan's D-E6 decision — the criteria record gained six components;
+    // (the plan's D-R6 decision — the criteria record gained six components;
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
     static final Set<String> CATALOG_CACHE_NAMES =

@@ -39,7 +39,7 @@ import java.lang.reflect.Method;
  * components, so the spaces are disjoint by prefix and no pre-L32 entry
  * can be read as an L32 hit. (The cache NAME also bumps to
  * {@code search-results-v3} — see SearchService — the deploy-time eviction
- * of the schema extension; both mechanisms are the documented D-E6
+ * of the schema extension; both mechanisms are the documented D-R6
  * decision.)
  *
  * <p>P1 (postgis integration plan §D-P12): the radius triple rides as
