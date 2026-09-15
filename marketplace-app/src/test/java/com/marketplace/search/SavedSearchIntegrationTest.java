@@ -110,6 +110,23 @@ class SavedSearchIntegrationTest {
 
     @BeforeEach
     void seed() {
+        // The pristine saved-search world (the CI round-4 root fix): this
+        // class shares ONE Spring context (and one container) across its
+        // tests, and the matcher scans EVERY alert-enabled saved search
+        // regardless of owner — correct production behavior. A live
+        // search left behind by a previously-run test (its own random
+        // user) matches a later test's fresh listing and inserts an
+        // unexpected ledger row: measured live in CI round 4 — the
+        // aggregation test counted 3 rows for its listing (its own two
+        // searches + one leftover) while its notification count stayed
+        // honestly scoped to its own recipient. Every test therefore
+        // starts from an empty saved-search world. No FK links the two
+        // tables (the V52 plain-UUID discipline) and raw SQL writes no
+        // Envers revisions, so the deletes are order-free and audit-silent.
+        jdbc.update("DELETE FROM saved_search_matches");
+        jdbc.update("DELETE FROM saved_searches");
+        jdbc.update("DELETE FROM notifications WHERE type = 'SAVED_SEARCH_MATCH'");
+
         consumerUserId = UUID.randomUUID();
         providerUserId = UUID.randomUUID();
         providerProfileId = UUID.randomUUID();
