@@ -73,15 +73,6 @@ class CatalogServiceTest {
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
 
-    // L38: the completeness computation's two cross-module ports
-    // (realestate implements PropertyDetailsPort, media implements
-    // MediaLookupPort at runtime — the slice mocks the contracts).
-    @MockitoBean
-    private com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
-
-    @MockitoBean
-    private com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
-
     private ProviderListing listing(ListingStatus status) {
         return Instancio.of(ProviderListing.class)
                 .set(field(ProviderListing::getStatus), status)
@@ -349,67 +340,35 @@ class CatalogServiceTest {
         when(providerLookupPort.findByUserId(listing.getProviderId())).thenReturn(Optional.of(owner));
     }
 
-    // ---- L38: the completeness read -------------------------------------------
+    // ---- L38: the owned-listing read (the completeness surface's gate) --------
 
     /**
-     * The composed read: the stored listing + the UPLOADED photo count +
-     * the optional property block ride the documented equation — here the
-     * full fixture (description present, one photo, block with location)
-     * answers the full score.
+     * The ownership read returns the listing itself in ANY status — the
+     * score guides completion before activation, so the public ACTIVE-only
+     * gate does not apply (a DRAFT is readable by its owner).
      */
     @Test
-    void getCompleteness_composesTheThreeReadsIntoTheScore() {
+    void getOwnedListing_returnsTheListingToItsOwner() {
         ProviderListing stored = ProviderListing.create(
                 java.util.UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
         when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
         stubOwnership(stored);
-        when(mediaLookupPort.countUploadedByListing(stored.getId())).thenReturn(1L);
-        when(propertyDetailsPort.findByListingId(stored.getId()))
-                .thenReturn(Optional.of(propertyWithLocation(stored.getId())));
-        var score = catalogService.getCompleteness(
+
+        ProviderListing result = catalogService.getOwnedListing(
                 stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class));
 
-        assertThat(score.percent()).isEqualTo(100);
-        assertThat(score.coreFieldsPresent()).isTrue();
-        assertThat(score.photosPresent()).isTrue();
-        assertThat(score.propertyDetailsPresent()).isTrue();
-        assertThat(score.locationPresent()).isTrue();
-        verify(mediaLookupPort).countUploadedByListing(stored.getId());
-        verify(propertyDetailsPort).findByListingId(stored.getId());
+        assertThat(result).isSameAs(stored);
     }
 
-    /**
-     * The partial fixture: description present, but no photos and no
-     * property block — the plan's criterion-2 boundary (25, the low
-     * quarter score with three of the four groups missing).
-     */
+    /** Unknown id: the ownership read's own 404. */
     @Test
-    void getCompleteness_partialListing_answersTheBoundaryScore() {
-        ProviderListing stored = ProviderListing.create(
-                java.util.UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
-        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
-        stubOwnership(stored);
-        when(mediaLookupPort.countUploadedByListing(stored.getId())).thenReturn(0L);
-        when(propertyDetailsPort.findByListingId(stored.getId())).thenReturn(Optional.empty());
-
-        var score = catalogService.getCompleteness(
-                stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class));
-
-        assertThat(score.percent()).isEqualTo(25);
-        assertThat(score.photosPresent()).isFalse();
-        assertThat(score.propertyDetailsPresent()).isFalse();
-    }
-
-    /** Unknown id: the ownership read's own 404 (before any port call). */
-    @Test
-    void getCompleteness_unknownId_throwsNotFound() {
+    void getOwnedListing_unknownId_throwsNotFound() {
         when(listingRepository.findById(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> catalogService.getCompleteness(
+        assertThatThrownBy(() -> catalogService.getOwnedListing(
                 java.util.UUID.randomUUID(),
                 org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
                 .isInstanceOf(ResourceNotFoundException.class);
-        verify(mediaLookupPort, never()).countUploadedByListing(any());
     }
 
     /**
@@ -417,7 +376,7 @@ class CatalogServiceTest {
      * current user is NOT the listing's owner, so 403 before any scoring.
      */
     @Test
-    void getCompleteness_foreignProvider_throwsAccessDenied() {
+    void getOwnedListing_foreignProvider_throwsAccessDenied() {
         ProviderListing stored = listing(ListingStatus.ACTIVE);
         when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
         // The foreign caller: a different user id than the owner's.
@@ -427,21 +386,9 @@ class CatalogServiceTest {
                 new com.marketplace.shared.api.ProviderSummary(
                         java.util.UUID.randomUUID(), "provider", "VERIFIED", stored.getProviderId())));
 
-        assertThatThrownBy(() -> catalogService.getCompleteness(
+        assertThatThrownBy(() -> catalogService.getOwnedListing(
                 stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
-        verify(mediaLookupPort, never()).countUploadedByListing(any());
-    }
-
-    private static com.marketplace.shared.api.PropertyDetailsPort.PropertyView propertyWithLocation(
-            UUID listingId) {
-        return new com.marketplace.shared.api.PropertyDetailsPort.PropertyView(
-                listingId,
-                com.marketplace.shared.api.PropertyPurpose.RENT,
-                com.marketplace.shared.api.PropertyType.APARTMENT,
-                120, 3, 2, 1, 4, 2015, true,
-                java.util.List.of("elevator"), null,
-                java.util.UUID.randomUUID(), null, null);
     }
 
 }

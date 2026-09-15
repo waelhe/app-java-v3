@@ -3,6 +3,7 @@ package com.marketplace.catalog;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.IsoCurrencyCode;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ProviderListingView;
@@ -33,14 +34,21 @@ public class CatalogController {
     private final ListingMapper listingMapper;
     private final PropertyDetailsPort propertyDetailsPort;
 
+    // L38: the completeness photo count — a leaf port like the property
+    // embed port above it (the media adapter depends on nothing in this
+    // module, so the controller stays the cycle-free composition point).
+    private final MediaLookupPort mediaLookupPort;
+
     public CatalogController(CatalogService catalogService,
                              CurrentUserProvider currentUserProvider,
                              ListingMapper listingMapper,
-                             PropertyDetailsPort propertyDetailsPort) {
+                             PropertyDetailsPort propertyDetailsPort,
+                             MediaLookupPort mediaLookupPort) {
         this.catalogService = catalogService;
         this.currentUserProvider = currentUserProvider;
         this.listingMapper = listingMapper;
         this.propertyDetailsPort = propertyDetailsPort;
+        this.mediaLookupPort = mediaLookupPort;
     }
 
     @GetMapping
@@ -98,9 +106,15 @@ public class CatalogController {
 
     /**
      * L38 (realestate systems plan §5 — completeness score): the provider's
-     * own read — the ownership gate answers 403 for a foreign provider and
-     * 404 for an unknown id (the update/pause/renew contract). Owner read,
-     * so no public-surface rate limiter (the authenticated owner surfaces'
+     * own read. The service owns the security contract (PROVIDER role + the
+     * update/pause/renew ownership gate: 404 unknown, 403 foreign); THIS
+     * controller is the cross-module composition point (the L31 embed
+     * architecture — {@code RealestateService} implements the property port
+     * while depending on {@code CatalogService}, so the service must not
+     * inject it; the leaf controller breaks the circle). Every read on this
+     * path is uncached — a photo that lands between two requests shows on
+     * the very next one (the plan's criterion 3). Owner read, so no
+     * public-surface rate limiter (the authenticated owner surfaces'
      * contract).
      */
     @GetMapping("/{id}/completeness")
@@ -115,7 +129,12 @@ public class CatalogController {
                     + "tell the provider exactly which quarter is missing.")
     public ResponseEntity<ListingCompletenessResponse> completeness(
             @PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(catalogService.getCompleteness(id, authentication));
+        ProviderListing listing = catalogService.getOwnedListing(id, authentication);
+        long uploadedPhotos = mediaLookupPort.countUploadedByListing(id);
+        PropertyDetailsPort.PropertyView property =
+                propertyDetailsPort.findByListingId(id).orElse(null);
+        return ResponseEntity.ok(
+                ListingCompletenessResponse.of(listing, uploadedPhotos, property));
     }
 
     @PostMapping
