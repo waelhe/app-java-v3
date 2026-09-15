@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -124,6 +125,38 @@ class NotificationEventListenerTest {
     void onListingLeadCreated_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onListingLeadCreated", ListingLeadCreatedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onSavedSearchMatched_callsNotificationServiceWithTheAggregatedCount() {
+        UUID userId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        var event = new SavedSearchMatchedEvent(userId, listingId,
+                java.util.List.of(UUID.randomUUID(), UUID.randomUUID()));
+
+        listener.onSavedSearchMatched(event);
+
+        verify(notificationService).onSavedSearchMatch(userId, listingId, 2);
+    }
+
+    @Test
+    void onSavedSearchMatched_propagatesException() {
+        var event = new SavedSearchMatchedEvent(UUID.randomUUID(), UUID.randomUUID(),
+                java.util.List.of(UUID.randomUUID()));
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onSavedSearchMatch(any(), any(), anyInt());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onSavedSearchMatched(event));
+    }
+
+    @Test
+    void onSavedSearchMatched_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onSavedSearchMatched", SavedSearchMatchedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }

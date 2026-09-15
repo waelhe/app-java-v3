@@ -54,7 +54,8 @@ class UserControllerTest {
                 new UserDataExportResponse.Profile(user.getId(), "sub-1", "a@b.com",
                         "Alice", "CONSUMER", null, null),
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                java.util.List.of(), java.util.List.of(), java.util.List.of());
+                java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                java.util.List.of()); // L35: the savedSearches section joins the export
 
         // The /me bootstrap convention: the profile syncs from the token's
         // freshest claims before it is read (the same call /me makes).

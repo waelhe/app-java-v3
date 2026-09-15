@@ -60,6 +60,12 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.NotificationExportPort notificationExportPort;
 
+    // L35 (realestate systems plan §5): the export's sixth section — the
+    // saved-search port (the search module's adapter, outside this slice);
+    // the same house pattern as the five ports above.
+    @MockitoBean
+    com.marketplace.shared.api.SavedSearchExportPort savedSearchExportPort;
+
     // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
     // this module slice) consumes the cross-module purge port as a List —
     // the shared-api contract implemented by the six owning modules'

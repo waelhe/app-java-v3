@@ -19,7 +19,7 @@ import java.util.UUID;
  * children exist (the service answers 409 — no silent cascades). The entity
  * is {@code @Audited} per the AGENTS.md rule, so every admin amendment leaves
  * an Envers trail (the R__ seed itself bypasses Envers by nature — the
- * documented debt D-E6 of the plan).
+ * documented debt D-E11 of the plan).
  *
  * <p>{@code parentId} is a plain UUID column — a self-reference inside this
  * module, modeled exactly like the house's cross-module id columns (no JPA

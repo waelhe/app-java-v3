@@ -13,9 +13,14 @@ package com.marketplace.notifications;
  * ("القناة الجديدة إضافة نقطة واحدة"): the enum is the single source of
  * truth, the per-type/channel preference machinery (L22) governs its
  * delivery from day one with no new mechanism.
+ *
+ * <p>L35 (realestate systems plan §5 — saved searches and alerts):
+ * {@code SAVED_SEARCH_MATCH} joins as the fourth type — the same point
+ * addition (the V55 CHECK widens the DB-side membership guard to match).
  */
 public enum NotificationType {
     BOOKING_CREATED,
     PAYMENT_STATE,
-    LEAD_RECEIVED
+    LEAD_RECEIVED,
+    SAVED_SEARCH_MATCH
 }

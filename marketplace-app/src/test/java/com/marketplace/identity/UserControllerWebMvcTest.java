@@ -69,7 +69,8 @@ class UserControllerWebMvcTest {
                 new UserDataExportResponse.Profile(UUID.randomUUID(), "sub", null, null,
                         "CONSUMER", null, null),
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                java.util.List.of(), java.util.List.of(), java.util.List.of());
+                java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                java.util.List.of()); // L35: the savedSearches section joins the export
 
         when(userService.syncFromOidc(any())).thenReturn(user);
         when(userDataExportService.exportFor(user)).thenReturn(export);

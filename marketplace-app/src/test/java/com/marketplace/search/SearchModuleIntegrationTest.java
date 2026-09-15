@@ -30,6 +30,23 @@ import org.springframework.data.domain.Page;
 @WithMockUser
 class SearchModuleIntegrationTest {
 
+    /**
+     * L35: the module's first persistent shape (SavedSearchService) needs
+     * the injectable house clock — the catalog slice's exact pattern
+     * (CatalogModuleIntegrationTest.ClockBean): the production bean lives
+     * in platform-infra's ClockConfig, which this slice does not scan (a
+     * direct @Import of the config class fails in the slice — its
+     * instance-method @Bean needs the config-class bean, which the module
+     * filter drops — measured in CI round 2). One Clock per context.
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @MockitoBean
     CatalogSearchPort catalogSearchPort;
 
@@ -52,6 +69,12 @@ class SearchModuleIntegrationTest {
     // realestate module).
     @MockitoBean
     com.marketplace.shared.api.RealestatePropertyFilterPort realestatePropertyFilterPort;
+
+    // L35: the /me surface's identity stitch — the shared-security
+    // component is outside this slice (the LeadsController sibling in the
+    // messaging module's slice mocks it the same way).
+    @MockitoBean
+    com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     @Autowired
     private SearchService searchService;
