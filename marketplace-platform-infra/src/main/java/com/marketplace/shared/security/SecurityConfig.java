@@ -135,6 +135,17 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // L38 (realestate systems plan §5 — completeness
+                        // score): the score is the PROVIDER'S OWN read under
+                        // ownership — carved out from the blanket public
+                        // listings GET line BELOW it (first match wins in
+                        // declaration order): an anonymous caller answers 401
+                        // through the resource-server chain, and the service's
+                        // ownership gate answers 403 for a foreign provider.
+                        // The precise-wildcard pattern is the L36 public-page
+                        // line's mirror image (there a public surface opened;
+                        // here an owner surface stays closed).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/listings/*/completeness").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/listings/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()

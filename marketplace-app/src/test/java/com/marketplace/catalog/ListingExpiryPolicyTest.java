@@ -48,6 +48,12 @@ class ListingExpiryPolicyTest {
     private com.marketplace.shared.api.ProviderNameResolver providerNameResolver;
     @Mock
     private com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+    // L38: the completeness computation's two cross-module ports — plain
+    // Mockito mocks (this test constructs the service directly).
+    @Mock
+    private com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
+    @Mock
+    private com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
 
     private CatalogService service;
     private final org.springframework.security.core.Authentication authentication =
@@ -57,6 +63,7 @@ class ListingExpiryPolicyTest {
     void setUp() {
         service = new CatalogService(listingRepository, currentUserProvider,
                 providerNameResolver, eventPublisher, providerLookupPort,
+                propertyDetailsPort, mediaLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(90, 1)));
     }
 
@@ -131,6 +138,7 @@ class ListingExpiryPolicyTest {
     void activate_withoutPolicyAndWithoutExplicitDate_is409() {
         CatalogService unpolicy = new CatalogService(listingRepository, currentUserProvider,
                 providerNameResolver, eventPublisher, providerLookupPort,
+                propertyDetailsPort, mediaLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(null, 1)));
         ProviderListing draft = draftListing();
 

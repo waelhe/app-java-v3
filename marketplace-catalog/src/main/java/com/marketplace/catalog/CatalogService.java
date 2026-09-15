@@ -17,6 +17,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.MediaLookupPort;
+import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -56,6 +58,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderNameResolver providerNameResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final ProviderLookupPort providerLookupPort;
+    private final PropertyDetailsPort propertyDetailsPort;
+    private final MediaLookupPort mediaLookupPort;
     private final java.time.Clock clock;
     private final CatalogProperties catalogProperties;
 
@@ -64,6 +68,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                           ProviderNameResolver providerNameResolver,
                           ApplicationEventPublisher eventPublisher,
                           ProviderLookupPort providerLookupPort,
+                          PropertyDetailsPort propertyDetailsPort,
+                          MediaLookupPort mediaLookupPort,
                           java.time.Clock clock,
                           CatalogProperties catalogProperties) {
         this.listingRepository = listingRepository;
@@ -71,6 +77,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         this.providerNameResolver = providerNameResolver;
         this.eventPublisher = eventPublisher;
         this.providerLookupPort = providerLookupPort;
+        this.propertyDetailsPort = propertyDetailsPort;
+        this.mediaLookupPort = mediaLookupPort;
         this.clock = clock;
         this.catalogProperties = catalogProperties;
     }
@@ -237,6 +245,31 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public ListingInfo getListingInfo(UUID listingId) {
         ProviderListing listing = getById(listingId);
         return new ListingInfo(listing.getProviderId(), listing.getPriceCents(), listing.getCurrency());
+    }
+
+    /**
+     * L38 (realestate systems plan §5 — completeness score): the provider's
+     * own read of his listing's completeness. The ownership gate is the
+     * update/pause/renew contract verbatim — 404 for an unknown id, 403 for
+     * a foreign provider (admin passes, {@link #verifyOwnership}); the score
+     * itself is {@link ListingCompletenessResponse}'s documented equation.
+     *
+     * <p><b>Always fresh by construction (the plan's criterion 3):</b> this
+     * method carries NO {@code @Cacheable} and reads through the uncached
+     * {@link #getById} plus the two cross-module ports on every call — a
+     * photo that lands between two reads is visible on the very next one.
+     * The controller calls this method directly (no self-invocation), so
+     * both annotations on this method fire exactly once per request.
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    @Transactional(readOnly = true)
+    public ListingCompletenessResponse getCompleteness(UUID id, Authentication authentication) {
+        ProviderListing listing = getById(id);
+        verifyOwnership(listing, authentication);
+        return ListingCompletenessResponse.of(
+                listing,
+                mediaLookupPort.countUploadedByListing(id),
+                propertyDetailsPort.findByListingId(id).orElse(null));
     }
 
     /**

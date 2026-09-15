@@ -96,6 +96,28 @@ public class CatalogController {
                 .orElse(response);
     }
 
+    /**
+     * L38 (realestate systems plan §5 — completeness score): the provider's
+     * own read — the ownership gate answers 403 for a foreign provider and
+     * 404 for an unknown id (the update/pause/renew contract). Owner read,
+     * so no public-surface rate limiter (the authenticated owner surfaces'
+     * contract).
+     */
+    @GetMapping("/{id}/completeness")
+    @Operation(summary = "My listing's completeness score (provider)",
+            description = "L38: a pure recomputed-on-read score — no storage, no cache; every "
+                    + "read is fresh. The documented equation (equal quarters over the plan's "
+                    + "four component groups): 25% core fields (title, description, price) + "
+                    + "25% at least one UPLOADED photo (storage-verified; a pending upload "
+                    + "never counts) + 25% the real-estate details block (L31) + 25% the "
+                    + "administrative location attached (L30 — the property block's "
+                    + "location_id, not the display coordinates). The four component flags "
+                    + "tell the provider exactly which quarter is missing.")
+    public ResponseEntity<ListingCompletenessResponse> completeness(
+            @PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(catalogService.getCompleteness(id, authentication));
+    }
+
     @PostMapping
     @Operation(summary = "Create a listing (provider)", description = "Publishes a new service "
             + "listing with a base nightly price in minor units and an optional guest capacity.")

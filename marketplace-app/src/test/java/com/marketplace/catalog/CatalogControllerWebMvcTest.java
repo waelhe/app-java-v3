@@ -195,6 +195,30 @@ class CatalogControllerWebMvcTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * L38: the completeness endpoint's line format — the five-field score
+     * body (percent + the four component flags) serialized straight from
+     * the record, and the id riding the service call. The ownership and
+     * freshness contracts are the integration test's (the real chain).
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void completeness_returnsTheScoreLineFormat() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(catalogService.getCompleteness(eq(id), any())).thenReturn(
+                new ListingCompletenessResponse(75, true, true, true, false));
+
+        mockMvc.perform(get("/api/v1/listings/{id}/completeness", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.percent").value(75))
+                .andExpect(jsonPath("$.coreFieldsPresent").value(true))
+                .andExpect(jsonPath("$.photosPresent").value(true))
+                .andExpect(jsonPath("$.propertyDetailsPresent").value(true))
+                .andExpect(jsonPath("$.locationPresent").value(false));
+
+        verify(catalogService).getCompleteness(eq(id), any());
+    }
+
     private static ProviderListingView mockView(UUID id) {
         return new ProviderListingView(id, null, null, null, null, null, null, null, null, null, null);
     }

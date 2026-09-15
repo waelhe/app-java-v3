@@ -65,6 +65,15 @@ class CatalogServiceSecurityTest {
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
 
+    // L38: the completeness computation's two cross-module ports (same
+    // fix as CatalogServiceTest — the context must satisfy the widened
+    // constructor).
+    @MockitoBean
+    private com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
+
+    @MockitoBean
+    private com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotProvider_thenAccessDenied() {
@@ -98,6 +107,18 @@ class CatalogServiceSecurityTest {
     void pause_whenNotProvider_thenAccessDenied() {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> catalogService.pause(UUID.randomUUID(), null));
+    }
+
+    /**
+     * L38: the completeness read is a provider-scoped surface exactly like
+     * the write paths — the role gate fires before any ownership or
+     * scoring logic.
+     */
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void getCompleteness_whenNotProvider_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> catalogService.getCompleteness(UUID.randomUUID(), null));
     }
 
     /**
