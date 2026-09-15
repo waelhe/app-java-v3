@@ -84,6 +84,13 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
 
+    // L38: the closure's CatalogController also composes the completeness
+    // score through MediaLookupPort — the media module is outside this
+    // slice too (same house pattern; MediaExportPort above is the same
+    // module's other port).
+    @MockitoBean
+    com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
+
     // L32: the closure pulls SearchService, whose location facet needs the
     // geo module's port — outside this slice.
     @MockitoBean

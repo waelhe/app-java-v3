@@ -240,6 +240,41 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     /**
+     * L38 (realestate systems plan §5 — completeness score): the provider's
+     * OWN read of his listing in ANY status (the score guides completion
+     * before activation, so the public ACTIVE-only gate does not apply).
+     * The ownership gate is the update/pause/renew contract verbatim — 404
+     * for an unknown id, 403 for a foreign provider (admin passes,
+     * {@link #verifyOwnership}).
+     *
+     * <p><b>Why this stops at the entity (the L31 architecture, restored):</b>
+     * the property block and the photo count compose at the CONTROLLER —
+     * {@code RealestateService} implements {@code PropertyDetailsPort} while
+     * depending on this service (ListingPriceProvider + CatalogSpi), so this
+     * service must NEVER inject that port or the context boots a circular
+     * reference (measured: CI round 1 on this very layer). The controller is
+     * a leaf bean — the L31 embed point, now the L38 composition point.
+     *
+     * <p><b>Always fresh (the plan's criterion 3):</b> no {@code @Cacheable}
+     * here and the read rides the uncached {@link #getById} — the ports the
+     * controller adds are uncached reads too, so a photo that lands between
+     * two requests is visible on the very next one.
+     *
+     * <p><b>The admin-family gate (CodeRabbit round 1 adoption):</b>
+     * {@code hasAnyRole('PROVIDER','ADMIN')} — the archive family's own
+     * precedent in this service, matching {@link #verifyOwnership}'s
+     * documented "admins bypass" contract: with a single-role gate that
+     * branch of the very helper this method calls would be unreachable.
+     */
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    @Transactional(readOnly = true)
+    public ProviderListing getOwnedListing(UUID id, Authentication authentication) {
+        ProviderListing listing = getById(id);
+        verifyOwnership(listing, authentication);
+        return listing;
+    }
+
+    /**
      * L32: the criteria search restricted to the realestate module's
      * matching-id set — the property-facet flow. Backed by the official
      * Specifications (hasStatus + hasCategory + priceBetween + minGuests +

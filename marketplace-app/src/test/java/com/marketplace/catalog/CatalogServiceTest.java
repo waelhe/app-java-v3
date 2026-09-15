@@ -340,4 +340,55 @@ class CatalogServiceTest {
         when(providerLookupPort.findByUserId(listing.getProviderId())).thenReturn(Optional.of(owner));
     }
 
+    // ---- L38: the owned-listing read (the completeness surface's gate) --------
+
+    /**
+     * The ownership read returns the listing itself in ANY status — the
+     * score guides completion before activation, so the public ACTIVE-only
+     * gate does not apply (a DRAFT is readable by its owner).
+     */
+    @Test
+    void getOwnedListing_returnsTheListingToItsOwner() {
+        ProviderListing stored = ProviderListing.create(
+                java.util.UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        stubOwnership(stored);
+
+        ProviderListing result = catalogService.getOwnedListing(
+                stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class));
+
+        assertThat(result).isSameAs(stored);
+    }
+
+    /** Unknown id: the ownership read's own 404. */
+    @Test
+    void getOwnedListing_unknownId_throwsNotFound() {
+        when(listingRepository.findById(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> catalogService.getOwnedListing(
+                java.util.UUID.randomUUID(),
+                org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    /**
+     * Foreign provider: the update/pause/renew ownership contract — the
+     * current user is NOT the listing's owner, so 403 before any scoring.
+     */
+    @Test
+    void getOwnedListing_foreignProvider_throwsAccessDenied() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        // The foreign caller: a different user id than the owner's.
+        when(currentUserProvider.isAdmin(any())).thenReturn(false);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(java.util.UUID.randomUUID());
+        when(providerLookupPort.findByUserId(stored.getProviderId())).thenReturn(Optional.of(
+                new com.marketplace.shared.api.ProviderSummary(
+                        java.util.UUID.randomUUID(), "provider", "VERIFIED", stored.getProviderId())));
+
+        assertThatThrownBy(() -> catalogService.getOwnedListing(
+                stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
 }

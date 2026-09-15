@@ -24,6 +24,15 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     long countByListingId(UUID listingId);
 
     /**
+     * L38 (realestate systems plan — completeness score): the count of one
+     * listing's assets in a given status — {@code MediaLookupAdapter} calls
+     * it with {@code UPLOADED} (the port's storage-verified-only contract).
+     * Derived like its sibling above, so the shared {@code @SoftDelete}
+     * excludes purged rows from both counts.
+     */
+    long countByListingIdAndStatus(UUID listingId, MediaAssetStatus status);
+
+    /**
      * Serializes display-position allocation per listing (CodeRabbit #241):
      * {@code countByListingId(listingId) + 1} inside a transaction does not
      * stop two concurrent uploads from reading the same count and persisting

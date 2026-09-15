@@ -47,6 +47,11 @@ class CatalogControllerWebMvcTest {
     @MockitoBean
     private com.marketplace.shared.api.PropertyDetailsPort propertyDetailsPort;
 
+    // L38: the completeness photo-count port (media implements it at
+    // runtime; the slice mocks the contract).
+    @MockitoBean
+    private com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
@@ -193,6 +198,37 @@ class CatalogControllerWebMvcTest {
 
         mockMvc.perform(get("/api/v1/listings/{id}", id))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * L38: the completeness endpoint's line format and composition — the
+     * controller composes the owned listing (service) + the photo count
+     * (media port) + the property block (realestate port) into the record's
+     * documented equation. The five-field score body serializes straight
+     * from the record; the ownership/freshness contracts are the
+     * integration test's (the real chain).
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void completeness_composesThePortsIntoTheScoreLineFormat() throws Exception {
+        UUID id = UUID.randomUUID();
+        ProviderListing owned = ProviderListing.create(
+                UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
+        when(catalogService.getOwnedListing(eq(id), any())).thenReturn(owned);
+        when(mediaLookupPort.countUploadedByListing(id)).thenReturn(1L);
+        when(propertyDetailsPort.findByListingId(id)).thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(get("/api/v1/listings/{id}/completeness", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.percent").value(50))
+                .andExpect(jsonPath("$.coreFieldsPresent").value(true))
+                .andExpect(jsonPath("$.photosPresent").value(true))
+                .andExpect(jsonPath("$.propertyDetailsPresent").value(false))
+                .andExpect(jsonPath("$.locationPresent").value(false));
+
+        verify(catalogService).getOwnedListing(eq(id), any());
+        verify(mediaLookupPort).countUploadedByListing(id);
+        verify(propertyDetailsPort).findByListingId(id);
     }
 
     private static ProviderListingView mockView(UUID id) {
