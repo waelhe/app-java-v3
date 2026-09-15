@@ -124,6 +124,11 @@ public class SavedSearchService {
         // CodeRabbit round-1 adoption: the per-user availability bound —
         // the rate limiter bounds the write frequency; this bounds the
         // stored set the matcher scans on every listing activation.
+        // CodeRabbit round-1 FOLLOW-UP (the cap thread's atomicity note):
+        // the count-then-insert pair alone is a TOCTOU race — two
+        // concurrent creates both read below the cap and both insert.
+        // The advisory transaction lock below closes the window.
+        lockPerUserCreate(userId);
         int cap = properties.savedSearches().maxPerUser();
         if (repository.countByUserId(userId) >= cap) {
             throw new ConflictException(
@@ -203,6 +208,31 @@ public class SavedSearchService {
         // non-match (criterion 2).
         log.info("Saved-search scan: listingId={}, scanned={}, matched={}, notifiedUsers={}",
                 listingId, scanned, matched, newMatchesPerUser.size());
+    }
+
+    /**
+     * The create unit's per-user serialization (the CodeRabbit round-1
+     * follow-up on the cap thread): a PostgreSQL advisory TRANSACTION
+     * lock — auto-released at commit or rollback, so there is no unlock
+     * path to forget — keyed by the hash of the user id. The second
+     * concurrent create waits for the first unit to commit, re-reads the
+     * count, and answers 409 at the cap. A hash collision between two
+     * different users only over-serializes those two units for the
+     * microseconds of the insert; it never touches the matcher's scan
+     * (the lock lives inside the create transaction only — single
+     * advisory lock per transaction, no lock-ordering inversion).
+     */
+    private void lockPerUserCreate(UUID userId) {
+        jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) con -> {
+            try (var ps = con.prepareStatement(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))")) {
+                ps.setString(1, userId.toString());
+                try (var rs = ps.executeQuery()) {
+                    rs.next();
+                }
+            }
+            return null;
+        });
     }
 
     /**

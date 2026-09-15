@@ -266,6 +266,62 @@ class SavedSearchIntegrationTest {
     }
 
     @Test
+    void thePerUserCapIsAtomicUnderConcurrentCreation() throws Exception {
+        // CodeRabbit's round-1 follow-up on the cap thread: the count-
+        // then-insert pair alone is a TOCTOU race — two concurrent creates
+        // for one user can both read below the cap and both insert. The
+        // advisory transaction lock serializes the create unit per user,
+        // so racing the cap boundary leaves EXACTLY one winner. The
+        // property is constructor-bound (a second context for cap=1 is
+        // disproportionate) — the boundary is reached by filling the
+        // default 20 minus one, then racing the last slot from two
+        // simultaneously-starting threads (a CountDownLatch gate, not
+        // invokeAll's staggered start).
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var criteria = mapper.readTree("{\"minRooms\": 2}");
+        for (int i = 0; i < 19; i++) {
+            savedSearchService.create(consumerUserId, criteria, true);
+        }
+
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.Callable<Object> racer = () -> {
+            gate.await();
+            return savedSearchService.create(consumerUserId, criteria, true);
+        };
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(racer);
+            var second = executor.submit(racer);
+            gate.countDown();
+            Object outcome1 = outcomeOf(first);
+            Object outcome2 = outcomeOf(second);
+
+            // exactly one row landed, exactly one honest 409 — never two
+            // rows (the unserialized race), never two 409s (over-locking)
+            long wins = java.util.List.of(outcome1, outcome2).stream()
+                    .filter(o -> o instanceof SavedSearch).count();
+            long conflicts = java.util.List.of(outcome1, outcome2).stream()
+                    .filter(o -> o instanceof com.marketplace.shared.api.ConflictException).count();
+            assertThat(wins).isEqualTo(1);
+            assertThat(conflicts).isEqualTo(1);
+            Integer total = jdbc.queryForObject(
+                    "SELECT count(*) FROM saved_searches WHERE user_id = ? AND is_deleted = FALSE",
+                    Integer.class, consumerUserId);
+            assertThat(total).isEqualTo(20);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Object outcomeOf(java.util.concurrent.Future<Object> future) throws InterruptedException {
+        try {
+            return future.get();
+        } catch (java.util.concurrent.ExecutionException execution) {
+            return execution.getCause(); // the racer's own exception (the 409)
+        }
+    }
+
+    @Test
     void nonMatchingActivationIsSilent() throws Exception {
         // Criterion 2 — the negative: rooms 5 is not satisfied by the
         // seeded rooms-3 property; after the scan COMPLETES (deterministic
