@@ -20,9 +20,18 @@
 -- is ALTERed alongside its audited table; nullable there — a DEL revision
 -- row carries the id alone, the V24/V54 precedent).
 --
--- CHECK in the V44/V52 locking shape: NOT VALID (metadata-only, enforced
--- for new rows immediately) + VALIDATE under SHARE UPDATE EXCLUSIVE so the
--- shared production database keeps serving traffic during the deploy.
+-- The CHECK is added NOT VALID and validated in the FOLLOW-UP migration
+-- V57 (CodeRabbit round 1, adopted from the root — the Squawk
+-- constraint-missing-not-valid rule): PostgreSQL retains the ACCESS
+-- EXCLUSIVE lock taken by ADD CONSTRAINT until the owning TRANSACTION
+-- commits, so validating inside this same script would run the validation
+-- scan under ACCESS EXCLUSIVE and block all reads of provider_profiles.
+-- Splitting the VALIDATE into its own migration makes the V44 locking
+-- shape's documented intent actually real: V56 commits the catalog-only
+-- ADD (enforced for every new row immediately), then V57's single
+-- VALIDATE runs under its own SHARE UPDATE EXCLUSIVE lock — concurrent
+-- reads keep flowing during the scan. V57 is trivially re-runnable after
+-- repair (validating an already-valid constraint is a no-op).
 
 ALTER TABLE provider_profiles
     ADD COLUMN IF NOT EXISTS actor_type VARCHAR(30) NOT NULL DEFAULT 'INDIVIDUAL',
@@ -37,5 +46,3 @@ ALTER TABLE provider_profiles_aud
 ALTER TABLE provider_profiles
     ADD CONSTRAINT chk_provider_profiles_actor_type
     CHECK (actor_type IN ('INDIVIDUAL', 'INDEPENDENT_BROKER', 'AGENCY')) NOT VALID;
-
-ALTER TABLE provider_profiles VALIDATE CONSTRAINT chk_provider_profiles_actor_type;

@@ -122,6 +122,17 @@ class AuthoredContentPurgeIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    /**
+     * CodeRabbit PR #318 round 1 (adopted): the providers-cache guard —
+     * the purge runs as raw JDBC, so without the adapter's targeted
+     * AFTER_COMMIT invalidation the cached persona would outlive the
+     * erasure. The guard pre-warms the real cache through the real
+     * service read, purges through the real HTTP surface, then reads
+     * again: the persona must come back purged, not stale.
+     */
+    @Autowired
+    private com.marketplace.provider.ProviderService providerService;
+
     @Autowired
     private UserDetailsManager userDetailsManager;
 
@@ -177,6 +188,16 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(pseudonymize.statusCode())
                 .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
 
+        // The cache guard's warm-up (CodeRabbit #318 round 1, adopted):
+        // the un-purged persona enters the real "providers" cache through
+        // the real read path BEFORE the purge runs.
+        com.marketplace.provider.ProviderProfile prePurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(prePurge.getDisplayName()).isEqualTo("Subject The Provider");
+        assertThat(prePurge.getBio()).isEqualTo("the subject's bio");
+        assertThat(prePurge.getAgencyName()).isEqualTo("Subject Agency LLC");
+        assertThat(prePurge.getLicenseNumber()).isEqualTo("BR-2026-0001");
+
         // The action — real HTTP through the administrative surface.
         HttpResponse<String> purge = postJsonWithBearer(
                 "/api/v1/admin/users/" + subjectId + "/purge-content", admin.accessToken(),
@@ -187,14 +208,16 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(purgeBody.path("purgedRows").asInt())
                 .as("the exact fan-out count, measured against the seeded "
                         + "fixture (CodeRabbit's round-1 arithmetic, adopted; "
-                        + "extended by the §9 listings row's eighth converter): "
+                        + "extended by the §9 listings row's eighth converter "
+                        + "and the L36 persona fields): "
                         + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
                         + "the seed plants ONE subject message mirror) + 4 review "
                         + "comments + 4 review replies (2 base + 2 mirror each) "
-                        + "+ 4 profile fields (name+bio, base+mirror) + 4 listing "
+                        + "6 profile fields (name+bio+agency+license, base+mirror) "
+                        + "+ 4 listing "
                         + "fields (title+description, base+mirror — the catalog "
                         + "adapter) + 2 disputes + 2 notifications")
-                .isEqualTo(25);
+                .isEqualTo(27);
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
@@ -296,6 +319,17 @@ class AuthoredContentPurgeIntegrationTest {
                 .containsEntry("agency_name", null)
                 .containsEntry("license_number", null)
                 .containsEntry("status", "ACTIVE");
+
+        // The cache guard's read-back (CodeRabbit #318 round 1, adopted):
+        // the SAME cached read path must serve the PURGED persona — the
+        // adapter's targeted AFTER_COMMIT invalidation evicted the warm
+        // entry, so this read misses the cache and reflects the erased row.
+        com.marketplace.provider.ProviderProfile postPurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
+        assertThat(postPurge.getBio()).isNull();
+        assertThat(postPurge.getAgencyName()).isNull();
+        assertThat(postPurge.getLicenseNumber()).isNull();
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT display_name, bio, agency_name, license_number FROM provider_profiles WHERE id = ?",
                 f.counterpartyProfileId()))
