@@ -272,6 +272,25 @@ class ListingCompletenessIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * L38 (CodeRabbit round-1 adoption): the admin-family gate — an ADMIN
+     * token reads a listing he does NOT own (the verifyOwnership admin
+     * bypass, the archive family's own contract in this service; the same
+     * hasAnyRole('PROVIDER','ADMIN') gate).
+     */
+    @Test
+    void admin_readsAnyListingCompleteness() throws Exception {
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(FOREIGN_USER_ID);
+        when(currentUserProvider.isAdmin(any())).thenReturn(true);
+
+        mockMvc.perform(get("/api/v1/listings/{id}/completeness", FULL_LISTING_ID)
+                        .with(jwt().jwt(j -> j.subject("l38-admin"))
+                                .authorities(new org.springframework.security.core.authority
+                                        .SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.percent").value(100));
+    }
+
     /** An unknown listing answers the ownership read's honest 404. */
     @Test
     void unknownListing_answers404() throws Exception {

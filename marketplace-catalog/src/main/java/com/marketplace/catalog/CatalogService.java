@@ -259,8 +259,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * here and the read rides the uncached {@link #getById} — the ports the
      * controller adds are uncached reads too, so a photo that lands between
      * two requests is visible on the very next one.
+     *
+     * <p><b>The admin-family gate (CodeRabbit round 1 adoption):</b>
+     * {@code hasAnyRole('PROVIDER','ADMIN')} — the archive family's own
+     * precedent in this service, matching {@link #verifyOwnership}'s
+     * documented "admins bypass" contract: with a single-role gate that
+     * branch of the very helper this method calls would be unreachable.
      */
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
     @Transactional(readOnly = true)
     public ProviderListing getOwnedListing(UUID id, Authentication authentication) {
         ProviderListing listing = getById(id);

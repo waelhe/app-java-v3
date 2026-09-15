@@ -103,13 +103,32 @@ class CatalogServiceSecurityTest {
     /**
      * L38: the completeness surface's ownership read is a provider-scoped
      * surface exactly like the write paths — the role gate fires before
-     * any ownership or scoring logic.
+     * any ownership or scoring logic (CONSUMER carries neither role).
      */
     @Test
     @WithMockUser(roles = "CONSUMER")
-    void getOwnedListing_whenNotProvider_thenAccessDenied() {
+    void getOwnedListing_whenNotProviderOrAdmin_thenAccessDenied() {
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
                 () -> catalogService.getOwnedListing(UUID.randomUUID(), null));
+    }
+
+    /**
+     * L38 (CodeRabbit round-1 adoption): the admin-family gate — an ADMIN
+     * token passes the role gate AND the verifyOwnership admin bypass (the
+     * archive family's own contract in this service).
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getOwnedListing_whenAdmin_thenInvokesRead() {
+        ProviderListing stored = com.marketplace.catalog.ProviderListing.create(
+                UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        when(currentUserProvider.isAdmin(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+
+        assertThat(catalogService.getOwnedListing(
+                stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
+                .isSameAs(stored);
+        verify(providerLookupPort, org.mockito.Mockito.never()).findByUserId(org.mockito.ArgumentMatchers.any());
     }
 
     /**
