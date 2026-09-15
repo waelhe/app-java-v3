@@ -122,6 +122,17 @@ class AuthoredContentPurgeIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    /**
+     * CodeRabbit PR #318 round 1 (adopted): the providers-cache guard —
+     * the purge runs as raw JDBC, so without the adapter's targeted
+     * AFTER_COMMIT invalidation the cached persona would outlive the
+     * erasure. The guard pre-warms the real cache through the real
+     * service read, purges through the real HTTP surface, then reads
+     * again: the persona must come back purged, not stale.
+     */
+    @Autowired
+    private com.marketplace.provider.ProviderService providerService;
+
     @Autowired
     private UserDetailsManager userDetailsManager;
 
@@ -177,6 +188,16 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(pseudonymize.statusCode())
                 .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
 
+        // The cache guard's warm-up (CodeRabbit #318 round 1, adopted):
+        // the un-purged persona enters the real "providers" cache through
+        // the real read path BEFORE the purge runs.
+        com.marketplace.provider.ProviderProfile prePurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(prePurge.getDisplayName()).isEqualTo("Subject The Provider");
+        assertThat(prePurge.getBio()).isEqualTo("the subject's bio");
+        assertThat(prePurge.getAgencyName()).isEqualTo("Subject Agency LLC");
+        assertThat(prePurge.getLicenseNumber()).isEqualTo("BR-2026-0001");
+
         // The action — real HTTP through the administrative surface.
         HttpResponse<String> purge = postJsonWithBearer(
                 "/api/v1/admin/users/" + subjectId + "/purge-content", admin.accessToken(),
@@ -187,14 +208,16 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(purgeBody.path("purgedRows").asInt())
                 .as("the exact fan-out count, measured against the seeded "
                         + "fixture (CodeRabbit's round-1 arithmetic, adopted; "
-                        + "extended by the §9 listings row's eighth converter): "
+                        + "extended by the §9 listings row's eighth converter "
+                        + "and the L36 persona fields): "
                         + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
                         + "the seed plants ONE subject message mirror) + 4 review "
                         + "comments + 4 review replies (2 base + 2 mirror each) "
-                        + "+ 4 profile fields (name+bio, base+mirror) + 4 listing "
+                        + "6 profile fields (name+bio+agency+license, base+mirror) "
+                        + "+ 4 listing "
                         + "fields (title+description, base+mirror — the catalog "
                         + "adapter) + 2 disputes + 2 notifications")
-                .isEqualTo(25);
+                .isEqualTo(27);
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
@@ -288,24 +311,40 @@ class AuthoredContentPurgeIntegrationTest {
         // -- provider_profiles (V14/V22: bio nullable -> NULL;
         //    display_name NOT NULL -> the marker) -------------------------
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio, status FROM provider_profiles WHERE id = ?",
+                "SELECT display_name, bio, agency_name, license_number, status FROM provider_profiles WHERE id = ?",
                 f.subjectProfileId()))
-                .as("the subject's persona: name -> marker, bio -> NULL, status stays")
+                .as("the subject's persona: name -> marker, bio -> NULL, L36 persona fields -> NULL, status stays")
                 .containsEntry("display_name", PURGED_MARKER)
                 .containsEntry("bio", null)
-                .containsEntry("status", "ACTIVE");
+                .containsEntry("agency_name", null)
+                .containsEntry("license_number", null)
+                .containsEntry("status", "VERIFIED");
+
+        // The cache guard's read-back (CodeRabbit #318 round 1, adopted):
+        // the SAME cached read path must serve the PURGED persona — the
+        // adapter's targeted AFTER_COMMIT invalidation evicted the warm
+        // entry, so this read misses the cache and reflects the erased row.
+        com.marketplace.provider.ProviderProfile postPurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
+        assertThat(postPurge.getBio()).isNull();
+        assertThat(postPurge.getAgencyName()).isNull();
+        assertThat(postPurge.getLicenseNumber()).isNull();
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio FROM provider_profiles WHERE id = ?",
+                "SELECT display_name, bio, agency_name, license_number FROM provider_profiles WHERE id = ?",
                 f.counterpartyProfileId()))
                 .as("the counterparty's persona survives untouched")
                 .containsEntry("display_name", "Counterparty Stays")
-                .containsEntry("bio", "counterparty keeps his bio");
+                .containsEntry("bio", "counterparty keeps his bio")
+                .containsEntry("agency_name", "Counterparty Agency")
+                .containsEntry("license_number", "BR-2026-0002");
         assertThat(jdbcTemplate.queryForMap(
-                "SELECT display_name, bio FROM provider_profiles_aud WHERE id = ? AND rev = ?",
+                "SELECT display_name, bio, agency_name FROM provider_profiles_aud WHERE id = ? AND rev = ?",
                 f.subjectProfileId(), f.revBase()))
                 .as("the subject's persona mirror dies")
                 .containsEntry("display_name", PURGED_MARKER)
-                .containsEntry("bio", null);
+                .containsEntry("bio", null)
+                .containsEntry("agency_name", null);
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT display_name FROM provider_profiles_aud WHERE id = ? AND rev = ?",
                 f.counterpartyProfileId(), f.revBase()).get("display_name"))
@@ -620,25 +659,34 @@ class AuthoredContentPurgeIntegrationTest {
         // Phase 2 V18 lesson, applied to both no-default tables here).
         UUID subjectProfileId = UUID.randomUUID();
         UUID counterpartyProfileId = UUID.randomUUID();
+        // L36: the persona fields ride both seeds — the subject's agency
+        // name and license number must die with the purge (the existing
+        // masking applies to them verbatim), the counterparty's survive.
+        // The status seed is 'VERIFIED' (a real ProviderStatus member): the
+        // cache-guard's pre-warm read materializes the profile through JPA
+        // now, and the enum mapping rejects a fictional constant (CI-measured:
+        // "No enum constant ProviderStatus.ACTIVE" — the raw-JDBC-only era of
+        // this seed tolerated it; the assertion "status stays" follows).
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
+                VALUES (?, ?, ?, 'VERIFIED', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
-                subjectProfileId, "Subject The Provider", "the subject's bio", subjectId);
+                subjectProfileId, "Subject The Provider", "the subject's bio", subjectId,
+                "Subject Agency LLC", "BR-2026-0001");
         jdbcTemplate.update(
                 """
-                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, now(), now())
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
+                VALUES (?, ?, ?, 'VERIFIED', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 counterpartyProfileId, "Counterparty Stays", "counterparty keeps his bio",
-                counterpartyId);
+                counterpartyId, "Counterparty Agency", "BR-2026-0002");
         seedProfilesAud(subjectProfileId, revBase, subjectId,
-                "Subject The Provider", "the subject's bio");
+                "Subject The Provider", "the subject's bio", "Subject Agency LLC", "BR-2026-0001");
         seedProfilesAud(counterpartyProfileId, revBase, counterpartyId,
-                "Counterparty Stays", "counterparty keeps his bio");
+                "Counterparty Stays", "counterparty keeps his bio", "Counterparty Agency", "BR-2026-0002");
 
         // Disputes (V20/V38): the subject's + the counterparty's. V20's
         // disputes.booking_id carries no FK — but the production write path
@@ -730,11 +778,12 @@ class AuthoredContentPurgeIntegrationTest {
                 id, rev, reviewerId, providerId, comment, reply);
     }
 
-    private void seedProfilesAud(UUID id, int rev, UUID userId, String displayName, String bio) {
+    private void seedProfilesAud(UUID id, int rev, UUID userId, String displayName, String bio,
+                                 String agencyName, String licenseNumber) {
         jdbcTemplate.update(
-                "INSERT INTO provider_profiles_aud (id, rev, revtype, user_id, display_name, bio) "
-                        + "VALUES (?, ?, 0, ?, ?, ?)",
-                id, rev, userId, displayName, bio);
+                "INSERT INTO provider_profiles_aud (id, rev, revtype, user_id, display_name, bio, agency_name, license_number) "
+                        + "VALUES (?, ?, 0, ?, ?, ?, ?, ?)",
+                id, rev, userId, displayName, bio, agencyName, licenseNumber);
     }
 
     private void seedDisputesAud(UUID id, int rev, UUID openedBy, String reason) {

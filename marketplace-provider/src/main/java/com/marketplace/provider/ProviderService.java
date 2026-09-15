@@ -40,7 +40,23 @@ public class ProviderService {
     @Observed(name = "provider.create")
     @PreAuthorize("hasRole('CONSUMER')")
     public ProviderProfile create(String displayName, String bio, UUID userId) {
-        return providerRepository.save(ProviderProfile.create(displayName, bio, userId));
+        return create(displayName, bio, userId, null, null, null);
+    }
+
+    /**
+     * L36 full form: the persona fields ride the creation — a null actor
+     * type is the individual default (the entity factory's own gate). Both
+     * forms cross the proxy exactly once at their entry (the #270 rule: the
+     * delegating overload is unproxied self-invocation, so BOTH forms
+     * carry {@code @Observed}).
+     */
+    @Observed(name = "provider.create")
+    @PreAuthorize("hasRole('CONSUMER')")
+    public ProviderProfile create(String displayName, String bio, UUID userId,
+                                  ProviderActorType actorType, String agencyName,
+                                  String licenseNumber) {
+        return providerRepository.save(
+                ProviderProfile.create(displayName, bio, userId, actorType, agencyName, licenseNumber));
     }
 
     @Transactional(readOnly = true)
@@ -53,9 +69,22 @@ public class ProviderService {
     @Observed(name = "provider.update")
     @PreAuthorize("hasRole('PROVIDER')")
     public ProviderProfile update(UUID id, String displayName, String bio, Authentication authentication) {
+        return update(id, displayName, bio, null, null, null, authentication);
+    }
+
+    /**
+     * L36 full form — the persona fields follow the entity's documented PUT
+     * semantics (actorType null = keep; agencyName/licenseNumber null =
+     * clear, the bio contract). Same entry-form rule as create: both forms
+     * carry the observation.
+     */
+    @Observed(name = "provider.update")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderProfile update(UUID id, String displayName, String bio, ProviderActorType actorType,
+                                  String agencyName, String licenseNumber, Authentication authentication) {
         ProviderProfile provider = getById(id);
         verifyOwnership(provider, authentication);
-        provider.update(displayName, bio);
+        provider.update(displayName, bio, actorType, agencyName, licenseNumber);
         eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
         return provider;
     }

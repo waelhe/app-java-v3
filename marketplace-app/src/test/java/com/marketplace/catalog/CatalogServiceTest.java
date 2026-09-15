@@ -20,6 +20,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,6 +92,46 @@ class CatalogServiceTest {
         assertThat(summaries).hasSize(3);
         assertThat(summaries.map(ProviderListingSummary::status))
                 .containsExactly("DRAFT", "ACTIVE", "ARCHIVED");
+    }
+
+    /**
+     * L36 (realestate systems plan §5): the shared-api port form of the
+     * public provider-listings read — the same ACTIVE-only repository
+     * contract as the REST surface, mapped to the summaries the provider
+     * module's public page composes. CodeRabbit round-1 adoption: the
+     * effective pageable is deterministic (unsorted defaults to id ASC —
+     * the L32 total-order rule; offset pagination never duplicates or
+     * omits rows across pages).
+     */
+    @Test
+    void listActiveByProvider_queriesActiveOnlyMapsSummariesAndSortsDeterministically() {
+        UUID providerUserId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        ProviderListing active = listing(ListingStatus.ACTIVE);
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        when(listingRepository.findByProviderIdAndStatus(eq(providerUserId), eq(ListingStatus.ACTIVE), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(active),
+                        inv.getArgument(2, Pageable.class), 1));
+
+        var page = catalogService.listActiveByProvider(providerUserId, pageable);
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+        assertThat(page.getContent()).singleElement()
+                .satisfies(summary -> assertThat(summary.id()).isEqualTo(active.getId()));
+        // The effective sort the repository saw: unsorted request -> id ASC
+        // (the deterministic total order), same page number/size.
+        org.mockito.Mockito.verify(listingRepository)
+                .findByProviderIdAndStatus(eq(providerUserId), eq(ListingStatus.ACTIVE), captured.capture());
+        var effective = captured.getValue();
+        assertThat(effective.getPageNumber()).isZero();
+        assertThat(effective.getPageSize()).isEqualTo(20);
+        assertThat(effective.getSort().isSorted()).isTrue();
+        // Sort.getOrderFor returns the (nullable) Order directly — a total
+        // id ASC order must be present.
+        org.assertj.core.api.Assertions.assertThat(effective.getSort().getOrderFor("id"))
+                .isNotNull()
+                .extracting(org.springframework.data.domain.Sort.Order::getDirection)
+                .isEqualTo(org.springframework.data.domain.Sort.Direction.ASC);
     }
 
     @Test

@@ -101,6 +101,29 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 providerId, ListingStatus.ACTIVE, pageable);
     }
 
+    /**
+     * L36 (realestate systems plan §5): the shared-api port form of the
+     * same public read — the provider module's public page composes its
+     * listings block through this method. Same repository query, same
+     * ACTIVE-only documented contract as the REST surface; the summaries
+     * mapping is the port's contract (the property embed stays a REST-side
+     * concern of the catalog controller). Uncached like the REST path —
+     * the profile block rides the provider module's own "providers" cache.
+     *
+     * <p>CodeRabbit PR #318 round 1 (adopted): the derived query carries no
+     * OrderBy, so an unsorted {@link Pageable} would paginate
+     * non-deterministically (offset pagination can duplicate or omit rows
+     * across pages) — the effective pageable goes through
+     * {@link #deterministic(Pageable)} (the L32 total-order rule: requested
+     * sort with the id ASC tiebreak, unsorted defaults to id ASC).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable) {
+        return toSummaryPage(listingRepository.findByProviderIdAndStatus(
+                providerUserId, ListingStatus.ACTIVE, deterministic(pageable)));
+    }
+
     @Transactional(readOnly = true)
     public Page<ProviderListingView> findAll(Pageable pageable) {
         return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable)

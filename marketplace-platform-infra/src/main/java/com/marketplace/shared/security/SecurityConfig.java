@@ -142,6 +142,13 @@ public class SecurityConfig {
                         // hierarchy is public reference data — the anonymous
                         // browse pattern, one line, same chain.
                         .requestMatchers(HttpMethod.GET, "/api/v1/geo/**").permitAll()
+                        // L36 (realestate systems plan §5): the agent/office
+                        // PUBLIC page — the plan's "نقطة عامة". Precise path
+                        // pattern (the L34 leads precedent): the plain
+                        // /providers/{id} profile read and the /providers/me/**
+                        // owner surfaces keep their existing authenticated
+                        // contracts; only the composite public page opens.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/providers/*/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
