@@ -38,11 +38,19 @@ import java.util.UUID;
  * — the plan's original "existing behavior" claim is corrected in this
  * layer's truth batch).
  *
- * <p><b>Id spaces (the A1 contract):</b> this service resolves the profile
- * row ({@code provider_profiles.id}) and passes {@code profile.getUserId()}
- * to the catalog port — {@code provider_listings.provider_id} lives in the
- * users.id space. A profile without a linked user id cannot own listings:
- * the empty page is the honest answer.
+ * <p><b>Id spaces (measured, CI-enforced):</b> this service resolves the
+ * profile row ({@code provider_profiles.id}) and passes
+ * {@code profile.getUserId()} to BOTH cross-module ports — the listings
+ * block's {@code provider_listings.provider_id} and the rating block's
+ * {@code reviews.provider_id} both live in the <b>users.id</b> space: the
+ * V6 FK ({@code references users(id)}) enforces the reviews' space, the
+ * production write path writes it ({@code ReviewsService.create} carries
+ * {@code bookingInfo.providerId()} = {@code bookings.provider_id} = the
+ * owner's user id — the A1 contract), and the FK-honest house test
+ * ({@code ReviewsAggregateDirectionIntegrationTest}, Flyway-enabled)
+ * seeds and aggregates by the user id. A profile without a linked user id
+ * can own neither listings nor reviews: the empty block is the honest
+ * answer.
  */
 @Service
 @Transactional(readOnly = true)
@@ -65,7 +73,9 @@ public class ProviderPublicPageService {
 
         Page<ListingSummary> listings = listingsBlock(profile, pageable);
 
-        Optional<ReviewStats> stats = reviewStatsPort.findStatsByProviderId(providerId);
+        Optional<ReviewStats> stats = profile.getUserId() == null
+                ? Optional.empty()
+                : reviewStatsPort.findStatsByProviderId(profile.getUserId());
         Double ratingAverage = stats.map(ReviewStats::averageRating).orElse(null);
         long reviewCount = stats.map(ReviewStats::reviewCount).orElse(0L);
 

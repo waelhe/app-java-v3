@@ -84,12 +84,15 @@ class ProviderModuleIntegrationTest {
     void publicPage_servesVerifiedProviderListingsThroughThePort() {
         // L36 through the module slice: the ports are the slice boundary;
         // the VERIFIED gate and the composite assembly are the module's own.
-        var profile = providerService.create("Broker", "bio", UUID.randomUUID(),
+        UUID ownerUserId = UUID.randomUUID();
+        var profile = providerService.create("Broker", "bio", ownerUserId,
                 com.marketplace.provider.ProviderActorType.INDEPENDENT_BROKER, null, "BR-9");
         providerService.verify(profile.getId());
-        when(reviewStatsPort.findStatsByProviderId(profile.getId()))
+        // The rating aggregates in the reviews' id space (users.id — the
+        // V6 FK's space; the profile id never reaches the reviews port).
+        when(reviewStatsPort.findStatsByProviderId(ownerUserId))
                 .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ReviewStats(
-                        profile.getId(), 4.5, 12)));
+                        ownerUserId, 4.5, 12)));
         when(catalogSearchPort.listActiveByProvider(any(), any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(
                         java.util.List.of(new com.marketplace.shared.api.ListingSummary(

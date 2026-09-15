@@ -318,7 +318,7 @@ class AuthoredContentPurgeIntegrationTest {
                 .containsEntry("bio", null)
                 .containsEntry("agency_name", null)
                 .containsEntry("license_number", null)
-                .containsEntry("status", "ACTIVE");
+                .containsEntry("status", "VERIFIED");
 
         // The cache guard's read-back (CodeRabbit #318 round 1, adopted):
         // the SAME cached read path must serve the PURGED persona — the
@@ -662,10 +662,15 @@ class AuthoredContentPurgeIntegrationTest {
         // L36: the persona fields ride both seeds — the subject's agency
         // name and license number must die with the purge (the existing
         // masking applies to them verbatim), the counterparty's survive.
+        // The status seed is 'VERIFIED' (a real ProviderStatus member): the
+        // cache-guard's pre-warm read materializes the profile through JPA
+        // now, and the enum mapping rejects a fictional constant (CI-measured:
+        // "No enum constant ProviderStatus.ACTIVE" — the raw-JDBC-only era of
+        // this seed tolerated it; the assertion "status stays" follows).
         jdbcTemplate.update(
                 """
                 INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, now(), now())
+                VALUES (?, ?, ?, 'VERIFIED', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 subjectProfileId, "Subject The Provider", "the subject's bio", subjectId,
@@ -673,7 +678,7 @@ class AuthoredContentPurgeIntegrationTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO provider_profiles (id, display_name, bio, status, user_id, agency_name, license_number, created_at, updated_at)
-                VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, now(), now())
+                VALUES (?, ?, ?, 'VERIFIED', ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO NOTHING
                 """,
                 counterpartyProfileId, "Counterparty Stays", "counterparty keeps his bio",

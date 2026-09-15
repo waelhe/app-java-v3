@@ -53,7 +53,9 @@ class ProviderPublicPageServiceTest {
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
         when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
-        when(reviewStatsPort.findStatsByProviderId(providerId))
+        // The rating aggregates in the REVIEWS' id space (users.id — the V6
+        // FK's space, the class javadoc's measured fact).
+        when(reviewStatsPort.findStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(providerId, 4.5, 12)));
 
         var result = service.getPublicPage(providerId, pageable);
@@ -119,12 +121,29 @@ class ProviderPublicPageServiceTest {
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, UUID.randomUUID()));
         when(catalogSearchPort.listActiveByProvider(any(), eq(pageable))).thenReturn(Page.empty(pageable));
-        when(reviewStatsPort.findStatsByProviderId(providerId)).thenReturn(Optional.empty());
+        when(reviewStatsPort.findStatsByProviderId(any())).thenReturn(Optional.empty());
 
         var result = service.getPublicPage(providerId, pageable);
 
         assertThat(result.ratingAverage()).isNull();
         assertThat(result.reviewCount()).isZero();
+    }
+
+    @Test
+    void profileWithoutUserId_noRatingEither() {
+        // The reviews' provider_id lives in the users.id space — a profile
+        // with no linked user can own no reviews: the null guard skips the
+        // port call entirely (no aggregate by the profile id, ever).
+        UUID providerId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, null));
+
+        var result = service.getPublicPage(providerId, pageable);
+
+        assertThat(result.ratingAverage()).isNull();
+        assertThat(result.reviewCount()).isZero();
+        assertThat(result.listings().totalElements()).isZero();
+        verifyNoInteractions(catalogSearchPort, reviewStatsPort);
     }
 
     @Test
