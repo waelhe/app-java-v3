@@ -53,8 +53,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         // The TTL-expiry seam: the production default is the plan's 24h
-        // ("Redis TTL يوم"); 200ms here makes the criterion runnable.
-        "marketplace.catalog.views.dedup-window=200ms",
+        // ("Redis TTL يوم"); 2s here makes the criterion runnable. The
+        // window must comfortably exceed TWO sequential MockMvc reads —
+        // the first performs the locked insert + the Envers revision
+        // against the container database, which on a slow CI runner can
+        // take longer than a sub-second window (CodeRabbit round 1,
+        // adopted — the flake class this avoids).
+        "marketplace.catalog.views.dedup-window=2s",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -123,7 +128,7 @@ class ListingViewsDedupTtlIntegrationTest {
 
         // the property override is the measured premise of this guard
         assertThat(catalogProperties.views().dedupWindow())
-                .isEqualTo(Duration.ofMillis(200));
+                .isEqualTo(Duration.ofSeconds(2));
     }
 
     @AfterEach
@@ -148,7 +153,8 @@ class ListingViewsDedupTtlIntegrationTest {
 
         // 2) after the TTL: the marker is GONE — Redis expired it (the
         // criterion's own wording: "عدم وجود مفتاح Redis بعد انتهاء TTL")
-        Thread.sleep(400);
+        // (2.5s > the 2s window, with margin for Redis's lazy expiry)
+        Thread.sleep(2_500);
 
         assertThat(dedupMarkerKeys()).isEmpty();
 

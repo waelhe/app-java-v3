@@ -117,11 +117,14 @@ public class CatalogController {
     public ResponseEntity<ListingResponse> getById(@PathVariable UUID id,
                                                     HttpServletRequest httpRequest) {
         ListingResponse response = listingMapper.toResponse(catalogService.getActiveById(id));
-        // L40: count only a read that actually resolved — the visitor saw
-        // the listing. The counter is total (never throws — its own
-        // contract), so the read above is the response regardless.
+        // L40 (CodeRabbit round 1, adopted): compose the COMPLETE response
+        // first — a failed property/JSON-LD composition must not count as a
+        // view (the visitor saw an error, not the listing). The counter is
+        // total (never throws — its own contract), so the composed response
+        // above is the response regardless.
+        ListingResponse composed = withJsonLd(withProperty(response));
         listingViewCounter.recordView(id, httpRequest.getRemoteAddr());
-        return ResponseEntity.ok(withJsonLd(withProperty(response)));
+        return ResponseEntity.ok(composed);
     }
 
     /**

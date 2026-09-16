@@ -141,10 +141,14 @@ class ListingViewsReadPathLatencyIntegrationTest {
             readAs("10.1." + (i / 250) + "." + (i % 250 + 1));
         }
 
-        // Cohort A — the dedup-hit read (one Redis op, no DB write)
+        // Cohort A — the dedup-hit read (one Redis op, no DB write).
+        // The visitor is one the WARMUP already marked (CodeRabbit round 1,
+        // adopted): a fresh address would make the FIRST sample a dedup
+        // miss — one locked insert inside the baseline cohort AND a total
+        // of WARMUP+1+COHORT that breaks the counting assertion below.
         List<Long> dedupHit = new ArrayList<>(COHORT);
         for (int i = 0; i < COHORT; i++) {
-            dedupHit.add(timedRead("192.0.2.1"));
+            dedupHit.add(timedRead("10.1.0.1"));
         }
 
         // Cohort B — the full counting read (Redis + locked +1 + Envers +
