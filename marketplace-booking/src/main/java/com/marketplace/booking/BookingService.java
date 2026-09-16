@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -110,7 +111,13 @@ public class BookingService implements BookingSpi {
     @Transactional(readOnly = true)
     public Page<BookingSummary> listByStatusSummary(String status, Pageable pageable) {
         try {
-            BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase());
+            // Locale.ROOT: enum names are ASCII protocol keys — the
+            // default-locale toUpperCase() turns "confirmed" into
+            // "CONFİRMED" (U+0130) under a Turkish JVM locale and
+            // valueOf rejects it (JDK String.toUpperCase @apiNote
+            // prescribes toUpperCase(Locale.ROOT); same rule as
+            // Currencies.normalize / CurrencyExchangeProperties).
+            BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase(Locale.ROOT));
             return listByStatusSummary(bookingStatus, pageable);
         } catch (IllegalArgumentException e) {
             throw new BadRequestException("Invalid booking status: " + status);
