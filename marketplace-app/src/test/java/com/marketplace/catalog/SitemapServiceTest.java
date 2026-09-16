@@ -92,6 +92,26 @@ class SitemapServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    /**
+     * The standard's index cardinality cap (CodeRabbit round 2 adoption):
+     * "Sitemap index files may not list more than 50,000 Sitemaps" — a
+     * count beyond the single-index capacity (2.5 billion clean-ACTIVE
+     * listings) answers 503 with an explicit scale message, never an
+     * invalid document and never silent truncation. The multi-level
+     * index redesign is the documented escalation path, not machinery
+     * built for an unreachable threshold.
+     */
+    @Test
+    void sitemap_beyondSingleIndexCapacity_answers503_neverAnInvalidIndex() {
+        stubCount(2_500_000_001L);
+        assertThatThrownBy(() -> service.sitemap(null))
+                .isInstanceOf(ServiceUnavailableException.class)
+                .hasMessageContaining("single sitemap index capacity");
+        verify(repository, org.mockito.Mockito.never()).findSitemapEntries(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     // ---- the documents (criterion 1: XSD-valid) ----
 
     @Test

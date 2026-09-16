@@ -81,6 +81,22 @@ public class SitemapService {
     /** sitemaps.org 0.90: "each Sitemap file … no more than 50,000 URLs". */
     public static final int SITEMAP_PAGE_SIZE = 50_000;
 
+    /**
+     * sitemaps.org 0.90: "Sitemap index files may not list more than
+     * 50,000 Sitemaps" — the single-index capacity, and with it the
+     * layer's designed scale ceiling: 50,000 pages × 50,000 URLs =
+     * 2.5 billion clean-ACTIVE listings. Beyond it the capability
+     * answers 503 (CodeRabbit round 2 adoption: never an invalid
+     * document, never silent truncation) — the multi-level index
+     * redesign (one Sitemap: line per root index in robots.txt, the
+     * standard's own "You can have more than one Sitemap index file")
+     * is the documented escalation path, deliberately not built for a
+     * threshold five orders of magnitude beyond this system's envelope
+     * (the D-E6 closure-point pattern: qudsya's catalog by multiples,
+     * revisited at full-city scale).
+     */
+    public static final int MAX_INDEX_ENTRIES = 50_000;
+
     /** The W3C Datetime form of an {@link java.time.Instant} (xsd:dateTime). */
     private static final DateTimeFormatter LASTMOD = DateTimeFormatter.ISO_INSTANT;
 
@@ -128,6 +144,13 @@ public class SitemapService {
                 throw new ResourceNotFoundException("Sitemap", null);
             }
             long pageCount = (total + SITEMAP_PAGE_SIZE - 1) / SITEMAP_PAGE_SIZE;
+            if (pageCount > MAX_INDEX_ENTRIES) {
+                throw new ServiceUnavailableException(
+                        "The clean ACTIVE set exceeds the single sitemap index capacity "
+                                + "(50,000 pages x 50,000 URLs = 2.5 billion listings) — beyond the "
+                                + "layer's designed scale; multi-level sitemap indexes are the "
+                                + "escalation path");
+            }
             if (pageCount > 1) {
                 return new SeoDocument(indexXml((int) pageCount), MediaType.APPLICATION_XML);
             }
