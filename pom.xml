@@ -402,6 +402,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- JVM locale determinism (Locale.getDefault() is an
+                      environment input, not code): -Duser.language/country
+                      pin the forked test JVM to en regardless of the OS
+                      locale. Without it an ar_EG box lets locale-sensitive
+                      library code (JDK ResourceBundle candidates, Stripe
+                      SDK String.format HMAC input) diverge from CI. The
+                      @{argLine} late-replacement preserves JaCoCo's
+                      prepare-agent (official JaCoCo+Surefire pattern). -->
+                    <argLine>-Duser.language=en -Duser.country=US @{argLine}</argLine>
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
@@ -415,6 +424,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
+                    <!-- Same JVM locale pin as surefire above: integration
+                      tests fork their own JVMs (Stripe webhook signature
+                      tests verify HMAC over SDK-formatted bytes). -->
+                    <argLine>-Duser.language=en -Duser.country=US @{argLine}</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                         <include>**/*IntegrationTest.java</include>

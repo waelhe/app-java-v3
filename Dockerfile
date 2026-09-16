@@ -193,7 +193,13 @@ EXPOSE 8080
 # exec-form recipe. Scoped to this stage only: the build/extractor/trainer
 # stages never see it. Includes the AOT cache flag from the training stage.
 # Measured locally on this app's boot path: −38% time-to-context with the cache.
-ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
+#
+# JVM locale pin (-Duser.language/country): Locale.getDefault() follows the
+# container OS locale; locale-sensitive library code (Stripe SDK webhook
+# HMAC input via String.format, JDK ResourceBundle candidates) must see the
+# same Latin-digit en baseline on every host. Explicit defense-in-depth,
+# not assumption about the base image's locale data.
+ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
 
 # The pure official Spring Boot 4.1 recipe (same reference page as above):
 #   ENTRYPOINT ["java", "-jar", "application.jar"]
