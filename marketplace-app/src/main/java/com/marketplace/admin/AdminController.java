@@ -173,6 +173,30 @@ public class AdminController {
         return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
     }
 
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the
+     * administrative shading point. PUT on the promotion sub-resource —
+     * a settable state, the {@code /users/{id}/role} and
+     * {@code /users/{id}/status} family, not a one-shot action: the body
+     * sets the window's end, and an ABSENT/null {@code until} CLEARS the
+     * boost (the L36 bio-fields' own PUT contract — an admin correcting a
+     * shading is the documented exit).
+     *
+     * <p>The window's future-boundary is validated at the SERVICE against
+     * the injected Clock (one seam, one clock — the reason there is no
+     * {@code @Future} here is documented there). Every shading is an
+     * @Audited entity update, so the Envers revision trail with the
+     * {@code updated_by} attribution is the plan's criterion-4 record;
+     * this endpoint answers the resulting state.
+     */
+    public record SetListingPromotionRequest(java.time.Instant until) {}
+
+    @PutMapping("/listings/{id}/promotion")
+    public ResponseEntity<com.marketplace.shared.api.ListingPromotion> setListingPromotion(
+            @PathVariable UUID id, @Valid @RequestBody SetListingPromotionRequest request) {
+        return ResponseEntity.ok(catalogSpi.setListingPromotion(id, request.until()));
+    }
+
     // -- Bookings -------------------------------------------------------
 
     @GetMapping("/bookings")

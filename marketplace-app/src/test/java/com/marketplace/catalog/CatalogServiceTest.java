@@ -98,20 +98,26 @@ class CatalogServiceTest {
 
     /**
      * L36 (realestate systems plan §5): the shared-api port form of the
-     * public provider-listings read — the same ACTIVE-only repository
+     * public provider-listings read — the same ACTIVE-only predicate
      * contract as the REST surface, mapped to the summaries the provider
-     * module's public page composes. CodeRabbit round-1 adoption: the
-     * effective pageable is deterministic (unsorted defaults to id ASC —
-     * the L32 total-order rule; offset pagination never duplicates or
-     * omits rows across pages).
+     * module's public page composes.
+     *
+     * <p>L37: the surface rides the two-specification boost-first read
+     * now — the ordering (boost flag + requested sort + the id ASC
+     * tiebreak, unsorted defaulting to id ASC) lives INSIDE the content
+     * specification, so the pageable the repository sees is UNSORTED
+     * (page/size only: a sorted Pageable would REPLACE the
+     * specification's order — the measured SimpleJpaRepository chain,
+     * documented on findBoostFirst). The ordering itself is proven on
+     * the real database by BoostOrderingIntegrationTest.
      */
     @Test
-    void listActiveByProvider_queriesActiveOnlyMapsSummariesAndSortsDeterministically() {
+    void listActiveByProvider_queriesActiveOnlyMapsSummariesThroughTheBoostFirstRead() {
         UUID providerUserId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         ProviderListing active = listing(ListingStatus.ACTIVE);
-        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
-        when(listingRepository.findByProviderIdAndStatus(eq(providerUserId), eq(ListingStatus.ACTIVE), any(Pageable.class)))
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
                 .thenAnswer(inv -> new PageImpl<>(List.of(active),
                         inv.getArgument(2, Pageable.class), 1));
 
@@ -120,20 +126,17 @@ class CatalogServiceTest {
         assertThat(page.getTotalElements()).isEqualTo(1);
         assertThat(page.getContent()).singleElement()
                 .satisfies(summary -> assertThat(summary.id()).isEqualTo(active.getId()));
-        // The effective sort the repository saw: unsorted request -> id ASC
-        // (the deterministic total order), same page number/size.
-        org.mockito.Mockito.verify(listingRepository)
-                .findByProviderIdAndStatus(eq(providerUserId), eq(ListingStatus.ACTIVE), captured.capture());
+        // The pageable the repository saw: same page/size, UNSORTED — the
+        // total order is the boost specification's own contract now.
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        org.mockito.Mockito.verify(listingRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class),
+                captured.capture());
         var effective = captured.getValue();
         assertThat(effective.getPageNumber()).isZero();
         assertThat(effective.getPageSize()).isEqualTo(20);
-        assertThat(effective.getSort().isSorted()).isTrue();
-        // Sort.getOrderFor returns the (nullable) Order directly — a total
-        // id ASC order must be present.
-        org.assertj.core.api.Assertions.assertThat(effective.getSort().getOrderFor("id"))
-                .isNotNull()
-                .extracting(org.springframework.data.domain.Sort.Order::getDirection)
-                .isEqualTo(org.springframework.data.domain.Sort.Direction.ASC);
+        assertThat(effective.getSort().isSorted()).isFalse();
     }
 
     @Test
@@ -171,7 +174,7 @@ class CatalogServiceTest {
 
     @Test
     void searchByCriteriaRestricted_mapsPricesAndDelegatesWithTheWhitelist() {
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any()))
+        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
         var criteria = new com.marketplace.shared.api.SearchCriteria(
@@ -182,14 +185,17 @@ class CatalogServiceTest {
         assertThat(result).hasSize(1);
         // BigDecimal 10 -> 1000 cents: the same movePointRight(2) mapping as
         // the unrestricted path rides the restricted query. guests rides
-        // through as null (criterion-less).
+        // through as null (criterion-less). The :now instant (L37) is the
+        // service clock's own reading — asserted only as "present" here;
+        // the boost semantics it feeds are integration-proven.
         verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(1000L), eq(2000L), eq(null), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+                eq(null), eq(1000L), eq(2000L), eq(null), eq(PROVIDER_IDS), any(java.time.Instant.class),
+                eq(PageRequest.of(0, 10)));
     }
 
     @Test
     void searchByCriteriaRestricted_guestsRideThroughToTheQuery() {
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any()))
+        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
         // A windowless guests-only criterion (I6).
@@ -199,23 +205,26 @@ class CatalogServiceTest {
         catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
 
         verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(null), eq(null), eq(4), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+                eq(null), eq(null), eq(null), eq(4), eq(PROVIDER_IDS), any(java.time.Instant.class),
+                eq(PageRequest.of(0, 10)));
     }
 
     @Test
     void searchFullTextRestricted_keepsTheTrigramFallbackOnAnEmptyPage() {
         // Zero TOTAL matches — the pg_trgm fallback runs, exactly like the
         // unrestricted searchFullText.
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(listingRepository.searchSimilarRestricted(anyString(), any(), any()))
+        when(listingRepository.searchSimilarRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
         var result = catalogService.searchFullTextRestricted("gardn", PROVIDER_IDS, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
-        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
     }
 
     @Test
@@ -224,25 +233,25 @@ class CatalogServiceTest {
         // content is legitimately empty — the fallback must NOT replace it
         // with a different result set (PR #256 full-review round:
         // isEmpty() is true while totalElements > 0).
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
 
         var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(5, 10));
 
         assertThat(result).isEmpty();
         assertThat(result.getTotalElements()).isEqualTo(1);
-        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any());
+        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
     }
 
     @Test
     void searchFullTextRestricted_noFallbackWhenFtsMatches() {
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
         var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any());
+        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
     }
 
     // ---- I6: the guest-capacity write path ------------------------------------
@@ -391,6 +400,80 @@ class CatalogServiceTest {
         assertThatThrownBy(() -> catalogService.getOwnedListing(
                 stored.getId(), org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class)))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    // ---- L37: the administrative boost shading point -------------------------
+
+    /**
+     * The happy shading: a future window at the injected clock lands on the
+     * entity and answers the resulting state. The cache eviction rides the
+     * standard relay — proven END-TO-END by BoostOrderingIntegrationTest
+     * (the cached surface's ordering flips after the shading, which IS the
+     * AFTER_COMMIT relay working); this context's @MockitoBean
+     * ApplicationEventPublisher does not intercept the context's own
+     * publisher (the resolvable-dependency seam — the house verifies
+     * events on manually-constructed services, e.g.
+     * ListingExpiryPolicyTest, or end-to-end).
+     */
+    @Test
+    void setListingPromotion_futureWindow_setsAndReturnsState() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        java.time.Instant until = java.time.Instant.now()
+                .plus(java.time.Duration.ofDays(7));
+
+        var result = catalogService.setListingPromotion(stored.getId(), until);
+
+        assertThat(result.id()).isEqualTo(stored.getId());
+        assertThat(result.promotedUntil()).isEqualTo(until);
+        assertThat(stored.getPromotedUntil()).isEqualTo(until);
+    }
+
+    /**
+     * The boundary rule (the activate/renew contract verbatim): a window
+     * that is not strictly future at the injected clock is a 400 — a past
+     * window would be a silent no-op ordering.
+     */
+    @Test
+    void setListingPromotion_pastWindow_throwsBadRequest() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        // Instancio seeds the new nullable field with a random Instant —
+        // the 400 contract is "unchanged", not "null" (the rejection must
+        // never mutate the entity).
+        java.time.Instant before = stored.getPromotedUntil();
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+
+        assertThatThrownBy(() -> catalogService.setListingPromotion(
+                stored.getId(), java.time.Instant.now().minusSeconds(60)))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("strictly in the future");
+        assertThat(stored.getPromotedUntil()).isEqualTo(before);
+    }
+
+    /**
+     * The clear path: a null until removes the boost (the admin's
+     * correction exit — the L36 optional-field PUT contract).
+     */
+    @Test
+    void setListingPromotion_nullWindow_clears() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        stored.promoteUntil(java.time.Instant.now().plusSeconds(3600));
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+
+        var result = catalogService.setListingPromotion(stored.getId(), null);
+
+        assertThat(result.promotedUntil()).isNull();
+        assertThat(stored.getPromotedUntil()).isNull();
+    }
+
+    /** Unknown listing: the archive family's 404 contract. */
+    @Test
+    void setListingPromotion_unknownListing_throwsNotFound() {
+        when(listingRepository.findById(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> catalogService.setListingPromotion(
+                java.util.UUID.randomUUID(), java.time.Instant.now().plusSeconds(3600)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
 }

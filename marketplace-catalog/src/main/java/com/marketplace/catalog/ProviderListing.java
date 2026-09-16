@@ -78,6 +78,20 @@ public class ProviderListing extends BaseEntity {
     @Column(name = "renewed_at")
     private Instant renewedAt;
 
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): when the
+     * listing's boost window ends. NULL = not boosted. The boost is
+     * ORTHOGONAL to the status machine (D-R7: zero machine changes) — a
+     * shaded DRAFT/PAUSED/ARCHIVED listing simply matches no public
+     * surface until it is ACTIVE again, and the window keeps ticking on
+     * its own clock (no lifecycle coupling: activation does not clear,
+     * pause does not preserve-privileged — the window is a plain
+     * timestamp, not state). Expiry is evaluated at QUERY TIME by the
+     * ordering criterion, never by a transition here.
+     */
+    @Column(name = "promoted_until")
+    private Instant promotedUntil;
+
     protected ProviderListing() {
     }
 
@@ -145,6 +159,26 @@ public class ProviderListing extends BaseEntity {
     public Instant getExpiresAt() { return expiresAt; }
     public String getPausedReason() { return pausedReason; }
     public Instant getRenewedAt() { return renewedAt; }
+
+    /**
+     * L37: the boost window's nullable-Instant family contract — like
+     * {@code renewedAt}, the value is read as-is; the future-vs-now
+     * boundary is the SERVICE's own clock-based check (the entity has no
+     * clock — the activate/renew seam exactly).
+     */
+    public Instant getPromotedUntil() { return promotedUntil; }
+
+    /**
+     * L37: sets the boost window (or clears it with null — an admin
+     * correcting a shading is the documented exit). Deliberately no
+     * status gate: the boost reorders ACTIVE result sets only and never
+     * changes what matches (the plan's criterion 2), so shading a
+     * non-ACTIVE listing is a dormant window, not an error. The full
+     * audit trail is the @Audited revision this UPDATE produces.
+     */
+    public void promoteUntil(Instant until) {
+        this.promotedUntil = until;
+    }
 
     public void update(String title, String description, String category, Long priceCents) {
         update(title, description, category, priceCents, null);

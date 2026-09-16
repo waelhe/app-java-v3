@@ -31,4 +31,20 @@ public interface CatalogSpi {
     Page<ProviderListingSummary> findAllSummaries(Pageable pageable);
 
     ProviderListingSummary archiveListing(UUID id, Authentication authentication);
+
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the
+     * administrative shading point — sets (or clears, with a null
+     * {@code until}) the listing's boost window. ADMIN-gated at the
+     * service (the archiveListing family — the gate rides the security
+     * context, not a method parameter, so no Authentication is carried);
+     * the returned state is the response's own contract. Every call is an
+     * @Audited entity UPDATE, so the Envers revision trail IS the plan's
+     * criterion 4 record — the admin revisions surface reads it directly.
+     * The purchase point (self-service via the internal ledger or a PSP)
+     * stays behind the G-R3 gate; the behavior and the ordering work
+     * without it.
+     */
+    com.marketplace.shared.api.ListingPromotion setListingPromotion(
+            UUID id, java.time.Instant until);
 }

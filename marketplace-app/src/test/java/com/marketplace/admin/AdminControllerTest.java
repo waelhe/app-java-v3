@@ -80,6 +80,25 @@ class AdminControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
 
+    /**
+     * L37: the boost shading point — the request's until rides to the SPI
+     * verbatim (a null = the documented clear), and the SPI's state answer
+     * is the response body.
+     */
+    @Test
+    void setListingPromotion_returnsState() {
+        UUID id = UUID.randomUUID();
+        Instant until = Instant.now().plus(java.time.Duration.ofDays(7));
+        when(catalogSpi.setListingPromotion(id, until))
+                .thenReturn(new com.marketplace.shared.api.ListingPromotion(id, until));
+
+        ResponseEntity<com.marketplace.shared.api.ListingPromotion> result =
+                controller.setListingPromotion(id, new AdminController.SetListingPromotionRequest(until));
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(until, result.getBody().promotedUntil());
+    }
+
     @Test
     void listBookings_withStatus() {
         PageRequest pageable = PageRequest.of(0, 10);

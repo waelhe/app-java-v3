@@ -15,18 +15,14 @@ import java.util.UUID;
 
 public interface ProviderListingRepository extends JpaRepository<ProviderListing, UUID>, JpaSpecificationExecutor<ProviderListing>, RevisionRepository<ProviderListing, UUID, Integer> {
 
-    Page<ProviderListing> findByProviderId(UUID providerId, Pageable pageable);
-
     /**
-     * The public provider-profile surface's page — ACTIVE listings only
-     * (the documented contract of {@code GET /api/v1/catalog/provider/{id}}
-     * and the guard for the L31 property embed; CodeRabbit PR #299 round 1).
+     * The GraphQL demo surface's read (CatalogSpi.findAll — unpaged).
+     * L37 deliberately leaves THIS surface on the derived query: it is the
+     * unpaged legacy Service listing, which never carried an ordering
+     * contract (boost-blind, like the sitemap — the ordered public reads
+     * are the Specification-backed surfaces; see
+     * ProviderListingSpecifications#boostFirst).
      */
-    Page<ProviderListing> findByProviderIdAndStatus(UUID providerId, ListingStatus status,
-                                                    Pageable pageable);
-
-    Page<ProviderListing> findByCategoryAndStatus(String category, ListingStatus status, Pageable pageable);
-
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);
 
     /**
@@ -97,16 +93,36 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * input containing quotes, parentheses or a leading dash. Users also gain
      * the officially supported web-search operators: {@code "quoted phrase"},
      * {@code OR}, and {@code -exclusion}.
+     *
+     * <p><b>L37 (realestate systems plan §5 — the featured boost):</b> the baked
+     * ORDER BY gains the boost flag FIRST — "المعزّز أولًا داخل نفس الفرز
+     * الأساسي": boosted matches outrank organic ones, relevance ranks WITHIN
+     * each group (Q1 resolved by the plan's own uniform rule — the alternative,
+     * a relevance-multiplying auction, is the system the plan explicitly
+     * excludes). The flag is the TOTAL boolean
+     * {@code (promoted_until IS NOT NULL AND promoted_until > :now)} — never
+     * NULL (a false AND anything is false), so PostgreSQL's NULLS-FIRST-on-DESC
+     * trap cannot rank unboosted rows first, and an expired window evaluates
+     * false at query time (self-correcting — no cleanup job). {@code :now} is
+     * bound from the service's injected Clock (the expiry test's seam); it
+     * rides the CONTENT query only — the count query never references it,
+     * which Spring Data's count binding officially tolerates (LENIENT error
+     * handling silently skips a named parameter absent from the count string —
+     * measured in the 4.1.1 sources). The id tiebreak is appended (the L32
+     * total-order rule — equal {@code ts_rank} values must not wobble across
+     * pages; this closes the latent gap where the unrestricted text path
+     * ordered by rank alone).
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
-            ORDER BY ts_rank(
-                to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                websearch_to_tsquery('simple', :query)
-            ) DESC
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                ts_rank(
+                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('simple', :query)
+                ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -115,7 +131,9 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                           @@ websearch_to_tsquery('simple', :query)
                     """,
             nativeQuery = true)
-    Page<ProviderListing> searchFullText(@Param("query") String query, Pageable pageable);
+    Page<ProviderListing> searchFullText(@Param("query") String query,
+                                         @Param("now") java.time.Instant now,
+                                         Pageable pageable);
 
     /**
      * Typo-tolerant fallback search using the official pg_trgm extension
@@ -135,7 +153,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
-            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -143,7 +162,9 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                       AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
                     """,
             nativeQuery = true)
-    Page<ProviderListing> searchSimilar(@Param("query") String query, Pageable pageable);
+    Page<ProviderListing> searchSimilar(@Param("query") String query,
+                                        @Param("now") java.time.Instant now,
+                                        Pageable pageable);
 
     @Query(value = """
             SELECT * FROM provider_listings
@@ -153,7 +174,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -169,6 +190,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                            @Param("minPrice") Long minPrice,
                                            @Param("maxPrice") Long maxPrice,
                                            @Param("guests") Integer guests,
+                                           @Param("now") java.time.Instant now,
                                            Pageable pageable);
 
     // L27 (feature-expansion roadmap §5) — window-restricted variants. The
@@ -189,7 +211,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -207,6 +229,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                                      @Param("maxPrice") Long maxPrice,
                                                      @Param("guests") Integer guests,
                                                      @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                     @Param("now") java.time.Instant now,
                                                      Pageable pageable);
 
     @Query(value = """
@@ -215,10 +238,11 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND provider_id IN (:providerIds)
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
-            ORDER BY ts_rank(
-                to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                websearch_to_tsquery('simple', :query)
-            ) DESC, id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                ts_rank(
+                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('simple', :query)
+                ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -230,6 +254,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             nativeQuery = true)
     Page<ProviderListing> searchFullTextRestricted(@Param("query") String query,
                                                    @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                   @Param("now") java.time.Instant now,
                                                    Pageable pageable);
 
     /**
@@ -241,7 +266,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND provider_id IN (:providerIds)
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
-            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -252,6 +278,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             nativeQuery = true)
     Page<ProviderListing> searchSimilarRestricted(@Param("query") String query,
                                                   @Param("providerIds") java.util.Collection<UUID> providerIds,
+                                                  @Param("now") java.time.Instant now,
                                                   Pageable pageable);
 
     // L32 (realestate systems plan §5) — listing-id-restricted variants (the
@@ -267,10 +294,11 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND id IN (:listingIds)
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
-            ORDER BY ts_rank(
-                to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                websearch_to_tsquery('simple', :query)
-            ) DESC, id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                ts_rank(
+                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('simple', :query)
+                ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -282,6 +310,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             nativeQuery = true)
     Page<ProviderListing> searchFullTextRestrictedToListings(@Param("query") String query,
                                                              @Param("listingIds") Collection<UUID> listingIds,
+                                                             @Param("now") java.time.Instant now,
                                                              Pageable pageable);
 
     /**
@@ -293,7 +322,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND id IN (:listingIds)
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
-            ORDER BY word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
+            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+                word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
@@ -304,5 +334,6 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             nativeQuery = true)
     Page<ProviderListing> searchSimilarRestrictedToListings(@Param("query") String query,
                                                             @Param("listingIds") Collection<UUID> listingIds,
+                                                            @Param("now") java.time.Instant now,
                                                             Pageable pageable);
 }
