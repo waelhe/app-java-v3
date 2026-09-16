@@ -275,4 +275,35 @@ class CatalogServiceSecurityTest {
 
         assertThat(result.getStatus()).isEqualTo(ListingStatus.ARCHIVED);
     }
+
+    /**
+     * L37: the boost shading point is ADMIN-only — a PROVIDER token (the
+     * role that owns every other listing write) is denied: the boost is a
+     * marketplace-wide visibility decision, not a listing owner's
+     * self-service (that purchase point sits behind the plan's G-R3 gate).
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER", username = "provider")
+    void setListingPromotion_whenProvider_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
+                () -> catalogService.setListingPromotion(UUID.randomUUID(), java.time.Instant.now().plusSeconds(3600)));
+    }
+
+    /**
+     * L37: an ADMIN token passes the gate and the shading lands (no
+     * ownership concept exists for the boost — the admin bypasses nothing,
+     * there is simply no ownership to verify).
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void setListingPromotion_whenAdmin_thenInvokes() {
+        ProviderListing stored = ProviderListing.create(
+                UUID.randomUUID(), "Villa", "sea view", "APARTMENT", 1000L);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        java.time.Instant until = java.time.Instant.now().plus(java.time.Duration.ofDays(7));
+
+        var result = catalogService.setListingPromotion(stored.getId(), until);
+
+        assertThat(result.promotedUntil()).isEqualTo(until);
+    }
 }

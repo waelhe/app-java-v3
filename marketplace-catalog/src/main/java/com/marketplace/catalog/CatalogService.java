@@ -79,7 +79,13 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "catalog-active-v2", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> listActive(Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.findByStatus(ListingStatus.ACTIVE, pageable);
+        // L37: the derived query rides the official Specifications path now —
+        // boost-first + the L32 total order (see findBoostFirst). The cache
+        // key keeps the ARGUMENT pageable's shape (page/size/sort), so the
+        // key space is unchanged; entries filled before the L37 deploy
+        // (arbitrary pre-L37 order) age out within the 1h TTL.
+        Page<ProviderListing> page = findBoostFirst(
+                ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE), pageable);
         return toSummaryPage(page);
     }
 
@@ -87,7 +93,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.findByCategoryAndStatus(category, ListingStatus.ACTIVE, pageable);
+        Page<ProviderListing> page = findBoostFirst(
+                ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)
+                        .and(ProviderListingSpecifications.hasCategory(category)), pageable);
         return toSummaryPage(page);
     }
 
@@ -97,31 +105,37 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // profile surface ("Browse one provider's active listings") — the
         // status filter is the documented contract, and it also guards the
         // L31 property embed from ever carrying non-ACTIVE listings' data.
-        return listingRepository.findByProviderIdAndStatus(
-                providerId, ListingStatus.ACTIVE, pageable);
+        // L37: the same boost-first read as every ordered public surface
+        // (the provider page's own listings reorder under the same rule).
+        return findBoostFirst(
+                ProviderListingSpecifications.hasProviderId(providerId)
+                        .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),
+                pageable);
     }
 
     /**
      * L36 (realestate systems plan §5): the shared-api port form of the
      * same public read — the provider module's public page composes its
-     * listings block through this method. Same repository query, same
+     * listings block through this method. Same repository predicates, same
      * ACTIVE-only documented contract as the REST surface; the summaries
      * mapping is the port's contract (the property embed stays a REST-side
      * concern of the catalog controller). Uncached like the REST path —
      * the profile block rides the provider module's own "providers" cache.
      *
-     * <p>CodeRabbit PR #318 round 1 (adopted): the derived query carries no
-     * OrderBy, so an unsorted {@link Pageable} would paginate
-     * non-deterministically (offset pagination can duplicate or omit rows
-     * across pages) — the effective pageable goes through
-     * {@link #deterministic(Pageable)} (the L32 total-order rule: requested
-     * sort with the id ASC tiebreak, unsorted defaults to id ASC).
+     * <p>CodeRabbit PR #318 round 1 (adopted): an unsorted {@link Pageable}
+     * would paginate non-deterministically (offset pagination can
+     * duplicate or omit rows across pages) — the L32 total-order rule
+     * (requested sort with the id ASC tiebreak, unsorted defaults to id
+     * ASC) now rides the L37 boost-first ordering specification (one
+     * discipline for every ordered public read — see findBoostFirst).
      */
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable) {
-        return toSummaryPage(listingRepository.findByProviderIdAndStatus(
-                providerUserId, ListingStatus.ACTIVE, deterministic(pageable)));
+        return toSummaryPage(findBoostFirst(
+                ProviderListingSpecifications.hasProviderId(providerUserId)
+                        .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),
+                pageable));
     }
 
     @Transactional(readOnly = true)
@@ -134,7 +148,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "catalog-search-v2", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.searchFullText(query, pageable);
+        // L37: one read, one "now" — the FTS page and its typo-tolerance
+        // fallback share the same instant, so the boost state cannot
+        // straddle a window boundary between them.
+        java.time.Instant now = clock.instant();
+        Page<ProviderListing> page = listingRepository.searchFullText(query, now, pageable);
         if (page.isEmpty()) {
             // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
             // stem match — retry with word-similarity so a one-edit typo
@@ -142,7 +160,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
             // An implementation detail of the catalog's search: the port
             // contract, the search module and every caller are unchanged.
             // Cached as the final result of this query either way.
-            page = listingRepository.searchSimilar(query, pageable);
+            page = listingRepository.searchSimilar(query, now, pageable);
         }
         return toSummaryPage(page);
     }
@@ -153,7 +171,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteria(
-                criteria.category(), minPrice, maxPrice, criteria.guests(), pageable);
+                criteria.category(), minPrice, maxPrice, criteria.guests(), clock.instant(), pageable);
         return toSummaryPage(page);
     }
 
@@ -174,7 +192,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
-                criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, pageable);
+                criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, clock.instant(), pageable);
         return toSummaryPage(page);
     }
 
@@ -196,9 +214,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, pageable);
+        java.time.Instant now = clock.instant();
+        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, now, pageable);
         if (page.getTotalElements() == 0) {
-            page = listingRepository.searchSimilarRestricted(query, providerIds, pageable);
+            page = listingRepository.searchSimilarRestricted(query, providerIds, now, pageable);
         }
         return toSummaryPage(page);
     }
@@ -282,24 +301,28 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * whitelist mapped by the search surface) with the id tiebreak — and
      * the UNSORTED default is {@code id ASC}, byte-identical to the native
      * criteria path's ORDER BY id.
+     *
+     * <p>L37: the boost-first ordering composes into the CONTENT
+     * specification while the count specification keeps the predicates
+     * verbatim — the two-specification {@code findAll(spec, countSpec,
+     * pageable)} overload (see findBoostFirst; the plan's criterion 2 is
+     * structural: the count query is byte-identical to the pre-L37 one).
      */
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
                                                                      Set<UUID> listingIds,
                                                                      Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.findAll(
-                criteriaSpecification(criteria).and(
-                        ProviderListingSpecifications.hasListingIdIn(listingIds)),
-                deterministic(pageable));
+        var predicates = criteriaSpecification(criteria)
+                .and(ProviderListingSpecifications.hasListingIdIn(listingIds));
+        Page<ProviderListing> page = findBoostFirst(predicates, pageable);
         return toSummaryPage(page);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.findAll(
-                criteriaSpecification(criteria), deterministic(pageable));
+        Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria), pageable);
         return toSummaryPage(page);
     }
 
@@ -322,9 +345,10 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable) {
-        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, pageable);
+        java.time.Instant now = clock.instant();
+        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, now, pageable);
         if (page.getTotalElements() == 0) {
-            page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, pageable);
+            page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, now, pageable);
         }
         return toSummaryPage(page);
     }
@@ -381,17 +405,54 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     /**
-     * L32: the deterministic effective sort — the requested sort (the
-     * price/newest whitelist, already mapped by the search surface) with
-     * the id ASC tiebreak; unsorted requests default to id ASC
-     * (byte-identical to the native criteria path's ORDER BY id — offset
-     * pagination requires a total order, "no deceptive pages").
+     * L37 (realestate systems plan §5 — the featured boost): the one
+     * boost-first read for every Specification-backed ordered surface —
+     * the official two-specification overload
+     * {@code JpaSpecificationExecutor.findAll(spec, countSpec, pageable)}
+     * (since 3.5):
+     *
+     * <ul>
+     *   <li><b>spec</b> — the predicates composed with
+     *       {@link ProviderListingSpecifications#boostFirst(Sort, Instant)}
+     *       LAST (the composition order guarantees its ordering wins), so
+     *       the content query orders
+     *       {@code boost DESC, effective sort, id ASC} and carries the
+     *       predicates;</li>
+     *   <li><b>countSpec</b> — the predicates VERBATIM. Measured necessity:
+     *       the same {@code toPredicate} also runs for the count query, and
+     *       PostgreSQL rejects an aggregate whose ORDER BY references a
+     *       non-grouped column — so the ordering must stay out of the count
+     *       spec (this is exactly what the second specification parameter
+     *       exists for);</li>
+     *   <li><b>pageable</b> — UNSORTED (page/size only): a sorted Pageable
+     *       would REPLACE the specification's order
+     *       ({@code SimpleJpaRepository.getQuery} applies
+     *       {@code if (sort.isSorted()) query.orderBy(toOrders(...))} AFTER
+     *       the specification — the JPA {@code orderBy} contract replaces).
+     *       The requested sort rides the boost specification instead, via
+     *       the framework's own {@code QueryUtils.toOrders}.</li>
+     * </ul>
+     *
+     * <p>The cache staleness bound: the caller's {@code @Cacheable} pages
+     * reflect the boost state at fill time — an admin shading evicts
+     * through the standard {@code CacheInvalidationRequested} relay (the
+     * mutation contract), and a pure window EXPIRY ages out within the 1h
+     * TTL (the same bounded staleness the L33 expiry job's half-hour ticks
+     * already document for paused listings).
      */
-    private static Pageable deterministic(Pageable pageable) {
-        Sort effective = pageable.getSort().isUnsorted()
-                ? Sort.by(Sort.Direction.ASC, "id")
-                : pageable.getSort().and(Sort.by(Sort.Direction.ASC, "id"));
-        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), effective);
+    private Page<ProviderListing> findBoostFirst(Specification<ProviderListing> predicates, Pageable pageable) {
+        java.time.Instant now = clock.instant();
+        return listingRepository.findAll(
+                predicates.and(ProviderListingSpecifications.boostFirst(pageable.getSort(), now)),
+                predicates,
+                unsorted(pageable));
+    }
+
+    /** The page/size of the request, without its sort (see findBoostFirst). */
+    private static Pageable unsorted(Pageable pageable) {
+        return pageable.isPaged()
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
+                : Pageable.unpaged();
     }
 
     /** The min/max price mapping shared by the criteria paths. */
@@ -614,6 +675,54 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         listing.archive();
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
+    }
+
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the
+     * administrative shading point — "ADMIN يظلّل لب until". Sets the
+     * listing's boost window (or CLEARS it with a null {@code until} — an
+     * admin correcting a shading is the documented exit; the request field
+     * is optional exactly like the L36 bio fields' PUT contract).
+     *
+     * <p><b>Validation:</b> a non-null window must be strictly future at
+     * the INJECTED clock (the activate/renew boundary rule verbatim — a
+     * past window would be a silent no-op ordering). One seam, one clock:
+     * deliberately no bean-validation {@code @Future} at the controller —
+     * it would validate against the JVM clock while the service validates
+     * against the injected one, and the two can legitimately diverge in
+     * clock-injection tests (the L38 single-source lesson).
+     *
+     * <p><b>Why no status gate:</b> the boost reorders ACTIVE result sets
+     * only (the ordering criterion composes with the status predicates —
+     * it never touches WHERE), so shading a DRAFT/PAUSED/ARCHIVED listing
+     * is a dormant window, not an error; the status machine stays
+     * untouched (D-R7). Activation does not clear the window and pause
+     * does not interact with it — the window is a plain timestamp, not
+     * lifecycle state.
+     *
+     * <p><b>The audit trail (the plan's criterion 4):</b> the shading is
+     * an @Audited entity UPDATE — the Envers revision (with the
+     * {@code updated_by} attribution from the security context) IS the
+     * record; the admin revisions surface reads it directly. The response
+     * carries the resulting state (a cleared boost reports {@code null}).
+     *
+     * <p><b>Cache:</b> every ordering-bearing page evicts through the
+     * standard relay — the boost reorders cached pages, so the shading
+     * mutation is a cache invalidation event exactly like every other
+     * listing write.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public com.marketplace.shared.api.ListingPromotion setListingPromotion(
+            UUID id, java.time.Instant until) {
+        ProviderListing listing = getById(id);
+        java.time.Instant now = clock.instant();
+        if (until != null && !until.isAfter(now)) {
+            throw new BadRequestException("promotedUntil must be strictly in the future");
+        }
+        listing.promoteUntil(until);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
+        return new com.marketplace.shared.api.ListingPromotion(listing.getId(), listing.getPromotedUntil());
     }
 
     /**

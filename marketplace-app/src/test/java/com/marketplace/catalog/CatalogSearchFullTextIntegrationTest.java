@@ -221,7 +221,7 @@ class CatalogSearchFullTextIntegrationTest {
         // Same-stem words tie (identical trigram overlap) so order is not
         // asserted; the SQL orders by similarity DESC which is the correct
         // semantics either way.
-        Page<ProviderListing> page = listingRepository.searchSimilar("gardn", Pageable.ofSize(10));
+        Page<ProviderListing> page = listingRepository.searchSimilar("gardn", java.time.Instant.now(), Pageable.ofSize(10));
         assertThat(page.map(ProviderListing::getTitle))
                 .containsExactlyInAnyOrder("Garden View", "Cozy House");
     }
