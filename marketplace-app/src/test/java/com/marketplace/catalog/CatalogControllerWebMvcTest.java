@@ -59,6 +59,13 @@ class CatalogControllerWebMvcTest {
     @MockitoBean
     private ListingSeoService listingSeoService;
 
+    // L40: the public read point's view counter (Redis + the views
+    // service at runtime; the slice mocks the contract — Mockito's
+    // default for the void method is a no-op, so the existing reads
+    // keep passing unchanged).
+    @MockitoBean
+    private ListingViewCounter listingViewCounter;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
@@ -205,6 +212,48 @@ class CatalogControllerWebMvcTest {
 
         mockMvc.perform(get("/api/v1/listings/{id}", id))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * L40: a successful public detail read counts one view — the counter
+     * receives the listing id and the REQUEST's remote address (the
+     * fingerprint input the web layer owns). The dedup arithmetic itself
+     * is the counter's unit test's; the real chain is the integration
+     * test's.
+     */
+    @Test
+    void getById_recordsOneViewWithTheRequestRemoteAddress() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(catalogService.getActiveById(id)).thenReturn(mockView(id));
+        when(listingMapper.toResponse(any(com.marketplace.shared.api.ProviderListingView.class)))
+                .thenReturn(mockResponse(id));
+
+        mockMvc.perform(get("/api/v1/listings/{id}", id)
+                        .with(request -> {
+                            request.setRemoteAddr("203.0.113.7");
+                            return request;
+                        }))
+                .andExpect(status().isOk());
+
+        verify(listingViewCounter).recordView(id, "203.0.113.7");
+    }
+
+    /**
+     * L40: a 404 read never counts — the visitor did not see a listing
+     * (the plan's "من نقطة القراءة العامة للوحة": the counting follows the
+     * successful resolution, and getActiveById throws before the counter
+     * is reached).
+     */
+    @Test
+    void getById_unknownListing_neverCounts() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(catalogService.getActiveById(id))
+                .thenThrow(new com.marketplace.shared.api.ResourceNotFoundException("Listing", id));
+
+        mockMvc.perform(get("/api/v1/listings/{id}", id))
+                .andExpect(status().isNotFound());
+
+        verify(listingViewCounter, org.mockito.Mockito.never()).recordView(any(), any());
     }
 
     /**

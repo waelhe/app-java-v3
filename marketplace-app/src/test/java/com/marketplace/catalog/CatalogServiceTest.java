@@ -55,7 +55,8 @@ class CatalogServiceTest {
         @org.springframework.context.annotation.Bean
         CatalogProperties catalogProperties() {
             return new CatalogProperties(new CatalogProperties.Expiry(90, 1),
-                    new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()));
+                    new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
+                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
         }
     }
 

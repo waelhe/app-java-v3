@@ -216,7 +216,8 @@ class SitemapServiceTest {
 
     private static CatalogProperties properties(String base, String listingPath, List<String> disallow) {
         return new CatalogProperties(null,
-                new CatalogProperties.Seo(base, listingPath, disallow));
+                new CatalogProperties.Seo(base, listingPath, disallow),
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
     }
 
     private static void assertValidAgainstXsd(String xml, String xsdPath) throws Exception {
