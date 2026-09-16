@@ -119,6 +119,17 @@ spring:
   # nothing (CodeRabbit #241).
   web:
     locale: en
+  # i18n determinism (official Spring Boot reference — Internationalization):
+  # spring.messages.fallback-to-system-locale defaults to true, so a JVM whose
+  # Locale.getDefault() is not en (e.g. an ar_EG OS) still pulls the system
+  # locale into ResourceBundle candidate resolution and silently resolves the
+  # Arabic bundle even for Locale.ENGLISH requests. The JDK ResourceBundle
+  # spec combines the requested locale AND Locale.getDefault() into the
+  # candidate chain; pinning the fallback off keeps the byte-identical English
+  # floor above authoritative on any machine (CI stays green, this dev box no
+  # longer needs -Duser.language=en to reproduce CI).
+  messages:
+    fallback-to-system-locale: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}

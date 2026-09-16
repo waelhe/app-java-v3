@@ -50,6 +50,12 @@ class GlobalExceptionHandlerI18nTest {
         var source = new ResourceBundleMessageSource();
         source.setBasename("messages");
         source.setDefaultEncoding("UTF-8");
+        // same floor as application.yml spring.messages.fallback-to-system-locale=false
+        // (official Spring Boot reference — Internationalization): without it a JVM
+        // whose Locale.getDefault() is ar_EG lets the JDK ResourceBundle resolve the
+        // Arabic bundle even for Locale.ENGLISH, so the pre-B4 English literal is no
+        // longer byte-identical on non-English dev machines.
+        source.setFallbackToSystemLocale(false);
         return source;
     }
 

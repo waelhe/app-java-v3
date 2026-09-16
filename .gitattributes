@@ -1,0 +1,4 @@
+# Workflow files are line-ending sensitive (ProductionWatchdogFilesTest pins
+# exact "permissions:" column-0 + repo-relative reads). Force LF on checkout
+# regardless of core.autocrlf so tests read what CI reads.
+.github/workflows/*.yml text eol=lf
