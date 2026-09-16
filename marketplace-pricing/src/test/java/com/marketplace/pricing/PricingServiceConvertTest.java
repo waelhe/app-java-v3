@@ -11,6 +11,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class PricingServiceConvertTest {
 
@@ -40,22 +41,9 @@ class PricingServiceConvertTest {
     void boundChannel_delegatesToThePort() {
         var port = new StaticRatesCurrencyExchange(new CurrencyExchangeProperties(
                 "SAR", Map.of("USD", new BigDecimal("3.75"))));
-        ObjectProvider<CurrencyExchangePort> provider = new ObjectProvider<>() {
-            @Override
-            public CurrencyExchangePort getObject() {
-                return port;
-            }
-
-            @Override
-            public CurrencyExchangePort getIfAvailable() {
-                return port;
-            }
-
-            @Override
-            public CurrencyExchangePort getIfUnique() {
-                return port;
-            }
-        };
+        @SuppressWarnings("unchecked")
+        ObjectProvider<CurrencyExchangePort> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(port);
         var service = new PricingService(null, null, provider);
 
         var quote = service.convert(10_000L, "sar", "usd");
