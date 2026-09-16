@@ -129,12 +129,28 @@ public class SecurityConfig {
     SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http,
                                                           CorrelationIdFilter correlationIdFilter) throws Exception {
         http
-                .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**")
+                .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**",
+                        "/sitemap.xml", "/robots.txt")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // L39 (realestate systems plan §5 — SEO): the two
+                        // crawler surfaces at the root paths the standards
+                        // fix (robots.txt "MUST be located … in the top-level
+                        // path" — RFC 9309; the sitemap's universal
+                        // /sitemap.xml convention). GET-only precise lines on
+                        // THIS stateless chain — the L34/L36 public-read
+                        // precedent: without the matcher entries above, the
+                        // root paths would fall to the form-login default
+                        // chain and answer a 302 redirect instead of the
+                        // document (the anti-pattern a crawler must never
+                        // meet). The documents themselves carry no
+                        // authenticated subject — crawlers are anonymous by
+                        // design, and the sitemap's own rate limiter bounds
+                        // the crawl cost.
+                        .requestMatchers(HttpMethod.GET, "/sitemap.xml", "/robots.txt").permitAll()
                         // L38 (realestate systems plan §5 — completeness
                         // score): the score is the PROVIDER'S OWN read under
                         // ownership — carved out from the blanket public

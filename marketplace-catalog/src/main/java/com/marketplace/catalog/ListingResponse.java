@@ -13,6 +13,14 @@ import java.util.UUID;
  * implements, catalog consumes — an application association in the
  * aggregation, never JPA across module boundaries). The field is additive
  * and null for every listing without property details.
+ *
+ * <p>L39 (realestate systems plan §5 — SEO and structured data): gains
+ * the optional {@code jsonLd} block — the schema.org
+ * {@code RealEstateListing} structured data composed on the PUBLIC
+ * DETAIL read only (the page a search engine verifies is the detail
+ * page; list surfaces never carry per-item JSON-LD). The field is
+ * additive and null for every listing without a property block (a
+ * service listing is not a RealEstateListing).
  */
 public record ListingResponse(
         UUID id,
@@ -26,14 +34,15 @@ public record ListingResponse(
         Instant updatedAt,
         PropertyDetailsPort.PropertyView property,
         Instant expiresAt,
-        String pausedReason
+        String pausedReason,
+        RealEstateListingJsonLd jsonLd
 ) {
     /** The pre-L31 nine-component form — every existing construction site. */
     public ListingResponse(UUID id, String title, String description, String category,
                            BigDecimal price, String currency, Integer maxGuests,
                            Instant createdAt, Instant updatedAt) {
         this(id, title, description, category, price, currency, maxGuests,
-                createdAt, updatedAt, null, null, null);
+                createdAt, updatedAt, null, null, null, null);
     }
 
     /** The L31 form (property embed) — the L32-era construction sites. */
@@ -42,12 +51,28 @@ public record ListingResponse(
                            Instant createdAt, Instant updatedAt,
                            PropertyDetailsPort.PropertyView property) {
         this(id, title, description, category, price, currency, maxGuests,
-                createdAt, updatedAt, property, null, null);
+                createdAt, updatedAt, property, null, null, null);
+    }
+
+    /** The L33 form (property embed + expiry window) — the L34-era sites. */
+    public ListingResponse(UUID id, String title, String description, String category,
+                           BigDecimal price, String currency, Integer maxGuests,
+                           Instant createdAt, Instant updatedAt,
+                           PropertyDetailsPort.PropertyView property,
+                           Instant expiresAt, String pausedReason) {
+        this(id, title, description, category, price, currency, maxGuests,
+                createdAt, updatedAt, property, expiresAt, pausedReason, null);
     }
 
     /** The embed — the wither of the L31 block. */
     public ListingResponse withProperty(PropertyDetailsPort.PropertyView propertyView) {
         return new ListingResponse(id, title, description, category, price, currency,
-                maxGuests, createdAt, updatedAt, propertyView, expiresAt, pausedReason);
+                maxGuests, createdAt, updatedAt, propertyView, expiresAt, pausedReason, jsonLd);
+    }
+
+    /** The structured-data wither of the L39 block (the detail read's composition). */
+    public ListingResponse withJsonLd(RealEstateListingJsonLd block) {
+        return new ListingResponse(id, title, description, category, price, currency,
+                maxGuests, createdAt, updatedAt, property, expiresAt, pausedReason, block);
     }
 }

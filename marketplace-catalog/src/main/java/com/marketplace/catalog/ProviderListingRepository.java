@@ -48,6 +48,41 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Set<UUID> findIdsByStatus(ListingStatus status);
 
     /**
+     * L39 (realestate systems plan §5 — SEO): the sitemap page — the
+     * clean ACTIVE set's id + updated_at projection (exactly the two
+     * facts a sitemaps.org {@code <url>} entry carries; a 50,000-URL
+     * page must never load full entities). The expiry term is
+     * deliberately stricter than the L33 job's window
+     * ({@code findByStatusAndExpiresAtBefore}): a listing whose window
+     * has already passed — still ACTIVE in status between the job's
+     * half-hour ticks — is never advertised, because its page is about
+     * to answer 404. Soft-deleted rows are excluded structurally by the
+     * entity's {@code @SoftDelete}. Deterministic id order (the L32
+     * total-order rule) comes from the service's Pageable.
+     */
+    @Query("""
+            select new com.marketplace.catalog.SitemapEntry(l.id, l.updatedAt)
+            from ProviderListing l
+            where l.status = ?1 and (l.expiresAt is null or l.expiresAt > ?2)
+            """)
+    Page<SitemapEntry> findSitemapEntries(ListingStatus status,
+                                          java.time.Instant now,
+                                          Pageable pageable);
+
+    /**
+     * L39: the count-only twin of {@link #findSitemapEntries} — the
+     * root request's page-count decision (urlset vs sitemap index) rides
+     * this, never a row fetch (CodeRabbit round 1: a multi-page root must
+     * not materialize a 50,000-row page only to discard it). Same clean
+     * ACTIVE predicate, same soft-delete structural exclusion.
+     */
+    @Query("""
+            select count(l) from ProviderListing l
+            where l.status = ?1 and (l.expiresAt is null or l.expiresAt > ?2)
+            """)
+    long countSitemapEntries(ListingStatus status, java.time.Instant now);
+
+    /**
      * Full-text search using PostgreSQL tsvector with GIN index.
      * Searches title and description columns.
      * Matches the GIN index defined in V9__search_index.sql.
