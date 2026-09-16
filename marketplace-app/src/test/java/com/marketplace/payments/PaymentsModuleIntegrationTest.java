@@ -33,6 +33,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentsModuleIntegrationTest {
 
     /**
+     * Single source for the throwaway webhook secret: the channel bean
+     * below and the test-side signer must use the same value, or the
+     * SDK reports "No signatures found matching the expected signature".
+     */
+    private static final String TEST_WEBHOOK_SECRET = "whsec_test_webhook_secret";
+
+    /**
      * Binds a REAL StripePspChannel with throwaway test credentials so the
      * verified-webhook path (signature verification + event parsing) runs
      * through the production code — the sync path makes no network calls.
@@ -42,7 +49,7 @@ class PaymentsModuleIntegrationTest {
     static class RealChannelConfig {
         @Bean
         PspChannel testStripeChannel() {
-            return new StripePspChannel("sk_test_inert", "whsec_test_webhook_secret");
+            return new StripePspChannel("sk_test_inert", TEST_WEBHOOK_SECRET);
         }
     }
 
@@ -206,7 +213,7 @@ class PaymentsModuleIntegrationTest {
             long timestamp = Instant.now().getEpochSecond();
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(
-                    "whsec_test_webhook_secret".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                    TEST_WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] digest = mac.doFinal((timestamp + "." + payload).getBytes(StandardCharsets.UTF_8));
             return "t=" + timestamp + ",v1=" + HexFormat.of().formatHex(digest);
         } catch (Exception e) {
