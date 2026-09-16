@@ -10,7 +10,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -25,8 +24,6 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,9 +90,6 @@ class ListingViewsDedupTtlIntegrationTest {
     @Autowired
     private CatalogProperties catalogProperties;
 
-    @MockitoBean
-    private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
-
     private static final UUID OWNER_USER_ID = UUID.randomUUID();
     private static final UUID LISTING_ID = UUID.randomUUID();
     private static final String VISITOR_IP = "203.0.113.7";
@@ -143,8 +137,6 @@ class ListingViewsDedupTtlIntegrationTest {
 
     @Test
     void markerExpiresAndTheVisitorCountsAgain_noPermanentIdentifierStored() throws Exception {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
-
         // 1) inside the window: the marker exists, dedup answers "counted"
         readAs(VISITOR_IP);
         readAs(VISITOR_IP);

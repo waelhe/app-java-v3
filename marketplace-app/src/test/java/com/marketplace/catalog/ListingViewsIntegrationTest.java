@@ -33,12 +33,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * L40 (realestate systems plan §5 — view analytics): the full chain on the
- * REAL modules — the public detail read (MockMvc → the real controller →
+ * L40 (realestate systems plan §5 — view analytics): the COUNTING chain on
+ * the REAL modules, at the HTTP level — MockMvc → the real controller →
  * the real counter → the real Redis SETNX → the real locked +1 → the real
- * Envers revisions) and the provider's windowed totals (the real
- * {@code ListingViewsStatsAdapter} join). Only the principal resolution is
- * the mocked seam (the L20/L25 integration precedent).
+ * Envers revisions — plus the provider surface's real JSON line through
+ * the real resource-server filter chain. This class is HTTP-only BY
+ * DESIGN (the CI-measured lesson of this PR's first round): mixing MockMvc
+ * request flows with service-level {@code @WithMockUser} calls in one
+ * class breaks the service calls — the MockMvc security chain clears the
+ * thread's SecurityContext after each request, so a later service call
+ * finds no Authentication. The window arithmetic over seeded buckets
+ * lives in {@code ListingViewsWindowIntegrationTest} (the
+ * ProviderStatsIntegrationTest pattern); this class carries the counting
+ * and the HTTP seams.
  *
  * <p>Boot pattern follows {@code CacheRedisTtlIntegrationTest}: isolated
  * {@code postgis/postgis:18-3.6-alpine} (Flyway enabled, ddl-auto=none)
@@ -47,24 +54,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * codebase's first direct Redis consumer, so its integration guard needs
  * the real TTL semantics, not the cache abstraction's.
  *
- * <p>The plan's acceptance criteria, in order:
- * <ol>
- *   <li>three consecutive reads from one visitor in one day ⇒ counter 1
- *       (a second visitor ⇒ 2) — the dedup contract;</li>
- *   <li>the provider windows return correct numbers ACROSS date
- *       boundaries (seeded rows at today-0/1/7/8/30/31/90/91 — each
- *       window claims exactly its own days);</li>
- *   <li>the anonymous visitor leaves no permanent identifier: the dedup
- *       key is gone once the TTL lapses (this test overrides the window
- *       to 200ms — the property exists precisely for this criterion) and
- *       the only stored trace is the anonymous daily count.</li>
- * </ol>
- *
- * <p>Plus two house guards beyond the plan text: the Envers mirror is
- * LIVE (each ADD/MOD leaves a revision — the D-R8 "تجميعي يُدقَّق كالكيانات"
- * requirement, which is exactly why the increment is NOT a native
- * upsert), and soft-deleted buckets are excluded from the aggregate (the
- * Hibernate 7 {@code @SoftDelete} predicate on the JPQL join).
+ * <p>The plan's acceptance criteria covered here: criterion 1 (three
+ * consecutive reads from one visitor in one day ⇒ counter 1; a second
+ * visitor ⇒ 2 — the dedup contract, end-to-end through the endpoint) and
+ * the D-R8 house guard (the Envers mirror is LIVE: one ADD + one MOD per
+ * further +1 — the measured fact that forced the locked read-modify-write
+ * over the plan's literal native upsert).
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -99,16 +94,14 @@ class ListingViewsIntegrationTest {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
-    @Autowired
-    private com.marketplace.provider.ProviderListingViewsService viewsService;
-
-    // The provider surface is guarded by the REAL @authHelper.ownsProvider;
-    // only the principal resolution is the mocked seam (the L20 precedent).
+    // The provider HTTP surface resolves the principal through the real
+    // resource-server chain; only the CurrentUserProvider seam is mocked
+    // (the ListingCompletenessIntegrationTest pattern — the providerJwt()
+    // helper carries the role).
     @MockitoBean
     private com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     private static final UUID OWNER_USER_ID = UUID.randomUUID();
-    private static final UUID FOREIGN_USER_ID = UUID.randomUUID();
     private static final UUID LISTING_ID = UUID.randomUUID();
     private static final UUID OTHER_LISTING_ID = UUID.randomUUID();
 
@@ -121,18 +114,16 @@ class ListingViewsIntegrationTest {
         jdbcTemplate.update("DELETE FROM listing_views_daily");
         jdbcTemplate.update("DELETE FROM provider_listings WHERE id IN (?, ?)",
                 LISTING_ID, OTHER_LISTING_ID);
-        jdbcTemplate.update("DELETE FROM provider_profiles WHERE user_id IN (?, ?)",
-                OWNER_USER_ID, FOREIGN_USER_ID);
-        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?)", OWNER_USER_ID, FOREIGN_USER_ID);
+        jdbcTemplate.update("DELETE FROM provider_profiles WHERE user_id = ?", OWNER_USER_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", OWNER_USER_ID);
 
-        for (UUID userId : List.of(OWNER_USER_ID, FOREIGN_USER_ID)) {
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO users (id, subject, email, display_name, role)
-                    VALUES (?, ?, ?, ?, 'PROVIDER')
-                    """,
-                    userId, "l40-" + userId, "l40-" + userId + "@example.com", "L40 User " + userId);
-        }
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                """,
+                OWNER_USER_ID, "l40-" + OWNER_USER_ID, "l40-" + OWNER_USER_ID + "@example.com",
+                "L40 User " + OWNER_USER_ID);
         jdbcTemplate.update(
                 """
                 INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at, version, is_deleted)
@@ -140,8 +131,8 @@ class ListingViewsIntegrationTest {
                 """,
                 UUID.randomUUID(), OWNER_USER_ID);
 
-        // Both listings of the owner: the seeded-view listing and the
-        // deterministic-order tiebreak partner.
+        // Both listings of the owner: the counted listing and the
+        // httpLine partner.
         for (UUID listingId : List.of(LISTING_ID, OTHER_LISTING_ID)) {
             jdbcTemplate.update(
                     """
@@ -160,9 +151,8 @@ class ListingViewsIntegrationTest {
         jdbcTemplate.update("DELETE FROM listing_views_daily");
         jdbcTemplate.update("DELETE FROM provider_listings WHERE id IN (?, ?)",
                 LISTING_ID, OTHER_LISTING_ID);
-        jdbcTemplate.update("DELETE FROM provider_profiles WHERE user_id IN (?, ?)",
-                OWNER_USER_ID, FOREIGN_USER_ID);
-        jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?)", OWNER_USER_ID, FOREIGN_USER_ID);
+        jdbcTemplate.update("DELETE FROM provider_profiles WHERE user_id = ?", OWNER_USER_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", OWNER_USER_ID);
     }
 
     /**
@@ -174,19 +164,9 @@ class ListingViewsIntegrationTest {
     @Test
     void threeReadsFromOneVisitor_countOne_secondVisitorCountsTwo() throws Exception {
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/api/v1/listings/{id}", LISTING_ID)
-                            .with(request -> {
-                                request.setRemoteAddr("203.0.113.7");
-                                return request;
-                            }))
-                    .andExpect(status().isOk());
+            readAs("203.0.113.7");
         }
-        mockMvc.perform(get("/api/v1/listings/{id}", LISTING_ID)
-                        .with(request -> {
-                            request.setRemoteAddr("198.51.100.9");
-                            return request;
-                        }))
-                .andExpect(status().isOk());
+        readAs("198.51.100.9");
 
         Long counted = jdbcTemplate.queryForObject(
                 "SELECT view_count FROM listing_views_daily WHERE listing_id = ? AND view_date = ?",
@@ -197,129 +177,6 @@ class ListingViewsIntegrationTest {
         Integer buckets = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM listing_views_daily WHERE listing_id = ?", Integer.class, LISTING_ID);
         assertThat(buckets).isEqualTo(1);
-    }
-
-    /**
-     * Acceptance criterion 1's mirror at the provider surface: the
-     * provider's own 7-day window carries the deduplicated total (2), not
-     * the raw read count (4).
-     */
-    @Test
-    @org.springframework.security.test.context.support.WithMockUser
-    void providerWindow_carriesTheDeduplicatedTotal() throws Exception {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
-
-        for (int i = 0; i < 3; i++) {
-            readAs("203.0.113.7");
-        }
-        readAs("198.51.100.9");
-
-        var response = viewsService.getViews(OWNER_USER_ID, new com.marketplace.provider.ListingViewsWindow(7));
-
-        assertThat(response.days()).isEqualTo(7);
-        assertThat(response.sinceInclusive()).isEqualTo(TODAY.minusDays(6));
-        assertThat(response.listings()).hasSize(1);
-        assertThat(response.listings().get(0).listingId()).isEqualTo(LISTING_ID);
-        assertThat(response.listings().get(0).views()).isEqualTo(2L);
-        assertThat(response.listings().get(0).title()).isEqualTo("L40 Main Listing");
-    }
-
-    /**
-     * Acceptance criterion 2: windows correct across date boundaries. The
-     * seeded rows claim exact dates relative to TODAY (so the test is
-     * deterministic every day it runs) — each row sits ON a boundary or
-     * exactly one day past it:
-     * <pre>
-     *   today      : 5 views   — the still-accumulating bucket, in 7/30/90
-     *   today-6    : 3 views   — the 7-day window's INCLUSIVE first day
-     *   today-7    : 4 views   — one day past 7 (in 30/90)
-     *   today-29   : 6 views   — the 30-day window's INCLUSIVE first day
-     *   today-30   : 9 views   — one day past 30 (in 90)
-     *   today-89   : 2 views   — the 90-day window's INCLUSIVE first day
-     *   today-90   : 7 views   — one day past 90 (in NOTHING)
-     *   today-2, soft-deleted bucket: 7 views — in NOTHING (the @SoftDelete guard)
-     * </pre>
-     * Expected sums: 7-day = 5+3; 30-day = 5+3+4+6; 90-day = 5+3+4+6+9+2.
-     */
-    @Test
-    @org.springframework.security.test.context.support.WithMockUser
-    void windows_claimExactlyTheirOwnDays_acrossDateBoundaries() {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
-
-        seedBucket(LISTING_ID, TODAY, 5L);
-        seedBucket(LISTING_ID, TODAY.minusDays(6), 3L);
-        seedBucket(LISTING_ID, TODAY.minusDays(7), 4L);
-        seedBucket(LISTING_ID, TODAY.minusDays(29), 6L);
-        seedBucket(LISTING_ID, TODAY.minusDays(30), 9L);
-        seedBucket(LISTING_ID, TODAY.minusDays(89), 2L);
-        seedBucket(LISTING_ID, TODAY.minusDays(90), 7L);
-        seedSoftDeletedBucket(LISTING_ID, TODAY.minusDays(2), 7L);
-
-        assertThat(totalFor(7)).isEqualTo(5L + 3L);
-        assertThat(totalFor(30)).isEqualTo(5L + 3L + 4L + 6L);
-        assertThat(totalFor(90)).isEqualTo(5L + 3L + 4L + 6L + 9L + 2L);
-    }
-
-    /**
-     * The deterministic order (L32): equal totals break by listing id ASC.
-     */
-    @Test
-    @org.springframework.security.test.context.support.WithMockUser
-    void equalTotals_breakByListingIdAscending() {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
-
-        seedBucket(LISTING_ID, TODAY, 5L);
-        seedBucket(OTHER_LISTING_ID, TODAY, 5L);
-        seedBucket(OTHER_LISTING_ID, TODAY.minusDays(3), 1L);
-
-        var response = viewsService.getViews(OWNER_USER_ID, new com.marketplace.provider.ListingViewsWindow(7));
-
-        assertThat(response.listings()).hasSize(2);
-        // OTHER has 6 (5+1) > MAIN's 5 → OTHER first despite the name
-        assertThat(response.listings().get(0).listingId()).isEqualTo(OTHER_LISTING_ID);
-        assertThat(response.listings().get(0).views()).isEqualTo(6L);
-        assertThat(response.listings().get(1).listingId()).isEqualTo(LISTING_ID);
-        assertThat(response.listings().get(1).views()).isEqualTo(5L);
-    }
-
-    /**
-     * Another provider's views never leak into the caller's window — the
-     * ownership join rides provider_listings.provider_id (the users.id
-     * space, A1).
-     */
-    @Test
-    @org.springframework.security.test.context.support.WithMockUser
-    void foreignListings_neverLeakIntoTheCallerWindow() {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(FOREIGN_USER_ID);
-
-        // the OWNER's listing carries views; the FOREIGN caller owns an
-        // empty listing space
-        seedBucket(LISTING_ID, TODAY, 5L);
-
-        var response = viewsService.getViews(FOREIGN_USER_ID, new com.marketplace.provider.ListingViewsWindow(30));
-
-        assertThat(response.listings()).isEmpty();
-    }
-
-    /**
-     * The join's OTHER soft-delete side (the repository javadoc's promise):
-     * a soft-deleted LISTING carries no analytics — its views are views of
-     * a tombstone (the purge flow's own contract: the purged listing is
-     * not browsable, not searchable, and not an analytics row either).
-     */
-    @Test
-    @org.springframework.security.test.context.support.WithMockUser
-    void softDeletedListing_carriesNoAnalytics() {
-        when(currentUserProvider.getCurrentUserId(any())).thenReturn(OWNER_USER_ID);
-
-        jdbcTemplate.update("UPDATE provider_listings SET is_deleted = true WHERE id = ?", LISTING_ID);
-        seedBucket(LISTING_ID, TODAY, 5L);
-        seedBucket(OTHER_LISTING_ID, TODAY, 2L); // the live partner stays
-
-        var response = viewsService.getViews(OWNER_USER_ID, new com.marketplace.provider.ListingViewsWindow(30));
-
-        assertThat(response.listings()).hasSize(1);
-        assertThat(response.listings().get(0).listingId()).isEqualTo(OTHER_LISTING_ID);
     }
 
     /**
@@ -402,25 +259,11 @@ class ListingViewsIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    private long totalFor(int days) {
-        return viewsService.getViews(OWNER_USER_ID, new com.marketplace.provider.ListingViewsWindow(days))
-                .listings().stream().mapToLong(com.marketplace.shared.api.ListingViewStats::views).sum();
-    }
-
     private void seedBucket(UUID listingId, LocalDate viewDate, long views) {
         jdbcTemplate.update(
                 """
                 INSERT INTO listing_views_daily (id, listing_id, view_date, view_count, is_deleted, version, created_at, updated_at)
                 VALUES (?, ?, ?, ?, false, 0, now(), now())
-                """,
-                UUID.randomUUID(), listingId, java.sql.Date.valueOf(viewDate), views);
-    }
-
-    private void seedSoftDeletedBucket(UUID listingId, LocalDate viewDate, long views) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO listing_views_daily (id, listing_id, view_date, view_count, is_deleted, version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, true, 0, now(), now())
                 """,
                 UUID.randomUUID(), listingId, java.sql.Date.valueOf(viewDate), views);
     }

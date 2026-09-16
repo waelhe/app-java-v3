@@ -59,6 +59,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
+        // The measurement context lifts the catalog rate limiter (50/min
+        // in the base profile): a THROTTLED read measures permit-wait
+        // time, not work time — the D-E7 question is the marginal cost of
+        // the counting write per read, so the 260 measurement reads must
+        // never queue behind the limiter. Production keeps its own limit;
+        // the limiter's own guards live elsewhere (ResilienceAnnotationTest
+        // pins the annotation; the rate-limit behavior tests run their own
+        // contexts).
+        "resilience4j.ratelimiter.instances.catalog.limit-for-period=1000",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)

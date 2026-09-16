@@ -57,6 +57,13 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.CatalogSearchPort catalogSearchPort;
 
+    // L40: the listing-views analytics read — outside this module slice
+    // (catalog owns the daily buckets), same @MockitoBean convention as
+    // every cross-module port above (the L38 GeoLookupPort lesson: a port
+    // without a slice bean fails the whole context boot).
+    @MockitoBean
+    com.marketplace.shared.api.ListingViewsStatsPort listingViewsStatsPort;
+
     @Autowired
     private ProviderService providerService;
 
