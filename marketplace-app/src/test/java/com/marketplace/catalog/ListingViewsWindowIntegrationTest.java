@@ -76,8 +76,14 @@ class ListingViewsWindowIntegrationTest {
 
     private static final UUID OWNER_USER_ID = UUID.randomUUID();
     private static final UUID FOREIGN_USER_ID = UUID.randomUUID();
-    private static final UUID LISTING_ID = UUID.randomUUID();
-    private static final UUID OTHER_LISTING_ID = UUID.randomUUID();
+    // Deterministically ordered pair (CodeRabbit adoption on the moved
+    // test): identical prefix, differing only in the LAST byte — an id
+    // pair whose order PROVABLY agrees between PostgreSQL's uuid
+    // comparison (unsigned byte order, memcmp) and Java's UUID.compareTo
+    // (signed longs, which DISAGREES with PostgreSQL when the differing
+    // byte's high bit is set — a random pair flips on that coin).
+    private static final UUID LISTING_ID = UUID.fromString("10000000-0000-4000-8000-000000000001");
+    private static final UUID OTHER_LISTING_ID = UUID.fromString("10000000-0000-4000-8000-000000000002");
 
     private static final LocalDate TODAY = LocalDate.now(ZoneOffset.UTC);
 
@@ -193,7 +199,9 @@ class ListingViewsWindowIntegrationTest {
     }
 
     /**
-     * The deterministic order (L32): equal totals break by listing id ASC.
+     * The deterministic order (L32): EQUAL totals break by listing id
+     * ASC — the tiebreak itself, on a deterministically ordered id pair
+     * (LISTING_ID is constructed as the smaller of the two).
      */
     @Test
     @WithMockUser
@@ -202,15 +210,14 @@ class ListingViewsWindowIntegrationTest {
 
         seedBucket(LISTING_ID, TODAY, 5L);
         seedBucket(OTHER_LISTING_ID, TODAY, 5L);
-        seedBucket(OTHER_LISTING_ID, TODAY.minusDays(3), 1L);
 
         var response = viewsService.getViews(OWNER_USER_ID, new com.marketplace.provider.ListingViewsWindow(7));
 
         assertThat(response.listings()).hasSize(2);
-        // OTHER has 6 (5+1) > MAIN's 5 → OTHER first despite the name
-        assertThat(response.listings().get(0).listingId()).isEqualTo(OTHER_LISTING_ID);
-        assertThat(response.listings().get(0).views()).isEqualTo(6L);
-        assertThat(response.listings().get(1).listingId()).isEqualTo(LISTING_ID);
+        // equal totals (5 == 5) → the smaller listing id first
+        assertThat(response.listings().get(0).listingId()).isEqualTo(LISTING_ID);
+        assertThat(response.listings().get(0).views()).isEqualTo(5L);
+        assertThat(response.listings().get(1).listingId()).isEqualTo(OTHER_LISTING_ID);
         assertThat(response.listings().get(1).views()).isEqualTo(5L);
     }
 
