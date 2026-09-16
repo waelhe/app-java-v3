@@ -39,16 +39,23 @@ public class CatalogController {
     // module, so the controller stays the cycle-free composition point).
     private final MediaLookupPort mediaLookupPort;
 
+    // L39: the JSON-LD composition (the same leaf architecture — the
+    // geo tree port depends on nothing in this module; the cross-module
+    // reads ride the leaf, never the service layer).
+    private final ListingSeoService listingSeoService;
+
     public CatalogController(CatalogService catalogService,
                              CurrentUserProvider currentUserProvider,
                              ListingMapper listingMapper,
                              PropertyDetailsPort propertyDetailsPort,
-                             MediaLookupPort mediaLookupPort) {
+                             MediaLookupPort mediaLookupPort,
+                             ListingSeoService listingSeoService) {
         this.catalogService = catalogService;
         this.currentUserProvider = currentUserProvider;
         this.listingMapper = listingMapper;
         this.propertyDetailsPort = propertyDetailsPort;
         this.mediaLookupPort = mediaLookupPort;
+        this.listingSeoService = listingSeoService;
     }
 
     @GetMapping
@@ -89,10 +96,13 @@ public class CatalogController {
     @RateLimiter(name = "catalog")
     @Operation(summary = "Get one active listing", description = "The public listing detail — "
             + "INACTIVE/ARCHIVED listings answer 404 on this surface. L31: the real-estate "
-            + "property block is embedded when the listing has one.")
+            + "property block is embedded when the listing has one. L39: the schema.org "
+            + "RealEstateListing JSON-LD block is composed on this read when the property "
+            + "block exists — the structured data the frontend embeds for search-engine "
+            + "verification (url only when a public site origin is bound).")
     public ResponseEntity<ListingResponse> getById(@PathVariable UUID id) {
         ListingResponse response = listingMapper.toResponse(catalogService.getActiveById(id));
-        return ResponseEntity.ok(withProperty(response));
+        return ResponseEntity.ok(withJsonLd(withProperty(response)));
     }
 
     /**
@@ -101,6 +111,20 @@ public class CatalogController {
     private ListingResponse withProperty(ListingResponse response) {
         return propertyDetailsPort.findByListingId(response.id())
                 .map(response::withProperty)
+                .orElse(response);
+    }
+
+    /**
+     * L39: the structured-data block of one composed response — the
+     * leaf composition (the L38 architecture: this controller is the
+     * cycle-free point where the cross-module reads meet; the block
+     * itself only exists for real-estate listings with a property
+     * block, and its URL field only when the public site origin is
+     * bound).
+     */
+    private ListingResponse withJsonLd(ListingResponse response) {
+        return listingSeoService.jsonLdFor(response)
+                .map(response::withJsonLd)
                 .orElse(response);
     }
 

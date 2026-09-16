@@ -360,6 +360,17 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # L39 (realestate systems plan §5): the public sitemap crawl
+      # surface — a distinct named instance so a crawler's burst cannot
+      # exhaust the shared catalog/search read budget (the geoSuggest
+      # model: fail fast, 429 RL-001). robots.txt is deliberately NOT
+      # limited: it is a pure configuration emission with no data path,
+      # and crawlers refetch it by design before every session —
+      # throttling it would break the protocol's own etiquette.
+      seo:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
 
 app:
   commission:
@@ -378,6 +389,18 @@ marketplace:
     expiry:
       expiry-days: ${MARKETPLACE_CATALOG_EXPIRY_DAYS:90}
       renewal-cooldown-days: ${MARKETPLACE_CATALOG_RENEWAL_COOLDOWN_DAYS:1}
+    # L39 (realestate systems plan §5 — SEO): the public-site contract.
+    # Blank base URL by design — the same gate model as PSP/MAIL: the
+    # sitemap describes the PUBLIC SITE's pages and that origin belongs
+    # to the frontend deployment (client-hosting plan, gates B/C), so
+    # until it exists the sitemap capability stays OFF (503 SU-001, not
+    # broken), the JSON-LD block omits url, and robots.txt omits the
+    # Sitemap line — never a fabricated URL. One env variable turns it
+    # all on when the public origin exists.
+    seo:
+      public-site-base-url: ${MARKETPLACE_CATALOG_SEO_PUBLIC_SITE_BASE_URL:}
+      listing-path: ${MARKETPLACE_CATALOG_SEO_LISTING_PATH:/listings/{id}}
+      robots-disallow-paths: ${MARKETPLACE_CATALOG_SEO_ROBOTS_DISALLOW_PATHS:}
   # Currency exchange channel (roadmap B4 / gap G-PROD-4) — provider-optional
   # exactly like the PSP/MEDIA_S3/MAIL gates: when no rate is bound, no
   # exchange beans are created (StaticRatesConfiguredCondition) and

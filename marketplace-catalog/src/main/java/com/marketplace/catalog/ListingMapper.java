@@ -14,14 +14,22 @@ public interface ListingMapper {
      * embedded by the controller through {@code PropertyDetailsPort} after
      * the mapping (application association, never JPA). Both targets are
      * ignored so MapStruct never synthesizes a mapping for them.
+     *
+     * <p>L39: the {@code jsonLd} block follows the same rule — it is
+     * composed on the public detail read (the {@code ListingSeoService}
+     * leaf), never mapped from the entity.
      */
     @Mapping(target = "price", expression = "java(java.math.BigDecimal.valueOf(listing.getPriceCents(), 2))")
     @Mapping(target = "property", ignore = true)
     @Mapping(target = "withProperty", ignore = true)
+    @Mapping(target = "jsonLd", ignore = true)
+    @Mapping(target = "withJsonLd", ignore = true)
     ListingResponse toResponse(ProviderListing listing);
 
     @Mapping(target = "price", expression = "java(java.math.BigDecimal.valueOf(listing.priceCents(), 2))")
     @Mapping(target = "property", ignore = true)
     @Mapping(target = "withProperty", ignore = true)
+    @Mapping(target = "jsonLd", ignore = true)
+    @Mapping(target = "withJsonLd", ignore = true)
     ListingResponse toResponse(ProviderListingView listing);
 }

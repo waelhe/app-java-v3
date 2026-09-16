@@ -52,6 +52,13 @@ class CatalogControllerWebMvcTest {
     @MockitoBean
     private com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
 
+    // L39: the JSON-LD composition leaf (geo tree + config at runtime;
+    // the slice mocks the contract — Mockito's default answer for the
+    // Optional return is empty, so listings without a property block
+    // pass through unchanged).
+    @MockitoBean
+    private ListingSeoService listingSeoService;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
@@ -198,6 +205,34 @@ class CatalogControllerWebMvcTest {
 
         mockMvc.perform(get("/api/v1/listings/{id}", id))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * L39: the public detail read composes the JSON-LD block through the
+     * leaf service — the block rides the response verbatim when the
+     * listing carries a real-estate property block (the composition
+     * contract; the field mapping guards live in ListingSeoServiceTest,
+     * the real chain in SeoIntegrationTest).
+     */
+    @Test
+    void getById_composesJsonLdBlockThroughTheLeafService() throws Exception {
+        UUID id = UUID.randomUUID();
+        var listing = mockView(id);
+        var withProperty = new ListingResponse(id, null, null, null, null, null, null, null, null)
+                .withProperty(new com.marketplace.shared.api.PropertyDetailsPort.PropertyView(
+                        id, null, null, null, null, null, null, null, null,
+                        null, java.util.List.of(), null, null, null, null));
+        var block = new RealEstateListingJsonLd("https://schema.org", "RealEstateListing",
+                "Test", null, null, null, null, null, null);
+        when(catalogService.getActiveById(id)).thenReturn(listing);
+        when(listingMapper.toResponse(listing)).thenReturn(withProperty);
+        when(listingSeoService.jsonLdFor(withProperty)).thenReturn(java.util.Optional.of(block));
+
+        mockMvc.perform(get("/api/v1/listings/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jsonLd['@context']").value("https://schema.org"))
+                .andExpect(jsonPath("$.jsonLd['@type']").value("RealEstateListing"))
+                .andExpect(jsonPath("$.jsonLd.name").value("Test"));
     }
 
     /**
