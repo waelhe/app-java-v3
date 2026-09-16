@@ -45,6 +45,15 @@ class CatalogModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.MediaLookupPort mediaLookupPort;
 
+    // L39: ListingSeoService resolves the JSON-LD address chain through
+    // GeoLookupPort — the geo module is outside this slice exactly like
+    // the two ports above (the same house pattern; the full-context
+    // SeoIntegrationTest covers the real cached-tree adapter). Without
+    // this mock the context boot fails on ListingSeoService's constructor
+    // — the module slice boots catalog + shared only, never geo.
+    @MockitoBean
+    com.marketplace.shared.api.GeoLookupPort geoLookupPort;
+
     /**
      * L33: the catalog lifecycle's Clock — the production bean lives in
      * platform-infra's ClockConfig, which this slice does not scan (the

@@ -148,7 +148,12 @@ class SeoIntegrationTest {
                 .doesNotContain(PAUSED_ID.toString())
                 .doesNotContain(DRAFT_ID.toString())
                 .doesNotContain(SOFT_DELETED_ID.toString());
-        assertThat(body).containsPattern("<lastmod>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z</lastmod>");
+        // ISO_INSTANT keeps the instant's fractional-second precision when
+        // present (the seeded now() carries microseconds) — valid W3C
+        // Datetime ("ss.s — one or more digits") and valid xsd:dateTime
+        // alike; the XSD validation below is the authority either way.
+        assertThat(body).containsPattern(
+                "<lastmod>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z</lastmod>");
         assertValidAgainstXsd(body, "/seo/sitemap.xsd");
     }
 
