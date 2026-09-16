@@ -58,7 +58,8 @@ class ListingExpiryPolicyTest {
         service = new CatalogService(listingRepository, currentUserProvider,
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(90, 1),
-                    new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of())));
+                    new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
+                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))));
     }
 
     private ProviderListing draftListing() {
@@ -133,7 +134,8 @@ class ListingExpiryPolicyTest {
         CatalogService unpolicy = new CatalogService(listingRepository, currentUserProvider,
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(null, 1),
-                new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of())));
+                new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))));
         ProviderListing draft = draftListing();
 
         assertThatThrownBy(() -> unpolicy.activate(draft.getId(), null, authentication))

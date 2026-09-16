@@ -11,6 +11,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -44,18 +45,29 @@ public class CatalogController {
     // reads ride the leaf, never the service layer).
     private final ListingSeoService listingSeoService;
 
+    // L40: the view counter — the public read point's own analytics. The
+    // controller (not the service) is the hook because the plan counts
+    // "من نقطة القراءة العامة للوحة": CatalogService.getActiveById is
+    // ALSO the lead-submission liveness gate (messaging's resolveLiveListing
+    // — a lead is not a view), and the IP the fingerprint needs is a
+    // web-layer fact the service layer never touches (the LeadsController
+    // seam).
+    private final ListingViewCounter listingViewCounter;
+
     public CatalogController(CatalogService catalogService,
                              CurrentUserProvider currentUserProvider,
                              ListingMapper listingMapper,
                              PropertyDetailsPort propertyDetailsPort,
                              MediaLookupPort mediaLookupPort,
-                             ListingSeoService listingSeoService) {
+                             ListingSeoService listingSeoService,
+                             ListingViewCounter listingViewCounter) {
         this.catalogService = catalogService;
         this.currentUserProvider = currentUserProvider;
         this.listingMapper = listingMapper;
         this.propertyDetailsPort = propertyDetailsPort;
         this.mediaLookupPort = mediaLookupPort;
         this.listingSeoService = listingSeoService;
+        this.listingViewCounter = listingViewCounter;
     }
 
     @GetMapping
@@ -99,10 +111,20 @@ public class CatalogController {
             + "property block is embedded when the listing has one. L39: the schema.org "
             + "RealEstateListing JSON-LD block is composed on this read when the property "
             + "block exists — the structured data the frontend embeds for search-engine "
-            + "verification (url only when a public site origin is bound).")
-    public ResponseEntity<ListingResponse> getById(@PathVariable UUID id) {
+            + "verification (url only when a public site origin is bound). L40: every "
+            + "successful read counts one (deduplicated) view of the listing — the "
+            + "provider-facing analytics signal; a 404 does not count.")
+    public ResponseEntity<ListingResponse> getById(@PathVariable UUID id,
+                                                    HttpServletRequest httpRequest) {
         ListingResponse response = listingMapper.toResponse(catalogService.getActiveById(id));
-        return ResponseEntity.ok(withJsonLd(withProperty(response)));
+        // L40 (CodeRabbit round 1, adopted): compose the COMPLETE response
+        // first — a failed property/JSON-LD composition must not count as a
+        // view (the visitor saw an error, not the listing). The counter is
+        // total (never throws — its own contract), so the composed response
+        // above is the response regardless.
+        ListingResponse composed = withJsonLd(withProperty(response));
+        listingViewCounter.recordView(id, httpRequest.getRemoteAddr());
+        return ResponseEntity.ok(composed);
     }
 
     /**

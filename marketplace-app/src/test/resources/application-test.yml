@@ -45,6 +45,14 @@ marketplace:
     expiry:
       expiry-days: 90
       renewal-cooldown-days: 1
+    # L40 (realestate systems plan §5): the view visitor-fingerprint HMAC
+    # key for the test profile — same discipline as the L34 leads key
+    # below (explicit test-only value; prod fails startup on a blank key
+    # via CatalogConfig instead). The dedup window stays at the 24h
+    # default here; the TTL-expiry acceptance criterion overrides it to
+    # milliseconds on the test that needs it.
+    views:
+      ip-hash-key: test-profile-fingerprint-key
   security:
     jwt:
       audience: marketplace-api

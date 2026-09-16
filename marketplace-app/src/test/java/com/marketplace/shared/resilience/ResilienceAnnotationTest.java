@@ -131,7 +131,11 @@ class ResilienceAnnotationTest {
         @Test
         @DisplayName("getById should have @RateLimiter")
         void getById_hasRateLimiter() throws NoSuchMethodException {
-            Method method = CatalogController.class.getMethod("getById", java.util.UUID.class);
+            // L40: the public read point gained the HttpServletRequest
+            // parameter (the view counter's remote-address seam, the
+            // LeadsController pattern) — the limiter still guards it.
+            Method method = CatalogController.class.getMethod("getById", java.util.UUID.class,
+                    jakarta.servlet.http.HttpServletRequest.class);
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);
             assertNotNull(rl, "getById should have @RateLimiter");

@@ -3,6 +3,7 @@ package com.marketplace.catalog;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,12 +29,48 @@ import java.util.UUID;
  * the MarketplaceProperties pattern the expiry section used (catalog is
  * shared-only under Modulith — the platform-infra class is not on its
  * allowed dependencies, and the L33 precedent settled the shape).
+ *
+ * <p>L40 (realestate systems plan §5 — view analytics): the {@code views}
+ * section — the visitor-fingerprint key and the dedup window. Same shape,
+ * same rules: the HMAC key is blank by default, REQUIRED under the prod
+ * profile (CatalogConfig fails startup — the MessagingConfig pattern), and
+ * the test profile declares a known key (application-test.yml). The dedup
+ * window defaults to the plan's "Redis TTL يوم" (24h) and stays
+ * env-tunable so the TTL-expiry acceptance criterion can run in
+ * milliseconds instead of a day.
  */
 @ConfigurationProperties(prefix = "marketplace.catalog")
 public record CatalogProperties(
         @DefaultValue Expiry expiry,
-        @DefaultValue Seo seo
+        @DefaultValue Seo seo,
+        @DefaultValue Views views
 ) {
+
+    /**
+     * L40: the view-analytics policy.
+     *
+     * <p>{@code ipHashKey}: the HmacSHA256 key for the visitor fingerprint
+     * (the L34 leads pattern, CWE-759 — the IPv4 space is enumerable, so a
+     * bare digest is reversible by brute force; a keyed HMAC is not). The
+     * fingerprint NEVER leaves the process: it exists solely as part of the
+     * ephemeral Redis dedup key (24h TTL), so no permanent identifier is
+     * stored for the anonymous visitor (the plan's privacy-by-design —
+     * no new b-5). Blank by default; CatalogConfig fails prod startup when
+     * blank; the test profile pins a known value.
+     *
+     * <p>{@code dedupWindow}: how long one (visitor, listing) pair counts
+     * as ONE visit — the plan's "زيارة واحدة لكل (زائر/لوحة/يوم) بمعيار
+     * بصمة الزائر في الذاكرة (Redis TTL يوم)". Fixed expiry from the FIRST
+     * view (SET .. EX — no sliding renewal), so a visitor is counted at
+     * most once per rolling 24h, not per calendar day: the plan's own
+     * documented choice. Default 24h; tests override to milliseconds to
+     * prove the marker actually disappears (acceptance criterion 3).
+     */
+    public record Views(
+            @DefaultValue("") String ipHashKey,
+            @DefaultValue("24h") Duration dedupWindow
+    ) {
+    }
 
     public record Expiry(
             /** Days a listing's publication lasts — null = policy unset. */
