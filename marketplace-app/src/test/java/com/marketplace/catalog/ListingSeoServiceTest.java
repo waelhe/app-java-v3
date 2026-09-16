@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
  * L39 (realestate systems plan §5 — SEO): the JSON-LD block's unit
  * guards — the schema.org {@code RealEstateListing} comparative field
  * test (the plan's criterion 3: every emitted field is a measured
- * schema.org fact — the type's own {@code datePosted}, the GoodRelations
+ * schema.org fact — the GoodRelations
  * businessFunction values the standard adopted, the PostalAddress
  * level mapping) and the honesty rules (block only for real-estate
  * listings, url only when the public origin is bound, address only from
@@ -62,7 +62,9 @@ class ListingSeoServiceTest {
         assertThat(block.name()).isEqualTo("شقة قدسيا للإيجار");
         assertThat(block.description()).isEqualTo("وصف الشقة");
         assertThat(block.url()).isEqualTo(BASE + "/listings/00000000-0000-0000-0000-000000000001");
-        assertThat(block.datePosted()).isEqualTo(Instant.parse("2026-09-01T00:00:00Z"));
+        // datePosted is deliberately ABSENT (CodeRabbit round 1 adoption):
+        // the entity records no publication instant — createdAt is the
+        // draft's date, and fabricating the field misleads consumers.
         assertThat(block.dateModified()).isEqualTo(Instant.parse("2026-09-10T00:00:00Z"));
         // The Offer: the response's own price/currency + the GoodRelations
         // businessFunction value (schema.org/BusinessFunction's members).

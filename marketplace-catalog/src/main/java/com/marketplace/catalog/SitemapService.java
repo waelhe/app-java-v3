@@ -61,6 +61,19 @@ import java.time.format.DateTimeFormatter;
  * <p><b>Deterministic pagination (the L32 total-order rule):</b> the
  * enumeration sorts by {@code id} ascending — offset pagination over a
  * total order never duplicates or omits a listing between crawl visits.
+ *
+ * <p><b>The served media type (a measured choice):</b>
+ * {@code application/xml} without a charset parameter, exactly as
+ * RFC 7303 prescribes for XML media types ("the charset parameter
+ * SHOULD NOT be used… the encoding declaration in the XML prolog
+ * governs"). The prolog declares UTF-8 and the document is
+ * ASCII-by-construction — {@code <loc>} URIs (RFC 3986: URIs are
+ * ASCII/percent-encoded) and ISO-8601 {@code <lastmod>} timestamps —
+ * and ASCII is a byte-identical subset of UTF-8, so whatever charset
+ * the String converter applies, the bytes satisfy the prolog. The
+ * robots.txt sibling is the deliberate contrast: RFC 9309 declares the
+ * file UTF-8 with no prolog to govern, so THAT content type carries
+ * the charset explicitly (see {@code SeoController}).
  */
 @Service
 public class SitemapService {
@@ -92,6 +105,11 @@ public class SitemapService {
      * The sitemap document for a request: {@code page == null} is the
      * root (the urlset when it fits one page, the sitemap index when it
      * does not); a positive page number is that page's urlset.
+     *
+     * <p>The root decision rides a COUNT, never a row fetch (CodeRabbit
+     * round 1: a multi-page root must not materialize a 50,000-row page
+     * only to read {@code totalPages} and discard it) — rows are fetched
+     * only when the response is a urlset.
      */
     @Transactional(readOnly = true)
     public SeoDocument sitemap(Integer page) {
@@ -102,17 +120,25 @@ public class SitemapService {
                             + "(marketplace.catalog.seo.public-site-base-url) or the listing "
                             + "path template has no {id} placeholder");
         }
+        if (page == null) {
+            long total = listingRepository.countSitemapEntries(ListingStatus.ACTIVE, clock.instant());
+            if (total == 0) {
+                // No valid empty sitemap exists per the XSDs — the honest
+                // answer for an empty catalog is 404.
+                throw new ResourceNotFoundException("Sitemap", null);
+            }
+            long pageCount = (total + SITEMAP_PAGE_SIZE - 1) / SITEMAP_PAGE_SIZE;
+            if (pageCount > 1) {
+                return new SeoDocument(indexXml((int) pageCount), MediaType.APPLICATION_XML);
+            }
+        }
         Pageable pageable = PageRequest.of(page == null ? 0 : page - 1,
                 SITEMAP_PAGE_SIZE, Sort.by(Sort.Direction.ASC, "id"));
         Page<SitemapEntry> entries = listingRepository.findSitemapEntries(
                 ListingStatus.ACTIVE, clock.instant(), pageable);
         if (entries.getContent().isEmpty()) {
-            // No valid empty sitemap exists per the XSDs — the honest
-            // answer for an empty catalog or an out-of-range page is 404.
+            // An out-of-range page has nothing to enumerate — 404.
             throw new ResourceNotFoundException("Sitemap page", page);
-        }
-        if (page == null && entries.getTotalPages() > 1) {
-            return new SeoDocument(indexXml(entries.getTotalPages()), MediaType.APPLICATION_XML);
         }
         return new SeoDocument(urlsetXml(entries), MediaType.APPLICATION_XML);
     }

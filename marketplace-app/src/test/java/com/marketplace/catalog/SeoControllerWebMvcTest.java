@@ -59,7 +59,11 @@ class SeoControllerWebMvcTest {
     void robots_defaultPolicy_isTheCanonicalAllowAll() throws Exception {
         mockMvc.perform(get("/robots.txt"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                // RFC 9309: UTF-8 — the served type keeps the mapping's charset
+                // (the CodeRabbit round 1 adoption: plain TEXT_PLAIN would hand
+                // StringHttpMessageConverter its ISO-8859-1 default).
+                .andExpect(content().contentType(
+                        new MediaType(MediaType.TEXT_PLAIN, java.nio.charset.StandardCharsets.UTF_8)))
                 .andExpect(content().string("User-agent: *\nDisallow:\nSitemap: https://public.example/sitemap.xml\n"));
     }
 

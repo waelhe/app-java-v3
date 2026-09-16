@@ -97,8 +97,13 @@ public class SeoController {
                     + "origin's /sitemap.xml. The /robots.txt URI itself is "
                     + "implicitly allowed (RFC 9309).")
     public ResponseEntity<String> robots() {
+        // RFC 9309: the file MUST be UTF-8 — the explicit content type keeps
+        // the mapping's charset (CodeRabbit round 1: ResponseEntity's plain
+        // TEXT_PLAIN would hand StringHttpMessageConverter its ISO-8859-1
+        // default — the produces charset is only honored when the response
+        // entity does not override it).
         return ResponseEntity.ok()
-                .contentType(MediaType.TEXT_PLAIN)
+                .contentType(new MediaType(MediaType.TEXT_PLAIN, java.nio.charset.StandardCharsets.UTF_8))
                 .body(robotsBody());
     }
 

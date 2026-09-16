@@ -191,6 +191,11 @@ class SeoIntegrationTest {
                 .andExpect(jsonPath("$.jsonLd['@type']").value("RealEstateListing"))
                 .andExpect(jsonPath("$.jsonLd.name").value("L39 Listing"))
                 .andExpect(jsonPath("$.jsonLd.url").value(BASE + "/listings/" + CLEAN_ACTIVE_ID))
+                // datePosted is deliberately absent — the entity records no
+                // publication instant (the honest-omission rule); dateModified
+                // maps the updated_at audit column, the exact fact it claims.
+                .andExpect(jsonPath("$.jsonLd.datePosted").doesNotExist())
+                .andExpect(jsonPath("$.jsonLd.dateModified").exists())
                 .andExpect(jsonPath("$.jsonLd.offers['@type']").value("Offer"))
                 .andExpect(jsonPath("$.jsonLd.offers.price").value(10.00))
                 .andExpect(jsonPath("$.jsonLd.offers.priceCurrency").value("SAR"))

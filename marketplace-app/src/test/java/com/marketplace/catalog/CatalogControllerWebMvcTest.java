@@ -223,7 +223,7 @@ class CatalogControllerWebMvcTest {
                         id, null, null, null, null, null, null, null, null,
                         null, java.util.List.of(), null, null, null, null));
         var block = new RealEstateListingJsonLd("https://schema.org", "RealEstateListing",
-                "Test", null, null, null, null, null, null);
+                "Test", null, null, null, null, null);
         when(catalogService.getActiveById(id)).thenReturn(listing);
         when(listingMapper.toResponse(listing)).thenReturn(withProperty);
         when(listingSeoService.jsonLdFor(withProperty)).thenReturn(java.util.Optional.of(block));

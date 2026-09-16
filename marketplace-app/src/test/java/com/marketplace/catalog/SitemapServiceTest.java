@@ -76,9 +76,13 @@ class SitemapServiceTest {
 
     @Test
     void sitemap_emptyCatalog_answers404_noValidEmptySitemapExistsPerTheXsds() {
-        stubPage(List.of(), 0);
+        stubCount(0);
         assertThatThrownBy(() -> service.sitemap(null))
                 .isInstanceOf(ResourceNotFoundException.class);
+        // The empty root never fetches rows — the count alone answers.
+        verify(repository, org.mockito.Mockito.never()).findSitemapEntries(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -94,6 +98,7 @@ class SitemapServiceTest {
     void sitemap_singlePage_servesAnXsdValidUrlsetWithLocAndLastmod() throws Exception {
         UUID id = UUID.randomUUID();
         Instant updated = Instant.parse("2026-09-14T08:00:00Z");
+        stubCount(1);
         stubPage(List.of(new SitemapEntry(id, updated)), 1);
 
         SitemapService.SeoDocument document = service.sitemap(null);
@@ -106,10 +111,11 @@ class SitemapServiceTest {
     }
 
     @Test
-    void sitemap_multiPageRoot_servesAnXsdValidIndexWithOneChildPerPage() throws Exception {
+    void sitemap_multiPageRoot_servesAnXsdValidIndexWithoutFetchingAnyRow() throws Exception {
         // 100_001 qualifying listings over the 50_000 cap = 3 pages; the
-        // mocked repository answers the root request's page-1 fetch.
-        stubPage(List.of(new SitemapEntry(UUID.randomUUID(), NOW)), 100_001);
+        // root's page-count decision rides the COUNT only (CodeRabbit
+        // round 1 adoption) — the 50,000-row page is never materialized.
+        stubCount(100_001);
 
         SitemapService.SeoDocument document = service.sitemap(null);
 
@@ -118,6 +124,9 @@ class SitemapServiceTest {
                 .contains("<sitemap><loc>" + BASE + "/sitemap.xml?page=2</loc></sitemap>")
                 .contains("<sitemap><loc>" + BASE + "/sitemap.xml?page=3</loc></sitemap>");
         assertValidAgainstXsd(document.body(), "/seo/siteindex.xsd");
+        verify(repository, org.mockito.Mockito.never()).findSitemapEntries(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -135,6 +144,7 @@ class SitemapServiceTest {
         service = new SitemapService(repository, Clock.fixed(NOW, ZoneOffset.UTC),
                 properties(BASE + "/", "/listings/{id}", List.of()));
         UUID id = UUID.randomUUID();
+        stubCount(1);
         stubPage(List.of(new SitemapEntry(id, NOW)), 1);
 
         assertThat(service.sitemap(null).body())
@@ -145,6 +155,7 @@ class SitemapServiceTest {
 
     @Test
     void sitemap_enumeratesInDeterministicIdOrderAtTheStandardCap() {
+        stubCount(1);
         stubPage(List.of(new SitemapEntry(UUID.randomUUID(), NOW)), 1);
 
         service.sitemap(null);
@@ -176,6 +187,11 @@ class SitemapServiceTest {
                 total);
         when(repository.findSitemapEntries(eq(ListingStatus.ACTIVE), any(Instant.class), any(Pageable.class)))
                 .thenReturn(page);
+    }
+
+    private void stubCount(long total) {
+        when(repository.countSitemapEntries(eq(ListingStatus.ACTIVE), any(Instant.class)))
+                .thenReturn(total);
     }
 
     private static CatalogProperties properties(String base, String listingPath, List<String> disallow) {

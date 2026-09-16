@@ -25,9 +25,16 @@ import java.util.Optional;
  *       describes one or more real-estate Offers (whose
  *       businessFunction is typically to lease out, or to sell)").</li>
  *   <li>{@code name}/{@code description}/{@code url} — Thing properties.</li>
- *   <li>{@code dateModified} — CreativeWork property; {@code datePosted}
- *       — RealEstateListing's own property ("Publication date of an
- *       online listing", Date or DateTime).</li>
+ *   <li>{@code dateModified} — CreativeWork property, mapped from the
+ *       entity's {@code updated_at} audit column (exactly the fact that
+ *       column claims). {@code datePosted} — the type's own "Publication
+ *       date of an online listing" — is deliberately OMITTED: the entity
+ *       records no publication instant ({@code activate()} changes the
+ *       status with no timestamp — a listing drafted days before
+ *       activation would carry a fabricated date under {@code createdAt};
+ *       CodeRabbit round 1 verified the schema carries no such column).
+ *       The field returns when a publication timestamp becomes a
+ *       first-class fact — an honest omission, never a guess.</li>
  *   <li>{@code offers} with an {@code Offer} carrying {@code price},
  *       {@code priceCurrency} (ISO 4217) and {@code businessFunction} —
  *       the type's own documentation directs the transaction kind there;
@@ -62,7 +69,6 @@ public record RealEstateListingJsonLd(
         String name,
         String description,
         String url,
-        Instant datePosted,
         Instant dateModified,
         Offers offers,
         Address address
@@ -98,7 +104,6 @@ public record RealEstateListingJsonLd(
                 listing.title(),
                 listing.description(),
                 pageUrl.orElse(null),
-                listing.createdAt(),
                 listing.updatedAt(),
                 new Offers(listing.price(), listing.currency(),
                         businessFunctionOf(property.purpose())),

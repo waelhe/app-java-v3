@@ -70,6 +70,19 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                           Pageable pageable);
 
     /**
+     * L39: the count-only twin of {@link #findSitemapEntries} — the
+     * root request's page-count decision (urlset vs sitemap index) rides
+     * this, never a row fetch (CodeRabbit round 1: a multi-page root must
+     * not materialize a 50,000-row page only to discard it). Same clean
+     * ACTIVE predicate, same soft-delete structural exclusion.
+     */
+    @Query("""
+            select count(l) from ProviderListing l
+            where l.status = ?1 and (l.expiresAt is null or l.expiresAt > ?2)
+            """)
+    long countSitemapEntries(ListingStatus status, java.time.Instant now);
+
+    /**
      * Full-text search using PostgreSQL tsvector with GIN index.
      * Searches title and description columns.
      * Matches the GIN index defined in V9__search_index.sql.
