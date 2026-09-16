@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
 /**
@@ -136,8 +137,15 @@ public class SitemapService {
                             + "(marketplace.catalog.seo.public-site-base-url) or the listing "
                             + "path template has no {id} placeholder");
         }
+        // One "as of" instant per request (CodeRabbit's final advisory,
+        // adopted): the root's count and the single-page fetch share it, so
+        // a listing cannot expire BETWEEN the two queries and turn a
+        // positive count into an empty fetch (a 404 with a lying cause).
+        // A multi-page root returns the index before any fetch; child pages
+        // take their own instants by design (each request stands alone).
+        Instant now = clock.instant();
         if (page == null) {
-            long total = listingRepository.countSitemapEntries(ListingStatus.ACTIVE, clock.instant());
+            long total = listingRepository.countSitemapEntries(ListingStatus.ACTIVE, now);
             if (total == 0) {
                 // No valid empty sitemap exists per the XSDs — the honest
                 // answer for an empty catalog is 404.
@@ -158,7 +166,7 @@ public class SitemapService {
         Pageable pageable = PageRequest.of(page == null ? 0 : page - 1,
                 SITEMAP_PAGE_SIZE, Sort.by(Sort.Direction.ASC, "id"));
         Page<SitemapEntry> entries = listingRepository.findSitemapEntries(
-                ListingStatus.ACTIVE, clock.instant(), pageable);
+                ListingStatus.ACTIVE, now, pageable);
         if (entries.getContent().isEmpty()) {
             // An out-of-range page has nothing to enumerate — 404.
             throw new ResourceNotFoundException("Sitemap page", page);
