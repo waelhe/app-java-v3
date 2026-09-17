@@ -94,6 +94,8 @@ public class UserDataExportService {
         var notifications = notificationExportPort.exportForRecipient(user.getId());
         var savedSearches = savedSearchExportPort.exportForOwner(user.getId());
         var memberships = communityExportPort.exportForOwner(user.getId());
+        var communityPosts = communityExportPort.exportPostsForOwner(user.getId());
+        var communityComments = communityExportPort.exportCommentsForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -113,16 +115,20 @@ public class UserDataExportService {
                 media,
                 notifications,
                 savedSearches,
-                memberships);
+                memberships,
+                communityPosts,
+                communityComments);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
         // pseudonymization audit line applies against CWE-532).
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
-                        + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}",
+                        + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
+                        + "communityPosts={}, communityComments={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
-                media.size(), notifications.size(), savedSearches.size(), memberships.size());
+                media.size(), notifications.size(), savedSearches.size(), memberships.size(),
+                communityPosts.size(), communityComments.size());
         return response;
     }
 }

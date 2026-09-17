@@ -134,6 +134,33 @@ public class NotificationService {
         sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
     }
 
+    /**
+     * L42 (neighborhood community plan §5 — the posts/feed/comments
+     * layer): the post author's POST_COMMENTED alert — the same delivery
+     * shape as the event points above (in-app row always lands; WebSocket
+     * and email ride their L22 per-type/channel preferences). The
+     * recipient is the post's author id, which lives in the users.id
+     * space — the id IS the recipient, the same seam
+     * {@code onLeadReceived} uses for its provider.
+     *
+     * <p>The self-comment skip is the LISTENER's own policy (the plan's
+     * criterion 4: "ما لم يكن المعلق هو المؤلف") — this method delivers
+     * unconditionally, so the delivery contract stays one shape for
+     * every caller.
+     */
+    public void onPostCommented(UUID postId, UUID postAuthorId) {
+        String message = "New comment on your post: " + postId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(postAuthorId,
+                NotificationType.POST_COMMENTED.name(), message));
+        if (preferences.isChannelEnabled(postAuthorId,
+                NotificationType.POST_COMMENTED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(postAuthorId, "New Comment",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.

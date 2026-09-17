@@ -398,4 +398,34 @@ class NotificationServiceTest {
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
     }
+
+    @Test
+    void onPostCommentedAlertsThePostAuthorOnEveryDefaultChannel() {
+        // L42 (neighborhood community plan §5): the recipient is the post's
+        // author id — the users.id space, the same seam onLeadReceived uses.
+        // The self-comment skip is the LISTENER's policy; this method
+        // delivers unconditionally, so the delivery contract stays one
+        // shape for every caller.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID postId = create(UUID.class);
+
+        service.onPostCommented(postId, PROVIDER_ID);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("POST_COMMENTED");
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+    }
 }

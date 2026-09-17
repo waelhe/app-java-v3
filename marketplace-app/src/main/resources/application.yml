@@ -417,6 +417,23 @@ resilience4j:
         base-config: default
         limit-for-period: 10
         timeout-duration: 0
+      # L42 (neighborhood community plan §5 — the posts/feed/comments
+      # layer): the community writes — two distinct named instances
+      # (the plan's own words: "نمطلتان مسماتان مستقلتان") so a comment
+      # burst cannot exhaust the post window (same L29 model: fail fast,
+      # 429 RL-001, conservative until real traffic; G8 env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_POSTCREATE_LIMIT_FOR_PERIOD
+      # etc.). postCreate sits at the bookingCreate/reviewCreate write
+      # budget; postComment at the lighter mediaUpload budget — a comment
+      # is one bounded text field, a post is the feed's unit.
+      postCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      postComment:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
       # L39 (realestate systems plan §5): the public sitemap crawl
       # surface — a distinct named instance so a crawler's burst cannot
       # exhaust the shared catalog/search read budget (the geoSuggest

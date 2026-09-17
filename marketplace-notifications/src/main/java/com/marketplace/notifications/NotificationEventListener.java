@@ -3,6 +3,7 @@ package com.marketplace.notifications;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +63,33 @@ public class NotificationEventListener {
                 event.savedSearchIds().size());
         log.info("Notification sent for saved-search match: userId={}, listingId={}, searches={}",
                 event.userId(), event.listingId(), event.savedSearchIds().size());
+    }
+
+    /**
+     * L42 (neighborhood community plan §5 — the posts/feed/comments layer):
+     * the post author's POST_COMMENTED alert. Same contract as the
+     * listeners above — after commit, its own transaction, the
+     * framework's retry: a failed delivery never loses the comment's
+     * notification (the registry entry stays incomplete until the
+     * listener succeeds).
+     *
+     * <p><b>The self-comment skip lives HERE</b> (the plan's criterion 4:
+     * "ما لم يكن المعلق هو المؤلف"): the event is published for every
+     * comment — the fact stays honest and auditable in the publication
+     * registry — and the listener compares the two ids it carries before
+     * notifying. The author commenting on their own post is the one
+     * delivery this module deliberately drops.
+     */
+    @ApplicationModuleListener
+    public void onPostCommented(PostCommentedEvent event) {
+        if (event.commentAuthorId().equals(event.postAuthorId())) {
+            log.debug("Self-comment on post {} — no POST_COMMENTED notification by policy",
+                    event.postId());
+            return;
+        }
+        notificationService.onPostCommented(event.postId(), event.postAuthorId());
+        log.info("Notification sent for post comment: postId={}, author={}",
+                event.postId(), event.postAuthorId());
     }
 
 }

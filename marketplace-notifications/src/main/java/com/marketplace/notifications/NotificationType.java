@@ -17,10 +17,17 @@ package com.marketplace.notifications;
  * <p>L35 (realestate systems plan §5 — saved searches and alerts):
  * {@code SAVED_SEARCH_MATCH} joins as the fourth type — the same point
  * addition (the V55 CHECK widens the DB-side membership guard to match).
+ *
+ * <p>L42 (neighborhood community plan §5 — the posts/feed/comments layer):
+ * {@code POST_COMMENTED} joins as the fifth type — the same point addition
+ * ("نقطة إضافة واحدة" D-N12; the V62 CHECK widens the DB-side membership
+ * guard to match). The recipient is the post's author; the self-comment
+ * skip is the listener's own policy, not this enum's concern.
  */
 public enum NotificationType {
     BOOKING_CREATED,
     PAYMENT_STATE,
     LEAD_RECEIVED,
-    SAVED_SEARCH_MATCH
+    SAVED_SEARCH_MATCH,
+    POST_COMMENTED
 }
