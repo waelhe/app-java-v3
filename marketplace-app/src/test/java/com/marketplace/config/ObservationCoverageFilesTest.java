@@ -49,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>availability — timeoff.create</li>
  *   <li>booking — create, confirm, complete, cancel, auto.cancel</li>
  *   <li>catalog — create.listing</li>
+ *   <li>community — membership.join, membership.leave (L41 — the
+ *       neighborhood membership anchor's two commands; the read stays
+ *       unobserved per policy)</li>
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
@@ -92,6 +95,8 @@ class ObservationCoverageFilesTest {
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
+            Map.entry("marketplace-community", List.of(
+                    "community.membership.join", "community.membership.leave")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",

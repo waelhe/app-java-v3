@@ -70,7 +70,7 @@ class UserControllerWebMvcTest {
                         "CONSUMER", null, null),
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                java.util.List.of()); // L35: the savedSearches section joins the export
+                java.util.List.of(), java.util.List.of()); // L35: savedSearches; L41: memberships
 
         when(userService.syncFromOidc(any())).thenReturn(user);
         when(userDataExportService.exportFor(user)).thenReturn(export);
