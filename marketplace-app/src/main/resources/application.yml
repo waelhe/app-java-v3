@@ -197,6 +197,25 @@ server:
   # no container-side port mapping needed.
   port: ${PORT:8080}
   shutdown: graceful
+  # HTTP response compression (official Spring Boot handle — verified by
+  # javap + configuration metadata of spring-boot-web-server 4.1.1 this
+  # session, not a tuning guess): ServerProperties(prefix="server") +
+  # Compression model. Metadata: server.compression.enabled "Whether
+  # response compression is enabled" (default false) wires Tomcat's
+  # CompressionConnectorCustomizer (compression=on + 2KB floor + mime list).
+  # additional-mime-types (official extension handle — "additional MIME
+  # types that should be compressed", default []) EXTENDS the built-in list
+  # instead of replacing it (text/*, application/json, ... stay intact —
+  # zero drift when Boot changes defaults). application/json covers success
+  # bodies; application/problem+json covers our RFC 7807 ProblemDetail error
+  # bodies (absent from the built-in list — an enabled-only flag would
+  # silently skip exactly the responses a weak-network user sees most:
+  # 401/404/503). Base profile, not prod-only: compression has no trust
+  # dimension (no secrets in bodies — tokens travel headers/cookies — so no
+  # BREACH surface), and dev/test must behave like prod.
+  compression:
+    enabled: true
+    additional-mime-types: application/problem+json
   tomcat:
     accesslog:
       enabled: true
