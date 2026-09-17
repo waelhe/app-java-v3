@@ -74,6 +74,23 @@ class NeighborhoodPostRateLimitIntegrationTest {
     @MockitoBean
     com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
+    /**
+     * The limiter-state isolation seam (the CodeRabbit round-1 adoption,
+     * verified against the actual 2.4.0 bytecode): the three tests share
+     * ONE Spring context, so the in-memory permits a test consumes would
+     * bleed into the next (a spent postCreate window would answer 429 for
+     * the independence test's final post). {@code registry.remove(name)}
+     * drops the INSTANCE only — the aspect's own lookup
+     * ({@code getConfiguration(name)} → {@code rateLimiter(name, config)},
+     * measured in the decompiled RateLimiterAspect) re-creates it with the
+     * properties-declared config on the next annotated call, so every
+     * test starts with a full window. The surgical alternative to
+     * {@code @DirtiesContext} — no context recreation, no container
+     * restart.
+     */
+    @Autowired
+    private io.github.resilience4j.ratelimiter.RateLimiterRegistry rateLimiterRegistry;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -90,6 +107,11 @@ class NeighborhoodPostRateLimitIntegrationTest {
 
     @BeforeEach
     void seed() {
+        // Full windows for every test (see the field's javadoc — the
+        // registry drop is the isolation; the aspect re-creates with the
+        // test properties' tiny config).
+        rateLimiterRegistry.remove("postCreate");
+        rateLimiterRegistry.remove("postComment");
         // A REAL member of the REAL seed node — the membership gate must
         // not mask the limiter's own answer (the RateLimitProblemDetail
         // convention: the first well-formed call runs the business logic).

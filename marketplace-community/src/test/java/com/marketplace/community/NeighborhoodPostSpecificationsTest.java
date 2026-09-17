@@ -34,14 +34,18 @@ class NeighborhoodPostSpecificationsTest {
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         jakarta.persistence.criteria.Predicate conjunction = mock(jakarta.persistence.criteria.Predicate.class);
         when(cb.conjunction()).thenReturn(conjunction);
+        // ONE Root mock for both the call and the verify — the instance
+        // the predicate actually receives is the one whose interactions
+        // the assertion reads (the CodeRabbit round-1 adoption).
+        Root<NeighborhoodPost> root = root();
 
         Specification<NeighborhoodPost> spec =
                 NeighborhoodPostSpecifications.hasCategory(null);
 
-        assertThat(spec.toPredicate(root(), mock(CriteriaQuery.class), cb))
+        assertThat(spec.toPredicate(root, mock(CriteriaQuery.class), cb))
                 .isSameAs(conjunction);
         // The absent predicate touches no field — the official model.
-        verifyNoInteractions(root());
+        verifyNoInteractions(root);
     }
 
     @Test

@@ -115,6 +115,22 @@ class NeighborhoodPostModuleIntegrationTest {
     @Autowired
     private com.marketplace.community.spi.CommunityContentPurgeAdapter purgeAdapter;
 
+    /**
+     * Cross-test isolation for the shared container (the CodeRabbit
+     * round-1 adoption): every test plants its own posts in the SAME
+     * fixed seed node, and the feed counts posts by NEIGHBORHOOD, not by
+     * author — a test that runs after another would see the earlier
+     * tests' visible posts in its feed counts. Comments delete BEFORE
+     * posts (V61's internal FK); the membership rows stay (they never
+     * affect feed counts — the G-N1 slot is per user and every test uses
+     * its own random users).
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void isolateNeighborhoodData() {
+        jdbc.update("DELETE FROM post_comments");
+        jdbc.update("DELETE FROM neighborhood_posts");
+    }
+
     private UUID asCaller(UUID userId) {
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
         return userId;
@@ -207,6 +223,12 @@ class NeighborhoodPostModuleIntegrationTest {
         // Invalid category — the controller's own parse (the vocabulary is
         // listed; never an enum-binding 500).
         postOverHttp(authorId, QUDSAYYA_OLD_TOWN, "SPAM", "Title", "Body")
+                .andExpect(status().isBadRequest());
+        // Blank category — @NotBlank at the boundary (the CodeRabbit
+        // round-1 adoption: @NotNull would have admitted "" through to
+        // parseCategory's null and the entity's NOT NULL would answer a
+        // 500-class integrity violation instead of the clean 400).
+        postOverHttp(authorId, QUDSAYYA_OLD_TOWN, "  ", "Title", "Body")
                 .andExpect(status().isBadRequest());
         // Blank title.
         postOverHttp(authorId, QUDSAYYA_OLD_TOWN, "GENERAL", "  ", "Body")

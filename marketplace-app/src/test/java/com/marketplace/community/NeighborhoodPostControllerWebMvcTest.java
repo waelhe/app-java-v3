@@ -143,6 +143,21 @@ class NeighborhoodPostControllerWebMvcTest {
     }
 
     @Test
+    void postCreate_blankCategory_is400AtTheBoundary() throws Exception {
+        // The CodeRabbit round-1 adoption: @NotBlank (not @NotNull) at the
+        // boundary — "" must answer the clean 400, never reach
+        // parseCategory's null branch.
+        stubCaller();
+
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + UUID.randomUUID() + "\", "
+                                + "\"category\": \"  \", \"title\": \"Title\", "
+                                + "\"body\": \"Body\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void postCreate_blankTitle_is400BeforeAnyWrite() throws Exception {
         stubCaller();
 

@@ -189,7 +189,7 @@ public class NeighborhoodPostController {
                     example = "11111111-1111-4111-8111-111111111104")
             UUID locationId,
 
-            @NotNull
+            @NotBlank
             @Schema(description = "The post's category.", allowableValues = {"GENERAL", "CLASSIFIED", "LOST_FOUND"},
                     example = "GENERAL")
             String category,
