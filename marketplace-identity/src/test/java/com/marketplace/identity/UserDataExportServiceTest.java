@@ -2,8 +2,10 @@ package com.marketplace.identity;
 
 import com.marketplace.shared.api.BookingExportEntry;
 import com.marketplace.shared.api.BookingExportPort;
+import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
+import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.ConversationExportEntry;
 import com.marketplace.shared.api.MediaExportEntry;
 import com.marketplace.shared.api.MediaExportPort;
@@ -77,6 +79,13 @@ class UserDataExportServiceTest {
                 UUID.randomUUID(), "SELF_DECLARED", Instant.now(), Instant.now(),
                 Instant.now(), false));
         when(communityExportPort.exportForOwner(userId)).thenReturn(memberships);
+        var communityPosts = List.of(new CommunityPostExportEntry(UUID.randomUUID(),
+                UUID.randomUUID(), "GENERAL", "Title", "Body", "VISIBLE",
+                Instant.now(), Instant.now(), false));
+        when(communityExportPort.exportPostsForOwner(userId)).thenReturn(communityPosts);
+        var communityComments = List.of(new CommunityCommentExportEntry(UUID.randomUUID(),
+                UUID.randomUUID(), "Comment", Instant.now(), Instant.now(), false));
+        when(communityExportPort.exportCommentsForOwner(userId)).thenReturn(communityComments);
 
         UserDataExportResponse response = service.exportFor(user);
 
@@ -89,6 +98,8 @@ class UserDataExportServiceTest {
         assertSame(notifications, response.notifications());
         assertSame(savedSearches, response.savedSearches()); // L35: the search module's share
         assertSame(memberships, response.memberships()); // L41: the community module's share
+        assertSame(communityPosts, response.communityPosts()); // L42: the posts share
+        assertSame(communityComments, response.communityComments()); // L42: the comments share
 
         // The profile section: the account row's own fields.
         assertEquals(userId, response.profile().id());
@@ -113,6 +124,8 @@ class UserDataExportServiceTest {
         when(mediaExportPort.exportForOwner(userId)).thenReturn(List.of());
         when(savedSearchExportPort.exportForOwner(userId)).thenReturn(List.of());
         when(communityExportPort.exportForOwner(userId)).thenReturn(List.of());
+        when(communityExportPort.exportPostsForOwner(userId)).thenReturn(List.of());
+        when(communityExportPort.exportCommentsForOwner(userId)).thenReturn(List.of());
         when(notificationExportPort.exportForRecipient(userId)).thenReturn(List.of());
 
         UserDataExportResponse response = service.exportFor(user);
@@ -124,6 +137,8 @@ class UserDataExportServiceTest {
         assertEquals(0, response.media().size());
         assertEquals(0, response.notifications().size());
         assertEquals(0, response.memberships().size());
+        assertEquals(0, response.communityPosts().size());
+        assertEquals(0, response.communityComments().size());
         assertEquals("sub-empty", response.profile().subject());
     }
 }
