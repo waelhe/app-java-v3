@@ -75,19 +75,26 @@ class NeighborhoodPostRateLimitIntegrationTest {
     com.marketplace.shared.security.CurrentUserProvider currentUserProvider;
 
     /**
-     * The limiter-state isolation seam (the CodeRabbit round-1 adoption,
-     * verified against the actual 2.4.0 bytecode): the three tests share
-     * ONE Spring context, so the in-memory permits a test consumes would
-     * bleed into the next (a spent postCreate window would answer 429 for
-     * the independence test's final post). {@code registry.remove(name)}
-     * drops the INSTANCE only — the aspect's own lookup
-     * ({@code getConfiguration(name)} → {@code rateLimiter(name, config)},
-     * measured in the decompiled RateLimiterAspect) re-creates it with the
-     * properties-declared config on the next annotated call, so every
-     * test starts with a full window. The surgical alternative to
-     * {@code @DirtiesContext} — no context recreation, no container
-     * restart.
+     * The limiter-state isolation seam — round 2, the CI-measured root
+     * cause of the first fix's own failure: after registry.remove(name)
+     * ALONE, the aspect's fallback re-created the limiter from the
+     * registry's DEFAULT configuration (application.yml's default config
+     * — 100 permits/minute), so the third call answered 201 instead of
+     * 429 (CI run 35258267839: "expected:<429> but was:<201>", all three
+     * tests). The provable fix removes the drained instance and
+     * EAGERLY re-registers a fresh one with the tiny test config —
+     * InMemoryRateLimiterRegistry.rateLimiter(name, config) is
+     * computeIfAbsent (measured in the 2.4.0 bytecode), so the aspect's
+     * getOrCreateRateLimiter finds THIS instance with a full 2-permit
+     * window, regardless of the registry's configuration-map internals.
      */
+    private static final io.github.resilience4j.ratelimiter.RateLimiterConfig TINY =
+            io.github.resilience4j.ratelimiter.RateLimiterConfig.custom()
+                    .limitForPeriod(2)
+                    .limitRefreshPeriod(java.time.Duration.ofSeconds(60))
+                    .timeoutDuration(java.time.Duration.ZERO)
+                    .build();
+
     @Autowired
     private io.github.resilience4j.ratelimiter.RateLimiterRegistry rateLimiterRegistry;
 
@@ -107,11 +114,13 @@ class NeighborhoodPostRateLimitIntegrationTest {
 
     @BeforeEach
     void seed() {
-        // Full windows for every test (see the field's javadoc — the
-        // registry drop is the isolation; the aspect re-creates with the
-        // test properties' tiny config).
+        // Full windows for every test (see TINY's javadoc — remove the
+        // drained instance, then re-register a fresh one with the tiny
+        // config; the aspect's computeIfAbsent finds THIS instance).
         rateLimiterRegistry.remove("postCreate");
+        rateLimiterRegistry.rateLimiter("postCreate", TINY);
         rateLimiterRegistry.remove("postComment");
+        rateLimiterRegistry.rateLimiter("postComment", TINY);
         // A REAL member of the REAL seed node — the membership gate must
         // not mask the limiter's own answer (the RateLimitProblemDetail
         // convention: the first well-formed call runs the business logic).
