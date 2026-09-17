@@ -21,7 +21,7 @@
 | قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers) **وفي الإنتاج** (خدمة `postgres-18` = **postgis/postgis:18-3.6** بتبديل P-1 في المكان 2026-09-12 [خطة PostGIS §4-P3] + فوليوم، 18.6، سجل Flyway حي بـ61 مدخلًا (59 نسخية V1..V60 + بذرتان تكراريتان) بعد وصول V60 — قياس §15 2026-09-17)؛ **فصل الهويات مقيس 2026-09-13 (§15):** الترحيل عبر `flyway_migrator` (خارق — `SPRING_FLYWAY_*`) والتشغيل عبر `marketplace_app` (NOSUPERUSER — `DB_*`) والمستخدم التأسيسي `marketplace` طوارئ حصرًا (حارس المنصة يمنع نزع خوارقه) | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` + سجل الإقلاع الحي (§15) |
 | الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose) **وفي الإنتاج** (8.2: ترقية في المكان + فوليوم + requirepass + RDB 2026-09-04 — §15)؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
 | الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) | `pom.xml:44-45` |
-| الوحدات | **16** وحدة Maven في Reactor الجذر | `pom.xml:22-37` |
+| الوحدات | **21** وحدة Maven في Reactor الجذر (18 نطاقية + التجميع + المشتركة + البنية التحتية) | `pom.xml:21-43` |
 | النشر | Dockerfile + `.railway/railway.ts` (IaC — إعدادات خدمة-مستوى) + docker-compose.yml | جذر المستودع |
 
 ---
@@ -44,7 +44,7 @@
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 16 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 21 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 
@@ -78,9 +78,9 @@
 
 ---
 
-## 5. البنية النمطية — 16 وحدة تحت Modulith
+## 5. البنية النمطية — 21 وحدة تحت Modulith
 
-**القسمة (من `pom.xml:22-37`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **13 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes.
+**القسمة (من `pom.xml:21-43`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **18 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai.
 
 **آلية الحدود:** كل وحدة نطاق تحمل `package-info.java` يعلن `@NamedInterface` + `@ApplicationModule(allowedDependencies=...)`. نموذج حرفي (booking):
 
