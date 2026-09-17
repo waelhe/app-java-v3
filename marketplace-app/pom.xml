@@ -102,6 +102,14 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-community</artifactId>
         </dependency>
+        <!-- AI foundation: the marketplace-ai capability module joins the
+             aggregation exactly like community — the app is the assembly
+             root where every domain module meets Spring's component
+             scanning and the Modulith boundary check. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-ai</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>
