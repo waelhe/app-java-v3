@@ -66,6 +66,12 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.SavedSearchExportPort savedSearchExportPort;
 
+    // L41 (neighborhood community plan §5): the export's seventh section —
+    // the community module's membership port (its adapter lives outside
+    // this slice); the same house pattern as the six ports above.
+    @MockitoBean
+    com.marketplace.shared.api.CommunityExportPort communityExportPort;
+
     // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
     // this module slice) consumes the cross-module purge port as a List —
     // the shared-api contract implemented by the six owning modules'

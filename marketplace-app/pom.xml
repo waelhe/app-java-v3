@@ -94,6 +94,14 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-realestate</artifactId>
         </dependency>
+        <!-- L41 (neighborhood community plan): the community module joins
+             the reactor's application assembly — the L30/L31 documented
+             exception: a new vertical module enters the Reactor list in its
+             first layer's own PR. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-community</artifactId>
+        </dependency>
 
         <!-- Boot starters -->
         <dependency>

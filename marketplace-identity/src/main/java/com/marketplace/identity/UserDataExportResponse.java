@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.BookingExportEntry;
+import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.ConversationExportEntry;
 import com.marketplace.shared.api.MediaExportEntry;
 import com.marketplace.shared.api.MessageExportEntry;
@@ -43,7 +44,8 @@ public record UserDataExportResponse(
         List<MessageExportEntry> messages,
         List<MediaExportEntry> media,
         List<NotificationExportEntry> notifications,
-        List<SavedSearchExportEntry> savedSearches
+        List<SavedSearchExportEntry> savedSearches,
+        List<CommunityMembershipExportEntry> memberships
 ) {
 
     /**
@@ -80,7 +82,8 @@ public record UserDataExportResponse(
             — exported as structured, machine-readable JSON:
             your account profile; bookings where you are a first party (status, dates, amounts); \
             reviews and messages you authored; descriptive metadata of your media (never file bytes); \
-            your notifications; and your saved searches (criteria as stored, alerts flag).
+            your notifications; your saved searches (criteria as stored, alerts flag); \
+            and your neighborhood memberships (the self-declared home location — active and left, as stored).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.

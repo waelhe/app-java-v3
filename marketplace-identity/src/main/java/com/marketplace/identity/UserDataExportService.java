@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.BookingExportPort;
+import com.marketplace.shared.api.CommunityExportPort;
 import com.marketplace.shared.api.MediaExportPort;
 import com.marketplace.shared.api.MessagingExportData;
 import com.marketplace.shared.api.MessagingExportPort;
@@ -53,19 +54,22 @@ public class UserDataExportService {
     private final MediaExportPort mediaExportPort;
     private final NotificationExportPort notificationExportPort;
     private final SavedSearchExportPort savedSearchExportPort;
+    private final CommunityExportPort communityExportPort;
 
     public UserDataExportService(BookingExportPort bookingExportPort,
                                  ReviewExportPort reviewExportPort,
                                  MessagingExportPort messagingExportPort,
                                  MediaExportPort mediaExportPort,
                                  NotificationExportPort notificationExportPort,
-                                 SavedSearchExportPort savedSearchExportPort) {
+                                 SavedSearchExportPort savedSearchExportPort,
+                                 CommunityExportPort communityExportPort) {
         this.bookingExportPort = bookingExportPort;
         this.reviewExportPort = reviewExportPort;
         this.messagingExportPort = messagingExportPort;
         this.mediaExportPort = mediaExportPort;
         this.notificationExportPort = notificationExportPort;
         this.savedSearchExportPort = savedSearchExportPort;
+        this.communityExportPort = communityExportPort;
     }
 
     /**
@@ -89,6 +93,7 @@ public class UserDataExportService {
         var media = mediaExportPort.exportForOwner(user.getId());
         var notifications = notificationExportPort.exportForRecipient(user.getId());
         var savedSearches = savedSearchExportPort.exportForOwner(user.getId());
+        var memberships = communityExportPort.exportForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -107,16 +112,17 @@ public class UserDataExportService {
                 messaging.messages(),
                 media,
                 notifications,
-                savedSearches);
+                savedSearches,
+                memberships);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
         // pseudonymization audit line applies against CWE-532).
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
-                        + "messages={}, media={}, notifications={}, savedSearches={}",
+                        + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
-                media.size(), notifications.size(), savedSearches.size());
+                media.size(), notifications.size(), savedSearches.size(), memberships.size());
         return response;
     }
 }
