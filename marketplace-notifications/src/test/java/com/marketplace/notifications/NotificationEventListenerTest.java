@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,53 @@ class NotificationEventListenerTest {
     void onSavedSearchMatched_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onSavedSearchMatched", SavedSearchMatchedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onPostCommented_callsNotificationServiceForThePostAuthor() {
+        UUID postId = UUID.randomUUID();
+        UUID commentAuthorId = UUID.randomUUID();
+        UUID postAuthorId = UUID.randomUUID();
+        PostCommentedEvent event = new PostCommentedEvent(postId, commentAuthorId, postAuthorId);
+
+        listener.onPostCommented(event);
+
+        verify(notificationService).onPostCommented(postId, postAuthorId);
+    }
+
+    @Test
+    void onPostCommented_selfComment_skipsTheNotificationByPolicy() {
+        // The plan's criterion 4 ("ما لم يكن المعلق هو المؤلف"): the author
+        // commenting on their own post is the one delivery this module
+        // deliberately drops — the event still exists (the registry keeps
+        // the honest fact), the notification does not.
+        UUID postId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        PostCommentedEvent event = new PostCommentedEvent(postId, authorId, authorId);
+
+        listener.onPostCommented(event);
+
+        verify(notificationService, never()).onPostCommented(any(), any());
+    }
+
+    @Test
+    void onPostCommented_propagatesException() {
+        PostCommentedEvent event = new PostCommentedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onPostCommented(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onPostCommented(event));
+    }
+
+    @Test
+    void onPostCommented_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onPostCommented", PostCommentedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }
