@@ -78,6 +78,12 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.SavedSearchExportPort savedSearchExportPort;
 
+    // L41 (neighborhood community plan §5): the export's seventh section
+    // (the community module's adapter, outside the closure) — the same
+    // house pattern.
+    @MockitoBean
+    com.marketplace.shared.api.CommunityExportPort communityExportPort;
+
     // L31: the closure pulls CatalogController, whose property embed needs
     // the realestate module's port — outside this slice (the same house
     // pattern as the other outside-slice ports above).

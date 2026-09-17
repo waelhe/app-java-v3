@@ -201,12 +201,22 @@ class NeighborhoodMembershipModuleIntegrationTest {
     }
 
     @Test
-    void criterion3b_concurrentJoins_leaveExactlyOneWinner() throws Exception {
+    void criterion3b_concurrentJoins_neverLeaveTwoActiveRows() throws Exception {
         // The race the backstop exists for: two joins that both read "no
-        // membership" and both insert — the partial unique index rejects
-        // the loser (23505 ⇒ the DataIntegrityViolationException the
-        // shared handler maps to 409 at HTTP). The L35 concurrency shape
-        // (a CountDownLatch gate, not invokeAll's staggered start).
+        // membership" and both insert. The CountDownLatch aligns the
+        // STARTS, not the interleavings (CodeRabbit round 1, adopted from
+        // the root): exactly two interleavings are legal — (a) the true
+        // race, both threads pass findByUserId before either commits, and
+        // the partial unique index rejects the loser's insert (23505 ⇒ the
+        // DataIntegrityViolationException the shared handler maps to 409
+        // at HTTP); (b) the threads serialize, the later one SEES the
+        // committed row and takes the idempotent branch. The assertion is
+        // the invariant that holds in EVERY interleaving: at least one
+        // join answers, every failure is the unique-violation backstop
+        // itself (never any other exception), and EXACTLY one row exists —
+        // active and total. Two active rows (the unserialized race the
+        // G-N1 index exists to make impossible) fails the test in every
+        // interleaving — which is the point.
         UUID userId = UUID.randomUUID();
         UUID location = UUID.fromString(AL_HAMAH);
 
@@ -223,13 +233,18 @@ class NeighborhoodMembershipModuleIntegrationTest {
             Object outcome1 = outcomeOf(first);
             Object outcome2 = outcomeOf(second);
 
-            long wins = java.util.List.of(outcome1, outcome2).stream()
+            var outcomes = java.util.List.of(outcome1, outcome2);
+            long wins = outcomes.stream()
                     .filter(o -> o instanceof NeighborhoodMembershipService.MembershipCommandResult).count();
-            long rejects = java.util.List.of(outcome1, outcome2).stream()
-                    .filter(o -> o instanceof org.springframework.dao.DataIntegrityViolationException).count();
-            assertThat(wins).isEqualTo(1);
-            assertThat(rejects).isEqualTo(1);
+            // interleaving (a): 1 win + 1 reject; interleaving (b): 2 wins
+            // (the second is the idempotent re-join). Both are correct
+            // system behavior; neither may ever be anything else.
+            assertThat(wins).isBetween(1L, 2L);
+            assertThat(outcomes.stream()
+                    .filter(o -> !(o instanceof NeighborhoodMembershipService.MembershipCommandResult)))
+                    .allMatch(o -> o instanceof org.springframework.dao.DataIntegrityViolationException);
             assertThat(activeRows(userId)).isEqualTo(1);
+            assertThat(totalRows(userId)).isEqualTo(1);
         } finally {
             executor.shutdownNow();
         }
