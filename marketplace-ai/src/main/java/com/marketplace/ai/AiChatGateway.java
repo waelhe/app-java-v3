@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ServiceUnavailableException;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,8 +44,11 @@ import org.springframework.stereotype.Service;
  * {@code ChatModel} binds and the context still boots cleanly.
  * {@link #available()} reports the state and {@link #chat} answers 503
  * SU-001 while off — never a startup failure, never a health contribution.
- * Selecting a provider without its key is a broken selection, not an off
- * state, and fails at the provider's own startup assertion.
+ * The 503 detail reports the selector's <em>actual configured value</em> (read
+ * from the {@link Environment} — an unmatched value binds no model either,
+ * so the message must never assume {@code none}); selecting a provider
+ * without its key is a broken selection, not an off state, and fails at the
+ * provider's own startup assertion.
  */
 @Service
 public class AiChatGateway {
@@ -57,9 +61,11 @@ public class AiChatGateway {
     public static final String CHAT_SELECTOR_PROPERTY = "spring.ai.model.chat";
 
     private final ObjectProvider<ChatModel> models;
+    private final Environment environment;
 
-    public AiChatGateway(ObjectProvider<ChatModel> models) {
+    public AiChatGateway(ObjectProvider<ChatModel> models, Environment environment) {
         this.models = models;
+        this.environment = environment;
     }
 
     /**
@@ -74,15 +80,28 @@ public class AiChatGateway {
      * Sends one user turn to the bound provider and returns its text answer.
      *
      * @throws ServiceUnavailableException (503 SU-001) when the capability is
-     *         OFF — no provider selected or bound.
+     *         OFF — no provider selected or bound. The detail names the
+     *         selector property with its actually configured value (or that
+     *         it is unset), never an assumed one.
      */
     public String chat(String userText) {
         ChatModel model = models.getIfAvailable();
         if (model == null) {
             throw new ServiceUnavailableException(
-                    "The AI chat capability is OFF: no ChatModel is bound (" + CHAT_SELECTOR_PROPERTY
-                            + "=none) — select a provider (google-genai | deepseek) with its API key to turn it on");
+                    "The AI chat capability is OFF: no ChatModel is bound for " + CHAT_SELECTOR_PROPERTY
+                            + selectorState() + " — select a provider (google-genai | deepseek) with its API key to turn it on");
         }
         return ChatClient.create(model).prompt().user(userText).call().content();
+    }
+
+    /**
+     * The selector's configured value as reported in the 503 detail — the
+     * measured fact from the {@link Environment}, not an assumption: any
+     * value other than a configured provider (including {@code none} or an
+     * unmatched string, or no value at all) leaves no {@code ChatModel} bound.
+     */
+    private String selectorState() {
+        String selector = environment.getProperty(CHAT_SELECTOR_PROPERTY);
+        return selector == null ? " (unset)" : "=" + selector;
     }
 }

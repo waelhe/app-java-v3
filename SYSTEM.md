@@ -32,9 +32,9 @@
 
 | الجانب | المالك | الآلية | الدليل |
 |---|---|---|---|
-| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml:22-37` |
-| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10, 60-210` |
-| بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml:217-260` |
+| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (21 وحدة) |
+| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
+| بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml` — كتلة `<build>/<plugins>` في الجذر |
 | مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |
 | إنشاء الفول والتوصيل | Boot | component scan + auto-configuration شرطية | `MarketplaceApplication.java:9-11` |
 | قراءة الإعدادات | Boot | ربط نوعي `@ConfigurationProperties` | `MarketplaceProperties.java:17` |
@@ -44,7 +44,7 @@
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 21 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 21 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 
