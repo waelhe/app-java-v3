@@ -38,6 +38,7 @@
         <module>marketplace-geo</module>
         <module>marketplace-realestate</module>
         <module>marketplace-community</module>
+        <module>marketplace-ai</module>
         <module>marketplace-app</module>
     </modules>
 
@@ -51,6 +52,7 @@
         <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.0</instancio.version>
+        <spring-ai.version>2.0.1</spring-ai.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
         <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements -->
         <jackson.version>3.2.2</jackson.version>
@@ -89,6 +91,34 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Exception #13: Spring AI BOM — Boot does not manage Spring AI
+                 (official Spring project, same category as the Modulith BOM
+                 exception #1 above — NOT one of the three community exceptions).
+                 Reason: provider-neutral chat-client foundation for the new
+                 marketplace-ai capability module (ChatModel/ChatClient plus the
+                 spring.ai.model.chat provider selector).
+                 Compatibility evidence (docs.spring.io/spring-ai, v2.0.1):
+                 "Spring AI 2.0.x supports Spring Boot 4.0.x and 4.1.x."
+                 (reference/getting-started.html); releases publish to Maven
+                 Central with no extra repository
+                 (reference/getting-started.html#artifact-repositories); the
+                 coordinates below are the documented
+                 reference/getting-started.html#dependency-management recipe
+                 (org.springframework.ai:spring-ai-bom, type pom, scope import).
+                 Live proof on this project's account: gemini-3.5-flash-lite
+                 answers 200 (measured 2026-09-17).
+                 Owner: platform maintainers (version-policy §8).
+                 Follow-up review: 2026-12-17 (quarterly minor cadence,
+                 version-policy §3; the Dependabot allow-list covers Boot +
+                 Modulith only, so Spring AI upgrades arrive via this review,
+                 not automation). -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!-- Exception #3: Resilience4j BOM — Boot BOM does not manage resilience4j-spring-boot4 -->
             <dependency>
                 <groupId>io.github.resilience4j</groupId>
@@ -116,6 +146,57 @@
                 <version>${jackson.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!-- Override: Guava — the Google GenAI SDK tree (Spring AI 2.0.1,
+                 exception #13) requires four guava versions at once
+                 (google-http-client 30.1.1-android, opencensus 29.0-android,
+                 google-auth 33.4.0-android, api-common 33.4.0-jre):
+                 DependencyConvergence + RequireUpperBoundDeps fail without a
+                 single pin (measured 2026-09-17). 33.4.0-jre is the upper
+                 bound (above every -android requirement) and the -jre flavor
+                 is the correct one for a server JVM (the -android flavor
+                 strips server-side implementation). -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>33.4.0-jre</version>
+            </dependency>
+            <!-- Override: error_prone_annotations — annotations-only artifact;
+                 gson 2.13.2 (managed) requires 2.41.0 while the rest of the
+                 Google tree requires 2.36.0 (RequireUpperBoundDeps, measured
+                 2026-09-17). Pin the max; zero behavioral surface. -->
+            <dependency>
+                <groupId>com.google.errorprone</groupId>
+                <artifactId>error_prone_annotations</artifactId>
+                <version>2.41.0</version>
+            </dependency>
+            <!-- Override: checker-qual — annotations-only artifact; postgresql
+                 42.7.13 requires 3.55.1 while guava 33.4.0-jre (override
+                 above, exception #13) requires 3.43.0 (DependencyConvergence,
+                 measured 2026-09-17). Pin the max; zero behavioral surface. -->
+            <dependency>
+                <groupId>org.checkerframework</groupId>
+                <artifactId>checker-qual</artifactId>
+                <version>3.55.1</version>
+            </dependency>
+            <!-- Override: okio-jvm — the OTel exporter tree (okhttp-jvm 5.3.2)
+                 requires 3.16.4 while the Google GenAI SDK tree (okhttp 4.12.0,
+                 exception #13) requires 3.6.0 (DependencyConvergence, measured
+                 2026-09-17). Pin the max — okio 3.x is binary-compatible
+                 within the major version; the full suite below confirms. -->
+            <dependency>
+                <groupId>com.squareup.okio</groupId>
+                <artifactId>okio-jvm</artifactId>
+                <version>3.16.4</version>
+            </dependency>
+            <!-- Override: antlr4-runtime — Boot/Hibernate require 4.13.2 while
+                 spring-ai-template-st 2.0.1 (exception #13) requires 4.13.1
+                 (DependencyConvergence, measured 2026-09-17). Pin the max —
+                 the ANTLR4 runtime stays backward-compatible within 4.x. -->
+            <dependency>
+                <groupId>org.antlr</groupId>
+                <artifactId>antlr4-runtime</artifactId>
+                <version>4.13.2</version>
             </dependency>
             <!-- Override: Prometheus — micrometer-registry-prometheus 1.17.1 requires 1.7.0, Boot 4.1.1 manages 1.7.0; keep 1.8.0 (latest stable) for CVE coverage -->
             <dependency>
@@ -288,6 +369,11 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-community</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-ai</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

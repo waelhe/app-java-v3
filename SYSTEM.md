@@ -21,7 +21,7 @@
 | قاعدة البيانات | PostgreSQL 18 في المستودع (CI/compose/Testcontainers) **وفي الإنتاج** (خدمة `postgres-18` = **postgis/postgis:18-3.6** بتبديل P-1 في المكان 2026-09-12 [خطة PostGIS §4-P3] + فوليوم، 18.6، سجل Flyway حي بـ61 مدخلًا (59 نسخية V1..V60 + بذرتان تكراريتان) بعد وصول V60 — قياس §15 2026-09-17)؛ **فصل الهويات مقيس 2026-09-13 (§15):** الترحيل عبر `flyway_migrator` (خارق — `SPRING_FLYWAY_*`) والتشغيل عبر `marketplace_app` (NOSUPERUSER — `DB_*`) والمستخدم التأسيسي `marketplace` طوارئ حصرًا (حارس المنصة يمنع نزع خوارقه) | `.github/workflows/ci.yml:23-24` + `docker-compose.yml:3` + سجل الإقلاع الحي (§15) |
 | الذاكرة/الجلسات | Redis 8 في المستودع (CI/compose) **وفي الإنتاج** (8.2: ترقية في المكان + فوليوم + requirepass + RDB 2026-09-04 — §15)؛ Lettuce 7.5.2 (BOM) يدعم رسمياً «Redis 2.6+ up to Redis 8.x» | `.github/workflows/ci.yml:36-37` + `application.yml:109-111` |
 | الجودة | JaCoCo 0.8.15، عتبة تغطية ≥ 70% لكل وحدة (BUNDLE) | `pom.xml:44-45` |
-| الوحدات | **16** وحدة Maven في Reactor الجذر | `pom.xml:22-37` |
+| الوحدات | **21** وحدة Maven في Reactor الجذر (18 نطاقية + التجميع + المشتركة + البنية التحتية) | `pom.xml:21-43` |
 | النشر | Dockerfile + `.railway/railway.ts` (IaC — إعدادات خدمة-مستوى) + docker-compose.yml | جذر المستودع |
 
 ---
@@ -32,9 +32,9 @@
 
 | الجانب | المالك | الآلية | الدليل |
 |---|---|---|---|
-| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml:22-37` |
-| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10, 60-210` |
-| بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml:217-260` |
+| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (21 وحدة) |
+| إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
+| بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml` — كتلة `<build>/<plugins>` في الجذر |
 | مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |
 | إنشاء الفول والتوصيل | Boot | component scan + auto-configuration شرطية | `MarketplaceApplication.java:9-11` |
 | قراءة الإعدادات | Boot | ربط نوعي `@ConfigurationProperties` | `MarketplaceProperties.java:17` |
@@ -44,7 +44,7 @@
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 16 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus — `pom.xml:60-210`).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 21 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 
@@ -78,9 +78,9 @@
 
 ---
 
-## 5. البنية النمطية — 16 وحدة تحت Modulith
+## 5. البنية النمطية — 21 وحدة تحت Modulith
 
-**القسمة (من `pom.xml:22-37`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **13 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes.
+**القسمة (من `pom.xml:21-43`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **18 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai.
 
 **آلية الحدود:** كل وحدة نطاق تحمل `package-info.java` يعلن `@NamedInterface` + `@ApplicationModule(allowedDependencies=...)`. نموذج حرفي (booking):
 
@@ -186,6 +186,8 @@ package com.marketplace.booking;
 ---
 
 ## 11. الحالة الحالية للخطط الحاكمة (auth redesign + استضافة العملاء + توسع الميزات)
+
+- **AI foundation — أساس قدرة المحادثة (2026-09-17، أمر [تنفيذ] للنطاق المعلن؛ خارج نوافذ الخطط — لا بند roadmap):** **الوحدة الجديدة `marketplace-ai`** (pom بنمط geo + `package-info` بـallowedDependencies shared-only + `AiModule` + `AiChatGateway`: حقن `ObjectProvider<ChatModel>` وبناء العميل بمصنع `ChatClient.create` الموثق — لا Builder: تعريفه موجود بلا ChatModel وغير قابل للإنشاء، مقيس `UnsatisfiedDependencyException`) + **الاستثناء الموثق #13** (`spring-ai-bom:2.0.1` — مشروع Spring رسمي كفئة Modulith #1 لا استثناء مجتمعي؛ الدليل: «Spring AI 2.0.x supports Spring Boot 4.0.x and 4.1.x» + وصفة BOM المركزية + Central؛ المراجعة 2026-12-17) + **5 تثبيتات حدود عليا** (guava 33.4.0-jre + error_prone 2.41.0 + checker-qual 3.55.1 + okio-jvm 3.16.4 + antlr4-runtime 4.13.2 — نمط تجاوزات jackson/prometheus) + **العقد الإعدادي** (`spring.ai.model.chat=none` افتراضيًا = القدرة OFF بلا حبوب؛ `google-genai|deepseek` يفعّل مزودًا واحدًا بالضبط؛ المفاتيح env-only فارغة؛ الاختبار `chat=none`) + **الحرّاس** (الوحدة خضراء + Modulith أخضر + تكامليتا OFF/ON خضروان على JDK 25.0.4 — التفاصيل والأدلة: PROJECT_MAP القسم الأحدث). **حقيقتا سلسلة محليتين:** سكربت `mvnw.cmd` يتجاهل JAVA_HOME هنا (البوابات عبر `mvn.cmd` المباشر)؛ صنفا بوابة الدخول يفشلان على HEAD النقي أسوأ منه على هذه الشجرة (worktree pristine: 11 مقابل 8 — عائلة بيئية، CI حكمها).
 
 - **Layer 42 — المنشورات والتغذية والتعليقات: الطبقة الثانية للخطة المجتمعية (2026-09-17، كلمة «نفذ» المستمرة = فتح البوابة المعلنة؛ الحالة: منفَّذة — جاهزة للدمج (الفرع `feat/community-posts-feed`)):** تغذية الحي فوق مرساة L41 بنفس الحدود (الوحدة القائمة `marketplace-community` — صفر أثر على الحدود، `allowedDependencies = shared حصرًا`). **V61** (`neighborhood_posts` + `post_comments` + المرآتان بنمط V24): category/status معدودان DB بـCHECKs بنمط V44 (RECOMMENDATION نقطة توسيع L43؛ HIDDEN_BY_MODERATOR قلب L45 وحده — لا مسار كتابة في هذه الطبقة سوى VISIBLE)، **فهرس التغذية** الجزئي `(location_id, created_at DESC, id DESC) WHERE is_deleted = FALSE AND status = 'VISIBLE'` هو شكل الاستعلام نفسه (D-N5)، فهرسا المؤلف غير-جزئيان عمدًا (تصدير b-2 وتطهير b-3 يقرآن عبر مرشح الحذف الناعم بالSQL الخام — الفهرس الجزئي سيخفي بالضبط الصفوف التي وُجدت لأجلها)، و`post_id` عمود UUID مجرد بـFK داخلية (سابقة `messages.conversation_id` حرفيًا)؛ **V62** توسيع CHECK الإشعارات للنوع الخامس POST_COMMENTED (سابقة V53/V55 نفسها). **السطح:** عائلتا URL بنمط الخطة — `GET/POST /api/v1/neighborhood/posts` (التغذية قراءة العضوية هي النطاق: G-N1 عضوية واحدة ⇒ تغذية واحدة، بلا باراميتر موقع؛ النشر ببوابة L41 نفسها 404→400→403) و`GET/POST /api/v1/posts/{id}/comments` + `DELETE /api/v1/posts/{id}` (بوابة المنشور المرئي 404 للأمجهول/المخفي/المحذوف، وبوابة العضوية النشطة في `location_id` الخاص بالمنشور نفسه — تبنّي ملاحظة CodeRabbit ج1 على الخطة) — كلها تحت `anyRequest().authenticated()` القائم (صفر سطور أمن). **الترتيب الحتمي مقيس بالحارس:** الخدمة تفرض مفتاح الترتيب الكامل على Pageable المتلقي (صفحتان لصفين بنفس الثانية بلا تكرار/فجوة — معيار 8 بغرس SQL مباشر). **الحدث:** `PostCommentedEvent` (shared-api: postId/commentAuthorId/postAuthorId) يُنشر داخل معاملة التعليق (السجل يلتزم ذريًا) والمستمع `onPostCommented` يخطر المؤلف AFTER_COMMIT بكل قنوات L22 — **وتخطي التعليق الذاتي سياسة المستمع لا الناشر** (الحدث يبقى الحقيقة الصادقة في سجل النشر؛ معيار 4 السالب مقيس بانتظار تسوية السجل). **b-2/b-3:** منفذا التصدير الجديدان يحملان منشورات/تعليقات المستخدم (بما فيها المحذوفة — تمييز b-5) والمحوّل صار حقيقيًا (title/body بالعلامة `[purged]` للقاعدة والمرايا مع مرشح الإيدمبوتنس الدقيق) — تضييق استثناء L41 الموثق إلى صف العضوية وحده كما وعد الجافادوك نفسه. **حدود المعدل:** نمطان مسميان مستقلان `postCreate` (10/1م — ميزانية bookingCreate/reviewCreate) و`postComment` (30/1م — ميزانية mediaUpload) بنموذج L29 (timeout 0 = 429 RL-001 فوري؛ G8 قابل للمعايرة بالبيئة). **بوابة النوع (معيار 3):** فئة الطلب String تُفك قبل أي استدعاء خدمة (فك التعداد التلقائي ليس IllegalArgumentException) والعنوان 200/الجسم 2000 بحدود موثقة (سابقتا provider_listings.title ورسالة الـlead) والعمود TEXT فالتوسيع قرار منتج بلا ترحيلة. **الحرّاس:** 31 وحدة + 17 WebMvc + تكاملي كامل المعايير + صنف حدود المعدل بنمط L34 + تحديث المصفوفات المتأثرة (15 صف تفضيلات + جرد @Observed بالأوامر الثلاثة مرتبة أبجديًا كما يمسحها الحارس). **صفر متغيرات بيئة جديدة.** **بوابات الخطة:** L46 جسر العقار ختام المرحلة الأولى — بكلمة «نفذ».
 

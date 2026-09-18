@@ -1,4 +1,11 @@
 spring:
+  # AI foundation: the test profile never binds a provider (no network in
+  # tests) — spring.ai.model.chat=none disables every chat
+  # auto-configuration, so the context boots with the capability OFF and
+  # AiChatGateway reports unavailable.
+  ai:
+    model:
+      chat: none
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
