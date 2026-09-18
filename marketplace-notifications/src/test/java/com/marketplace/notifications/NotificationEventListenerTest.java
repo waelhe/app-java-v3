@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -205,6 +206,43 @@ class NotificationEventListenerTest {
     void onPostCommented_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onPostCommented", PostCommentedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onNewListingInNeighborhood_callsNotificationServiceForTheMember() {
+        UUID recipientId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        NewListingInNeighborhoodEvent event =
+                new NewListingInNeighborhoodEvent(recipientId, listingId);
+
+        listener.onNewListingInNeighborhood(event);
+
+        verify(notificationService).onNewListingInNeighborhood(recipientId, listingId);
+    }
+
+    @Test
+    void onNewListingInNeighborhood_propagatesException() {
+        // L46's criterion 3 (the unit-level failure injection — the same
+        // root every listener above pins): a delivery failure must
+        // propagate so the per-member publication stays incomplete in the
+        // registry and the framework's retry re-delivers it — a swallowed
+        // exception would silently lose the match for this member.
+        NewListingInNeighborhoodEvent event = new NewListingInNeighborhoodEvent(
+                UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onNewListingInNeighborhood(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onNewListingInNeighborhood(event));
+    }
+
+    @Test
+    void onNewListingInNeighborhood_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onNewListingInNeighborhood", NewListingInNeighborhoodEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }
