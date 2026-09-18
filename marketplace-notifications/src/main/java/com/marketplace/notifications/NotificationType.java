@@ -23,11 +23,19 @@ package com.marketplace.notifications;
  * ("نقطة إضافة واحدة" D-N12; the V62 CHECK widens the DB-side membership
  * guard to match). The recipient is the post's author; the self-comment
  * skip is the listener's own policy, not this enum's concern.
+ *
+ * <p>L46 (neighborhood community plan §5 — the community realestate
+ * bridge): {@code NEW_LISTING_IN_NEIGHBORHOOD} joins as the sixth type —
+ * the same point addition (the V63 CHECK widens the DB-side membership
+ * guard to match). The recipient is an ACTIVE member of the activated
+ * listing's neighborhood; the publisher's own membership is excluded by
+ * the community side's bridge listener, not by this enum.
  */
 public enum NotificationType {
     BOOKING_CREATED,
     PAYMENT_STATE,
     LEAD_RECEIVED,
     SAVED_SEARCH_MATCH,
-    POST_COMMENTED
+    POST_COMMENTED,
+    NEW_LISTING_IN_NEIGHBORHOOD
 }

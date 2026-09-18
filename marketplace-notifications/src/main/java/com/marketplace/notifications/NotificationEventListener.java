@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
@@ -90,6 +91,30 @@ public class NotificationEventListener {
         notificationService.onPostCommented(event.postId(), event.postAuthorId());
         log.info("Notification sent for post comment: postId={}, author={}",
                 event.postId(), event.postAuthorId());
+    }
+
+    /**
+     * L46 (neighborhood community plan §5 — the community realestate
+     * bridge): the neighborhood member's NEW_LISTING_IN_NEIGHBORHOOD
+     * alert. The event arrives pre-scoped per member (the community
+     * bridge's structural one-event-per-recipient fan-out), so one event
+     * is one notification. Same contract as the listeners above — after
+     * commit, its own transaction, the framework's retry: a failed
+     * delivery never loses the match (the registry entry stays
+     * incomplete until the listener succeeds).
+     *
+     * <p><b>The publisher's own exclusion lives on the community side</b>
+     * (the plan's criterion 4: the bridge listener skips the
+     * publisher-member before publishing) — every event this listener
+     * receives is a genuine neighbor alert, so this method delivers
+     * unconditionally, keeping the delivery contract one shape for every
+     * caller.
+     */
+    @ApplicationModuleListener
+    public void onNewListingInNeighborhood(NewListingInNeighborhoodEvent event) {
+        notificationService.onNewListingInNeighborhood(event.recipientId(), event.listingId());
+        log.info("Notification sent for new neighborhood listing: recipient={}, listing={}",
+                event.recipientId(), event.listingId());
     }
 
 }

@@ -2,8 +2,11 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
+import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +41,17 @@ import java.util.UUID;
  * <p><b>The leave contract (G-N1):</b> the soft delete releases the
  * partial index's slot — a later rejoin inserts a fresh row whose
  * {@code member_since} honestly restarts the membership clock.
+ *
+ * <p><b>The L46 realestate bridge (neighborhood community plan §5-L46):</b>
+ * the membership aggregate's own query powers the community side of the
+ * catalog activation fan-out — {@link #onListingActivated(UUID, UUID)}
+ * resolves the listing's neighborhood through {@link PropertyDetailsPort}
+ * and publishes one {@link NewListingInNeighborhoodEvent} per ACTIVE
+ * member (the publisher's own membership excepted). The bridge lives on
+ * THIS service because the member resolution is the membership domain's
+ * own read — the same ownership {@code SavedSearchService.
+ * processListingActivated} proved for the search side of the same event
+ * (realestate plan §5-L35, one publisher, many consumers).
  */
 @Service
 @Transactional
@@ -53,13 +67,19 @@ public class NeighborhoodMembershipService {
 
     private final NeighborhoodMembershipRepository repository;
     private final GeoLookupPort geoLookupPort;
+    private final PropertyDetailsPort propertyDetailsPort;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public NeighborhoodMembershipService(NeighborhoodMembershipRepository repository,
                                          GeoLookupPort geoLookupPort,
+                                         PropertyDetailsPort propertyDetailsPort,
+                                         ApplicationEventPublisher eventPublisher,
                                          Clock clock) {
         this.repository = repository;
         this.geoLookupPort = geoLookupPort;
+        this.propertyDetailsPort = propertyDetailsPort;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -133,5 +153,73 @@ public class NeighborhoodMembershipService {
      * is the command's own fact, not a guess.
      */
     record MembershipCommandResult(NeighborhoodMembershipView view, boolean created) {
+    }
+
+    /**
+     * L46 (neighborhood community plan §5 — the community realestate
+     * bridge): one catalog activation reaching the members of the
+     * listing's neighborhood. The catalog module stays unaware of every
+     * consumer ("صفر معرفة بالبحوث" — the L35 discipline verbatim): it
+     * published {@code ListingActivatedEvent} inside its activation
+     * transaction, and THIS unit — running AFTER_COMMIT in its own
+     * transaction via the thin {@link NeighborhoodListingEventListener}
+     * — resolves the property's {@code locationId} through
+     * {@link PropertyDetailsPort} and publishes one
+     * {@link NewListingInNeighborhoodEvent} per ACTIVE member of that
+     * node.
+     *
+     * <p><b>The documented skip (criterion 2):</b> a listing with no
+     * {@code property_details} row (not real-estate) has no neighborhood
+     * to bridge — the method returns 0 notifications. A property in a
+     * node nobody joined behaves identically through the query itself
+     * (criterion 5: zero notifications, zero errors — no level gate, no
+     * exception; the ACTIVE-membership query IS the scope).
+     *
+     * <p><b>The conflict-of-interest exclusion (criterion 4):</b> the
+     * listing's own publisher, when they are ALSO a member of that
+     * neighborhood, is the one member this bridge deliberately does not
+     * alert — nobody gets a "new listing" notification for their own
+     * activation.
+     *
+     * <p><b>The retry contract (criterion 3):</b> the per-member event
+     * publications commit atomically with this unit — a failure anywhere
+     * (the port lookup, the member query, a publication) rolls back
+     * every publication of this run and the framework's registry keeps
+     * the {@code ListingActivatedEvent} entry incomplete for retry, so
+     * a failed bridge run never silently drops the match. Fan-out is
+     * linear on member count by design (the plan's declared D-C1 debt,
+     * closure at the measured threshold).
+     *
+     * <p><b>No {@code @Observed} of its own:</b> async listener-side
+     * runs stay outside the observation inventory by the pinned policy
+     * (business commands observed, listener runs not — the
+     * {@code SavedSearchService.processListingActivated} precedent for
+     * this very event); the bridge's health is observable through the
+     * publication registry and the listener's own log line.
+     *
+     * @param listingId  the activated catalog listing
+     * @param providerId the listing's publisher (the users.id-space fact
+     *                   {@code ListingActivatedEvent} carries) — used
+     *                   only for the self-notification exclusion
+     * @return how many members were alerted (0 for the documented skips)
+     */
+    public int onListingActivated(UUID listingId, UUID providerId) {
+        Optional<PropertyDetailsPort.PropertyView> property =
+                propertyDetailsPort.findByListingId(listingId);
+        if (property.isEmpty()) {
+            // Not a real-estate listing — no neighborhood to bridge.
+            return 0;
+        }
+        UUID locationId = property.get().locationId();
+        int alerted = 0;
+        for (NeighborhoodMembership member : repository.findByLocationId(locationId)) {
+            if (member.getUserId().equals(providerId)) {
+                continue;
+            }
+            eventPublisher.publishEvent(
+                    new NewListingInNeighborhoodEvent(member.getUserId(), listingId));
+            alerted++;
+        }
+        return alerted;
     }
 }
