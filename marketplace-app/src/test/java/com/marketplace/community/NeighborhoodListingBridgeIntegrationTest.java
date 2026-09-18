@@ -120,6 +120,16 @@ class NeighborhoodListingBridgeIntegrationTest {
                 ON CONFLICT (id) DO NOTHING
                 """, providerUserId, "l46-provider-" + providerUserId + "@example.com",
                 "l46-provider-" + providerUserId + "@example.com", "L46 provider");
+        // The ownership gate's own resolution (the SavedSearchIntegrationTest
+        // seeding convention): verifyOwnership resolves the listing's provider
+        // through providerLookupPort.findByUserId — a users row alone leaves
+        // that lookup EMPTY and the honest answer is the 403 (measured in CI:
+        // every activation answered 403 until this row existed).
+        jdbc.update("""
+                INSERT INTO provider_profiles (id, display_name, bio, status, user_id, created_at, updated_at)
+                VALUES (?, ?, 'l46-test', 'PENDING', ?, now(), now())
+                ON CONFLICT (id) DO NOTHING
+                """, UUID.randomUUID(), "L46 provider", providerUserId);
     }
 
     /** A DRAFT listing whose property sits in the given level-3 node. */
