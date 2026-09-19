@@ -1,63 +1,44 @@
-import { defineRailway, github, preserve, project, service, volume } from "railway/iac";
+import { defineRailway, github, preserve, project, service } from "railway/iac";
 
 // Migrated from railway.toml (Config as Code, deprecated — hard cutoff
 // 2026-12-01) per docs.railway.com/infrastructure-as-code#migrating-from-config-as-code.
 //
 // Partial export: this file manages ONLY the app-java-v3 service (the only
-// CaC-managed service). The data services (postgres-18, postgres, redis,
-// netdiag) are image-based, not CaC-managed, and stay Railway-managed.
+// CaC-managed service). The data services are external channels since the
+// Neon migration (2026-09-18) and stay outside this partial by design.
 //
-// Everything the service owns is DECLARED so the partial's remove-what-is-
-// omitted semantics cannot destroy state:
-//   - source: the deploy GitHub repo (fork waelhe88-coder/app-java-v3, main)
-//   - build: builder DOCKERFILE + root Dockerfile (expressed explicitly per
-//     the DSL types — the migrate tool emitted them as comments only; losing
-//     builder=DOCKERFILE would drop builds to Railpack's Java 21 default and
-//     re-break the JDK 25 build, the documented 9dbbbb5 failure mode)
-//   - env: all 35 runtime variables via preserve() — the official mechanism
-//     that keeps values managed in Railway (secrets never materialize here).
-//     Scope: the app-java-v3 service-scoped names in the production
-//     environment's flat variable collection (measured enumeration
-//     2026-09-10 — SYSTEM.md §15). The 18 data-service variables
-//     (postgres-18/redis) are outside this partial by design (image-based,
-//     Railway-managed); zero shared/unscoped names exist.
-//     Reconciled 2026-09-10 against the live GraphQL enumeration (SYSTEM.md
-//     §15): added the I2 currency bundle (EXCHANGE_BASE_CURRENCY + 6
-//     MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_*) and
-//     PSEUDONYMIZATION_HMAC_KEY (I7 Phase 1), and REMOVED the
-//     JWT_KEYSTORE_PATH declaration — that channel was deliberately deleted
-//     from the platform in I1 (2026-09-09, documented trap-closure: the b64
-//     channel is the only keystore path; a stale PATH silently resurrects
-//     the old key if b64 is ever emptied). Reconciled again 2026-09-13
-//     (D-P13 hardening, docs/postgis-integration-plan.md §4-P3): added
-//     SPRING_FLYWAY_USER / SPRING_FLYWAY_PASSWORD (the migration-identity
-//     pair — values write-only on the platform); DB_USERNAME / DB_PASSWORD
-//     values were rotated platform-side the same day (marketplace_app — the
-//     NOSUPERUSER runtime role; preserve() semantics unchanged). The
-//     declared set mirrors the measured live set (35 names, set-equality
-//     verified) — no config apply has ever run.
-//   - volumeMounts: the existing app-java-v3-volume at /data (the documented
-//     residue — its separation/removal stays a user-gated decision, not an
-//     omission side effect)
-//   - healthcheck: the [deploy] section of the old CaC file — now service-
-//     level settings that actually reflect in deploy manifests (closing the
-//     documented gap where file-level [deploy] never applied).
+// Reconciled 2026-09-19 for the v3-account migration (PR #347, SYSTEM.md §15):
+//   - source: the DIRECT main repository (waelhe/app-java-v3, branch main) —
+//     the retired deployment fork (waelhe88-coder/app-java-v3) was left here
+//     by the pre-migration state, and any `railway config apply` with it
+//     would rebind this service to a repository whose sync workflow is
+//     disabled and whose account is drained (the CodeRabbit-flagged trap).
+//   - env: the full measured live set — 45 service-scoped names on the v3
+//     service's production environment (set-equality verified against the
+//     GraphQL enumeration after the faithful transfer; the 2026-09-13
+//     declaration had 35 names — the S3 media bundle, the two IP hash keys,
+//     SPRING_AI_MODEL_CHAT, MAIL_PORT and SPRING_DATA_REDIS_SSL_ENABLED were
+//     added since). All via preserve() — the official mechanism that keeps
+//     values managed in Railway (secrets never materialize here).
+//   - volumeMounts: REMOVED — the v3 service runs without a volume (the
+//     /data "app-java-v3-volume" residue belonged to the retired account's
+//     service; the v3 deployment 4b203ec2 is measured healthy without it).
+//     Declaring it here would re-create the old topology on apply.
+//   - healthcheck: unchanged ([deploy] semantics — service-level settings
+//     that actually reflect in deploy manifests).
+//   - no config apply has ever run against the v3 project; this file is the
+//     declared record matching the API-applied live state.
 export const partial = "app-java-v3";
 
 export default defineRailway(() => {
-  const app_data_volume = volume("app-java-v3-volume", { region: "ams", sizeMB: 500 });
-
   const app_java_v3 = service("app-java-v3", {
-    source: github("waelhe88-coder/app-java-v3", { branch: "main" }),
+    source: github("waelhe/app-java-v3", { branch: "main" }),
     build: {
       builder: "DOCKERFILE",
       dockerfilePath: "Dockerfile",
     },
     healthcheck: "/actuator/health/liveness",
     healthcheckTimeout: 300,
-    volumeMounts: {
-      "/data": app_data_volume,
-    },
     env: {
       AUTH_SERVER_ISSUER: preserve(),
       CORS_ALLOWED_ORIGINS: preserve(),
@@ -71,8 +52,11 @@ export default defineRailway(() => {
       JWT_KEY_PASSWORD: preserve(),
       MAIL_HOST: preserve(),
       MAIL_PASSWORD: preserve(),
+      MAIL_PORT: preserve(),
       MAIL_USERNAME: preserve(),
       MANAGEMENT_SERVER_PORT: preserve(),
+      MARKETPLACE_CATALOG_VIEWS_IP_HASH_KEY: preserve(),
+      MARKETPLACE_MESSAGING_LEADS_IP_HASH_KEY: preserve(),
       MARKETPLACE_PAYMENTS_WEBHOOK_SHARED_SECRET: preserve(),
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_AED: preserve(),
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_EGP: preserve(),
@@ -80,6 +64,11 @@ export default defineRailway(() => {
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_GBP: preserve(),
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_KWD: preserve(),
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_USD: preserve(),
+      MEDIA_S3_ACCESS_KEY: preserve(),
+      MEDIA_S3_BUCKET: preserve(),
+      MEDIA_S3_ENDPOINT: preserve(),
+      MEDIA_S3_REGION: preserve(),
+      MEDIA_S3_SECRET_KEY: preserve(),
       OAUTH_CLIENT_ID: preserve(),
       OAUTH_CLIENT_REDIRECT_URIS: preserve(),
       OAUTH_CLIENT_SECRET: preserve(),
@@ -90,7 +79,9 @@ export default defineRailway(() => {
       PSEUDONYMIZATION_HMAC_KEY: preserve(),
       REDIS_HOST: preserve(),
       REDIS_PORT: preserve(),
+      SPRING_AI_MODEL_CHAT: preserve(),
       SPRING_DATA_REDIS_PASSWORD: preserve(),
+      SPRING_DATA_REDIS_SSL_ENABLED: preserve(),
       SPRING_FLYWAY_PASSWORD: preserve(),
       SPRING_FLYWAY_USER: preserve(),
       SPRING_PROFILES_ACTIVE: preserve(),
@@ -98,6 +89,6 @@ export default defineRailway(() => {
   });
 
   return project("app-java-v3", {
-    resources: [app_java_v3, app_data_volume],
+    resources: [app_java_v3],
   });
 });
