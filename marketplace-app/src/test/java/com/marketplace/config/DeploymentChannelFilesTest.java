@@ -11,10 +11,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Gate test for the deployment-channel layer (Layer 15): it pins the two
- * halves of the automated delivery channel — the fork that Railway builds
- * from fast-forwarding itself (fork-sync.yml), and the watchdog guarding
- * both the channel's freshness and its alerting home (watchdog.yml). Same
- * class of latent "config that lies" defect as
+ * halves of the automated delivery channel — the retired fork-sync half
+ * (fork-sync.yml; disabled_manually 2026-09-19 with the old account's
+ * decommission — the file stays as the retirement record and its pins keep
+ * its documented shape honest in case it is ever re-enabled) and the live
+ * watchdog half guarding the direct channel's freshness and its alerting
+ * home (watchdog.yml). Same class of latent "config that lies" defect as
  * {@code ProductionWatchdogFilesTest} and {@code PlatformGovernanceFilesTest}:
  * nothing at runtime rejects a silently weakened channel — a dropped
  * repository guard, a widened lag limit, or a lost write permission just
@@ -69,14 +71,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       credential-free. The blocked run must fail loudly WITH that
  *       explanation (a silent swallow or a red mystery both cost the
  *       same manual debugging this repo is being cleaned of).</li>
- *   <li><b>channel freshness alarm</b> — a dead sync (60-day
- *       scheduled-workflow disablement, permission loss, divergence) leaves
- *       production serving stale code with every HTTP probe green. The
- *       watchdog must measure the age of the oldest un-deployed upstream
- *       commit via the public compare API, with the measured threshold
- *       (240m = observed scheduled-run spacing up to 2h53m + Railway build
- *       ~15m + margin) and the 250-commit compare truncation guard (official
- *       doc: "the returned list is limited to 250 commits").</li>
+ *   <li><b>channel freshness alarm</b> (redesigned 2026-09-19 for the v3
+ *       account migration): production deploys directly from main via
+ *       Railway's GitHub App, which posts a commit status on the exact
+ *       commit it builds (context "&lt;project&gt; - &lt;service&gt;", measured:
+ *       success on bb6da39, failure on 7371afbb/16117d8 "Deployment
+ *       failed"). A dead trigger or a failed build leaves production
+ *       serving stale code with every HTTP probe green — so the watchdog
+ *       reads that status on main HEAD: failure = immediate incident (a
+ *       failed build never self-heals); pending/missing is bounded by the
+ *       commit's age with the measured threshold (240m continuity limit —
+ *       a push-triggered channel reports within minutes of the push).</li>
  * </ul>
  *
  * <p>File-location note: surefire runs with the module basedir
@@ -182,8 +187,9 @@ class DeploymentChannelFilesTest {
                         + "incident steps must never run there (every healthy fork "
                         + "run failed with 'the repository has disabled issues')")
                 .contains("if: github.repository == 'waelhe/app-java-v3'");
-        assertThat(yml).as("the freshness probe reads both repositories' branch "
-                        + "state - the read scope is explicit least privilege")
+        assertThat(yml).as("the freshness probe reads main's branch state and "
+                        + "its commit statuses - the read scope is explicit "
+                        + "least privilege")
                 .contains("contents: read");
         assertThat(yml).as("the watchdog still owns the alerting action")
                 .contains("issues: write");
@@ -197,23 +203,31 @@ class DeploymentChannelFilesTest {
                 .contains("- name: Probe deployment channel freshness");
         assertThat(yml).as("the probe reads the governing repo's main")
                 .contains("UPSTREAM: waelhe/app-java-v3");
-        assertThat(yml).as("the probe reads the deployment fork Railway builds from")
-                .contains("DEPLOY_FORK: waelhe88-coder/app-java-v3");
-        assertThat(yml).as("the measured threshold: observed scheduled-run spacing "
-                        + "up to 2h53m + Railway build ~15m + margin - a lower "
-                        + "value false-alarms on documented cron delay, a higher "
-                        + "value delays detection of a dead channel")
+        // 2026-09-19 channel redesign (PR #347): production deploys directly
+        // from main via Railway's GitHub App; the retired fork compare would
+        // measure a frozen repository forever (the fork-sync workflow is
+        // disabled and the fork frozen at its last fast-forward). The live
+        // channel's own telemetry is the commit status the App posts on the
+        // exact commit it builds — context "<project> - <service>",
+        // measured: success on bb6da39 ("Success - app-java-v3-production...")
+        // and failure on 7371afbb/16117d8 ("Deployment failed").
+        assertThat(yml).as("the probe reads Railway's own commit status on main "
+                        + "HEAD - the live deployment channel's telemetry "
+                        + "(measured context)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
+        assertThat(yml).as("the retired fork compare must be gone - the fork "
+                        + "channel was decommissioned with the old account")
+                .doesNotContain("DEPLOY_FORK");
+        assertThat(yml).as("the measured threshold stays bounded: a push-triggered "
+                        + "channel reports within minutes, so an old HEAD without "
+                        + "a success means the trigger is gone - a lower value "
+                        + "false-alarms during a legitimate build, a higher value "
+                        + "delays detection of a dead channel")
                 .contains("MAX_LAG_MINUTES: 240");
-        assertThat(yml).as("lag is measured from the oldest un-deployed commit via "
-                        + "the public compare API")
-                .contains("compare/$fork_sha...$up_sha");
-        assertThat(yml).as("the compare API truncates at 250 commits (official doc) "
-                        + "- a channel more than 250 commits behind pages "
-                        + "immediately instead of dating a truncated list")
-                .contains("-gt 250");
-        assertThat(yml).as("a diverged fork (not in upstream history) is an "
-                        + "incident of its own")
-                .contains("channel diverged?");
+        assertThat(yml).as("a FAILED deployment is an immediate incident - a "
+                        + "failed build never self-heals, so production would "
+                        + "keep serving stale code with every HTTP probe green")
+                .contains("\"$rw_state\" = \"failure\"");
         assertThat(yml).as("the incident body must state the broadened contract: "
                         + "endpoints OR deployment channel")
                 .contains("## Production unhealthy (endpoints or deployment channel)");
