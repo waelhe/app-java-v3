@@ -98,7 +98,7 @@ jobs:
       - name: Probe public production endpoints
         id: probe
         env:
-          BASE_URL: https://app-java-v3-production-d020.up.railway.app
+          BASE_URL: https://app-java-v3-production.up.railway.app
         run: |
           set -u
           declare -A want=(
