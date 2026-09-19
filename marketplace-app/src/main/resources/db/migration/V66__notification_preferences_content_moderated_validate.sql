@@ -1,0 +1,25 @@
+-- L45 (neighborhood community plan §5 — the moderation & reports layer):
+-- the validation step of V65's widened type CHECK, in its OWN migration —
+-- the L36/V56+V57 Squawk adoption (constraint-missing-not-valid), the
+-- house's own measured precedent for the identical situation: V57 is
+-- nothing but the VALIDATE of V56's NOT VALID constraint, and this file
+-- is nothing but the VALIDATE of V65's.
+--
+-- The lock fact the split exists for (CodeRabbit r1 on this PR, root
+-- adopted): Flyway runs each versioned migration in its own
+-- transaction, and a transaction RETAINS every lock it acquired until
+-- it commits — so a VALIDATE sharing V65's transaction would scan under
+-- the DROP/ADD statements' still-held ACCESS EXCLUSIVE, blocking
+-- ordinary reads and writes for the scan. Alone here, the VALIDATE
+-- statement's own lock is SHARE UPDATE EXCLUSIVE — concurrent reads and
+-- writes keep flowing (the PostgreSQL ALTER TABLE lock table; the V44
+-- locking shape's own documented intent, finally true in the letter as
+-- it always was in the intent).
+--
+-- Idempotence note: this is exactly the shape V57 already ran in
+-- production (SHARE UPDATE EXCLUSIVE, sub-second on the preference
+-- overrides table — V63's whole apply was measured at 69ms on the Neon
+-- channel), and the same shape this repository's Squawk adoption
+-- prescribes.
+
+ALTER TABLE notification_preferences VALIDATE CONSTRAINT notification_preferences_type_check;

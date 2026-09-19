@@ -53,6 +53,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       neighborhood membership anchor's two commands; the read stays
  *       unobserved per policy); post.create, post.comment, post.delete
  *       (L42 — the feed layer's three commands; the reads stay
+ *       unobserved per the same policy); report.create, report.resolve
+ *       (L45 — the moderation layer's two commands: a member's report
+ *       and the administrative resolve; the queue read stays
  *       unobserved per the same policy)</li>
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
@@ -99,7 +102,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-community", List.of(
                     "community.membership.join", "community.membership.leave",
-                    "community.post.comment", "community.post.create", "community.post.delete")),
+                    "community.post.comment", "community.post.create", "community.post.delete",
+                    "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
