@@ -37,7 +37,7 @@ Alertmanager الرسمي يُعرّف التجميع (Grouping): «categorizes 
 
 ### 1.1 العنوان والنقاط العمومية الخمس
 
-- **عنوان الإنتاج:** `https://app-java-v3-production-d020.up.railway.app` (SYSTEM.md §15) — بروفايل prod نشط، بنية 3 خدمات (app + postgres-18 + redis 8.2).
+- **عنوان الإنتاج:** `https://app-java-v3-production.up.railway.app` (SYSTEM.md §15 — حساب v3 منذ 2026-09-19، مشروع `app-java-v3`‏ `c8ba2537`) — بروفايل prod نشط، خدمة واحدة `30294a45` + قناة قاعدة بيانات Neon الخارجية (`ep-weathered-pond-b2vgv0jc...neon.tech/neondb`، القناة المباشرة ب`channel_binding=require`) + Redis خارجي (Upstash). النطاق المتقاعد `-d020` (الحساب القديم) غير مستجيب — لا يُفحص أثناء الحوادث.
 - **البوابة العمومية 8080** (Railway يحقن `PORT` — `application.yml:165`) عليها النقاط الخمس التي يفحصها المراقب حرفياً (`watchdog.yml:105-109`):
 
 | النقطة | الصحيح | معناها | الدليل |
