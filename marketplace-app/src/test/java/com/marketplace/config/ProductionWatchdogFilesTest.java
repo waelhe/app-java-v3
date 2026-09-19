@@ -45,8 +45,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       page anyone.</li>
  *   <li><b>least privilege</b> - the workflow needs exactly
  *       {@code issues: write} (official syntax doc: "issues: write permits
- *       an action to add a comment to an issue") and nothing more: no
- *       checkout, no contents, no pull-requests scope.</li>
+ *       an action to add a comment to an issue") plus {@code contents: read}
+ *       for the freshness probe's gh api reads - and nothing more: no
+ *       checkout, no pull-requests scope.</li>
  *   <li><b>incident lifecycle</b> - deduplicated by the
  *       {@code uptime-watchdog} label (one open incident at a time),
  *       assigned to the repository owner (that is the notification: an
@@ -87,7 +88,7 @@ class ProductionWatchdogFilesTest {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
                         + "(SYSTEM.md §15)")
-                .contains("BASE_URL: https://app-java-v3-production-d020.up.railway.app");
+                .contains("BASE_URL: https://app-java-v3-production.up.railway.app");
         assertThat(yml).as("liveness probe").contains("[\"/actuator/health/liveness\"]=\"200\"");
         assertThat(yml).as("readiness probe").contains("[\"/actuator/health/readiness\"]=\"200\"");
         assertThat(yml).as("auth keys probe").contains("[\"/oauth2/jwks\"]=\"200\"");
@@ -109,12 +110,39 @@ class ProductionWatchdogFilesTest {
     }
 
     @Test
+    void watchdogFreshnessMeasuresTheLiveRailwayChannel() throws IOException {
+        String yml = read(".github/workflows/watchdog.yml");
+        // The retired fork channel (fork-sync.yml, disabled with the old
+        // account 2026-09-19) is gone: production now deploys directly from
+        // main via Railway's GitHub App, which reports each deployment as a
+        // commit status on the built commit. Measured on this account:
+        // success on bb6da39 ("Success - app-java-v3-production...") and
+        // failure on 7371afbb/16117d8 ("Deployment failed" - the BUILD_IMAGE
+        // cache-id validation PR #347 closes). Only a pinned context keeps
+        // the probe measuring the REAL channel - a reverted pin would
+        // silently monitor a context nobody posts to, and every run would
+        // take the age-bounded path until the 240m limit trips.
+        assertThat(yml).as("the freshness probe reads Railway's own commit "
+                        + "status on main HEAD - the live deployment "
+                        + "channel's telemetry (measured context)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
+        assertThat(yml).as("the retired fork compare must be gone - the "
+                        + "fork channel was decommissioned with the old "
+                        + "account and its compare would fail forever")
+                .doesNotContain("DEPLOY_FORK");
+        assertThat(yml).as("freshness tolerance stays bounded - a missing "
+                        + "status is only tolerated while the commit is "
+                        + "young enough for a build to plausibly be running")
+                .contains("MAX_LAG_MINUTES: 240");
+    }
+
+    @Test
     void watchdogIncidentLifecycleIsDeduplicatedAndLeastPrivilege() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
         // CWE-732 / CodeRabbit #241: assert the EXACT permission map, not just
         // that a block exists — a broader or additional permission would
         // otherwise pass silently. The freshness probe needs contents: read
-        // (gh api reads of the two repositories' branch state); issue
+        // (gh api reads of main's branch state and commit statuses); issue
         // creation/commenting needs issues: write. Nothing else.
         java.util.Map<String, String> permissions = parseWorkflowPermissions(yml);
         assertThat(permissions).as("the workflow-level permissions map").isNotEmpty();
