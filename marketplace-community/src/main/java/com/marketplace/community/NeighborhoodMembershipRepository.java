@@ -23,4 +23,13 @@ public interface NeighborhoodMembershipRepository
 
     /** The caller's ACTIVE membership, if any (soft-deleted rows filtered). */
     Optional<NeighborhoodMembership> findByUserId(UUID userId);
+
+    /**
+     * The ACTIVE memberships of one neighborhood (L46 — the bridge's own
+     * query). Hibernate's {@code @SoftDelete} filter hides left
+     * memberships from this derived query exactly as it does from
+     * {@link #findByUserId}, so the bridge notifies exactly the members
+     * G-N1's active slot admits — a left member is never alerted.
+     */
+    java.util.List<NeighborhoodMembership> findByLocationId(UUID locationId);
 }

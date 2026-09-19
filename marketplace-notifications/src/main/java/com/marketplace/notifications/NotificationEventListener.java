@@ -1,7 +1,9 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
@@ -90,6 +92,55 @@ public class NotificationEventListener {
         notificationService.onPostCommented(event.postId(), event.postAuthorId());
         log.info("Notification sent for post comment: postId={}, author={}",
                 event.postId(), event.postAuthorId());
+    }
+
+    /**
+     * L46 (neighborhood community plan §5 — the community realestate
+     * bridge): the neighborhood member's NEW_LISTING_IN_NEIGHBORHOOD
+     * alert. The event arrives pre-scoped per member (the community
+     * bridge's structural one-event-per-recipient fan-out), so one event
+     * is one notification. Same contract as the listeners above — after
+     * commit, its own transaction, the framework's retry: a failed
+     * delivery never loses the match (the registry entry stays
+     * incomplete until the listener succeeds).
+     *
+     * <p><b>The publisher's own exclusion lives on the community side</b>
+     * (the plan's criterion 4: the bridge listener skips the
+     * publisher-member before publishing) — every event this listener
+     * receives is a genuine neighbor alert, so this method delivers
+     * unconditionally, keeping the delivery contract one shape for every
+     * caller.
+     */
+    @ApplicationModuleListener
+    public void onNewListingInNeighborhood(NewListingInNeighborhoodEvent event) {
+        notificationService.onNewListingInNeighborhood(event.recipientId(), event.listingId());
+        log.info("Notification sent for new neighborhood listing: recipient={}, listing={}",
+                event.recipientId(), event.listingId());
+    }
+
+    /**
+     * L45 (neighborhood community plan §5 — the moderation &amp; reports
+     * layer): the moderated content's author alert. Same contract as the
+     * listeners above — after commit, its own transaction, the
+     * framework's retry: a failed delivery never loses the moderation
+     * alert (the registry entry stays incomplete until the listener
+     * succeeds), and the hide itself already committed atomically with
+     * the report's RESOLVED close.
+     *
+     * <p><b>The one-real-hide-one-alert policy lives on the COMMUNITY
+     * side</b> (the resolve command fires the event on the real
+     * VISIBLE→HIDDEN transition alone — an already-hidden or
+     * author-deleted target carries no new fact for the author) — every
+     * event this listener receives is a genuine first hide, so this
+     * method delivers unconditionally, keeping the delivery contract one
+     * shape for every caller.
+     */
+    @ApplicationModuleListener
+    public void onContentModerated(ContentModeratedEvent event) {
+        notificationService.onContentModerated(
+                event.recipientId(), event.targetType(), event.targetId());
+        log.info("Notification sent for content moderation: recipient={}, targetType={}, target={}",
+                event.recipientId(), event.targetType(), event.targetId());
     }
 
 }

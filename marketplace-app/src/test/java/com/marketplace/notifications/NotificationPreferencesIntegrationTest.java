@@ -205,13 +205,15 @@ class NotificationPreferencesIntegrationTest {
         verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
 
         // The effective matrix reads all-enabled for a user with no overrides
-        // (fifteen rows: 5 types x 3 channels — L35 added SAVED_SEARCH_MATCH
+        // (twenty-one rows: 7 types x 3 channels — L35 added SAVED_SEARCH_MATCH
         // backed by the V55 CHECK widening; L42 added POST_COMMENTED backed
-        // by the V62 CHECK widening).
+        // by the V62 CHECK widening; L46 added NEW_LISTING_IN_NEIGHBORHOOD
+        // backed by the V63 CHECK widening; L45 added CONTENT_MODERATED
+        // backed by the V65/V66 CHECK widening).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(15);
+        assertThat(matrix).hasSize(21);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 
