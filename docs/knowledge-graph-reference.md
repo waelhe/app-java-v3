@@ -30,9 +30,10 @@
 
 **حدود حداثة اللقطتين مقيسة بصدق كامل (لا تُفترض):** لقطة main لا تعرف وحدة `marketplace-community` أصلاً (صفر عقد تحتها — وُلدت قبل L41/L42)؛ ولقطة الفرع تعرف community (88 عقدة رئيسية) وmessaging لكنها **تسبق L45** (لا `content_reports` ولا `CONTENT_MODERATED`). أي عنصر أحدث من لقطة الرسم = غير موجود فيه حكماً — يُقاس حياً كالعادة.
 
-**الوصول للقطة الأحدث قبل دمج فرعها** (يعمل دون أي دمج):
+**الوصول للقطة الأحدث قبل دمج فرعها** (يعمل دون أي دمج) — **استخرج الملفين معاً** (الرسم + هويته، فلا تخلط لقطة بهوية أخرى):
 ```bash
 git show origin/knowledge/graph-957e9ac:.ua/knowledge-graph.json > /tmp/kg.json
+git show origin/knowledge/graph-957e9ac:.ua/meta.json > /tmp/meta.json
 ```
 وبعد دمج المستخدم للفرع تصبح `.ua/` على main هي اللقطة الأحدث مباشرة (الوصفات كلها تعمل على المسارين).
 
@@ -79,7 +80,7 @@ git show origin/knowledge/graph-957e9ac:.ua/knowledge-graph.json > /tmp/kg.json
 
 ## 3. وصفات الاستعلام — كلها مختبرة (جلسة 2026-09-19)
 
-> **قاعدة الاستخدام:** تُشغَّل من **جذر المستودع** بـ`python3` فقط (المكتبة القياسية تكفي — لا اعتماديات). السطر الأول في كل وصفة `KG = '.ua/knowledge-graph.json'` (لقطة main) — **عدّله إلى `'/tmp/kg.json'`** لتشغيلها على لقطة الفرع الأحدث بعد استخراجها (أمر §1). **النتائج المقيسة أدناه مأخوذة من لقطة الفرع** (الأحدث وقت التوثيق) — فعلى لقطة main الحالية (جيل #334) تعطي R1/R2/R4/R6 نواتجها، بينما R3/R5/R7/R8 تحتاج جيل `imports`/`migrates` فتعطي صفراً/قوائم فارغة على الجيل الأقدم حتى يُدمج فرع اللقطة الجديدة.
+> **قاعدة الاستخدام:** تُشغَّل من **جذر المستودع** بـ`python3` فقط (المكتبة القياسية تكفي — لا اعتماديات). السطر الأول في كل وصفة `KG = '.ua/knowledge-graph.json'` (لقطة main) — **عدّله إلى `'/tmp/kg.json'`** لتشغيلها على لقطة الفرع الأحدث بعد استخراجها، **وفي R1 عدّل `META` أيضاً إلى `'/tmp/meta.json'`** (أمر §1 — الهوية والرسم من اللقطة نفسها دائماً). **النتائج المقيسة أدناه مأخوذة من لقطة الفرع** (الأحدث وقت التوثيق) — فعلى لقطة main الحالية (جيل #334) تعطي R1/R2/R4/R6 نواتجها، بينما R3/R5/R7/R8 تحتاج جيل `imports`/`migrates` فتعطي صفراً/قوائم فارغة على الجيل الأقدم حتى يُدمج فرع اللقطة الجديدة.
 
 ### R1 — هوية اللقطة (إلزامية قبل أي استخدام آخر)
 
@@ -88,8 +89,10 @@ git show origin/knowledge/graph-957e9ac:.ua/knowledge-graph.json > /tmp/kg.json
 ```bash
 python3 - <<'PY'
 import json
-meta = json.load(open('.ua/meta.json'))
-g = json.load(open('.ua/knowledge-graph.json'))
+KG = '.ua/knowledge-graph.json'
+META = '.ua/meta.json'
+meta = json.load(open(META))
+g = json.load(open(KG))
 print(meta['gitCommitHash'][:8], '|', meta['lastAnalyzedAt'],
       '|', len(g['nodes']), 'nodes |', len(g['edges']), 'edges')
 PY
@@ -107,12 +110,12 @@ KG = '.ua/knowledge-graph.json'
 g = json.load(open(KG))
 for n in g['nodes']:
     if n['name'] == 'MessagingService' and n['type'] == 'class':
-        path = n.get('filePath') or n['id'].split(':', 1)[1]
+        path = n.get('filePath') or n['id'].split(':', 1)[1].rsplit(':', 1)[0]
         print(path, '|', n['complexity'], '|', n['tags'])
         print(n['summary'])
 PY
 ```
-**الناتج المقيس (لقطة الفرع):** `marketplace-messaging/.../MessagingService.java:MessagingService | moderate | ['service','messaging','conversation']` + الملخص العربي (المسار هنا مستخرج من `id` لأن جيل الفرع لا يحمل `filePath` على عقدة الصنف هذه). **وعلى لقطة main (جيل #334) نفس الوصفة تعطي:** المسار نفسه بوسوم عربية `['خدمة','مراسلة','websocket']` وملخص أقدم — مثال حيّ على أن الملخصات/الوسوم وصفُ لقطة لا اقتباس أزلي (حد 6 أدناه). **تنبيهان:** الاسم الواحد قد يصادف صنفاً ودالته البانية معاً (فلتر `type` إلزامي)؛ وحقل `filePath` قد يغيب عن عقد class/function في بعض الأجيال — لذلك يُستخرج المسار من `id` عند غيابه (سطر `path = ...`).
+**الناتج المقيس (لقطة الفرع):** `marketplace-messaging/.../MessagingService.java | moderate | ['service','messaging','conversation']` + الملخص العربي (المسار هنا مستخرج من `id` — بعد نزع بادئة النوع ولاحقة اسم العنصر — لأن جيل الفرع لا يحمل `filePath` على عقدة الصنف هذه). **وعلى لقطة main (جيل #334) نفس الوصفة تعطي:** المسار نفسه بوسوم عربية `['خدمة','مراسلة','websocket']` وملخص أقدم — مثال حيّ على أن الملخصات/الوسوم وصفُ لقطة لا اقتباس أزلي (حد 6 أدناه). **تنبيهان:** الاسم الواحد قد يصادف صنفاً ودالته البانية معاً (فلتر `type` إلزامي)؛ وحقل `filePath` قد يغيب عن عقد class/function في بعض الأجيال — لذلك يُستخرج المسار من `id` عند غيابه (سطر `path = ...`).
 
 ### R3 — نصف قطر المس (من يعتمد على هذا الملف؟)
 
@@ -126,12 +129,12 @@ g = json.load(open(KG))
 target = 'file:marketplace-platform-infra/src/main/java/com/marketplace/shared/security/CurrentUserProvider.java'
 hits = [e['source'] for e in g['edges']
         if e['target'] == target and e['type'] in ('imports', 'calls')]
-print(len(hits), 'معتمداً (أعلى 10):')
-for h in hits[:10]:
+print(len(hits), 'حافة واردة من', len(set(hits)), 'عقدة مصدر مختلفة (أعلى 10):')
+for h in sorted(set(hits))[:10]:
     print('  ', h)
 PY
 ```
-**الناتج المقيس (لقطة الفرع):** `94 معتمداً` — أعلى Fan-In في النظام كله (§4).
+**الناتج المقيس (لقطة الفرع):** `94 حافة واردة من 94 عقدة مصدر مختلفة` — كلها حواف `imports` من ملفات (بلا تكرار)، أعلى Fan-In في النظام كله (§4). العدّ للمصادر الفريدة هو المعنى الصحيح لـ«معتمدًا»؛ عدّ الحواف وحده قد يضاعف ملفاً واحداً بعدة حواف.
 
 ### R4 — حرّاس الاختبار لملف
 
@@ -159,9 +162,12 @@ import json
 KG = '.ua/knowledge-graph.json'
 g = json.load(open(KG))
 t = [n for n in g['nodes'] if n['type'] == 'table' and n['name'] == 'neighborhood_posts']
-for e in g['edges']:
-    if e['type'] == 'migrates' and e['target'] == t[0]['id']:
-        print(e['source'], '->', e['target'])
+if not t:
+    print('لا عقدة جدول بهذا الاسم في هذه اللقطة (اسم مختلف أو جيل أقدم من migrates)')
+else:
+    for e in g['edges']:
+        if e['type'] == 'migrates' and e['target'] == t[0]['id']:
+            print(e['source'], '->', e['target'])
 PY
 ```
 **الناتج المقيس (لقطة الفرع):** `table:marketplace-app/src/main/resources/db/migration/V61__neighborhood_posts.sql -> table:...V61__neighborhood_posts.sql:neighborhood_posts` — أي أن معرّف عقدة الجدول يحمل رحلة إنشائه نفسها (نمط `table:<الترحيلة>:<الجدول>`).
@@ -194,7 +200,7 @@ from collections import Counter
 KG = '.ua/knowledge-graph.json'
 g = json.load(open(KG))
 fin = Counter(e['target'] for e in g['edges'] if e['type'] == 'imports')
-for nid, c in fin.most_common(10):
+for nid, c in fin.most_common(8):
     print(f'{c:>4}  {nid}')
 PY
 ```
@@ -220,11 +226,19 @@ for e in g['edges']:
         s, t = mod(e['source']), mod(e['target'])
         if s != t and s.startswith('marketplace') and t.startswith('marketplace'):
             cross[(s, t)] += 1
+LEGIT_TARGETS = {'marketplace-shared', 'marketplace-platform-infra'}
+SPI_DECLARED = {('marketplace-messaging', 'marketplace-catalog'),
+                ('marketplace-realestate', 'marketplace-catalog')}
+violations = sorted(p for p in cross
+                    if p not in SPI_DECLARED and p[1] not in LEGIT_TARGETS
+                    and p[0] != 'marketplace-app')
+print('إجمالي الأزواج العابرة:', len(cross), '(أعلى 12 للعرض)')
 for (s, t), c in cross.most_common(12):
     print(f'{c:>4}  {s} -> {t}')
+print('انتهاكات الأعمال→أعمال خارج الأوعية المشروعة وSPI المعلنة:', violations if violations else 'صفر')
 PY
 ```
-**الناتج المقيس (لقطة الفرع):** المصفوفة الكاملة في §4.2 — أوعيتها الأربع فقط، وصفر اقتران أعمال→أعمال خارج SPI معلنة.
+**الناتج المقيس (لقطة الفرع):** `إجمالي الأزواج العابرة: 52` ثم أعلى 12 زوجًا للعرض (جدول §4.2 يجمعها في أوعيتها الأربعة) — **والفحص الحاسم يطبع السالبة الحاكمة على كل الأزواج لا على أعلى 12 فقط:** `انتهاكات الأعمال→أعمال خارج الأوعية المشروعة وSPI المعلنة: صفر`.
 
 ---
 
