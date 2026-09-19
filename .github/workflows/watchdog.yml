@@ -169,12 +169,12 @@ jobs:
           rw_desc=$(echo "$status_json" | jq -r --arg ctx "$RAILWAY_STATUS_CONTEXT" \
             '[.statuses[] | select(.context == $ctx)][0].description // ""')
           if [ "$rw_state" = "success" ]; then
-            echo "OK    deployment channel fresh: main HEAD $($(
+            echo "OK    deployment channel fresh: main HEAD ($(
               echo "$up_sha" | cut -c1-12)) deployed — $rw_desc" | tee -a probe-results.txt
             exit 0
           fi
           if [ "$rw_state" = "failure" ]; then
-            echo "FAIL  deployment channel: Railway reports a failed deployment from main HEAD $($(
+            echo "FAIL  deployment channel: Railway reports a failed deployment from main HEAD ($(
               echo "$up_sha" | cut -c1-12)) — production is serving stale code ($rw_desc)" | tee -a probe-results.txt
             exit 1
           fi
