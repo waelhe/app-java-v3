@@ -8,6 +8,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import javax.sql.DataSource;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
@@ -95,6 +96,9 @@ class ContentReportModuleIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Autowired
     private NeighborhoodMembershipService membershipService;
@@ -318,6 +322,61 @@ class ContentReportModuleIntegrationTest {
 
         // and an unknown target is the honest 404.
         reportOverHttp(reporterId, UUID.randomUUID(), "POST", "SPAM", 404);
+    }
+
+    /**
+     * Criterion 5's transaction-boundary companion (CodeRabbit r1
+     * adoption): the sequential 404/409 gates above cover the check's
+     * own paths; this test reproduces the RACE deterministically — the
+     * reporter's first report inserted but NOT yet committed (invisible
+     * to the service's duplicate check under READ COMMITTED), the HTTP
+     * request's INSERT blocked on the partial unique index entry the
+     * open transaction holds, and the commit releasing it straight into
+     * a 23505 unique_violation — the house 409 translation.
+     *
+     * <p>Every interleaving of the two threads answers 409 (a check that
+     * runs after the commit is the service gate's own 409); the blocking
+     * insert makes the losing-insert path — the one this test exists to
+     * exercise — the dominant one.
+     */
+    @Test
+    void criterion5_inFlightConflictingInsert_theLosingHttpInsertAnswers409()
+            throws Exception {
+        SeededPost seeded = visiblePostIn(QUDSAYYA_OLD_TOWN);
+        UUID reporterId = asCaller(joinedMember(QUDSAYYA_OLD_TOWN));
+
+        try (java.sql.Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try (java.sql.PreparedStatement insert = conn.prepareStatement("""
+                    INSERT INTO content_reports
+                        (id, reporter_id, target_type, target_id, reason, status,
+                         is_deleted, version, created_at, updated_at)
+                    VALUES (?, ?, 'POST', ?, 'SPAM', 'OPEN', FALSE, 0, now(), now())
+                    """)) {
+                insert.setObject(1, UUID.randomUUID());
+                insert.setObject(2, reporterId);
+                insert.setObject(3, seeded.postId());
+                insert.executeUpdate();
+            }
+
+            java.util.concurrent.ExecutorService executor =
+                    java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                java.util.concurrent.Future<Boolean> loser = executor.submit(() -> {
+                    // The assertion rides the HTTP call itself: the
+                    // expected status IS the 409 of the losing insert.
+                    reportOverHttp(reporterId, seeded.postId(), "POST", "OTHER", 409);
+                    return true;
+                });
+                // Let the loser reach its blocking INSERT before the
+                // commit releases the index entry.
+                Thread.sleep(500);
+                conn.commit();
+                assertThat(loser.get(15, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     // ---------- criterion 6: the Envers trail ----------

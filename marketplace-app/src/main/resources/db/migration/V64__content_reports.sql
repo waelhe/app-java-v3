@@ -23,11 +23,17 @@
 -- transition out of OPEN is the resolve command alone).
 --
 -- CHECKs in the V44 locking shape: NOT VALID (metadata-only, enforced
--- for new rows immediately) + VALIDATE under SHARE UPDATE EXCLUSIVE so
--- the shared production database keeps serving traffic during the deploy.
--- Every BaseEntity column present from day one (V25/V32 lesson); the
--- Envers mirror follows the V24 convention (V33 lesson: base-table
--- columns without the _aud twin break audit INSERTs silently).
+-- for new rows immediately) + VALIDATE. The VALIDATE rides this same
+-- migration deliberately — the L36/V56+V57 Squawk split exists for
+-- EXISTING tables (a scan under the still-held ACCESS EXCLUSIVE of the
+-- same transaction's ALTERs blocks live traffic); THIS table is born in
+-- this transaction: zero rows to scan, and no other session can even
+-- see it before the commit — the V61 precedent verbatim (its three
+-- same-migration VALIDATEs ran in production twice: postgres-18 and
+-- Neon, measured). Every BaseEntity column present from day one
+-- (V25/V32 lesson); the Envers mirror follows the V24 convention
+-- (V33 lesson: base-table columns without the _aud twin break audit
+-- INSERTs silently).
 --
 -- The queue index is the query's own shape: status-first (the drain
 -- reads OPEN by default), FIFO on the complete sort key (created_at ASC,
