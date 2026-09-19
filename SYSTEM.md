@@ -286,7 +286,7 @@ package com.marketplace.booking;
 13. `OAuth2AuthorizationServerConfigurer` يسجّل `HttpStatusEntryPoint(UNAUTHORIZED)` لنقاط AS (بايت-كود spring-security-config 7.1.1: `defaultAuthenticationEntryPointFor`) — رفض طلب refresh من عميل عام = **401 بجسم فارغ** (موثّق باختبار حي).
 
 14. رسم المعرفة (`.ua/` متتبَّع منذ #334 — مرجعه `docs/knowledge-graph-reference.md`): أعلى Fan-In عبر `imports` (لقطة `957e9ac`) = `CurrentUserProvider` **94** / `ResourceNotFoundException` **59** / `ConflictException` **43** / `BaseEntity` **30** — النواة المشتركة هي الجاذبية المعمارية للنظام؛ وقاعدة التسليم مقيسة في الرسم نفسه: كل الحواف العابرة للوحدات (920) تسير shared (**690**) أو infra (**142**) أو جذر التركيب app (**84**) أو SPI معلنة (**4**) — صفر أعمال→أعمال خارج SPI. الوصفات المختبرة R1..R8 في مرجعها §3؛ هوية اللقطة (R1) قبل أي استخدام.
-15. لقطتا الرسم القائمتان (قياس 2026-09-19): main يحمل جيل #334 (@`604bb5b` — **يسبق community كله**، بلا `imports`/`migrates`) والجيل الأحدث (@`957e9ac`، 3813 عقدة/5357 حافة مع `imports`/`migrates`) على فرع `knowledge/graph-957e9ac` — دمجه بكلمة المستخدم، وبعده تصبح `.ua/` عليه مباشرة (دورة التحديث: §6 من المرجع).
+15. لقطة الرسم على main بعد الاستبدال (2026-09-19، بكلمة المستخدم «تخلّص من نسخة graph القديمة»): الجيل الأحدث (@`957e9ac`، 3813 عقدة/5357 حافة مع `imports`/`migrates` — تعرف community وai وتسبق L45) هي `.ua/` على main مباشرة والوصفات الثماني تعمل من مسارها الافتراضي؛ جيل #334 القديم (@`604bb5b` بلا `imports`/`migrates`) زال بالاستبدال (دورة التحديث وتقاعد اللقطات: §6 من المرجع).
 
 
 ---

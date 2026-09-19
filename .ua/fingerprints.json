@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "604bb5bcfcd2335c8d6f3478c59bc7dc5d73b628",
-  "generatedAt": "2026-09-17T12:20:48.839Z",
+  "gitCommitHash": "957e9ace25a73ee310dd1cc12dcf9d1740d57cb9",
+  "generatedAt": "2026-09-19T07:50:51.711Z",
   "files": {
     ".ci/check-openapi-compat.sh": {
       "filePath": ".ci/check-openapi-compat.sh",
@@ -259,22 +259,22 @@
     },
     "PROJECT_MAP.md": {
       "filePath": "PROJECT_MAP.md",
-      "contentHash": "073ddd541374f2be1a310b030aa11c38f9c8103d82463828c5a3f9522ec0865a",
+      "contentHash": "6699c2b0a6a6a969a22f3afcca5904efda285a1404b43a33f4eba7294a2576b7",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 1483,
+      "totalLines": 1514,
       "hasStructuralAnalysis": false
     },
     "SYSTEM.md": {
       "filePath": "SYSTEM.md",
-      "contentHash": "9ed4a4a247b6b6ad49decba122425547244af6dc9a147a81d9e1d734d0793f2e",
+      "contentHash": "a7d3f418d5c62e36e3f08652b2e67afba135d753cd420823d128519524d89287",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 418,
+      "totalLines": 429,
       "hasStructuralAnalysis": false
     },
     "docker-compose.yml": {
@@ -556,7 +556,7 @@
     },
     "docs/neighborhood-community-plan.md": {
       "filePath": "docs/neighborhood-community-plan.md",
-      "contentHash": "b19f3b4755c058c4cb341b1e8a45f4953dc96c4ce1d021bb619a14d5efde6463",
+      "contentHash": "17a0d94b7734a06435152489b0b0a19555448138d6b9c0b0590529aa53d39e45",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -616,7 +616,7 @@
     },
     "docs/railway-deployment-reference.md": {
       "filePath": "docs/railway-deployment-reference.md",
-      "contentHash": "2ff027df306e13106335af85e5c34e5af7bca2c71a95305ff97a37ac81e76e66",
+      "contentHash": "2355e5c40f3e6a5d4abcab762e8c8cae9b713e1c91d57e77c78015ac127ca6d3",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -704,6 +704,16 @@
       "totalLines": 53,
       "hasStructuralAnalysis": false
     },
+    "docs/superpowers/specs/2026-09-17-ui-control-system-design.md": {
+      "filePath": "docs/superpowers/specs/2026-09-17-ui-control-system-design.md",
+      "contentHash": "4e18bf32bb0e797c409db890590cf34bbea31c85e0e2a364d1926e3af59df965",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 78,
+      "hasStructuralAnalysis": false
+    },
     "keys/README.md": {
       "filePath": "keys/README.md",
       "contentHash": "434f1057fd9532957e4c3d101a44fd78e8c5a62972e3a2ff38c5b79b97d2677a",
@@ -759,6 +769,332 @@
         "probe"
       ],
       "totalLines": 99,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-ai/pom.xml": {
+      "filePath": "marketplace-ai/pom.xml",
+      "contentHash": "52aa9dafae5ed90165279335f1046f4411915c0768170be3a66d298fff33d1f8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 35,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-ai/src/main/java/com/marketplace/ai/AiChatGateway.java": {
+      "filePath": "marketplace-ai/src/main/java/com/marketplace/ai/AiChatGateway.java",
+      "contentHash": "4117cc91a7bb7f86c8d67ac4ed06cbdccae8dfc3c4616a58036d4df620a33f5e",
+      "functions": [
+        {
+          "name": "AiChatGateway",
+          "params": [
+            "models",
+            "environment"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "available",
+          "params": [],
+          "returnType": "boolean",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "chat",
+          "params": [
+            "userText"
+          ],
+          "returnType": "String",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "selectorState",
+          "params": [],
+          "returnType": "String",
+          "exported": false,
+          "lineCount": 4
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiChatGateway",
+          "methods": [
+            "AiChatGateway",
+            "available",
+            "chat",
+            "selectorState"
+          ],
+          "properties": [
+            "CHAT_SELECTOR_PROPERTY",
+            "models",
+            "environment"
+          ],
+          "exported": true,
+          "lineCount": 55
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.ServiceUnavailableException",
+          "specifiers": [
+            "ServiceUnavailableException"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.client.ChatClient",
+          "specifiers": [
+            "ChatClient"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatModel",
+          "specifiers": [
+            "ChatModel"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.ObjectProvider",
+          "specifiers": [
+            "ObjectProvider"
+          ]
+        },
+        {
+          "source": "org.springframework.core.env.Environment",
+          "specifiers": [
+            "Environment"
+          ]
+        },
+        {
+          "source": "org.springframework.stereotype.Service",
+          "specifiers": [
+            "Service"
+          ]
+        }
+      ],
+      "exports": [
+        "CHAT_SELECTOR_PROPERTY",
+        "AiChatGateway",
+        "available",
+        "chat",
+        "AiChatGateway"
+      ],
+      "totalLines": 108,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-ai/src/main/java/com/marketplace/ai/AiModule.java": {
+      "filePath": "marketplace-ai/src/main/java/com/marketplace/ai/AiModule.java",
+      "contentHash": "c0dba5c6786b71d0404112485823dfb97cfdd2fc46a4bdad49ad933f947fcae7",
+      "functions": [
+        {
+          "name": "AiModule",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiModule",
+          "methods": [
+            "AiModule"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.modulith.PackageInfo",
+          "specifiers": [
+            "PackageInfo"
+          ]
+        }
+      ],
+      "exports": [
+        "AiModule"
+      ],
+      "totalLines": 10,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-ai/src/main/java/com/marketplace/ai/package-info.java": {
+      "filePath": "marketplace-ai/src/main/java/com/marketplace/ai/package-info.java",
+      "contentHash": "e68034b612741d74e612cc7007d281ff0071617aca47ac70cb526ed8d789c120",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 6,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-ai/src/test/java/com/marketplace/ai/AiChatGatewayTest.java": {
+      "filePath": "marketplace-ai/src/test/java/com/marketplace/ai/AiChatGatewayTest.java",
+      "contentHash": "78fcee85271f13dff455d7c568d6ab32590fdc7b12321945e823b6a10f9b7300",
+      "functions": [
+        {
+          "name": "gatewayWithSelector",
+          "params": [
+            "selectorValue"
+          ],
+          "returnType": "AiChatGateway",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "capabilityOffWhenNoChatModelBound",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "offDetailReportsTheActualSelectorValueNotAnAssumedNone",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "offDetailReportsUnsetWhenSelectorHasNoValue",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "delegatesToChatClientWhenBound",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiChatGatewayTest",
+          "methods": [
+            "gatewayWithSelector",
+            "capabilityOffWhenNoChatModelBound",
+            "offDetailReportsTheActualSelectorValueNotAnAssumedNone",
+            "offDetailReportsUnsetWhenSelectorHasNoValue",
+            "delegatesToChatClientWhenBound"
+          ],
+          "properties": [
+            "models"
+          ],
+          "exported": false,
+          "lineCount": 77
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.ServiceUnavailableException",
+          "specifiers": [
+            "ServiceUnavailableException"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.messages.AssistantMessage",
+          "specifiers": [
+            "AssistantMessage"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatModel",
+          "specifiers": [
+            "ChatModel"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatResponse",
+          "specifiers": [
+            "ChatResponse"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.Generation",
+          "specifiers": [
+            "Generation"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.prompt.Prompt",
+          "specifiers": [
+            "Prompt"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.ObjectProvider",
+          "specifiers": [
+            "ObjectProvider"
+          ]
+        },
+        {
+          "source": "org.springframework.mock.env.MockEnvironment",
+          "specifiers": [
+            "MockEnvironment"
+          ]
+        },
+        {
+          "source": "reactor.core.publisher.Flux",
+          "specifiers": [
+            "Flux"
+          ]
+        },
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 111,
       "hasStructuralAnalysis": true
     },
     "marketplace-app/pom.xml": {
@@ -2181,12 +2517,12 @@
     },
     "marketplace-app/src/main/resources/application.yml": {
       "filePath": "marketplace-app/src/main/resources/application.yml",
-      "contentHash": "e09a8f51316701f1a5f79f49a267a07906951afa36387d774be93bfd63e7a04a",
+      "contentHash": "56cd9c583c8a40db8c2646205343a15a790d6dec1aef3bb3dde1c09380c607b3",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 555,
+      "totalLines": 572,
       "hasStructuralAnalysis": false
     },
     "marketplace-app/src/main/resources/db/migration/R__seed_geo_qudsaya.sql": {
@@ -2757,6 +3093,36 @@
       "imports": [],
       "exports": [],
       "totalLines": 35,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-app/src/main/resources/db/migration/V60__neighborhood_memberships.sql": {
+      "filePath": "marketplace-app/src/main/resources/db/migration/V60__neighborhood_memberships.sql",
+      "contentHash": "bfe0bd11c5ae22a605c5d5a3bf6d7557777adf69cf3339033cce55fdd6430d3f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 82,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-app/src/main/resources/db/migration/V61__neighborhood_posts.sql": {
+      "filePath": "marketplace-app/src/main/resources/db/migration/V61__neighborhood_posts.sql",
+      "contentHash": "92e43ab3593e7f939f220fa914dd8819ba5e859ee930e79a90f8f6f5617cc79f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 141,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-app/src/main/resources/db/migration/V62__notification_preferences_post_commented_type.sql": {
+      "filePath": "marketplace-app/src/main/resources/db/migration/V62__notification_preferences_post_commented_type.sql",
+      "contentHash": "96b780bb8bcb377923b29cc0a40aed5f3e61189411d136856297200a7cb60ed4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 23,
       "hasStructuralAnalysis": false
     },
     "marketplace-app/src/main/resources/db/migration/V6__reviews.sql": {
@@ -3955,6 +4321,333 @@
       ],
       "exports": [],
       "totalLines": 126,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/ai/AiDeepSeekProviderSelectionIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/ai/AiDeepSeekProviderSelectionIntegrationTest.java",
+      "contentHash": "bb74c0f68da3f9e6458e1666ed62a51b27012d53c288a23be25491610c7a4ce3",
+      "functions": [
+        {
+          "name": "selectorActivatesExactlyOneProvider",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 5
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiDeepSeekProviderSelectionIntegrationTest",
+          "methods": [
+            "selectorActivatesExactlyOneProvider"
+          ],
+          "properties": [
+            "postgres",
+            "context",
+            "gateway"
+          ],
+          "exported": false,
+          "lineCount": 28
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatModel",
+          "specifiers": [
+            "ChatModel"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.context.ApplicationContext",
+          "specifiers": [
+            "ApplicationContext"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.testcontainers.containers.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 54,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/ai/AiModuleIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/ai/AiModuleIntegrationTest.java",
+      "contentHash": "305831a4f4e38ff236216f2b2c5ea7ab0464cbe7eecb2f805e6052f842afe76d",
+      "functions": [
+        {
+          "name": "contextBootsWithCapabilityOff",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiModuleIntegrationTest",
+          "methods": [
+            "contextBootsWithCapabilityOff"
+          ],
+          "properties": [
+            "postgres",
+            "context",
+            "gateway"
+          ],
+          "exported": false,
+          "lineCount": 28
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.ServiceUnavailableException",
+          "specifiers": [
+            "ServiceUnavailableException"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatModel",
+          "specifiers": [
+            "ChatModel"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.context.ApplicationContext",
+          "specifiers": [
+            "ApplicationContext"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.testcontainers.containers.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 57,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/ai/AiProviderSelectionIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/ai/AiProviderSelectionIntegrationTest.java",
+      "contentHash": "dbb9aca42406416cf2642cf25273ac3b67f2bf3c45a7a71f18f5c922e40c4fd8",
+      "functions": [
+        {
+          "name": "selectorActivatesExactlyOneProvider",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 5
+        }
+      ],
+      "classes": [
+        {
+          "name": "AiProviderSelectionIntegrationTest",
+          "methods": [
+            "selectorActivatesExactlyOneProvider"
+          ],
+          "properties": [
+            "postgres",
+            "context",
+            "gateway"
+          ],
+          "exported": false,
+          "lineCount": 28
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.ai.chat.model.ChatModel",
+          "specifiers": [
+            "ChatModel"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.context.ApplicationContext",
+          "specifiers": [
+            "ApplicationContext"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.testcontainers.containers.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 52,
       "hasStructuralAnalysis": true
     },
     "marketplace-app/src/test/java/com/marketplace/app/MigrationChecksumGuardTest.java": {
@@ -12071,6 +12764,1662 @@
       "totalLines": 234,
       "hasStructuralAnalysis": true
     },
+    "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodMembershipControllerWebMvcTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodMembershipControllerWebMvcTest.java",
+      "contentHash": "08eaff5b1801c518fbf7ea0d41af92892af86ccdd17ac591d48a2a9ddfbd1e84",
+      "functions": [
+        {
+          "name": "stubCaller",
+          "params": [],
+          "returnType": "UUID",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "view",
+          "params": [
+            "userId",
+            "locationId"
+          ],
+          "returnType": "NeighborhoodMembershipView",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "put_joinWithCreatedBody_answers201",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "put_idempotentRejoin_answers200",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "put_missingLocationId_is400AtTheBoundary",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "put_unknownLocation_answers404ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "put_nonNeighborhoodNode_answers400ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "get_returnsTheStoredMembership",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "get_withoutMembership_answers404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "delete_answers204",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "delete_withoutMembership_answers404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipControllerWebMvcTest",
+          "methods": [
+            "stubCaller",
+            "view",
+            "put_joinWithCreatedBody_answers201",
+            "put_idempotentRejoin_answers200",
+            "put_missingLocationId_is400AtTheBoundary",
+            "put_unknownLocation_answers404ProblemDetail",
+            "put_nonNeighborhoodNode_answers400ProblemDetail",
+            "get_returnsTheStoredMembership",
+            "get_withoutMembership_answers404",
+            "delete_answers204",
+            "delete_withoutMembership_answers404"
+          ],
+          "properties": [
+            "mockMvc",
+            "membershipService",
+            "currentUserProvider"
+          ],
+          "exported": false,
+          "lineCount": 147
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration",
+          "specifiers": [
+            "OAuth2ResourceServerAutoConfiguration"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.TestConfiguration",
+          "specifiers": [
+            "TestConfiguration"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest",
+          "specifiers": [
+            "WebMvcTest"
+          ]
+        },
+        {
+          "source": "org.springframework.context.annotation.Import",
+          "specifiers": [
+            "Import"
+          ]
+        },
+        {
+          "source": "org.springframework.http.MediaType",
+          "specifiers": [
+            "MediaType"
+          ]
+        },
+        {
+          "source": "org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity",
+          "specifiers": [
+            "EnableMethodSecurity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.core.Authentication",
+          "specifiers": [
+            "Authentication"
+          ]
+        },
+        {
+          "source": "org.springframework.security.test.context.support.WithMockUser",
+          "specifiers": [
+            "WithMockUser"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoBean",
+          "specifiers": [
+            "MockitoBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.MockMvc",
+          "specifiers": [
+            "MockMvc"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete",
+          "specifiers": [
+            "delete"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get",
+          "specifiers": [
+            "get"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put",
+          "specifiers": [
+            "put"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath",
+          "specifiers": [
+            "jsonPath"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.status",
+          "specifiers": [
+            "status"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 184,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodMembershipModuleIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodMembershipModuleIntegrationTest.java",
+      "contentHash": "fce41e6f304a5c80a1deec275cc975566f7f7f0141a735c668891756a5f1d90e",
+      "functions": [
+        {
+          "name": "asCaller",
+          "params": [
+            "userId"
+          ],
+          "returnType": "UUID",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "joinOverHttp",
+          "params": [
+            "userId",
+            "locationId",
+            "expectedStatus"
+          ],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "activeRows",
+          "params": [
+            "userId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "totalRows",
+          "params": [
+            "userId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "criterion1_joinLevel3_thenReadReturnsIt",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 18
+        },
+        {
+          "name": "criterion2_nonLevel3OrUnknown_is400Or404BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "criterion3_secondActiveMembership_isImpossible",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 19
+        },
+        {
+          "name": "criterion3b_concurrentJoins_neverLeaveTwoActiveRows",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 49
+        },
+        {
+          "name": "outcomeOf",
+          "params": [
+            "future"
+          ],
+          "returnType": "Object",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "criterion4_leaveReleasesTheSlot_rejoinWorks",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 24
+        },
+        {
+          "name": "criterion5_switchIsAtomicAndLevelGatedOnTheNewLocation",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 21
+        },
+        {
+          "name": "criterion5b_createFailure_leavesTheOldMembershipIntact",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 25
+        },
+        {
+          "name": "criterion6_exportCarriesTheMembership_purgeTouchesNothingByDesign",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 30
+        },
+        {
+          "name": "envers_everyMembershipLeavesItsTrailOnTheRealMirror",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 32
+        },
+        {
+          "name": "anonymousSurface_is401ThroughTheRealResourceServerChain",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "checkConstraint_backsTheVerificationFloorForRawWriters",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 19
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipModuleIntegrationTest",
+          "methods": [
+            "asCaller",
+            "joinOverHttp",
+            "activeRows",
+            "totalRows",
+            "criterion1_joinLevel3_thenReadReturnsIt",
+            "criterion2_nonLevel3OrUnknown_is400Or404BeforeAnyWrite",
+            "criterion3_secondActiveMembership_isImpossible",
+            "criterion3b_concurrentJoins_neverLeaveTwoActiveRows",
+            "outcomeOf",
+            "criterion4_leaveReleasesTheSlot_rejoinWorks",
+            "criterion5_switchIsAtomicAndLevelGatedOnTheNewLocation",
+            "criterion5b_createFailure_leavesTheOldMembershipIntact",
+            "criterion6_exportCarriesTheMembership_purgeTouchesNothingByDesign",
+            "envers_everyMembershipLeavesItsTrailOnTheRealMirror",
+            "anonymousSurface_is401ThroughTheRealResourceServerChain",
+            "checkConstraint_backsTheVerificationFloorForRawWriters"
+          ],
+          "properties": [
+            "SYRIA",
+            "RIF_DIMASHQ",
+            "QUDSAYYA_CITY",
+            "QUDSAYYA_OLD_TOWN",
+            "QUDSAYYA_SUBURB",
+            "AL_HAMAH",
+            "postgres",
+            "currentUserProvider",
+            "membershipRepository",
+            "mockMvc",
+            "jdbc",
+            "membershipService",
+            "exportAdapter",
+            "purgeAdapter"
+          ],
+          "exported": false,
+          "lineCount": 366
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc",
+          "specifiers": [
+            "AutoConfigureMockMvc"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.http.MediaType",
+          "specifiers": [
+            "MediaType"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoBean",
+          "specifiers": [
+            "MockitoBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoSpyBean",
+          "specifiers": [
+            "MockitoSpyBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.MockMvc",
+          "specifiers": [
+            "MockMvc"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.postgresql.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.Callable",
+          "specifiers": [
+            "Callable"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.CountDownLatch",
+          "specifiers": [
+            "CountDownLatch"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.ExecutionException",
+          "specifiers": [
+            "ExecutionException"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.ExecutorService",
+          "specifiers": [
+            "ExecutorService"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.Executors",
+          "specifiers": [
+            "Executors"
+          ]
+        },
+        {
+          "source": "java.util.concurrent.Future",
+          "specifiers": [
+            "Future"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.doThrow",
+          "specifiers": [
+            "doThrow"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        },
+        {
+          "source": "org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt",
+          "specifiers": [
+            "jwt"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete",
+          "specifiers": [
+            "delete"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get",
+          "specifiers": [
+            "get"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put",
+          "specifiers": [
+            "put"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath",
+          "specifiers": [
+            "jsonPath"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.status",
+          "specifiers": [
+            "status"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 433,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostControllerWebMvcTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostControllerWebMvcTest.java",
+      "contentHash": "5459fabbffcd6b1793e3457a0b013f51642967fdf6104bfcbeaf054c27e40dae",
+      "functions": [
+        {
+          "name": "stubCaller",
+          "params": [],
+          "returnType": "UUID",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "postView",
+          "params": [
+            "authorId",
+            "locationId"
+          ],
+          "returnType": "NeighborhoodPostView",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "getFeed_member_answersThePagedBody",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "getFeed_invalidCategory_is400AtTheBoundary",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "getFeed_noMembership_answers403ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "postCreate_validBody_answers201",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "postCreate_invalidCategory_is400AtTheBoundary",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "postCreate_blankCategory_is400AtTheBoundary",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "postCreate_blankTitle_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "postCreate_overLimitBody_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "postCreate_overLimitTitle_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "postCreate_noMembership_answers403ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "postCreate_unknownLocation_answers404ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "postCreate_nonLevel3Node_answers400ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "commentCreate_validBody_answers201",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "commentCreate_blankBody_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "commentCreate_unknownPost_answers404ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "commentCreate_nonMember_answers403ProblemDetail",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "commentRead_answersThePagedBody",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "commentRead_hiddenPost_answers404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "deleteMyPost_answers204",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "deleteAnotherAuthorsPost_answers403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "deleteUnknownPost_answers404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostControllerWebMvcTest",
+          "methods": [
+            "stubCaller",
+            "postView",
+            "getFeed_member_answersThePagedBody",
+            "getFeed_invalidCategory_is400AtTheBoundary",
+            "getFeed_noMembership_answers403ProblemDetail",
+            "postCreate_validBody_answers201",
+            "postCreate_invalidCategory_is400AtTheBoundary",
+            "postCreate_blankCategory_is400AtTheBoundary",
+            "postCreate_blankTitle_is400BeforeAnyWrite",
+            "postCreate_overLimitBody_is400BeforeAnyWrite",
+            "postCreate_overLimitTitle_is400BeforeAnyWrite",
+            "postCreate_noMembership_answers403ProblemDetail",
+            "postCreate_unknownLocation_answers404ProblemDetail",
+            "postCreate_nonLevel3Node_answers400ProblemDetail",
+            "commentCreate_validBody_answers201",
+            "commentCreate_blankBody_is400BeforeAnyWrite",
+            "commentCreate_unknownPost_answers404ProblemDetail",
+            "commentCreate_nonMember_answers403ProblemDetail",
+            "commentRead_answersThePagedBody",
+            "commentRead_hiddenPost_answers404",
+            "deleteMyPost_answers204",
+            "deleteAnotherAuthorsPost_answers403",
+            "deleteUnknownPost_answers404"
+          ],
+          "properties": [
+            "mockMvc",
+            "postService",
+            "currentUserProvider"
+          ],
+          "exported": false,
+          "lineCount": 315
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration",
+          "specifiers": [
+            "OAuth2ResourceServerAutoConfiguration"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.TestConfiguration",
+          "specifiers": [
+            "TestConfiguration"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest",
+          "specifiers": [
+            "WebMvcTest"
+          ]
+        },
+        {
+          "source": "org.springframework.context.annotation.Import",
+          "specifiers": [
+            "Import"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.PageImpl",
+          "specifiers": [
+            "PageImpl"
+          ]
+        },
+        {
+          "source": "org.springframework.http.MediaType",
+          "specifiers": [
+            "MediaType"
+          ]
+        },
+        {
+          "source": "org.springframework.security.access.AccessDeniedException",
+          "specifiers": [
+            "AccessDeniedException"
+          ]
+        },
+        {
+          "source": "org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity",
+          "specifiers": [
+            "EnableMethodSecurity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.test.context.support.WithMockUser",
+          "specifiers": [
+            "WithMockUser"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoBean",
+          "specifiers": [
+            "MockitoBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.MockMvc",
+          "specifiers": [
+            "MockMvc"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.eq",
+          "specifiers": [
+            "eq"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.isNull",
+          "specifiers": [
+            "isNull"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete",
+          "specifiers": [
+            "delete"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get",
+          "specifiers": [
+            "get"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post",
+          "specifiers": [
+            "post"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath",
+          "specifiers": [
+            "jsonPath"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.status",
+          "specifiers": [
+            "status"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 358,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostModuleIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostModuleIntegrationTest.java",
+      "contentHash": "d7e4fcd6f130217ca4b34c070c64b8278d27823248a7ff9c940ee2e63be4cb30",
+      "functions": [
+        {
+          "name": "isolateNeighborhoodData",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "asCaller",
+          "params": [
+            "userId"
+          ],
+          "returnType": "UUID",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "joinOverHttp",
+          "params": [
+            "userId",
+            "locationId",
+            "expectedStatus"
+          ],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "postOverHttp",
+          "params": [
+            "userId",
+            "locationId",
+            "category",
+            "title",
+            "body"
+          ],
+          "returnType": "org.springframework.test.web.servlet.ResultActions",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "joinedMember",
+          "params": [
+            "locationId"
+          ],
+          "returnType": "UUID",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "visiblePostIn",
+          "params": [
+            "locationId"
+          ],
+          "returnType": "SeededPost",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "criterion1_memberPostsInTheirNeighborhood_201AndTheFeedCarriesIt",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 28
+        },
+        {
+          "name": "criterion2_nonMemberReadsTheFeed_is403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "criterion3_typeGateAnswers400BeforeAnyWrite_andNonMemberCommentIs403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 55
+        },
+        {
+          "name": "criterion4_commentNotifiesTheAuthor_selfCommentDoesNot",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 38
+        },
+        {
+          "name": "criterion5_hiddenPostIsAbsentFromTheFeedAndItsComments",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 34
+        },
+        {
+          "name": "criterion6_authorDeleteHidesThePost_theEnversTrailStays",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 34
+        },
+        {
+          "name": "criterion8_sameSecondPosts_pageDeterministically",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 58
+        },
+        {
+          "name": "criterion9_purgeEmptiesTheTexts_theStructureStays_mirrorIncluded",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 62
+        },
+        {
+          "name": "envers_everyCommentAndPostLeavesItsTrailOnTheRealMirror",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 23
+        },
+        {
+          "name": "anonymousSurface_is401ThroughTheRealResourceServerChain",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 20
+        },
+        {
+          "name": "checkConstraints_backTheEnumFloorsForRawWriters",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 21
+        },
+        {
+          "name": "postRows",
+          "params": [
+            "authorId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "totalPostRows",
+          "params": [
+            "postId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "commentRows",
+          "params": [
+            "postId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "postCommentedRows",
+          "params": [
+            "recipientId"
+          ],
+          "returnType": "int",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "awaitPostCommentedNotification",
+          "params": [
+            "recipientId",
+            "expected"
+          ],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "awaitEventPublicationSettled",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostModuleIntegrationTest",
+          "methods": [
+            "isolateNeighborhoodData",
+            "asCaller",
+            "joinOverHttp",
+            "postOverHttp",
+            "joinedMember",
+            "visiblePostIn",
+            "criterion1_memberPostsInTheirNeighborhood_201AndTheFeedCarriesIt",
+            "criterion2_nonMemberReadsTheFeed_is403",
+            "criterion3_typeGateAnswers400BeforeAnyWrite_andNonMemberCommentIs403",
+            "criterion4_commentNotifiesTheAuthor_selfCommentDoesNot",
+            "criterion5_hiddenPostIsAbsentFromTheFeedAndItsComments",
+            "criterion6_authorDeleteHidesThePost_theEnversTrailStays",
+            "criterion8_sameSecondPosts_pageDeterministically",
+            "criterion9_purgeEmptiesTheTexts_theStructureStays_mirrorIncluded",
+            "envers_everyCommentAndPostLeavesItsTrailOnTheRealMirror",
+            "anonymousSurface_is401ThroughTheRealResourceServerChain",
+            "checkConstraints_backTheEnumFloorsForRawWriters",
+            "postRows",
+            "totalPostRows",
+            "commentRows",
+            "postCommentedRows",
+            "awaitPostCommentedNotification",
+            "awaitEventPublicationSettled"
+          ],
+          "properties": [
+            "SYRIA",
+            "RIF_DIMASHQ",
+            "QUDSAYYA_CITY",
+            "QUDSAYYA_OLD_TOWN",
+            "QUDSAYYA_SUBURB",
+            "AL_HAMAH",
+            "postgres",
+            "currentUserProvider",
+            "messagingTemplate",
+            "mockMvc",
+            "jdbc",
+            "membershipService",
+            "postService",
+            "exportAdapter",
+            "purgeAdapter"
+          ],
+          "exported": false,
+          "lineCount": 559
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc",
+          "specifiers": [
+            "AutoConfigureMockMvc"
+          ]
+        },
+        {
+          "source": "org.springframework.http.MediaType",
+          "specifiers": [
+            "MediaType"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.messaging.simp.SimpMessagingTemplate",
+          "specifiers": [
+            "SimpMessagingTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoBean",
+          "specifiers": [
+            "MockitoBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.MockMvc",
+          "specifiers": [
+            "MockMvc"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.postgresql.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.eq",
+          "specifiers": [
+            "eq"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.timeout",
+          "specifiers": [
+            "timeout"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        },
+        {
+          "source": "org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt",
+          "specifiers": [
+            "jwt"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete",
+          "specifiers": [
+            "delete"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get",
+          "specifiers": [
+            "get"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post",
+          "specifiers": [
+            "post"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put",
+          "specifiers": [
+            "put"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath",
+          "specifiers": [
+            "jsonPath"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.status",
+          "specifiers": [
+            "status"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 626,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostRateLimitIntegrationTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/community/NeighborhoodPostRateLimitIntegrationTest.java",
+      "contentHash": "60bb8231b3cb3da73c6f0d3f3a6e2d2648e3ecd25cab68845c8e944675c023f2",
+      "functions": [
+        {
+          "name": "seed",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "postCreate_thirdCallIsRateLimited",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 29
+        },
+        {
+          "name": "postComment_thirdCallIsRateLimited",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 27
+        },
+        {
+          "name": "theTwoWindowsAreIndependent",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 26
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostRateLimitIntegrationTest",
+          "methods": [
+            "seed",
+            "postCreate_thirdCallIsRateLimited",
+            "postComment_thirdCallIsRateLimited",
+            "theTwoWindowsAreIndependent"
+          ],
+          "properties": [
+            "QUDSAYYA_OLD_TOWN",
+            "postgres",
+            "currentUserProvider",
+            "TINY",
+            "rateLimiterRegistry",
+            "mockMvc",
+            "jdbc",
+            "membershipService",
+            "postService",
+            "authorId"
+          ],
+          "exported": false,
+          "lineCount": 169
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.BeforeEach",
+          "specifiers": [
+            "BeforeEach"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.DisplayName",
+          "specifiers": [
+            "DisplayName"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.beans.factory.annotation.Autowired",
+          "specifiers": [
+            "Autowired"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.test.context.SpringBootTest",
+          "specifiers": [
+            "SpringBootTest"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.testcontainers.service.connection.ServiceConnection",
+          "specifiers": [
+            "ServiceConnection"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc",
+          "specifiers": [
+            "AutoConfigureMockMvc"
+          ]
+        },
+        {
+          "source": "org.springframework.http.MediaType",
+          "specifiers": [
+            "MediaType"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.ActiveProfiles",
+          "specifiers": [
+            "ActiveProfiles"
+          ]
+        },
+        {
+          "source": "org.springframework.test.context.bean.override.mockito.MockitoBean",
+          "specifiers": [
+            "MockitoBean"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.MockMvc",
+          "specifiers": [
+            "MockMvc"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Container",
+          "specifiers": [
+            "Container"
+          ]
+        },
+        {
+          "source": "org.testcontainers.junit.jupiter.Testcontainers",
+          "specifiers": [
+            "Testcontainers"
+          ]
+        },
+        {
+          "source": "org.testcontainers.postgresql.PostgreSQLContainer",
+          "specifiers": [
+            "PostgreSQLContainer"
+          ]
+        },
+        {
+          "source": "org.testcontainers.utility.DockerImageName",
+          "specifiers": [
+            "DockerImageName"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        },
+        {
+          "source": "org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt",
+          "specifiers": [
+            "jwt"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post",
+          "specifiers": [
+            "post"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.content",
+          "specifiers": [
+            "content"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath",
+          "specifiers": [
+            "jsonPath"
+          ]
+        },
+        {
+          "source": "org.springframework.test.web.servlet.result.MockMvcResultMatchers.status",
+          "specifiers": [
+            "status"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 217,
+      "hasStructuralAnalysis": true
+    },
     "marketplace-app/src/test/java/com/marketplace/config/AccountPseudonymizationIntegrationTest.java": {
       "filePath": "marketplace-app/src/test/java/com/marketplace/config/AccountPseudonymizationIntegrationTest.java",
       "contentHash": "fad93324cbe90bf97278111559a4448c191b8957803bfc35686e47034fcef355",
@@ -16818,6 +19167,100 @@
       "totalLines": 103,
       "hasStructuralAnalysis": true
     },
+    "marketplace-app/src/test/java/com/marketplace/config/HttpCompressionConfigTest.java": {
+      "filePath": "marketplace-app/src/test/java/com/marketplace/config/HttpCompressionConfigTest.java",
+      "contentHash": "34704f93e35fb8505590d9cc754f91bebb58d49c5e0560aabbd1bca0ad8b432c",
+      "functions": [
+        {
+          "name": "baseProfileEnablesCompression",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "baseProfileExtendsMimeListWithProblemJsonInsteadOfReplacingIt",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "noProfileDisablesCompression",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "property",
+          "params": [
+            "yml",
+            "key"
+          ],
+          "returnType": "String",
+          "exported": false,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "HttpCompressionConfigTest",
+          "methods": [
+            "baseProfileEnablesCompression",
+            "baseProfileExtendsMimeListWithProblemJsonInsteadOfReplacingIt",
+            "noProfileDisablesCompression",
+            "property"
+          ],
+          "properties": [
+            "loader"
+          ],
+          "exported": false,
+          "lineCount": 47
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.boot.env.YamlPropertySourceLoader",
+          "specifiers": [
+            "YamlPropertySourceLoader"
+          ]
+        },
+        {
+          "source": "org.springframework.core.env.PropertySource",
+          "specifiers": [
+            "PropertySource"
+          ]
+        },
+        {
+          "source": "org.springframework.core.io.ClassPathResource",
+          "specifiers": [
+            "ClassPathResource"
+          ]
+        },
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 90,
+      "hasStructuralAnalysis": true
+    },
     "marketplace-app/src/test/java/com/marketplace/config/MultiReplicaReadinessIntegrationTest.java": {
       "filePath": "marketplace-app/src/test/java/com/marketplace/config/MultiReplicaReadinessIntegrationTest.java",
       "contentHash": "0aefa75600e9e67463bc60e8708f1eadf3c9b9ff620fecc4762560387cae14d7",
@@ -17355,7 +19798,7 @@
     },
     "marketplace-app/src/test/java/com/marketplace/config/ObservationCoverageFilesTest.java": {
       "filePath": "marketplace-app/src/test/java/com/marketplace/config/ObservationCoverageFilesTest.java",
-      "contentHash": "5e171ef9700efd7609d6bc9c4e5fedf396b3882ebdece8752828a6c3f79b5ec3",
+      "contentHash": "4ac951d7695fb1fd0f656506dc1ea7c676844b3ab002065e24718534c6d80b2c",
       "functions": [
         {
           "name": "repoRoot",
@@ -17420,7 +19863,7 @@
             "EXPECTED"
           ],
           "exported": false,
-          "lineCount": 159
+          "lineCount": 160
         }
       ],
       "imports": [
@@ -17510,7 +19953,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 245,
+      "totalLines": 248,
       "hasStructuralAnalysis": true
     },
     "marketplace-app/src/test/java/com/marketplace/config/OpenApiConfigTest.java": {
@@ -21142,7 +23585,7 @@
     },
     "marketplace-app/src/test/java/com/marketplace/identity/UserControllerWebMvcTest.java": {
       "filePath": "marketplace-app/src/test/java/com/marketplace/identity/UserControllerWebMvcTest.java",
-      "contentHash": "754a3d1e186da48359757baa6751faf4ae0960c93ac3e57d014223231e11df0a",
+      "contentHash": "8a1339a399113ed9029b990d60f87a1fbf40fffab3094b627be374b56b71deeb",
       "functions": [
         {
           "name": "getCurrentUser_returnsOk",
@@ -21156,7 +23599,7 @@
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 19
+          "lineCount": 20
         },
         {
           "name": "mockResponse",
@@ -21181,7 +23624,7 @@
             "userDataExportService"
           ],
           "exported": false,
-          "lineCount": 65
+          "lineCount": 66
         }
       ],
       "imports": [
@@ -21271,7 +23714,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 86,
+      "totalLines": 87,
       "hasStructuralAnalysis": true
     },
     "marketplace-app/src/test/java/com/marketplace/ledger/LedgerControllerWebMvcTest.java": {
@@ -24524,7 +26967,7 @@
     },
     "marketplace-app/src/test/java/com/marketplace/notifications/NotificationPreferencesIntegrationTest.java": {
       "filePath": "marketplace-app/src/test/java/com/marketplace/notifications/NotificationPreferencesIntegrationTest.java",
-      "contentHash": "c1eae950d4ad64382e52f533dcecf8938366344a1ffeaf590e15d239495dd205",
+      "contentHash": "255a877e2ac13ca37ee5366853f67ff9e351c5cf39a7234993d27056714220d0",
       "functions": [
         {
           "name": "seedUser",
@@ -24561,7 +27004,7 @@
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 31
+          "lineCount": 32
         },
         {
           "name": "preferenceFlipLeavesAnAuditRevisionTrail",
@@ -24596,7 +27039,7 @@
             "jdbc"
           ],
           "exported": false,
-          "lineCount": 179
+          "lineCount": 180
         }
       ],
       "imports": [
@@ -24806,7 +27249,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 244,
+      "totalLines": 245,
       "hasStructuralAnalysis": true
     },
     "marketplace-app/src/test/java/com/marketplace/notifications/NotificationsModuleIntegrationTest.java": {
@@ -33060,12 +35503,12 @@
     },
     "marketplace-app/src/test/resources/migration-checksums.properties": {
       "filePath": "marketplace-app/src/test/resources/migration-checksums.properties",
-      "contentHash": "c3a02002b6b56cf167c5686cb9eb481756e54241f6c86a8ec32408dbd71099c0",
+      "contentHash": "1840bd4e2f48d95ab8ca2a45296c9cc9dc2fa5f55af6e0a8bf8ca69c505625cf",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 69,
+      "totalLines": 71,
       "hasStructuralAnalysis": false
     },
     "marketplace-app/src/test/resources/seo/siteindex.xsd": {
@@ -41850,6 +44293,3585 @@
       "totalLines": 34,
       "hasStructuralAnalysis": true
     },
+    "marketplace-community/pom.xml": {
+      "filePath": "marketplace-community/pom.xml",
+      "contentHash": "ea174eb10f04706f6c2ba820fbd5c11bb2c84a13020d3b9dfca84049d8bff793",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/CommunityModule.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/CommunityModule.java",
+      "contentHash": "185a8473a52d8ef0a013526ce4e893c09921060a035480931f26128764b71b91",
+      "functions": [
+        {
+          "name": "CommunityModule",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "classes": [
+        {
+          "name": "CommunityModule",
+          "methods": [
+            "CommunityModule"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.modulith.PackageInfo",
+          "specifiers": [
+            "PackageInfo"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityModule"
+      ],
+      "totalLines": 10,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/MembershipVerificationState.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/MembershipVerificationState.java",
+      "contentHash": "81d5d33ba0a1ed0a05e4a54cd28ddd7fa7a1896513cbaefd3ad89f1f31885576",
+      "functions": [],
+      "classes": [
+        {
+          "name": "MembershipVerificationState",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 8
+        }
+      ],
+      "imports": [],
+      "exports": [
+        "MembershipVerificationState"
+      ],
+      "totalLines": 26,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembership.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembership.java",
+      "contentHash": "4854c8758b9cd4bb3d5d4008f43dabaecc90e673387491e7ceb56c77e8e96b39",
+      "functions": [
+        {
+          "name": "NeighborhoodMembership",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "NeighborhoodMembership",
+          "params": [
+            "id",
+            "userId",
+            "locationId"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "join",
+          "params": [
+            "userId",
+            "locationId",
+            "clock"
+          ],
+          "returnType": "NeighborhoodMembership",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "getId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "getUserId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getLocationId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getVerificationState",
+          "params": [],
+          "returnType": "MembershipVerificationState",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getMemberSince",
+          "params": [],
+          "returnType": "Instant",
+          "exported": true,
+          "lineCount": 1
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembership",
+          "methods": [
+            "NeighborhoodMembership",
+            "NeighborhoodMembership",
+            "join",
+            "getId",
+            "getUserId",
+            "getLocationId",
+            "getVerificationState",
+            "getMemberSince"
+          ],
+          "properties": [
+            "id",
+            "userId",
+            "locationId",
+            "verificationState",
+            "memberSince"
+          ],
+          "exported": true,
+          "lineCount": 55
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.jpa.BaseEntity",
+          "specifiers": [
+            "BaseEntity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Column",
+          "specifiers": [
+            "Column"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Entity",
+          "specifiers": [
+            "Entity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.EnumType",
+          "specifiers": [
+            "EnumType"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Enumerated",
+          "specifiers": [
+            "Enumerated"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Id",
+          "specifiers": [
+            "Id"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Table",
+          "specifiers": [
+            "Table"
+          ]
+        },
+        {
+          "source": "org.hibernate.envers.Audited",
+          "specifiers": [
+            "Audited"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "join",
+        "getId",
+        "getUserId",
+        "getLocationId",
+        "getVerificationState",
+        "getMemberSince",
+        "NeighborhoodMembership"
+      ],
+      "totalLines": 100,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipController.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipController.java",
+      "contentHash": "0a0ac406372a9286e88baa81671b1eb37992cb4431fd6d5b28da65eb33949451",
+      "functions": [
+        {
+          "name": "NeighborhoodMembershipController",
+          "params": [
+            "membershipService",
+            "currentUserProvider"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "join",
+          "params": [
+            "request",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<NeighborhoodMembershipView>",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "getMine",
+          "params": [
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<NeighborhoodMembershipView>",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "leave",
+          "params": [
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<Void>",
+          "exported": true,
+          "lineCount": 10
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipController",
+          "methods": [
+            "NeighborhoodMembershipController",
+            "join",
+            "getMine",
+            "leave"
+          ],
+          "properties": [
+            "membershipService",
+            "currentUserProvider"
+          ],
+          "exported": true,
+          "lineCount": 63
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.ApiConstants",
+          "specifiers": [
+            "ApiConstants"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "io.swagger.v3.oas.annotations.Operation",
+          "specifiers": [
+            "Operation"
+          ]
+        },
+        {
+          "source": "io.swagger.v3.oas.annotations.media.Schema",
+          "specifiers": [
+            "Schema"
+          ]
+        },
+        {
+          "source": "jakarta.validation.Valid",
+          "specifiers": [
+            "Valid"
+          ]
+        },
+        {
+          "source": "jakarta.validation.constraints.NotNull",
+          "specifiers": [
+            "NotNull"
+          ]
+        },
+        {
+          "source": "org.springframework.http.ResponseEntity",
+          "specifiers": [
+            "ResponseEntity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.core.Authentication",
+          "specifiers": [
+            "Authentication"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.DeleteMapping",
+          "specifiers": [
+            "DeleteMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.GetMapping",
+          "specifiers": [
+            "GetMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.PutMapping",
+          "specifiers": [
+            "PutMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RequestBody",
+          "specifiers": [
+            "RequestBody"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RequestMapping",
+          "specifiers": [
+            "RequestMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RestController",
+          "specifiers": [
+            "RestController"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodMembershipController",
+        "join",
+        "getMine",
+        "leave",
+        "NeighborhoodMembershipController"
+      ],
+      "totalLines": 96,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipRepository.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipRepository.java",
+      "contentHash": "ebbe92994ba6f7c12d77f24c1a6ccc0621b460f587cc486515e4d050355e2e87",
+      "functions": [],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipRepository",
+          "methods": [
+            "findByUserId"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.data.jpa.repository.JpaRepository",
+          "specifiers": [
+            "JpaRepository"
+          ]
+        },
+        {
+          "source": "org.springframework.data.repository.history.RevisionRepository",
+          "specifiers": [
+            "RevisionRepository"
+          ]
+        },
+        {
+          "source": "java.util.Optional",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodMembershipRepository"
+      ],
+      "totalLines": 27,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipService.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipService.java",
+      "contentHash": "ea019e7e9bbdf19cdea5eeb78fcd47cf349af5a2db6eefdef1ee75abaced1ed4",
+      "functions": [
+        {
+          "name": "NeighborhoodMembershipService",
+          "params": [
+            "repository",
+            "geoLookupPort",
+            "clock"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "join",
+          "params": [
+            "userId",
+            "locationId"
+          ],
+          "returnType": "MembershipCommandResult",
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "getMine",
+          "params": [
+            "userId"
+          ],
+          "returnType": "NeighborhoodMembershipView",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "leave",
+          "params": [
+            "userId"
+          ],
+          "returnType": "void",
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipService",
+          "methods": [
+            "NeighborhoodMembershipService",
+            "join",
+            "getMine",
+            "leave"
+          ],
+          "properties": [
+            "NEIGHBORHOOD_LEVEL",
+            "repository",
+            "geoLookupPort",
+            "clock"
+          ],
+          "exported": true,
+          "lineCount": 96
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.GeoLookupPort",
+          "specifiers": [
+            "GeoLookupPort"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "io.micrometer.observation.annotation.Observed",
+          "specifiers": [
+            "Observed"
+          ]
+        },
+        {
+          "source": "org.springframework.stereotype.Service",
+          "specifiers": [
+            "Service"
+          ]
+        },
+        {
+          "source": "org.springframework.transaction.annotation.Transactional",
+          "specifiers": [
+            "Transactional"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.util.Optional",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodMembershipService",
+        "join",
+        "getMine",
+        "leave",
+        "NeighborhoodMembershipService"
+      ],
+      "totalLines": 138,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipView.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodMembershipView.java",
+      "contentHash": "c5cd68425f20c2307c5062acce9839900d60af4e23ddd057f022b65e62efbd5d",
+      "functions": [
+        {
+          "name": "of",
+          "params": [
+            "membership"
+          ],
+          "returnType": "NeighborhoodMembershipView",
+          "exported": false,
+          "lineCount": 10
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipView",
+          "methods": [
+            "of"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 20
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodMembershipView"
+      ],
+      "totalLines": 33,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPost.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPost.java",
+      "contentHash": "4f12ceb5ecf0f036070a2dcd9e2e2ebacf1722a5dff80d454398fd6dc1dea7f0",
+      "functions": [
+        {
+          "name": "NeighborhoodPost",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "NeighborhoodPost",
+          "params": [
+            "id",
+            "authorId",
+            "locationId"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "post",
+          "params": [
+            "authorId",
+            "locationId",
+            "category",
+            "title",
+            "body",
+            "clock"
+          ],
+          "returnType": "NeighborhoodPost",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "getId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "getAuthorId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getLocationId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getCategory",
+          "params": [],
+          "returnType": "PostCategory",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getTitle",
+          "params": [],
+          "returnType": "String",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getBody",
+          "params": [],
+          "returnType": "String",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getStatus",
+          "params": [],
+          "returnType": "PostStatus",
+          "exported": true,
+          "lineCount": 1
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPost",
+          "methods": [
+            "NeighborhoodPost",
+            "NeighborhoodPost",
+            "post",
+            "getId",
+            "getAuthorId",
+            "getLocationId",
+            "getCategory",
+            "getTitle",
+            "getBody",
+            "getStatus"
+          ],
+          "properties": [
+            "id",
+            "authorId",
+            "locationId",
+            "category",
+            "title",
+            "body",
+            "status"
+          ],
+          "exported": true,
+          "lineCount": 68
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.jpa.BaseEntity",
+          "specifiers": [
+            "BaseEntity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Column",
+          "specifiers": [
+            "Column"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Entity",
+          "specifiers": [
+            "Entity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.EnumType",
+          "specifiers": [
+            "EnumType"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Enumerated",
+          "specifiers": [
+            "Enumerated"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Id",
+          "specifiers": [
+            "Id"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Table",
+          "specifiers": [
+            "Table"
+          ]
+        },
+        {
+          "source": "org.hibernate.envers.Audited",
+          "specifiers": [
+            "Audited"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "post",
+        "getId",
+        "getAuthorId",
+        "getLocationId",
+        "getCategory",
+        "getTitle",
+        "getBody",
+        "getStatus",
+        "NeighborhoodPost"
+      ],
+      "totalLines": 113,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostController.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostController.java",
+      "contentHash": "d48a24b0e80ae9b4b68202161e755e8f15e87bb2c181b65aa39c7342e3985cd6",
+      "functions": [
+        {
+          "name": "NeighborhoodPostController",
+          "params": [
+            "postService",
+            "currentUserProvider"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "feed",
+          "params": [
+            "category",
+            "pageable",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<PagedResponse<NeighborhoodPostView>>",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "create",
+          "params": [
+            "request",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<NeighborhoodPostView>",
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "comments",
+          "params": [
+            "postId",
+            "pageable",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<PagedResponse<PostCommentView>>",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "comment",
+          "params": [
+            "postId",
+            "request",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<PostCommentView>",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "delete",
+          "params": [
+            "postId",
+            "authentication"
+          ],
+          "returnType": "ResponseEntity<Void>",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "parseCategory",
+          "params": [
+            "raw"
+          ],
+          "returnType": "PostCategory",
+          "exported": false,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostController",
+          "methods": [
+            "NeighborhoodPostController",
+            "feed",
+            "create",
+            "comments",
+            "comment",
+            "delete",
+            "parseCategory"
+          ],
+          "properties": [
+            "MAX_BODY_LENGTH",
+            "postService",
+            "currentUserProvider"
+          ],
+          "exported": true,
+          "lineCount": 169
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.ApiConstants",
+          "specifiers": [
+            "ApiConstants"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.PagedResponse",
+          "specifiers": [
+            "PagedResponse"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "io.swagger.v3.oas.annotations.Operation",
+          "specifiers": [
+            "Operation"
+          ]
+        },
+        {
+          "source": "io.swagger.v3.oas.annotations.Parameter",
+          "specifiers": [
+            "Parameter"
+          ]
+        },
+        {
+          "source": "io.swagger.v3.oas.annotations.media.Schema",
+          "specifiers": [
+            "Schema"
+          ]
+        },
+        {
+          "source": "io.github.resilience4j.ratelimiter.annotation.RateLimiter",
+          "specifiers": [
+            "RateLimiter"
+          ]
+        },
+        {
+          "source": "jakarta.validation.Valid",
+          "specifiers": [
+            "Valid"
+          ]
+        },
+        {
+          "source": "jakarta.validation.constraints.NotBlank",
+          "specifiers": [
+            "NotBlank"
+          ]
+        },
+        {
+          "source": "jakarta.validation.constraints.NotNull",
+          "specifiers": [
+            "NotNull"
+          ]
+        },
+        {
+          "source": "jakarta.validation.constraints.Size",
+          "specifiers": [
+            "Size"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Pageable",
+          "specifiers": [
+            "Pageable"
+          ]
+        },
+        {
+          "source": "org.springframework.http.ResponseEntity",
+          "specifiers": [
+            "ResponseEntity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.core.Authentication",
+          "specifiers": [
+            "Authentication"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.DeleteMapping",
+          "specifiers": [
+            "DeleteMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.GetMapping",
+          "specifiers": [
+            "GetMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.PathVariable",
+          "specifiers": [
+            "PathVariable"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.PostMapping",
+          "specifiers": [
+            "PostMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RequestBody",
+          "specifiers": [
+            "RequestBody"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RequestMapping",
+          "specifiers": [
+            "RequestMapping"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RequestParam",
+          "specifiers": [
+            "RequestParam"
+          ]
+        },
+        {
+          "source": "org.springframework.web.bind.annotation.RestController",
+          "specifiers": [
+            "RestController"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodPostController",
+        "feed",
+        "create",
+        "comments",
+        "comment",
+        "delete",
+        "NeighborhoodPostController"
+      ],
+      "totalLines": 221,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostRepository.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostRepository.java",
+      "contentHash": "514a6a0d98e61e4ec348d963c2a54faa94a2d4ad1efae90705632e19df61c5a5",
+      "functions": [],
+      "classes": [
+        {
+          "name": "NeighborhoodPostRepository",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.data.jpa.repository.JpaRepository",
+          "specifiers": [
+            "JpaRepository"
+          ]
+        },
+        {
+          "source": "org.springframework.data.jpa.repository.JpaSpecificationExecutor",
+          "specifiers": [
+            "JpaSpecificationExecutor"
+          ]
+        },
+        {
+          "source": "org.springframework.data.repository.history.RevisionRepository",
+          "specifiers": [
+            "RevisionRepository"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodPostRepository"
+      ],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostService.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostService.java",
+      "contentHash": "e73713869720049a9ac1e0e9ce6649492cf89befe71669c3d6910cecfccf59d2",
+      "functions": [
+        {
+          "name": "NeighborhoodPostService",
+          "params": [
+            "repository",
+            "commentRepository",
+            "membershipRepository",
+            "geoLookupPort",
+            "eventPublisher",
+            "clock"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "createPost",
+          "params": [
+            "authorId",
+            "locationId",
+            "category",
+            "title",
+            "body"
+          ],
+          "returnType": "NeighborhoodPostView",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "getFeed",
+          "params": [
+            "callerId",
+            "category",
+            "pageable"
+          ],
+          "returnType": "Page<NeighborhoodPostView>",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "comment",
+          "params": [
+            "commenterId",
+            "postId",
+            "body"
+          ],
+          "returnType": "PostCommentView",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "getComments",
+          "params": [
+            "callerId",
+            "postId",
+            "pageable"
+          ],
+          "returnType": "Page<PostCommentView>",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "deleteByAuthor",
+          "params": [
+            "authorId",
+            "postId"
+          ],
+          "returnType": "void",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "visiblePost",
+          "params": [
+            "postId"
+          ],
+          "returnType": "NeighborhoodPost",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "requireActiveMembership",
+          "params": [
+            "callerId",
+            "noMembershipMessage"
+          ],
+          "returnType": "NeighborhoodMembership",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "requireActiveMembershipIn",
+          "params": [
+            "callerId",
+            "locationId",
+            "noMembershipMessage",
+            "wrongLocationMessage"
+          ],
+          "returnType": "NeighborhoodMembership",
+          "exported": false,
+          "lineCount": 10
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostService",
+          "methods": [
+            "NeighborhoodPostService",
+            "createPost",
+            "getFeed",
+            "comment",
+            "getComments",
+            "deleteByAuthor",
+            "visiblePost",
+            "requireActiveMembership",
+            "requireActiveMembershipIn"
+          ],
+          "properties": [
+            "NEIGHBORHOOD_LEVEL",
+            "FEED_SORT",
+            "COMMENT_SORT",
+            "repository",
+            "commentRepository",
+            "membershipRepository",
+            "geoLookupPort",
+            "eventPublisher",
+            "clock"
+          ],
+          "exported": true,
+          "lineCount": 175
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.GeoLookupPort",
+          "specifiers": [
+            "GeoLookupPort"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.PostCommentedEvent",
+          "specifiers": [
+            "PostCommentedEvent"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "io.micrometer.observation.annotation.Observed",
+          "specifiers": [
+            "Observed"
+          ]
+        },
+        {
+          "source": "org.springframework.context.ApplicationEventPublisher",
+          "specifiers": [
+            "ApplicationEventPublisher"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Page",
+          "specifiers": [
+            "Page"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.PageRequest",
+          "specifiers": [
+            "PageRequest"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Pageable",
+          "specifiers": [
+            "Pageable"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Sort",
+          "specifiers": [
+            "Sort"
+          ]
+        },
+        {
+          "source": "org.springframework.security.access.AccessDeniedException",
+          "specifiers": [
+            "AccessDeniedException"
+          ]
+        },
+        {
+          "source": "org.springframework.stereotype.Service",
+          "specifiers": [
+            "Service"
+          ]
+        },
+        {
+          "source": "org.springframework.transaction.annotation.Transactional",
+          "specifiers": [
+            "Transactional"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodPostService",
+        "createPost",
+        "getFeed",
+        "comment",
+        "getComments",
+        "deleteByAuthor",
+        "NeighborhoodPostService"
+      ],
+      "totalLines": 228,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostSpecifications.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostSpecifications.java",
+      "contentHash": "05f9d59033012247ef0d4fa7a19504cb06a622b8bca6d60fa0e0d2ec0762db8a",
+      "functions": [
+        {
+          "name": "NeighborhoodPostSpecifications",
+          "params": [],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "hasLocation",
+          "params": [
+            "locationId"
+          ],
+          "returnType": "Specification<NeighborhoodPost>",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "isVisible",
+          "params": [],
+          "returnType": "Specification<NeighborhoodPost>",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "hasCategory",
+          "params": [
+            "category"
+          ],
+          "returnType": "Specification<NeighborhoodPost>",
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostSpecifications",
+          "methods": [
+            "NeighborhoodPostSpecifications",
+            "hasLocation",
+            "isVisible",
+            "hasCategory"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 27
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.data.jpa.domain.Specification",
+          "specifiers": [
+            "Specification"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "hasLocation",
+        "isVisible",
+        "hasCategory",
+        "NeighborhoodPostSpecifications"
+      ],
+      "totalLines": 54,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostView.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/NeighborhoodPostView.java",
+      "contentHash": "2701c83013fe8596d3a2330332dbfb6a1d82e0e5441cf8300bcd652b9f56c3a2",
+      "functions": [
+        {
+          "name": "of",
+          "params": [
+            "post"
+          ],
+          "returnType": "NeighborhoodPostView",
+          "exported": false,
+          "lineCount": 12
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostView",
+          "methods": [
+            "of"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 24
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "NeighborhoodPostView"
+      ],
+      "totalLines": 36,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/PostCategory.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/PostCategory.java",
+      "contentHash": "e73862c220c1713f6d8f76dcd6b663b8e22646ba0f71bd9f7a9ab937262dbe76",
+      "functions": [],
+      "classes": [
+        {
+          "name": "PostCategory",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "imports": [],
+      "exports": [
+        "PostCategory"
+      ],
+      "totalLines": 18,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/PostComment.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/PostComment.java",
+      "contentHash": "bbf4301c2342becf32ff5f97f9c1486feddffe4b48248a8e76788318b8d9ea41",
+      "functions": [
+        {
+          "name": "PostComment",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "PostComment",
+          "params": [
+            "id",
+            "postId",
+            "authorId"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "comment",
+          "params": [
+            "postId",
+            "authorId",
+            "body"
+          ],
+          "returnType": "PostComment",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "getId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "getPostId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getAuthorId",
+          "params": [],
+          "returnType": "UUID",
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "getBody",
+          "params": [],
+          "returnType": "String",
+          "exported": true,
+          "lineCount": 1
+        }
+      ],
+      "classes": [
+        {
+          "name": "PostComment",
+          "methods": [
+            "PostComment",
+            "PostComment",
+            "comment",
+            "getId",
+            "getPostId",
+            "getAuthorId",
+            "getBody"
+          ],
+          "properties": [
+            "id",
+            "postId",
+            "authorId",
+            "body"
+          ],
+          "exported": true,
+          "lineCount": 43
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.jpa.BaseEntity",
+          "specifiers": [
+            "BaseEntity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Column",
+          "specifiers": [
+            "Column"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Entity",
+          "specifiers": [
+            "Entity"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Id",
+          "specifiers": [
+            "Id"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.Table",
+          "specifiers": [
+            "Table"
+          ]
+        },
+        {
+          "source": "org.hibernate.envers.Audited",
+          "specifiers": [
+            "Audited"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "comment",
+        "getId",
+        "getPostId",
+        "getAuthorId",
+        "getBody",
+        "PostComment"
+      ],
+      "totalLines": 72,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/PostCommentRepository.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/PostCommentRepository.java",
+      "contentHash": "ce0c435f865aeec80280d74051b5d3f6f56c8d337d808c9bb26da61d3032e824",
+      "functions": [],
+      "classes": [
+        {
+          "name": "PostCommentRepository",
+          "methods": [
+            "findByPostId"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.springframework.data.domain.Page",
+          "specifiers": [
+            "Page"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Pageable",
+          "specifiers": [
+            "Pageable"
+          ]
+        },
+        {
+          "source": "org.springframework.data.jpa.repository.JpaRepository",
+          "specifiers": [
+            "JpaRepository"
+          ]
+        },
+        {
+          "source": "org.springframework.data.repository.history.RevisionRepository",
+          "specifiers": [
+            "RevisionRepository"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "PostCommentRepository"
+      ],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/PostCommentView.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/PostCommentView.java",
+      "contentHash": "a0658c6ea28629441437b5a1015586d83e136a9a95f12a185b351411774df020",
+      "functions": [
+        {
+          "name": "of",
+          "params": [
+            "comment"
+          ],
+          "returnType": "PostCommentView",
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [
+        {
+          "name": "PostCommentView",
+          "methods": [
+            "of"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 18
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "PostCommentView"
+      ],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/PostStatus.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/PostStatus.java",
+      "contentHash": "1bcd0f661f8b76cae07e4f6229dc9d09aa3b0c63906e605ab0df03d870fabd34",
+      "functions": [],
+      "classes": [
+        {
+          "name": "PostStatus",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "imports": [],
+      "exports": [
+        "PostStatus"
+      ],
+      "totalLines": 21,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/package-info.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/package-info.java",
+      "contentHash": "7f7ec189cbfcef32d6d4c3d0dd1331649f4fe81984c4d6bcf683dada51815521",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/spi/CommunityContentPurgeAdapter.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/spi/CommunityContentPurgeAdapter.java",
+      "contentHash": "7500a864995aa28ff649076f8fed13e3957018916527fb44f646f60d7d962bdb",
+      "functions": [
+        {
+          "name": "CommunityContentPurgeAdapter",
+          "params": [
+            "jdbcTemplate"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "purgeAuthoredTexts",
+          "params": [
+            "userId"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 28
+        }
+      ],
+      "classes": [
+        {
+          "name": "CommunityContentPurgeAdapter",
+          "methods": [
+            "CommunityContentPurgeAdapter",
+            "purgeAuthoredTexts"
+          ],
+          "properties": [
+            "log",
+            "jdbcTemplate"
+          ],
+          "exported": true,
+          "lineCount": 40
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.AuthoredContentPurgePort",
+          "specifiers": [
+            "AuthoredContentPurgePort"
+          ]
+        },
+        {
+          "source": "org.slf4j.Logger",
+          "specifiers": [
+            "Logger"
+          ]
+        },
+        {
+          "source": "org.slf4j.LoggerFactory",
+          "specifiers": [
+            "LoggerFactory"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.stereotype.Component",
+          "specifiers": [
+            "Component"
+          ]
+        },
+        {
+          "source": "org.springframework.transaction.annotation.Transactional",
+          "specifiers": [
+            "Transactional"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityContentPurgeAdapter",
+        "purgeAuthoredTexts",
+        "CommunityContentPurgeAdapter"
+      ],
+      "totalLines": 79,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/main/java/com/marketplace/community/spi/CommunityExportAdapter.java": {
+      "filePath": "marketplace-community/src/main/java/com/marketplace/community/spi/CommunityExportAdapter.java",
+      "contentHash": "eca7f02f084f51173bcb694fde537c56f2fcc4e180d839884c893a5469d30420",
+      "functions": [
+        {
+          "name": "CommunityExportAdapter",
+          "params": [
+            "jdbcTemplate"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "exportForOwner",
+          "params": [
+            "userId"
+          ],
+          "returnType": "List<CommunityMembershipExportEntry>",
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "exportPostsForOwner",
+          "params": [
+            "userId"
+          ],
+          "returnType": "List<CommunityPostExportEntry>",
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "exportCommentsForOwner",
+          "params": [
+            "userId"
+          ],
+          "returnType": "List<CommunityCommentExportEntry>",
+          "exported": true,
+          "lineCount": 19
+        }
+      ],
+      "classes": [
+        {
+          "name": "CommunityExportAdapter",
+          "methods": [
+            "CommunityExportAdapter",
+            "exportForOwner",
+            "exportPostsForOwner",
+            "exportCommentsForOwner"
+          ],
+          "properties": [
+            "jdbcTemplate"
+          ],
+          "exported": true,
+          "lineCount": 75
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.CommunityCommentExportEntry",
+          "specifiers": [
+            "CommunityCommentExportEntry"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.CommunityExportPort",
+          "specifiers": [
+            "CommunityExportPort"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.CommunityMembershipExportEntry",
+          "specifiers": [
+            "CommunityMembershipExportEntry"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.CommunityPostExportEntry",
+          "specifiers": [
+            "CommunityPostExportEntry"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.stereotype.Component",
+          "specifiers": [
+            "Component"
+          ]
+        },
+        {
+          "source": "org.springframework.transaction.annotation.Transactional",
+          "specifiers": [
+            "Transactional"
+          ]
+        },
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityExportAdapter",
+        "exportForOwner",
+        "exportPostsForOwner",
+        "exportCommentsForOwner",
+        "CommunityExportAdapter"
+      ],
+      "totalLines": 104,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipControllerTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipControllerTest.java",
+      "contentHash": "a88d32702d2aec824e87fbd5be079e09b555650011dd2127a9fdfd8346ffe042",
+      "functions": [
+        {
+          "name": "view",
+          "params": [
+            "location"
+          ],
+          "returnType": "NeighborhoodMembershipView",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "join_created_answers201",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "join_idempotent_answers200",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "getMine_delegatesWithTheCallerId",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "leave_answers204",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipControllerTest",
+          "methods": [
+            "view",
+            "join_created_answers201",
+            "join_idempotent_answers200",
+            "getMine_delegatesWithTheCallerId",
+            "leave_answers204"
+          ],
+          "properties": [
+            "membershipService",
+            "currentUserProvider",
+            "authentication",
+            "controller",
+            "userId",
+            "locationId"
+          ],
+          "exported": false,
+          "lineCount": 76
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.InjectMocks",
+          "specifiers": [
+            "InjectMocks"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.http.HttpStatus",
+          "specifiers": [
+            "HttpStatus"
+          ]
+        },
+        {
+          "source": "org.springframework.http.ResponseEntity",
+          "specifiers": [
+            "ResponseEntity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.core.Authentication",
+          "specifiers": [
+            "Authentication"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 103,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipServiceTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipServiceTest.java",
+      "contentHash": "994ab6bbbf18c7541196b9668b25927b57723aaac3477505d0e5cbd417cd58d0",
+      "functions": [
+        {
+          "name": "setUp",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "node",
+          "params": [
+            "level"
+          ],
+          "returnType": "GeoLookupPort.GeoNode",
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "storedMembership",
+          "params": [
+            "location"
+          ],
+          "returnType": "NeighborhoodMembership",
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "join_unknownLocation_isThePortsOwn404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "join_nonLevel3Node_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "join_fresh_savesAndReportsCreated",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "join_sameLocation_isIdempotentNoWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "join_differentLocation_switchesInDeleteFlushSaveOrder",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 19
+        },
+        {
+          "name": "getMine_noMembership_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "getMine_returnsTheStoredView",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "leave_noMembership_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "leave_softDeletesTheActiveMembership",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "switch_writeFailure_propagatesAfterDelete",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 19
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipServiceTest",
+          "methods": [
+            "setUp",
+            "node",
+            "storedMembership",
+            "join_unknownLocation_isThePortsOwn404",
+            "join_nonLevel3Node_is400BeforeAnyWrite",
+            "join_fresh_savesAndReportsCreated",
+            "join_sameLocation_isIdempotentNoWrite",
+            "join_differentLocation_switchesInDeleteFlushSaveOrder",
+            "getMine_noMembership_is404",
+            "getMine_returnsTheStoredView",
+            "leave_noMembership_is404",
+            "leave_softDeletesTheActiveMembership",
+            "switch_writeFailure_propagatesAfterDelete"
+          ],
+          "properties": [
+            "FIXED",
+            "repository",
+            "geoLookupPort",
+            "clock",
+            "service",
+            "userId",
+            "locationId"
+          ],
+          "exported": false,
+          "lineCount": 164
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.GeoLookupPort",
+          "specifiers": [
+            "GeoLookupPort"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.InOrder",
+          "specifiers": [
+            "InOrder"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.time.ZoneOffset",
+          "specifiers": [
+            "ZoneOffset"
+          ]
+        },
+        {
+          "source": "java.util.Optional",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.doThrow",
+          "specifiers": [
+            "doThrow"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.inOrder",
+          "specifiers": [
+            "inOrder"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.never",
+          "specifiers": [
+            "never"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 206,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodMembershipTest.java",
+      "contentHash": "2aff2f660dac898dba8138513e8a9262571eb74c7609ddaf595a106b243b9aaf",
+      "functions": [
+        {
+          "name": "joinFactory_setsEveryStoredFact",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "theVocabularyCarriesOnlyTheSelfDeclaredState",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodMembershipTest",
+          "methods": [
+            "joinFactory_setsEveryStoredFact",
+            "theVocabularyCarriesOnlyTheSelfDeclaredState"
+          ],
+          "properties": [
+            "FIXED",
+            "clock"
+          ],
+          "exported": false,
+          "lineCount": 28
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.time.ZoneOffset",
+          "specifiers": [
+            "ZoneOffset"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 44,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostControllerTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostControllerTest.java",
+      "contentHash": "12959e4baff8b031f301625a0d3c60b040a4b8a60526d2b2b11034c404b25ea9",
+      "functions": [
+        {
+          "name": "view",
+          "params": [],
+          "returnType": "NeighborhoodPostView",
+          "exported": false,
+          "lineCount": 6
+        },
+        {
+          "name": "feed_delegatesWithTheParsedCategory",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "feed_absentCategory_delegatesWithNull",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "feed_invalidCategory_is400BeforeAnyServiceCall",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "create_answers201WithTheStoredView",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "create_invalidCategory_is400BeforeAnyServiceCall",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "comment_answers201WithTheStoredView",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "comments_delegatesToTheService",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "delete_answers204",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostControllerTest",
+          "methods": [
+            "view",
+            "feed_delegatesWithTheParsedCategory",
+            "feed_absentCategory_delegatesWithNull",
+            "feed_invalidCategory_is400BeforeAnyServiceCall",
+            "create_answers201WithTheStoredView",
+            "create_invalidCategory_is400BeforeAnyServiceCall",
+            "comment_answers201WithTheStoredView",
+            "comments_delegatesToTheService",
+            "delete_answers204"
+          ],
+          "properties": [
+            "postService",
+            "currentUserProvider",
+            "authentication",
+            "controller",
+            "authorId",
+            "locationId",
+            "postId"
+          ],
+          "exported": false,
+          "lineCount": 134
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.security.CurrentUserProvider",
+          "specifiers": [
+            "CurrentUserProvider"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.InjectMocks",
+          "specifiers": [
+            "InjectMocks"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Pageable",
+          "specifiers": [
+            "Pageable"
+          ]
+        },
+        {
+          "source": "org.springframework.http.HttpStatus",
+          "specifiers": [
+            "HttpStatus"
+          ]
+        },
+        {
+          "source": "org.springframework.http.ResponseEntity",
+          "specifiers": [
+            "ResponseEntity"
+          ]
+        },
+        {
+          "source": "org.springframework.security.core.Authentication",
+          "specifiers": [
+            "Authentication"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 164,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostServiceTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostServiceTest.java",
+      "contentHash": "41089fef5b9af813ac384cb617a64c984887e1a12392ba267bc6420be2e8b867",
+      "functions": [
+        {
+          "name": "setUp",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "node",
+          "params": [
+            "level"
+          ],
+          "returnType": "GeoLookupPort.GeoNode",
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "membershipOf",
+          "params": [
+            "user",
+            "location"
+          ],
+          "returnType": "NeighborhoodMembership",
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "visiblePost",
+          "params": [
+            "author",
+            "location"
+          ],
+          "returnType": "NeighborhoodPost",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "createPost_unknownLocation_isThePortsOwn404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "createPost_nonLevel3Node_is400BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "createPost_noMembership_is403BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "createPost_membershipInADifferentNeighborhood_is403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "createPost_memberOfTheExactLocation_savesAndReturnsTheView",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "getFeed_noMembership_is403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "getFeed_member_readsOwnNeighborhoodOnTheCompleteSortKey",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 24
+        },
+        {
+          "name": "comment_unknownPost_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "comment_hiddenPost_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "comment_noMembership_is403BeforeAnyWrite",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "comment_membershipInADifferentNeighborhood_is403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "comment_memberOfThePostsNeighborhood_savesAndPublishesTheEvent",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 22
+        },
+        {
+          "name": "getComments_unknownPost_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "getComments_hiddenPost_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "getComments_noMembership_is403",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "getComments_member_readsChronologicallyOnTheCompleteSortKey",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 18
+        },
+        {
+          "name": "deleteByAuthor_unknownPost_is404",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "deleteByAuthor_notTheAuthor_is403_noDelete",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "deleteByAuthor_theAuthor_softDeletes",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostServiceTest",
+          "methods": [
+            "setUp",
+            "node",
+            "membershipOf",
+            "visiblePost",
+            "createPost_unknownLocation_isThePortsOwn404",
+            "createPost_nonLevel3Node_is400BeforeAnyWrite",
+            "createPost_noMembership_is403BeforeAnyWrite",
+            "createPost_membershipInADifferentNeighborhood_is403",
+            "createPost_memberOfTheExactLocation_savesAndReturnsTheView",
+            "getFeed_noMembership_is403",
+            "getFeed_member_readsOwnNeighborhoodOnTheCompleteSortKey",
+            "comment_unknownPost_is404",
+            "comment_hiddenPost_is404",
+            "comment_noMembership_is403BeforeAnyWrite",
+            "comment_membershipInADifferentNeighborhood_is403",
+            "comment_memberOfThePostsNeighborhood_savesAndPublishesTheEvent",
+            "getComments_unknownPost_is404",
+            "getComments_hiddenPost_is404",
+            "getComments_noMembership_is403",
+            "getComments_member_readsChronologicallyOnTheCompleteSortKey",
+            "deleteByAuthor_unknownPost_is404",
+            "deleteByAuthor_notTheAuthor_is403_noDelete",
+            "deleteByAuthor_theAuthor_softDeletes"
+          ],
+          "properties": [
+            "FIXED",
+            "repository",
+            "commentRepository",
+            "membershipRepository",
+            "geoLookupPort",
+            "eventPublisher",
+            "clock",
+            "service",
+            "authorId",
+            "commenterId",
+            "locationId",
+            "postId"
+          ],
+          "exported": false,
+          "lineCount": 320
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.BadRequestException",
+          "specifiers": [
+            "BadRequestException"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.GeoLookupPort",
+          "specifiers": [
+            "GeoLookupPort"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.PostCommentedEvent",
+          "specifiers": [
+            "PostCommentedEvent"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.ResourceNotFoundException",
+          "specifiers": [
+            "ResourceNotFoundException"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.BeforeEach",
+          "specifiers": [
+            "BeforeEach"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentCaptor",
+          "specifiers": [
+            "ArgumentCaptor"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.context.ApplicationEventPublisher",
+          "specifiers": [
+            "ApplicationEventPublisher"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Page",
+          "specifiers": [
+            "Page"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.PageRequest",
+          "specifiers": [
+            "PageRequest"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Pageable",
+          "specifiers": [
+            "Pageable"
+          ]
+        },
+        {
+          "source": "org.springframework.data.domain.Sort",
+          "specifiers": [
+            "Sort"
+          ]
+        },
+        {
+          "source": "org.springframework.security.access.AccessDeniedException",
+          "specifiers": [
+            "AccessDeniedException"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.time.ZoneOffset",
+          "specifiers": [
+            "ZoneOffset"
+          ]
+        },
+        {
+          "source": "java.util.Optional",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThatThrownBy",
+          "specifiers": [
+            "assertThatThrownBy"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.never",
+          "specifiers": [
+            "never"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 371,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostSpecificationsTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostSpecificationsTest.java",
+      "contentHash": "0d49d59ddff0758cc0f2c960f4c1005bd07eb2416d396516074cdc5c93ee010a",
+      "functions": [
+        {
+          "name": "root",
+          "params": [],
+          "returnType": "Root<NeighborhoodPost>",
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "hasCategory_null_isTheAbsentConjunction",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 18
+        },
+        {
+          "name": "hasCategory_present_delegatesToEqual",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "hasLocation_delegatesToEqualOnTheMappedField",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "isVisible_pinsTheModerationFloor",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 13
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostSpecificationsTest",
+          "methods": [
+            "root",
+            "hasCategory_null_isTheAbsentConjunction",
+            "hasCategory_present_delegatesToEqual",
+            "hasLocation_delegatesToEqualOnTheMappedField",
+            "isVisible_pinsTheModerationFloor"
+          ],
+          "properties": [],
+          "exported": false,
+          "lineCount": 69
+        }
+      ],
+      "imports": [
+        {
+          "source": "jakarta.persistence.criteria.CriteriaBuilder",
+          "specifiers": [
+            "CriteriaBuilder"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.criteria.CriteriaQuery",
+          "specifiers": [
+            "CriteriaQuery"
+          ]
+        },
+        {
+          "source": "jakarta.persistence.criteria.Root",
+          "specifiers": [
+            "Root"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.springframework.data.jpa.domain.Specification",
+          "specifiers": [
+            "Specification"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.mock",
+          "specifiers": [
+            "mock"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verifyNoInteractions",
+          "specifiers": [
+            "verifyNoInteractions"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 94,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/NeighborhoodPostTest.java",
+      "contentHash": "c0554bc9912213358fe80028c7c2452ac6f44c7bf775d824cb0551299beb248a",
+      "functions": [
+        {
+          "name": "postFactory_setsEveryStoredFact",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "theVocabularyCarriesExactlyThePlannedValues",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 10
+        }
+      ],
+      "classes": [
+        {
+          "name": "NeighborhoodPostTest",
+          "methods": [
+            "postFactory_setsEveryStoredFact",
+            "theVocabularyCarriesExactlyThePlannedValues"
+          ],
+          "properties": [
+            "FIXED",
+            "clock"
+          ],
+          "exported": false,
+          "lineCount": 34
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "java.time.Clock",
+          "specifiers": [
+            "Clock"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.time.ZoneOffset",
+          "specifiers": [
+            "ZoneOffset"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 52,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/PostCommentTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/PostCommentTest.java",
+      "contentHash": "530e1a997c0f3de2ccf346aacb89570ff66cd9901931c678bb7996773bfaaaf5",
+      "functions": [
+        {
+          "name": "commentFactory_setsEveryStoredFact",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 12
+        }
+      ],
+      "classes": [
+        {
+          "name": "PostCommentTest",
+          "methods": [
+            "commentFactory_setsEveryStoredFact"
+          ],
+          "properties": [],
+          "exported": false,
+          "lineCount": 15
+        }
+      ],
+      "imports": [
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/spi/CommunityContentPurgeAdapterTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/spi/CommunityContentPurgeAdapterTest.java",
+      "contentHash": "8d82a315939a7fc7b2fc4a8ba27cd8cac88852cc271f25ef15281f503a504bce",
+      "functions": [
+        {
+          "name": "purgeAuthoredTexts_updatesPostsAndComments_baseAndMirrors",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 26
+        },
+        {
+          "name": "theMarkerRidesTheSharedContractConstant",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 6
+        }
+      ],
+      "classes": [
+        {
+          "name": "CommunityContentPurgeAdapterTest",
+          "methods": [
+            "purgeAuthoredTexts_updatesPostsAndComments_baseAndMirrors",
+            "theMarkerRidesTheSharedContractConstant"
+          ],
+          "properties": [
+            "jdbcTemplate",
+            "userId"
+          ],
+          "exported": false,
+          "lineCount": 42
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.AuthoredContentPurgePort",
+          "specifiers": [
+            "AuthoredContentPurgePort"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentCaptor",
+          "specifiers": [
+            "ArgumentCaptor"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.anyString",
+          "specifiers": [
+            "anyString"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.times",
+          "specifiers": [
+            "times"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.verify",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 73,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-community/src/test/java/com/marketplace/community/spi/CommunityExportAdapterTest.java": {
+      "filePath": "marketplace-community/src/test/java/com/marketplace/community/spi/CommunityExportAdapterTest.java",
+      "contentHash": "7aabe6ae85258a18763117050983ec059e34ca7ee5f524d4f51e09f72eacd721",
+      "functions": [
+        {
+          "name": "exportForOwner_mapsTheStoredFactsIncludingLeftMemberships",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 31
+        },
+        {
+          "name": "exportForOwner_scopesToTheOwnerWithTheHonestOrder",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "exportPostsForOwner_mapsTheStoredFactsIncludingDeletedPosts",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 33
+        },
+        {
+          "name": "exportPostsForOwner_scopesToTheAuthorWithTheHonestOrder",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "exportCommentsForOwner_mapsTheStoredFactsIncludingDeletedComments",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 28
+        },
+        {
+          "name": "exportCommentsForOwner_scopesToTheAuthorWithTheHonestOrder",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 15
+        }
+      ],
+      "classes": [
+        {
+          "name": "CommunityExportAdapterTest",
+          "methods": [
+            "exportForOwner_mapsTheStoredFactsIncludingLeftMemberships",
+            "exportForOwner_scopesToTheOwnerWithTheHonestOrder",
+            "exportPostsForOwner_mapsTheStoredFactsIncludingDeletedPosts",
+            "exportPostsForOwner_scopesToTheAuthorWithTheHonestOrder",
+            "exportCommentsForOwner_mapsTheStoredFactsIncludingDeletedComments",
+            "exportCommentsForOwner_scopesToTheAuthorWithTheHonestOrder"
+          ],
+          "properties": [
+            "jdbcTemplate",
+            "rs",
+            "userId"
+          ],
+          "exported": false,
+          "lineCount": 153
+        }
+      ],
+      "imports": [
+        {
+          "source": "com.marketplace.shared.api.CommunityMembershipExportEntry",
+          "specifiers": [
+            "CommunityMembershipExportEntry"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.Test",
+          "specifiers": [
+            "Test"
+          ]
+        },
+        {
+          "source": "org.junit.jupiter.api.extension.ExtendWith",
+          "specifiers": [
+            "ExtendWith"
+          ]
+        },
+        {
+          "source": "org.mockito.Mock",
+          "specifiers": [
+            "Mock"
+          ]
+        },
+        {
+          "source": "org.mockito.junit.jupiter.MockitoExtension",
+          "specifiers": [
+            "MockitoExtension"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.JdbcTemplate",
+          "specifiers": [
+            "JdbcTemplate"
+          ]
+        },
+        {
+          "source": "org.springframework.jdbc.core.RowMapper",
+          "specifiers": [
+            "RowMapper"
+          ]
+        },
+        {
+          "source": "java.sql.ResultSet",
+          "specifiers": [
+            "ResultSet"
+          ]
+        },
+        {
+          "source": "java.sql.Timestamp",
+          "specifiers": [
+            "Timestamp"
+          ]
+        },
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        },
+        {
+          "source": "org.assertj.core.api.Assertions.assertThat",
+          "specifiers": [
+            "assertThat"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.any",
+          "specifiers": [
+            "any"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.anyString",
+          "specifiers": [
+            "anyString"
+          ]
+        },
+        {
+          "source": "org.mockito.ArgumentMatchers.eq",
+          "specifiers": [
+            "eq"
+          ]
+        },
+        {
+          "source": "org.mockito.Mockito.when",
+          "specifiers": [
+            "when"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 184,
+      "hasStructuralAnalysis": true
+    },
     "marketplace-disputes/pom.xml": {
       "filePath": "marketplace-disputes/pom.xml",
       "contentHash": "45853a16282a29176f7f86df87272a5ace1945b4c45e85f7948204ceb7d1d9bc",
@@ -45559,7 +51581,7 @@
     },
     "marketplace-identity/src/main/java/com/marketplace/identity/UserDataExportResponse.java": {
       "filePath": "marketplace-identity/src/main/java/com/marketplace/identity/UserDataExportResponse.java",
-      "contentHash": "bc23def8575649da7cb189dc4fbae722e184be9d106f4755090aeb2e27b3b1ef",
+      "contentHash": "0f1e085db17f8a7b6b511ad619efdd3f9810982dd4ffa33c5c67dc3494cc1b29",
       "functions": [],
       "classes": [
         {
@@ -45569,7 +51591,7 @@
             "SCOPE_NOTICE"
           ],
           "exported": true,
-          "lineCount": 55
+          "lineCount": 59
         }
       ],
       "imports": [
@@ -45580,9 +51602,21 @@
           ]
         },
         {
+          "source": "com.marketplace.shared.api.CommunityCommentExportEntry",
+          "specifiers": [
+            "CommunityCommentExportEntry"
+          ]
+        },
+        {
           "source": "com.marketplace.shared.api.CommunityMembershipExportEntry",
           "specifiers": [
             "CommunityMembershipExportEntry"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.CommunityPostExportEntry",
+          "specifiers": [
+            "CommunityPostExportEntry"
           ]
         },
         {
@@ -45643,12 +51677,12 @@
       "exports": [
         "UserDataExportResponse"
       ],
-      "totalLines": 93,
+      "totalLines": 99,
       "hasStructuralAnalysis": true
     },
     "marketplace-identity/src/main/java/com/marketplace/identity/UserDataExportService.java": {
       "filePath": "marketplace-identity/src/main/java/com/marketplace/identity/UserDataExportService.java",
-      "contentHash": "894b0b1d0aec425a51797783e947c1efc38cd7ab966b9fff2055b6373c42e357",
+      "contentHash": "f34e96c4741eef548189ecf59f6b41ceadac230e47d0eb87787c761a216aede2",
       "functions": [
         {
           "name": "UserDataExportService",
@@ -45671,7 +51705,7 @@
           ],
           "returnType": "UserDataExportResponse",
           "exported": true,
-          "lineCount": 39
+          "lineCount": 45
         }
       ],
       "classes": [
@@ -45692,7 +51726,7 @@
             "communityExportPort"
           ],
           "exported": true,
-          "lineCount": 84
+          "lineCount": 90
         }
       ],
       "imports": [
@@ -45780,7 +51814,7 @@
         "exportFor",
         "UserDataExportService"
       ],
-      "totalLines": 129,
+      "totalLines": 135,
       "hasStructuralAnalysis": true
     },
     "marketplace-identity/src/main/java/com/marketplace/identity/UserLookupPortImpl.java": {
@@ -47070,7 +53104,7 @@
     },
     "marketplace-identity/src/test/java/com/marketplace/identity/UserControllerTest.java": {
       "filePath": "marketplace-identity/src/test/java/com/marketplace/identity/UserControllerTest.java",
-      "contentHash": "d0b8a0222e244d7aae1a85c4fcecabfb417ffa61f1efe02e8a0e11ad5f0b7ce6",
+      "contentHash": "e64e553ea01130795e83957ad8c3e11daef42a80d9bd92f50164e28ef2a85915",
       "functions": [
         {
           "name": "getCurrentUser_returnsUserResponse",
@@ -47084,7 +53118,7 @@
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 26
+          "lineCount": 27
         }
       ],
       "classes": [
@@ -47101,7 +53135,7 @@
             "userController"
           ],
           "exported": false,
-          "lineCount": 57
+          "lineCount": 58
         }
       ],
       "imports": [
@@ -47173,26 +53207,26 @@
         }
       ],
       "exports": [],
-      "totalLines": 74,
+      "totalLines": 75,
       "hasStructuralAnalysis": true
     },
     "marketplace-identity/src/test/java/com/marketplace/identity/UserDataExportServiceTest.java": {
       "filePath": "marketplace-identity/src/test/java/com/marketplace/identity/UserDataExportServiceTest.java",
-      "contentHash": "fd5c667b18c2558c35dd5b0e0de22e67d0b74e4aac5c7130d7de618b814b58b6",
+      "contentHash": "977885bcf442468d3eab804a8928df7438b98b1b96003a61eb0d6f8b7e72fe71",
       "functions": [
         {
           "name": "aggregatesEveryModuleShareWithTheBoundaryNoticeAndTheProfile",
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 58
+          "lineCount": 67
         },
         {
           "name": "emptySharesComposeAnEmptyButCompleteDocument",
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 24
+          "lineCount": 28
         }
       ],
       "classes": [
@@ -47213,7 +53247,7 @@
             "service"
           ],
           "exported": false,
-          "lineCount": 99
+          "lineCount": 112
         }
       ],
       "imports": [
@@ -47230,6 +53264,12 @@
           ]
         },
         {
+          "source": "com.marketplace.shared.api.CommunityCommentExportEntry",
+          "specifiers": [
+            "CommunityCommentExportEntry"
+          ]
+        },
+        {
           "source": "com.marketplace.shared.api.CommunityExportPort",
           "specifiers": [
             "CommunityExportPort"
@@ -47239,6 +53279,12 @@
           "source": "com.marketplace.shared.api.CommunityMembershipExportEntry",
           "specifiers": [
             "CommunityMembershipExportEntry"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.CommunityPostExportEntry",
+          "specifiers": [
+            "CommunityPostExportEntry"
           ]
         },
         {
@@ -47369,7 +53415,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 130,
+      "totalLines": 145,
       "hasStructuralAnalysis": true
     },
     "marketplace-identity/src/test/java/com/marketplace/identity/UserMapperTest.java": {
@@ -57702,7 +63748,7 @@
     },
     "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationEventListener.java": {
       "filePath": "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationEventListener.java",
-      "contentHash": "0b761292e87bdb00d69a8d544bcccc3a326d2a36e6b406154670ef8d8a95f976",
+      "contentHash": "a0cb09e2496e1fd1dc76125d944f4daaa454110dda8b6e9cf2aa24fd41bc19ad",
       "functions": [
         {
           "name": "NotificationEventListener",
@@ -57747,6 +63793,15 @@
           "returnType": "void",
           "exported": true,
           "lineCount": 7
+        },
+        {
+          "name": "onPostCommented",
+          "params": [
+            "event"
+          ],
+          "returnType": "void",
+          "exported": true,
+          "lineCount": 11
         }
       ],
       "classes": [
@@ -57757,14 +63812,15 @@
             "onBookingCreated",
             "onPaymentStateChanged",
             "onListingLeadCreated",
-            "onSavedSearchMatched"
+            "onSavedSearchMatched",
+            "onPostCommented"
           ],
           "properties": [
             "log",
             "notificationService"
           ],
           "exported": true,
-          "lineCount": 56
+          "lineCount": 83
         }
       ],
       "imports": [
@@ -57784,6 +63840,12 @@
           "source": "com.marketplace.shared.api.PaymentStateChangedEvent",
           "specifiers": [
             "PaymentStateChangedEvent"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.PostCommentedEvent",
+          "specifiers": [
+            "PostCommentedEvent"
           ]
         },
         {
@@ -57823,9 +63885,10 @@
         "onPaymentStateChanged",
         "onListingLeadCreated",
         "onSavedSearchMatched",
+        "onPostCommented",
         "NotificationEventListener"
       ],
-      "totalLines": 68,
+      "totalLines": 96,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationPreference.java": {
@@ -58412,7 +64475,7 @@
     },
     "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationService.java": {
       "filePath": "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationService.java",
-      "contentHash": "9328988510614c8378a882a9a887ad518106d699655093cbbbba00f6042aaff3",
+      "contentHash": "164dd15aeacc27428cf9d2c81dadb7299a67aa281924bf01ccb17300e530a588",
       "functions": [
         {
           "name": "NotificationService",
@@ -58470,6 +64533,16 @@
           "lineCount": 14
         },
         {
+          "name": "onPostCommented",
+          "params": [
+            "postId",
+            "postAuthorId"
+          ],
+          "returnType": "void",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
           "name": "sendWebSocket",
           "params": [
             "userId",
@@ -58509,6 +64582,7 @@
             "onPaymentStateChanged",
             "onLeadReceived",
             "onSavedSearchMatch",
+            "onPostCommented",
             "sendWebSocket",
             "getMyNotifications",
             "markAsRead"
@@ -58524,7 +64598,7 @@
             "preferences"
           ],
           "exported": true,
-          "lineCount": 145
+          "lineCount": 172
         }
       ],
       "imports": [
@@ -58637,16 +64711,17 @@
         "onPaymentStateChanged",
         "onLeadReceived",
         "onSavedSearchMatch",
+        "onPostCommented",
         "getMyNotifications",
         "markAsRead",
         "NotificationService"
       ],
-      "totalLines": 167,
+      "totalLines": 194,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationType.java": {
       "filePath": "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationType.java",
-      "contentHash": "14f52556ba79651e6dbf0158c9b1bf53e9b1e5bbee489b701ced5ba4226eee8b",
+      "contentHash": "8d93feec597e692287f6f0a47c40cf92e07116bb204dc1144f7937aaabbd296f",
       "functions": [],
       "classes": [
         {
@@ -58654,14 +64729,14 @@
           "methods": [],
           "properties": [],
           "exported": true,
-          "lineCount": 6
+          "lineCount": 7
         }
       ],
       "imports": [],
       "exports": [
         "NotificationType"
       ],
-      "totalLines": 27,
+      "totalLines": 34,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/main/java/com/marketplace/notifications/NotificationsModule.java": {
@@ -59160,7 +65235,7 @@
     },
     "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationEventListenerTest.java": {
       "filePath": "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationEventListenerTest.java",
-      "contentHash": "2e30684ab724c1b95c8ab76fa47a3f777e5c4d1ba3f66ed01a90202cf4df26cf",
+      "contentHash": "7bb1c54363f99866b62ce96c73adc1fe73d8015480b7d4f2aea42eb8a2cb500b",
       "functions": [
         {
           "name": "onBookingCreated_callsNotificationService",
@@ -59245,6 +65320,34 @@
           "returnType": "void",
           "exported": false,
           "lineCount": 7
+        },
+        {
+          "name": "onPostCommented_callsNotificationServiceForThePostAuthor",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "onPostCommented_selfComment_skipsTheNotificationByPolicy",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 14
+        },
+        {
+          "name": "onPostCommented_propagatesException",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "onPostCommented_usesApplicationModuleListenerAnnotation",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 7
         }
       ],
       "classes": [
@@ -59262,14 +65365,18 @@
             "onListingLeadCreated_usesApplicationModuleListenerAnnotation",
             "onSavedSearchMatched_callsNotificationServiceWithTheAggregatedCount",
             "onSavedSearchMatched_propagatesException",
-            "onSavedSearchMatched_usesApplicationModuleListenerAnnotation"
+            "onSavedSearchMatched_usesApplicationModuleListenerAnnotation",
+            "onPostCommented_callsNotificationServiceForThePostAuthor",
+            "onPostCommented_selfComment_skipsTheNotificationByPolicy",
+            "onPostCommented_propagatesException",
+            "onPostCommented_usesApplicationModuleListenerAnnotation"
           ],
           "properties": [
             "notificationService",
             "listener"
           ],
           "exported": false,
-          "lineCount": 142
+          "lineCount": 189
         }
       ],
       "imports": [
@@ -59283,6 +65390,12 @@
           "source": "com.marketplace.shared.api.ListingLeadCreatedEvent",
           "specifiers": [
             "ListingLeadCreatedEvent"
+          ]
+        },
+        {
+          "source": "com.marketplace.shared.api.PostCommentedEvent",
+          "specifiers": [
+            "PostCommentedEvent"
           ]
         },
         {
@@ -59371,12 +65484,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 164,
+      "totalLines": 212,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationPreferenceServiceTest.java": {
       "filePath": "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationPreferenceServiceTest.java",
-      "contentHash": "5ffb71b379e25de9b08b0ed3322e54f4980ab982cffc62eb622523f05729acd6",
+      "contentHash": "363ce2ed295704fd2e253dbf50d43e8f72490b0b4941f9bddb4552b852f1f2b5",
       "functions": [
         {
           "name": "createService",
@@ -59414,7 +65527,7 @@
           "params": [],
           "returnType": "void",
           "exported": false,
-          "lineCount": 28
+          "lineCount": 31
         },
         {
           "name": "updateMyPreferencesCreatesTheOverrideWhenAbsent",
@@ -59479,7 +65592,7 @@
             "USER_ID"
           ],
           "exported": false,
-          "lineCount": 199
+          "lineCount": 202
         }
       ],
       "imports": [
@@ -59569,12 +65682,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 219,
+      "totalLines": 222,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationServiceTest.java": {
       "filePath": "marketplace-notifications/src/test/java/com/marketplace/notifications/NotificationServiceTest.java",
-      "contentHash": "51751dcdd963f508ad8a9fdb6a61ba38ace58d1fdcc1aa17a49d97f3af1df315",
+      "contentHash": "a36219ad2707a8df5fa6ef7298068f838f2bcfbde79de451664d3aa8b8b6638d",
       "functions": [
         {
           "name": "createService",
@@ -59718,6 +65831,13 @@
           "returnType": "void",
           "exported": false,
           "lineCount": 26
+        },
+        {
+          "name": "onPostCommentedAlertsThePostAuthorOnEveryDefaultChannel",
+          "params": [],
+          "returnType": "void",
+          "exported": false,
+          "lineCount": 29
         }
       ],
       "classes": [
@@ -59741,7 +65861,8 @@
             "onPaymentStateChangedWithEmptyOptionalDoesNothing",
             "getMyNotificationsReturnsNotificationsForCurrentUser",
             "onPaymentStateChangedSendsEmailAndWebSocket",
-            "onLeadReceivedAlertsTheListingProviderUserDirectly"
+            "onLeadReceivedAlertsTheListingProviderUserDirectly",
+            "onPostCommentedAlertsThePostAuthorOnEveryDefaultChannel"
           ],
           "properties": [
             "CONSUMER_ID",
@@ -59750,7 +65871,7 @@
             "PROVIDER_EMAIL"
           ],
           "exported": false,
-          "lineCount": 378
+          "lineCount": 408
         }
       ],
       "imports": [
@@ -59864,7 +65985,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 402,
+      "totalLines": 432,
       "hasStructuralAnalysis": true
     },
     "marketplace-notifications/src/test/java/com/marketplace/notifications/spi/NotificationExportAdapterTest.java": {
@@ -88354,6 +94475,142 @@
       "totalLines": 140,
       "hasStructuralAnalysis": true
     },
+    "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityCommentExportEntry.java": {
+      "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityCommentExportEntry.java",
+      "contentHash": "61f2cfe75a02ff642fb8f098b592eaac880cd399967dff6100ab52a065bc838d",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CommunityCommentExportEntry",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 9
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityCommentExportEntry"
+      ],
+      "totalLines": 27,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityExportPort.java": {
+      "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityExportPort.java",
+      "contentHash": "6cf09555aeeb6163e344adace3c8f09cd0570b21c4ba4b6a238cc7da3d51c0d0",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CommunityExportPort",
+          "methods": [
+            "exportForOwner",
+            "exportPostsForOwner",
+            "exportCommentsForOwner"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 26
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.util.List",
+          "specifiers": [
+            "List"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityExportPort"
+      ],
+      "totalLines": 49,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityMembershipExportEntry.java": {
+      "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityMembershipExportEntry.java",
+      "contentHash": "fb8e348ef83114a2b784ad352eb76b20e746bd5ec83b10ed0c271655f04f9d43",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CommunityMembershipExportEntry",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 10
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityMembershipExportEntry"
+      ],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityPostExportEntry.java": {
+      "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/CommunityPostExportEntry.java",
+      "contentHash": "da013c903d09d9d48402afe04a4eb48eee5f784e831323a2b19cd3957a9213c0",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CommunityPostExportEntry",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.time.Instant",
+          "specifiers": [
+            "Instant"
+          ]
+        },
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "CommunityPostExportEntry"
+      ],
+      "totalLines": 31,
+      "hasStructuralAnalysis": true
+    },
     "marketplace-shared/src/main/java/com/marketplace/shared/api/ConflictException.java": {
       "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/ConflictException.java",
       "contentHash": "8289b6f0be58f5437c4cc06b81200f64825666a0209146cf615e09ec355262ee",
@@ -89820,6 +96077,33 @@
         "PaymentSummary"
       ],
       "totalLines": 18,
+      "hasStructuralAnalysis": true
+    },
+    "marketplace-shared/src/main/java/com/marketplace/shared/api/PostCommentedEvent.java": {
+      "filePath": "marketplace-shared/src/main/java/com/marketplace/shared/api/PostCommentedEvent.java",
+      "contentHash": "7ab06b63e93970547530e32e70609f42b9d7b564c2b18bd0a54c6afc0585012e",
+      "functions": [],
+      "classes": [
+        {
+          "name": "PostCommentedEvent",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 6
+        }
+      ],
+      "imports": [
+        {
+          "source": "java.util.UUID",
+          "specifiers": [
+            "UUID"
+          ]
+        }
+      ],
+      "exports": [
+        "PostCommentedEvent"
+      ],
+      "totalLines": 36,
       "hasStructuralAnalysis": true
     },
     "marketplace-shared/src/main/java/com/marketplace/shared/api/PropertyCriteria.java": {
