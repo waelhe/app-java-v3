@@ -1,6 +1,7 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
@@ -243,6 +244,44 @@ class NotificationEventListenerTest {
     void onNewListingInNeighborhood_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onNewListingInNeighborhood", NewListingInNeighborhoodEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onContentModerated_callsNotificationServiceForTheContentAuthor() {
+        UUID recipientId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        ContentModeratedEvent event =
+                new ContentModeratedEvent(recipientId, "POST", targetId);
+
+        listener.onContentModerated(event);
+
+        verify(notificationService).onContentModerated(recipientId, "POST", targetId);
+    }
+
+    @Test
+    void onContentModerated_propagatesException() {
+        // L45's unit-level failure injection (the same root every listener
+        // above pins): a delivery failure must propagate so the
+        // publication stays incomplete in the registry and the framework's
+        // retry re-delivers it — a swallowed exception would silently lose
+        // the author's moderation alert while the hide itself already
+        // committed.
+        ContentModeratedEvent event = new ContentModeratedEvent(
+                UUID.randomUUID(), "COMMENT", UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onContentModerated(any(), any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onContentModerated(event));
+    }
+
+    @Test
+    void onContentModerated_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onContentModerated", ContentModeratedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }

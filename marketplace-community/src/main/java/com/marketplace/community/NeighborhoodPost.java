@@ -101,6 +101,21 @@ public class NeighborhoodPost extends BaseEntity {
         return post;
     }
 
+    /**
+     * L45 (neighborhood community plan §5 — the moderation &amp; reports
+     * layer): the moderation flip — the ONE write to {@code status} in
+     * the whole codebase outside the publish factory's own VISIBLE.
+     * {@link PostStatus} reserved this transition from L42 ("إخفاء بدون
+     * إشراف مستحيل"); the moderation resolve command calls it inside its
+     * one transaction so the flip, the report's RESOLVED close and the
+     * author's {@code CONTENT_MODERATED} event are atomic (the plan's
+     * criterion 2). Package-private by design: the flip is the community
+     * domain's own — no surface outside this package can hide a post.
+     */
+    void hideByModerator() {
+        this.status = PostStatus.HIDDEN_BY_MODERATOR;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getAuthorId() { return authorId; }

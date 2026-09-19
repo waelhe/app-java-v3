@@ -30,6 +30,16 @@ package com.marketplace.notifications;
  * guard to match). The recipient is an ACTIVE member of the activated
  * listing's neighborhood; the publisher's own membership is excluded by
  * the community side's bridge listener, not by this enum.
+ *
+ * <p>L45 (neighborhood community plan §5 — the moderation &amp; reports
+ * layer): {@code CONTENT_MODERATED} joins as the seventh type — the same
+ * point addition ("نقطة إضافة" — the plan's own wording for this
+ * layer's notification; the V65 CHECK widens the DB-side membership
+ * guard to match). The recipient is the moderated content's author; the
+ * event fires on the real VISIBLE→HIDDEN transition alone (an
+ * already-hidden or author-deleted target carries no new fact), and the
+ * one-real-hide-one-alert policy lives in the community side's resolve
+ * command, not in this enum.
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -37,5 +47,6 @@ public enum NotificationType {
     LEAD_RECEIVED,
     SAVED_SEARCH_MATCH,
     POST_COMMENTED,
-    NEW_LISTING_IN_NEIGHBORHOOD
+    NEW_LISTING_IN_NEIGHBORHOOD,
+    CONTENT_MODERATED
 }

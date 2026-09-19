@@ -188,6 +188,35 @@ public class NotificationService {
         sendWebSocket(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
     }
 
+    /**
+     * L45 (neighborhood community plan §5 — the moderation &amp; reports
+     * layer): the moderated content's author alert — the same delivery
+     * shape as the event points above (in-app row always lands; WebSocket
+     * and email ride their L22 per-type/channel preferences). The
+     * recipient is the content's author in the users.id space — the id
+     * IS the recipient, the same seam {@code onPostCommented} uses.
+     *
+     * <p>{@code targetType} arrives as the community domain's stored name
+     * ("POST"/"COMMENT" — the ContentModeratedEvent vocabulary, the
+     * PaymentStateChangedEvent String precedent) and rides the message
+     * so the alert reads as the fact it is; the one-real-hide-one-alert
+     * policy lives on the COMMUNITY side's resolve command — this method
+     * delivers unconditionally, so the delivery contract stays one shape
+     * for every caller.
+     */
+    public void onContentModerated(UUID recipientId, String targetType, UUID targetId) {
+        String message = "Your " + targetType.toLowerCase() + " was moderated: " + targetId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(recipientId,
+                NotificationType.CONTENT_MODERATED.name(), message));
+        if (preferences.isChannelEnabled(recipientId,
+                NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(recipientId, "Your Content Was Moderated",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
