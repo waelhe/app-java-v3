@@ -40,9 +40,40 @@
 -- at all — the Envers mirror (V24) audits the same rows it always did;
 -- every direct open and every later soft-delete is a revision.
 --
+-- NON-TRANSACTIONAL BUILD (the V51 in-tree precedent verbatim — adopted
+-- from CodeRabbit r1 on this PR, verified against the official docs
+-- before action): a standard unique index build locks out conversation
+-- INSERT/UPDATE/DELETE for the build's duration; CONCURRENTLY takes no
+-- lock that prevents concurrent writes (PostgreSQL 18 docs,
+-- sql-createindex.html: "When this option is used, PostgreSQL will build
+-- the index without taking any locks that prevent concurrent inserts,
+-- updates, or deletes on the table; whereas a standard index build locks
+-- out writes (but not reads) on the table until it's done."). The table
+-- is young today (the direct rows do not exist yet — the feature IS this
+-- PR), but the V51 lesson is written for exactly this moment: the build
+-- path is proven non-blocking BEFORE volume can arrive, not after.
+--
+-- FLYWAY OFFICIAL PATTERN (two settings, both required — V51 measured
+-- them end-to-end): (1) the sibling file
+-- V67__conversations_direct_pair_unique.sql.conf sets
+-- `executeInTransaction = false` (Redgate Flyway docs, "Execute In
+-- Transaction Setting": "Note that this setting can be set from Script
+-- Configuration in addition to project configuration"); PostgreSQL
+-- cannot run CREATE INDEX CONCURRENTLY inside a transaction block.
+-- (2) the PROJECT setting spring.flyway.postgresql.transactional-lock:
+-- false (application.yml, in place since V51) — without it Flyway's
+-- default TRANSACTIONAL advisory lock predates the concurrent build's
+-- snapshot waits and boot hangs indefinitely.
+--
+-- RETRY SEMANTICS (PostgreSQL, "Building Indexes Concurrently"): a
+-- failed concurrent build is entered as an INVALID index in the system
+-- catalogs BEFORE the table scans — the documented recovery is drop the
+-- index and try again; a FAILED V67 leaves the migration failed (loud,
+-- Flyway records it), never a silent skip.
+--
 -- Checksum registered in migration-checksums.properties in this same
 -- PR (MigrationChecksumGuardTest — the 2026-09-14 incident class).
 
-CREATE UNIQUE INDEX uq_conversations_direct_pair
+CREATE UNIQUE INDEX CONCURRENTLY uq_conversations_direct_pair
     ON conversations (LEAST(participant_a, participant_b), GREATEST(participant_a, participant_b))
     WHERE booking_id IS NULL AND is_deleted = FALSE;

@@ -84,10 +84,6 @@ class DirectConversationModuleIntegrationTest {
     @MockitoBean
     SimpMessagingTemplate messagingTemplate;
 
-    /** The booking seam — only the criterion-4 comparison leg touches it; the direct leg never does. */
-    @MockitoBean
-    com.marketplace.shared.api.BookingParticipantProvider bookingParticipantProvider;
-
     @Autowired
     private MockMvc mockMvc;
 
@@ -227,16 +223,32 @@ class DirectConversationModuleIntegrationTest {
 
     @Test
     void criterion4_bookingAndDirectConversationsCoexistAsTwoThreads() throws Exception {
+        // The REAL chain for the booking leg too (the CI round-1 root cause: V7's
+        // conversations_booking_id_fkey is REAL — a random bookingId with no
+        // bookings row violates the FK; the module slice's entity-built schema
+        // has no FK, which is why only the full context caught it — the
+        // «test schema ≠ production schema» lesson once more). So this leg
+        // seeds the real rows (users -> provider_listings -> bookings) and lets
+        // the REAL BookingParticipantProviderAdapter read the booking — no
+        // booking mocks anywhere in this test.
         UUID provider = seededUser("bk-provider");
         UUID consumer = seededUser("bk-consumer");
+        UUID listingId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
-        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(
-                new com.marketplace.shared.api.BookingInfo(
-                        provider, consumer, "CONFIRMED", 1000L, "SAR",
-                        java.time.Instant.now(), java.time.Instant.now()));
+        jdbc.update("""
+                INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status)
+                VALUES (?, ?, 'L44 booking thread seed', 'seed listing', 'APARTMENT', 10000, 'SAR', 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """, listingId, provider);
+        jdbc.update("""
+                INSERT INTO bookings (id, listing_id, consumer_id, provider_id, status, price_cents, currency)
+                VALUES (?, ?, ?, ?, 'CONFIRMED', 10000, 'SAR')
+                ON CONFLICT (id) DO NOTHING
+                """, bookingId, listingId, consumer, provider);
 
         // The existing booking flow, byte-byte: same booking ⇒ same
-        // conversation, always 201 per the historic contract.
+        // conversation, always 201 per the historic contract — through the
+        // REAL booking participant provider reading the seeded row.
         asCaller(consumer);
         String bookingOpen1 = mockMvc.perform(post("/api/v1/messages/conversations")
                         .with(jwt())
