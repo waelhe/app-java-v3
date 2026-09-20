@@ -1444,7 +1444,7 @@
 
 ---
 
-## Modules (16)
+## Modules (17)
 
 | Module | Type | Coverage | Status |
 |--------|------|----------|--------|
@@ -1463,6 +1463,7 @@
 | **marketplace-ledger** | Domain (ledger, balances) | ✅ 70% | ✅ |
 | **marketplace-search** | Domain (full-text search) | ✅ 70% | ✅ |
 | **marketplace-admin** | Package in app (admin REST) | ✅ (in app) | ✅ |
+| **marketplace-edge** | Standalone BFF (OAuth2 confidential client + TokenRelay + spa CSRF, zero domain deps — outside Modulith) | ✅ 70% | ⏳ `feature/edge-bff-gateway` (Tasks 1–5 green 10/10; gate commit deferred to CI-with-Redis) |
 
 ---
 
