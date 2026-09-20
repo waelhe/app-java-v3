@@ -1,0 +1,19 @@
+spring:
+  security:
+    oauth2:
+      client:
+        provider:
+          edge:
+            # Test profile: explicit endpoints, NO issuer-uri key at all.
+            # Main application.yml uses issuer-uri (correct for dev/prod where the
+            # SAS issuer is live), but Boot resolves issuer-uri at startup via
+            # OIDC discovery (OAuth2ClientPropertiesMapper -> fromIssuerLocation),
+            # which needs a live issuer. A nulled/empty issuer-uri still routes
+            # into fromIssuerLocation (measured: "issuer cannot be empty"), so the
+            # key must be ABSENT here, not blank — and EdgeContextTest additionally
+            # backs off the whole repository auto-config with a @MockitoBean.
+            # These URIs mirror the live SAS surface; unit tests never invoke them.
+            authorization-uri: http://localhost:8080/oauth2/authorize
+            token-uri: http://localhost:8080/oauth2/token
+            jwk-set-uri: http://localhost:8080/oauth2/jwks
+            user-info-uri: http://localhost:8080/userinfo

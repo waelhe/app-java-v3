@@ -6,6 +6,20 @@ spring:
     # Official property; Redis is the default store (prod already runs Redis 8).
     # JDBC-in-Postgres is the recorded fallback (edge plan, Task 5).
     store-type: redis
+  security:
+    oauth2:
+      client:
+        registration:
+          edge:
+            client-id: ${EDGE_CLIENT_ID:edge-local}
+            client-secret: ${EDGE_CLIENT_SECRET:}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/edge"
+            scope: openid,profile
+            client-authentication-method: client_secret_basic
+        provider:
+          edge:
+            issuer-uri: ${AUTH_SERVER_ISSUER:http://localhost:8080}
 
 management:
   endpoints:
