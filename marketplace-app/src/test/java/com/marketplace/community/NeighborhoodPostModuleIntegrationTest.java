@@ -554,10 +554,27 @@ class NeighborhoodPostModuleIntegrationTest {
         var ownPost = postService.createPost(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
                 PostCategory.GENERAL, "Title", "Body");
 
-        // A raw SQL writer cannot invent a category (D-N7 — RECOMMENDATION
-        // is L43's widening point)...
-        assertThatThrownBy(() -> jdbc.update(
+        // L43 (criterion 3, the positive half): the widened CHECK (V68+V69)
+        // ACCEPTS RECOMMENDATION at the DB floor — the value L42's guard
+        // used to reject is now legal vocabulary, exactly as V61's own
+        // comment reserved ("RECOMMENDATION is L43's CHECK-widening
+        // point")...
+        assertThat(jdbc.update(
                 "UPDATE neighborhood_posts SET category = 'RECOMMENDATION' WHERE id = ?",
+                ownPost.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT category FROM neighborhood_posts WHERE id = ?", String.class, ownPost.id()))
+                .isEqualTo("RECOMMENDATION");
+        // ...and back to GENERAL — the update path is ordinary vocabulary
+        // traffic, nothing special-cased.
+        assertThat(jdbc.update(
+                "UPDATE neighborhood_posts SET category = 'GENERAL' WHERE id = ?",
+                ownPost.id())).isEqualTo(1);
+
+        // A raw SQL writer still cannot invent a category OUTSIDE the
+        // widened vocabulary (D-N7's floor holds past the widening)...
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE neighborhood_posts SET category = 'SPAM' WHERE id = ?",
                 ownPost.id()))
                 .hasRootCauseInstanceOf(java.sql.SQLException.class)
                 .hasMessageContaining("chk_neighborhood_posts_category");
@@ -567,6 +584,84 @@ class NeighborhoodPostModuleIntegrationTest {
                 ownPost.id()))
                 .hasRootCauseInstanceOf(java.sql.SQLException.class)
                 .hasMessageContaining("chk_neighborhood_posts_status");
+    }
+
+    @Test
+    void l43_criterion1_recommendationPostPublishes_andFiltersAloneInTheFeed()
+            throws Exception {
+        // The plan's §5-L43 acceptance criteria 1+2 over the REAL chain:
+        // a RECOMMENDATION post is created through the real write path and
+        // filtered ALONE by its own axis in the feed, while the older
+        // categories keep their byte-identical behavior — GENERAL still
+        // filters to its own posts, and the UNFILTERED feed carries both.
+        //
+        // MEASURED BUDGET FACT (the CI round-1 root cause, fixed at the
+        // root): this class's app context starts FRESH (container + Flyway
+        // V1..V69, ~39s) so every test executes within the same first
+        // postCreate window — the class's controller-level writes consume
+        // exactly 9 of the 10 permits (criterion1/criterion4/criterion5/
+        // criterion6/envers seeds + criterion3's three body-level 400s +
+        // criterion3's own seed), ONE spare. This test therefore consumes
+        // ZERO postCreate permits: both posts ride postService.createPost —
+        // the ContentReport sibling class's own measured convention for
+        // setup data (the real write path through V68's widened CHECK,
+        // without the HTTP limiter). The HTTP 201 shape for a
+        // RECOMMENDATION post is pinned by the WebMvc slice
+        // (l43_postCreate_recommendationCategory_answers201), and the DB
+        // floor itself by checkConstraints below — the integration surface
+        // under test HERE is the feed's filter axis.
+        UUID authorId = asCaller(UUID.randomUUID());
+        joinOverHttp(authorId, QUDSAYYA_OLD_TOWN, 201);
+
+        NeighborhoodPostView recommendation = postService.createPost(
+                authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
+                PostCategory.RECOMMENDATION,
+                "Any trustworthy plumber around?",
+                "Looking for a reliable plumber for a kitchen leak.");
+        org.assertj.core.api.Assertions.assertThat(recommendation.category())
+                .isEqualTo("RECOMMENDATION");
+        NeighborhoodPostView general = postService.createPost(
+                authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
+                PostCategory.GENERAL,
+                "Welcome to the neighborhood board", "Introduce yourself here.");
+        org.assertj.core.api.Assertions.assertThat(general.category())
+                .isEqualTo("GENERAL");
+
+        // The recommendation axis carries ONLY the recommendation post.
+        mockMvc.perform(get("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .queryParam("category", "RECOMMENDATION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].category").value("RECOMMENDATION"))
+                .andExpect(jsonPath("$.content[0].title")
+                        .value("Any trustworthy plumber around?"));
+
+        // The GENERAL axis is untouched — byte-identical (criterion 2).
+        mockMvc.perform(get("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .queryParam("category", "GENERAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].category").value("GENERAL"));
+
+        // And the UNFILTERED feed carries both — the axis is a filter, not
+        // a partition.
+        mockMvc.perform(get("/api/v1/neighborhood/posts").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+
+        // A RECOMMENDATION post takes comments on the SAME surface (the
+        // axis is orthogonal to the comment path — the plan's "تعمل من
+        // تلقاء نفسها"). The postComment window (30) is far from exhausted.
+        UUID commenterId = asCaller(UUID.randomUUID());
+        joinOverHttp(commenterId, QUDSAYYA_OLD_TOWN, 201);
+        mockMvc.perform(post("/api/v1/posts/{id}/comments", recommendation.id())
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\": \"Call Abu Samir — fixed our leak same day.\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.body").value("Call Abu Samir — fixed our leak same day."));
     }
 
     // ---------- helpers ----------

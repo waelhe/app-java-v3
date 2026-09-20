@@ -103,6 +103,23 @@ class NeighborhoodPostControllerWebMvcTest {
     }
 
     @Test
+    void l43_getFeed_recommendationFilter_parsesToTheEnum() throws Exception {
+        // L43: the widened vocabulary rides the SAME one-word filter axis —
+        // RECOMMENDATION parses (not a 400) and reaches the service as the
+        // enum constant, never as a raw String.
+        UUID userId = stubCaller();
+        UUID locationId = UUID.randomUUID();
+        NeighborhoodPostView view = postView(userId, locationId);
+        when(postService.getFeed(eq(userId), eq(PostCategory.RECOMMENDATION), any()))
+                .thenReturn(new PageImpl<>(List.of(view)));
+
+        mockMvc.perform(get("/api/v1/neighborhood/posts")
+                        .param("category", "RECOMMENDATION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].authorId").value(userId.toString()));
+    }
+
+    @Test
     void getFeed_noMembership_answers403ProblemDetail() throws Exception {
         UUID userId = stubCaller();
         when(postService.getFeed(eq(userId), isNull(), any()))
@@ -128,6 +145,33 @@ class NeighborhoodPostControllerWebMvcTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.category").value("GENERAL"))
                 .andExpect(jsonPath("$.title").value("Title"));
+    }
+
+    @Test
+    void l43_postCreate_recommendationCategory_answers201() throws Exception {
+        // L43: the type gate's vocabulary now includes RECOMMENDATION — the
+        // SAME parse path (no special-cased branch), the SAME 201 shape.
+        UUID userId = stubCaller();
+        UUID locationId = UUID.randomUUID();
+        NeighborhoodPostView recommendationView = new NeighborhoodPostView(
+                UUID.randomUUID(), userId, locationId, "RECOMMENDATION",
+                "Any trustworthy plumber around?",
+                "Looking for a reliable plumber for a kitchen leak.",
+                "VISIBLE", Instant.parse("2026-09-20T11:30:00Z"),
+                Instant.parse("2026-09-20T11:30:00Z"));
+        when(postService.createPost(eq(userId), eq(locationId), eq(PostCategory.RECOMMENDATION),
+                eq("Any trustworthy plumber around?"),
+                eq("Looking for a reliable plumber for a kitchen leak.")))
+                .thenReturn(recommendationView);
+
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + locationId + "\", "
+                                + "\"category\": \"RECOMMENDATION\", "
+                                + "\"title\": \"Any trustworthy plumber around?\", "
+                                + "\"body\": \"Looking for a reliable plumber for a kitchen leak.\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("RECOMMENDATION"));
     }
 
     @Test

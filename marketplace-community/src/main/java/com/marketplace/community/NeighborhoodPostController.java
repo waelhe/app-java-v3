@@ -76,11 +76,12 @@ public class NeighborhoodPostController {
             description = "The caller's OWN neighborhood's VISIBLE posts, newest first — the "
                     + "membership is the scope (there is no location parameter: one membership, "
                     + "one feed — G-N1/G-N3). No active membership answers 403. The optional "
-                    + "category filter is the feed's one axis (GENERAL/CLASSIFIED/LOST_FOUND); "
+                    + "category filter is the feed's one axis (GENERAL/CLASSIFIED/LOST_FOUND/"
+                    + "RECOMMENDATION — L43 widened the vocabulary); "
                     + "an invalid value answers 400 before any read. Deterministic pagination on "
                     + "the complete sort key (createdAt DESC, id DESC) — no shaky page boundaries.")
     public ResponseEntity<PagedResponse<NeighborhoodPostView>> feed(
-            @Parameter(description = "Optional category filter — GENERAL, CLASSIFIED or LOST_FOUND")
+            @Parameter(description = "Optional category filter — GENERAL, CLASSIFIED, LOST_FOUND or RECOMMENDATION")
             @RequestParam(required = false) String category,
             Pageable pageable,
             Authentication authentication) {
@@ -173,7 +174,7 @@ public class NeighborhoodPostController {
             return PostCategory.valueOf(raw.trim());
         } catch (IllegalArgumentException invalid) {
             throw new BadRequestException(
-                    "Invalid category '" + raw + "' — valid values: GENERAL, CLASSIFIED, LOST_FOUND");
+                    "Invalid category '" + raw + "' — valid values: GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION");
         }
     }
 
@@ -190,7 +191,9 @@ public class NeighborhoodPostController {
             UUID locationId,
 
             @NotBlank
-            @Schema(description = "The post's category.", allowableValues = {"GENERAL", "CLASSIFIED", "LOST_FOUND"},
+            @Schema(description = "The post's category — RECOMMENDATION (L43) is a neighbor asking "
+                    + "for a local-service recommendation or offering one.",
+                    allowableValues = {"GENERAL", "CLASSIFIED", "LOST_FOUND", "RECOMMENDATION"},
                     example = "GENERAL")
             String category,
 
