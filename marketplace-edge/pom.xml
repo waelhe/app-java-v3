@@ -40,5 +40,31 @@
         </dependency>
 
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <!-- MockMvc support (Boot 4.x: lives in spring-boot-webmvc-test, not the
+             slimmed test-autoconfigure; same idiom as marketplace-app). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- MockMvc oauth2Login() for the relay IT (Boot BOM manages the version;
+             same idiom as marketplace-app exception #10). -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- WireMock backend stub for the relay IT (version: root exception #15).
+             Standalone (shaded) flavor per the official download page: the plain
+             core artifact needs a separate HttpServerFactory extension on the
+             classpath (measured: "Jetty 11 is not present ... no suitable
+             HttpServerFactory"), while standalone embeds its server and adds
+             zero transitive convergence surface. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>${wiremock.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
