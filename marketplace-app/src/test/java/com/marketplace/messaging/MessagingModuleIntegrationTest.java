@@ -3,6 +3,8 @@ package com.marketplace.messaging;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.UserSummary;
 import com.marketplace.shared.config.MarketplaceProperties;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +68,13 @@ class MessagingModuleIntegrationTest {
     @MockitoBean
     BookingParticipantProvider bookingParticipantProvider;
 
+    // L44 (neighborhood community plan §5 — direct neighbor messages): the
+    // identity seam the direct-open gate resolves the recipient through —
+    // it joins the standard @MockitoBean boundary the slice already forms
+    // (the FULL-context test exercises the real identity implementation).
+    @MockitoBean
+    UserLookupPort userLookupPort;
+
     // L34 (realestate systems plan §5 — lead capture): the standalone slice
     // cannot see the catalog module's implementations of the lead's
     // liveness seams, so they join the standard @MockitoBean boundary the
@@ -87,6 +97,11 @@ class MessagingModuleIntegrationTest {
         var bookingInfo = new BookingInfo(PROVIDER_ID, CONSUMER_ID, "CONFIRMED",
                 1000L, "USD", Instant.now(), Instant.now());
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(bookingInfo);
+        // L44: every user the direct-open tests name resolves through the
+        // identity seam (the unknown-recipient 404 test stubs its own miss).
+        when(userLookupPort.findById(any(UUID.class)))
+                .thenAnswer(inv -> Optional.of(new UserSummary(
+                        inv.getArgument(0), "neighbor@example.com", "A Neighbor", "CONSUMER", null, null)));
     }
 
     @Test
@@ -97,6 +112,16 @@ class MessagingModuleIntegrationTest {
     void createConversation_saves() {
         var conversation = messagingService.createConversation(CONSUMER_ID, UUID.randomUUID());
         assertThat(conversation.getId()).isNotNull();
+    }
+
+    @Test
+    void openDirectConversation_savesBookinglessPair() {
+        var outcome = messagingService.openDirectConversation(PROVIDER_ID, CONSUMER_ID);
+
+        assertThat(outcome.newlyCreated()).isTrue();
+        assertThat(outcome.conversation().getBookingId()).isNull();
+        assertThat(outcome.conversation().hasParticipant(PROVIDER_ID)).isTrue();
+        assertThat(outcome.conversation().hasParticipant(CONSUMER_ID)).isTrue();
     }
 
     /**

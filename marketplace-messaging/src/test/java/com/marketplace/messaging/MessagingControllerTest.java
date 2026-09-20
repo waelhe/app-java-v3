@@ -112,6 +112,57 @@ class MessagingControllerTest {
     }
 
     /**
+     * L44 (neighborhood community plan §5 — direct neighbor messages):
+     * opening a NEW direct conversation answers 201 — the outcome record's
+     * newlyCreated flag drives the status, the mapped body is the same
+     * conversation shape every access point already speaks.
+     */
+    @Test
+    void openDirectConversation_new_answers201() {
+        UUID requesterId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        var request = new MessagingController.DirectConversationRequest(recipientId);
+        Conversation conv = Conversation.create(requesterId, recipientId, null);
+        ConversationResponse response = new ConversationResponse(UUID.randomUUID(), null, null, null);
+
+        when(currentUserProvider.getCurrentUserId(auth)).thenReturn(requesterId);
+        when(messagingService.openDirectConversation(requesterId, recipientId))
+                .thenReturn(new MessagingService.DirectConversationOutcome(conv, true));
+        when(conversationMapper.toResponse(conv)).thenReturn(response);
+
+        ResponseEntity<ConversationResponse> result = controller.openDirectConversation(request, auth);
+
+        assertEquals(HttpStatus.CREATED, result.getStatusCode());
+        assertEquals(response, result.getBody());
+    }
+
+    /**
+     * L44: the pair's conversation already exists — the idempotent reopen
+     * answers 200 with the SAME conversation (the plan's own "المحادثة
+     * الموجودة ⇒ 200 بالموجودة").
+     */
+    @Test
+    void openDirectConversation_existing_answers200WithSameConversation() {
+        UUID requesterId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        var request = new MessagingController.DirectConversationRequest(recipientId);
+        Conversation existing = Conversation.create(requesterId, recipientId, null);
+        ConversationResponse response = new ConversationResponse(existing.getId(), null, null, null);
+
+        when(currentUserProvider.getCurrentUserId(auth)).thenReturn(requesterId);
+        when(messagingService.openDirectConversation(requesterId, recipientId))
+                .thenReturn(new MessagingService.DirectConversationOutcome(existing, false));
+        when(conversationMapper.toResponse(existing)).thenReturn(response);
+
+        ResponseEntity<ConversationResponse> result = controller.openDirectConversation(request, auth);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(response, result.getBody());
+    }
+
+    /**
      * POST a message returns 201 with the mapped response — B1: the
      * response now carries the authenticated user's id as
      * {@code senderId}.

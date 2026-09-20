@@ -3,6 +3,7 @@ package com.marketplace.messaging;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -69,6 +70,33 @@ public class MessagingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(conversationMapper.toResponse(conversation));
     }
 
+    /**
+     * L44 (neighborhood community plan §5 — direct neighbor messages): the
+     * direct channel on the same conversations table (D-N8 — booking-less,
+     * {@code booking_id IS NULL}). 201 when this call opened it, 200 when the
+     * pair's conversation already existed (idempotent — whichever side asks).
+     *
+     * <p>The named conservative instance {@code conversationCreate} (the L29
+     * model: fail fast, 429 RL-001 — the same budget as the booking
+     * conversation's write family; pre-declared in the L45 report
+     * controller's own javadoc) bounds the open frequency; the pair's
+     * uniqueness is V67's backstop, not a per-caller cap.
+     */
+    @PostMapping("/conversations/direct")
+    @RateLimiter(name = "conversationCreate")
+    @Operation(summary = "Open a direct conversation", description = "Opens (or returns) "
+            + "the direct conversation with one neighbor — 201 when newly opened, "
+            + "200 when it already exists (idempotent per pair).")
+    public ResponseEntity<ConversationResponse> openDirectConversation(
+            @Valid @RequestBody DirectConversationRequest request,
+            Authentication authentication) {
+        UUID requesterId = currentUserProvider.getCurrentUserId(authentication);
+        MessagingService.DirectConversationOutcome outcome =
+                messagingService.openDirectConversation(requesterId, request.recipientId());
+        return ResponseEntity.status(outcome.newlyCreated() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(conversationMapper.toResponse(outcome.conversation()));
+    }
+
     @PostMapping("/conversations/{conversationId}/messages")
     @Operation(summary = "Send a message", description = "Sends a chat message to a conversation "
             + "the caller participates in; the other participant is notified.")
@@ -95,6 +123,14 @@ public class MessagingController {
             @Schema(description = "The booking this conversation is about",
                     example = "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")
             @NotNull UUID bookingId
+    ) {
+    }
+
+    @Schema(description = "Direct conversation request: the neighbor to talk to")
+    public record DirectConversationRequest(
+            @Schema(description = "The recipient user id (the conversation's other participant)",
+                    example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+            @NotNull UUID recipientId
     ) {
     }
 
