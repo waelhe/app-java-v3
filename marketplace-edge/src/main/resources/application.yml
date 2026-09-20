@@ -1,0 +1,14 @@
+server:
+  port: 8081
+
+spring:
+  session:
+    # Official property; Redis is the default store (prod already runs Redis 8).
+    # JDBC-in-Postgres is the recorded fallback (edge plan, Task 5).
+    store-type: redis
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
