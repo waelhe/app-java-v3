@@ -590,23 +590,42 @@ class NeighborhoodPostModuleIntegrationTest {
     void l43_criterion1_recommendationPostPublishes_andFiltersAloneInTheFeed()
             throws Exception {
         // The plan's §5-L43 acceptance criteria 1+2 over the REAL chain:
-        // (1) a RECOMMENDATION post is created (201, the same gates) and
-        // filtered ALONE by its own axis in the feed; (2) the older
+        // a RECOMMENDATION post is created through the real write path and
+        // filtered ALONE by its own axis in the feed, while the older
         // categories keep their byte-identical behavior — GENERAL still
         // filters to its own posts, and the UNFILTERED feed carries both.
+        //
+        // MEASURED BUDGET FACT (the CI round-1 root cause, fixed at the
+        // root): this class's app context starts FRESH (container + Flyway
+        // V1..V69, ~39s) so every test executes within the same first
+        // postCreate window — the class's controller-level writes consume
+        // exactly 9 of the 10 permits (criterion1/criterion4/criterion5/
+        // criterion6/envers seeds + criterion3's three body-level 400s +
+        // criterion3's own seed), ONE spare. This test therefore consumes
+        // ZERO postCreate permits: both posts ride postService.createPost —
+        // the ContentReport sibling class's own measured convention for
+        // setup data (the real write path through V68's widened CHECK,
+        // without the HTTP limiter). The HTTP 201 shape for a
+        // RECOMMENDATION post is pinned by the WebMvc slice
+        // (l43_postCreate_recommendationCategory_answers201), and the DB
+        // floor itself by checkConstraints below — the integration surface
+        // under test HERE is the feed's filter axis.
         UUID authorId = asCaller(UUID.randomUUID());
         joinOverHttp(authorId, QUDSAYYA_OLD_TOWN, 201);
 
-        postOverHttp(authorId, QUDSAYYA_OLD_TOWN, "RECOMMENDATION",
-                        "Any trustworthy plumber around?",
-                        "Looking for a reliable plumber for a kitchen leak.")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.category").value("RECOMMENDATION"))
-                .andExpect(jsonPath("$.status").value("VISIBLE"));
-        postOverHttp(authorId, QUDSAYYA_OLD_TOWN, "GENERAL",
-                        "Welcome to the neighborhood board", "Introduce yourself here.")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.category").value("GENERAL"));
+        NeighborhoodPostView recommendation = postService.createPost(
+                authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
+                PostCategory.RECOMMENDATION,
+                "Any trustworthy plumber around?",
+                "Looking for a reliable plumber for a kitchen leak.");
+        org.assertj.core.api.Assertions.assertThat(recommendation.category())
+                .isEqualTo("RECOMMENDATION");
+        NeighborhoodPostView general = postService.createPost(
+                authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
+                PostCategory.GENERAL,
+                "Welcome to the neighborhood board", "Introduce yourself here.");
+        org.assertj.core.api.Assertions.assertThat(general.category())
+                .isEqualTo("GENERAL");
 
         // The recommendation axis carries ONLY the recommendation post.
         mockMvc.perform(get("/api/v1/neighborhood/posts")
@@ -634,16 +653,10 @@ class NeighborhoodPostModuleIntegrationTest {
 
         // A RECOMMENDATION post takes comments on the SAME surface (the
         // axis is orthogonal to the comment path — the plan's "تعمل من
-        // تلقاء نفسها").
+        // تلقاء نفسها"). The postComment window (30) is far from exhausted.
         UUID commenterId = asCaller(UUID.randomUUID());
         joinOverHttp(commenterId, QUDSAYYA_OLD_TOWN, 201);
-        String feedBody = mockMvc.perform(get("/api/v1/neighborhood/posts")
-                        .with(jwt())
-                        .queryParam("category", "RECOMMENDATION"))
-                .andReturn().getResponse().getContentAsString();
-        String recommendationPostId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
-                .readTree(feedBody).get("content").get(0).get("id").asText();
-        mockMvc.perform(post("/api/v1/posts/{id}/comments", recommendationPostId)
+        mockMvc.perform(post("/api/v1/posts/{id}/comments", recommendation.id())
                         .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"body\": \"Call Abu Samir — fixed our leak same day.\"}"))
