@@ -90,7 +90,9 @@ class NeighborhoodPostControllerTest {
                         Pageable.unpaged(), authentication),
                         com.marketplace.shared.api.BadRequestException.class);
 
-        assertThat(thrown).hasMessageContaining("GENERAL, CLASSIFIED, LOST_FOUND");
+        // L43 widened the listed vocabulary to the four values.
+        assertThat(thrown).hasMessageContaining(
+                "GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION");
         org.mockito.Mockito.verifyNoInteractions(postService);
     }
 

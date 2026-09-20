@@ -40,12 +40,32 @@ class NeighborhoodPostTest {
 
     @Test
     void theVocabularyCarriesExactlyThePlannedValues() {
-        // D-N7: the enumerated columns' vocabularies are pinned by the V61
+        // D-N7: the enumerated columns' vocabularies are pinned by the SQL
         // CHECKs — the Java side mirrors them exactly. RECOMMENDATION is
-        // L43's widening point; HIDDEN_BY_MODERATOR is L45's flip.
+        // L43's widening (V68/V69); HIDDEN_BY_MODERATOR is L45's flip.
         assertThat(PostCategory.values()).containsExactly(
-                PostCategory.GENERAL, PostCategory.CLASSIFIED, PostCategory.LOST_FOUND);
+                PostCategory.GENERAL, PostCategory.CLASSIFIED, PostCategory.LOST_FOUND,
+                PostCategory.RECOMMENDATION);
         assertThat(PostStatus.values()).containsExactly(
                 PostStatus.VISIBLE, PostStatus.HIDDEN_BY_MODERATOR);
+    }
+
+    @Test
+    void l43_recommendationPostsTakeTheSameFactoryPath() {
+        // L43's "byte-for-byte" gate: a RECOMMENDATION post is authored
+        // text on the SAME factory — no special-cased branch anywhere in
+        // the layer (the plan's §5-L43: the feed, the filters, the
+        // comments and the rate limits all ride the axis L42 built).
+        UUID authorId = UUID.randomUUID();
+        UUID locationId = UUID.randomUUID();
+
+        NeighborhoodPost post = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.RECOMMENDATION,
+                "Any trustworthy plumber around?",
+                "Looking for a reliable plumber for a kitchen leak.",
+                clock);
+
+        assertThat(post.getCategory()).isEqualTo(PostCategory.RECOMMENDATION);
+        assertThat(post.getStatus()).isEqualTo(PostStatus.VISIBLE);
     }
 }
