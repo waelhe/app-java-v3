@@ -2,9 +2,37 @@ server:
   port: 8081
 
 spring:
+  cloud:
+    gateway:
+      # PROPERTY PATH EVIDENCE (5.0.3, not the plan's 4.1-era path): the
+      # spring-cloud-gateway-server-webmvc-5.0.3.jar binds ONLY
+      # spring.cloud.gateway.server.webmvc.routes(+routes-map) — verified in
+      # META-INF/spring-configuration-metadata.json; no mvc.routes alias exists
+      # anywhere in main or additional metadata. The plan's
+      # spring.cloud.gateway.mvc.routes would be silently ignored (unknown
+      # property) and NO route would ever register. Current reference:
+      # https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-webmvc/filters/tokenrelay.html
+      # TokenRelay (no clientRegistrationId): forwards the currently
+      # authenticated user's own access token (obtained during oauth2Login) as
+      # a downstream Authorization header. Requires the oauth2-client
+      # properties below (they trigger the OAuth2AuthorizedClientManager bean).
+      server:
+        webmvc:
+          routes:
+            - id: backend-api
+              uri: ${EDGE_BACKEND_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/**
+              filters:
+                - TokenRelay=
   session:
-    # Official property; Redis is the default store (prod already runs Redis 8).
-    # JDBC-in-Postgres is the recorded fallback (edge plan, Task 5).
+    # MEASURED TRUTH (Boot 4.1, not the old assumption): spring.session
+    # store-type is a DEAD key — SessionProperties.class (javap on
+    # spring-boot-session-4.1.1.jar) exposes only timeout + servlet/*, and no
+    # session artifact references 'store-type'. Redis sessions engage purely
+    # by starter presence (SessionDataRedisAutoConfiguration,
+    # ConditionalOnBean RedisConnectionFactory). Kept verbatim for Task 5,
+    # which owns the session redesign (Redis-by-presence vs starter swap).
     store-type: redis
   security:
     oauth2:
