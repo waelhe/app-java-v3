@@ -25,15 +25,13 @@ spring:
                 - Path=/api/**
               filters:
                 - TokenRelay=
-  session:
-    # MEASURED TRUTH (Boot 4.1, not the old assumption): spring.session
-    # store-type is a DEAD key — SessionProperties.class (javap on
-    # spring-boot-session-4.1.1.jar) exposes only timeout + servlet/*, and no
-    # session artifact references 'store-type'. Redis sessions engage purely
-    # by starter presence (SessionDataRedisAutoConfiguration,
-    # ConditionalOnBean RedisConnectionFactory). Kept verbatim for Task 5,
-    # which owns the session redesign (Redis-by-presence vs starter swap).
-    store-type: redis
+  # Sessions (Task 5, measured on Boot 4.1.1): there is NO store-type property —
+  # SessionProperties.class (javap) exposes only timeout + servlet/*. Redis
+  # sessions engage purely by this starter's presence
+  # (SessionDataRedisAutoConfiguration, ConditionalOnBean
+  # RedisConnectionFactory). JDBC fallback = swap this starter for
+  # spring-boot-starter-session-jdbc + one Flyway migration (never a property
+  # switch, never csrf().disable()).
   security:
     oauth2:
       client:
