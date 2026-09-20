@@ -1,5 +1,21 @@
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
+## دمج #356 — بوابة BFF (وحدة `marketplace-edge` المستقلة) تصل main + دورة ما بعد الدمج الكاملة (2026-09-21 — أمر المستخدم «وادمج» + الأوامر الدائمة كاملة: الوثائق الرسمية للإطار، تفعيل مراجعات CodeRabbit، البروتوكول، مهندس نظام لا أجزاء، لا ترقيع ولا ديون)
+
+- **إعلان §0 (AGENTS.md):** الملف الحاكم: `docs/superpowers/plans/2026-09-20-edge-bff-gateway.md` (خطة المهمة — Tasks 1-5) + `docs/security/client-hosting-strategy-plan.md` §4 نمط 1 + SYSTEM.md §14.3/§15؛ النواة المعمارية: وحدة مستقلة جديدة خارج حدود Modulith بتصميم (Spring Cloud Gateway Server MVC — الاستثناء #14، عميل OAuth2 سري `edge` + D6 + TokenRelay + جلسات Redis + `csrf.spa()`)؛ أثر الحدود: صفر اختراق (صفر اعتماديات نطاقية — ModulithVerificationTest/DocumentationTest أخضران بحضورها)؛ دين: لا (قصة إصلاح جذر gitleaks ج1 موثقة بجسم الـPR و§15: قيمة وهمية عالية الإنتروبيا → عرف البيت `it-*-secret` + fixup في الكوميت المصدر بسابقة #186 + الألواح لم تُمس).
+- **دمج PR #356 بكلمة «ادمج» — البوابات الثلاث مقيسة لحظة الدمج (merge356_exec ذاتي-البوابات):** CI على الرأس `8e74b9ae7c3c` — الفحوص الستة خضراء (أول تشغيل Maven فعلي للوحدة في CI ببيئة كاملة Redis+Postgres: Full Integration ‏~29د ثم Build & Test ‏~39د) + حالة CodeRabbit نجاح؛ mergeable=True/CLEAN؛ خيوط CodeRabbit ‏0/0 (راجع الرأس المدفوع تدريجياً وترك صفر ملاحظات قابلة للإجراء). **الدمج:** squash ⇒ main `fb61f5b4c0d9` (2026-09-20T22:30:18Z).
+- **دورة ما بعد الدمج الكاملة (كلها مقيسة):**
+
+| القياس | القيمة |
+|---|---|
+| النشر | `bfd0633a` SUCCESS 22:32:29Z عبر قناة commit status (السياق `app-java-v3 - app-java-v3`) — ~2د11ث من الدمج إلى الحالة الخضراء: شجرة التطبيق غير مماسة (الـDockerfile يبني `-pl marketplace-app -am` وedge ليست اعتماداً للـapp — الـDockerfile متطابق حرفياً بين main والفرع) فالبناء دافئ |
+| الدخان | **دخان المحطة الختامية ALL PASS ‏15/15 بـ108 مسارات**: النظام (readiness/liveness/jwks `kid=marketplace-jwt-r3`/OIDC بالنطاق الحي/modulith 401/api-docs 108) + أسطح المرحلة الثانية كاملة بعقود 401 problem+json (درزا L41 الثلاثة PUT/GET/DELETE `/api/v1/me/neighborhood` + مرشح L43 بالقيمة الرابعة + مفردة Swagger الحية [المرشح والمخطط] + سطح L44 `POST /api/v1/messages/conversations/direct` + سطحا L45 `POST /api/v1/reports` و`GET /api/v1/admin/reports`) + مسارات L44/L45 مسجلة في api-docs الحي |
+| CI على main | كل الفحوص نجاح على `fb61f5b4c0d9` (CodeQL Analyze + Container Scan ثم Full Integration ~23:06Z ثم Build & Test ~23:11Z — Trivy/CodeQL المستقلان فحوصا تعليق على رؤوس الفروع بعرف main المتكرر) |
+| الـwatchdog | جولتان على الرأس الجديد كلتاهما نجاح (المجدولة run 35543469202 ‏[23:02:59Z — استدركت نوافذ جدولة فائتة 21:07-22:52Z] + dispatch يدوي run 35543781067 ‏[23:09:00Z]) — النقاط الحية سليمة والقناة طازجة؛ صفر PRs/issues مفتوحة |
+
+- **الحقيقة التشغيلية الجديدة المسجلة:** marketplace-edge صارت **الوحدة 22 في المفاعل** (قياس pom الجذر بعد الدمج — 22 وحدة `<module>`) — تُبنى وتُختبر في كل جولة CI — لكنها **ليست منشورة كخدمة في الإنتاج** (لا خدمة Railway تحملها؛ مصنوعات الإنتاج لم تتغير): ربط البوابة كخدمة منشورة (خدمة ثانية أو دخول البوابة مسار المرور) = بوابة قرار تالية بيد المستخدم حصراً (§14.3). وصف الجدول أدناه حُدّث: ⏳ فرع غير مدموج → ✅ مدموجة.
+
+
 ## محطة المراجعة الختامية — دمج L43 (#354) يُكمل المرحلة الثانية بالكامل + العرض الحي للمرحلة على الإنتاج (2026-09-20 — أمر المستخدم «كلمة «ادمج» للـPR #354 → أُكمل دورة ما بعد الدمج (V68/V69 على Neon + دخان 108 مسارات بفئة التوصيات) ثم محطة المراجعة الختامية بعرض حي لكامل المرحلة الثانية»)
 
 - **إعلان §0 (AGENTS.md):** الملف الحاكم: `docs/neighborhood-community-plan.md` §4 (محطة المراجعة الختامية — ختام المرحلة الثانية) + §5-L43 (الحالة بعد الدمج) + SYSTEM.md §14.3/§15؛ النواة المعمارية: صفر تغيير معماري في هذه الدفعة (توثيق محطة + سجل دمج — الدفعة الطرفية التي تجيزها القاعدة المصححة: لا PR وظيفي تالٍ في الخطة فالتوثيق يركب PR المحطة الختامية)؛ البند: بند المحطات في §4 (المحطتان بيد المستخدم حصراً)؛ أثر الحدود: صفر؛ دين: لا.
@@ -1504,7 +1520,7 @@
 | **marketplace-ledger** | Domain (ledger, balances) | ✅ 70% | ✅ |
 | **marketplace-search** | Domain (full-text search) | ✅ 70% | ✅ |
 | **marketplace-admin** | Package in app (admin REST) | ✅ (in app) | ✅ |
-| **marketplace-edge** | Standalone BFF (OAuth2 confidential client + TokenRelay + spa CSRF, zero domain deps — outside Modulith) | ✅ 70% | ⏳ `feature/edge-bff-gateway` (Tasks 1–5 green 10/10; gate commit deferred to CI-with-Redis) |
+| **marketplace-edge** | Standalone BFF (OAuth2 confidential client + TokenRelay + spa CSRF, zero domain deps — outside Modulith) | ✅ 70% | ✅ merged #356 → main `fb61f5b4c0d9` (in CI reactor as module 22; production wiring as a deployed service is a user-gated decision §14.3) |
 
 ---
 
