@@ -1,0 +1,54 @@
+server:
+  port: 8081
+
+spring:
+  cloud:
+    gateway:
+      # PROPERTY PATH EVIDENCE (5.0.3, not the plan's 4.1-era path): the
+      # spring-cloud-gateway-server-webmvc-5.0.3.jar binds ONLY
+      # spring.cloud.gateway.server.webmvc.routes(+routes-map) — verified in
+      # META-INF/spring-configuration-metadata.json; no mvc.routes alias exists
+      # anywhere in main or additional metadata. The plan's
+      # spring.cloud.gateway.mvc.routes would be silently ignored (unknown
+      # property) and NO route would ever register. Current reference:
+      # https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-webmvc/filters/tokenrelay.html
+      # TokenRelay (no clientRegistrationId): forwards the currently
+      # authenticated user's own access token (obtained during oauth2Login) as
+      # a downstream Authorization header. Requires the oauth2-client
+      # properties below (they trigger the OAuth2AuthorizedClientManager bean).
+      server:
+        webmvc:
+          routes:
+            - id: backend-api
+              uri: ${EDGE_BACKEND_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/**
+              filters:
+                - TokenRelay=
+  # Sessions (Task 5, measured on Boot 4.1.1): there is NO store-type property —
+  # SessionProperties.class (javap) exposes only timeout + servlet/*. Redis
+  # sessions engage purely by this starter's presence
+  # (SessionDataRedisAutoConfiguration, ConditionalOnBean
+  # RedisConnectionFactory). JDBC fallback = swap this starter for
+  # spring-boot-starter-session-jdbc + one Flyway migration (never a property
+  # switch, never csrf().disable()).
+  security:
+    oauth2:
+      client:
+        registration:
+          edge:
+            client-id: ${EDGE_CLIENT_ID:edge-local}
+            client-secret: ${EDGE_CLIENT_SECRET:}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/edge"
+            scope: openid,profile
+            client-authentication-method: client_secret_basic
+        provider:
+          edge:
+            issuer-uri: ${AUTH_SERVER_ISSUER:http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

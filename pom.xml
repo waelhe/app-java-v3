@@ -40,6 +40,7 @@
         <module>marketplace-community</module>
         <module>marketplace-ai</module>
         <module>marketplace-app</module>
+        <module>marketplace-edge</module>
     </modules>
 
     <properties>
@@ -53,6 +54,16 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.0</instancio.version>
         <spring-ai.version>2.0.1</spring-ai.version>
+        <!-- Cloud train for the edge BFF (exception #14): single property,
+             per-artifact versions stay managed by the BOM below. -->
+        <spring-cloud.version>2025.1.3</spring-cloud.version>
+        <!-- Test-only: WireMock (exception #15) — managed by NEITHER Boot 4.1.1 BOM
+             (verified: no wiremock entry in spring-boot-dependencies-4.1.1.pom)
+             NOR Cloud 2025.1.3 BOM (verified absent). Stable 3.x line only
+             (4.x is beta — excluded by the stable-only rule); coordinates are the
+             official wiremock.org "Download and Installation" test-dependency
+             recipe (org.wiremock:wiremock, test scope). -->
+        <wiremock.version>3.13.2</wiremock.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
         <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements -->
         <jackson.version>3.2.2</jackson.version>
@@ -127,6 +138,42 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Exception #14: Spring Cloud BOM — Boot does not manage Spring Cloud
+                 (official Spring umbrella, same category as Modulith BOM #1 and
+                 Spring AI BOM #13 — NOT a community exception).
+                 Reason: edge BFF foundation for the new marketplace-edge capability
+                 module (Gateway Server MVC TokenRelay + oauth2-client + shared
+                 sessions) serving client-hosting-strategy-plan §4 pattern (1).
+                 Compatibility evidence (spring.io/projects/spring-cloud):
+                 "2025.1.x aka Oakwood → 4.0.x, 4.1.x (Starting with 2025.1.2)";
+                 this project is Boot 4.1.1. Coordinates verified against the
+                 official Initializr output for Boot 4.1.1
+                 (start.spring.io → spring-cloud-starter-gateway-server-webmvc,
+                 spring-cloud-dependencies 2025.1.3, measured 2026-09-20).
+                 PRECEDENCE (Maven first-import-wins; measured 2026-09-20):
+                 this import sits AFTER resilience4j-bom on purpose — the Cloud
+                 train also manages resilience4j artifacts (older line), and the
+                 house BOM must keep precedence or RequireUpperBoundDeps breaks
+                 (resilience4j-micrometer 2.3.0 vs 2.4.0, caught by enforcer).
+                 The Cloud BOM therefore manages ONLY artifacts no house BOM
+                 owns (gateway et al).
+                 Owner: platform maintainers (version-policy §8).
+                 Follow-up review: 2026-12-20 (quarterly minor cadence,
+                 version-policy §3). -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Exception #15: WireMock test backend for the edge BFF relay IT
+                 (plan Task 4) — managed by neither BOM (evidence in properties
+                 above). Reason: stub the SAS discovery document and the backend
+                 /api/** surface in CI with zero live servers (house rule: no live
+                 infra in unit CI). Test scope only; property above, no other
+                 artifact affected. Owner: platform maintainers (version-policy §8).
+                 Follow-up review: 2026-12-20 (with #14; WireMock 4.x GA watch). -->
             <!-- Exception #4: ArchUnit — test-only, not managed by Boot -->
             <dependency>
                 <groupId>com.tngtech.archunit</groupId>

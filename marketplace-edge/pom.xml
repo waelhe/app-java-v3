@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.marketplace</groupId>
+        <artifactId>marketplace-platform</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>marketplace-edge</artifactId>
+    <name>marketplace-edge</name>
+    <description>Edge BFF — Spring Cloud Gateway Server MVC + TokenRelay + shared sessions. Serves client-hosting-strategy-plan §4 pattern (1) confidential web clients. Zero domain dependencies by design (Modulith isolation); never depends on marketplace-* modules.</description>
+
+    <dependencies>
+        <!-- BFF router (Server MVC servlet variant — same stack as the app;
+             version managed by spring-cloud-dependencies, exception #14). -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway-server-webmvc</artifactId>
+        </dependency>
+        <!-- Confidential OAuth2 client (Boot BOM). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+        <!-- Shared sessions (Boot BOM; mirrors marketplace-platform-infra).
+             Redis is the default store (spring.session.store-type=redis);
+             JDBC-in-Postgres is the recorded fallback (one Flyway migration). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-session-data-redis</artifactId>
+        </dependency>
+        <!-- Health probes for the second Railway service (Boot BOM). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <!-- MockMvc support (Boot 4.x: lives in spring-boot-webmvc-test, not the
+             slimmed test-autoconfigure; same idiom as marketplace-app). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- MockMvc oauth2Login() for the relay IT (Boot BOM manages the version;
+             same idiom as marketplace-app exception #10). -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- WireMock backend stub for the relay IT (version: root exception #15).
+             Standalone (shaded) flavor per the official download page: the plain
+             core artifact needs a separate HttpServerFactory extension on the
+             classpath (measured: "Jetty 11 is not present ... no suitable
+             HttpServerFactory"), while standalone embeds its server and adds
+             zero transitive convergence surface. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>${wiremock.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
