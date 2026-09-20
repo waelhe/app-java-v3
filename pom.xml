@@ -40,6 +40,7 @@
         <module>marketplace-community</module>
         <module>marketplace-ai</module>
         <module>marketplace-app</module>
+        <module>marketplace-edge</module>
     </modules>
 
     <properties>
@@ -53,6 +54,9 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.0</instancio.version>
         <spring-ai.version>2.0.1</spring-ai.version>
+        <!-- Cloud train for the edge BFF (exception #14): single property,
+             per-artifact versions stay managed by the BOM below. -->
+        <spring-cloud.version>2025.1.3</spring-cloud.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
         <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements -->
         <jackson.version>3.2.2</jackson.version>
@@ -116,6 +120,28 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Exception #14: Spring Cloud BOM — Boot does not manage Spring Cloud
+                 (official Spring umbrella, same category as Modulith BOM #1 and
+                 Spring AI BOM #13 — NOT a community exception).
+                 Reason: edge BFF foundation for the new marketplace-edge capability
+                 module (Gateway Server MVC TokenRelay + oauth2-client + shared
+                 sessions) serving client-hosting-strategy-plan §4 pattern (1).
+                 Compatibility evidence (spring.io/projects/spring-cloud):
+                 "2025.1.x aka Oakwood → 4.0.x, 4.1.x (Starting with 2025.1.2)";
+                 this project is Boot 4.1.1. Coordinates verified against the
+                 official Initializr output for Boot 4.1.1
+                 (start.spring.io → spring-cloud-starter-gateway-server-webmvc,
+                 spring-cloud-dependencies 2025.1.3, measured 2026-09-20).
+                 Owner: platform maintainers (version-policy §8).
+                 Follow-up review: 2026-12-20 (quarterly minor cadence,
+                 version-policy §3). -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
