@@ -1,0 +1,48 @@
+-- L44 (neighborhood community plan §5 — direct neighbor messages):
+-- the direct channel's pair uniqueness on the EXISTING conversations
+-- table — D-N8's own words: "الرسائل المباشرة توسّع conversations القائمة
+-- لا جدولًا موازيًا". No new table, no new column: V7 measured booking_id
+-- nullable from day one (it references bookings(id) with no NOT NULL), so
+-- `booking_id IS NULL` is the direct marker the whole layer keys on, and
+-- the service stores every direct pair in canonical order — the
+-- UUID.compareTo contract, MessagingService's own — which makes plain
+-- pair equality the pair's identity for the
+-- application finder riding V7's idx_conversations_participants.
+--
+-- This index is the DB-level guard for the same invariant: a partial
+-- unique index on the EXPRESSIVE pair (LEAST, GREATEST) — order-free by
+-- construction, so even a row that somehow escaped canonical ordering
+-- cannot duplicate a pair. (The service's canonical order is the
+-- UUID.compareTo contract — SIGNED long halves, a total order that need
+-- not match byte-wise order; the guard's LEAST/GREATEST works on the byte
+-- representation. The two are INDEPENDENT guards: the application finder
+-- needs the canonical order, the uniqueness backstop needs only
+-- symmetry — they never need to agree with each other.) Partial on
+-- exactly the layer's rows: booking_id IS NULL (direct conversations
+-- only — a booking conversation and a direct conversation between the
+-- same two users are two threads by design, exactly as two bookings
+-- already are) AND is_deleted = FALSE (a soft-deleted conversation never
+-- blocks the pair from talking again — the same live-rows-only shape as
+-- uq_content_reports_reporter_target and every V7 partial index).
+--
+-- The service's explicit pre-check returns the existing conversation
+-- (200, idempotent — the findByBookingId precedent); this constraint is
+-- the backstop for the concurrent double-open race, where the losing
+-- racer gets 23505 and the house translation answers 409 (the L30 G-N1
+-- precedent verbatim — the reports layer's own documented shape).
+--
+-- The pair lookup itself needs no new index: V7's
+-- idx_conversations_participants (participant_a, participant_b) WHERE
+-- is_deleted = false already answers the canonical equality with a
+-- near-unique two-UUID key.
+--
+-- No CHECK, no _aud change: no new enumerated column and no new column
+-- at all — the Envers mirror (V24) audits the same rows it always did;
+-- every direct open and every later soft-delete is a revision.
+--
+-- Checksum registered in migration-checksums.properties in this same
+-- PR (MigrationChecksumGuardTest — the 2026-09-14 incident class).
+
+CREATE UNIQUE INDEX uq_conversations_direct_pair
+    ON conversations (LEAST(participant_a, participant_b), GREATEST(participant_a, participant_b))
+    WHERE booking_id IS NULL AND is_deleted = FALSE;
