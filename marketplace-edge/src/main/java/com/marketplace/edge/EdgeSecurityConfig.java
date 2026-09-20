@@ -5,7 +5,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -17,10 +19,12 @@ import org.springframework.security.web.SecurityFilterChain;
 public class EdgeSecurityConfig {
 
     @Bean
-    SecurityFilterChain edgeSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain edgeSecurityFilterChain(HttpSecurity http,
+            Customizer<CsrfConfigurer<HttpSecurity>> edgeCsrf) throws Exception {
         http.oauth2Login(login -> {
         });
         http.authorizeHttpRequests(auth -> auth.anyRequest().authenticated());
+        http.csrf(edgeCsrf);
         return http.build();
     }
 
