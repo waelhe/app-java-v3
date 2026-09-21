@@ -27,24 +27,25 @@ spring:
                 - TokenRelay=
   # Sessions — ADOPTED OFFICIAL DIRECTION (no JDBC fallback): Redis durability
   # is an infrastructure property, not an application backend choice.
-  # redis.io prescribes AOF everysec (~1s typical loss — approximate, Redis
-  # may delay writes while a previous fsync runs) + retained RDB snapshots
-  # ("PostgreSQL-comparable safety"). Implemented here: the repo-owned Redis
-  # (docker-compose redisdata:/data). Off-site RDB copies and production AOF
-  # enablement (RDB + /data already there) remain an operational follow-up —
-  # no Redis backup/restore mechanism exists in this repo yet. JDBC sessions
-  # are REJECTED for this purpose: no official source prescribes JDBC as a
-  # Redis-durability fix (Spring Session presents both backends neutrally),
-  # and it would trade Redis-volatility for fate-sharing with the primary DB
-  # plus per-request SQL cost — while breaking the edge's stateless design
-  # (new DataSource + pool + migration + secrets on a stateless gateway).
-  # Residual window may require one SSO re-authorization; a surviving SAS
-  # login session may skip the login page (stored consent likewise) — silent
-  # recovery is likely but not guaranteed. Measured on Boot 4.1.1: no
-  # store-type property exists (SessionProperties = timeout + servlet/*
-  # only); Redis engages purely by this starter's presence
-  # (SessionDataRedisAutoConfiguration, ConditionalOnBean
-  # RedisConnectionFactory). Never csrf().disable().
+  # Production Redis is Upstash MANAGED (ARCHITECTURE.md + runbooks: external
+  # store for cache/sessions/rate-limit; REDIS_HOST wired) — persistence and
+  # multi-zone replication are platform properties (CONFIG restricted;
+  # verified live: no user persistence toggles). The redis.io AOF+RDB recipe
+  # ("PostgreSQL-comparable safety") is applied where we own the server: the
+  # repo-owned Redis (docker-compose redisdata:/data). Operational follow-ups
+  # on the Upstash dashboard (not code): backup/snapshot feature status +
+  # eviction policy review. JDBC sessions are REJECTED for this purpose: no
+  # official source prescribes JDBC as a Redis-durability fix (Spring Session
+  # presents both backends neutrally), and it would trade managed-volatility
+  # for fate-sharing with the primary DB plus per-request SQL cost — while
+  # breaking the edge's stateless design (new DataSource + pool + migration +
+  # secrets on a stateless gateway). Residual window may require one SSO
+  # re-authorization; a surviving SAS login session may skip the login page
+  # (stored consent likewise) — silent recovery is likely but not
+  # guaranteed. Measured on Boot 4.1.1: no store-type property exists
+  # (SessionProperties = timeout + servlet/* only); Redis engages purely by
+  # this starter's presence (SessionDataRedisAutoConfiguration,
+  # ConditionalOnBean RedisConnectionFactory). Never csrf().disable().
   # Precision fixes adopted from CodeRabbit r1 (3× Minor).
   security:
     oauth2:
