@@ -25,13 +25,23 @@ spring:
                 - Path=/api/**
               filters:
                 - TokenRelay=
-  # Sessions (Task 5, measured on Boot 4.1.1): there is NO store-type property —
-  # SessionProperties.class (javap) exposes only timeout + servlet/*. Redis
-  # sessions engage purely by this starter's presence
+  # Sessions — ADOPTED OFFICIAL DIRECTION (no JDBC fallback): Redis durability
+  # is an infrastructure property, not an application backend choice.
+  # redis.io prescribes AOF everysec (<=1s loss) + retained RDB snapshots
+  # ("PostgreSQL-comparable safety") + off-site RDB copies — applied to the
+  # repo-owned Redis (docker-compose) and to runbook for production (RDB +
+  # /data already there; enable AOF + backups operationally). JDBC sessions
+  # are REJECTED for this purpose: no official source prescribes JDBC as a
+  # Redis-durability fix (Spring Session presents both backends neutrally),
+  # and it would trade Redis-volatility for fate-sharing with the primary DB
+  # plus per-request SQL cost — while breaking the edge's stateless design
+  # (new DataSource + pool + migration + secrets on a stateless gateway).
+  # Residual window (<=1s + disk loss) costs one silent SSO re-authorization
+  # via the surviving SAS session — no login ceremony. Measured on Boot
+  # 4.1.1: no store-type property exists (SessionProperties = timeout +
+  # servlet/* only); Redis engages purely by this starter's presence
   # (SessionDataRedisAutoConfiguration, ConditionalOnBean
-  # RedisConnectionFactory). JDBC fallback = swap this starter for
-  # spring-boot-starter-session-jdbc + one Flyway migration (never a property
-  # switch, never csrf().disable()).
+  # RedisConnectionFactory). Never csrf().disable().
   security:
     oauth2:
       client:
