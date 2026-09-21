@@ -5,7 +5,7 @@
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/edge-placeholder-/root/.m2,target=/root/.m2 \
+RUN --mount=type=cache,id=s/51549c2b-20d8-4970-aa2c-a722d422e0b8-/root/.m2,target=/root/.m2 \
     chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-edge -am
 
 # ── Extract layers stage ─────────────────────────────
