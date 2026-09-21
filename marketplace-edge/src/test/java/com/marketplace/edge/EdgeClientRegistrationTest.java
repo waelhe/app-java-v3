@@ -50,4 +50,36 @@ class EdgeClientRegistrationTest {
                 .run(new DefaultApplicationArguments()))
                 .doesNotThrowAnyException();
     }
+
+    @Test
+    void httpBackendThrowsInProd() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("EDGE_BACKEND_URL", "http://backend.internal:8080");
+
+        assertThatThrownBy(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
+                .run(new DefaultApplicationArguments()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    void httpsBackendPassesInProd() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("EDGE_BACKEND_URL", "https://backend.internal:8080");
+
+        assertThatCode(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
+                .run(new DefaultApplicationArguments()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void explicitInsecureHatchPassesInProd() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("EDGE_BACKEND_URL", "http://backend.internal:8080")
+                .withProperty("EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT", "true");
+
+        assertThatCode(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
+                .run(new DefaultApplicationArguments()))
+                .doesNotThrowAnyException();
+    }
 }
