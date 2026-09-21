@@ -121,6 +121,20 @@ class EdgeSessionIT {
     }
 
     @Test
+    void anonymousHealthNeverEntersLoginFlow() throws Exception {
+        // Orchestrator probes carry no credentials: health must answer (200
+        // when all contributors up, 503 otherwise) and must NEVER 302 to the
+        // OAuth2 login chain. Adopted from CodeRabbit r1 (Major, stability);
+        // same idiom as the main app SecurityConfig (GET /actuator/health/**
+        // permitAll).
+        MvcResult result = mockMvc.perform(get("/actuator/health"))
+                .andReturn();
+        assertThat(result.getResponse().getStatus())
+                .as("anonymous health must not redirect to login")
+                .isNotEqualTo(302);
+    }
+
+    @Test
     void postWithoutCsrfTokenIsRejected() throws Exception {
         // No global CSRF switch-off exists anywhere (plan forbids it): an
         // unsafe method without a token must 403, never reach routing —
