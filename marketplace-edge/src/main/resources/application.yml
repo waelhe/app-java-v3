@@ -2,6 +2,10 @@ server:
   port: 8081
 
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   cloud:
     gateway:
       # PROPERTY PATH EVIDENCE (5.0.3, not the plan's 4.1-era path): the
@@ -25,13 +29,30 @@ spring:
                 - Path=/api/**
               filters:
                 - TokenRelay=
-  # Sessions (Task 5, measured on Boot 4.1.1): there is NO store-type property —
-  # SessionProperties.class (javap) exposes only timeout + servlet/*. Redis
-  # sessions engage purely by this starter's presence
-  # (SessionDataRedisAutoConfiguration, ConditionalOnBean
-  # RedisConnectionFactory). JDBC fallback = swap this starter for
-  # spring-boot-starter-session-jdbc + one Flyway migration (never a property
-  # switch, never csrf().disable()).
+  # Sessions — ADOPTED OFFICIAL DIRECTION (no JDBC fallback): Redis durability
+  # is an infrastructure property, not an application backend choice.
+  # Production Redis is Upstash MANAGED (ARCHITECTURE.md + runbooks: external
+  # store for cache/sessions/rate-limit; REDIS_HOST wired) — persistence and
+  # multi-zone replication are platform properties (CONFIG restricted;
+  # verified live: no user persistence toggles). The redis.io AOF+RDB recipe
+  # ("PostgreSQL-comparable safety") is applied where we own the server: the
+  # repo-owned Redis (docker-compose redisdata:/data). DECIDED (free tier, no
+  # upgrade for backups): Upstash backups are paywalled — no off-site RDB
+  # copies exist; total-loss risk ACCEPTED and documented (rare + silent SSO
+  # re-auth softens it). Eviction stays DISABLED (dashboard) so active
+  # sessions are never silently evicted. JDBC sessions are REJECTED for this purpose: no
+  # official source prescribes JDBC as a Redis-durability fix (Spring Session
+  # presents both backends neutrally), and it would trade managed-volatility
+  # for fate-sharing with the primary DB plus per-request SQL cost — while
+  # breaking the edge's stateless design (new DataSource + pool + migration +
+  # secrets on a stateless gateway). Residual window may require one SSO
+  # re-authorization; a surviving SAS login session may skip the login page
+  # (stored consent likewise) — silent recovery is likely but not
+  # guaranteed. Measured on Boot 4.1.1: no store-type property exists
+  # (SessionProperties = timeout + servlet/* only); Redis engages purely by
+  # this starter's presence (SessionDataRedisAutoConfiguration,
+  # ConditionalOnBean RedisConnectionFactory). Never csrf().disable().
+  # Precision fixes adopted from CodeRabbit r1 (3× Minor).
   security:
     oauth2:
       client:

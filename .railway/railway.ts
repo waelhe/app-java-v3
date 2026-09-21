@@ -88,7 +88,29 @@ export default defineRailway(() => {
     },
   });
 
+  const app_java_v3_edge = service("app-java-v3-edge", {
+    source: github("waelhe/app-java-v3", { branch: "main" }),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "marketplace-edge/Dockerfile",
+    },
+    healthcheck: "/actuator/health/liveness",
+    healthcheckTimeout: 300,
+    env: {
+      AUTH_SERVER_ISSUER: preserve(),
+      EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT: preserve(),
+      EDGE_BACKEND_URL: preserve(),
+      EDGE_CLIENT_ID: preserve(),
+      EDGE_CLIENT_SECRET: preserve(),
+      REDIS_HOST: preserve(),
+      REDIS_PORT: preserve(),
+      SPRING_DATA_REDIS_PASSWORD: preserve(),
+      SPRING_DATA_REDIS_SSL_ENABLED: preserve(),
+      SPRING_PROFILES_ACTIVE: preserve(),
+    },
+  });
+
   return project("app-java-v3", {
-    resources: [app_java_v3],
+    resources: [app_java_v3, app_java_v3_edge],
   });
 });
