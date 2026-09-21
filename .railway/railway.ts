@@ -98,6 +98,7 @@ export default defineRailway(() => {
     healthcheckTimeout: 300,
     env: {
       AUTH_SERVER_ISSUER: preserve(),
+      EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT: preserve(),
       EDGE_BACKEND_URL: preserve(),
       EDGE_CLIENT_ID: preserve(),
       EDGE_CLIENT_SECRET: preserve(),

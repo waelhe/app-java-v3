@@ -63,9 +63,9 @@ Cache id uses edge service id (to be filled after first `railway service create`
 All secrets via `preserve()` (never materialized in repo — `.railway/railway.ts:22` precedent):
 
 - `EDGE_CLIENT_ID` / `EDGE_CLIENT_SECRET` (D6 prod guard already in EdgeSecurityConfig)
-- `EDGE_BACKEND_URL` = `http://app-java-v3.railway.internal:8080` (prod) / `http://localhost:8080` (local)
+- `EDGE_BACKEND_URL` = `http://app-java-v3.railway.internal:8080` (prod) / `http://localhost:8080` (local) — private Railway hop, so `EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT=true` must be preserved in prod (otherwise `edgeTransportGuard` fails startup on `http://` — Major, stability)
 - `AUTH_SERVER_ISSUER` (already present, reused)
-- `REDIS_HOST/PORT/PASSWORD/SPRING_DATA_REDIS_SSL_ENABLED` (Upstash managed — same as app)
+- `REDIS_HOST/PORT/PASSWORD/SPRING_DATA_REDIS_SSL_ENABLED` (Upstash managed — same as app; `REDIS_HOST/PORT` mapped to `spring.data.redis.host/port` in `application.yml`)
 - `SPRING_PROFILES_ACTIVE=prod`
 
 Healthcheck `300s` (same as app) on `/actuator/health/liveness` (edge exposes it via `management.endpoints.web.exposure.include: health`).
@@ -82,7 +82,7 @@ Per Gateway 5.0.3 doc (fetched): `TokenRelay` with no `clientRegistrationId` for
 
 - **Unit:** `mvn verify -pl marketplace-edge` (14 tests: relay, sessions, CSRF, D6, health permitAll, https guard) — must stay green.
 - **IaC:** `npx railway check` (or `railway config apply --dry-run` if available) — validates `railway.ts` shape.
-- **Live smoke (after deploy):** `curl` edge public URL `/actuator/health/liveness` 200 → login → `curl -H "Authorization: Bearer <edge-token>" /api/v1/search` 200 via edge; direct app bypass blocked by Railway private-network ACL.
+- **Live smoke (after deploy):** `curl` edge public URL `/actuator/health/liveness` 200 → login via `oauth2Login` (establish `SESSION` cookie) → `curl -b SESSION=<cookie> -H "X-XSRF-TOKEN: <xsrf>" /api/v1/search` 200 via edge (spec §6: TokenRelay uses the login session, not bearer auth); direct app bypass blocked by Railway private-network ACL.
 
 ---
 

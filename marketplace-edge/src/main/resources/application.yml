@@ -2,6 +2,10 @@ server:
   port: 8081
 
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   cloud:
     gateway:
       # PROPERTY PATH EVIDENCE (5.0.3, not the plan's 4.1-era path): the

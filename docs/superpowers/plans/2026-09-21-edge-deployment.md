@@ -50,6 +50,7 @@ RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted
 
 FROM eclipse-temurin:25-jre-alpine AS trainer
 WORKDIR /app
+COPY --from=extractor /app/app.jar app.jar
 COPY --from=extractor /app/extracted/dependencies/ ./
 COPY --from=extractor /app/extracted/spring-boot-loader/ ./
 COPY --from=extractor /app/extracted/snapshot-dependencies/ ./
@@ -72,6 +73,7 @@ RUN apk upgrade --no-cache
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 RUN mkdir -p /var/log/marketplace /app/logs && chown app:app /var/log/marketplace /app/logs
+COPY --from=extractor /app/app.jar app.jar
 COPY --from=extractor /app/extracted/dependencies/ ./
 COPY --from=extractor /app/extracted/spring-boot-loader/ ./
 COPY --from=extractor /app/extracted/snapshot-dependencies/ ./
