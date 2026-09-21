@@ -67,4 +67,33 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Executable jar: the missing repackage. Measured on the failed edge
+                 deploy 2e039a1d (raw build log via the Railway API, 2026-09-21):
+                 "jar:3.15.1:jar" produced a PLAIN jar (no repackage goal ran), so the
+                 Dockerfile extractor stage (jarmode=tools extract, layers mode)
+                 failed with "no main manifest attribute, in app.jar" (exit 1). The
+                 app module declares this plugin and inherits the repackage
+                 execution from spring-boot-starter-parent 4.1.1 pluginManagement:
+                 the identical Dockerfile recipe works for it in production.
+                 Declaring the plugin here activates repackage (fat jar with
+                 Main-Class) + build-info, exactly like marketplace-app. -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <mainClass>com.marketplace.edge.EdgeApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
