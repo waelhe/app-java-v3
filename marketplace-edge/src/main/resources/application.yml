@@ -1,5 +1,17 @@
 server:
-  port: 8081
+  # PORT is the injected platform variable (Railway: "Railway will inject a
+  # PORT environment variable that your application should listen on. This
+  # variable's value is also used when performing health checks on your
+  # deployments... Not listening on the PORT variable... can result in your
+  # health check returning a service unavailable error." — docs.railway.com/
+  # deployments/healthchecks, fetched live 2026-09-22; the same
+  # placeholder-with-default pattern as marketplace-app's yml). The edge
+  # service also pins PORT=8081 in .railway/railway.ts (the docs' sanctioned
+  # manual variable) so the listen port and the healthcheck port derive from
+  # the SAME variable by construction — they cannot diverge. Default 8081
+  # preserves the designed local-dev port (spec: edge:8081 in front of
+  # app:8080).
+  port: ${PORT:8081}
 
 spring:
   data:
@@ -73,3 +85,13 @@ management:
     web:
       exposure:
         include: health
+  endpoint:
+    health:
+      # Liveness/readiness groups for the Railway healthcheck path
+      # /actuator/health/liveness (same as marketplace-app): without
+      # probes.enabled, Boot does not create the groups outside Kubernetes
+      # and the path returns 404 — the deployment then fails its healthcheck
+      # even though the container is healthy (edge deployments e9985b9f/
+      # 9438ba0f, 2026-09-21).
+      probes:
+        enabled: true

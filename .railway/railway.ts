@@ -102,6 +102,13 @@ export default defineRailway(() => {
       EDGE_BACKEND_URL: preserve(),
       EDGE_CLIENT_ID: preserve(),
       EDGE_CLIENT_SECRET: preserve(),
+      // The designed listen port, pinned as the docs' sanctioned manual
+      // variable: "you can manually set a PORT variable to inform Railway of
+      // the port to use for health checks" (docs.railway.com/deployments/
+      // healthchecks, fetched live 2026-09-22). With the yml's
+      // ${PORT:8081} placeholder, the listen port and the healthcheck port
+      // are the SAME variable by construction — they cannot diverge.
+      PORT: "8081",
       REDIS_HOST: preserve(),
       REDIS_PORT: preserve(),
       SPRING_DATA_REDIS_PASSWORD: preserve(),
