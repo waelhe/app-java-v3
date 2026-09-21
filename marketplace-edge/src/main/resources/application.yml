@@ -32,9 +32,11 @@ spring:
   # multi-zone replication are platform properties (CONFIG restricted;
   # verified live: no user persistence toggles). The redis.io AOF+RDB recipe
   # ("PostgreSQL-comparable safety") is applied where we own the server: the
-  # repo-owned Redis (docker-compose redisdata:/data). Operational follow-ups
-  # on the Upstash dashboard (not code): backup/snapshot feature status +
-  # eviction policy review. JDBC sessions are REJECTED for this purpose: no
+  # repo-owned Redis (docker-compose redisdata:/data). DECIDED (free tier, no
+  # upgrade for backups): Upstash backups are paywalled — no off-site RDB
+  # copies exist; total-loss risk ACCEPTED and documented (rare + silent SSO
+  # re-auth softens it). Eviction stays DISABLED (dashboard) so active
+  # sessions are never silently evicted. JDBC sessions are REJECTED for this purpose: no
   # official source prescribes JDBC as a Redis-durability fix (Spring Session
   # presents both backends neutrally), and it would trade managed-volatility
   # for fate-sharing with the primary DB plus per-request SQL cost — while
