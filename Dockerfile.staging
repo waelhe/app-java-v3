@@ -1,0 +1,73 @@
+# Dockerfile.staging — app image for NON-PRODUCTION services (staging/dev).
+#
+# WHY THIS FILE EXISTS (measured): Railway validates Dockerfile
+# `--mount=type=cache,id=s/<service-id>-...` against the CURRENT service —
+# the root Dockerfile's app-service id broke staging with "missing the
+# cacheKey prefix". This file is bound to the STAGING service id below, so
+# staging builds stay warm (trial credits: every main push rebuilds staging;
+# cold .m2 downloads each time would burn them fast).
+# SYNC DISCIPLINE: keep byte-identical to ./Dockerfile except the RUN mount
+# id below. If ./Dockerfile changes, mirror it here (and vice versa). If the
+# staging service is ever deleted/recreated (new id), update the id here —
+# the failure mode is loud (same prefix error) and the fix is one line.
+# Production (app-java-v3) keeps using ./Dockerfile with its own warm mount.
+
+# ── Build stage ──────────────────────────────────────
+FROM eclipse-temurin:25-jdk-alpine AS build
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,id=s/18f4e260-a765-4043-bd80-39f42dc75743-/root/.m2,target=/root/.m2 \
+    chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
+
+# ── Extract layers stage ─────────────────────────────
+# Per Spring Boot 4.1 Reference: jarmode=tools (layertools removed)
+# "java -Djarmode=tools -jar application.jar extract --layers --destination extracted"
+FROM build AS extractor
+WORKDIR /app
+COPY --from=build /app/marketplace-app/target/*.jar app.jar
+RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted
+
+# ── AOT training stage ───────────────────────────────
+# Excludes Flyway to keep train on a disposable snapshot DB (matches ROOT
+# Dockerfile comment: AOT contribution must be runtime-invariant — schema
+# shape is, instance URL is not) and pins the JPA dialect so trainer never
+# touches JDBC metadata. NON_NEGOTIABLE: the Dockerfile is the single easiest
+# place to regress this — keep all four flags when editing this stage.
+FROM eclipse-temurin:25-jre-alpine AS trainer
+WORKDIR /app
+COPY --from=extractor /app/extracted/dependencies/ ./
+COPY --from=extractor /app/extracted/spring-boot-loader/ ./
+COPY --from=extractor /app/extracted/snapshot-dependencies/ ./
+COPY --from=extractor /app/extracted/application/ ./
+RUN mkdir -p /var/log/marketplace
+RUN java -XX:AOTCacheOutput=/app/app.aot \
+    -Dspring.context.exit=onRefresh \
+    -Dspring.main.lazy-initialization=true \
+    -Dspring.flyway.enabled=false \
+    -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
+    -Dspring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
+    -Dspring.jpa.hibernate.ddl-auto=none \
+    -Dspring.sql.init.mode=never \
+    -Dspring.session.redis.configure-action=none \
+    -Dspring.session.store-type=none \
+    -Dmanagement.opentelemetry.map-environment-variables=false \
+    -Dserver.port=8080 \
+    -jar app.jar
+
+# ── Runtime stage ────────────────────────────────────
+# eclipse-temurin:25-jre-alpine is the runtime here too (same JDK line as
+# build: class-file v69 everywhere, no javac on the ship).
+FROM eclipse-temurin:25-jre-alpine
+RUN apk upgrade --no-cache
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+RUN mkdir -p /var/log/marketplace /app/logs && chown app:app /var/log/marketplace /app/logs
+COPY --from=extractor /app/extracted/dependencies/ ./
+COPY --from=extractor /app/extracted/spring-boot-loader/ ./
+COPY --from=extractor /app/extracted/snapshot-dependencies/ ./
+COPY --from=extractor /app/extracted/application/ ./
+COPY --from=trainer /app/app.aot app.aot
+USER app
+EXPOSE 8080
+ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
+ENTRYPOINT ["java", "-jar", "app.jar"]
