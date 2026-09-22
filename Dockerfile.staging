@@ -3,21 +3,20 @@
 # WHY THIS FILE EXISTS (measured): Railway validates Dockerfile
 # `--mount=type=cache,id=s/<service-id>-...` against the CURRENT service —
 # the root Dockerfile's app-service id broke staging with "missing the
-# cacheKey prefix". This file is bound to the STAGING service id below, so
-# staging builds stay warm (trial credits: every main push rebuilds staging;
-# cold .m2 downloads each time would burn them fast).
+# cacheKey prefix", and a staging-bound id broke again on service
+# delete/recreate (new id). Service identity is UNSTABLE across recreate
+# cycles, so this file carries NO cache mount: valid for any service,
+# forever. Builds are colder (full .m2 download) — mitigate by disabling
+# auto-deploy on non-production services (dashboard) so they build on demand.
 # SYNC DISCIPLINE: keep byte-identical to ./Dockerfile except the RUN mount
-# id below. If ./Dockerfile changes, mirror it here (and vice versa). If the
-# staging service is ever deleted/recreated (new id), update the id here —
-# the failure mode is loud (same prefix error) and the fix is one line.
+# flag below. If ./Dockerfile changes, mirror it here (and vice versa).
 # Production (app-java-v3) keeps using ./Dockerfile with its own warm mount.
 
 # ── Build stage ──────────────────────────────────────
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/18f4e260-a765-4043-bd80-39f42dc75743-/root/.m2,target=/root/.m2 \
-    chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
+RUN chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
 
 # ── Extract layers stage ─────────────────────────────
 # Per Spring Boot 4.1 Reference: jarmode=tools (layertools removed)
