@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "6f70886f812354980ec5396ba873cfdf50e296da",
-  "generatedAt": "2026-09-21T09:27:24.671Z",
+  "gitCommitHash": "43484ea087c5a2e483b4c94ec4e210920df6f72c",
+  "generatedAt": "2026-09-22T13:47:19.812Z",
   "files": {
     ".ci/check-openapi-compat.sh": {
       "filePath": ".ci/check-openapi-compat.sh",
@@ -195,7 +195,7 @@
     },
     ".railway/railway.ts": {
       "filePath": ".railway/railway.ts",
-      "contentHash": "cc2f826eb9a81f087319f434037304c5f6d4f1f9704adbe286febf166b295c7c",
+      "contentHash": "e64a507c45b705b431e541b003826539a0d0ad80ff3640d32367a5b680019776",
       "functions": [],
       "classes": [],
       "imports": [
@@ -213,7 +213,7 @@
       "exports": [
         "partial"
       ],
-      "totalLines": 95,
+      "totalLines": 124,
       "hasStructuralAnalysis": true
     },
     ".trivyignore.yaml": {
@@ -246,34 +246,44 @@
       "totalLines": 226,
       "hasStructuralAnalysis": false
     },
-    "PROJECT_MAP.md": {
-      "filePath": "PROJECT_MAP.md",
-      "contentHash": "3b55c5783ba4f4bcc5bd1a6d0ae483aa031be7ae352282741cc547f6fbee0ca8",
+    "Dockerfile.staging": {
+      "filePath": "Dockerfile.staging",
+      "contentHash": "d0e33d88dfeafdbf3bca3d620df88ac2bed5adb1b340b2d5c7bd1c7908f66074",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 1665,
+      "totalLines": 74,
+      "hasStructuralAnalysis": false
+    },
+    "PROJECT_MAP.md": {
+      "filePath": "PROJECT_MAP.md",
+      "contentHash": "d843b2a7376570000ee5db84ea99898ff01d38b0246ac1d983cc707bd974187b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1746,
       "hasStructuralAnalysis": false
     },
     "SYSTEM.md": {
       "filePath": "SYSTEM.md",
-      "contentHash": "7a733d4b99aaf85459567c993180b37980855a013db1a9c16f0420d77144747a",
+      "contentHash": "2bdeab6e36ec98386ae47ecffe56f2d7287edc615340dd68e2dd877b6002716c",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 459,
+      "totalLines": 464,
       "hasStructuralAnalysis": false
     },
     "docker-compose.yml": {
       "filePath": "docker-compose.yml",
-      "contentHash": "8a2454fca322ec7816e9f03bc3640bfe45ad5ded08c424a802f89b6b33d87a6f",
+      "contentHash": "0489145702f1df8651ea56ff0f7d39057df1a5569bd5679fcaf5019c7b3b47bc",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 46,
+      "totalLines": 57,
       "hasStructuralAnalysis": false
     },
     "docs/CODING_STANDARDS.md": {
@@ -595,7 +605,7 @@
     },
     "docs/railway-deployment-reference.md": {
       "filePath": "docs/railway-deployment-reference.md",
-      "contentHash": "dd1435cb2b2b58f3844c73d8fd88bcf2ee2ba3165ad3978ce2fdc0f1f463ff36",
+      "contentHash": "338b00f30f8c2799aa643ffc2e0a453a981f708c808c77d524ae013d9ca97086",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -681,6 +691,26 @@
       "imports": [],
       "exports": [],
       "totalLines": 53,
+      "hasStructuralAnalysis": false
+    },
+    "docs/superpowers/plans/2026-09-21-edge-deployment.md": {
+      "filePath": "docs/superpowers/plans/2026-09-21-edge-deployment.md",
+      "contentHash": "57a725960898ae44b6b0b4aab227300ffb05dbac667bb52b623d1b86def9e2eb",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 187,
+      "hasStructuralAnalysis": false
+    },
+    "docs/superpowers/specs/2026-09-21-edge-deployment-design.md": {
+      "filePath": "docs/superpowers/specs/2026-09-21-edge-deployment-design.md",
+      "contentHash": "68869cd15e9a405ee5f6ebaef5120c89eb8923e6edb9bf61ab03541a611e690f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 113,
       "hasStructuralAnalysis": false
     },
     "keys/README.md": {
@@ -53105,14 +53135,24 @@
       "totalLines": 34,
       "hasStructuralAnalysis": true
     },
-    "marketplace-edge/pom.xml": {
-      "filePath": "marketplace-edge/pom.xml",
-      "contentHash": "b65362b7b70c1e35e9b5a4043b3cc343e44fc330d72850e59bd035b255dd18f8",
+    "marketplace-edge/Dockerfile": {
+      "filePath": "marketplace-edge/Dockerfile",
+      "contentHash": "278c4640eaab4faf1b38177b687b829828759e670ae284ae80b2a20271ed81d5",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 71,
+      "totalLines": 58,
+      "hasStructuralAnalysis": false
+    },
+    "marketplace-edge/pom.xml": {
+      "filePath": "marketplace-edge/pom.xml",
+      "contentHash": "1ceed4cb48c37331f96e58f73f9103fb48314a510f2865ce334eba5d74975463",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 100,
       "hasStructuralAnalysis": false
     },
     "marketplace-edge/src/main/java/com/marketplace/edge/EdgeApplication.java": {
@@ -53336,12 +53376,12 @@
     },
     "marketplace-edge/src/main/resources/application.yml": {
       "filePath": "marketplace-edge/src/main/resources/application.yml",
-      "contentHash": "729f832affbf11786eb1b062035b92953be4e98c37ec80e383edcd4cb6007a30",
+      "contentHash": "8f94ae9d19e3749b9221db594b6e2a95821c3fdb65a18dab54c7ace936dbbe47",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 55,
+      "totalLines": 98,
       "hasStructuralAnalysis": false
     },
     "marketplace-edge/src/test/java/com/marketplace/edge/EdgeClientRegistrationTest.java": {
