@@ -13,9 +13,15 @@ dev machine.
 OAUTH_CLIENT_ID=marketplace-web-staging
 OAUTH_CLIENT_SECRET=<staging-secret-from-backend-team>
 BACKEND_URL=https://app-java-v3-staging-staging.up.railway.app
-# redirectURI default already matches the registered value:
+# The frontend must send this exact redirect_uri:
 # http://localhost:3000/api/auth/callback/marketplace-web
 ```
+
+Backend requirement (verified live on staging): `OAUTH_CLIENT_REDIRECT_URIS`
+must be set to `http://localhost:3000/api/auth/callback/marketplace-web`
+and registered for `marketplace-web-staging` — strict redirect-URI matching
+rejects anything else (a blank value falls back to a loopback default that
+does not match).
 
 Log in from `http://localhost:3000` → every write path (listings, messages,
 edits) is testable against isolated staging data. The staging secret is
