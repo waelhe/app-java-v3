@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>هوية منصة الأعمال المحلية — مستند قرار بوابة G-N4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+@page { size: 720px 1020px; margin: 0; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { background: #FFFFFF; }
+body {
+  font-family: 'Noto Naskh Arabic', 'DejaVu Sans', sans-serif;
+  color: #1A2733;
+  font-size: 13.5px;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+h1, h2, h3, h4, .kicker, .chip, th, .stat-num, .cover-title {
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+p, td, li { line-break: strict; overflow-wrap: break-word; }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.ltri { direction: ltr; unicode-bidi: isolate; display: inline; }
+
+/* ---------- cover ---------- */
+.cover {
+  width: 720px; height: 1020px;
+  background: #FFFFFF;
+  border-left: 14px solid #0F2A4A;
+  padding: 88px 64px 56px 64px;
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative;
+  break-after: page;
+}
+.cover .anchor-line {
+  position: absolute; top: 64px; right: 64px; left: 92px;
+  height: 3px; background: #EA580C;
+}
+.kicker {
+  font-size: 12px; font-weight: 600; color: #EA580C;
+  letter-spacing: 0.06em; margin-bottom: 18px;
+}
+.cover-title {
+  font-size: 34px; font-weight: 700; color: #0F2A4A;
+  line-height: 1.42; margin-bottom: 10px;
+}
+.cover-subtitle {
+  font-size: 19px; font-weight: 600; color: #33506B;
+  line-height: 1.6; margin-bottom: 26px;
+}
+.cover-abstract {
+  font-size: 13.5px; color: #3D4A56; line-height: 1.9;
+  border-right: 3px solid #EA580C; padding-right: 16px;
+  margin-bottom: 34px; max-width: 560px;
+}
+.cover-meta {
+  border-top: 1.5px solid #D7DFE8; padding-top: 22px; max-width: 560px;
+}
+.cr {
+  font-size: 12.5px; color: #33506B; margin-bottom: 9px;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+.cr b { color: #0F2A4A; font-weight: 600; }
+.cover-foot {
+  position: absolute; bottom: 56px; right: 64px; left: 92px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-top: 1.5px solid #D7DFE8; padding-top: 14px;
+}
+.cover-foot span {
+  font-size: 11.5px; color: #6B7A88; font-weight: 500;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+
+/* ---------- content pages ---------- */
+.page {
+  width: 720px; padding: 58px 64px 64px 64px;
+  background: #FFFFFF;
+}
+.chapter-header { break-after: avoid; break-inside: avoid; margin-top: 26px; }
+.chapter-header:first-child { margin-top: 0; }
+.chip {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: #EA580C; border: 1px solid #EA580C; border-radius: 3px;
+  padding: 2px 10px; margin-bottom: 8px; letter-spacing: 0.05em;
+}
+h2 {
+  font-size: 21px; font-weight: 700; color: #0F2A4A;
+  line-height: 1.5; margin-bottom: 6px;
+}
+.h2-rule { width: 52px; height: 3px; background: #EA580C; margin-bottom: 14px; }
+h3 {
+  font-size: 15.5px; font-weight: 600; color: #0F2A4A;
+  margin: 18px 0 10px 0; break-after: avoid;
+}
+p { margin-bottom: 10px; text-align: right; }
+ul, ol { margin: 0 18px 12px 0; padding: 0; }
+li { margin-bottom: 6px; text-align: right; }
+b, strong { color: #0F2A4A; }
+code, .mono {
+  font-family: 'DejaVu Sans Mono', monospace; font-size: 11.5px;
+  background: #EEF2F6; color: #0F2A4A; padding: 1px 5px; border-radius: 3px;
+  direction: ltr; unicode-bidi: isolate; display: inline-block;
+}
+
+/* ---------- tables ---------- */
+table {
+  width: 100%; border-collapse: collapse; margin: 12px 0 16px 0;
+  font-size: 12px;
+}
+table.keep { break-inside: avoid; }
+th {
+  background: #0F2A4A; color: #FFFFFF; font-weight: 600;
+  padding: 8px 10px; text-align: right; font-size: 11.5px;
+}
+td {
+  border: 1px solid #D7DFE8; padding: 7px 10px; vertical-align: top;
+  text-align: right; background: #FFFFFF;
+}
+tr:nth-child(even) td { background: #F6F9FC; }
+tr { break-inside: avoid; }
+td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono', monospace; font-size: 10.5px; }
+
+/* ---------- stat blocks ---------- */
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; break-inside: avoid; margin: 14px 0; }
+.stat {
+  flex: 1 1 150px; border: 1px solid #D7DFE8; border-top: 3px solid #EA580C;
+  border-radius: 4px; padding: 12px 14px; background: #FFFFFF;
+}
+.stat-num {
+  font-size: 22px; font-weight: 700; color: #0F2A4A;
+  direction: ltr; unicode-bidi: isolate; display: block; text-align: right;
+}
+.stat-cap { font-size: 11px; color: #6B7A88; line-height: 1.5; display: block; margin-top: 3px; }
+
+/* ---------- callout ---------- */
+.callout {
+  border-right: 4px solid #0F2A4A; background: #F3F7FB;
+  padding: 13px 16px; margin: 14px 0; border-radius: 0 4px 4px 0;
+  break-inside: avoid; font-size: 12.5px; color: #2C3E50;
+}
+.callout.orange { border-right-color: #EA580C; background: #FDF3EC; }
+.callout b { color: #0F2A4A; }
+
+/* ---------- back cover ---------- */
+.back {
+  width: 720px; height: 1020px; break-before: page; overflow: hidden; position: relative;
+  background: #0F2A4A; color: #FFFFFF; padding: 80px 64px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.back .anchor-line { position: absolute; top: 64px; right: 64px; left: 64px; height: 3px; background: #EA580C; }
+.back-title { font-size: 26px; font-weight: 700; color: #FFFFFF; margin-bottom: 24px; }
+.card-row { display: flex; gap: 14px; margin-bottom: 26px; }
+.bcard {
+  flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 6px; padding: 16px 18px; break-inside: avoid;
+}
+.bcard h4 { color: #F59E77; font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.bcard p { color: #D9E2EC; font-size: 12px; line-height: 1.7; margin: 0; text-align: right; }
+.back-sources { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 18px; }
+.back-sources h4 { color: #FFFFFF; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.back-sources p {
+  color: #AFC1D1; font-size: 10.5px; line-height: 1.9; margin: 0 0 4px 0;
+  direction: ltr; text-align: left; max-width: 520px;
+}
+.back-foot {
+  position: absolute; bottom: 56px; right: 64px; left: 64px;
+  display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.25);
+  padding-top: 14px; font-size: 11px; color: #AFC1D1;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ COVER ═══════════════ -->
+<div class="cover">
+  <div class="anchor-line"></div>
+  <div class="kicker">بوابة قرار منتج · G-N4 · مستند حسم حيادي</div>
+  <div class="cover-title">هوية منصة الأعمال المحلية</div>
+  <div class="cover-subtitle">سوق تعاملي، أم دليل أعمال، أم تعاونية مجتمعية؟</div>
+  <div class="cover-abstract">
+    مستند قرار يقيس النماذج الثلاثة لهوية دخول الأعمال المحلية إلى المنصة: ما قائم اليوم
+    في الكود الحي بالدليل، وما تقوله المرجعية العالمية — نموذج Nextdoor وصفات أعماله،
+    والتعاونيات المنصرية — ثم مصفوفة حسم موحدة بأربعة عناصر إلزامية: قياس الكود،
+    ومسار الإيراد، وخريطة البوابات، والمخاطر والخصوصية. حياد تام: العرض يقيس ولا يرجّح.
+  </div>
+  <div class="cover-meta">
+    <div class="cr"><b>صاحب البوابة:</b> المستخدم — قرار منتج لا يُفتح أحاديًا</div>
+    <div class="cr"><b>المرجع الحاكم:</b> خطة الطبقة المجتمعية — البوابة الرابعة</div>
+    <div class="cr"><b>الموقف:</b> حياد تام — قياس ومزايا/كلفة بلا ترجيح</div>
+    <div class="cr"><b>أساس الأدلة:</b> قياس الكود الحي (main b1ba99780) ومصادر عالمية مجلوبة</div>
+  </div>
+  <div class="cover-foot">
+    <span>منصة خدمات محلية — مجتمع الجوار</span>
+    <span>مستند قرار — حياد تام</span>
+    <span>23 سبتمبر 2026</span>
+  </div>
+</div>
+
+<!-- ═══════════════ 1. EXEC SUMMARY ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">1 · الملخص التنفيذي</span>
+    <h2>سؤال البوابة الواحد، بثلاثة أجوبة ممكنة</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    عند اكتمال المرحلتين من خطة الطبقة المجتمعية (L41–L46، كلها مدمجة وموصولة للإنتاج)،
+    انفتحت بوابة قرار واحدة معلّقة على المستخدم حصرًا: <b>G-N4 — هوية دخول الأعمال المحلية إلى
+    المنصة</b>. السؤال بجوهره التقني: هل يمتد <span class="ltri">ProviderProfile.actor_type</span>
+    (الطبقة L36) لتصبح الأعمال المحلية <b>مزوّدين</b> في مسار معاملات كامل، أم تدخل كـ<b>كيانات
+    دليل</b> في الطبقة المجتمعية بلا معاملات، أم يقوم النموذج الثالث — <b>تعاونية مجتمعية</b>
+    يملكها الأعضاء ويحكمونها؟
+  </p>
+  <p>
+    هذا المستند لا يفتح البوابة ولا يجيب عنها؛ إنه <b>أداة قياس</b>. يعرض ما هو قائم فعلًا في
+    الكود الحي (مقياسًا لا مفترضًا)، ثم يعرض كل نموذج بثلاث زوايا: ما الذي يجب بناؤه، ومن أين
+    يأتي الإيراد، وماذا تقول المرجعية العالمية عن مصائر النموذج نفسه. ثم يجمع كل شيء في مصفوفة
+    حسم واحدة بأربعة عناصر إلزامية، ويغلق بخريطة البوابات والآثار والبروتوكول.
+  </p>
+  <div class="callout">
+    <b>قاعدة الحياد المعلنة:</b> المستند يعرض الأرقام والوقائع كما قيست، ويذكر مزايا وكلفة كل
+    نموذج بصيغة متوازنة، ولا يتضمن أي توصية أو ترجيح. القرار — بأي اتجاه — يبقى بيد صاحب
+    البوابة: المستخدم.
+  </div>
+  <h3>أرقام البوابة في سطر واحد</h3>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">3</span><span class="stat-cap">نماذج هوية تحت القياس: سوق، دليل، تعاونية</span></div>
+    <div class="stat"><span class="stat-num">4</span><span class="stat-cap">عناصر حسم إلزامية في المصفوفة الموحدة</span></div>
+    <div class="stat"><span class="stat-num">12/12</span><span class="stat-cap">فحوص الختام للمجتمع — كلها PASS قبل هذه البوابة</span></div>
+    <div class="stat"><span class="stat-num">108</span><span class="stat-cap">مسارات API حية على نشر ed8e441c</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════ 2. MEASURED STARTING POINT ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">2 · قياس الكود الحي</span>
+    <h2>نقطة البداية المقيسة: ما قائم اليوم بالدليل</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    كل ما يلي مقيس مباشرة من المستودع الحي <span class="ltri">app-java-v3-review</span> على فرع
+    <span class="ltri">main</span> برأس <span class="ltri">b1ba99780</span> — لا افتراضات ولا خطط
+    غير مكتوبة. هذه هي الأرض التي سيقف عليها أي قرار من القرارات الثلاثة، وهي تحدد بدقة ما هو
+    «بناء جديد» وما هو «تمديد لموجود».
+  </p>
+  <h3>البنى الثلاث ذات الصلة المباشرة بالبوابة</h3>
+  <table class="keep">
+    <tr>
+      <th style="width:24%">البنية المقيسة</th>
+      <th style="width:30%">قيمها اليوم في main</th>
+      <th>دلالتها لبوابة G-N4</th>
+    </tr>
+    <tr>
+      <td><span class="ltri">ProviderActorType</span></td>
+      <td class="ltr-cell">INDIVIDUAL · INDEPENDENT_BROKER · AGENCY</td>
+      <td>لا يوجد اليوم نوع «عمل محلي» — دخول الأعمال يتطلب قيمة معدّدة جديدة أو مسارًا مختلفًا كليًا</td>
+    </tr>
+    <tr>
+      <td><span class="ltri">LedgerEntryType</span></td>
+      <td class="ltr-cell">PAYMENT_CREDIT · COMMISSION_DEBIT · REFUND_DEBIT</td>
+      <td>دفتر الإيراد جاهز بالفعل للعمولة والاسترداد (ترحيلة V19) — يخدم نموذج السوق دون بناء صفر</td>
+    </tr>
+    <tr>
+      <td><span class="ltri">promoted_until</span></td>
+      <td class="ltr-cell">column · V59 · marketplace-app (L37)</td>
+      <td>حقل «مُروَّج حتى تاريخ» موجود وموصول — يخدم نموذج الدليل بالإعلان المدفوع دون بناء صفر</td>
+    </tr>
+  </table>
+  <h3>حالة الطبقة المجتمعية عند فتح البوابة</h3>
+  <p>
+    المرحلتان اللتان بنيتا خطة المجتمع اكتملا بالكامل وقياس الختام أُجري على النشر الحي
+    <span class="ltri">ed8e441c</span>: <b>12/12 فحصًا PASS</b>، بـ108 مسارات API وفهرس قاعدة
+    بيانات على ترحيلتَي <span class="ltri">V69/V70</span>. ست موجات دمج موثقة: العضوية (#331)،
+    المنشورات والتعليقات (#336)، جسر العقارات (#340)، الإشراف (#342)، الرسائل الخاصة (#353)،
+    والتوصيات (#354).
+  </p>
+  <div class="callout">
+    <b>جوهر البوابة تقنيًا:</b> خطة الطبقة المجتمعية تركت «دخول الأعمال المحلية» عمدًا خلف بوابة
+    قرار مستخدم — لأن كل نموذج من الثلاثة يغيّر شكل الطبقة L36/L37 ومسار الإيراد برمّته،
+    والتأثير لا يُختار بالنيابة عن صاحب القرار.
+  </div>
+  <h3>ما يعنيه كل نموذج من موقع القياس نفسه</h3>
+  <table class="keep">
+    <tr><th style="width:22%">النموذج</th><th>حركته من نقطة القياس الحالية</th></tr>
+    <tr>
+      <td><b>سوق تعاملي</b></td>
+      <td>تمديد: قيمة معدّدة جديدة في <span class="ltri">actor_type</span> + تفعيل مسار الدفتر الموجود (V19) للعمولة — أقرب النماذج إلى الكود القائم</td>
+    </tr>
+    <tr>
+      <td><b>دليل أعمال</b></td>
+      <td>بناء خفيف: كيان دليل في الطبقة المجتمعية بلا معاملات، ويستفيد من <span class="ltri">promoted_until</span> (V59) للترقية المدفوعة</td>
+    </tr>
+    <tr>
+      <td><b>تعاونية مجتمعية</b></td>
+      <td>بناء أثقل: طبقة ملكية وحكم للأعضاء فوق البنية القائمة — وإطار قانوني يسبق الكود نفسه</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ═══════════════ 3. NEXTDOOR REFERENCE ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">3 · المرجعية العالمية — نموذج الدليل</span>
+    <h2>Nextdoor 2023: أرقام الدليل المجتمعي في أنقى صورها</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    المرجع العالمي الأقرب لنموذج «دليل الأعمال المجتمعي» هو <span class="ltri">Nextdoor</span> —
+    شبكة الجوار التي تعطي كل نشاط تجاري محلي <b>صفحة مجانية</b> وتسمح له بالمنشورات المجانية،
+    ويأتي الإيراد كله تقريبًا من <b>الإعلانات المدفوعة</b>. أرقام سنة 2023 كما وثّقت المصادر
+    المججلة:
+  </p>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">$218M</span><span class="stat-cap">إيراد Nextdoor 2023 — إعلانات في جوهرها</span></div>
+    <div class="stat"><span class="stat-num">−$148M</span><span class="stat-cap">صافي الخسارة نفس السنة — تكلفة نموذج الإعلانات</span></div>
+    <div class="stat"><span class="stat-num">1/3</span><span class="stat-cap">من الأسر الأمريكية على الشبكة</span></div>
+  </div>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">76%</span><span class="stat-cap">من الأعضاء تأثّروا بتوصية جوار على خدمة محلية</span></div>
+    <div class="stat"><span class="stat-num">88%</span><span class="stat-cap">منهم أنفقوا في نشاط محلي بعد التوصية</span></div>
+  </div>
+  <h3>ما تقوله هذه الأرقام لدليل الحسم</h3>
+  <p>
+    نموذج «الدليل المجاني + الإعلان المدفوع» يولّد <b>سلوك توصية قويًا</b> (76% تأثروا، و88%
+    أنفقوا) لكنه يولّد <b>ربحية صعبة حتى بفئات المقياس الأمريكية</b>: منصة بثلث الأسر الأمريكية
+    خسرت $148M في سنة واحدة. أثر السلوك سليم؛ هامش النموذج هو الكلفة.
+  </p>
+  <p>
+    وعلى مقياس منصة خدمات محلية ناشئة، هذا يعني أن مسار إيراد «الدليل» يظل عمليًا عبر الترقية
+    المدفوعة للنشاط (<span class="ltri">promoted_until</span> موجود في الكود)، لكن الوصول إلى
+    إيراد إعلاني واسع يتطلب مقياس عضوية قد يسبق البوابة الحالية بمراحل.
+  </p>
+  <div class="callout orange">
+    <b>قراءة حيادية للأرقام:</b> كلفة الاكتساب وسرعة النمو تستقرئان لتوصيات الجوار (76%/88%)،
+    بينما الخسارة (−$148M) تستقرئ لكلفة تشغيل منصة إعلانات على مقياس قومي — كل نموذج يستحق
+    قراءة كلفته مقابل مقياسه المتاح فعلًا لا مقياس المرجع.
+  </div>
+</div>
+
+<!-- ═══════════════ 4. PLATFORM COOP REFERENCE ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">4 · المرجعية العالمية — نموذج التعاونية</span>
+    <h2>تعاونيات المنصات: الملكية والحكم للأعضاء</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    التعاونية المنصرية (Platform Cooperative) تعريفًا: منصة رقمية <b>يملكها ويحكمها مستخدموها
+    أنفسهم</b> — العاملون أو الأعضاء — بدل مستثمرين خارجيين. المرجعية الموثقة تعطي أمثلة قائمة
+    وقريبة من روح النموذج الثالث المطروح في هذه البوابة:
+  </p>
+  <table class="keep">
+    <tr><th style="width:30%">مثال قائم</th><th>ما يمثّله للمرجعية</th></tr>
+    <tr>
+      <td><span class="ltri">Green Taxi Cooperative</span> — دنفر</td>
+      <td>تعاونية سيارات أجرة يملكها السائقون أنفسهم؛ منافسة منصة توصيل بملكية السائقين لا العمولة الخارجية</td>
+    </tr>
+    <tr>
+      <td><span class="ltri">Stocksy United</span></td>
+      <td>تعاونية ميديا فوتوغرافية: المساهمون فنانون يحصلون على فائض المنصة موزّعًا بحصص ملكية</td>
+    </tr>
+    <tr>
+      <td><span class="ltri">BHive</span></td>
+      <td>تعاونية مصرفية رقمية للقطاع التعاوني — بنية مالية بملكية الأعضاء</td>
+    </tr>
+  </table>
+  <h3>النقدان الموثقان للنموذج</h3>
+  <ol>
+    <li>
+      <b>هيمنة المنصات القائمة:</b> التعاونيات تنافس منصات رأسمالية سبقتها بالمقياس ورأس المال،
+      في غالب الأسواق تكون المنصة الرائدة قد حسمت السلوك قبل أن تدخل التعاونية.
+    </li>
+    <li>
+      <b>صعوبة التمويل المبكر:</b> بنية الملكية الجماعية تستبعد مستثمري المغامرة التقليديين،
+      فيظل تمويل النمو التشغيلي والقانوني على الأعضاء أو القروض التعاونية.
+    </li>
+  </ol>
+  <div class="callout">
+    <b>ما يعنيه هذا لدليل الحسم:</b> النموذج التعاوني ليس «نموذجًا هشًا» — له أمثلة قائمة
+    وأدبيات ناضجة — لكن قياسه الصحيح يبدأ من خارج المنتج: الإطار القانوني والملكية سابقان على
+    أي كود. لهذا تقدير الجهد أدناه (10–15 يومًا) لا يشمل إلا طبقة المنتج، ويشترط قرارًا
+    قانونيًا مستقلًا يسبقه.
+  </div>
+</div>
+
+<!-- ═══════════════ 5. MODEL 1 — MARKETPLACE ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">5 · النموذج الأول</span>
+    <h2>سوق تعاملي: الأعمال المحلية مزوّدون بمعاملات</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    في هذا النموذج يمتد <span class="ltri">ProviderProfile.actor_type</span> (L36) بقيمة معدّدة
+    جديدة — «عمل محلي» — فتدج الأعمال المحلية مسار المزوّدين القائم بالكامل: ملف مزوّد، خدمات
+    مسعّرة، حجز ومعاملة، والعمولة تسجل في الدفتر القائم
+    (<span class="ltri">PAYMENT_CREDIT / COMMISSION_DEBIT / REFUND_DEBIT</span> — V19). المنصة
+    هنا <b>طرف في المعاملة</b>: تحصيل، عمولة، واسترداد.
+  </p>
+  <h3>ما يجب بناؤه (من موقع القياس)</h3>
+  <ul>
+    <li>قيمة معدّدة جديدة في <span class="ltri">ProviderActorType</span> + تحديث قيدَي V56/V57 لاستقبالها.</li>
+    <li>ربط ملف العمل المحلي بكيان المزوّد القائم — مع بذور التحقق (ترخيص/هوية) على نمط القيود الموجودة.</li>
+    <li>مسار عمولة ينطلق من الدفتر الموجود: لا بناء دفتر جديد، بل تكوين سياسة عمولة للأعمال المحلية.</li>
+    <li>بوابات إشراف إضافية على المعاملات (نزاع، استرداد، إيقاف نشاط) فوق طبقة الإشراف المجتمعية المكتملة (#342).</li>
+  </ul>
+  <h3>مسار الإيراد</h3>
+  <p>
+    <b>عمولة على كل معاملة</b> — المسار الوحيد من الثلاثة الذي يبدأ إيراده من أول معاملة دون
+    حاجة إلى مقياس عضوية واسع. الدفتر (V19) مبني أصلاً لهذا المسار، والقيمة المضافة للعمولة
+    تُسجّل تلقائيًا. تقدير الجهد: <b>≈ 4–6 أيام</b> من موقع القياس الحالي.
+  </p>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">≈4–6</span><span class="stat-cap">أيام جهد تقديرية من نقطة القياس</span></div>
+    <div class="stat"><span class="stat-num">V19</span><span class="stat-cap">الدفتر جاهز: عمولة واسترداد بقيم معدّدة</span></div>
+    <div class="stat"><span class="stat-num">L36</span><span class="stat-cap">نقطة التمديد الوحيدة الأساسية في المعدّدة</span></div>
+  </div>
+  <h3>المزايا والكلفة بصيغة متوازنة</h3>
+  <table class="keep">
+    <tr><th style="width:50%">مزايا مقيسة</th><th>كلفة ومخاطر مقيسة</th></tr>
+    <tr>
+      <td>إيراد من أول معاملة بلا انتظار مقياس؛ استغلال مباشر لدفتر V19؛ أقرب النماذج إلى بنية الكود القائمة</td>
+      <td>المنصة طرف في كل نزاع واسترداد؛ مسؤولية تحصيل؛ عبء تشغيل أعلى من النموذجين الآخرين؛ الخصوصية تتسع لبيانات معاملات مالية</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ═══════════════ 6. MODEL 2 — DIRECTORY ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">6 · النموذج الثاني</span>
+    <h2>دليل أعمال: كيانات دليل في الطبقة المجتمعية</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    في هذا النموذج تدخل الأعمال المحلية <b>كيانات دليل</b> داخل الطبقة المجتمعية المكتملة —
+    صفحة نشاط، منشورات، توصيات الجوار — بلا أي معاملة عبر المنصة. الإيراد لا يمر عبر الدفتر
+    بل عبر <b>الترقية المدفوعة</b>: النشاط يدفع لظهور مروَّج حتى تاريخ محدد، والحقل
+    <span class="ltri">promoted_until</span> (V59، في marketplace-app/L37) موجود وموصول لهذا
+    الغرض تحديدًا.
+  </p>
+  <h3>ما يجب بناؤه (من موقع القياس)</h3>
+  <ul>
+    <li>كيان «نشاط محلي» في الطبقة المجتمعية بملف عام — بلا لمس لمسار المزوّدين إطلاقًا.</li>
+    <li>تصنيف وعرض الدليل (بحث/تصنيفات) فوق بنية المجتمع المكتملة (#331–#354).</li>
+    <li>مسار ترقية يستثمر <span class="ltri">promoted_until</span> القائم — أثقل ما فيه التسعير، لا البنية.</li>
+    <li>تمييز صارم بصريًا وتحريريًا بين التوصيات المجتمعية والظهور المروَّج (حماية الثقة).</li>
+  </ul>
+  <h3>مسار الإيراد</h3>
+  <p>
+    <b>إعلان/ترقية مدفوعة</b> — نموذج Nextdoor نفسه: صفحة مجانية + منشورات مجانية + ظهور مروَّج
+    مدفوع. كما أظهرت أرقام 2023: سلوك التوصية قوي (76%/88%) لكن هامش النموذج يتحقق على مقاييس
+    عضوية كبيرة، ومعها خسر المرجع الأكبر $148M في سنة. تقدير الجهد: <b>≈ 4–5 أيام</b> — الأخف
+    من الثلاثة بنيويًا.
+  </p>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">≈4–5</span><span class="stat-cap">أيام جهد تقديرية — الأخف بنيويًا</span></div>
+    <div class="stat"><span class="stat-num">V59</span><span class="stat-cap">حقل الترويج موجود وموصول مسبقًا</span></div>
+    <div class="stat"><span class="stat-num">0</span><span class="stat-cap">معاملات عبر المنصة — لا دفتر ولا نزاعات</span></div>
+  </div>
+  <h3>المزايا والكلفة بصيغة متوازنة</h3>
+  <table class="keep">
+    <tr><th style="width:50%">مزايا مقيسة</th><th>كلفة ومخاطر مقيسة</th></tr>
+    <tr>
+      <td>أخف جهد تقني؛ لا مسؤولية تحصيل ولا نزاعات معاملات؛ يستثمر حقل V59 القائم؛ يحمي نمو المجتمع من احتكاك الدفع</td>
+      <td>إيراد أضعف على المقاييس الصغيرة ويتطلب مقياس عضوية للتراكم؛ الاعتماد على سلوك توصية يُبنى ببطء؛ خطر تضارب مصالح الظهور المروَّج مع الثقة المجتمعية</td></tr>
+  </table>
+</div>
+
+<!-- ═══════════════ 7. MODEL 3 — COOPERATIVE ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">7 · النموذج الثالث</span>
+    <h2>تعاونية مجتمعية: ملكية الأعضاء وحكمهم للمنصة</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    النموذج الثالث — المضاف لهذه البوابة بطلب صاحبها — يقفز من سؤال «كيف تدخل الأعمال؟» إلى
+    سؤال «من يملك المنصة؟»: تعاونية يملكها المزوّدون والأعضاء أنفسهم، توزّع فائضها عليهم،
+    ويحكمون قراراتها بأصوات لا بحصص استثمارية. هذا النموذج يستطيع أن يحتوي مسار معاملات (كالسوق)
+    أو مسار دليل — الفارق الجوهري في <b>طبقة الملكية والحكم</b> فوق أي منهما.
+  </p>
+  <h3>ما يجب بناؤه (من موقع القياس)</h3>
+  <ul>
+    <li>سجل عضوية تعاونية: حصص الأعضاء، أصواتهم، وحقوقهم — بنية لا وجود لأي مكوّن منها في الكود الحي.</li>
+    <li>آلية حكم: تصويت على قرارات المنصة (سيايات العمولة، الترشيح للإشراف، توزيع الفائض).</li>
+    <li>طبقة توزيع فائض: إن وُجد مسار إيراد (عمولة أو ترقية)، حساب نصيب كل عضو وآلية صرفه.</li>
+    <li>قرار إطار قانوني <b>يسبق كل ما فوق</b>: شكل التعاونية، مسؤولياتها، والتزاماتها — خارج المنتج تمامًا.</li>
+  </ul>
+  <h3>مسار الإيراد</h3>
+  <p>
+    <b>رسوم عضوية و/أو علاوة تشغيل</b> تُجمع ثم يوزَّع فائضها على الأعضاء بحصصهم — لا عمولة
+    تُستبقي لمالك المنصة. المرجعية تعطي أمثلة قائمة (Green Taxi، Stocksy، BHive) وتوثّق النقد
+    المتكرر: التمويل المبكر أصعب، والمنافسة ضد منصات مسعّرة بمال خارجي أثقل. تقدير الجهد:
+    <b>≈ 10–15 يومًا</b> لطبقة المنتج فقط — أثقل النماذج الثلاثة — <b>بعد</b> حسم الإطار
+    القانوني المستقل.
+  </p>
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">≈10–15</span><span class="stat-cap">أيام جهد تقديرية لطبقة المنتج وحدها</span></div>
+    <div class="stat"><span class="stat-num">0</span><span class="stat-cap">مكوّنات ملكية/حكم موجودة في الكود الحي</span></div>
+    <div class="stat"><span class="stat-num">أولًا</span><span class="stat-cap">قرار قانوني مستقل يسبق أي بناء</span></div>
+  </div>
+  <h3>المزايا والكلفة بصيغة متوازنة</h3>
+  <table class="keep">
+    <tr><th style="width:50%">مزايا مقيسة</th><th>كلفة ومخاطر مقيسة</th></tr>
+    <tr>
+      <td>توافق مصالح كامل: مستخدمو المنصة هم مالكوها؛ ولاء عضوية عميق مقارن بالعميل العابر؛ حصانة من ضغط استثمار خارجي؛ مرجعية قائمة (أمثلة موثقة)</td>
+      <td>أثقل جهد (10–15 يومًا) فوق قرار قانوني سابق؛ تمويل مبكر أصعب (نقد موثق)؛ منافسة منصات مسعّرة رأسماليًا؛ تعقيد خصوصية إضافي (بيانات عضوية وحصص وأصوات)</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ═══════════════ 8. UNIFIED DECISION MATRIX ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">8 · مصفوفة الحسم الموحدة</span>
+    <h2>النماذج الثلاثة في جدول واحد بأربعة عناصر إلزامية</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    المصفوفة التالية هي خلاصة المستند كلها: كل صف عنصر إلزامي من عناصر الحسم الأربعة، وكل عمود
+    نموذج. القيم كلها مستقرئة من الأقسام السابقة — قياس الكود (§2)، والمرجعية العالمية
+    (§3–§4)، وتقادير الجهد المشتقة. <b>لا صف في المصفوفة يُرجّح نموذجًا؛ القرار يجمعها صاحبها.</b>
+  </p>
+  <table class="keep">
+    <tr>
+      <th style="width:17%">العنصر الإلزامي</th>
+      <th style="width:28%">سوق تعاملي</th>
+      <th style="width:27%">دليل أعمال</th>
+      <th>تعاونية مجتمعية</th>
+    </tr>
+    <tr>
+      <td><b>قياس الكود</b></td>
+      <td>تمديد <span class="ltri">actor_type</span> (L36) + دفتر V19 جاهز — أقرب النماذج للقائم</td>
+      <td>كيان دليل في طبقة المجتمع + حقل <span class="ltri">promoted_until</span> (V59) جاهز</td>
+      <td>لا مكوّن قائم إطلاقًا — بناء عضوية وحكم كامل من الصفر</td>
+    </tr>
+    <tr>
+      <td><b>مسار الإيراد</b></td>
+      <td>عمولة من أول معاملة — لا حاجة لمقياس عضوية مسبق</td>
+      <td>ترقية مدفوعة — يتراكم مع مقياس العضوية (نموذج Nextdoor)</td>
+      <td>رسوم عضوية/علاوة — الفائض يوزَّع على الأعضاء لا يُستبقى</td>
+    </tr>
+    <tr>
+      <td><b>الجهد التقديري</b></td>
+      <td><b>≈ 4–6 أيام</b></td>
+      <td><b>≈ 4–5 أيام</b> — الأخف بنيويًا</td>
+      <td><b>≈ 10–15 يومًا</b> + قرار قانوني مستقل يسبقها</td>
+    </tr>
+    <tr>
+      <td><b>المخاطر والخصوصية</b></td>
+      <td>مسؤولية تحصيل ونزاعات؛ بيانات معاملات مالية في نطاق الخصوصية</td>
+      <td>إيراد ضعيف قبل المقياس؛ تضارب الظهور المروَّج مع ثقة التوصيات</td>
+      <td>تمويل مبكر أصعب (نقد موثق)؛ منافسة رأسمالية؛ خصوصية عضوية وحصص وأصوات</td>
+    </tr>
+  </table>
+  <div class="callout orange">
+    <b>قراءة الجهد الصحيحة:</b> أرقام الأيام تقديرات لطبقة المنتج من نقطة القياس الحالية
+    (main b1ba99780) وتفترض نفس إيقاع موجات الدمج الموثقة — النموذج الثالث وحده يحمل شرطًا
+    خارج المنتج (الإطار القانوني) لا يظهر في رقم أيامه.
+  </div>
+  <h3>ما لا تقوله المصفوفة</h3>
+  <p>
+    المصفوفة تقيس الحاضر الممتد والكلفة المباشرة؛ لا تقيس ذوق صاحب القرار ولا رؤيته للمنصة
+    بعد سنتين، ولا تحكم أي نموذج «أصحّ» — كل صف قابل للترجيح بأوزان شخصية مختلفة، وهذا بالضبط
+    سبب بقاء القرار عند صاحبه لا عند المستند.
+  </p>
+</div>
+
+<!-- ═══════════════ 9. GATE MAP ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">9 · خريطة البوابات</span>
+    <h2>G-N4 في شبكة بوابات خطة المجتمع</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    خطة الطبقة المجتمعية أغلقت بناءها الست موجات، وبقيت بنود §7 خلف بوابات قرار مستخدم —
+    G-N4 رابعتها وأكثرها مركزية: هوية الأعمال تحدد الشكل النهائي لطبقتي L36/L37 ومسار
+    الإيراد. مواقع البوابات كما توثقها الخطة:
+  </p>
+  <table class="keep">
+    <tr><th style="width:15%">البوابة</th><th style="width:35%">سؤالها</th><th>علاقتها بـ G-N4</th></tr>
+    <tr>
+      <td><b>G-N1</b></td>
+      <td>فتح المجتمع لغير سكان النطاق الجغرافي</td>
+      <td>يوسّع قاعدة الأعضاء التي يُقاس عليها أي نموذج إيراد لاحق</td>
+    </tr>
+    <tr>
+      <td><b>G-N2</b></td>
+      <td>سياسة المحتوى المدفوع داخل المجتمع</td>
+      <td>متشابكة مع «الترقية المدفوعة» في نموذج الدليل — تُفتح بعده أو معه</td>
+    </tr>
+    <tr>
+      <td><b>G-N4</b></td>
+      <td>هوية دخول الأعمال المحلية — سوق/دليل/تعاونية</td>
+      <td><b>هذه البوابة</b> — تسبق وتشكّل الاثنتين المجاورتين</td>
+    </tr>
+    <tr>
+      <td><b>G-N5</b></td>
+      <td>حدود الجمع بين المحتوى المجتمعي والتوصيات التجارية</td>
+      <td>شكل الأعمال المختار في G-N4 يعيد كتابة حدود هذه البوابة</td>
+    </tr>
+    <tr>
+      <td><b>G-N6</b></td>
+      <td>مآل بيانات المجتمع عند التوسع الجغرافي</td>
+      <td>يتأثر بأي نموذج يضيف بيانات معاملات أو عضوية تعاونية</td>
+    </tr>
+  </table>
+  <div class="callout">
+    <b>لماذا G-N4 «قبل» جيرانها:</b> قرار هوية الأعمال يحدد هل ستوجد معاملات مالية أصلًا
+    (نموذج السوق/التعاونية) — وبالتالي هل تُفتح G-N2/G-N5 على بوابة إيراد حقيقية أم على
+    سياسات دليل صرفة. فتح الجيران قبله يعرض لقرارين مرتين.
+  </div>
+</div>
+
+<!-- ═══════════════ 10. IMPACT & PROTOCOL ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">10 · الأثر والبروتوكول</span>
+    <h2>ما يحدث بعد كل قرار، وكيف تُفتح البوابة</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <h3>أثر كل اختيار على الطبقات (من نقطة القياس)</h3>
+  <table class="keep">
+    <tr><th style="width:20%">الاختيار</th><th style="width:40%">أثره التقني المباشر</th><th>أثره التشغيلي</th></tr>
+    <tr>
+      <td><b>سوق تعاملي</b></td>
+      <td>تمديد المعدّدة (L36) + تفعيل سياسة عمولة على الدفتر V19 + بوابات إشراف معاملات</td>
+      <td>مسؤولية تحصيل ونزاعات واستردادات — عبء تشغيل دائم من أول معاملة</td>
+    </tr>
+    <tr>
+      <td><b>دليل أعمال</b></td>
+      <td>كيان دليل في طبقة المجتمع + مسار ترقية على V59 — بلا لمس لمسار المزوّدين</td>
+      <td>أقل عبء تشغيل؛ يضيف إشرافًا تحريريًا (تمييز المروَّج) لا ماليًا</td>
+    </tr>
+    <tr>
+      <td><b>تعاونية مجتمعية</b></td>
+      <td>طبقة عضوية وحكم وتوزيع فائض كاملة فوق البنية القائمة</td>
+      <td>إدارة تعاونية قائمة (جمعيات عمومية، أصوات، حسابات فائض) — نمط تشغيل مختلف جوهريًا</td>
+    </tr>
+  </table>
+  <h3>بروتوكول فتح البوابة</h3>
+  <ol>
+    <li>المستخدم يقرأ المصفوفة (§8) وخريطة البوابات (§9) ويصدر اتجاهًا واحدًا في المحادثة.</li>
+    <li>أي اتجاه يترجم إلى موجات دمج بنفس إيقاع L41–L46: فرع ← CI الكاملة الستة ← CodeRabbit ← كلمة «ادمج».</li>
+    <li>النموذج التعاوني وحده يبدأ بخطوة سابقة: حسم الإطار القانوني خارج المستودع قبل أي فرع.</li>
+    <li>بعد التنفيذ تُفتح جارتا البوابة (G-N2/G-N5) على أرض الهوية المختارة — لا قبلها.</li>
+  </ol>
+  <div class="callout orange">
+    <b>ما لا يفعله هذا المستند:</b> لا يفتح فرعًا، ولا يعدّل خطة، ولا يرسل إشارة لأي نظام —
+    هو أداة قياس صامتة حتى تنطق أنت بالقرار.
+  </div>
+</div>
+
+<!-- ═══════════════ BACK COVER ═══════════════ -->
+<div class="back">
+  <div class="anchor-line"></div>
+  <div class="back-title">البوابة مفتوحة أمامك — والمستند صامت حتى قرارك</div>
+  <div class="card-row">
+    <div class="bcard">
+      <h4>السؤال</h4>
+      <p>هوية دخول الأعمال المحلية: سوق تعاملي بعمولة، أم دليل أعمال بترقية مدفوعة، أم تعاونية يملكها الأعضاء؟</p>
+    </div>
+    <div class="bcard">
+      <h4>الخطر</h4>
+      <p>كل نموذج يحمل كلفته المقيسة: مسؤولية معاملات، أو إيرادًا يحتاج مقياسًا، أو قرارًا قانونيًا يسبق الكود.</p>
+    </div>
+    <div class="bcard">
+      <h4>نقاط القوة</h4>
+      <p>الأرض تقيس لصالح أي اتجاه: دفتر V19 جاهز للعمولة، وحقل V59 جاهز للترقية، ومرجعية قائمة للتعاونيات.</p>
+    </div>
+  </div>
+  <div class="back-sources">
+    <h4>المصادر والقياسات</h4>
+    <p>en.wikipedia.org/wiki/Nextdoor (financials 2023, business model, reach statistics)</p>
+    <p>en.wikipedia.org/wiki/Platform_cooperative (definition, examples: Green Taxi Cooperative, Stocksy United, BHive, criticisms)</p>
+    <p>Repository app-java-v3-review @ main b1ba99780: ProviderActorType (V56/V57), LedgerEntryType (V19), promoted_until (V59, marketplace-app L37)</p>
+    <p>docs/neighborhood-community-plan.md §2/§7 — community layers L41–L46 (PRs #331–#354), deploy ed8e441c: 12/12 PASS, 108 API routes, Flyway V69/V70</p>
+  </div>
+  <div class="back-foot">
+    <span>مستند قرار — حياد تام</span>
+    <span>23 سبتمبر 2026</span>
+  </div>
+</div>
+
+</body>
+</html>
