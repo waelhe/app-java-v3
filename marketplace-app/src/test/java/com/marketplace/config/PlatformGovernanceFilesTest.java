@@ -331,6 +331,64 @@ class PlatformGovernanceFilesTest {
                 .contains("CVE-2026-68525");
     }
 
+    @Test
+    void integrationTestsOwnTheirDatabaseContainer() throws IOException {
+        // AGENTS.md (Testing) requires every integration test to carry
+        // @Testcontainers/@Container. The rule exists because a container is
+        // retained across test classes (Spring Boot 4.1.1 reference,
+        // "Testcontainers": "A single test container instance can, and often
+        // is, retained across execution of tests from multiple test classes"),
+        // so a class that borrows the workflow's shared PostgreSQL service
+        // reads and writes the auth tables (auth_users, auth_authorities,
+        // oauth2_registered_client, oauth2_authorization_consent) left behind
+        // by whichever class ran before it. Maven does not pin class order
+        // (no <runOrder> in the root pom), so the suite passed on main at
+        // 02:47 and failed on the same commit at 12:34 and 16:51 with
+        // AuthorizationServerLoginGateIntegrationTest: a leftover admin row
+        // from PublicPkceClientGateIntegrationTest made the last-admin gate
+        // answer 200 instead of 409, and the consent fixtures no longer
+        // matched. Measured, not inferred — see the run-order diff in the
+        // incident record. Isolation, not ordering, is the fix.
+        List<Path> integrationTests = integrationTestSources();
+        assertThat(integrationTests)
+                .as("integration test sources found under marketplace-app/src/test")
+                .isNotEmpty();
+        List<String> withoutContainer = integrationTests.stream()
+                .filter(source -> {
+                    try {
+                        String text = Files.readString(source);
+                        return !text.contains("@Testcontainers") && !text.contains("@Container");
+                    } catch (IOException e) {
+                        throw new IllegalStateException("unreadable test source: " + source, e);
+                    }
+                })
+                .map(source -> repoRoot().relativize(source).toString().replace('\\', '/'))
+                .toList();
+        assertThat(withoutContainer)
+                .as("every *IntegrationTest must own its Testcontainers database "
+                        + "(AGENTS.md Testing) — a class on the workflow's shared "
+                        + "PostgreSQL service inherits the auth rows of the class "
+                        + "that ran before it, and the suite's result depends on "
+                        + "an order Maven does not pin")
+                .isEmpty();
+    }
+
+    private static List<Path> integrationTestSources() throws IOException {
+        Path testRoot = repoRoot().resolve("marketplace-app/src/test/java");
+        try (var files = Files.walk(testRoot)) {
+            return files.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith("IntegrationTest.java"))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static Path repoRoot() {
+        Path cwd = Paths.get("").toAbsolutePath();
+        Path repoRoot = cwd.resolve("..");
+        return Files.exists(repoRoot.resolve(".github")) ? repoRoot : cwd;
+    }
+
     private static int osUpgradeInstructionIndex(String dockerfile, int runtimeFrom) {
         // Line-anchored: RUN must START the line (an actual instruction) —
         // "RUN apk upgrade --no-cache" inside a comment or prose must not
