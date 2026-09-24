@@ -138,7 +138,7 @@ FROM eclipse-temurin:25-jre-alpine
 # branch, use a time-bounded .trivyignore.yaml entry (expired_at + statement —
 # the policy the file documents). Guard-pinned by
 # PlatformGovernanceFilesTest.dockerfileRuntimeStageUpgradesOsPackages.
-RUN apk upgrade --no-cache # os-pkgs-refresh 2026-09-09
+RUN apk upgrade --no-cache # os-pkgs-refresh 2026-09-24
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
