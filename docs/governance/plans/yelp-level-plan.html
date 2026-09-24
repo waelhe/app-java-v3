@@ -39,7 +39,7 @@ p, td, li { line-break: strict; overflow-wrap: break-word; }
   height: 3px; background: #EA580C;
 }
 .kicker {
-  font-size: 12px; font-weight: 600; color: #EA580C;
+  font-size: 12px; font-weight: 600; color: #C2410C;
   letter-spacing: 0.06em; margin-bottom: 18px;
 }
 .cover-title {
@@ -81,7 +81,7 @@ p, td, li { line-break: strict; overflow-wrap: break-word; }
 .chapter-header:first-child { margin-top: 0; }
 .chip {
   display: inline-block; font-size: 10.5px; font-weight: 600;
-  color: #EA580C; border: 1px solid #EA580C; border-radius: 3px;
+  color: #C2410C; border: 1px solid #EA580C; border-radius: 3px;
   padding: 2px 10px; margin-bottom: 8px; letter-spacing: 0.05em;
 }
 h2 {
@@ -190,7 +190,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <div class="cr"><b>الأساس القياسي:</b> الكود الحي على <span class="ltri">main a40f862</span> — كل «موجود/غائب» بدليله؛ نسخة مدققة ضد الكود ووثائق الإطار الرسمية (§1.4)</div>
     <div class="cr"><b>الاستقلالية:</b> تُقرأ وحدها بلا أي مستند سابق؛ علاقتها بـ<span class="ltri">G-N4</span> توسيع §13 لا اعتماد</div>
     <div class="cr"><b>النطاق:</b> الوحدات الـ21 كلها — ثقة، دليل، اكتشاف، مجتمع، ظهور، بنية</div>
-    <div class="cr"><b>الأفق:</b> ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~19 يوم عمل</div>
+    <div class="cr"><b>الأفق:</b> ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~20 يوم عمل</div>
   </div>
   <div class="cover-foot">
     <span>منصة خدمات محلية — دليل ومراجعات ومجتمع</span>
@@ -233,7 +233,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   </ul>
 
   <h3>1.2 ما هذه الخطة ليست</h3>
-  <p>ليست مستند قرار ببدائل متقابلة — الملك حسم الاتجاه نحو مستوى
+  <p>ليست مستند قرار ببدائل متقابلة — المالك حسم الاتجاه نحو مستوى
   <span class="ltri">Yelp</span> وهذه الخطة تنفيذ أمره؛ وليست مواصفة منتج تفصيلية
   لكل واجهة — هي عقد معماري: ما يُنشأ من جداول وأعمدة وبوابات ومفاتيح، بأي ترتيب
   تُنشأ، وبأي معيار يُقبل كل شطر. كما أنها لا تمس النماذج المالية القائمة:
@@ -263,12 +263,12 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <h2>القواعد الحاكمة للتنفيذ — الإطار الرسمي ونظام المستودع</h2>
     <div class="h2-rule"></div>
   </div>
-  <p>بأمر المالك ًا تامًّا بالوثائق الرسمية للإطار
-  («تأكد من الخطة التنفيذية... والتزامها التام بالوثائق الرسمية
+  <h3>1.4 القواعد الحاكمة للتنفيذ</h3>
+  <p>بأمر المالك («تأكد من الخطة التنفيذية... والتزامها التام بالوثائق الرسمية
   للإطار») دُقّقت هذه النسخة الثانية ضد الكود الحي: صُحّحت ثلاث حقائق (الفهرس
   الفريد الحي §4.2، وآلية الجدولة §7، وحقيقة فحص الدفتر §7)، وضُبطت وحدات
   <span class="ltri">W2</span> وعدّ ترحيلات <span class="ltri">W5</span>، ووُثّق التدقيق
-  في مصادر الغلاف الخلفي؛ والإالتزام الوحيد على <span class="ltri">main</span> بعد
+  في مصادر الغلاف الخلفي؛ والالتزام الوحيد على <span class="ltri">main</span> بعد
   نقطة القياس وثائقي صرف (<span class="ltri">#372</span>) بصفر أثر. وهذا القسم
   الجديد يثبّت كل آلية تنفيذ على مصدرها الرسمي وقاعدتها الممدّنة في المستودع:
   فلا بند في §4 و§5 يخرج عن صفوف الجدول، ولا يُقبل حل بديل «يراه المهندس
@@ -438,7 +438,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   <h3>3.1 الفئة A — قلب نظام المراجعات (10 فجوات)</h3>
   <table class="keep">
     <tr><th>#</th><th>الفجوة</th><th>الأثر على مستوى Yelp</th><th>دليل الغياب</th></tr>
-    <tr><td class="ltr-cell">G1</td><td>المراجعة محبوسة في المعاملة: <span class="ltri">booking_id NOT NULL</span></td><td>لا مراجعة إلا لمستخدم أتمّ حجزًا — يخالف أمر المالك بالحالتين معًا، ويخنص نمو <span class="ltri">Yelp</span> العام</td><td class="ltr-cell">V6__reviews.sql</td></tr>
+    <tr><td class="ltr-cell">G1</td><td>المراجعة محبوسة في المعاملة: <span class="ltri">booking_id NOT NULL</span></td><td>لا مراجعة إلا لمستخدم أتمّ حجزًا — يخالف أمر المالك بالحالتين معًا، ويخنق نمو <span class="ltri">Yelp</span> العام</td><td class="ltr-cell">V6__reviews.sql</td></tr>
     <tr><td class="ltr-cell">G2</td><td>لا مفهوم «منشأ المراجعة» — لا عمود يميّز الموثّق من العام</td><td>لا يمكن بناء الشارة والعدّادين المنفصلين ولا الترجيح بين الإشارتين</td><td class="ltr-cell">reviews schema V6/V37/V45</td></tr>
     <tr><td class="ltr-cell">G3</td><td>لا آلية إعدادات أو مفاتيح ميزات إطلاقًا</td><td>اختيار نمط المراجعة المتفعّل يستحيل بلا تغيير كود — عكس أمر المالك «أنا أحدد أيهما يُفعَّل»</td><td class="ltr-cell">feature_flag|system_setting = 0 hits</td></tr>
     <tr><td class="ltr-cell">G4</td><td>لا يمكن الإبلاغ عن مراجعة</td><td>أهداف الإبلاغ منشورات وتعليقات فقط؛ مراجعة مسيئة لا سبيل لرفعها للإشراف</td><td class="ltr-cell">ReportTargetType.java: POST, COMMENT</td></tr>
@@ -446,7 +446,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <tr><td class="ltr-cell">G6</td><td>لا أصوات تفاعل («مفيد»)</td><td>لا ترتيب جودة داخل قائمة مراجعات المزود، ولا إشارة مجتمع على المحتوى</td><td class="ltr-cell">review_votes = 0 tables</td></tr>
     <tr><td class="ltr-cell">G7</td><td>الاستجابة تخفي هوية المراجع</td><td>الاسم والصورة وعدد المراجعات غائبة من <span class="ltri">ReviewResponse</span> — صفحة مراجعات بلا وجوه</td><td class="ltr-cell">ReviewResponse.java</td></tr>
     <tr><td class="ltr-cell">G8</td><td>العدّاد غير مخزّن — المتوسط فقط يخزّن</td><td>كل عرض لعدد المراجعات استعلام تجميع حيّ؛ ولا توزيع نجوم (رسم 1–5) لا مخزّن ولا محسوب</td><td class="ltr-cell">provider_profiles: rating_average فقط</td></tr>
-    <tr><td class="ltr-cell">G9</td><td>لا مضادات إساءة للنمط المفتوح</td><td>سقف يومي، وعمر حساب، وقائمة انتظار إشراف أولى — كلها شروط بقاء إن فُتح الباب بلا معاملة</td><td class="ltr-cell">لا أي rate-limit على الإنشاء</td></tr>
+    <tr><td class="ltr-cell">G9</td><td>لا مضادات إساءة للنمط المفتوح</td><td>سقف يومي، وعمر حساب، وقائمة انتظار إشراف أولى — كلها شروط بقاء إن فُتح الباب بلا معاملة</td><td class="ltr-cell">reviewCreate (10/دقيقة) قائم — بلا سقف يومي لكل مستخدم</td></tr>
     <tr><td class="ltr-cell">G10</td><td>لا فريديّة مراجعة عامة (مستخدم×مزود)</td><td>الفهرس الفريد الحالي على الحجز فقط؛ بالنمط المفتوح يمكن لمستخدم قصف مزود بمراجعات متكررة</td><td class="ltr-cell">uq_reviews_booking_direction_active (V45)</td></tr>
   </table>
 </div>
@@ -492,7 +492,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <tr><th>#</th><th>الفجوة</th><th>الأثر</th><th>دليل الغياب</th></tr>
     <tr><td class="ltr-cell">G25</td><td>لا كشف احتيال مراجعات</td><td>النمط المفتوح يفتح باب التقييم الذاتي وقصف المنافسين — الحارس غائب</td><td class="ltr-cell">لا fraud signals</td></tr>
     <tr><td class="ltr-cell">G26</td><td>لا درجة ثقة للمراجع</td><td>مراجع موثوق (حساب معاملات، تاريخ، أصوات مفيد) مقابل حساب ولد اليوم — لا تمييز</td><td class="ltr-cell">لا trust score</td></tr>
-    <tr><td class="ltr-cell">G27</td><td>لا سقوف معدل على مستخدم</td><td>غطاء القصف اليومي (كم مراجعة عامة/يوم) غائب</td><td class="ltr-cell">لا rate limit إنشاء</td></tr>
+    <tr><td class="ltr-cell">G27</td><td>لا سقوف معدل على مستخدم</td><td>غطاء القصف اليومي (كم مراجعة عامة/يوم) غائب</td><td class="ltr-cell">reviewCreate نافذة قصيرة (10/دقيقة) لا سقف يومي</td></tr>
     <tr><td class="ltr-cell">G28</td><td>لا صفحة مراجع عامة</td><td>اسم وصورة وإحصاءات ونشاط المراجع — ركن <span class="ltri">Yelp</span> المجتمعي</td><td class="ltr-cell">لا public reviewer endpoint</td></tr>
     <tr><td class="ltr-cell">G29</td><td>لا أوسمة (موثّق/نخبة/عدد)</td><td>شارات مصداقية المراجع والمزود على النمط المزدوج</td><td class="ltr-cell">لا badges</td></tr>
   </table>
@@ -659,16 +659,16 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <tr>
       <td><b>W1</b><br>المراجعات المزدوجة<br>~4 أيام</td>
       <td>دلتا مخطط §4.2 كاملة + بوابة الإنشاء الموحدة بقراءة النمط + هوية المراجع في الاستجابة (اسم عرض يحترم <span class="ltri">pseudonymized_at</span>، وعدّاد مراجعاته) + إبلاغ المراجعة + أصوات «مفيد» + مضادات §4.5 كلها + عدّادات العرض المزدوجة</td>
-      <td class="ltr-cell">V72, V73 (REVIEW توسيع زوجي), V74 (أصوات/إشارات)<br>reviews + community + identity + media</td>
+      <td class="ltr-cell">V72 (دلتا §4.2 + حالة إشراف المراجعة + عمودا rating_general على provider_profiles — كل المرايا), V73 (REVIEW توسيع زوجي), V74 (أصوات/إشارات)<br>reviews + community + identity + media</td>
       <td>اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية تمر دون تعديل حرفي؛ واختبار لكل نمط: إنشاء موثق، وعام بلا حجز، وهجين بشارتين؛ والفريديّتان تُختبران بالسلب</td>
       <td class="ltr-cell">G1, G2, G4–G10, G27</td>
     </tr>
     <tr>
-      <td><b>W2</b><br>صفحة الأعمال والظهور<br>~4 أيام</td>
-      <td><span class="ltri">AggregateRating</span> + <span class="ltri">Review</span> في JSON-LD (يُبثان فقط عند وجود مراجعات مقبولة) + ساعات عمل (<span class="ltri">business_hours</span> بمفتاح فريد مزود×يوم، وعرضها في <span class="ltri">openingHours</span> النمطية) + قائمة خدمات معلنة <span class="ltri">provider_services</span> + حالة توثيق المزود + صفحات فئات عامة تدخل الخريطة</td>
-      <td class="ltr-cell">V75 (ساعات/خدمات), V76 (توثيق)<br>catalog + provider<br>(الـSEO داخل catalog)</td>
+      <td><b>W2</b><br>صفحة الأعمال والظهور<br>~5 أيام</td>
+      <td><span class="ltri">AggregateRating</span> + <span class="ltri">Review</span> في JSON-LD (يُبثان فقط عند وجود مراجعات مقبولة) + ساعات عمل (<span class="ltri">business_hours</span> بمفتاح فريد مزود×يوم، وعرضها في <span class="ltri">openingHours</span> النمطية) + قائمة خدمات معلنة <span class="ltri">provider_services</span> + نطاق خدمة جغرافي معلن (<span class="ltri">service_areas</span> — G13) + سمات فئة ديناميكية (جدول سمات لكل فئة — G15، مبدأ «السمات بيانات» نفسه) + حالة توثيق المزود + صفحات فئات عامة تدخل الخريطة</td>
+      <td class="ltr-cell">V75 (ساعات/خدمات/نطاق خدمة), V76 (توثيق/سمات فئات)<br>catalog + provider<br>(الـSEO داخل catalog)</td>
       <td>صفحة مزود كاملة: ساعات + خدمات + توزيع نجوم + إشارتا التقييم؛ وأداة فحص البيانات المنظمة ترى النجوم؛ وصفحات الفئات في <span class="ltri">sitemap</span></td>
-      <td class="ltr-cell">G11, G12, G14, G22, G23</td>
+      <td class="ltr-cell">G11–G15, G22, G23</td>
     </tr>
     <tr>
       <td><b>W3</b><br>الاكتشاف والترتيب<br>~3 أيام</td>
@@ -710,7 +710,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   </div>
 
   <h3>6.1 المجموع والرسم البياني للاعتماديات</h3>
-  <p>مجموع المجهود التقديري <b>19 يوم عمل صافية</b> (1.5 + 4 + 4 + 3 + 2.5 + 4)، يضاف
+  <p>مجموع المجهود التقديري <b>20 يوم عمل صافية</b> (1.5 + 4 + 5 + 3 + 2.5 + 4)، يضاف
   إليها هامش مراجعة ودمج بحسب إيقاع المستودع المعتمد (§1.4): كل موجة فرع مستقل
   بفحص <span class="ltri">CI</span> (<span class="ltri">mvn clean verify</span>) ومراجعة
   <span class="ltri">CodeRabbit</span> وبوابة دمج بكلمة المالك «ادمج» حصرًا — النمط الذي جرى
@@ -798,7 +798,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     </div>
     <div class="bcard">
       <h4>كيف يصل الطريق</h4>
-      <p>ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~19 يوم عمل:
+      <p>ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~20 يوم عمل:
       المفتاح، ثم الازدواج، ثم الصفحة والاكتشاف والتفاعل بالتوازي، والإعلانات
       فوق أرض مستقرة — والدفاتر فوق انضباطها الصلب.</p>
     </div>
