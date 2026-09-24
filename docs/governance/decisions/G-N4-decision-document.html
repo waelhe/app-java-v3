@@ -192,7 +192,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <div class="cr"><b>المرجع الحاكم:</b> خطة الطبقة المجتمعية — البوابة الرابعة</div>
     <div class="cr"><b>الموقف:</b> حياد تام — قياس ومزايا/كلفة بلا ترجيح</div>
     <div class="cr"><b>أساس الأدلة:</b> قياس الكود الحي (main b1ba99780) ومصادر عالمية مجلوبة</div>
-    <div class="cr"><b>الاتجاه الموثق:</b> المجتمع الموسّع (§10) + سياسة القناة وسوق الجمعة (§11) + محركات الإيراد (§12)</div>
+    <div class="cr"><b>الاتجاه الموثق:</b> المجتمع الموسّع (§10) + سياسة القناة وسوق الجمعة (§11) + محركات الإيراد (§12) + خارطة مستوى <span class="ltri">Yelp</span> (§13)</div>
   </div>
   <div class="cover-foot">
     <span>منصة خدمات محلية — مجتمع الجوار</span>
@@ -926,6 +926,139 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   </div>
 </div>
 
+<!-- ═══════════════ 13. OWNER QUESTION — THE YELP LEVEL ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <span class="chip">13 · سؤال صاحب البوابة</span>
+    <h2>خارطة «مستوى <span class="ltri">Yelp</span>»: طبقتان فوق أرض قائمة</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <p>
+    سأل صاحب البوابة: كيف نصل إلى مستوى <span class="ltri">Yelp</span>؟ التفكيك المقيس
+    أولاً: يلب ليس «دليل أعمال» — الدليل يُستنسخ في أسابيع — بل <b>طبقتان</b> متراكمتان
+    عبر عشرين سنة: <b>الاكتشاف</b> (بحث بترتيب ذكي، وتصنيفات، وملفات أعمال غنية) و<b>الثقة</b>
+    (عشرات ملايين المراجعات، وخوارزمية فلترة للمزيف منها). والغالبية الساحقة من إيراده
+    السنوي (~1.4 مليار دولار، نحو 95%) من <b>الإعلانات</b> — بيع الصدارة في نتائج البحث؛
+    وخندقه ليس التكنولوجيا بل <b>تأثير الشبكة</b>: كل عمل يضع صفحته حيث العملاء، وكل عميل
+    يكتب مراجعته حيث الأعمال.
+  </p>
+  <h3>13.1 القياس: أرض الطبقتين قائمة — وإشارة الثقة أقوى من يلب نفسه</h3>
+  <table class="keep">
+    <tr>
+      <th style="width:25%">مكوّن طبقة يلب</th>
+      <th>قياسه من الكود الحي</th>
+    </tr>
+    <tr>
+      <td><b>مراجعات مقيدة بالمعاملة</b></td>
+      <td><span class="ltri">reviews.booking_id</span> إلزامي، والحجز يجب أن يكون <span class="ltri">COMPLETED</span> وإلا رُفض الطلب (<span class="ltri">ReviewsService</span>)</td>
+    </tr>
+    <tr>
+      <td><b>مراجعات ثنائية الاتجاه</b></td>
+      <td><span class="ltri">CONSUMER_TO_PROVIDER / PROVIDER_TO_CONSUMER</span> (I8/V45) — واحدة فريدة لكل حجز بكل اتجاه</td>
+    </tr>
+    <tr>
+      <td><b>ردّ المزود</b></td>
+      <td><span class="ltri">reply / replied_at</span> — ردّ واحد فريد لكل مراجعة (L21)؛ والثاني تعارض لا استبدال</td>
+    </tr>
+    <tr>
+      <td><b>تجميع وتدقيق</b></td>
+      <td><span class="ltri">ReviewStatsPort</span> للتجميع + حدثا إنشاء/تحديث + تصدير وإتلاف محتوى + تدقيق <span class="ltri">Envers</span></td>
+    </tr>
+    <tr>
+      <td><b>بحث نصي بتحمّل الأخطاء</b></td>
+      <td><span class="ltri">pg_trgm</span> بصيغة <span class="ltri">websearch</span> (عبارات مقتبسة، OR، استثناءات) وترتيب بالملاءمة</td>
+    </tr>
+    <tr>
+      <td><b>واجهات اكتشاف</b></td>
+      <td>تصنيف وسعر ونافذة إقامة وضيوف؛ وواجهات عقار (موقع هرمي، غرض، نوع، غرف، حمامات، مساحة)؛ ونصف قطر <span class="ltri">PostGIS</span> (<span class="ltri">ST_DWithin</span>)؛ و<b>بحث محفوظ</b></td>
+    </tr>
+    <tr>
+      <td><b>SEO مهيكل</b></td>
+      <td><span class="ltri">JSON-LD</span> بمخطط <span class="ltri">schema.org</span> لكل قائمة — <b>بلا</b> <span class="ltri">AggregateRating</span> بعد</td>
+    </tr>
+  </table>
+  <div class="callout orange">
+    <b>الورقة التي لا يملكها يلب:</b> مراجعاته مجهولة المصدر — معركته المزمنة مع المزيف
+    منها وفلترته الغامضة التي تغضب أصحاب الأعمال. هنا المراجعة <b>تتولد من حجز مكتمل عبر
+    المنصة</b> — إشارة يصعب تزييفها بلا خوارزمية فلترة. يلب بنى ثقة بلا معاملات وقضى عقدًا
+    يطلب المعاملات؛ هذه الأرض تبدأ حيث انتهى هو.
+  </div>
+</div>
+
+<div class="page">
+  <h3>13.2 الفجوات الحقيقية — ثلاث، كلها «إظهار» لا «بناء ثقة»</h3>
+  <table class="keep">
+    <tr>
+      <th style="width:23%">الفجوة</th>
+      <th style="width:39%">معناها</th>
+      <th>قياسها من الكود الحي</th>
+    </tr>
+    <tr>
+      <td><b>الفهرس المجّمع</b></td>
+      <td>ملف أعمال عام بتقييم مجمّع + صفحات مدينة×تصنيف + <span class="ltri">sitemap</span> آلي</td>
+      <td>§10.7: نواة الدليل (§5) تُعاد استخدامها — الفهرس نفسه بناء جديد</td>
+    </tr>
+    <tr>
+      <td><b>النجوم في نتائج البحث</b></td>
+      <td><span class="ltri">AggregateRating</span> في <span class="ltri">JSON-LD</span> — نجوم ترفع نقر نتائج جوجل</td>
+      <td>طبقة SEO قائمة بلا حقول التقييم — تمديد فوق <span class="ltri">ReviewStats</span></td>
+    </tr>
+    <tr>
+      <td><b>محرك فوترة الإعلانات</b></td>
+      <td>صدارة معلَّمة «إعلان» بميزانية يومية و<span class="ltri">CPC</span> واستهداف تصنيف×مدينة</td>
+      <td><span class="ltri">promoted_until</span> (V59) قائم — المحرك 1 (§12.1) ينتظر الفوترة عبر الدفتر</td>
+    </tr>
+  </table>
+  <h3>13.3 الخارطة بموجات — كل موجة ترث أرض التي قبلها</h3>
+  <table class="keep">
+    <tr>
+      <th style="width:17%">الموجة</th>
+      <th style="width:46%">ما تُبنى</th>
+      <th>أرضها المقيسة</th>
+    </tr>
+    <tr>
+      <td><b>1 · الفهرس</b></td>
+      <td>ملف الأعمال العام + التقييم المجمّع + صفحات مدينة×تصنيف + <span class="ltri">sitemap</span> آلي</td>
+      <td>نواة الدليل (§5) + <span class="ltri">ReviewStats</span></td>
+    </tr>
+    <tr>
+      <td><b>2 · الظهور</b></td>
+      <td><span class="ltri">AggregateRating</span> في <span class="ltri">JSON-LD</span> — نجوم في نتائج البحث</td>
+      <td>طبقة SEO القائمة</td>
+    </tr>
+    <tr>
+      <td><b>3 · الإعلانات</b></td>
+      <td>صدارة معلَّمة بوضوح + فوترة عبر الدفتر بقيد معدّد جديد</td>
+      <td><span class="ltri">promoted_until</span> + انضباط <span class="ltri">CHECK</span></td>
+    </tr>
+    <tr>
+      <td><b>4 · الغنى</b></td>
+      <td>معارض صور + ساعات عمل ونطاق خدمة وسمات أعمال ديناميكية</td>
+      <td>مبدأ «السمات بيانات» نفسه (§11.1)</td>
+    </tr>
+    <tr>
+      <td><b>5 · المجتمع</b></td>
+      <td>مستويات وشارات للمراجعين + تصويت «مفيد» يُغذي الرتبة</td>
+      <td>طبقة المجتمع L41–L46 + الهوية المزدوجة (§10.1)</td>
+    </tr>
+  </table>
+  <h3>13.4 سلم المقاييس — كيف يُعرف أن المسافة تُقفل</h3>
+  <p>
+    أربعة مؤشرات تحسم التقدم لا الإحساس: <b>تغطية الثقة</b> — نسبة الملفات العامة ذات
+    مراجعة واحدة على الأقل، وهدفها الواقعي 80%؛ <b>حصة الاكتشاف العضوي</b> من إجمالي
+    الزيارات؛ <b>العائد الإعلاني</b> — نقر نتائج البحث و<span class="ltri">RPM</span>
+    الإعلانات بعد الموجة الثالثة؛ <b>نشاط المراجعين</b> — عددهم النشط شهريًا واحتفاظهم بعد
+    ثلاثين يومًا. والحدّ الزمني الصادق: عمق محتوى يلب الرقمي (تراكم المراجعات والملفات)
+    = 12–24 شهر تشغيل فعلي؛ أما <b>إشارة الثقة</b> فالتفوق فيها قائم اليوم لأنها مقيدة
+    بالمعاملة — ما ينقصها الإظهار لا البناء.
+  </p>
+  <div class="callout orange">
+    <b>علاقة الخارطة بالبوابات:</b> لا تفتح بوابة جديدة — إنها تنفيذ نموذج الدليل (§5)
+    كطبقة داخل المجتمع الموسّع (§10.7)، وإغلاق المحرك رقم 1 (§12.1) بالفوترة عبر الدفتر؛
+    بأمواج بإيقاع L41–L46 نفسه: فرع ← CI ← CodeRabbit ← «ادمج».
+  </div>
+</div>
+
 <!-- ═══════════════ BACK COVER ═══════════════ -->
 <div class="back">
   <div class="anchor-line"></div>
@@ -934,7 +1067,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <div class="bcard">
       <h4>السؤال</h4>
       <p>هوية دخول الأعمال المحلية: سوق تعاملي، أم دليل أعمال، أم عضوية مجتمعية؟ — واتجاه صاحب البوابة الموثق: المجتمع الموسّع (§10) بسياسة القناة وسوق الجمعة
-    (§11) ومحركات الإيراد الأربعة (§12).</p>
+    (§11) ومحركات الإيراد الأربعة (§12) وخارطة «مستوى <span class="ltri">Yelp</span>» (§13).</p>
     </div>
     <div class="bcard">
       <h4>الخطر</h4>
@@ -951,6 +1084,8 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <p>en.wikipedia.org/wiki/Nextdoor (financials 2023, business model — free business pages + paid ads, reach statistics)</p>
     <p>Repository app-java-v3-review @ main b1ba99780: ProviderActorType (V56/V57), LedgerEntryType (V19), promoted_until (V59, marketplace-app L37)</p>
     <p>Repository measurement 2026-09-24: messaging ListingLead/LeadStatus (open channel), Booking/Payments/Ledger (mediated channel), catalog ListingExpiryJob + pricing PricingRule/SeasonalRate (Friday-market ground)</p>
+    <p>Repository measurement 2026-09-24 (Yelp-level pass): marketplace-reviews (booking_id NOT NULL + COMPLETED gate, I8 two-way, L21 unique reply, ReviewStats/Envers, export/purge) + marketplace-search (pg_trgm websearch relevance, L27 stay window, L32 real-estate facets, P1 PostGIS radius, saved searches) — JSON-LD without AggregateRating</p>
+    <p>en.wikipedia.org/wiki/Yelp (business model — advertising the overwhelming majority of annual revenue; review recommendation software)</p>
     <p>docs/neighborhood-community-plan.md §2/§7 — community layers L41–L46 (PRs #331–#354), deploy ed8e441c: 12/12 PASS, 108 API routes, Flyway V69/V70</p>
   </div>
   <div class="back-foot">
