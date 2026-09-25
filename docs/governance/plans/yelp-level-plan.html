@@ -553,7 +553,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   <table class="keep">
     <tr><th>العبارة</th><th>الأثر</th></tr>
     <tr><td class="ltr-cell">ALTER TABLE reviews<br>ALTER COLUMN booking_id<br>DROP NOT NULL</td><td>فكّ قيد G1 — الحجز يبقى مفتاحًا أجنبيًا ومرجعًا للمسار الموثق لكنه يصبح فارغًا في المسار العام</td></tr>
-    <tr><td class="ltr-cell">ADD COLUMN origin VARCHAR(20)<br>NOT NULL DEFAULT 'BOOKING'<br>CHECK (origin IN<br>('BOOKING','ORGANIC'))</td><td>عمود المنشأ (G2): <span class="ltri">BOOKING</span> لكل الصفوف القائمة — القيمة الافتراضية تجعل الترحيل صفري-الكلفة على البيانات الحية — و<span class="ltri">ORGANIC</span> للمراجعة العامة</td></tr>
+    <tr><td class="ltr-cell">ADD COLUMN origin VARCHAR(20)<br>NOT NULL DEFAULT 'BOOKING'<br>CHECK (origin IN<br>('BOOKING','ORGANIC'))</td><td>عمود المنشأ (G2): <span class="ltri">BOOKING</span> لكل الصفوف القائمة — القيمة الافتراضية تجعل الترحيل صفري-الكلفة على البيانات الحية — و<span class="ltri">ORGANIC</span> للمراجعة العامة</td></tr><tr><td class="ltr-cell">ADD CONSTRAINT ck_review_origin_booking<br>CHECK ((origin='BOOKING' AND booking_id IS NOT NULL)<br>OR (origin='ORGANIC' AND booking_id IS NULL))</td><td>ثابت المنشأ↔الحجز: الحجز موجودُ إذاً وفقط إذا كان المنشأ <span class="ltri">BOOKING</span> — قيد عبر-الأعمدة على مستوى قاعدة البيانات يحمي شارة «موثّقة» والمجموعين من أي مسار كتابة لاحق أو إصلاح بيانات: لا مراجعة تُعرض موثّقة بلا حجز مكتمل، ولا عامة تحمل حجزًا. النمط المؤسسي ذاته (فحص يرافق القيمة الافتراضية كما في زوج V68/V69)</td></tr>
     <tr><td class="ltr-cell">ADD COLUMN listing_id UUID<br>NULL REFERENCES<br>provider_listings(id)</td><td>المراجعة العامة تستهدف مزودًا، واختياريًا إعلانًا بعينه (تجربة محددة لا مزود مجرد) — نفس مساحة المعرف واصطلاح الملكية القائم</td></tr>
     <tr><td class="ltr-cell">CREATE UNIQUE INDEX<br>uq_review_organic_once<br>ON reviews (reviewer_id,<br>provider_id)<br>WHERE origin='ORGANIC'<br>AND is_deleted=false</td><td>فريديّة المراجعة العامة (G10): مستخدم واحد × مزود واحد، إلى الأبد — بنمط الفهرس الجزئي نفسه الذي يحمي المسار الموثق اليوم</td></tr>
     <tr><td class="ltr-cell">(إسقاط وإعادة إنشاء)<br>DROP INDEX<br>uq_reviews_booking_<br>direction_active;<br>CREATE UNIQUE INDEX<br>same name ON reviews<br>(booking_id, direction)<br>WHERE origin='BOOKING'<br>AND is_deleted=false</td><td>الفهرس الفريد الحي هو <span class="ltri">uq_reviews_booking_direction_active</span> (كل حجز×اتجاه — <span class="ltri">V45</span>؛ الاسم الأصلي <span class="ltri">uq_review_booking_active</span> أسقطه <span class="ltri">V45</span> نفسه): يُعاد بشرط <span class="ltri">origin='BOOKING'</span> ليخصّ المسار الموثق وحده ولا يعترض صفوف المسار العام الفارغة الحجز — تبديل ذرّي بنمط <span class="ltri">V45</span> ذاته عند استبدال فهرس <span class="ltri">V6</span></td></tr>
@@ -582,7 +582,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   يُقبل المسار العام (بمضاداته) ويُرفض الموثق أو يُحوَّل إلى عام بلا حجز حسب توجيه
   المالك عند التنفيذ؛ في <span class="ltri">HYBRID</span> كلا المسارين. الصف المشترك:
   كل مراجعة تحمل <span class="ltri">origin</span>، والمسار الموثق يظل يمر بالبوابتين
-  القائمتين (المشارك + الحجز المكتمل) دون أي تخفيف. الاختبارات تلزم بقبول حرفي:
+  القائمتين (المشارك + الحجز المكتمل) دون أي تخفيف. وإذا حملت المراجعةُ العامة <span class="ltri">listing_id</span> اختياريًا فقد تحقق البوابةُ ملكيته للمزود نفسه عبر المنفذ القائم (نمط التحقق عبر <span class="ltri">SPI</span> لا عبر قيد قاعدة — التحقق العاتب للجداول لا يُصاغ <span class="ltri">CHECK</span> في <span class="ltri">PostgreSQL</span>؛ البوابة هي طبقة الفرض). الاختبارات تلزم بقبول حرفي:
   مجموعة اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية يجب أن تمر دون تعديل
   سطر واحد منها — هذا هو تعريف «لا كسر للقائم».</p>
 
@@ -592,7 +592,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
   كامل لكل قارئ اليوم)، وعدّاد ومتوسط للعامّة في عمودين جديدين
   (<span class="ltri">rating_general_average</span> / <span class="ltri">rating_general_count</span>)
   يجدّدهما المستمع نفسه (<span class="ltri">ProviderReviewStatsListener</span>) بأحداث
-  الإنشاء والتعديل القائمة. كل مراجعة تحمل شارتها: «مراجعة موثّقة» لمعاملة مكتملة،
+  الإنشاء والتعديل القائمة. <b>تصحيح إلزامي قبل الاعتماد على هذا المستمع (عيب قائم مقيس):</b> <span class="ltri">reviews.provider_id</span> في فضاء <span class="ltri">users.id</span> (توثيق الكيان نفسه: مفتاح <span class="ltri">V6</span> الخارجي)، بينما <span class="ltri">ProviderService.refreshRatingAverage</span> يبحث به في <span class="ltri">provider_profiles.id</span> ثم يستعلم الإحصاء بـ <span class="ltri">profile.getId()</span> — عدم تطابق مزدوج يجعل المسار يتخطى بصمت في الإنتاج (اختبار <span class="ltri">L21</span> القائم يقنّعه بتمرير <span class="ltri">profile.getId()</span> حيث يمرر الإنتاج <span class="ltri">users.id</span>). W1 يصحح الإخراط إلى <span class="ltri">user_id</span> — النمط الذي تستخدمه <span class="ltri">ProviderPublicPageService</span> نفسها اليوم (<span class="ltri">findStatsByProviderId(profile.getUserId())</span>) — ويضيف اختبار تكامل بفضاءات المعرفات الحقيقية (مستخدم وملف بمعرفين مختلفين). كل مراجعة تحمل شارتها: «مراجعة موثّقة» لمعاملة مكتملة،
   «مراجعة عامة» لغيرها — والإشارة الموثقة أعلى رتبة في الترتيب داخل الصفحة. عند
   <span class="ltri">OPEN</span> يُدمج المجموعان في رقم واحد. التوزيع النجمي (رسم
   1–5) يُحسب حيًّا من الجدول بجملة تجميع واحدة، ويُعرض منفصلًا للإشارتين في الهجين.</p>
@@ -607,7 +607,7 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     <li><b>قائمة الانتظار الأولى:</b> أول ثلاث مراجعات عامة لكل حساب جديد تدخل حالة
     <span class="ltri">PENDING_REVIEW</span> ولا تُعرض إلا بعد موافقة إشراف — عمود حالة
     ناعم على المراجعة نفسها، والإشراف القائم (<span class="ltri">ModerationAdminController</span>)
-    هو سطح الحكم.</li>
+    هو سطح الحكم. <b>بوابة الرؤية بياناتٌ لا نية:</b> الموافقة ليست بوابةً فعلية إلا إذا صافت كل مسارات القراءة العامة — قائمة المراجعات العامة (<span class="ltri">findByProviderIdAndDirection</span>)، ومجموعة <span class="ltri">getStatsByProviderId</span> التي تغذي المتوسط المخزن، والقراءة المكاشفة في <span class="ltri">ProviderPublicPageService</span> — كلها تستثني غير المقبولة، وبالموافقة يُطلق تحديث المجموع عبر الحدث القائم (<span class="ltri">AFTER_COMMIT</span>) فلا يبقى المتوسط المخزن متأخرًا.</li>
     <li><b>إبلاغ المراجعة:</b> توسيع هدف الإبلاغ بقيمة <span class="ltri">REVIEW</span> —
     نفس زوج الترحيل (توسيع <span class="ltri">CHECK</span> + ثابت enum) بنمط
     <span class="ltri">V68/V69</span> (يسد G4).</li>
@@ -658,9 +658,9 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     </tr>
     <tr>
       <td><b>W1</b><br>المراجعات المزدوجة<br>~4 أيام</td>
-      <td>دلتا مخطط §4.2 كاملة + بوابة الإنشاء الموحدة بقراءة النمط + هوية المراجع في الاستجابة (اسم عرض يحترم <span class="ltri">pseudonymized_at</span>، وعدّاد مراجعاته) + إبلاغ المراجعة + أصوات «مفيد» + مضادات §4.5 كلها + عدّادات العرض المزدوجة</td>
-      <td class="ltr-cell">V72 (دلتا §4.2 + حالة إشراف المراجعة + عمودا rating_general على provider_profiles — كل المرايا), V73 (REVIEW توسيع زوجي), V74 (أصوات/إشارات)<br>reviews + community + identity + media</td>
-      <td>اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية تمر دون تعديل حرفي؛ واختبار لكل نمط: إنشاء موثق، وعام بلا حجز، وهجين بشارتين؛ والفريديّتان تُختبران بالسلب</td>
+      <td>دلتا مخطط §4.2 كاملة + بوابة الإنشاء الموحدة بقراءة النمط + هوية المراجع في الاستجابة (اسم عرض يحترم <span class="ltri">pseudonymized_at</span>، وعدّاد مراجعاته) + إبلاغ المراجعة + أصوات «مفيد» + مضادات §4.5 كلها (ومنها بوابة الرؤية على مسارات القراءة العامة الثلاثة) + عدّادات العرض المزدوجة + <b>تصحيح فضاء المعرفات في مسار المتوسط المخزن قبل الاعتماد عليه (§4.4: الإخراط إلى user_id بفضاءات معرفات حقيقية)</b> + <b>ارتباط وسائط المراجعة (<span class="ltri">review_media</span> بمرآة تدقيق) ومسار رفع/قراءة مملوك للمراجعة — <span class="ltri">MediaAsset.listing_id</span> القائم <span class="ltri">NOT NULL</span> لا يوصل G5 وحده</b></td>
+      <td class="ltr-cell">V72 (دلتا §4.2 + حالة إشراف المراجعة + عمودا rating_general على provider_profiles — كل المرايا), V73 (REVIEW توسيع زوجي), V74 (أصوات/إشارات/وسائط المراجعة — review_media ومرآتها)<br>reviews + community + identity + media</td>
+      <td>اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية تمر دون تعديل حرفي؛ واختبار لكل نمط: إنشاء موثق، وعام بلا حجز، وهجين بشارتين؛ والفريديّتان تُختبران بالسلب؛ وقيد <span class="ltri">ck_review_origin_booking</span> يُختبر بالسلب (موثق بلا حجز يرفضه القيد)؛ ومراجعة معلّقة لا تظهر في القائمة العامة ولا في المجموعين حتى الموافقة فيحدّث الحدثُ المتوسطَ؛ والوسائط تُرفع وتُقرأ من مراجعة بلا إعلان؛ والمتوسط المخزن يتجدد بمستخدم وملف بمعرفين مختلفين (فضاءات حقيقية)</td>
       <td class="ltr-cell">G1, G2, G4–G10, G27</td>
     </tr>
     <tr>
@@ -686,9 +686,9 @@ td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono',
     </tr>
     <tr>
       <td><b>W5</b><br>الإعلانات والفوترة<br>~4 أيام</td>
-      <td>حملات (<span class="ltri">ad_campaigns</span>: ميزانية، تسعير نقرة/ظهور، مدة) + أحداث (ظهور من <span class="ltri">listing_views_daily</span> القائم، ونقرة مسجلة) + وظيفة خصم دورية تُصدر نية دفع وتقيد الدفتر بنوع مُصدَر جديد <span class="ltri">AD_DEBIT</span> — بقرار إصدار موثق يجلس فوق انضباط الدفاتر الصلب (§7)</td>
-      <td class="ltr-cell">V80 (campaigns),<br>V81+V82 (زوج AD_DEBIT: توسيع التعداد + تحقق بنمط V68/V69)<br>catalog + payments + ledger + pricing</td>
-      <td>حملة بميزانية تنتهي بنفادها؛ والقيد يوازن الميزانية المخصومة فلسًا بفلس؛ والمُروَّج بلا ميزانية لا يتصدر</td>
+      <td>حملات (<span class="ltri">ad_campaigns</span>: ميزانية، تسعير نقرة/ظهور، مدة) + أحداث (ظهور من <span class="ltri">listing_views_daily</span> القائم، ونقرة مسجلة) + <b>هوية نافذة فوترة لكل حملة (مؤشر <span class="ltri">billed_through</span> + سجل شحن غير قابل للتعديل لكل نافذة يجمد الاستهلاك المفوتر) ومفتاح مصدر حتمي للدفتر (<span class="ltri">AD_DEBIT:{campaignId}:{windowStart}</span> — قيد <span class="ltri">source_id UNIQUE</span> القائم في <span class="ltri">V19</span> يرفض التكرار عند المفتاح الحتمي؛ إعادة المحاولة أو تداخل الجدولة يستحيلان معًا)</b> + وظيفة خصم دورية تُصدر نية دفع وتقيد الدفتر بنوع مُصدَر جديد <span class="ltri">AD_DEBIT</span> — بقرار إصدار موثق يجلس فوق انضباط الدفاتر الصلب (§7)</td>
+      <td class="ltr-cell">V80 (campaigns + مؤشر نافذة الفوترة وسجل الشحن),<br>V81+V82 (زوج AD_DEBIT: توسيع التعداد + تحقق بنمط V68/V69)<br>catalog + payments + ledger + pricing</td>
+      <td>حملة بميزانية تنتهي بنفادها؛ والقيد يوازن الميزانية المخصومة فلسًا بفلس؛ والمُروَّج بلا ميزانية لا يتصدر؛ وإعادة تشغيل الخصم أو تداخل جدولتين لنافذة واحدة تنتج قيدًا واحدًا ومفتاح مصدر واحد (اختبار التكرار الحتمي)</td>
       <td class="ltr-cell">G24, G25, G26</td>
     </tr>
   </table>
