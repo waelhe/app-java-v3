@@ -47,13 +47,18 @@ class ResilienceAnnotationTest {
         }
 
         @Test
-        @DisplayName("confirmIntent should have @Retry")
+        @DisplayName("settlement confirm should have @Retry (N2: moved off the admin command shell)")
         void confirmIntent_hasRetry() throws NoSuchMethodException {
-            Method method = PaymentsService.class.getMethod("confirmIntent",
-                    java.util.UUID.class, String.class);
+            // N2 moved the domain transition (and its resilience + observability)
+            // into PaymentIntentSettlementService: the admin command shell
+            // PaymentsService.confirmIntent carries ONLY the role check, and
+            // the retry now covers BOTH entry paths (admin command + verified
+            // webhook dispatch) because every call goes through the proxy.
+            Method method = com.marketplace.payments.PaymentIntentSettlementService.class
+                    .getMethod("confirm", java.util.UUID.class, String.class);
 
             Retry retry = method.getAnnotation(Retry.class);
-            assertNotNull(retry, "confirmIntent should have @Retry");
+            assertNotNull(retry, "settlement confirm should have @Retry");
             assertEquals("paymentProcessing", retry.name(), "Retry should use paymentProcessing instance");
         }
 
