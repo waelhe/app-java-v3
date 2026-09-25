@@ -529,18 +529,77 @@ public class PaymentsService implements PaymentsSpi {
                 paymentIntentId, remoteRefundedTotalCents, payment.getStatus());
     }
 
+    /**
+     * S12 guard — booking cancellation's money half maps the intent's ACTUAL
+     * state through {@link PaymentIntentStatus#TRANSITIONS} to its legal
+     * outcome instead of assuming SUCCEEDED. Spring Modulith's Event
+     * Publication Registry retries a listener that throws (official
+     * reference: "In case the listener fails, the log entry stays untouched
+     * so that retry mechanisms can be deployed"), so an illegal-transition
+     * throw here (the pre-fix behavior: unconditional {@code markRefunded()})
+     * was resubmitted daily forever with the intent stuck. Every state now
+     * either transitions legally or completes as an idempotent no-op:
+     * <ul>
+     *   <li>SUCCEEDED / PARTIALLY_REFUNDED → REFUNDED — the only states where
+     *       money moved, so the full refund (and its ledger debit event)
+     *       applies;</li>
+     *   <li>CREATED → CANCELLED — the booking died before any charge
+     *       existed, so nothing is owed back;</li>
+     *   <li>PROCESSING → FAILED — the in-flight charge is abandoned (the
+     *       local books assume it never settles; a late PSP success hitting
+     *       a terminal intent is the webhook side's declared gap, closed
+     *       separately);</li>
+     *   <li>FAILED / CANCELLED / REFUNDED → no-op — a redelivery must
+     *       complete the publication instead of re-violating the machine.</li>
+     * </ul>
+     */
     @Retry(name = "paymentProcessing")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void autoRefundByBooking(UUID bookingId) {
         paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
-            intent.markRefunded();
-            paymentIntentRepository.save(intent);
-            paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
-                payment.markRefunded();
-                paymentRepository.save(payment);
-            });
-            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+            switch (intent.getStatus()) {
+                case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
+                case CREATED -> cancelUnpaid(intent);
+                case PROCESSING -> failInFlight(intent);
+                case FAILED, CANCELLED, REFUNDED ->
+                        log.info("Auto-refund for booking {} skipped — intent {} already terminal in {}",
+                                bookingId, intent.getId(), intent.getStatus());
+            }
         });
+    }
+
+    private void refundFully(PaymentIntent intent) {
+        intent.markRefunded();
+        paymentIntentRepository.save(intent);
+        paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
+            payment.markRefunded();
+            paymentRepository.save(payment);
+        });
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+        log.info("Auto-refund completed for intent {} (full refund)", intent.getId());
+    }
+
+    private void cancelUnpaid(PaymentIntent intent) {
+        intent.cancel();
+        paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "CANCELLED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+        log.info("Auto-refund resolved intent {} as CANCELLED — the booking died before any charge existed",
+                intent.getId());
+    }
+
+    private void failInFlight(PaymentIntent intent) {
+        intent.markFailed();
+        paymentIntentRepository.save(intent);
+        paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
+            payment.markFailed();
+            paymentRepository.save(payment);
+        });
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
+        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+        log.info("Auto-refund resolved intent {} as FAILED — the in-flight charge was abandoned at cancellation",
+                intent.getId());
     }
 
     private PaymentSummary toPaymentSummary(PaymentIntent paymentIntent) {

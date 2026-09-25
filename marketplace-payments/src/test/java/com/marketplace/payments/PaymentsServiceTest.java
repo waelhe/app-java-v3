@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -16,6 +17,7 @@ import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.instancio.Instancio.*;
@@ -544,5 +546,160 @@ class PaymentsServiceTest {
 
         assertTrue(created);
         verify(webhookSecurity).validateSignature("stripe", eventId, "payment.succeeded", null, null, null);
+    }
+
+    // ---- S12: autoRefundByBooking state guard (booking cancellation's money half) ----
+
+    @Test
+    void autoRefundByBooking_succeededIntent_refundsFully() {
+        UUID bookingId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), create(UUID.class))
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.COMPLETED)
+                .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
+                .create();
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.autoRefundByBooking(bookingId);
+
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
+        assertEquals(5000L, intent.getRefundedAmountCents());
+        assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
+        assertEquals(5000L, payment.getRefundedAmountCents());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "REFUNDED"));
+        verify(eventPublisher).publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intentId));
+    }
+
+    @Test
+    void autoRefundByBooking_partiallyRefundedIntent_completesFullRefund() {
+        UUID bookingId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PARTIALLY_REFUNDED)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .set(field(PaymentIntent::getRefundedAmountCents), 2000L)
+                .create();
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), create(UUID.class))
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PARTIALLY_REFUNDED)
+                .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getRefundedAmountCents), 2000L)
+                .create();
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.autoRefundByBooking(bookingId);
+
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
+        assertEquals(5000L, intent.getRefundedAmountCents());
+        assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "REFUNDED"));
+    }
+
+    @Test
+    void autoRefundByBooking_createdIntent_cancelsWithoutCharge() {
+        UUID bookingId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.autoRefundByBooking(bookingId);
+
+        assertEquals(PaymentIntentStatus.CANCELLED, intent.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "CANCELLED"));
+        verify(eventPublisher).publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intentId));
+        // No charge ever existed — the payment row must not be touched.
+        verifyNoInteractions(paymentRepository);
+    }
+
+    @Test
+    void autoRefundByBooking_processingIntent_failsInFlight() {
+        UUID bookingId = create(UUID.class);
+        UUID intentId = create(UUID.class);
+        PaymentIntent intent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), intentId)
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.PROCESSING)
+                .set(field(PaymentIntent::getAmountCents), 5000L)
+                .create();
+        Payment payment = of(Payment.class)
+                .set(field(Payment::getId), create(UUID.class))
+                .set(field(Payment::getPaymentIntentId), intentId)
+                .set(field(Payment::getStatus), PaymentStatus.PENDING)
+                .set(field(Payment::getAmountCents), 5000L)
+                .set(field(Payment::getRefundedAmountCents), 0L)
+                .create();
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.autoRefundByBooking(bookingId);
+
+        assertEquals(PaymentIntentStatus.FAILED, intent.getStatus());
+        assertEquals(PaymentStatus.FAILED, payment.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(intentId, "FAILED"));
+        verify(eventPublisher).publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intentId));
+    }
+
+    @Test
+    void autoRefundByBooking_terminalStates_areIdempotentNoOps() {
+        for (PaymentIntentStatus terminal : new PaymentIntentStatus[]{
+                PaymentIntentStatus.REFUNDED, PaymentIntentStatus.FAILED, PaymentIntentStatus.CANCELLED}) {
+            UUID bookingId = create(UUID.class);
+            UUID intentId = create(UUID.class);
+            PaymentIntent intent = of(PaymentIntent.class)
+                    .set(field(PaymentIntent::getId), intentId)
+                    .set(field(PaymentIntent::getBookingId), bookingId)
+                    .set(field(PaymentIntent::getStatus), terminal)
+                    .set(field(PaymentIntent::getAmountCents), 5000L)
+                    .create();
+            when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+
+            // Pre-fix behavior: unconditional markRefunded() threw ConflictException on every
+            // resubmission — the eternal Modulith retry loop (S12). The guard completes instead.
+            assertDoesNotThrow(() -> service.autoRefundByBooking(bookingId),
+                    "terminal state " + terminal + " must complete as no-op");
+
+            assertEquals(terminal, intent.getStatus());
+            verify(intentRepository, never()).save(any(PaymentIntent.class));
+            verifyNoInteractions(paymentRepository);
+            verify(eventPublisher, never()).publishEvent(any(PaymentStateChangedEvent.class));
+            verify(eventPublisher, never()).publishEvent(any(CacheInvalidationRequested.class));
+        }
+    }
+
+    @Test
+    void autoRefundByBooking_withoutIntent_completesQuietly() {
+        UUID bookingId = create(UUID.class);
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+
+        assertDoesNotThrow(() -> service.autoRefundByBooking(bookingId));
+
+        verifyNoInteractions(paymentRepository);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
