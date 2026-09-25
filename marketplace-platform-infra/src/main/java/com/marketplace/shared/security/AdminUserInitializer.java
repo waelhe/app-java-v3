@@ -42,10 +42,15 @@ import org.springframework.util.StringUtils;
  *
  * <p><b>Fail-fast by profile:</b> in {@code prod} a blank password fails
  * startup with the operational message (the yml binding without a default is
- * the first defense layer — identical to {@code OAUTH_CLIENT_SECRET}). In
- * every other profile a blank value falls back to the documented development
- * constant, mirroring the ephemeral-RSA development fallback of
- * {@code SecurityConfig#jwkSource}: local convenience, never production.
+ * the first defense layer — identical to {@code OAUTH_CLIENT_SECRET}).
+ * Outside {@code prod} a blank password is a <b>designed no-op</b> — exactly
+ * the {@link OAuth2ClientSecretInitializer} contract ("when no client is
+ * configured and the prod profile is not active, startup is a deliberate
+ * no-op"): development convenience comes from the base {@code application.yml}
+ * default ({@code admin-dev}), while Flyway-disabled test contexts (JPA-only
+ * create-drop schemas that intentionally lack the {@code auth_*} tables —
+ * the security schema is Flyway-owned) leave the property blank so this
+ * runner never touches tables that do not exist there.
  *
  * <p><b>Idempotence guard:</b> {@code updateUser} runs only when the derived
  * definition differs from the stored row, so a matching row is a no-op and
@@ -65,13 +70,6 @@ public class AdminUserInitializer implements ApplicationRunner {
 
     /** The break-glass identity: referenced by the seed contract only. */
     static final String ADMIN_USERNAME = "admin";
-
-    /**
-     * Development-only fallback when {@code ADMIN_SEED_PASSWORD} is blank
-     * outside the {@code prod} profile — the same category as the ephemeral
-     * RSA signing key: local convenience, documented, never production.
-     */
-    static final String DEV_DEFAULT_PASSWORD = "admin-dev";
 
     private final MarketplaceProperties properties;
     private final UserDetailsManager userDetailsManager;
@@ -99,9 +97,12 @@ public class AdminUserInitializer implements ApplicationRunner {
                         "marketplace.security.admin-seed.password must be configured in production"
                                 + " (ADMIN_SEED_PASSWORD) — the fixed-hash migration seed is retired (N1)");
             }
-            rawPassword = DEV_DEFAULT_PASSWORD;
-            log.warn("ADMIN_SEED_PASSWORD not configured — using the documented development constant for the"
-                    + " break-glass admin (never valid in production)");
+            // Designed no-op (the client initializer's contract): blank outside
+            // prod means the environment did not ask for a break-glass admin —
+            // development uses the base application.yml default (admin-dev),
+            // and Flyway-disabled test contexts have no auth_* schema at all.
+            log.info("admin-seed password not configured — break-glass admin bootstrap skipped");
+            return;
         }
 
         if (!userDetailsManager.userExists(ADMIN_USERNAME)) {

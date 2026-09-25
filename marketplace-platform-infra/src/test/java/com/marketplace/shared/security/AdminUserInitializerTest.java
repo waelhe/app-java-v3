@@ -21,6 +21,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AdminUserInitializerTest {
@@ -41,17 +42,17 @@ class AdminUserInitializerTest {
     }
 
     @Test
-    void fallsBackToDocumentedDevConstantOutsideProduction() {
-        when(userDetailsManager.userExists("admin")).thenReturn(false);
-        when(passwordEncoder.encode(AdminUserInitializer.DEV_DEFAULT_PASSWORD)).thenReturn("encoded-dev");
-
+    void isADesignedNoOpWhenPasswordBlankOutsideProduction() {
+        // The client initializer's contract: blank outside prod = deliberate
+        // no-op — never a query. Test-profile contexts (Flyway disabled,
+        // JPA-only create-drop schemas) have no auth_* tables at all.
         new AdminUserInitializer(properties(""), userDetailsManager, passwordEncoder, environment(false))
                 .run(null);
 
-        UserDetails created = createdUserArgument();
-        assertThat(created.getUsername()).isEqualTo("admin");
-        assertThat(created.getPassword()).isEqualTo("encoded-dev");
-        assertThat(created.getAuthorities()).map(Object::toString).containsExactly("ROLE_ADMIN");
+        verify(userDetailsManager, never()).userExists(any());
+        verify(userDetailsManager, never()).createUser(any());
+        verify(userDetailsManager, never()).updateUser(any());
+        verifyNoInteractions(passwordEncoder);
     }
 
     @Test

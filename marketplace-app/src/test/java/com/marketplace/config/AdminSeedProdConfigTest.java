@@ -35,9 +35,12 @@ class AdminSeedProdConfigTest {
     private final YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
 
     @Test
-    void baseProfileBindsAdminSeedPasswordWithEmptyDefault() throws Exception {
+    void baseProfileBindsAdminSeedPasswordWithDocumentedDevDefault() throws Exception {
+        // The development-only credential lives in the yml default (visible,
+        // documented, overridable) — the initializer itself has NO in-code
+        // fallback: blank outside prod is a designed no-op.
         assertThat(property("application.yml", "marketplace.security.admin-seed.password"))
-                .isEqualTo("${ADMIN_SEED_PASSWORD:}");
+                .isEqualTo("${ADMIN_SEED_PASSWORD:admin-dev}");
     }
 
     @Test
@@ -46,6 +49,15 @@ class AdminSeedProdConfigTest {
         // placeholder resolution instead of silently binding blank.
         assertThat(property("application-prod.yml", "marketplace.security.admin-seed.password"))
                 .isEqualTo("${ADMIN_SEED_PASSWORD}");
+    }
+
+    @Test
+    void testProfileBlanksTheSeedSoFlywayDisabledContextsNeverTouchTheAuthSchema() throws Exception {
+        // The test profile boots JPA-only create-drop schemas (Flyway
+        // disabled): auth_users/auth_authorities do not exist there, so the
+        // initializer's blank contract must apply — the override pins it.
+        assertThat(property("application-test.yml", "marketplace.security.admin-seed.password"))
+                .isEqualTo("");
     }
 
     private String property(String yml, String key) throws java.io.IOException {
