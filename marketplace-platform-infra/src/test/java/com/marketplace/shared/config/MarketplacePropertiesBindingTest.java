@@ -99,6 +99,38 @@ class MarketplacePropertiesBindingTest {
                 .as("previous-keys ring (absent keys — deriveAll dereferences it)")
                 .isNotNull()
                 .isEmpty();
+
+        // N1 (admin-seed hardening): the admin-seed section is primed
+        // non-null when absent — AdminUserInitializer dereferences
+        // security().adminSeed().password() unconditionally at boot (the
+        // CodeRabbit #241 lesson applied to the new section), and a blank
+        // password means the documented development fallback outside prod /
+        // fail-fast inside prod — never a NullPointerException.
+        assertThat(properties.security().adminSeed())
+                .as("admin-seed section (absent keys — AdminUserInitializer dereferences it)")
+                .isNotNull();
+        assertThat(properties.security().adminSeed().password())
+                .as("admin-seed password (absent keys — blank, not null)")
+                .isEmpty();
+    }
+
+    /**
+     * N1: the admin-seed password binds from its property key — the shape the
+     * {@code ADMIN_SEED_PASSWORD} environment variable delivers through the
+     * application.yml placeholder.
+     */
+    @Test
+    void bindsAdminSeedPasswordFromItsPropertyKey() {
+        Map<String, Object> source = Map.of(
+                "marketplace.security.admin-seed.password", "env-delivered-secret");
+
+        MarketplaceProperties properties = new Binder(ConfigurationPropertySources
+                .from(new MapPropertySource("test", source)))
+                .bind("marketplace", Bindable.of(MarketplaceProperties.class))
+                .get();
+
+        assertThat(properties.security().adminSeed().password())
+                .isEqualTo("env-delivered-secret");
     }
 
     /**

@@ -561,6 +561,16 @@ marketplace:
         key-password: ${JWT_KEY_PASSWORD:}
     session:
       max-sessions: ${SESSION_MAX_SESSIONS:2}
+    # N1 (admin-seed hardening): the break-glass administrator's password —
+    # env-only channel, exactly like OAUTH_CLIENT_SECRET. The fixed bcrypt
+    # hash that previously shipped in R__seed_oauth2_client.sql (a credential
+    # burned into the repo and the jar for every environment) is gone;
+    # AdminUserInitializer converges the admin row from this value through
+    # the official JdbcUserDetailsManager API at every boot. Mandatory in
+    # prod (fail-fast); outside prod a blank value falls back to the
+    # documented development constant (see AdminUserInitializer).
+    admin-seed:
+      password: ${ADMIN_SEED_PASSWORD:}
     # I7 (account-pseudonymization-plan §5-أ, gate b-2(b)) — the HMAC secret
     # for account-subject pseudonymization: the "additional information" GDPR
     # Art. 4(5) requires to be kept separately. Optional until bound exactly
