@@ -1,6 +1,16 @@
 package com.marketplace.config;
 
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.lang.ArchCondition;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
@@ -12,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -329,6 +340,75 @@ class PlatformGovernanceFilesTest {
                 .contains("CVE-2026-65182")
                 .contains("CVE-2026-65905")
                 .contains("CVE-2026-68525");
+    }
+
+    @Test
+    void integrationTestsOwnTheirDatabaseContainer() {
+        // AGENTS.md (Testing) requires every integration test to carry
+        // @Testcontainers/@Container. The rule exists because a container is
+        // retained across test classes (Spring Boot 4.1.1 reference,
+        // "Testcontainers": "A single test container instance can, and often
+        // is, retained across execution of tests from multiple test classes"),
+        // so a class that borrows the workflow's shared PostgreSQL service
+        // reads and writes the auth tables (auth_users, auth_authorities,
+        // oauth2_registered_client, oauth2_authorization_consent) left behind
+        // by whichever class ran before it. Maven does not pin class order
+        // (no <runOrder> in the root pom), so the suite passed on main at
+        // 02:47 and failed on the same commit at 12:34 and 16:51 with
+        // AuthorizationServerLoginGateIntegrationTest: a leftover admin row
+        // from PublicPkceClientGateIntegrationTest made the last-admin gate
+        // answer 200 instead of 409, and the consent fixtures no longer
+        // matched. Measured, not inferred — see the run-order diff in the
+        // incident record. Isolation, not ordering, is the fix.
+        //
+        // The check is STRUCTURAL, not textual: the first edition of this
+        // guard matched annotation TEXT and let 18 classes pass that carry
+        // @Testcontainers with no @Container field at all — they were still
+        // on the workflow's shared PostgreSQL through the test profile's
+        // jdbc:postgresql://localhost:5432 default (17 @ApplicationModuleTest
+        // slices + ReviewsTwoWayIntegrationTest, a full @SpringBootTest).
+        // ArchUnit inspects the COMPILED classes here, so a regression can
+        // only pass by actually declaring a class-level @Testcontainers AND
+        // a @Container @ServiceConnection PostgreSQLContainer field — the
+        // Spring Boot reference's service-connection contract ("Testing:
+        // Testcontainers": the container field contributes the
+        // ConnectionDetails consumed by auto-configuration), which is what
+        // replaces the shared-service datasource for the context.
+        // @ApplicationModuleTest is a @SpringBootTest replacement on the same
+        // TestContext machinery (Modulith reference, "Testing"), so the
+        // service-connection customizer applies to the slices too.
+        JavaClasses imported = new ClassFileImporter().importPackages("com.marketplace");
+        ArchCondition<JavaClass> ownsServiceConnectedPostgres =
+                new ArchCondition<>("own a @Container @ServiceConnection PostgreSQLContainer field under a @Testcontainers class") {
+                    @Override
+                    public void check(JavaClass clazz, ConditionEvents events) {
+                        boolean annotated = clazz.isAnnotatedWith(Testcontainers.class);
+                        boolean ownsPostgres = clazz.getFields().stream().anyMatch(field ->
+                                field.isAnnotatedWith(Container.class)
+                                        && field.isAnnotatedWith(ServiceConnection.class)
+                                        && field.getRawType().isAssignableTo(PostgreSQLContainer.class));
+                        if (annotated && ownsPostgres) {
+                            return;
+                        }
+                        events.add(SimpleConditionEvent.violated(clazz, String.format(
+                                "%s is on the workflow's shared PostgreSQL instead of owning one: "
+                                        + "AGENTS.md (Testing) + the 2026-09-24 isolation incident require "
+                                        + "@Testcontainers on the class and a @Container @ServiceConnection "
+                                        + "PostgreSQLContainer field — the class inherits the rows of "
+                                        + "whichever class ran before it, and the suite's result depends on "
+                                        + "an order Maven does not pin",
+                                clazz.getName())));
+                    }
+                };
+        classes().that().haveSimpleNameEndingWith("IntegrationTest")
+                .should(ownsServiceConnectedPostgres)
+                .check(imported);
+    }
+
+    private static Path repoRoot() {
+        Path cwd = Paths.get("").toAbsolutePath();
+        Path repoRoot = cwd.resolve("..");
+        return Files.exists(repoRoot.resolve(".github")) ? repoRoot : cwd;
     }
 
     private static int osUpgradeInstructionIndex(String dockerfile, int runtimeFrom) {

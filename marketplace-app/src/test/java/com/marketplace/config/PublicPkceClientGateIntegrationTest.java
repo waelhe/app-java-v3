@@ -32,6 +32,12 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -77,8 +83,24 @@ import static org.assertj.core.api.Assertions.assertThat;
         "marketplace.security.oauth2.public-client.client-id=marketplace-public-client",
         "marketplace.security.oauth2.public-client.redirect-uris=com.marketplace.test:/oauth2/callback"
 })
+@Testcontainers(disabledWithoutDocker = true)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PublicPkceClientGateIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
+    static PostgreSQLContainer postgres = new PostgreSQLContainer(
+            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
+                    .asCompatibleSubstituteFor("postgres"))
+            .withDatabaseName("marketplace");
+
+    @Container
+    @ServiceConnection
+    @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
+    static GenericContainer<?> redis = new GenericContainer<>(
+            DockerImageName.parse("redis:8-alpine"))
+            .withExposedPorts(6379);
 
     private static final String ADMIN_USERNAME = "it-public-gate-admin";
     private static final String USER_USERNAME = "it-public-gate-user";
