@@ -100,9 +100,16 @@ jobs:
       # upgrade and the gate went green. `no-cache-filters` would be the
       # surgical form, but the runtime stage is unnamed — no-cache is the only
       # lever for the shipped layer. Cost: the trainer stage's Maven package
-      # and AOT training re-run on every scan (the cold .m2 download price the
-      # 45-minute timeout was budgeted for). The GHA cache is still exported
-      # so the .m2 cache mount stays warm for the next run.
+      # and AOT training re-run on every scan — the cold .m2 price the
+      # 45-minute timeout was budgeted for (that mount was never warm across
+      # runs here anyway: Docker docs, build/ci/github-actions/cache, "Cache
+      # mounts" — "BuildKit doesn't preserve cache mounts in the GitHub
+      # Actions cache by default"; it serves Railway builds, where the builder
+      # persists and the mount id embeds the service id). cache-from/cache-to
+      # are removed as dead config: this gate is the repo's only gha-cache
+      # consumer, and with no-cache disabling lookup permanently ("Do not use
+      # cache when building the image"), nothing would ever read what
+      # cache-to exports.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -114,8 +121,6 @@ jobs:
           tags: app-java-v3:scan
           no-cache: true
           pull: true
-          cache-from: type=gha
-          cache-to: type=gha
 
       # THE GATE — table output in the job log (the diff a failed check shows
       # on the PR), exit-code 1 turns findings into a required-check failure.

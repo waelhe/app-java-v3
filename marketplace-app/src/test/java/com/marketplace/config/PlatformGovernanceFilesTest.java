@@ -249,6 +249,18 @@ class PlatformGovernanceFilesTest {
                 .contains("no-cache: true");
         assertThat(yml).as("the gate build must re-resolve the base image")
                 .contains("pull: true");
+        // Dead-config guard (CodeRabbit round 1, adopted from the root):
+        // cache mounts never travel with the GHA cache anyway — Docker docs,
+        // build/ci/github-actions/cache, "Cache mounts": "BuildKit doesn't
+        // preserve cache mounts in the GitHub Actions cache by default" —
+        // and this gate is the repo's only gha-cache consumer while no-cache
+        // disables lookup for good, so a cache-from/cache-to pair would be
+        // config that looks alive and does nothing: the exact
+        // stale-certification illusion this gate exists to kill.
+        assertThat(yml).as("no dead cache import (lookup is permanently disabled)")
+                .doesNotContain("cache-from:");
+        assertThat(yml).as("no dead cache export (nothing ever reads it)")
+                .doesNotContain("cache-to:");
     }
 
     @Test
