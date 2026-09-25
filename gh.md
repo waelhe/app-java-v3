@@ -152,7 +152,7 @@ SEO
 - التغطية الوظيفية كاملة: كتالوج+بحث، مزوّدون+توفّر+تسعير، دورة حجز كاملة، تقييمات، محادثات، إشعارات، وسائط S3، جغرافيا، مجتمع (عضوية/تغذية/منشورات/تعليقات/تقارير/إشراف)، عقار (تفاصيل/اكتمال/ترويج/تحليلات مشاهدة)، leads، نزاعات، دفتر أستاذ، لوحة admin كاملة (14 عملية)، SEO.
 
 ### الفجوات الصادقة (ما لا يعمل اليوم)
-1. الواقع الزمني WebSocket ميت: صفر @EnableWebSocketMessageBroker في المستودع كله ⇒ Optional<SimpMessagingTemplate> فارغ دائماً ⇒ الإشعارات بـpoll لا push.
+1. الواقع الزمني WebSocket مبنيّ لكنه غير قابل للوصول بمتوكن JWT: WebSocketConfig.java:12 يفعّل @EnableWebSocketMessageBroker ويسجّل /ws (والحبة موجودة ⇒ Optional<SimpMessagingTemplate> ممتلئ)، لكن /ws ليس ضمن securityMatcher السلسلة 2 (تغطي /api/** و/actuator/** فحسب) فيسقط على السلسلة 3 (formLogin) ⇒ مصافحة HTTP ترجع 302 إلى /login بدل 101 Switching Protocols ⇒ لا يستطيع عميل الاتصال ⇒ الإشعارات بـpoll لا push.
 2. الدفع محاكاة لا حقيقي: لا مفاتيح Stripe في بيئة الإنتاج (45 متغيراً) ⇒ pspChannel.getIfAvailable() يسقط للمسار المحلي — لا خصم حقيقي.
 3. المحادثة AI مطفأة: SPRING_AI_MODEL_CHAT=none حيّاً.
 4. GraphQL: introspection معطّل في prod ⇒ العقد هو REST.
