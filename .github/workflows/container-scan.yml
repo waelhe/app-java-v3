@@ -22,9 +22,13 @@
 # The version bump for the OS surface is implemented at image build time:
 # the runtime stage of the Dockerfile runs `apk upgrade --no-cache` against
 # the v3.24 stable branch (the base image's /etc/apk/repositories, measured
-# live 2026-09-09), so every alpine fix published for the branch lands in the
-# shipped artifact on the next build. That closed the first two gate
-# failures this mechanism caught: the alpine libexpat pair CVE-2026-76956/
+# live 2026-09-09), so an alpine fix published for the branch lands in the
+# image that BUILDS IT FRESH. Freshness is not automatic, though: under a
+# Docker layer cache that RUN is replayed rather than re-executed (the
+# measured 2026-09-24 incident, written out at the build step below), so
+# this gate builds with no-cache + pull and Railway builds rely on the
+# Dockerfile's documented date-token lever. That mechanism closed the first
+# two gate failures it caught: the alpine libexpat pair CVE-2026-76956/
 # CVE-2026-76957 (2.8.3-r0 -> 2.8.4-r0, fork run 34343664520 2026-09-09 —
 # new Trivy DB entries matched the same pinned image, the documented
 # no-code-change case) and, via the same upgrade line, CVE-2026-14456
@@ -79,11 +83,33 @@ jobs:
       # always drives BuildKit; load: true puts the image into the runner's
       # docker daemon for the trivy scan below (trivy-action's default
       # docker-host is unix://var/run/docker.sock). The image is never pushed.
-      # GHA layer cache (default mode): the stable runtime layers (extracted
-      # dependencies/ + AOT cache) survive across code-only changes; the
-      # Maven RUN layer re-executes by design — its --mount=type=cache is
-      # builder-local, so cold .m2 downloads are the price of scanning the
-      # real recipe (budgeted in the 45-minute timeout).
+      #
+      # no-cache + pull (official inputs, docker/build-push-action README:
+      # "no-cache — Do not use cache when building the image (default false)",
+      # "pull — Always attempt to pull all referenced images (default false)"):
+      # WITHOUT them this gate certified a stale OS surface. Docker's cache
+      # rule (docs.docker.com/build/cache/optimize) — "a layer is reused from
+      # the build cache if the instruction and the files it depends on hasn't
+      # changed since it was previously built" — made the runtime stage's
+      # `apk upgrade --no-cache` a cache hit: --no-cache there is an APK flag
+      # (fresh index), not a Docker one, so with the parent layers unchanged
+      # the RUN was replayed and the OS packages froze at build time. Measured
+      # 2026-09-24: expat 2.8.5-r0 was already published in the v3.24 index
+      # (APKINDEX t:1790203100 = 2026-09-23T22:37Z) while the 18:50Z scan
+      # still reported 2.8.4-r0; changing the Dockerfile date token re-ran the
+      # upgrade and the gate went green. `no-cache-filters` would be the
+      # surgical form, but the runtime stage is unnamed — no-cache is the only
+      # lever for the shipped layer. Cost: the trainer stage's Maven package
+      # and AOT training re-run on every scan — the cold .m2 price the
+      # 45-minute timeout was budgeted for (that mount was never warm across
+      # runs here anyway: Docker docs, build/ci/github-actions/cache, "Cache
+      # mounts" — "BuildKit doesn't preserve cache mounts in the GitHub
+      # Actions cache by default"; it serves Railway builds, where the builder
+      # persists and the mount id embeds the service id). cache-from/cache-to
+      # are removed as dead config: this gate is the repo's only gha-cache
+      # consumer, and with no-cache disabling lookup permanently ("Do not use
+      # cache when building the image"), nothing would ever read what
+      # cache-to exports.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -93,8 +119,8 @@ jobs:
           context: .
           load: true
           tags: app-java-v3:scan
-          cache-from: type=gha
-          cache-to: type=gha
+          no-cache: true
+          pull: true
 
       # THE GATE — table output in the job log (the diff a failed check shows
       # on the PR), exit-code 1 turns findings into a required-check failure.
