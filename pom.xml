@@ -46,7 +46,18 @@
     <properties>
         <java.version>25</java.version>
         <resilience4j.version>2.4.0</resilience4j.version>
-        <archunit.version>1.5.0</archunit.version>
+        <!-- S9: aligned with the ArchUnit version spring-modulith-core 2.1.1
+             actually resolves (measured: dependency:tree -Dverbose). The
+             previous 1.5.0 pin ran the archunit-junit5 ENGINE 1.5.0 against
+             the BOM-transitive archunit CORE 1.4.2 — an unsupported mix
+             (junit5 1.5.0 expects core 1.5.0 APIs) that nobody could notice
+             precisely because the JDK guard silently skips the whole surface
+             on newer runtimes. One version everywhere: the framework's own
+             pairing. Bump BOTH together (core via this property is not
+             enough: core comes transitively from modulith-core — an override
+             would recreate the mix; upgrade Modulith itself, which re-pins
+             the pair). -->
+        <archunit.version>1.4.2</archunit.version>
         <jacoco.version>0.8.15</jacoco.version>
         <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
