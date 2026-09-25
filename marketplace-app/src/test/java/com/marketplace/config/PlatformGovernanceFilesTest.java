@@ -229,6 +229,26 @@ class PlatformGovernanceFilesTest {
         // New CVEs land without code changes — the weekly rescan is the
         // visible signal until the OTEL/MAIL alerting gates open (roadmap A1).
         assertThat(yml).as("main is rescanned on a schedule").contains("schedule:");
+        // The gate must certify a FRESH build, or it certifies a stale OS
+        // surface. Docker's cache rule (docs.docker.com/build/cache/optimize):
+        // "a layer is reused from the build cache if the instruction and the
+        // files it depends on hasn't changed since it was previously built" —
+        // `apk upgrade --no-cache` is an unchanged instruction whose --no-cache
+        // is an APK flag, not a Docker one, so under cache-from: type=gha the
+        // upgrade layer was replayed and froze the OS packages. Measured
+        // 2026-09-24: expat 2.8.5-r0 published in the v3.24 index (APKINDEX
+        // t:1790203100 = 2026-09-23T22:37Z) yet the 18:50Z scan still reported
+        // 2.8.4-r0; bumping the Dockerfile date token re-ran the upgrade and the
+        // gate went green. The official inputs that make every scan fresh:
+        // no-cache ("Do not use cache when building the image", default false)
+        // and pull ("Always attempt to pull all referenced images", default
+        // false) — docker/build-push-action README. The runtime stage is
+        // unnamed, so the surgical `no-cache-filters` cannot target it;
+        // no-cache is the only lever for the shipped layer.
+        assertThat(yml).as("the gate build must not replay a cached OS layer")
+                .contains("no-cache: true");
+        assertThat(yml).as("the gate build must re-resolve the base image")
+                .contains("pull: true");
     }
 
     @Test
