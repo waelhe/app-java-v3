@@ -323,7 +323,7 @@ class NotificationServiceTest {
     }
 
     @Test
-    void getMyNotificationsReturnsNotificationsForCurrentUser() {
+    void getMyNotificationsReturnsPagedNotificationsForCurrentUser() {
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
@@ -334,13 +334,33 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
 
         UUID userId = UUID.randomUUID();
-        var notifications = List.of(mock(Notification.class));
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        var page = new org.springframework.data.domain.PageImpl<>(
+                List.of(mock(Notification.class)), pageable, 1);
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
-        when(repository.findByRecipientIdOrderByCreatedAtDesc(userId)).thenReturn(notifications);
+        when(repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable)).thenReturn(page);
 
-        var result = service.getMyNotifications(authentication);
+        var result = service.getMyNotifications(authentication, pageable);
 
-        assertThat(result).isSameAs(notifications);
+        assertThat(result).isSameAs(page);
+    }
+
+    @Test
+    void getUnreadCountCountsOnlyTheCallersUnreadRows() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID userId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(repository.countByRecipientIdAndReadIsFalse(userId)).thenReturn(4L);
+
+        assertThat(service.getUnreadCount(authentication)).isEqualTo(4L);
     }
 
     @Test

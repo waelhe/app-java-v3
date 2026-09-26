@@ -46,11 +46,55 @@ class NotificationControllerWebMvcTest {
 
     @Test
     @WithMockUser
-    void getMine_returnsOk() throws Exception {
-        when(service.getMyNotifications(any())).thenReturn(List.of());
+    void getMine_returnsPagedFeed() throws Exception {
+        org.springframework.data.domain.Page<Notification> page =
+                new org.springframework.data.domain.PageImpl<>(
+                        java.util.List.<Notification>of(),
+                        org.springframework.data.domain.PageRequest.of(0, 20), 0);
+        when(service.getMyNotifications(any(), any())).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/notifications"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.pageNumber").value(0))
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    /**
+     * Plan item 2.6's contract: the pagination parameters are OPTIONAL —
+     * the unparameterized call keeps answering, and page/size ride the
+     * query string (springdoc renders them optional; the OpenAPI gate
+     * measured this change backward compatible end-to-end).
+     */
+    @Test
+    @WithMockUser
+    void getMine_acceptsPageAndSize() throws Exception {
+        org.springframework.data.domain.Page<Notification> page =
+                new org.springframework.data.domain.PageImpl<>(
+                        java.util.List.<Notification>of(),
+                        org.springframework.data.domain.PageRequest.of(1, 5), 7);
+        when(service.getMyNotifications(any(), any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/v1/notifications")
+                        .param("page", "1").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pageNumber").value(1))
+                .andExpect(jsonPath("$.pageSize").value(5))
+                .andExpect(jsonPath("$.totalElements").value(7));
+    }
+
+    /**
+     * Plan item 2.6: the unread badge endpoint — the polling number in the
+     * MessagingController unread-count response shape.
+     */
+    @Test
+    @WithMockUser
+    void getUnreadCount_returnsTheBadgeNumber() throws Exception {
+        when(service.getUnreadCount(any())).thenReturn(3L);
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(3));
     }
 
     @Test

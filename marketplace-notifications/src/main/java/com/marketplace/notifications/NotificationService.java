@@ -8,6 +8,8 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -230,9 +232,19 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public List<Notification> getMyNotifications(Authentication authentication) {
+    public Page<Notification> getMyNotifications(Authentication authentication, Pageable pageable) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return repository.findByRecipientIdOrderByCreatedAtDesc(userId);
+        return repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable);
+    }
+
+    /**
+     * Plan item 2.6: the unread badge count — a read-only COUNT over the
+     * recipient's unread rows, the polling endpoint's single number.
+     */
+    @Transactional(readOnly = true)
+    public long getUnreadCount(Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return repository.countByRecipientIdAndReadIsFalse(userId);
     }
 
     @Observed(name = "notification.mark.read")

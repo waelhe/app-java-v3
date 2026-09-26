@@ -8,7 +8,10 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -19,7 +22,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
 @ApplicationModuleTest
 @ActiveProfiles("test")
@@ -58,6 +64,9 @@ class NotificationsModuleIntegrationTest {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private NotificationRepository notificationRepository;
+
     @Test
     void contextLoads() {
     }
@@ -65,5 +74,53 @@ class NotificationsModuleIntegrationTest {
     @Test
     void notificationEventListener_isBean() {
         assertThat(notificationService).isNotNull();
+    }
+
+    // ---- Plan item 2.6 guards: the paginated feed + the unread badge, on the
+    // REAL migration schema (the module slice boots Flyway with ddl-auto=none) ----
+
+    @Test
+    void getMyNotifications_isAPagedReadOfOnlyTheCallersRows() {
+        UUID me = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "mine-1"));
+        notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "mine-2"));
+        notificationRepository.save(Notification.create(other,
+                NotificationType.PAYMENT_STATE.name(), "not-mine"));
+        notificationRepository.flush();
+
+        when(currentUserProvider.getCurrentUserId(org.mockito.ArgumentMatchers.any(Authentication.class)))
+                .thenReturn(me);
+        Authentication auth = new TestingAuthenticationToken("u", "p");
+
+        var page = notificationService.getMyNotifications(auth, PageRequest.of(0, 1));
+
+        assertThat(page.getTotalElements()).isEqualTo(2);   // the other user's rows never leak
+        assertThat(page.getNumberOfElements()).isEqualTo(1); // the page honors its size
+        assertThat(page.getContent()).allMatch(n -> n.getRecipientId().equals(me));
+    }
+
+    @Test
+    void getUnreadCount_countsOnlyUnreadAndMovesWhenMarkedRead() {
+        UUID me = UUID.randomUUID();
+        Notification unread = notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "unread"));
+        notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "also-unread"));
+        notificationRepository.flush();
+
+        when(currentUserProvider.getCurrentUserId(org.mockito.ArgumentMatchers.any(Authentication.class)))
+                .thenReturn(me);
+        Authentication auth = new TestingAuthenticationToken("u", "p");
+
+        assertThat(notificationService.getUnreadCount(auth)).isEqualTo(2);
+
+        unread.markRead();
+        notificationRepository.save(unread);
+        notificationRepository.flush();
+
+        assertThat(notificationService.getUnreadCount(auth)).isEqualTo(1);
     }
 }
