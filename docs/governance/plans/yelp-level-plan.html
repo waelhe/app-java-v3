@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>خطة الوصول إلى مستوى Yelp — الخطة المستقلة للدليل والمراجعات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+@page { size: 720px 1020px; margin: 0; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { background: #FFFFFF; }
+body {
+  font-family: 'Noto Naskh Arabic', 'DejaVu Sans', sans-serif;
+  color: #1A2733;
+  font-size: 13.5px;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+h1, h2, h3, h4, .kicker, .chip, th, .stat-num, .cover-title {
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+p, td, li { line-break: strict; overflow-wrap: break-word; }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.ltri { direction: ltr; unicode-bidi: isolate; display: inline; }
+
+/* ---------- cover ---------- */
+.cover {
+  width: 720px; height: 1020px;
+  background: #FFFFFF;
+  border-left: 14px solid #0F2A4A;
+  padding: 88px 64px 56px 64px;
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative;
+  break-after: page;
+}
+.cover .anchor-line {
+  position: absolute; top: 64px; right: 64px; left: 92px;
+  height: 3px; background: #EA580C;
+}
+.kicker {
+  font-size: 12px; font-weight: 600; color: #C2410C;
+  letter-spacing: 0.06em; margin-bottom: 18px;
+}
+.cover-title {
+  font-size: 34px; font-weight: 700; color: #0F2A4A;
+  line-height: 1.42; margin-bottom: 10px;
+}
+.cover-subtitle {
+  font-size: 19px; font-weight: 600; color: #33506B;
+  line-height: 1.6; margin-bottom: 26px;
+}
+.cover-abstract {
+  font-size: 13.5px; color: #3D4A56; line-height: 1.9;
+  border-right: 3px solid #EA580C; padding-right: 16px;
+  margin-bottom: 34px; max-width: 560px;
+}
+.cover-meta {
+  border-top: 1.5px solid #D7DFE8; padding-top: 22px; max-width: 560px;
+}
+.cr { font-size: 12px; color: #3D4A56; margin-bottom: 9px; line-height: 1.7; }
+.cr b { color: #0F2A4A; font-weight: 600; }
+.cover-foot {
+  position: absolute; bottom: 56px; right: 64px; left: 92px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-top: 1.5px solid #D7DFE8; padding-top: 16px;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+.cover-foot span {
+  font-size: 11.5px; color: #6B7A88; font-weight: 500;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+
+/* ---------- content pages ---------- */
+.page {
+  width: 720px; padding: 58px 64px 64px 64px;
+  background: #FFFFFF;
+  break-before: page;
+}
+.chapter-header { break-after: avoid; break-inside: avoid; margin-top: 26px; }
+.chapter-header:first-child { margin-top: 0; }
+.chip {
+  display: inline-block; font-size: 10.5px; font-weight: 600;
+  color: #C2410C; border: 1px solid #EA580C; border-radius: 3px;
+  padding: 2px 10px; margin-bottom: 8px; letter-spacing: 0.05em;
+}
+h2 {
+  font-size: 21px; font-weight: 700; color: #0F2A4A;
+  line-height: 1.5; margin-bottom: 6px;
+}
+.h2-rule { width: 52px; height: 3px; background: #EA580C; margin-bottom: 14px; }
+h3 {
+  font-size: 15.5px; font-weight: 600; color: #0F2A4A;
+  margin: 18px 0 10px 0; break-after: avoid;
+}
+p { margin-bottom: 10px; text-align: right; }
+ul, ol { margin: 0 18px 12px 0; padding: 0; }
+li { margin-bottom: 6px; text-align: right; }
+b, strong { color: #0F2A4A; }
+code, .mono {
+  font-family: 'DejaVu Sans Mono', monospace; font-size: 11.5px;
+  background: #EEF2F6; color: #0F2A4A; padding: 1px 5px; border-radius: 3px;
+  direction: ltr; unicode-bidi: isolate; display: inline-block;
+}
+
+/* ---------- tables ---------- */
+table {
+  width: 100%; border-collapse: collapse; margin: 12px 0 16px 0;
+  font-size: 12px;
+}
+table.keep { break-inside: avoid; }
+th {
+  background: #0F2A4A; color: #FFFFFF; font-weight: 600;
+  padding: 8px 10px; text-align: right; font-size: 11.5px;
+}
+td {
+  border: 1px solid #D7DFE8; padding: 7px 10px; vertical-align: top;
+  text-align: right; background: #FFFFFF;
+}
+tr:nth-child(even) td { background: #F6F9FC; }
+tr { break-inside: avoid; }
+td.ltr-cell { direction: ltr; text-align: left; font-family: 'DejaVu Sans Mono', monospace; font-size: 10.5px; }
+
+/* ---------- stat blocks ---------- */
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; break-inside: avoid; margin: 14px 0; }
+.stat {
+  flex: 1 1 150px; border: 1px solid #D7DFE8; border-top: 3px solid #EA580C;
+  border-radius: 4px; padding: 12px 14px; background: #FFFFFF;
+}
+.stat-num {
+  font-size: 22px; font-weight: 700; color: #0F2A4A;
+  direction: ltr; unicode-bidi: isolate; display: block; text-align: right;
+}
+.stat-cap { font-size: 11px; color: #6B7A88; line-height: 1.5; display: block; margin-top: 3px; }
+
+/* ---------- callout ---------- */
+.callout {
+  border-right: 4px solid #0F2A4A; background: #F3F7FB;
+  padding: 13px 16px; margin: 14px 0; border-radius: 0 4px 4px 0;
+  break-inside: avoid; font-size: 12.5px; color: #2C3E50;
+}
+.callout.orange { border-right-color: #EA580C; background: #FDF3EC; }
+.callout b { color: #0F2A4A; }
+
+/* ---------- back cover ---------- */
+.back {
+  width: 720px; height: 1020px; break-before: page; overflow: hidden; position: relative;
+  background: #0F2A4A; color: #FFFFFF; padding: 80px 64px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.back .anchor-line { position: absolute; top: 64px; right: 64px; left: 64px; height: 3px; background: #EA580C; }
+.back-title { font-size: 26px; font-weight: 700; color: #FFFFFF; margin-bottom: 24px; }
+.card-row { display: flex; gap: 14px; margin-bottom: 26px; }
+.bcard {
+  flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 6px; padding: 16px 18px; break-inside: avoid;
+}
+.bcard h4 { color: #F59E77; font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.bcard p { color: #D9E2EC; font-size: 12px; line-height: 1.7; margin: 0; text-align: right; }
+.back-sources { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 18px; }
+.back-sources h4 { color: #FFFFFF; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.back-sources p {
+  color: #AFC1D1; font-size: 10.5px; line-height: 1.9; margin: 0 0 4px 0;
+  direction: ltr; text-align: left; max-width: 520px;
+}
+.back-foot {
+  position: absolute; bottom: 56px; right: 64px; left: 64px;
+  display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.25);
+  padding-top: 14px; font-size: 11px; color: #AFC1D1;
+  font-family: 'IBM Plex Sans Arabic', 'DejaVu Sans', sans-serif;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ COVER ═══════════════ -->
+<div class="cover">
+  <div class="anchor-line"></div>
+  <div class="kicker">خطة مستقلة · برنامج الدليل والمراجعات · مستند تنفيذي</div>
+  <div class="cover-title">خطة الوصول إلى مستوى <span class="ltri">Yelp</span></div>
+  <div class="cover-subtitle">نظام مراجعات مزدوج، وصفحة أعمال كاملة، ودليل قابل للاكتشاف</div>
+  <div class="cover-abstract">
+    خطة تنفيذية مستقلة تبدأ بفحص كامل لكل أنظمة المنصة القائمة — 21 وحدة و68 جدولًا حيًّا قيست
+    ملفًا ملفًا — لاكتشاف النقص والفجوات مقابل قدرات <span class="ltri">Yelp</span>. قلب الخطة نظام
+    مراجعات مزدوج: مراجعة موثّقة من معاملة مكتملة، أو مراجعة عامة بدون معاملة — الحالتان
+    معًا في بنية واحدة، وبيد المالك وحدة مفتاح اختيار النمط المفعّل: تبديل بلا تغيير كود.
+  </div>
+  <div class="cover-meta">
+    <div class="cr"><b>صاحب الخطة والمفتاح:</b> المالك (المستخدم) — أوامر ثلاثة موثقة أدناه</div>
+    <div class="cr"><b>الأساس القياسي:</b> الكود الحي على <span class="ltri">main a40f862</span> — كل «موجود/غائب» بدليله؛ نسخة مدققة ضد الكود ووثائق الإطار الرسمية (§1.4)</div>
+    <div class="cr"><b>الاستقلالية:</b> تُقرأ وحدها بلا أي مستند سابق؛ علاقتها بـ<span class="ltri">G-N4</span> توسيع §13 لا اعتماد</div>
+    <div class="cr"><b>النطاق:</b> الوحدات الـ21 كلها — ثقة، دليل، اكتشاف، مجتمع، ظهور، بنية</div>
+    <div class="cr"><b>الأفق:</b> ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~20 يوم عمل</div>
+  </div>
+  <div class="cover-foot">
+    <span>منصة خدمات محلية — دليل ومراجعات ومجتمع</span>
+    <span>خطة تنفيذية مستقلة</span>
+    <span>24 سبتمبر 2026</span>
+  </div>
+</div>
+
+<!-- ═══════════════ §1 ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 1</div>
+    <h2>الغرض والنطاق والاستقلالية</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>هذه وثيقة خطة تنفيذية مستقلة هدفها رفع قدرة المنصة إلى مستوى <span class="ltri">Yelp</span> —
+  دليل أعمال محلية يُكتشف ويُقيَّم ويُوثَّق. صدرت عن أمر مالك مباشر بثلاثة شروط ملزمة وُثقت
+  بحرفها في هذا القسم، وتُلزم الخطة بكل بنودها. الوثيقة مستقلة استقلالًا كاملًا: تُقرأ من
+  الصفر بلا أي مستند سابق، وكل حقيقة فيها إما قياس مباشر من الكود الحي (باسم الملف أو
+  رقم الترحيل) أو تصميم جديد معلَّل. علاقتها بمستند بوابة <span class="ltri">G-N4</span>
+  (الفرع <span class="ltri">docs/gn4-decision-document</span>، <span class="ltri">PR #379</span>)
+  علاقة توسيع: §13 في ذلك المستند رسم خارطة المستوى في صفحتين داخل إطار قرار؛ هذه
+  الخطة تحمل الخارطة نفسها إلى عمق التنفيذ — مخطط قاعدة بيانات، وبوابات منطق، وموجات
+  ترحيل مرقمة، ومعايير قبول قابلة للقياس.</p>
+
+  <h3>1.1 أوامر المالك الثلاثة (النص الحاكم)</h3>
+  <ul>
+    <li><b>الاستقلالية:</b> «ركز فقط حاليًا على تصميم خطة مستقلة لنصل لمستوى
+    <span class="ltri">Yelp</span>» — خطة قائمة بذاتها، لا قسمًا يُلحق بمستند آخر ولا
+    قرارًا متعدد الخيارات؛ وثيقة تنفيذ واحدة بمسار واحد.</li>
+    <li><b>ازدواج المراجعة:</b> «لا تحصر المراجعة بوجود معاملة بل يمكن بدونها، أي
+    الحالتين، وأنا أحدد أيهما يُفعَّل» — النظام يجب أن يحمل الحالتين معًا في بنية واحدة:
+    مراجعة موثّقة بمعاملة مكتملة (القائم اليوم) ومراجعة عامة بلا معاملة (الجديد)،
+    والتفعيل بيد المالك عبر إعداد يحكم البوابة — تبديل نمط لا إعادة بناء.</li>
+    <li><b>الفحص الشامل:</b> «افحص كل الأنظمة المتوفرة واكتشف النقص والفجوات فيها» —
+    الفحص غطى الوحدات الـ21 كلها لا وحدتي المراجعات والبحث وحدهما، وجرد
+    <span class="ltri">Flyway</span> كاملًا (<span class="ltri">V1–V69</span>، 68 جدولًا
+    غير <span class="ltri">Quartz</span>)، والنتيجة مصفوفة الفجوات في §3.</li>
+  </ul>
+
+  <h3>1.2 ما هذه الخطة ليست</h3>
+  <p>ليست مستند قرار ببدائل متقابلة — المالك حسم الاتجاه نحو مستوى
+  <span class="ltri">Yelp</span> وهذه الخطة تنفيذ أمره؛ وليست مواصفة منتج تفصيلية
+  لكل واجهة — هي عقد معماري: ما يُنشأ من جداول وأعمدة وبوابات ومفاتيح، بأي ترتيب
+  تُنشأ، وبأي معيار يُقبل كل شطر. كما أنها لا تمس النماذج المالية القائمة:
+  الدفاتر والمدفوعات خارج نطاقها إلا عند موجة الإعلانات (§5-W5) حيث يُفتح النقاش
+  في حدود انضباط الدفاتر الصلب (§7).</p>
+
+  <h3>1.3 قاعدة الأدلة</h3>
+  <p>كل سطر «موجود» في §2 يقابله ملف حي باسمه ومساره، وكل سطر «غائب» في §3 نتج عن
+  بحث نصي شامل عاد صفريًا عبر الوحدات كلها — لا افتراض ولا استرجاع من الذاكرة.
+  نقطة القياس: <span class="ltri">main a40f862</span> (دمج <span class="ltri">PR #378</span>،
+  24 سبتمبر 2026)، وهي رأس <span class="ltri">main</span> لحظة كتابة الخطة. الترقيم
+  المستقبلي للترحيلات يبدأ من <span class="ltri">V71</span> لأن آخر ترحيل مقيس هو
+  <span class="ltri">V69</span> (توسيع فئات توصية منشورات الأحياء وزوج تحققه
+  <span class="ltri">V69</span>-<span class="ltri">validate</span>).</p>
+
+  <div class="callout orange">
+    <b>حد الاستقلالية المعرفي:</b> حيث تحيل الخطة إلى اتفاقيات قائمة (منفذ
+    <span class="ltri">ReviewStatsPort</span>، ونمط توسيع <span class="ltri">CHECK</span>
+    الثنائي <span class="ltri">V68/V69</span>، ومِرحّل إبطال الكاش
+    <span class="ltri">CacheInvalidationRelay</span>) فهي تصفها وصفًا مكتفيا بذاته في
+    موضعها — القارئ لا يحتاج مستندًا آخر لفهم أي بند.
+  </div>
+</div>
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 1 — تابع</div>
+    <h2>القواعد الحاكمة للتنفيذ — الإطار الرسمي ونظام المستودع</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <h3>1.4 القواعد الحاكمة للتنفيذ</h3>
+  <p>بأمر المالك («تأكد من الخطة التنفيذية... والتزامها التام بالوثائق الرسمية
+  للإطار») دُقّقت هذه النسخة الثانية ضد الكود الحي: صُحّحت ثلاث حقائق (الفهرس
+  الفريد الحي §4.2، وآلية الجدولة §7، وحقيقة فحص الدفتر §7)، وضُبطت وحدات
+  <span class="ltri">W2</span> وعدّ ترحيلات <span class="ltri">W5</span>، ووُثّق التدقيق
+  في مصادر الغلاف الخلفي؛ والالتزام الوحيد على <span class="ltri">main</span> بعد
+  نقطة القياس وثائقي صرف (<span class="ltri">#372</span>) بصفر أثر. وهذا القسم
+  الجديد يثبّت كل آلية تنفيذ على مصدرها الرسمي وقاعدتها الممدّنة في المستودع:
+  فلا بند في §4 و§5 يخرج عن صفوف الجدول، ولا يُقبل حل بديل «يراه المهندس
+  صوابًا» ما لم يحمل مصدرًا رسميًّا أو قاعدة ممدّنة أو قياس كود.</p>
+  <table class="keep">
+    <tr><th style="width:20%">الآلية</th><th style="width:47%">مصدرها الرسمي وقاعدتها الممدّنة</th><th>قيدها في هذه الخطة</th></tr>
+    <tr>
+      <td><b>الحدود والتكامل</b></td>
+      <td>مرجع <span class="ltri">Spring Modulith 2.1.1</span> الرسمي: الوحدة حزمة جذر بـ<span class="ltri">@ApplicationModule(allowedDependencies)</span>؛ والتكامل العابر حصرًا عبر منافذ <span class="ltri">SPI</span> ينفّذها مالك البيانات وأحداث تُنشر بعد الالتزام؛ والحدود مفروضة بفحص <span class="ltri">Modulith/ArchUnit</span> في <span class="ltri">CI</span> — ممدّنة في <span class="ltri">SYSTEM.md §5</span></td>
+      <td>صفر وحدات جديدة: كل البناء داخل الـ21 القائمة، وكل تواصل جديد بمنفذ أو حدث قائم</td>
+    </tr>
+    <tr>
+      <td><b>الإعداد الحاكم</b></td>
+      <td>مرجع <span class="ltri">Spring Boot</span> الرسمي (Externalized Configuration + Caching): <span class="ltri">@ConfigurationProperties</span> لإعدادات البيئة وقت الإقلاع؛ أما سياسة يقلبها المالك وقت التشغيل فمقرّها البيانات: صف في <span class="ltri">system_settings</span> يقرأ مكاشدًا عبر تجريد الكاش الرسمي ويُبطل بثًّا بـ<span class="ltri">Redis pub/sub</span></td>
+      <td><span class="ltri">reviews.mode</span> صف بيانات لا متغير بيئة — تبديل فوري عبر المِرحّل القائم دون إعادة نشر (متغيرات <span class="ltri">Railway</span> الـ45 مقروءة عند الإقلاع فقط — قياس)</td>
+    </tr>
+    <tr>
+      <td><b>ترحيلات المخطط</b></td>
+      <td>وثائق <span class="ltri">Flyway</span> الرسمية (Versioned Migrations): الترحيل المُصدَر لا يُعدَّل — كل تغيير ملف جديد برقم أعلى — وهي حرفيًّا قاعدة <span class="ltri">AGENTS.md</span></td>
+      <td><span class="ltri">V71–V82</span> كلها ملفات جديدة؛ <span class="ltri">V72</span> يعدّل المخطط بترحيل جديد لا يلامس ملفات <span class="ltri">V6/V37/V45</span></td>
+    </tr>
+    <tr>
+      <td><b>البناء والاعتماديات</b></td>
+      <td>مرجع <span class="ltri">Maven</span> الرسمي: إدارة الاعتماديات بوراثة الأب <span class="ltri">spring-boot-starter-parent 4.1.1</span> و<span class="ltri">BOM</span> مستورد (Modulith 2.1.1)، و<span class="ltri">enforcer [3.9,)</span> مع wrapper ‏<span class="ltri">3.9.16</span> — ممدّنة في <span class="ltri">SYSTEM.md §1/§3</span></td>
+      <td>صفر تغيير في أي <span class="ltri">pom.xml</span> وصفر اعتمادية جديدة: الموجات كلها تركب المفاعل القائم</td>
+    </tr>
+  </table>
+</div>
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 1 — تابع</div>
+    <h2>القواعد الحاكمة للتنفيذ — التدقيق والاختبار وإيقاع التسليم</h2>
+    <div class="h2-rule"></div>
+  </div>
+  <table class="keep">
+    <tr><th style="width:20%">الآلية</th><th style="width:47%">مصدرها الرسمي وقاعدتها الممدّنة</th><th>قيدها في هذه الخطة</th></tr>
+    <tr>
+      <td><b>تدقيق الكيانات</b></td>
+      <td>وثائق <span class="ltri">Hibernate Envers</span> الرسمية: كل كيان <span class="ltri">@Audited</span> له جدول مرآة <span class="ltri">_aud</span>، ودلتا المخطط تحمل تعديل المرآة (عرف <span class="ltri">V24</span>، درس <span class="ltri">V33</span>) — قاعدة <span class="ltri">AGENTS.md</span> الإجبارية</td>
+      <td><span class="ltri">V72</span> يوسّع <span class="ltri">reviews_aud</span> مع كل عمود جديد، وكل عمود في <span class="ltri">W2–W4</span> يحمل مرآته</td>
+    </tr>
+    <tr>
+      <td><b>الاختبارات</b></td>
+      <td>عرف المستودع الممدّن <span class="ltri">docs/dev/testing-conventions.md</span> (مبني على مراجع <span class="ltri">JUnit 5</span> و<span class="ltri">Surefire/Failsafe</span> و<span class="ltri">JaCoCo</span> الرسمية): التكاملية بـ<span class="ltri">@ActiveProfiles("test")</span> و<span class="ltri">@Testcontainers</span>، وعتبة <span class="ltri">JaCoCo 70%</span> تُفحص في <span class="ltri">verify</span></td>
+      <td>معيار <span class="ltri">W1</span> الحاسم حرفيّ: مجموعة <span class="ltri">VERIFIED_ONLY</span> القائمة تمر دون تعديل سطر واحد منها</td>
+    </tr>
+    <tr>
+      <td><b>إيقاع التسليم</b></td>
+      <td>قاعدة <span class="ltri">CI</span> في <span class="ltri">AGENTS.md</span> وعرف الدمج <span class="ltri">SYSTEM.md §14.3</span>: فرع ← <span class="ltri">mvn clean verify</span> ← مراجعة <span class="ltri">CodeRabbit</span> ← الدمج بكلمة المالك «ادمج» حصرًا — وتفعيل المراجعة بطلب <span class="ltri">@coderabbitai review</span> (الإجراء المقيس في <span class="ltri">#366</span>)</td>
+      <td>كل موجة من <span class="ltri">W0–W5</span> تسلَّم بهذا الإيقاع نفسه، بلا استثناء واحد</td>
+    </tr>
+  </table>
+  <div class="callout orange">
+    <b>لا ترقيع ولا ديون:</b> كل آلية في هذه الخطة إما قائمة فيُركَّب فوقها بقياسها، أو
+    جديدة فتحمل ترحيلها ومرآة تدقيقها واختبارها ومعيار قبولها — لا حالة تُترك بلا
+    مالك قياس. هذا هو تعريف «تغيير يحافظ على النظام» لا «ترقيع يترك ديونًا».
+  </div>
+</div>
+<!-- ═══════════════ §2 ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 2</div>
+    <h2>الأرض المقاسة — ما هو موجود فعلًا بالدليل</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>قبل أي فجوة، القياس: ماذا يملك المستودع اليوم من قدرات <span class="ltri">Yelp</span>؟
+  الجواب المدروس أن <b>الهيكل العظمي الكامل لدليل أعمال قائم فعلًا</b> — مراجعات، وبحث
+  نصي مكاني، وصفحة مزود عامة، وإشراف محتوى، ووسائط بترتيب ومصغّرات، و<span class="ltri">SEO</span>
+  — لكن كل طبقة منه تحتاج تعميقًا وإظهارًا. الجداول التالية تسرد الأصل الحي لكل طبقة؛
+  عمود الدليل يسمّي الملف أو الترحيل الذي يحمل الحقيقة.</p>
+
+  <div class="stat-row">
+    <div class="stat"><span class="stat-num">21</span><span class="stat-cap">وحدة حية في المستودع (marketplace-*)</span></div>
+    <div class="stat"><span class="stat-num">68</span><span class="stat-cap">جدولًا حيًّا غير Quartz (V1–V69)</span></div>
+    <div class="stat"><span class="stat-num">69</span><span class="stat-cap">آخر ترحيل Flyway مقيس (V69)</span></div>
+    <div class="stat"><span class="stat-num">0</span><span class="stat-cap">مفاتيح ميزات أو إعدادات نظام في كل القاعدة</span></div>
+  </div>
+
+  <h3>2.1 طبقة الثقة — المراجعات (الأقوى قياسًا)</h3>
+  <table class="keep">
+    <tr><th>القدرة</th><th>الأصل الحي</th><th>الدليل المقيس</th></tr>
+    <tr><td>مراجعات 1–5 نجوم بنص</td><td>جدول <span class="ltri">reviews</span> بفحص <span class="ltri">CHECK (rating BETWEEN 1 AND 5)</span> وحذف ناعم بفهرس جزئي</td><td class="ltr-cell">V6__reviews.sql</td></tr>
+    <tr><td>بوابة الثقة الموثقة</td><td>لا مراجعة إلا على حجز <span class="ltri">COMPLETED</span> وبيد مشارك الحجز نفسه — أقوى من إشارة <span class="ltri">Yelp</span> لأنها من معاملة مكتملة</td><td class="ltr-cell">ReviewsService.java L93, L152</td></tr>
+    <tr><td>المراجعة الاتجاهين</td><td>المستهلك يقيّم المزود والمزود يقيّم المستهلك، بفريديّة لكل اتجاه (<span class="ltri">I8</span>)</td><td class="ltr-cell">V37, V45; ReviewDirection.java</td></tr>
+    <tr><td>رد المزود</td><td>ردّ واحد فريد لكل مراجعة مع طابع زمني — نمط <span class="ltri">Yelp</span> نفسه</td><td class="ltr-cell">Review.java reply() L151</td></tr>
+    <tr><td>الإحصاء المجمع</td><td>متوسط وعدّاد حيّان من المراجعات الأمامية فقط عبر منفذ عابر للوحدات</td><td class="ltr-cell">ReviewStatsAdapter; ReviewStats</td></tr>
+    <tr><td>المتوسط المخزّن</td><td><span class="ltri">rating_average</span> على ملف المزود يعاد حسابه بأحداث الإنشاء/التعديل</td><td class="ltr-cell">V37; ProviderReviewStatsListener</td></tr>
+    <tr><td>التدقيق والخصوصية</td><td>تدقيق <span class="ltri">Envers</span> كامل، وتصدير وإتلاف <span class="ltri">GDPR</span> للمراجعات</td><td class="ltr-cell">reviews_aud; ReviewExportAdapter</td></tr>
+  </table>
+
+  <h3>2.2 طبقة الدليل — صفحة الأعمال</h3>
+  <table class="keep">
+    <tr><th>القدرة</th><th>الأصل الحي</th><th>الدليل المقيس</th></tr>
+    <tr><td>صفحة مزود عامة</td><td>ملف + إحصاء تقييم + إعلانات المزود في استجابة واحدة — النواة التي تُبنى عليها صفحة <span class="ltri">Yelp</span> للأعمال</td><td class="ltr-cell">ProviderPublicPageService/Response</td></tr>
+    <tr><td>هوية المزود</td><td>اسم عرض، وسيرة، ونوع فاعل (فرد/وسيط مستقل/وكالة)، واسم وكالة ورخصة</td><td class="ltr-cell">ProviderProfile; V56, V14</td></tr>
+    <tr><td>إعلانات قابلة للتصفح</td><td>عنوان ووصف وفئة وسعر وعملة وحالة، بسقف ضيوف وصلاحية وتجديد</td><td class="ltr-cell">ProviderListing; V2, V44, V49</td></tr>
+    <tr><td>صور بترتيب</td><td><span class="ltri">media_assets</span> بموقع تسلسلي ومصغّرات مولّدة</td><td class="ltr-cell">V32, V43</td></tr>
+    <tr><td>اكتمال الإعلان</td><td>تسجيل اكتمال محسوب لكل إعلان — رافد مستقبلي مباشر لخوارزمية الترتيب</td><td class="ltr-cell">ListingCompletenessResponse</td></tr>
+    <tr><td>قياس النشاط</td><td>مشاهدات يومية لكل إعلان — رافد الترتيب والإعلانات المدفوعة</td><td class="ltr-cell">V58; ListingViewsDaily</td></tr>
+  </table>
+</div>
+
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 2 — تابع</div>
+    <h2>الأرض المقاسة — الاكتشاف والمجتمع والظهور</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <h3>2.3 طبقة الاكتشاف — البحث</h3>
+  <table class="keep">
+    <tr><th>القدرة</th><th>الأصل الحي</th><th>الدليل المقيس</th></tr>
+    <tr><td>بحث نصي كامل</td><td><span class="ltri">websearch_to_tsquery</span> مع هبوط <span class="ltri">pg_trgm</span> (<span class="ltri">V34</span>) — صيغة بحث الويب لا صيغة المشغلين</td><td class="ltr-cell">SearchService L523</td></tr>
+    <tr><td>فلاتر وجدية</td><td>14 معيارًا: نص، فئة، نطاق سعر، تواريخ إقامة متحققة من التوفر، ضيوف، موقع، غرض، نوع عقار، غرف، حمامات، مساحة</td><td class="ltr-cell">SearchController L57–112</td></tr>
+    <tr><td>البحث المكاني</td><td><span class="ltri">PostGIS ST_DWithin</span> بنصف قطر كيلومتري وترتيب أقرب أولًا بفهرس <span class="ltri">GiST</span></td><td class="ltr-cell">V50/V51; SearchSorts</td></tr>
+    <tr><td>ترتيب مصفّى</td><td>قائمة بيضاء مدققة: سعر صعود/هبوط، أحدث، مساحة، مسافة — بكسر تعادل <span class="ltri">id</span> لثبات الصفحات</td><td class="ltr-cell">SearchSorts.java</td></tr>
+    <tr><td>تصفح الفئات</td><td>مسار مخصص للتصفح بفئة</td><td class="ltr-cell">SearchController L123 /category/{category}</td></tr>
+    <tr><td>بحث محفوظ + تنبيه</td><td>حفظ عمليات البحث، ومطابق أحداث الإعلانات الجديدة يطلق تنبيهًا — نواة «تنبيهي عند ظهور»</td><td class="ltr-cell">V54; SavedSearchMatcher</td></tr>
+  </table>
+
+  <h3>2.4 طبقة المجتمع — الأحياء والإشراف</h3>
+  <table class="keep">
+    <tr><th>القدرة</th><th>الأصل الحي</th><th>الدليل المقيس</th></tr>
+    <tr><td>عضوية الأحياء</td><td>انتماء بمواقع جغرافية بحالات تحقق (ذاتي التصريح فما فوق)</td><td class="ltr-cell">V60; NeighborhoodMembership</td></tr>
+    <tr><td>منشورات الحي</td><td>أربع فئات تشمل <span class="ltri">RECOMMENDATION</span> — «أبحث عن سبّاك موثوق» — مع تعليقات</td><td class="ltr-cell">V61, V68/V69; PostCategory</td></tr>
+    <tr><td>الإبلاغ عن محتوى</td><td><span class="ltri">content_reports</span> بأسباب وحالات وملاحظة حل وحلّ إداري</td><td class="ltr-cell">V64; ContentReport</td></tr>
+    <tr><td>إشراف فعّال</td><td>إخفاء بيد المشرف (<span class="ltri">HIDDEN_BY_MODERATOR</span>) وواجهة إدارة إشراف</td><td class="ltr-cell">PostStatus; ModerationAdminController</td></tr>
+    <tr><td>تنبيه الجوار</td><td>مستمع يطلق تنبيه «إعلان جديد في حيك» لأعضاء الحي</td><td class="ltr-cell">NeighborhoodListingEventListener</td></tr>
+  </table>
+
+  <h3>2.5 طبقة الظهور — SEO والبنية</h3>
+  <table class="keep">
+    <tr><th>القدرة</th><th>الأصل الحي</th><th>الدليل المقيس</th></tr>
+    <tr><td>بيانات منظمة</td><td><span class="ltri">JSON-LD</span> من نوع <span class="ltri">RealEstateListing</span>: اسم ووصف ورابط وطابع تعديل وعرض وعنوان من شجرة المواقع الكاشدة — <b>بلا <span class="ltri">AggregateRating</span></b></td><td class="ltr-cell">RealEstateListingJsonLd.java</td></tr>
+    <tr><td>خريطة موقع</td><td>صفحات خريطة بمؤشرات، 50 ألف مدخل للصفحة، بقدرة قابلة للإطفاء</td><td class="ltr-cell">SitemapService (50_000)</td></tr>
+    <tr><td>شجرة جغرافية</td><td>مواقع هرمية أربع مستويات بكاش ومسار إبطال بعد الالتزام</td><td class="ltr-cell">V47; GeoLookupPort.getTree()</td></tr>
+    <tr><td>إشعارات وتفضيلات</td><td>بريد ومقبس ويب بتفضيلات لكل نوع (14+ نوعًا) — قناة دفع المراجعات الجديدة والردود</td><td class="ltr-cell">V18, V40, V53, V62–V66</td></tr>
+    <tr><td>إبطال كاش موزع</td><td>أحداث <span class="ltri">CacheInvalidationRequested</span> تطلق من 8+ خدمات إلى مِرحّل <span class="ltri">Redis</span> pub/sub — البنية التي يركب عليها مفتاح النمط (§4.6)</td><td class="ltr-cell">CacheInvalidationRelay</td></tr>
+    <tr><td>تواصل مباشر</td><td>محادثات ورسائل وطلبات تواصل على الإعلانات (<span class="ltri">listing_leads</span>)</td><td class="ltr-cell">V7, V52, V67</td></tr>
+  </table>
+
+  <div class="callout">
+    <b>الخلاصة الحاكمة للفحص:</b> هيكل <span class="ltri">Yelp</span> قائم في المستودع، لا
+    غيابَه: مراجعاتٌ ببوابة أقوى من بوابة <span class="ltri">Yelp</span> نفسها (معاملة مكتملة)،
+    وبحثٌ نصي-مكاني مكتمل الأركان، وصفحةُ أعمالٍ عامة، وإشرافُ محتوى، ووسائط، و<span class="ltri">SEO</span>.
+    الفجوة الإجمالية — كما تفصّلها §3 — فجوة <b>إظهار وتعميق وازدواج</b>، لا فجوة بناء من
+    الصفر. الاستثناء الوحيد ذو وزن: عمود <span class="ltri">booking_id NOT NULL</span>
+    (<span class="ltri">V6</span>) يحبس المراجعة كلها في المعاملات — وهو بالضبط ما يفكّه
+    التصميم المركزي (§4) تنفيذًا لأمر المالك.
+  </div>
+</div>
+<!-- ═══════════════ §3 ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 3</div>
+    <h2>مصفوفة الفجوات — 29 فجوة في ست فئات</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>هذه نتيجة الفحص الذي أمر به المالك: جرد كل ما ينقص للوصول إلى مستوى
+  <span class="ltri">Yelp</span>، مرتبًا بست فئات. كل فجوة موصوفة بأثرها على مستوى
+  الهدف، ودليل غيابها قياس بحث شامل عاد صفريًا — الأسماء والمسارات المذكورة هي
+  أماكن البحث لا مواضع لبناءٍ خفي. الترقيم <span class="ltri">G1–G29</span> هو
+  المرجع الذي تربط به الموجات في §5، فلا فجوة بلا موجة تسدّها ولا موجة بلا فجوة تمسّها.</p>
+
+  <h3>3.1 الفئة A — قلب نظام المراجعات (10 فجوات)</h3>
+  <table class="keep">
+    <tr><th>#</th><th>الفجوة</th><th>الأثر على مستوى Yelp</th><th>دليل الغياب</th></tr>
+    <tr><td class="ltr-cell">G1</td><td>المراجعة محبوسة في المعاملة: <span class="ltri">booking_id NOT NULL</span></td><td>لا مراجعة إلا لمستخدم أتمّ حجزًا — يخالف أمر المالك بالحالتين معًا، ويخنق نمو <span class="ltri">Yelp</span> العام</td><td class="ltr-cell">V6__reviews.sql</td></tr>
+    <tr><td class="ltr-cell">G2</td><td>لا مفهوم «منشأ المراجعة» — لا عمود يميّز الموثّق من العام</td><td>لا يمكن بناء الشارة والعدّادين المنفصلين ولا الترجيح بين الإشارتين</td><td class="ltr-cell">reviews schema V6/V37/V45</td></tr>
+    <tr><td class="ltr-cell">G3</td><td>لا آلية إعدادات أو مفاتيح ميزات إطلاقًا</td><td>اختيار نمط المراجعة المتفعّل يستحيل بلا تغيير كود — عكس أمر المالك «أنا أحدد أيهما يُفعَّل»</td><td class="ltr-cell">feature_flag|system_setting = 0 hits</td></tr>
+    <tr><td class="ltr-cell">G4</td><td>لا يمكن الإبلاغ عن مراجعة</td><td>أهداف الإبلاغ منشورات وتعليقات فقط؛ مراجعة مسيئة لا سبيل لرفعها للإشراف</td><td class="ltr-cell">ReportTargetType.java: POST, COMMENT</td></tr>
+    <tr><td class="ltr-cell">G5</td><td>لا صور في المراجعات</td><td>الوسائط مرتبطة بالإعلانات حصرًا؛ مراجعات <span class="ltri">Yelp</span> بلا صور تفقد نصف حجيتها</td><td class="ltr-cell">MediaAsset.listing_id NOT NULL</td></tr>
+    <tr><td class="ltr-cell">G6</td><td>لا أصوات تفاعل («مفيد»)</td><td>لا ترتيب جودة داخل قائمة مراجعات المزود، ولا إشارة مجتمع على المحتوى</td><td class="ltr-cell">review_votes = 0 tables</td></tr>
+    <tr><td class="ltr-cell">G7</td><td>الاستجابة تخفي هوية المراجع</td><td>الاسم والصورة وعدد المراجعات غائبة من <span class="ltri">ReviewResponse</span> — صفحة مراجعات بلا وجوه</td><td class="ltr-cell">ReviewResponse.java</td></tr>
+    <tr><td class="ltr-cell">G8</td><td>العدّاد غير مخزّن — المتوسط فقط يخزّن</td><td>كل عرض لعدد المراجعات استعلام تجميع حيّ؛ ولا توزيع نجوم (رسم 1–5) لا مخزّن ولا محسوب</td><td class="ltr-cell">provider_profiles: rating_average فقط</td></tr>
+    <tr><td class="ltr-cell">G9</td><td>لا مضادات إساءة للنمط المفتوح</td><td>سقف يومي، وعمر حساب، وقائمة انتظار إشراف أولى — كلها شروط بقاء إن فُتح الباب بلا معاملة</td><td class="ltr-cell">reviewCreate (10/دقيقة) قائم — بلا سقف يومي لكل مستخدم</td></tr>
+    <tr><td class="ltr-cell">G10</td><td>لا فريديّة مراجعة عامة (مستخدم×مزود)</td><td>الفهرس الفريد الحالي على الحجز فقط؛ بالنمط المفتوح يمكن لمستخدم قصف مزود بمراجعات متكررة</td><td class="ltr-cell">uq_reviews_booking_direction_active (V45)</td></tr>
+  </table>
+</div>
+
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 3 — تابع</div>
+    <h2>مصفوفة الفجوات — صفحة الأعمال والاكتشاف والظهور</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <h3>3.2 الفئة B — صفحة الأعمال (5 فجوات)</h3>
+  <table class="keep">
+    <tr><th>#</th><th>الفجوة</th><th>الأثر</th><th>دليل الغياب</th></tr>
+    <tr><td class="ltr-cell">G11</td><td>لا ساعات عمل معلنة</td><td>التوفر القائم مواعيدُ حجزٍ فردية لا ساعات عمل؛ صفحة <span class="ltri">Yelp</span> بلا ساعات ناقصة جوهريًا</td><td class="ltr-cell">availability_slots vs business_hours</td></tr>
+    <tr><td class="ltr-cell">G12</td><td>لا قائمة خدمات وأسعار معلنة</td><td>«قائمة الطعام» في <span class="ltri">Yelp</span>: خدمة، مدة، سعر — غائبة عن المزود كليًا</td><td class="ltr-cell">provider_services = 0</td></tr>
+    <tr><td class="ltr-cell">G13</td><td>لا نطاق خدمة جغرافي معلن</td><td>«أخدم هذه المناطق» — عمود الفئة في الإعلان ليس نطاق مزود</td><td class="ltr-cell">لا service_areas</td></tr>
+    <tr><td class="ltr-cell">G14</td><td>لا حالة توثيق ملكية للمزود</td><td>«مالك موثّق» (<span class="ltri">Verified Owner</span>) شارة <span class="ltri">Yelp</span> المركزية؛ الرخصة عمود بلا حالة تحقق معلنة</td><td class="ltr-cell">ProviderProfile لا verification_state</td></tr>
+    <tr><td class="ltr-cell">G15</td><td>لا سمات فئة ديناميكية</td><td>الفئة نص حر؛ سمات منظمة لكل فئة (واي فاي، موقف، يدعم دفع إلكتروني) غائبة</td><td class="ltr-cell">category varchar(100) بلا جدول سمات</td></tr>
+  </table>
+
+  <h3>3.3 الفئة C — الاكتشاف والترتيب (6 فجوات)</h3>
+  <table class="keep">
+    <tr><th>#</th><th>الفجوة</th><th>الأثر</th><th>دليل الغياب</th></tr>
+    <tr><td class="ltr-cell">G16</td><td>لا ترتيب حسب التقييم</td><td>القائمة البيضاء: سعر/أحدث/مساحة/مسافة — النجوم لا تدخل الترتيب</td><td class="ltr-cell">SearchSorts.java</td></tr>
+    <tr><td class="ltr-cell">G17</td><td>لا فلتر حد أدنى من النجوم</td><td>لا «4 نجوم فأعلى» — الفلاتر الـ14 كلها بلا تقييم</td><td class="ltr-cell">SearchController L57–112</td></tr>
+    <tr><td class="ltr-cell">G18</td><td>لا ترتيب مركّب</td><td><span class="ltri">Yelp</span> يرتب بتقاطع تقييم×كمية×اكتمال×حداثة×نشاط؛ القاعدة تملك كل الروافد (اكتمال، مشاهدات) بلا خوارزمية تجمعها</td><td class="ltr-cell">لا ranking column/query</td></tr>
+    <tr><td class="ltr-cell">G19</td><td>لا مفضلات أو مجموعات</td><td>«حفظ لاحقًا» و«قائمتي» غائبان — صفر جداول</td><td class="ltr-cell">favorites|bookmarks = 0</td></tr>
+    <tr><td class="ltr-cell">G20</td><td>لا نجوم في نتائج البحث</td><td>نتيجة البحث لا تحمل تقييم المزود — قرار النقرة يفقد أهم إشارة</td><td class="ltr-cell">الاستجابة بلا حقول تقييم</td></tr>
+    <tr><td class="ltr-cell">G21</td><td>لا متابعة مزود</td><td>«تابع هذا المزود» وتنبيهات إعلانه الجديدة — غائبة</td><td class="ltr-cell">follows = 0</td></tr>
+  </table>
+
+  <h3>3.4 الفئة D — الظهور الخارجي (3 فجوات)</h3>
+  <table class="keep">
+    <tr><th>#</th><th>الفجوة</th><th>الأثر</th><th>دليل الغياب</th></tr>
+    <tr><td class="ltr-cell">G22</td><td>بلا <span class="ltri">AggregateRating</span> في JSON-LD</td><td>النجوم الغنية في نتائج غوغل — أقوى رافعة ظهور مجانية — معطلة</td><td class="ltr-cell">RealEstateListingJsonLd: name/offers/address فقط</td></tr>
+    <tr><td class="ltr-cell">G23</td><td>لا صفحات فئات عامة</td><td>«/فئة/سباكة-الرياض» صفحات هبوط SEO جماعية — غائبة عن الخريطة والمسارات</td><td class="ltr-cell">SitemapService: إعلانات فقط</td></tr>
+    <tr><td class="ltr-cell">G24</td><td>محرك فوترة إعلانات غائب</td><td><span class="ltri">promoted_until</span> موجود لكن بلا حملات ولا ميزانية ولا خصم ولا ربط دفاتر — «مُروَّج» تُدفع يدويًا أو بلا مقابل</td><td class="ltr-cell">V59 بلا ad_campaigns</td></tr>
+  </table>
+
+  <h3>3.5 الفئتان E وF — الثقة المفتوحة وهوية المراجع (5 فجوات)</h3>
+  <table class="keep">
+    <tr><th>#</th><th>الفجوة</th><th>الأثر</th><th>دليل الغياب</th></tr>
+    <tr><td class="ltr-cell">G25</td><td>لا كشف احتيال مراجعات</td><td>النمط المفتوح يفتح باب التقييم الذاتي وقصف المنافسين — الحارس غائب</td><td class="ltr-cell">لا fraud signals</td></tr>
+    <tr><td class="ltr-cell">G26</td><td>لا درجة ثقة للمراجع</td><td>مراجع موثوق (حساب معاملات، تاريخ، أصوات مفيد) مقابل حساب ولد اليوم — لا تمييز</td><td class="ltr-cell">لا trust score</td></tr>
+    <tr><td class="ltr-cell">G27</td><td>لا سقوف معدل على مستخدم</td><td>غطاء القصف اليومي (كم مراجعة عامة/يوم) غائب</td><td class="ltr-cell">reviewCreate نافذة قصيرة (10/دقيقة) لا سقف يومي</td></tr>
+    <tr><td class="ltr-cell">G28</td><td>لا صفحة مراجع عامة</td><td>اسم وصورة وإحصاءات ونشاط المراجع — ركن <span class="ltri">Yelp</span> المجتمعي</td><td class="ltr-cell">لا public reviewer endpoint</td></tr>
+    <tr><td class="ltr-cell">G29</td><td>لا أوسمة (موثّق/نخبة/عدد)</td><td>شارات مصداقية المراجع والمزود على النمط المزدوج</td><td class="ltr-cell">لا badges</td></tr>
+  </table>
+
+  <div class="callout orange">
+    <b>قراءة المصفوفة:</b> عشر من الفجوات التسع والعشرين (A كلها) في نظام المراجعات نفسه —
+    وهذا متسق مع أمر المالك: ازدواج المراجعة هو المركز. الفئتان B وC (11 فجوة) هما ما
+    يجعل الصفحة والاكتشاف «بمستوى <span class="ltri">Yelp</span>» شكلًا ومضمونًا، وD ما
+    يجعل الظهور الخارجي بذلك المستوى، وE+F ما يحمي الباب المفتوح من أن يتحول إلى ثغرة.
+  </div>
+</div>
+<!-- ═══════════════ §4 ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 4 — التصميم المركزي</div>
+    <h2>نظام المراجعات المزدوج — الحالتان والمفتاح بيد المالك</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>هذا القسم يجيب أمر المالك الثاني حرفيًا: المراجعة لا تُحصر بوجود معاملة، الحالتان
+  ممكنتان، والاختيار بيد المالك. التصميم يبني على ما هو قائم ولا يهدمه: مسار الحجز
+  المكتمل (<span class="ltri">ReviewsService</span> ببوابتيه في <span class="ltri">L93/L152</span>)
+  يبقى كما هو بايت-بايت حين يكون النمط الموثّق هو المتفعّل؛ ويُفتح إلى جانبه مسار عام
+  جديد محروس بمضادات إساءة. الفصل بين المسارين ليس في الكود بل في <b>بيانات</b> — عمود
+  منشأ، وإعداد حاكم يقرؤه الكود في كل بوابة إنشاء.</p>
+
+  <h3>4.1 الإعداد الحاكم — <span class="ltri">reviews.mode</span></h3>
+  <p>إعداد نظام واحد يحكم البوابة، قيمه الثلاث محددة بدلالة تشغيلية كاملة. يُخزّن في جدول
+  <span class="ltri">system_settings</span> الجديد (W0، §5) ويُقرأ من كاش
+  <span class="ltri">Redis</span> نفسه الذي يخدم المنصة اليوم، فيبقى التبديل فوريًا عبر
+  كامل النسخ دون إعادة نشر — وهذا معنى «أحدد أيهما يُفعَّل» تنفيذًا حرفيًا: طلب
+  <span class="ltri">PATCH</span> إداري واحد.</p>
+  <table class="keep">
+    <tr><th>قيمة النمط</th><th>بوابة الإنشاء</th><th>من يستطيع المراجعة</th><th>سلوك الإحصاء المجمع</th></tr>
+    <tr>
+      <td><b>VERIFIED_ONLY</b><br>موثّق فقط (الوضع الراهن)</td>
+      <td>حجز <span class="ltri">COMPLETED</span> + المشارك نفسه — البوابتان القائمتان دون أي تعديل سلوك</td>
+      <td>مستهلك الحجز أو مزوده، مرة لكل اتجاه</td>
+      <td>متوسط واحد من المراجعات الموثقة — كما اليوم تمامًا</td>
+    </tr>
+    <tr>
+      <td><b>OPEN</b><br>عام مفتوح</td>
+      <td>لا حجز مطلوب؛ حساب مسجل + ليس المزود نفسه + مضادات الإساءة (§4.5)</td>
+      <td>أي مستخدم مسجل، مراجعة واحدة لكل مزود (فريديّة G10)</td>
+      <td>متوسط واحد يجمع المراجعات العامة والموثقة معًا</td>
+    </tr>
+    <tr>
+      <td><b>HYBRID</b><br>الهجين المميَّز</td>
+      <td>كلا المسارين مفتوح — المسار الموثق ببوابته، والعام بمضاداته</td>
+      <td>الاثنان معًا</td>
+      <td>عدّادان وشارتان منفصلان (§4.4) — أقوى عرض ثقة: «موثّق 4.8 (23) · عام 4.2 (156)»</td>
+    </tr>
+  </table>
+
+  <h3>4.2 دلتا المخطط — <span class="ltri">V72</span> بالحرف</h3>
+  <p>ترحيل واحد مقيد الانعكاس (يُوثَّق كذلك في <span class="ltri">reviews_aud</span> عبر
+  <span class="ltri">Envers</span> القائم — العمود الجديد يدخل التعريف المُدقَّق):</p>
+  <table class="keep">
+    <tr><th>العبارة</th><th>الأثر</th></tr>
+    <tr><td class="ltr-cell">ALTER TABLE reviews<br>ALTER COLUMN booking_id<br>DROP NOT NULL</td><td>فكّ قيد G1 — الحجز يبقى مفتاحًا أجنبيًا ومرجعًا للمسار الموثق لكنه يصبح فارغًا في المسار العام</td></tr>
+    <tr><td class="ltr-cell">ADD COLUMN origin VARCHAR(20)<br>NOT NULL DEFAULT 'BOOKING'<br>CHECK (origin IN<br>('BOOKING','ORGANIC'))</td><td>عمود المنشأ (G2): <span class="ltri">BOOKING</span> لكل الصفوف القائمة — القيمة الافتراضية تجعل الترحيل صفري-الكلفة على البيانات الحية — و<span class="ltri">ORGANIC</span> للمراجعة العامة</td></tr><tr><td class="ltr-cell">ADD CONSTRAINT ck_review_origin_booking<br>CHECK ((origin='BOOKING' AND booking_id IS NOT NULL)<br>OR (origin='ORGANIC' AND booking_id IS NULL))</td><td>ثابت المنشأ↔الحجز: الحجز موجودُ إذاً وفقط إذا كان المنشأ <span class="ltri">BOOKING</span> — قيد عبر-الأعمدة على مستوى قاعدة البيانات يحمي شارة «موثّقة» والمجموعين من أي مسار كتابة لاحق أو إصلاح بيانات: لا مراجعة تُعرض موثّقة بلا حجز مكتمل، ولا عامة تحمل حجزًا. النمط المؤسسي ذاته (فحص يرافق القيمة الافتراضية كما في زوج V68/V69)</td></tr>
+    <tr><td class="ltr-cell">ADD COLUMN listing_id UUID<br>NULL REFERENCES<br>provider_listings(id)</td><td>المراجعة العامة تستهدف مزودًا، واختياريًا إعلانًا بعينه (تجربة محددة لا مزود مجرد) — نفس مساحة المعرف واصطلاح الملكية القائم</td></tr>
+    <tr><td class="ltr-cell">CREATE UNIQUE INDEX<br>uq_review_organic_once<br>ON reviews (reviewer_id,<br>provider_id)<br>WHERE origin='ORGANIC'<br>AND is_deleted=false</td><td>فريديّة المراجعة العامة (G10): مستخدم واحد × مزود واحد، إلى الأبد — بنمط الفهرس الجزئي نفسه الذي يحمي المسار الموثق اليوم</td></tr>
+    <tr><td class="ltr-cell">(إسقاط وإعادة إنشاء)<br>DROP INDEX<br>uq_reviews_booking_<br>direction_active;<br>CREATE UNIQUE INDEX<br>same name ON reviews<br>(booking_id, direction)<br>WHERE origin='BOOKING'<br>AND is_deleted=false</td><td>الفهرس الفريد الحي هو <span class="ltri">uq_reviews_booking_direction_active</span> (كل حجز×اتجاه — <span class="ltri">V45</span>؛ الاسم الأصلي <span class="ltri">uq_review_booking_active</span> أسقطه <span class="ltri">V45</span> نفسه): يُعاد بشرط <span class="ltri">origin='BOOKING'</span> ليخصّ المسار الموثق وحده ولا يعترض صفوف المسار العام الفارغة الحجز — تبديل ذرّي بنمط <span class="ltri">V45</span> ذاته عند استبدال فهرس <span class="ltri">V6</span></td></tr>
+  </table>
+
+  <div class="callout">
+    <b>انسجام مع النمط المؤسسي:</b> توسيع <span class="ltri">CHECK</span> مع قيمة افتراضية تحفظ
+    السلوك القائم هو النمط ذاته الذي نفذه المستودع في زوج <span class="ltri">V68/V69</span>
+    (توسيع فئات المنشورات): القيم القديمة سلوكها بايت-بايت، والجديد يدخل بقرار مُرقَّم
+    ومُدقَّق. لا <span class="ltri">enum</span> تطبيقي جديد هنا — العمود قيمتيه محفوظتان
+    بفحص قاعدة البيانات لا بمرجع Java، وهو ما يسمح مستقبلًا بإضافة قيمة ثالثة (مثل مراجعة
+    مدعومة) بترحيل توسيع لا بإعادة بناء.
+  </div>
+</div>
+
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 4 — تابع</div>
+    <h2>البوابات والعرض والمضادات ومفتاح التبديل</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <h3>4.3 بوابة الإنشاء الموحدة — القرار من البيانات لا من الكود</h3>
+  <p>الخدمة تقرأ النمط من الإعداد المكاش ثم تفصل: في <span class="ltri">VERIFIED_ONLY</span>
+  المسار الموثق وحده يُقبل، وطلبٌ بلا حجز يُرفض برسالة معلنة؛ في <span class="ltri">OPEN</span>
+  يُقبل المسار العام (بمضاداته) ويُرفض الموثق أو يُحوَّل إلى عام بلا حجز حسب توجيه
+  المالك عند التنفيذ؛ في <span class="ltri">HYBRID</span> كلا المسارين. الصف المشترك:
+  كل مراجعة تحمل <span class="ltri">origin</span>، والمسار الموثق يظل يمر بالبوابتين
+  القائمتين (المشارك + الحجز المكتمل) دون أي تخفيف. وإذا حملت المراجعةُ العامة <span class="ltri">listing_id</span> اختياريًا فقد تحقق البوابةُ ملكيته للمزود نفسه عبر المنفذ القائم (نمط التحقق عبر <span class="ltri">SPI</span> لا عبر قيد قاعدة — التحقق العاتب للجداول لا يُصاغ <span class="ltri">CHECK</span> في <span class="ltri">PostgreSQL</span>؛ البوابة هي طبقة الفرض). الاختبارات تلزم بقبول حرفي:
+  مجموعة اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية يجب أن تمر دون تعديل
+  سطر واحد منها — هذا هو تعريف «لا كسر للقائم».</p>
+
+  <h3>4.4 العرض في الهجين — إشارتان لا إشارة واحدة</h3>
+  <p>عند <span class="ltri">HYBRID</span> تُعرض المجموعات منفصلة: عدّاد ومتوسط للمراجعات
+  الموثقة (يستمر <span class="ltri">rating_average</span> القائم بحمله وحده — توافق خلفي
+  كامل لكل قارئ اليوم)، وعدّاد ومتوسط للعامّة في عمودين جديدين
+  (<span class="ltri">rating_general_average</span> / <span class="ltri">rating_general_count</span>)
+  يجدّدهما المستمع نفسه (<span class="ltri">ProviderReviewStatsListener</span>) بأحداث
+  الإنشاء والتعديل القائمة. <b>تصحيح إلزامي قبل الاعتماد على هذا المستمع (عيب قائم مقيس):</b> <span class="ltri">reviews.provider_id</span> في فضاء <span class="ltri">users.id</span> (توثيق الكيان نفسه: مفتاح <span class="ltri">V6</span> الخارجي)، بينما <span class="ltri">ProviderService.refreshRatingAverage</span> يبحث به في <span class="ltri">provider_profiles.id</span> ثم يستعلم الإحصاء بـ <span class="ltri">profile.getId()</span> — عدم تطابق مزدوج يجعل المسار يتخطى بصمت في الإنتاج (اختبار <span class="ltri">L21</span> القائم يقنّعه بتمرير <span class="ltri">profile.getId()</span> حيث يمرر الإنتاج <span class="ltri">users.id</span>). W1 يصحح الإخراط إلى <span class="ltri">user_id</span> — النمط الذي تستخدمه <span class="ltri">ProviderPublicPageService</span> نفسها اليوم (<span class="ltri">findStatsByProviderId(profile.getUserId())</span>) — ويضيف اختبار تكامل بفضاءات المعرفات الحقيقية (مستخدم وملف بمعرفين مختلفين). كل مراجعة تحمل شارتها: «مراجعة موثّقة» لمعاملة مكتملة،
+  «مراجعة عامة» لغيرها — والإشارة الموثقة أعلى رتبة في الترتيب داخل الصفحة. عند
+  <span class="ltri">OPEN</span> يُدمج المجموعان في رقم واحد. التوزيع النجمي (رسم
+  1–5) يُحسب حيًّا من الجدول بجملة تجميع واحدة، ويُعرض منفصلًا للإشارتين في الهجين.</p>
+
+  <h3>4.5 مضادات الإساءة في المسار العام (شرط البقاء لا الرفاهية)</h3>
+  <ul>
+    <li><b>سقف يومي للمراجع:</b> خمس مراجعات عامة يوميًا كحد أقصى (إعداد
+    <span class="ltri">reviews.organic.daily-cap</span> قابل للتعديل بيد المالك من
+    <span class="ltri">system_settings</span> — نفس آلية النمط).</li>
+    <li><b>عمر الحساب:</b> الحساب الأصغر من سبعة أيام لا يكتب مراجعة عامة — يرفع كلفة
+    الجيوش الزائفة إلى كلفة صبر لا كلفة كود.</li>
+    <li><b>قائمة الانتظار الأولى:</b> أول ثلاث مراجعات عامة لكل حساب جديد تدخل حالة
+    <span class="ltri">PENDING_REVIEW</span> ولا تُعرض إلا بعد موافقة إشراف — عمود حالة
+    ناعم على المراجعة نفسها، والإشراف القائم (<span class="ltri">ModerationAdminController</span>)
+    هو سطح الحكم. <b>بوابة الرؤية بياناتٌ لا نية:</b> الموافقة ليست بوابةً فعلية إلا إذا صافت كل مسارات القراءة العامة — قائمة المراجعات العامة (<span class="ltri">findByProviderIdAndDirection</span>)، ومجموعة <span class="ltri">getStatsByProviderId</span> التي تغذي المتوسط المخزن، والقراءة المكاشفة في <span class="ltri">ProviderPublicPageService</span> — كلها تستثني غير المقبولة، وبالموافقة يُطلق تحديث المجموع عبر الحدث القائم (<span class="ltri">AFTER_COMMIT</span>) فلا يبقى المتوسط المخزن متأخرًا.</li>
+    <li><b>إبلاغ المراجعة:</b> توسيع هدف الإبلاغ بقيمة <span class="ltri">REVIEW</span> —
+    نفس زوج الترحيل (توسيع <span class="ltri">CHECK</span> + ثابت enum) بنمط
+    <span class="ltri">V68/V69</span> (يسد G4).</li>
+    <li><b>أصوات «مفيد»:</b> جدول <span class="ltri">review_votes</span> بفريديّة
+    (مراجعة×مصوّت) — إشارة الجودة التي تتغذى عليها درجة ثقة المراجع لاحقًا (G6→G26).</li>
+    <li><b>إشارات الاحتيال التجميعية:</b> دفعة مراجعات متزامنة على مزود واحد، أو تزامن
+    التسجيل والمراجعة، أو تشابه النص — تُسجَّل إشارةً في جدول <span class="ltri">review_flags</span>
+    داخليًا لطابور الإشراف؛ لا حجب تلقائيًا في الإصدار الأول (شفافية على التقنيين).</li>
+  </ul>
+
+  <h3>4.6 التبديل بلا كود — أول تطبيق حي لطبقة التحكم</h3>
+  <p>الإعداد الجديد ليس حالة معزولة بل أول مقيم في بنية الإعدادات التي ستخدم لاحقًا
+  سياسات القناة ومحركات الإيراد: كتابة عبر <span class="ltri">AdminController</span>
+  (إدارة قائمة)، حفظ في <span class="ltri">system_settings</span> بإصدار وطابع وقائم
+  بالتحديث، قراءة مكاشدة، وبث إبطال عبر <span class="ltri">CacheInvalidationRelay</span>
+  القائم — نفس القناة التي تُبطل بها كاشات الفهرس والوسائط والجغرافيا اليوم عبر ثماني
+  خدمات. سجل التغيير يدخل تدقيق <span class="ltri">Envers</span>: من غيّر النمط، ومتى،
+  وإلى ماذا — مساءلة كاملة لمفتاح يبدّل شكل الثقة في المنصة.</p>
+
+  <div class="callout orange">
+    <b>حد التصميم الصريح:</b> النمط يحكم <b>الإنشاء</b> فقط. المراجعات الموجودة لا تُحذف
+    ولا تتحول بتغيير النمط: التحول من <span class="ltri">OPEN</span> إلى
+    <span class="ltri">VERIFIED_ONLY</span> يوقف قبول الجديد ولا يمسّ المكتوب — قاعدة
+    عدم رجوع البيانات التي يقوم عليها الحذف الناعم القائم في الجدول منذ <span class="ltri">V6</span>.
+  </div>
+</div>
+<!-- ═══════════════ §5 ═══════════════ -->
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 5</div>
+    <h2>خارطة الطريق — ست موجات و12 ترحيلًا</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>كل موجة وحدة تسليم مستقلة: ترحيلاتها، ووحداتها، ومعيار قبولها القابل للقياس.
+  الترتيب ليس زمنيًا فحسب بل سببي: W0 تبني المفتاح، W1 يركبه على المراجعات، ثم تتفرع
+  W2/W3/W4 بالتوازي، وW5 تُبنى فوق أرض الظهور والنشاط المستقرة. مرجع الفجوات في
+  العمود الأخير يضمن التغطية الكاملة: 29 فجوة، كلها مسدودة بنهاية W5.</p>
+
+  <table class="keep">
+    <tr><th>الموجة</th><th>النطاق (ما يُبنى بالضبط)</th><th>الترحيل / الوحدات</th><th>معيار القبول</th><th>الفجوات</th></tr>
+    <tr>
+      <td><b>W0</b><br>التحكم<br>~1.5 يوم</td>
+      <td>جدول <span class="ltri">system_settings</span> (مفتاح، قيمة JSONB، وصف، إصدار، قائم بالتحديث، طابع) + سطح إداري للقراءة والكتابة + قراءة مكاشدة + إبطال عبر المِرحّل القائم + القيمة الأولى: <span class="ltri">reviews.mode = VERIFIED_ONLY</span></td>
+      <td class="ltr-cell">V71<br>app(admin) + shared + platform-infra</td>
+      <td>كتابة إدارية تُبث خلال ثانيةٍ إلى كل نسخة قارئة، وسجل <span class="ltri">Envers</span> يحفظ من/متى/إلى ماذا، وصفر تغيير سلوك مرئي (القيمة الافتراضية = الوضع الراهن)</td>
+      <td class="ltr-cell">G3</td>
+    </tr>
+    <tr>
+      <td><b>W1</b><br>المراجعات المزدوجة<br>~4 أيام</td>
+      <td>دلتا مخطط §4.2 كاملة + بوابة الإنشاء الموحدة بقراءة النمط + هوية المراجع في الاستجابة (اسم عرض يحترم <span class="ltri">pseudonymized_at</span>، وعدّاد مراجعاته) + إبلاغ المراجعة + أصوات «مفيد» + مضادات §4.5 كلها (ومنها بوابة الرؤية على مسارات القراءة العامة الثلاثة) + عدّادات العرض المزدوجة + <b>تصحيح فضاء المعرفات في مسار المتوسط المخزن قبل الاعتماد عليه (§4.4: الإخراط إلى user_id بفضاءات معرفات حقيقية)</b> + <b>ارتباط وسائط المراجعة (<span class="ltri">review_media</span> بمرآة تدقيق) ومسار رفع/قراءة مملوك للمراجعة — <span class="ltri">MediaAsset.listing_id</span> القائم <span class="ltri">NOT NULL</span> لا يوصل G5 وحده</b></td>
+      <td class="ltr-cell">V72 (دلتا §4.2 + حالة إشراف المراجعة + عمودا rating_general على provider_profiles — كل المرايا), V73 (REVIEW توسيع زوجي), V74 (أصوات/إشارات/وسائط المراجعة — review_media ومرآتها)<br>reviews + community + identity + media</td>
+      <td>اختبارات <span class="ltri">VERIFIED_ONLY</span> الحالية تمر دون تعديل حرفي؛ واختبار لكل نمط: إنشاء موثق، وعام بلا حجز، وهجين بشارتين؛ والفريديّتان تُختبران بالسلب؛ وقيد <span class="ltri">ck_review_origin_booking</span> يُختبر بالسلب (موثق بلا حجز يرفضه القيد)؛ ومراجعة معلّقة لا تظهر في القائمة العامة ولا في المجموعين حتى الموافقة فيحدّث الحدثُ المتوسطَ؛ والوسائط تُرفع وتُقرأ من مراجعة بلا إعلان؛ والمتوسط المخزن يتجدد بمستخدم وملف بمعرفين مختلفين (فضاءات حقيقية)</td>
+      <td class="ltr-cell">G1, G2, G4–G10, G27</td>
+    </tr>
+    <tr>
+      <td><b>W2</b><br>صفحة الأعمال والظهور<br>~5 أيام</td>
+      <td><span class="ltri">AggregateRating</span> + <span class="ltri">Review</span> في JSON-LD (يُبثان فقط عند وجود مراجعات مقبولة) + ساعات عمل (<span class="ltri">business_hours</span> بمفتاح فريد مزود×يوم، وعرضها في <span class="ltri">openingHours</span> النمطية) + قائمة خدمات معلنة <span class="ltri">provider_services</span> + نطاق خدمة جغرافي معلن (<span class="ltri">service_areas</span> — G13) + سمات فئة ديناميكية (جدول سمات لكل فئة — G15، مبدأ «السمات بيانات» نفسه) + حالة توثيق المزود + صفحات فئات عامة تدخل الخريطة</td>
+      <td class="ltr-cell">V75 (ساعات/خدمات/نطاق خدمة), V76 (توثيق/سمات فئات)<br>catalog + provider<br>(الـSEO داخل catalog)</td>
+      <td>صفحة مزود كاملة: ساعات + خدمات + توزيع نجوم + إشارتا التقييم؛ وأداة فحص البيانات المنظمة ترى النجوم؛ وصفحات الفئات في <span class="ltri">sitemap</span></td>
+      <td class="ltr-cell">G11–G15, G22, G23</td>
+    </tr>
+    <tr>
+      <td><b>W3</b><br>الاكتشاف والترتيب<br>~3 أيام</td>
+      <td>ترتيب حسب التقييم في القائمة البيضاء + فلتر حد أدنى من النجوم + نجوم الاستجابة في نتائج البحث (انضمام إلى إحصاءات المزود المكاشدة) + خوارزمية ترتيب مركّبة (تقييم×log كمية×اكتمال×حداثة) عمودًا محسوبًا بجدول يومي قائم + المفضلات</td>
+      <td class="ltr-cell">V77 (favorites), V78 (ranking col)<br>search + catalog</td>
+      <td>«4 نجوم فأعلى» يعمل؛ والترتيب المركّب يفضّل مكتملًا موثقًا نشطًا على مكتمل ناقص صامت عند تساوي النجوم؛ وحفظ/إلغاء حفظ من واجهة النتائج</td>
+      <td class="ltr-cell">G16–G20</td>
+    </tr>
+    <tr>
+      <td><b>W4</b><br>التفاعل وهوية المراجع<br>~2.5 يوم</td>
+      <td>صفحة مراجع عامة (اسم، طابع انضمام، عدّاد مراجعات موثقة/عامة، أوسمته) + أوسمة المراجع (موثّق المعاملات، أصوات مفيد تراكمية) + متابعة مزود بتنبيه على إعلانه الجديد (عبر تفضيلات الإشعارات القائمة)</td>
+      <td class="ltr-cell">V79 (follows)<br>identity + reviews + notifications</td>
+      <td>نقرة من مراجعة إلى صفحة المراجع تكشف نشاطه؛ والمتابعة تطلق تنبيهًا واحدًا محترمًا للتفضيل</td>
+      <td class="ltr-cell">G21, G28, G29</td>
+    </tr>
+    <tr>
+      <td><b>W5</b><br>الإعلانات والفوترة<br>~4 أيام</td>
+      <td>حملات (<span class="ltri">ad_campaigns</span>: ميزانية، تسعير نقرة/ظهور، مدة) + أحداث (ظهور من <span class="ltri">listing_views_daily</span> القائم، ونقرة مسجلة) + <b>هوية نافذة فوترة لكل حملة (مؤشر <span class="ltri">billed_through</span> + سجل شحن غير قابل للتعديل لكل نافذة يجمد الاستهلاك المفوتر) ومفتاح مصدر حتمي للدفتر (<span class="ltri">AD_DEBIT:{campaignId}:{windowStart}</span> — قيد <span class="ltri">source_id UNIQUE</span> القائم في <span class="ltri">V19</span> يرفض التكرار عند المفتاح الحتمي؛ إعادة المحاولة أو تداخل الجدولة يستحيلان معًا)</b> + وظيفة خصم دورية تُصدر نية دفع وتقيد الدفتر بنوع مُصدَر جديد <span class="ltri">AD_DEBIT</span> — بقرار إصدار موثق يجلس فوق انضباط الدفاتر الصلب (§7)</td>
+      <td class="ltr-cell">V80 (campaigns + مؤشر نافذة الفوترة وسجل الشحن),<br>V81+V82 (زوج AD_DEBIT: توسيع التعداد + تحقق بنمط V68/V69)<br>catalog + payments + ledger + pricing</td>
+      <td>حملة بميزانية تنتهي بنفادها؛ والقيد يوازن الميزانية المخصومة فلسًا بفلس؛ والمُروَّج بلا ميزانية لا يتصدر؛ وإعادة تشغيل الخصم أو تداخل جدولتين لنافذة واحدة تنتج قيدًا واحدًا ومفتاح مصدر واحد (اختبار التكرار الحتمي)</td>
+      <td class="ltr-cell">G24, G25, G26</td>
+    </tr>
+  </table>
+
+  <div class="callout">
+    <b>لماذا هذا الترتيب:</b> المفتاح قبل القفل (W0 قبل W1) لأن بوابة المراجعة تقرأ
+    الإعداد؛ والمراجعات قبل الاكتشاف (W1 قبل W3) لأن ترتيبًا بلا نجوم ترتيبٌ أعمى؛
+    والظهور المجاني قبل المدفوع (W2 قبل W5) لأن <span class="ltri">AggregateRating</span>
+    يرفع قيمة الموضع المُروَّج نفسها؛ والإعلانات آخرًا لأنها الوحيدة التي تلامس الدفاتر —
+    أعلى كلفة خطأ، فتستحق أرضًا مستقرة تحتها.
+  </div>
+</div>
+
+<div class="page">
+  <div class="chapter-header">
+    <div class="chip">القسم 6</div>
+    <h2>المجهود والاعتماديات ومقاييس النجاح</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <h3>6.1 المجموع والرسم البياني للاعتماديات</h3>
+  <p>مجموع المجهود التقديري <b>20 يوم عمل صافية</b> (1.5 + 4 + 5 + 3 + 2.5 + 4)، يضاف
+  إليها هامش مراجعة ودمج بحسب إيقاع المستودع المعتمد (§1.4): كل موجة فرع مستقل
+  بفحص <span class="ltri">CI</span> (<span class="ltri">mvn clean verify</span>) ومراجعة
+  <span class="ltri">CodeRabbit</span> وبوابة دمج بكلمة المالك «ادمج» حصرًا — النمط الذي جرى
+  عليه <span class="ltri">main</span> حتى <span class="ltri">a40f862</span>. الاعتماديات خطية
+  في الرأس ومتفرعة في الجسد:</p>
+  <table class="keep">
+    <tr><th>المرحلة</th><th>ما يمكن تنفيذه بالتوازي</th></tr>
+    <tr><td>الرأس التسلسلي</td><td><span class="ltri">W0 → W1</span> — لا فكاك: البوابة تقرأ المفتاح</td></tr>
+    <tr><td>الجسد المتفرع</td><td><span class="ltri">W2</span> و<span class="ltri">W3</span> و<span class="ltri">W4</span> الثلاثة متوازية بعد <span class="ltri">W1</span> (فرق مختلفة أو تسلسل مالك) — تتقاطع فقط في قراءة الإحصاءات المكاشدة</td></tr>
+    <tr><td>الذيل</td><td><span class="ltri">W5</span> بعد اكتمال <span class="ltri">W2</span> (الظهور) — وتحديدًا بعد استقرار <span class="ltri">AggregateRating</span> لأن قيمة الموضع المُروَّج تُبنى عليه</td></tr>
+  </table>
+
+  <h3>6.2 سلّم المقاييس — من إظهار إلى ثقة إلى إيراد</h3>
+  <table class="keep">
+    <tr><th>المقياس</th><th>خط الأساس اليوم</th><th>هدف 90 يومًا من تفعيل W1</th></tr>
+    <tr><td>نسبة صفحات المزودين التي تبث <span class="ltri">AggregateRating</span></td><td>0% (المبنى نفسه غائب)</td><td>أكثر من 60% من المزودين النشطين</td></tr>
+    <tr><td>متوسط المراجعات لكل مزود نشط</td><td>المعاملات المكتملة فقط (لم تُقس نسبتها هنا)</td><td>أكثر من 5 مراجعات مقبولة</td></tr>
+    <tr><td>نسبة المراجعات الموثقة من الكل (في الهجين)</td><td>100% بالتعريف (لا مسار آخر)</td><td>أكثر من 40% — الإشارة الأقلى يجب أن تبقى مرئية</td></tr>
+    <tr><td>نسبة المراجعات عليها رد مزود خلال 72 ساعة</td><td>لم يُقس (الردّ موجود بلا قياس)</td><td>أكثر من 30%</td></tr>
+    <tr><td>نسبة المراجعات المُبلَّغ عنها إلى الإشراف</td><td>لا يمكن الإبلاغ أصلًا (G4)</td><td>أقل من 2% — أعلى منها يعني الإساءة تسبق المضادات</td></tr>
+    <tr><td>نقرة النتائج إلى صفحة المزود (<span class="ltri">CTR</span>)</td><td>لا نجوم في النتائج (G20)</td><td>قياس أساس في الشهر الأول ثم تحسّن ربعي معلل</td></tr>
+  </table>
+
+  <div class="chapter-header">
+    <div class="chip">القسم 7</div>
+    <h2>المخاطر وحدود التصميم</h2>
+    <div class="h2-rule"></div>
+  </div>
+
+  <p>ثلاث مخاطر ذات وزن، ولكلٍّ حده المرسوم في هذه الخطة. <b>الأولى: قصف المنافسين
+  والتقييم الذاتي عند فتح الباب العام.</b> الرد التدريجي المرسوم: مضادات §4.5
+  (سقف، عمر، قائمة انتظار، فريديّة أبدية مستخدم×مزود) ثم إشارات الاحتيال التجميعية
+  لاحقًا — مع مبدأ صريح: لا حجب تلقائي في الإصدار الأول؛ الإشراف البشري يقرر،
+  والإشارة ترتّب الطابور. <b>الثانية: تآكل الثقة الموثقة بالاندماج.</b> لهذا يعيش
+  الهجين بشارتين لا واحدة (§4.4) — الدمج في <span class="ltri">OPEN</span> قرار
+  المالك وحده بمعرفة كاملة أن الإشارة الموثقة تختفي من العرض المجمع. <b>الثالثة:
+  تضخم الجدول الأحادي.</b> المراجعة العامة لا تنشئ جدولًا جديدًا — الصف نفسه يحمل
+  المنشأ؛ لكن الأصوات والإشارات جداول مستقلة بفهارس جزئية، والترتيب المركّب عمود
+  يُجدّد يوميًا بوظيفة <span class="ltri">@Scheduled</span> بنمط
+  <span class="ltri">ListingExpiryJob</span> و<span class="ltri">EventPublicationCleanup</span>
+  القائمين — لا استعلام تجميعي في مسار القراءة (ومخزن <span class="ltri">Quartz</span>
+  الميت أسقطه <span class="ltri">V31</span>: صفر <span class="ltri">Quartz</span> في أي
+  <span class="ltri">pom</span> — قياس هذه الجولة).</p>
+
+  <div class="callout orange">
+    <b>الحد الصلب غير القابل للمساومة:</b> الدفاتر المالية تبقى بنمطها الصارم القائم —
+    نوع القيد تعداد <span class="ltri">Java</span> مُغلق
+    (<span class="ltri">LedgerEntryType</span>)، لا صفًا في جدول إعدادات. وقياس هذه
+    الجولة يضيف حقيقة تحسّن النظام: العمود <span class="ltri">entry_type</span> في
+    <span class="ltri">V19</span> هو <span class="ltri">VARCHAR(30)</span> بلا فحص
+    قيمة في القاعدة — فزوج <span class="ltri">W5</span>
+    (<span class="ltri">V81+V82</span>) يضيف <span class="ltri">AD_DEBIT</span> إلى
+    التعداد <b>و</b>يضيف فحص <span class="ltri">CHECK</span> يثبّت المجموعة المغلقة
+    كاملة على العمود — قرار إصدار
+    مُوثَّق بمراجعة مستقلة — نفس الانضباط الذي حكم
+    <span class="ltri">V44</span> و<span class="ltri">V56</span>. مفتاح النمط
+    (<span class="ltri">reviews.mode</span>) يحكم بوابة مراجعات، لا قيدًا ماليًّا
+    واحدًا — وهذه هي حدود سلطته بالتصميم.
+  </div>
+
+  <p>حد أخير بالتصميم: كل الواجهات الجديدة تخرج من الوحدات القائمة (المراجعات من
+  <span class="ltri">marketplace-reviews</span>، صفحة المراجع من
+  <span class="ltri">marketplace-identity</span> عبر منفذ موجود) — لا وحدة جديدة
+  واحدة في الخطة كلها. النمط المعماري القائم — <span class="ltri">Modulith</span>
+  بأحداث داخلية ومنافذ عابرة للوحدات وكاش موزع — يحمل الخطة بأكملها دون توسيع
+  نطاق النشر، والحاجة الوحيدة للتشغيل تبقى جدولة الوظائف القائمة نفسها.</p>
+</div>
+
+<!-- ═══════════════ BACK COVER ═══════════════ -->
+<div class="back">
+  <div class="anchor-line"></div>
+  <div class="back-title">الخلاصة والخطوة التالية</div>
+  <div class="card-row">
+    <div class="bcard">
+      <h4>ما وجد الفحص</h4>
+      <p>هيكل <span class="ltri">Yelp</span> قائم فعلًا: مراجعات ببوابة أقوى من الأصل، وبحث
+      نصي-مكاني مكتمل، وصفحة أعمال عامة، وإشراف، ووسائط، و<span class="ltri">SEO</span>.
+      الفجوة إظهار وتعميق وازدواج — 29 فجوة مسجلة بدليلها.</p>
+    </div>
+    <div class="bcard">
+      <h4>ما يبني التصميم</h4>
+      <p>مراجعة مزدوجة بمنشأ معلَن: موثّقة بمعاملة مكتملة أو عامة بلا معاملة، ومفتاح
+      <span class="ltri">reviews.mode</span> بيد المالك — تبديل بلا تغيير كود، عبر بنية
+      الإعدادات والمِرحّل القائمين.</p>
+    </div>
+    <div class="bcard">
+      <h4>كيف يصل الطريق</h4>
+      <p>ست موجات، 12 ترحيلًا (<span class="ltri">V71–V82</span>)، ~20 يوم عمل:
+      المفتاح، ثم الازدواج، ثم الصفحة والاكتشاف والتفاعل بالتوازي، والإعلانات
+      فوق أرض مستقرة — والدفاتر فوق انضباطها الصلب.</p>
+    </div>
+  </div>
+  <div class="back-sources">
+    <h4>المصادر المقيسة (الكود الحي — main a40f862)</h4>
+    <p>marketplace-reviews: Review.java, ReviewsService.java (L93, L152), ReviewStatsAdapter, V6/V37/V45</p>
+    <p>marketplace-provider: ProviderPublicPageService/Response, ProviderReviewStatsListener, ProviderProfile</p>
+    <p>marketplace-search: SearchController (L57–123), SearchService (L523), SearchSorts, V34/V50/V51/V54</p>
+    <p>marketplace-catalog: ProviderListing, RealEstateListingJsonLd, ListingSeoService, SitemapService, V2/V32/V58/V59</p>
+    <p>marketplace-community: ContentReport, ReportTargetType, PostCategory, V60–V69</p>
+    <p>marketplace-platform-infra: CacheInvalidationRelay; marketplace-identity: User (V46)</p>
+    <p>Verification pass 2026-09-24 (live code): live unique index = uq_reviews_booking_direction_active (V45; uq_review_booking_active dropped there); zero quartz in any pom (V31) — live jobs are @Scheduled; SEO lives inside marketplace-catalog; 13 module trees emit CacheInvalidationRequested; ledger entry_type is VARCHAR(30) WITHOUT a DB CHECK (V19) — closed set held by the LedgerEntryType enum only; system_settings / feature flags = 0 tables</p>
+    <p>Official framework references (§1.4): Spring Modulith 2.1.1 Reference; Spring Boot Reference (Externalized Configuration, Caching); Flyway docs (Versioned Migrations); Maven (dependency management — parent inheritance + BOM import, enforcer); Hibernate Envers docs — each bound to the repo's codified rules: AGENTS.md, SYSTEM.md §1/§3/§5/§14.3, CODING_STANDARDS.md, docs/dev/testing-conventions.md</p>
+  </div>
+  <div class="back-foot">
+    <span>خطة مستقلة — برنامج الدليل والمراجعات</span>
+    <span>القراءة التالية: أمر «ابدأ W0» يفتح التنفيذ</span>
+    <span>24 سبتمبر 2026</span>
+  </div>
+</div>
+</body>
+</html>
