@@ -36,11 +36,12 @@
 
 ## 5. Guardrails — حواجز حراسة (ليست SLOs)
 
-إشارات إنذار مبكرة تسبق كسر أي SLO:
+إشارات إنذار مبكرة تسبق كسر أي SLO — بالإضافة إلى **الحكم الشامل**: `MarketplaceAggregateHealthDown` صفّ حراسة لكنه ينبّه **critical** (لا warning كالبواقي الثلاثة): بعد إخراج البريد من صحة المنصة صار كل مسهم في المجمّع اعتمادية نواة (db/redis/diskSpace/ping/modulithEventBus) — سقوطه ليس إنذاراً مبكراً بل مرض قائم، وهو الصمام الشامل لأي مسهم مستقبلي لا تغطيه عروات الجاهزية الضيقة عمداً.
 
 | القاعدة | الشرط | المصدر |
 |---|---|---|
 | `MarketplaceCacheInvalidationFailures` | > 5 إخفاقات إخلاء مخبأة في 15 دقيقة | `marketplace.cache.invalidation.evict.failure` — `CacheInvalidationMetrics.java` (يُحدّثه `CacheInvalidationRelay`) |
+| `MarketplaceAggregateHealthDown` | الصحة المجمّعة ليست UP لـ 5 دقائق (القيمة 0 = مسهم ساقط؛ -1 = فشل مسبار الـgauge نفسه) | `marketplace.health.aggregate` — `AggregateHealthGauge.java` (مرآة `HealthEndpoint.health()` الرسمية، ذاتية الجدولة كل 60 ثانية بنمط `ModulithEventBusHealthIndicator` نفسه؛ درس S10: حكمٌ مجمّع لا يرصده أحد حكمٌ أعمى) |
 | `MarketplaceCircuitBreakerOpen` | قاطع دائرة مفتوح > 2 دقيقة | `resilience4j.circuitbreaker.state` — يأتي نقلياً (runtime) عبر `resilience4j-spring-boot4` 2.4.0 → `resilience4j-micrometer` (pom على Maven Central)؛ الحالات في `application.yml:246-258` |
 | `MarketplaceDbPoolSaturated` | نشط/أقصى > 90% لمدة 5 دقائق | `hikaricp.connections.*` — Micrometer/Hikari (يُصدَّر `hikaricp_connections_active/_max`)؛ البادئة الرسمية `HIKARI_METRIC_NAME_PREFIX = "hikaricp"` — `MicrometerMetricsTracker.java:53,63,65`، المصدر محفوظ `scripts/pr239-docs/hikaricp-MicrometerMetricsTracker.java`؛ إعداد التجمع في `application.yml:23-29` (max 20) |
 
@@ -52,7 +53,7 @@
 |---|---|
 | لا Prometheus موصول يحمل القواعد (rule_files — تقييم القواعد يبدأ فقط بتحميله) ولا Alertmanager (توصيل الإشعارات فقط) — بوابتان منفصلتان | قرار جهة التشغيل عند اختيار مستهلك المراقبة (يقترن بالبوابة C — خطة الاستضافة الحاكمة) |
 | لا لوحات Grafana — مؤجلة عمداً حتى يوجد المستهلك (لا تُبنى لوحات لأداة غير مختارة) | نفس البوابة |
-| لا runbooks تفاعلية للحوادث المذكورة (خطوات «ماذا أفعل عندما يشتغل التنبيه») | ~~المرحلة ج من خارطة الإغلاق (الاسترداد والحوادث)~~ → ✅ **مُغلق (PR #245):** `docs/observability/runbooks.md` — 8 أقسام (قسم كامل لكل قاعدة: تثليث/تشخيص/تحقق/تصعيد) بمصادر رسمية مؤرشفة، والحارس `RunbooksFilesTest` يفرض التطابق 1:1 مع ملف القواعد (خمسة أقسام إلزامية + خطورة + مرساة SLO متقاطعين) |
+| لا runbooks تفاعلية للحوادث المذكورة (خطوات «ماذا أفعل عندما يشتغل التنبيه») | ~~المرحلة ج من خارطة الإغلاق (الاسترداد والحوادث)~~ → ✅ **مُغلق (PR #245، ثم بند 3.2):** `docs/observability/runbooks.md` — 9 أقسام (قسم كامل لكل قاعدة: تثليث/تشخيص/تحقق/تصعيد) بمصادر رسمية مؤرشفة، والحارس `RunbooksFilesTest` يفرض التطابق 1:1 مع ملف القواعد (خمسة أقسام إلزامية + خطورة + مرساة SLO متقاطعين) |
 | كل العتبات مبدئية بلا ترافيك مرجعي | المعايرة بعد أول canary (خطة الإطلاق) |
 
 ## 7. دورة حياة السجلات (مكمل تشغيلي من نفس المرحلة)

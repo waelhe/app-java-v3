@@ -28,7 +28,9 @@ name: Production Watchdog
 #   runner-ubuntu2404-readme.md (actions/runner-images) —
 #     "GitHub CLI 2.98.0" is preinstalled on ubuntu-latest.
 #
-# Probe contract (measured live 2026-09-05, SYSTEM.md §15):
+# Probe contract (measured live 2026-09-05, SYSTEM.md §15; sixth probe added
+# by plan item 3.2 — merge AFTER the S10 fix that takes mail out of platform
+# health, or this probe false-pages on the documented SMTP outage):
 #   /actuator/health/liveness    -> 200  (process alive)
 #   /actuator/health/readiness   -> 200  (traffic-ready)
 #   /oauth2/jwks                 -> 200  (auth keys served)
@@ -36,13 +38,21 @@ name: Production Watchdog
 #   /actuator/modulith           -> 401  (boundary check: the endpoint is
 #        intentionally protected — 404 would mean the exposure list drifted,
 #        200 would mean the security boundary is gone; both are incidents)
+#   /actuator/health             -> 200  (the aggregate verdict — "the point
+#        that revealed the sickness": probe the point itself, not only what
+#        sits above it. With mail out of platform health, DOWN here means a
+#        core contributor (db/redis/diskSpace/ping/modulithEventBus) is
+#        failing — an incident worth paging on)
 #   TLS is verified by curl's default behaviour: an expired or broken
 #   certificate fails the probe (code 000) and pages like any outage.
 #
-# /actuator/health (full) is deliberately NOT probed: it returns 503 on the
-# documented MAIL_* provider placeholder (SYSTEM.md §15, debt item 3 — a
-# user-owned gate, not an outage). Paging on it would be a permanent false
-# alarm. It turns into a probe target the day the MAIL provider is chosen.
+# The full /actuator/health probe replaces the former deliberate exclusion:
+# pre-S10-fix it 503'd on the documented MAIL_* provider placeholder (a
+# user-owned gate, not an outage) and would have been a permanent false
+# alarm. mail no longer gates the aggregate (management.health.mail.enabled:
+# false — the S10 fix); the SMTP outage itself remains a declared operational
+# debt in the risk register until the provider is chosen — it just cannot
+# blind or sink the aggregate verdict anymore.
 #
 # Alerting home (layer 15, measured 2026-09-06): this workflow manages
 # incidents ONLY where issues exist — upstream (waelhe). The retired
@@ -121,6 +131,7 @@ jobs:
             ["/oauth2/jwks"]="200"
             ["/.well-known/openid-configuration"]="200"
             ["/actuator/modulith"]="401"
+            ["/actuator/health"]="200"
           )
           overall=0
           : > probe-results.txt

@@ -7,7 +7,7 @@
 # Contract guards (enforced by marketplace-app test com.marketplace.config.AlertRulesYamlTest):
 #   - every rule carries alert/expr/for/labels.severity/annotations.summary/description
 #   - every metric referenced by an expr is proven to exist at runtime (whitelist
-#     with file:line provenance documented in docs/observability/slo.md §4)
+#     with file:line provenance documented in docs/observability/slo.md §4-§5)
 #   - keep expr values single-line (the guard test parses them line-wise)
 #
 # Thresholds are initial values — calibration against real traffic is documented
@@ -48,6 +48,24 @@ groups:
           summary: "HTTP 5xx rate above 2% for 10 minutes"
           description: "5xx ratio is {{ $value | humanizePercentage }} — SLO-1 availability error budget at risk."
           slo: "docs/observability/slo.md#2-slo-1"
+      - alert: MarketplaceAggregateHealthDown
+        # The platform's own health statement, mirrored into a gauge by
+        # AggregateHealthGauge (same self-scheduled pattern as the eventbus
+        # indicator). Non-1 pages: 0 = a contributor dragged the aggregate
+        # DOWN/OUT_OF_SERVICE/UNKNOWN (after mail left platform health these
+        # are all core dependencies), -1 = the gauge's own probe of the
+        # HealthEndpoint failed. Readiness/liveness stay narrow by design —
+        # this rule is the catch-all for everything they deliberately exclude
+        # (the S10 lesson: an aggregate verdict nothing observes is a blind
+        # verdict). Mirrors the eventbus rule's sign-branching description.
+        expr: marketplace_health_aggregate != 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aggregate /actuator/health is not UP for 5 minutes"
+          description: "Gauge marketplace_health_aggregate = {{ $value }}: -1 means the gauge's own probe of the health endpoint failed; 0 means at least one aggregate contributor is DOWN/OUT_OF_SERVICE/UNKNOWN — after mail was taken out of platform health every remaining contributor is a core platform dependency (db, redis, diskSpace, ping, modulithEventBus) — identify which via the health endpoint components (show-details: when-authorized)."
+          slo: "docs/observability/slo.md#5-guardrails"
   - name: marketplace-business
     rules:
       - alert: MarketplacePaymentsFailing
