@@ -130,12 +130,30 @@ public class SecurityConfig {
                                                           CorrelationIdFilter correlationIdFilter) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**",
-                        "/sitemap.xml", "/robots.txt")
+                        "/sitemap.xml", "/robots.txt", "/ws/**")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // S4/N3 root fix (comprehensive repair plan §10/2.1): the
+                        // STOMP handshake joins THIS stateless resource-server chain.
+                        // Before the fix the endpoint fell to the form-login default
+                        // chain and answered 302 to the login page instead of the 101
+                        // protocol switch — every token client's WebSocket died at the
+                        // handshake, taking the notification push channel with it (N3).
+                        // The handshake itself is permitAll BY DESIGN: the WebSocket
+                        // protocol upgrade is protocol plumbing, not data — the
+                        // authorization boundary is the STOMP message layer
+                        // (@EnableWebSocketSecurity + messageAuthorizationManager with
+                        // denyAll() defaults), where a CONNECT must be authenticated
+                        // (a bearer header on the handshake — the framework hands the
+                        // HTTP Principal off to the WebSocket session — or the token on
+                        // the CONNECT frame, lifted by the documented
+                        // JwtChannelAuthenticationInterceptor). Header-capable clients
+                        // (Java/Node STOMP clients, the edge BFF) get the handshake
+                        // itself authenticated through this chain's bearer filter.
+                        .requestMatchers(HttpMethod.GET, "/ws/**").permitAll()
                         // L39 (realestate systems plan §5 — SEO): the two
                         // crawler surfaces at the root paths the standards
                         // fix (robots.txt "MUST be located … in the top-level
