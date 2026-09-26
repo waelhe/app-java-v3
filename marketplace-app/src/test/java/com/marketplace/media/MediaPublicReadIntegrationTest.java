@@ -81,6 +81,7 @@ class MediaPublicReadIntegrationTest {
 
     @BeforeEach
     void seed() {
+        cleanUp();
         jdbcTemplate.update(
                 "INSERT INTO users (id, subject, email, display_name, role) VALUES (?, ?, ?, ?, 'PROVIDER')",
                 OWNER_USER_ID, "s5-owner-" + OWNER_USER_ID,
@@ -93,16 +94,35 @@ class MediaPublicReadIntegrationTest {
                 "INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status, created_at, updated_at, version, is_deleted) "
                         + "VALUES (?, ?, 'S5 Pending', 'no uploaded photos yet', 'APARTMENT', 1000, 'SAR', 'ACTIVE', now(), now(), 0, false)",
                 PENDING_ONLY_LISTING_ID, OWNER_USER_ID);
+        // position starts at 1 — the schema's documented domain since V32
+        // (media_assets.position INT NOT NULL CHECK (position > 0)); the CI
+        // round-1 seed wrote 0 and died on the check constraint before the
+        // duplicate-key cascade masked it.
         jdbcTemplate.update(
                 "INSERT INTO media_assets (id, listing_id, provider_id, object_key, content_type, size_bytes, status, position, created_at, updated_at, version, is_deleted) "
-                        + "VALUES (?, ?, ?, ?, 'image/jpeg', 2048, 'UPLOADED', 0, now(), now(), 0, false)",
+                        + "VALUES (?, ?, ?, ?, 'image/jpeg', 2048, 'UPLOADED', 1, now(), now(), 0, false)",
                 UUID.randomUUID(), PUBLISHED_LISTING_ID, OWNER_USER_ID,
                 "listings/" + PUBLISHED_LISTING_ID + "/s5-photo.jpg");
         jdbcTemplate.update(
                 "INSERT INTO media_assets (id, listing_id, provider_id, object_key, content_type, size_bytes, status, position, created_at, updated_at, version, is_deleted) "
-                        + "VALUES (?, ?, ?, ?, 'image/jpeg', 2048, 'PENDING_UPLOAD', 0, now(), now(), 0, false)",
+                        + "VALUES (?, ?, ?, ?, 'image/jpeg', 2048, 'PENDING_UPLOAD', 1, now(), now(), 0, false)",
                 UUID.randomUUID(), PENDING_ONLY_LISTING_ID, OWNER_USER_ID,
                 "listings/" + PENDING_ONLY_LISTING_ID + "/s5-pending.jpg");
+    }
+
+    /**
+     * The per-method reset the reference integration tests use
+     * (ListingCompletenessIntegrationTest#cleanUp, verbatim shape): the class
+     * seeds fixed IDs for every test method on ONE container, so the previous
+     * method's rows must go first — child tables before parents — or the
+     * second seed dies on users_pkey. CI round 1 measured exactly that
+     * cascade (3/3 tests ERROR after the first one left its rows behind).
+     */
+    void cleanUp() {
+        jdbcTemplate.update("DELETE FROM media_assets WHERE provider_id = ?", OWNER_USER_ID);
+        jdbcTemplate.update("DELETE FROM provider_listings WHERE id IN (?, ?)",
+                PUBLISHED_LISTING_ID, PENDING_ONLY_LISTING_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", OWNER_USER_ID);
     }
 
     @Test
