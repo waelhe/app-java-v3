@@ -1,6 +1,7 @@
 package com.marketplace.config;
 
 import com.marketplace.MarketplaceApplication;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -266,7 +267,33 @@ class WebSocketTokenAuthenticationIntegrationTest {
     // -- fixtures & helpers (the L23 gate shapes, verbatim) ----------------------------------------
 
     private WebSocketStompClient stompClient() {
-        return new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        // CI round 3 (the framework's own contract, measured: "To track
+        // receipts, a TaskScheduler must be configured"): the SUBSCRIBE's
+        // receipt header — the channel-alive proof this guard asserts — needs
+        // receipt tracking, and the STOMP client only tracks receipts when a
+        // scheduler is configured (Spring Framework Reference › STOMP Client
+        // › Receipts). One class-level scheduler, shut down after the class.
+        client.setTaskScheduler(STOMP_RECEIPT_SCHEDULER);
+        return client;
+    }
+
+    /** The class-level receipt scheduler — one thread, shut down in {@link #shutDownReceiptScheduler()}. */
+    private static final org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler STOMP_RECEIPT_SCHEDULER =
+            createReceiptScheduler();
+
+    private static org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler createReceiptScheduler() {
+        org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler scheduler =
+                new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("s4-stomp-receipt-");
+        scheduler.initialize();
+        return scheduler;
+    }
+
+    @AfterAll
+    static void shutDownReceiptScheduler() {
+        STOMP_RECEIPT_SCHEDULER.shutdown();
     }
 
     /** Explicit empty handshake headers — the documented four-arg connect, unambiguous. */
