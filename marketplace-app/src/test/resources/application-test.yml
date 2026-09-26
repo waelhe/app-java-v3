@@ -63,6 +63,16 @@ marketplace:
   security:
     jwt:
       audience: marketplace-api
+    # N1 (admin-seed hardening): this profile boots JPA-only create-drop
+    # schemas (Flyway disabled above) — the auth_users/auth_authorities
+    # tables are Flyway-owned and intentionally DO NOT exist here. The
+    # break-glass admin initializer's blank-password contract is a designed
+    # no-op (the client initializer's own pattern), so it must never touch
+    # the missing schema. Development convenience comes from the base
+    # application.yml default (admin-dev); production binds the mandatory
+    # ADMIN_SEED_PASSWORD.
+    admin-seed:
+      password: ""
   payments:
     webhook:
       shared-secret: test-sig

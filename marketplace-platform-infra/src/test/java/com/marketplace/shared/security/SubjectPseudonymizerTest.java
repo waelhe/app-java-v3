@@ -38,7 +38,8 @@ class SubjectPseudonymizerTest {
                 null,
                 new MarketplaceProperties.Security(
                         null, null, null,
-                        new MarketplaceProperties.Security.Pseudonymization(key, java.util.List.of())));
+                        new MarketplaceProperties.Security.Pseudonymization(key, java.util.List.of()),
+                        null));
         return new SubjectPseudonymizer(properties);
     }
 
@@ -49,7 +50,8 @@ class SubjectPseudonymizerTest {
                 new MarketplaceProperties.Security(
                         null, null, null,
                         new MarketplaceProperties.Security.Pseudonymization(
-                                activeKey, List.of(previousKeys))));
+                                activeKey, List.of(previousKeys)),
+                        null));
         return new SubjectPseudonymizer(properties);
     }
 
