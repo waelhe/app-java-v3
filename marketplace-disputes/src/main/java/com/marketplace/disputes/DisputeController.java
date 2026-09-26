@@ -1,6 +1,7 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
@@ -25,11 +26,17 @@ public class DisputeController {
     }
 
     @PostMapping("/bookings/{bookingId}/disputes")
+    @Operation(summary = "Open a dispute on a booking",
+            description = "Opens a dispute on the caller's own booking with a mandatory "
+                    + "reason — the consumer-side entry into the dispute flow (OPEN state).")
     public ResponseEntity<DisputeResponse> open(@PathVariable UUID bookingId, @RequestParam @NotBlank String reason, Authentication authentication) {
         return ResponseEntity.ok(disputeMapper.toResponse(service.open(bookingId, reason, authentication)));
     }
 
     @GetMapping("/bookings/{bookingId}/disputes")
+    @Operation(summary = "List a booking's disputes",
+            description = "The dispute trail of one booking — visibility-scoped to the "
+                    + "booking's participants (consumer/provider) and administrators.")
     public ResponseEntity<List<DisputeResponse>> list(@PathVariable UUID bookingId, Authentication authentication) {
         List<DisputeResponse> disputes = service.listForBooking(bookingId, authentication).stream()
                 .map(disputeMapper::toResponse)
@@ -47,6 +54,12 @@ public class DisputeController {
      * moves implicitly: REFUND_CONSUMER must be named explicitly.
      */
     @PostMapping("/admin/disputes/{id}/resolve")
+    @Operation(summary = "Resolve a dispute (administrative)",
+            description = "L24: the resolution selects the financial outcome — "
+                    + "REFUND_CONSUMER / RELEASE_PROVIDER / NO_ACTION. The body is OPTIONAL "
+                    + "for backward compatibility: a body-less call resolves with NO_ACTION "
+                    + "(resolve, no money movement); REFUND_CONSUMER must be named explicitly "
+                    + "— money never moves implicitly.")
     public ResponseEntity<DisputeResponse> resolve(@PathVariable UUID id,
                                                     @Valid @RequestBody(required = false) ResolveDisputeRequest request,
                                                     Authentication authentication) {

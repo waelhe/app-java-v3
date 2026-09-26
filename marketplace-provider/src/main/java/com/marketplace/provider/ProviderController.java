@@ -76,11 +76,18 @@ public class ProviderController {
     }
 
     @PostMapping("/admin/providers/{id}/verify")
+    @Operation(summary = "Verify a provider (administrative)",
+            description = "Marks the provider verified — the administrative trust decision "
+                    + "that unlocks the provider's standing on the platform.")
     public ResponseEntity<ProviderResponse> verify(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.verify(id)));
     }
 
     @PostMapping("/admin/providers/{id}/suspend")
+    @Operation(summary = "Suspend a provider (administrative)",
+            description = "Suspends the provider — the administrative protective exit; a "
+                    + "suspended provider's inventory is hidden from the public page, while "
+                    + "the profile itself stays visible with its status.")
     public ResponseEntity<ProviderResponse> suspend(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.suspend(id)));
     }
