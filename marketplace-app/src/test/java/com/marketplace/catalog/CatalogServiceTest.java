@@ -94,6 +94,10 @@ class CatalogServiceTest {
         assertThat(summaries).hasSize(3);
         assertThat(summaries.map(ProviderListingSummary::status))
                 .containsExactly("DRAFT", "ACTIVE", "ARCHIVED");
+        // S7: the money shape is complete — every summary carries the
+        // listing's ISO 4217 currency next to its price.
+        assertThat(summaries.map(ProviderListingSummary::currency))
+                .containsExactly(draft.getCurrency(), active.getCurrency(), archived.getCurrency());
     }
 
     /**

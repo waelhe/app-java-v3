@@ -333,7 +333,7 @@ class PaymentsServicePspTest {
                 eq("marketplace-refund-" + payment.getId() + "-0-400")))
                 .thenReturn(new PspChannel.RemoteRefund("re_r1", "succeeded", 400L));
 
-        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L).payment();
 
         verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r1"), eq(400L), anyString());
         assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
@@ -358,7 +358,7 @@ class PaymentsServicePspTest {
         when(pspChannel.createRemoteRefund(eq("pi_remote_r2"), any(), anyString()))
                 .thenReturn(new PspChannel.RemoteRefund("re_r2", "succeeded", 800L));
 
-        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L).payment();
 
         assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
         assertEquals(800L, result.getRefundedAmountCents());
@@ -378,7 +378,7 @@ class PaymentsServicePspTest {
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L).payment();
 
         verify(pspChannel, never()).createRemoteRefund(any(), any(), any());
         assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
@@ -400,7 +400,7 @@ class PaymentsServicePspTest {
         when(pspChannel.createRemoteRefund(any(), any(), anyString()))
                 .thenReturn(new PspChannel.RemoteRefund("re_r4", "pending", 0L));
 
-        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L);
+        Payment result = service(boundChannel).refundPayment(payment.getId(), 400L).payment();
 
         assertEquals(PaymentStatus.COMPLETED, result.getStatus());
         assertEquals(0L, result.getRefundedAmountCents());

@@ -185,7 +185,7 @@ class PaymentsServiceSecurityTest {
         when(paymentIntentRepository.save(any(PaymentIntent.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        Payment result = paymentsService.refundPayment(payment.getId());
+        Payment result = paymentsService.refundPayment(payment.getId()).payment();
 
         assertThat(result.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(result.getRefundedAmountCents()).isEqualTo(1000L);
@@ -204,7 +204,7 @@ class PaymentsServiceSecurityTest {
         when(paymentIntentRepository.save(any(PaymentIntent.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        Payment result = paymentsService.refundPayment(payment.getId(), 400L);
+        Payment result = paymentsService.refundPayment(payment.getId(), 400L).payment();
 
         assertThat(result.getStatus()).isEqualTo(PaymentStatus.PARTIALLY_REFUNDED);
         assertThat(result.getRefundedAmountCents()).isEqualTo(400L);

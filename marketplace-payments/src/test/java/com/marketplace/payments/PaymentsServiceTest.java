@@ -277,7 +277,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId);
+        Payment result = service.refundPayment(paymentId).payment();
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(result.getAmountCents(), result.getRefundedAmountCents());
@@ -306,7 +306,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, 3000L);
+        Payment result = service.refundPayment(paymentId, 3000L).payment();
 
         assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
         assertEquals(3000L, result.getRefundedAmountCents());
@@ -335,7 +335,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, null);
+        Payment result = service.refundPayment(paymentId, null).payment();
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(10000L, result.getRefundedAmountCents());
@@ -364,7 +364,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, 5000L);
+        Payment result = service.refundPayment(paymentId, 5000L).payment();
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(5000L, result.getRefundedAmountCents());
@@ -393,7 +393,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, 2000L);
+        Payment result = service.refundPayment(paymentId, 2000L).payment();
 
         assertEquals(PaymentStatus.PARTIALLY_REFUNDED, result.getStatus());
         assertEquals(5000L, result.getRefundedAmountCents());
@@ -422,7 +422,7 @@ class PaymentsServiceTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment result = service.refundPayment(paymentId, 2000L);
+        Payment result = service.refundPayment(paymentId, 2000L).payment();
 
         assertEquals(PaymentStatus.REFUNDED, result.getStatus());
         assertEquals(10000L, result.getRefundedAmountCents());
