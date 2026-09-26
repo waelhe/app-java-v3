@@ -165,6 +165,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/listings/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
+                        // S5 (comprehensive repair plan §10/2.2): the listing's
+                        // media read is PUBLIC — the same visibility the blanket
+                        // listings GET line above grants the listing itself. A
+                        // guest could read the listing but not its photos (the
+                        // measured S5 gap: no media matcher at all while
+                        // listings GET was already public) — the public detail
+                        // page's images are domain-decided public read: the
+                        // response carries only time-limited presigned URLs for
+                        // UPLOADED assets of that listing. The WRITE surfaces
+                        // (uploads/complete/delete) keep their authenticated
+                        // contracts — this line is GET-scoped and
+                        // listing-subresource-scoped.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/media/listings/*").permitAll()
                         // L30 (realestate systems plan): the administrative
                         // hierarchy is public reference data — the anonymous
                         // browse pattern, one line, same chain.
