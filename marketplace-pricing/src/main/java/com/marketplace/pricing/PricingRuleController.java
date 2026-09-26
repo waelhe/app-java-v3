@@ -1,6 +1,7 @@
 package com.marketplace.pricing;
 
 import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -29,6 +30,10 @@ public class PricingRuleController {
     }
 
     @GetMapping
+    @Operation(summary = "List pricing rules",
+            description = "Every pricing rule with its tax rate, discount percentage and active "
+                    + "flag — the administrative catalogue of the effective-price engine's "
+                    + "rule inputs.")
     public ResponseEntity<List<PricingRuleResponse>> listRules() {
         List<PricingRuleResponse> rules = pricingService.listRules().stream()
                 .map(pricingRuleMapper::toResponse)
@@ -37,6 +42,10 @@ public class PricingRuleController {
     }
 
     @PostMapping
+    @Operation(summary = "Create a pricing rule",
+            description = "A new named rule (taxRate and discountPct as 0..1 fractions, "
+                    + "optionally scoped to one listing category). Rules are born inactive — "
+                    + "activate is the separate switch. Answers 201.")
     public ResponseEntity<PricingRuleResponse> createRule(@Valid @RequestBody CreateRuleRequest request) {
         PricingRule rule = pricingService.createRule(
                 request.name(),
@@ -48,16 +57,24 @@ public class PricingRuleController {
     }
 
     @PutMapping("/{id}/activate")
+    @Operation(summary = "Activate a pricing rule",
+            description = "Turns the rule on for the effective-price engine's rule resolution.")
     public ResponseEntity<PricingRuleResponse> activateRule(@PathVariable UUID id) {
         return ResponseEntity.ok(pricingRuleMapper.toResponse(pricingService.activate(id)));
     }
 
     @PutMapping("/{id}/deactivate")
+    @Operation(summary = "Deactivate a pricing rule",
+            description = "Turns the rule off without deleting it — the reversible exit that "
+                    + "keeps the rule's history.")
     public ResponseEntity<PricingRuleResponse> deactivateRule(@PathVariable UUID id) {
         return ResponseEntity.ok(pricingRuleMapper.toResponse(pricingService.deactivate(id)));
     }
 
     @DeleteMapping("/{id}")
+    @Operation(summary = "Delete a pricing rule",
+            description = "Removes the rule outright — the irreversible exit (deactivate is "
+                    + "the reversible one). Answers 204.")
     public ResponseEntity<Void> deleteRule(@PathVariable UUID id) {
         pricingService.deleteById(id);
         return ResponseEntity.noContent().build();

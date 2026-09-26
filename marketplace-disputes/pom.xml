@@ -4,6 +4,11 @@
   <parent><groupId>com.marketplace</groupId><artifactId>marketplace-platform</artifactId><version>0.1.0-SNAPSHOT</version></parent>
   <artifactId>marketplace-disputes</artifactId>
   <dependencies>
+    <!-- S11 (platform-readiness audit §4): OpenAPI annotation vocabulary for the
+         springdoc-generated contract — the same root-managed declaration
+         (Exception #12) every documenting domain module carries; disputes
+         joins them so its 3 operations document like the rest. -->
+    <dependency><groupId>io.swagger.core.v3</groupId><artifactId>swagger-annotations-jakarta</artifactId></dependency>
     <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
     <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-platform-infra</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
