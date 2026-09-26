@@ -49,10 +49,10 @@ public class AuthController {
     @PostMapping("/register")
     @Operation(summary = "Register a new account (public)", description = "Creates the account "
             + "in one transaction — the profile row and the login rows — with the CONSUMER role. "
-            + "The email becomes the login username. The password is stored only in its encoded "
-            + "form (bcrypt); 8 to 72 characters (the bcrypt byte ceiling — longer input is "
-            + "rejected, never silently truncated). An address that already owns an account "
-            + "answers 409.")
+            + "The email becomes the login username and is capped at 50 characters (the login "
+            + "store's domain). The password is stored only in its encoded form (bcrypt); 8 to "
+            + "72 characters (the bcrypt byte ceiling — longer input is rejected, never "
+            + "silently truncated). An address that already owns an account answers 409.")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
         User created = userService.register(
                 request.email().trim(), request.password(), request.displayName());
@@ -60,8 +60,12 @@ public class AuthController {
     }
 
     /**
-     * The registration request. The password policy is deliberately exactly
-     * what the storage can honor: a minimum of 8 (the baseline every
+     * The registration request. The email is capped at 50 characters — the
+     * login store's own domain (auth_users.username VARCHAR(50), V13): the
+     * address becomes the username, and the cap is validated HERE (the clean
+     * 400) rather than dying at storage time (a 500 — the CI-measured
+     * failure this round closed). The password policy is deliberately
+     * exactly what the storage can honor: a minimum of 8 (the baseline every
      * guidance converges on) and a maximum of 72 BYTES — bcrypt's documented
      * ceiling; a longer password is REJECTED here rather than silently
      * truncated by the hash (the honest contract — the stored verifier always
@@ -73,7 +77,7 @@ public class AuthController {
 
             @NotBlank
             @Email
-            @Size(max = 200)
+            @Size(max = 50)
             String email,
 
             @NotBlank

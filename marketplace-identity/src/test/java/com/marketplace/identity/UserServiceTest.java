@@ -59,15 +59,25 @@ class UserServiceTest {
     private AuditHistoryPurgeService auditHistoryPurgeService;
 
     /**
-     * S1/B1: the register surface's encoder mock — the unit guards assert the
-     * ENCODED value crosses to the manager verbatim (the encoding itself is
-     * the framework's tested behavior); other tests stub nothing on it.
+     * S1/B1: the register surface's encoder provider — a REAL
+     * DelegatingPasswordEncoder (the same bean type the full app wires):
+     * the unit guards then assert the genuinely-encoded value crosses to the
+     * manager (the {bcrypt} prefix — the stored form the login gate verifies).
+     * The provider indirection is the module-slice wiring (see UserService).
      */
     @Mock
-    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoderProvider;
 
     @InjectMocks
     private UserService userService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void wireTheRealEncoder() {
+        // lenient: only the register tests resolve the provider — strict
+        // stubs would fail every other test on the unused stubbing.
+        org.mockito.Mockito.lenient().when(passwordEncoderProvider.getObject()).thenReturn(
+                org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder());
+    }
 
     @Test
     void getById_returnsUser() {
@@ -87,7 +97,6 @@ class UserServiceTest {
         when(userRepository.existsBySubject("new@example.com")).thenReturn(false);
         when(userDetailsManager.userExists("new@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(passwordEncoder.encode("clear-password")).thenReturn("{bcrypt}$2a$10$encoded");
 
         User created = userService.register("new@example.com", "clear-password", "New Member");
 
@@ -98,12 +107,14 @@ class UserServiceTest {
         assertEquals("new@example.com", created.getEmail());
         assertEquals("New Member", created.getDisplayName());
 
-        // The login rows: through the framework's manager — the ENCODED value
-        // verbatim (never the clear password), the ROLE_CONSUMER authority.
+        // The login rows: through the framework's manager — the GENUINELY
+        // ENCODED value (the {bcrypt} delegating prefix — never the clear
+        // password), the ROLE_CONSUMER authority.
         ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
         verify(userDetailsManager).createUser(captured.capture());
         assertEquals("new@example.com", captured.getValue().getUsername());
-        assertEquals("{bcrypt}$2a$10$encoded", captured.getValue().getPassword());
+        assertThat(captured.getValue().getPassword()).startsWith("{bcrypt}");
+        assertThat(captured.getValue().getPassword()).doesNotContain("clear-password");
         assertTrue(captured.getValue().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
         assertTrue(captured.getValue().isAccountNonLocked(), "the account is born enabled — no verification hold");

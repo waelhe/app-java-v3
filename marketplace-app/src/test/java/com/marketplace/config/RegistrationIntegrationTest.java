@@ -85,9 +85,9 @@ class RegistrationIntegrationTest {
     private static final Pattern CSRF_INPUT = Pattern.compile("<input[^>]*name=\"_csrf\"[^>]*value=\"([^\"]+)\"");
     private static final Pattern CSRF_INPUT_REVERSED = Pattern.compile("<input[^>]*value=\"([^\"]+)\"[^>]*name=\"_csrf\"");
 
-    /** One address per test method — the uniqueness guard is per-address. */
+    /** One address per test method — within the login store's 50-char domain. */
     private String uniqueEmail() {
-        return "s1-" + UUID.randomUUID() + "@example.com";
+        return "s1-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
     }
 
     @Test
@@ -141,6 +141,18 @@ class RegistrationIntegrationTest {
                 {"email": "%s", "password": "short", "displayName": "S1 Member"}
                 """.formatted(uniqueEmail()));
         assertThat(response.statusCode()).as("weak password: %s", body(response)).isEqualTo(400);
+    }
+
+    @Test
+    void anAddressBeyondTheLoginStoresDomainAnswersTheCleanValidation400() throws Exception {
+        // The 50-character cap is the login username's schema domain
+        // (auth_users.username VARCHAR(50)) — validated at the request layer,
+        // never a storage-time 500 (the CI-measured failure this guard pins).
+        String tooLong = "s1-" + "x".repeat(40) + "@example.com"; // 54 chars
+        HttpResponse<String> response = postJson("/api/v1/auth/register", """
+                {"email": "%s", "password": "s1-valid-password", "displayName": "S1 Member"}
+                """.formatted(tooLong));
+        assertThat(response.statusCode()).as("over-length email: %s", body(response)).isEqualTo(400);
     }
 
     // -- HTTP helpers + the L23 login gate (browser-less five-step PKCE) -------

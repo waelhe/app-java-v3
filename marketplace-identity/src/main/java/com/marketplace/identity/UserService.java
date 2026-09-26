@@ -43,7 +43,19 @@ public class UserService implements IdentitySpi {
     private final SubjectPseudonymizer subjectPseudonymizer;
     private final AuthoredContentPurgeService authoredContentPurgeService;
     private final AuditHistoryPurgeService auditHistoryPurgeService;
-    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    /**
+     * ObjectProvider (the Modulith module-slice shape — the #392 CI-round-1
+     * lesson, measured again by #395's round): the encoder bean lives in the
+     * shared security infrastructure (SecurityConfig), which identity's own
+     * module slice does NOT carry — constructor injection fails the whole
+     * slice context. The provider resolves lazily at REGISTER time: in the
+     * full application the bean is always present (the same one every
+     * surface uses); in a module slice registration is never invoked (no
+     * HTTP arrives there) — and if it ever were, the explicit
+     * {@link java.util.NoSuchElementException} from {@code getObject()} is
+     * the honest failure, not a silent no-op.
+     */
+    private final org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
 
@@ -84,7 +96,7 @@ public class UserService implements IdentitySpi {
                        SubjectPseudonymizer subjectPseudonymizer,
                        AuthoredContentPurgeService authoredContentPurgeService,
                        AuditHistoryPurgeService auditHistoryPurgeService,
-                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
+                       org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsManager = userDetailsManager;
@@ -142,7 +154,12 @@ public class UserService implements IdentitySpi {
      * act on another account — the actor IS the account).
      *
      * @param email       the account's address — becomes the subject and the
-     *                    login username; uniqueness enforced per address
+     *                    login username; uniqueness enforced per address.
+     *                    Capped at 50 characters: the login store's own
+     *                    domain (auth_users.username VARCHAR(50), V13) — the
+     *                    honest contract, validated at the request layer
+     *                    (a longer address answers the clean 400, never a
+     *                    storage-time 500)
      * @param rawPassword the CLEAR password — validated by the request layer
      *                    (8..72, the bcrypt byte ceiling — longer input is
      *                    rejected, never silently truncated) and encoded here
@@ -161,7 +178,7 @@ public class UserService implements IdentitySpi {
                 User.create(subject, email, displayName, UserRole.CONSUMER));
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
                 .withUsername(subject)
-                .password(passwordEncoder.encode(rawPassword))
+                .password(passwordEncoder.getObject().encode(rawPassword))
                 .roles("CONSUMER")
                 .build());
         log.info("Account registered: subject={}, role=CONSUMER", subject);
