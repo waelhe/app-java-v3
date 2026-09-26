@@ -69,11 +69,27 @@ public class User extends BaseEntity {
     public UserRole getRole() { return role; }
     public Instant getPseudonymizedAt() { return pseudonymizedAt; }
 
+    /**
+     * S1/B1 (measured by the full-loop guard): an ABSENT value is not an
+     * erase command. The native login's tokens carry no {@code email}/{@code name}
+     * claims (the DaoAuthentication principal holds only the username and
+     * authorities) — under the old unconditional-write semantics the FIRST
+     * {@code /users/me} call after registration wiped the just-stored profile.
+     * The same hazard exists in the OIDC world: an IdP that drops the email
+     * scope must not erase every profile it touches. {@code null} now means
+     * "no information — keep the stored value"; an explicit erase keeps its
+     * own path ({@link #applyPseudonymization} — I7's deliberate nulling).
+     */
     public boolean updateProfile(String email, String displayName) {
-        boolean changed = !Objects.equals(this.email, email)
-                || !Objects.equals(this.displayName, displayName);
-        this.email = email;
-        this.displayName = displayName;
+        boolean changed = false;
+        if (email != null && !Objects.equals(this.email, email)) {
+            this.email = email;
+            changed = true;
+        }
+        if (displayName != null && !Objects.equals(this.displayName, displayName)) {
+            this.displayName = displayName;
+            changed = true;
+        }
         return changed;
     }
 

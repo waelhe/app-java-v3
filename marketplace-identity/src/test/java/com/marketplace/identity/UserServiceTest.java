@@ -58,8 +58,26 @@ class UserServiceTest {
     @Mock
     private AuditHistoryPurgeService auditHistoryPurgeService;
 
+    /**
+     * S1/B1: the register surface's encoder provider — a REAL
+     * DelegatingPasswordEncoder (the same bean type the full app wires):
+     * the unit guards then assert the genuinely-encoded value crosses to the
+     * manager (the {bcrypt} prefix — the stored form the login gate verifies).
+     * The provider indirection is the module-slice wiring (see UserService).
+     */
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoderProvider;
+
     @InjectMocks
     private UserService userService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void wireTheRealEncoder() {
+        // lenient: only the register tests resolve the provider — strict
+        // stubs would fail every other test on the unused stubbing.
+        org.mockito.Mockito.lenient().when(passwordEncoderProvider.getObject()).thenReturn(
+                org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder());
+    }
 
     @Test
     void getById_returnsUser() {
@@ -70,6 +88,67 @@ class UserServiceTest {
         User result = userService.getById(id);
 
         assertEquals(user, result);
+    }
+
+    // ---- S1/B1: the registration surface ---------------------------------------
+
+    @Test
+    void register_createsBothStoresInOneCallWithTheConsumerRole() {
+        when(userRepository.existsBySubject("new@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("new@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = userService.register("new@example.com", "clear-password", "New Member");
+
+        // The domain row: CONSUMER (the only self-serviceable role), the
+        // subject IS the email (the native world's login handle).
+        assertEquals(UserRole.CONSUMER, created.getRole());
+        assertEquals("new@example.com", created.getSubject());
+        assertEquals("new@example.com", created.getEmail());
+        assertEquals("New Member", created.getDisplayName());
+
+        // The login rows: through the framework's manager — the GENUINELY
+        // ENCODED value (the {bcrypt} delegating prefix — never the clear
+        // password), the ROLE_CONSUMER authority.
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).createUser(captured.capture());
+        assertEquals("new@example.com", captured.getValue().getUsername());
+        assertThat(captured.getValue().getPassword()).startsWith("{bcrypt}");
+        assertThat(captured.getValue().getPassword()).doesNotContain("clear-password");
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
+        assertTrue(captured.getValue().isAccountNonLocked(), "the account is born enabled — no verification hold");
+        // Registration grants NOTHING above CONSUMER — no admin, no provider.
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PROVIDER")));
+    }
+
+    @Test
+    void register_duplicateDomainSubjectAnswersConflictBeforeAnyWrite() {
+        when(userRepository.existsBySubject("taken@example.com")).thenReturn(true);
+
+        assertThrows(ConflictException.class,
+                () -> userService.register("taken@example.com", "clear-password", "Dup"));
+
+        verify(userRepository, never()).save(any());
+        verify(userDetailsManager, never()).createUser(any());
+    }
+
+    @Test
+    void register_loginSideRemnantWithoutDomainRowAlsoAnswersConflict() {
+        // The drifted-pair stock the S2/N4/N6 work documented: a login side
+        // without its domain row must not be silently re-adopted by a
+        // registration — the honest 409 covers both stores.
+        when(userRepository.existsBySubject("remnant@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("remnant@example.com")).thenReturn(true);
+
+        assertThrows(ConflictException.class,
+                () -> userService.register("remnant@example.com", "clear-password", "Remnant"));
+
+        verify(userRepository, never()).save(any());
+        verify(userDetailsManager, never()).createUser(any());
     }
 
     @Test
@@ -164,6 +243,54 @@ class UserServiceTest {
         assertEquals("Updated Name", result.getDisplayName());
         verify(userRepository, never()).save(any());
         verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void syncFromOidc_withoutProfileClaims_keepsTheStoredProfile() {
+        // S1/B1 (measured by the full-loop guard — the CI round that caught the
+        // wipe): the NATIVE login's tokens carry no email/name claims (the
+        // DaoAuthentication principal holds only the username + authorities).
+        // Under the old unconditional-write semantics the first /me call after
+        // registration erased the just-stored profile. An ABSENT claim is not
+        // an erase command — the stored values survive; nothing changes so
+        // not even an invalidation event fires.
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("native-user@example.com");
+        when(jwt.getClaimAsString("email")).thenReturn(null);
+        when(jwt.getClaimAsString("name")).thenReturn(null);
+
+        User existing = User.create("native-user@example.com", "native-user@example.com",
+                "Native Member", UserRole.CONSUMER);
+        when(userRepository.findBySubject("native-user@example.com")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals("native-user@example.com", result.getEmail(), "the registered email survives");
+        assertEquals("Native Member", result.getDisplayName(), "the registered display name survives");
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void syncFromOidc_withOnlyOneClaim_updatesOnlyThatField() {
+        // The partial-claim shape (an IdP that sends the name but not the
+        // email): the present claim updates, the absent one survives.
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("partial-sub");
+        when(jwt.getClaimAsString("email")).thenReturn(null);
+        when(jwt.getClaimAsString("name")).thenReturn("Refreshed Name");
+
+        User existing = User.create("partial-sub", "kept@b.com", "Old Name", UserRole.CONSUMER);
+        when(userRepository.findBySubject("partial-sub")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals("kept@b.com", result.getEmail(), "the absent claim keeps the stored email");
+        assertEquals("Refreshed Name", result.getDisplayName());
     }
 
     @Test
