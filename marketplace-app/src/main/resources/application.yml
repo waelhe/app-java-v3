@@ -259,6 +259,23 @@ server:
       max-days: 30
 
 management:
+  health:
+    mail:
+      # S10 (measured 2026-09-26): the mail health contributor dragged the
+      # AGGREGATE /actuator/health to 503 DOWN (~5.9s response = the 5s SMTP
+      # connectiontimeout signature; readiness/liveness stayed UP) because the
+      # prod SMTP host is unreachable from the Railway runtime — while email
+      # is an auxiliary, best-effort channel in this architecture (notifications
+      # only; every send is @Observed("email.send") and failures are logged).
+      # Official remedy — Spring Boot Reference, Actuator › Endpoints ›
+      # "Auto-configured HealthIndicators": selected indicators can be enabled
+      # or disabled per key via management.health.<key>.enabled. Auxiliary
+      # integrations do not gate platform health; their brokenness is observed
+      # through the metrics pipeline (email.send observation + alert rules),
+      # not through a synchronous SMTP connect on every health call. The SMTP
+      # outage itself is an operational follow-up (MAIL_* vars), declared in
+      # the risk register — disabling the indicator does not fix the outage.
+      enabled: false
   endpoints:
     web:
       exposure:
