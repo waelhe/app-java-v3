@@ -154,17 +154,89 @@ jobs:
           MANAGEMENT_HEALTH_MAIL_ENABLED: false
           MANAGEMENT_TRACING_ENABLED: false
 
-      - name: Health Check
-        run: "curl -sf http://localhost:8080/actuator/health | jq ."
-
-      - name: Data REST Endpoint Check
-        run: "curl -sf http://localhost:8080/api | jq . || echo 'Data REST: No repositories exposed yet'"
-
-      - name: GraphQL Endpoint Check
+      # Plan item 4.4 (comprehensive-reverification-repair-plan-2026-09-26,
+      # PR #400): ONE composed smoke scenario instead of three disconnected
+      # curl probes. The three old steps each asserted one URL in isolation
+      # (health / Data REST / GraphQL) — none of them ever exercised the
+      # security boundary, so the most important production property (an
+      # anonymous visitor reads the public surface but is rejected by the
+      # resource-server chain on protected surfaces, RFC 7807 problem+json)
+      # had NO smoke coverage at all. This is the composed journey, five
+      # legs in one narrative, zero dependencies beyond curl+jq (both
+      # already used below), every leg asserting status AND body contract:
+      #   1. the aggregate health verdict is UP (the platform's own statement);
+      #   2. a visitor browses the public listing surface -> 200 + the
+      #      PagedResponse contract (content/totalElements);
+      #   3. the SAME visitor attempts a protected write without a token ->
+      #      401 + AUTHN-001 problem+json with the taxonomy type URI (the
+      #      measured contract of problemDetailAuthenticationEntryPoint);
+      #   4. the GraphQL surface answers introspection -> 200 + query type;
+      #   5. the API chain's catch-all: an unrouted anonymous GET (bare /api)
+      #      answers the same 401 AUTHN-001 problem contract — the old soft
+      #      Data REST check ("No repositories exposed yet") was masking it.
+      - name: Composed Smoke Scenario (visitor journey)
         run: |
-          curl -sf -X POST http://localhost:8080/graphql \
+          set -euo pipefail
+          BASE=http://localhost:8080
+
+          fail() { echo "::error::SMOKE FAIL — $1"; exit 1; }
+
+          echo "=== [1/5] The aggregate health verdict is UP ==="
+          code=$(curl -s -o /tmp/smoke-health.json -w '%{http_code}' "$BASE/actuator/health")
+          echo "GET /actuator/health -> $code"
+          [ "$code" = "200" ] || fail "aggregate health answered $code (expected 200 — the platform's own verdict)"
+          jq -e '.status == "UP"' /tmp/smoke-health.json > /dev/null \
+            || fail "health body: status is not UP ($(cat /tmp/smoke-health.json))"
+
+          echo "=== [2/5] A visitor browses the public listing surface ==="
+          code=$(curl -s -o /tmp/smoke-listings.json -w '%{http_code}' "$BASE/api/v1/listings?page=0&size=1")
+          echo "GET /api/v1/listings -> $code"
+          [ "$code" = "200" ] || fail "the public browse surface answered $code (expected 200)"
+          jq -e 'has("content") and has("totalElements")' /tmp/smoke-listings.json > /dev/null \
+            || fail "the browse answer is not the PagedResponse contract ($(cat /tmp/smoke-listings.json))"
+
+          echo "=== [3/5] The same visitor attempts a protected write without a token ==="
+          answer=$(curl -s -o /tmp/smoke-write.json -w '%{http_code} %{content_type}' \
+            -X POST "$BASE/api/v1/listings" \
             -H 'Content-Type: application/json' \
-            -d '{"query":"{ __schema { queryType { name } } }"}' | jq .
+            -d '{"title":"smoke probe","category":"stay","priceCents":1}')
+          echo "POST /api/v1/listings (anonymous) -> $answer"
+          code=${answer%% *}
+          ctype=${answer#* }
+          [ "$code" = "401" ] || fail "the resource-server chain answered $code (expected 401 — the boundary IS the contract)"
+          case "$ctype" in application/problem+json*) ;; *) fail "the 401 content type is $ctype (expected application/problem+json)";; esac
+          jq -e '.errorCode == "AUTHN-001" and .type == "https://marketplace.com/errors/unauthorized"' /tmp/smoke-write.json > /dev/null \
+            || fail "the 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-write.json))"
+
+          echo "=== [4/5] The GraphQL surface answers introspection ==="
+          code=$(curl -s -o /tmp/smoke-graphql.json -w '%{http_code}' -X POST "$BASE/graphql" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ __schema { queryType { name } } }"}')
+          echo "POST /graphql (introspection) -> $code"
+          [ "$code" = "200" ] || fail "GraphQL introspection answered $code (expected 200)"
+          jq -e '.data.__schema.queryType.name != null' /tmp/smoke-graphql.json > /dev/null \
+            || fail "the introspection answer carries no query type ($(cat /tmp/smoke-graphql.json))"
+
+          echo "=== [5/5] The API chain's catch-all rejects an unrouted anonymous path ==="
+          # Measured fact: Spring Data REST is not on the classpath, so /api is
+          # an unrouted path — but it still matches the resource-server chain's
+          # /api/** matcher, and none of the permitAll lines matches a bare /api,
+          # so anyRequest().authenticated() applies: an anonymous GET answers
+          # 401 AUTHN-001 problem+json. The old soft check ("No repositories
+          # exposed yet") was masking exactly this 401. This leg pins the
+          # catch-all property (leg 3 passed a specific protected route; this
+          # proves the chain's default posture), first-match-wins included.
+          answer=$(curl -s -o /tmp/smoke-catchall.json -w '%{http_code} %{content_type}' "$BASE/api")
+          echo "GET /api (anonymous, unrouted) -> $answer"
+          code=${answer%% *}
+          ctype=${answer#* }
+          [ "$code" = "401" ] || fail "the unrouted anonymous path answered $code (expected the catch-all 401)"
+          case "$ctype" in application/problem+json*) ;; *) fail "the catch-all 401 content type is $ctype (expected application/problem+json)";; esac
+          jq -e '.errorCode == "AUTHN-001"' /tmp/smoke-catchall.json > /dev/null \
+            || fail "the catch-all 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-catchall.json))"
+
+          echo ""
+          echo "SMOKE PASS — the composed visitor journey held: public read 200, protected write 401 AUTHN-001 problem+json, discovery surfaces alive."
 
       - name: Stop Application
         if: always()
