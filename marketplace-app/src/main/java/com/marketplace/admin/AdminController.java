@@ -10,6 +10,7 @@ import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PaymentSummary;
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.UserSummary;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +52,9 @@ public class AdminController {
     // -- Users ----------------------------------------------------------
 
     @GetMapping("/users")
+    @Operation(summary = "List all accounts",
+            description = "Paginated user summaries — the admin roster surface. Every account "
+                    + "across roles (CONSUMER/PROVIDER/ADMIN), newest-first by persistence order.")
     public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
     }
@@ -58,6 +62,10 @@ public class AdminController {
     public record ChangeRoleRequest(@NotBlank String role) {}
 
     @PutMapping("/users/{id}/role")
+    @Operation(summary = "Change an account's role",
+            description = "Sets the account's role (CONSUMER/PROVIDER/ADMIN) on the users store. "
+                    + "The authorization authorities that ride the role are owned by the identity "
+                    + "module's role-surface contract.")
     public ResponseEntity<Void> updateUserRole(@PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
         identitySpi.updateUserRole(id, request.role());
         return ResponseEntity.ok().build();
@@ -76,6 +84,10 @@ public class AdminController {
             @NotBlank String reason) {}
 
     @PutMapping("/users/{id}/status")
+    @Operation(summary = "Disable or enable an account",
+            description = "L23 administrative account state change. The reason is part of the "
+                    + "contract: it is recorded with the action in the identity module's audit "
+                    + "log. Status values are pinned at the request boundary (DISABLED|ENABLED).")
     public ResponseEntity<Void> updateUserStatus(@PathVariable UUID id,
                                                  @Valid @RequestBody ChangeStatusRequest request,
                                                  Authentication authentication) {
@@ -100,6 +112,11 @@ public class AdminController {
     public record PseudonymizeRequest(@NotBlank String reason) {}
 
     @PostMapping("/users/{id}/pseudonymize")
+    @Operation(summary = "Pseudonymize an account (one-way)",
+            description = "I7 Phase 1 — one-way account pseudonymization. The reason is recorded "
+                    + "with the action in the identity module's structured audit line. Idempotent "
+                    + "no-op on an already-pseudonymized row. Answers 503 SU-001 while the HMAC "
+                    + "secret channel (PSEUDONYMIZATION_HMAC_KEY) is unbound.")
     public ResponseEntity<Void> pseudonymizeUser(@PathVariable UUID id,
                                                  @Valid @RequestBody PseudonymizeRequest request,
                                                  Authentication authentication) {
@@ -126,6 +143,11 @@ public class AdminController {
     public record ContentPurgeResponse(int purgedRows) {}
 
     @PostMapping("/users/{id}/purge-content")
+    @Operation(summary = "Purge an account's free-text content",
+            description = "I7 Phase 3 — UPDATE-only free-text purge across the owning modules "
+                    + "(base tables + Envers mirrors); shared records keep structure and non-text "
+                    + "columns. Idempotent (a re-run reports zero). The target must already be "
+                    + "pseudonymized (409 otherwise — the purge completes an erasure flow).")
     public ResponseEntity<ContentPurgeResponse> purgeUserContent(@PathVariable UUID id,
                                                                  @Valid @RequestBody ContentPurgeRequest request,
                                                                  Authentication authentication) {
@@ -153,6 +175,11 @@ public class AdminController {
     public record AuditPurgeResponse(int scrubbedRows, int usersAudRowsDeleted) {}
 
     @PostMapping("/users/{id}/purge-audit-history")
+    @Operation(summary = "Purge an account's audit identity",
+            description = "I7 Phase 3 — users_aud rows deleted for the user plus the "
+                    + "created_by/updated_by columns nulled across every carrying table; heavy "
+                    + "operation outside any transaction, idempotent (a re-run answers zero on "
+                    + "both counts). The target must already be pseudonymized (409 otherwise).")
     public ResponseEntity<AuditPurgeResponse> purgeUserAuditHistory(@PathVariable UUID id,
                                                                     @Valid @RequestBody AuditPurgeRequest request,
                                                                     Authentication authentication) {
@@ -164,11 +191,19 @@ public class AdminController {
     // -- Listings -------------------------------------------------------
 
     @GetMapping("/listings")
+    @Operation(summary = "List all listings (every state)",
+            description = "Paginated provider-listing summaries across all lifecycle states — "
+                    + "the administrative roster of the catalog, unconstrained by the public "
+                    + "ACTIVE-only browse surfaces.")
     public ResponseEntity<PagedResponse<ProviderListingSummary>> listAllListings(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(catalogSpi.findAllSummaries(pageable)));
     }
 
     @PostMapping("/listings/{id}/archive")
+    @Operation(summary = "Archive a listing",
+            description = "Administrative archive of a listing in any live state — the admin-side "
+                    + "exit the provider's own archive action mirrors; answers the archived "
+                    + "summary. An archived listing disappears from every public surface.")
     public ResponseEntity<ProviderListingSummary> archiveListing(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
     }
@@ -192,6 +227,11 @@ public class AdminController {
     public record SetListingPromotionRequest(java.time.Instant until) {}
 
     @PutMapping("/listings/{id}/promotion")
+    @Operation(summary = "Set or clear a listing's featured boost",
+            description = "L37 administrative shading point. The body sets the boost window's "
+                    + "end; an absent/null until CLEARS the boost. The window's future-boundary "
+                    + "is validated at the service against the injected Clock; every shading is "
+                    + "an @Audited entity update (Envers revision trail with attribution).")
     public ResponseEntity<com.marketplace.shared.api.ListingPromotion> setListingPromotion(
             @PathVariable UUID id, @Valid @RequestBody SetListingPromotionRequest request) {
         return ResponseEntity.ok(catalogSpi.setListingPromotion(id, request.until()));
@@ -200,6 +240,10 @@ public class AdminController {
     // -- Bookings -------------------------------------------------------
 
     @GetMapping("/bookings")
+    @Operation(summary = "List bookings (optional status filter)",
+            description = "Paginated booking summaries across the platform — the administrative "
+                    + "oversight surface; an optional status filter narrows to one lifecycle "
+                    + "state (PENDING/CONFIRMED/CANCELLED/COMPLETED).")
     public ResponseEntity<PagedResponse<BookingSummary>> listBookings(
             @RequestParam(required = false) String status, Pageable pageable) {
         Page<BookingSummary> bookings = status != null && !status.isBlank()
@@ -211,11 +255,17 @@ public class AdminController {
     // -- Payments -------------------------------------------------------
 
     @GetMapping("/payments")
+    @Operation(summary = "List payment intents",
+            description = "Paginated payment-intent summaries — the administrative money "
+                    + "oversight surface (amount, currency, state machine position per intent).")
     public ResponseEntity<PagedResponse<PaymentSummary>> listPaymentIntents(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(paymentsSpi.listIntentsSummaries(pageable)));
     }
 
     @GetMapping("/payments/{id}")
+    @Operation(summary = "Read one payment intent",
+            description = "Single payment-intent summary by id — the administrative drill-down "
+                    + "of the money oversight surface.")
     public ResponseEntity<PaymentSummary> getPaymentIntent(@PathVariable UUID id) {
         return ResponseEntity.ok(paymentsSpi.getIntentSummary(id));
     }
@@ -223,11 +273,17 @@ public class AdminController {
     // -- Revisions / Audit history ---------------------------------------
 
     @GetMapping("/revisions/entities")
+    @Operation(summary = "List audited entity names",
+            description = "The sorted names of every @Audited entity carrying an Envers revision "
+                    + "trail — the index of the audit-history surfaces below.")
     public ResponseEntity<List<String>> listAuditedEntities() {
         return ResponseEntity.ok(revisionService.getEntityNames().stream().sorted().toList());
     }
 
     @GetMapping("/revisions/{entityName}/{id}")
+    @Operation(summary = "Read an entity's revision trail",
+            description = "The Envers revision entries of one audited entity row — the raw "
+                    + "revision-number/timestamp trail per id, entity-name-keyed.")
     public ResponseEntity<List<RevisionService.RevisionEntry>> getRevisions(
             @PathVariable String entityName, @PathVariable UUID id) {
         return ResponseEntity.ok(revisionService.getRevisions(entityName, id));
