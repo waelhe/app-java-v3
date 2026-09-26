@@ -10,6 +10,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,6 +31,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.only;
 import static org.mockito.Mockito.verify;
@@ -150,7 +152,14 @@ class CatalogControllerTest {
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody().property()).isEqualTo(property);
         assertThat(result.getBody().jsonLd()).isEqualTo(jsonLd);
-        verify(listingViewCounter).recordView(LISTING_ID, "203.0.113.7");
+        // CodeRabbit round 2 (adopted): the complete composition happens BEFORE
+        // the view is counted — a failed composition must not count (L40). InOrder
+        // pins the ordering a bare verify(recordView) could not see.
+        InOrder order = inOrder(listingMapper, propertyDetailsPort, listingSeoService, listingViewCounter);
+        order.verify(listingMapper).toResponse(any(ProviderListingView.class));
+        order.verify(propertyDetailsPort).findByListingId(LISTING_ID);
+        order.verify(listingSeoService).jsonLdFor(any());
+        order.verify(listingViewCounter).recordView(LISTING_ID, "203.0.113.7");
     }
 
     @Test
