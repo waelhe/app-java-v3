@@ -561,10 +561,10 @@ log.info("password=" + password);  // ❌ secret in log
 | Use `{}` placeholders (not string concatenation) | Performance (lazy eval) | SLF4J docs |
 | `private static final Logger log` | One per class | Convention |
 | Log levels: `ERROR` (failures), `WARN` (recoverable), `INFO` (business events), `DEBUG` (diagnostics) | Standard | Convention |
-| **Never** log secrets | Security | OWASP |
+| **Never** log secrets — the primary rule (the prod console scrub below is a secondary net, never permission) | Security | OWASP |
 | **Never** `System.out` / `System.err` | Use logger | Convention |
 | **Never** `e.printStackTrace()` | Use `log.error("msg", e)` | Convention |
-| Logback `%replace` masks secret-shaped fields in console output (prod pattern, `application-prod.yml`) | Defense in depth | [Logback — layouts](https://logback.qos.ch/manual/layouts.html) |
+| Logback `%replace` masks the single whitespace/comma-delimited value following each occurrence of the supported labels (password/secret/token/api-key/authorization) in console output (prod pattern, `application-prod.yml`) — defense in depth, **not** complete secret/JWT protection (a `Bearer <jwt>` value keeps the JWT after the masked scheme word) | Defense in depth | [Logback — layouts](https://logback.qos.ch/manual/layouts.html) |
 
 ---
 

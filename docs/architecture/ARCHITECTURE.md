@@ -168,10 +168,12 @@ spring-modulith-moments → publishes DayHasPassed (daily)
 #### Flow 4 — OAuth2 Token Issuance (Spring Authorization Server)
 ```
 public client → /oauth2/authorize (AUTHORIZATION_CODE + PKCE, ClientAuthenticationMethod.NONE)
-    → /oauth2/token → JWT access token + refresh token
+    → /oauth2/token → JWT access token only — no refresh token is minted for the
+        public client (the measured contract:
+        PublicPkceClientGateIntegrationTest.publicClientExchangesCodeWithoutAuthenticationAndMintsNoRefreshToken)
         (JWKSource — persistent JKS keystore in prod, runbook `keys/README.md`)
 confidential client → /oauth2/token (CLIENT_SECRET_BASIC; authorization_code/refresh_token/client_credentials)
-    → JWT access token — same JWKSource, same resource-server validation chain
+    → JWT access token (+ refresh token via the refresh_token grant) — same JWKSource, same resource-server validation chain
 ```
 
 ### Exception Handling Policy
@@ -251,14 +253,22 @@ confidential client → /oauth2/token (CLIENT_SECRET_BASIC; authorization_code/r
 
 ![Security Architecture](diagrams/05-security-auth.png)
 
-### Authentication Mechanisms (4 paths, all converge on JWT)
+### Authentication Mechanisms (3 paths, all converge on JWT)
 
 | Mechanism | Spec | Implementation |
 |-----------|------|----------------|
 | OAuth2 authorization-code login (public client) | RFC 6749, RFC 8252 (PKCE), RFC 9068 (JWT) | OAuth2PublicClientInitializer (ClientAuthenticationMethod.NONE + AUTHORIZATION_CODE) |
 | OAuth2 confidential clients (BFF / service) | RFC 6749 | OAuth2ClientSecretInitializer (CLIENT_SECRET_BASIC + AUTHORIZATION_CODE + REFRESH_TOKEN + CLIENT_CREDENTIALS) |
 | JWT resource server | Spring Security 7 | SecurityConfig (NimbusJwtDecoder + JwtAuthenticationConverter), CurrentUserProvider, AuthHelper |
-| In-process rate limiting | resilience4j | `@RateLimiter` on search/reviews/messaging controllers (instances in `application.yml`) |
+
+### Request Protection (in-process)
+
+Not an authentication mechanism — a request-shaped protection layer beside the
+security chains:
+
+| Concern | Implementation |
+|---------|----------------|
+| In-process rate limiting | resilience4j `@RateLimiter` on search/reviews/messaging controllers (instances in `application.yml`) |
 
 ### Security HTTP Headers (applied to both SecurityFilterChains)
 
