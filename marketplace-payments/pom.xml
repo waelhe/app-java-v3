@@ -69,4 +69,71 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Plan item 4.2 (comprehensive-reverification-repair-plan-2026-09-26,
+                 PR #400): the PIT trial — one deliberately limited entry, the payment
+                 intent state machine (the plan's own candidate: "payments أول
+                 المرشحين — آلة الحالات"). NOT bound to any lifecycle phase: the trial
+                 runs by explicit invocation only, so the normal verify/CI cycle is
+                 untouched:
+                   ./mvnw pitest:mutationCoverage -pl marketplace-payments
+                 (dry-run first, the official setup-shakeout mode:
+                   ./mvnw pitest:mutationCoverage -pl marketplace-payments -Dpit.dryRun=true )
+                 Versions measured from Maven Central's own metadata at setup time
+                 (org.pitest:pitest-maven <latest>1.30.0</latest>,
+                 org.pitest:pitest-junit5-plugin <latest>1.2.3</latest>) and the
+                 patterns are the PIT Maven quickstart's own (archived:
+                 scripts/doc-verify/pitest-maven-quickstart.html):
+                 targetClasses/targetTests to limit scope, the globs rule respected —
+                 exact class name, no trailing glob, because PaymentIntentStatus has
+                 no nested classes to miss. -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.30.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>1.2.3</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <!-- PIT's own argLine (takes precedence over the surefire-derived
+                         one): the same JVM locale pin as surefire/failsafe (the house
+                         rule — Stripe HMAC and ResourceBundle candidates diverge on a
+                         non-en box), WITHOUT the @{argLine} late-replacement token.
+                         Measured reason: pitest copies surefire's argLine literally
+                         (parseSurefireConfig=true, the plugin's own documented
+                         "may not give the desired result in some circumstances"),
+                         the forked JVM then parses the literal @{argLine} as an
+                         @-argument FILE and dies: NoSuchFileException: {argLine}.
+                         The fix is the plugin's own documented escape hatch:
+                         parseSurefireConfig=false (the surefire-derived argLine wins
+                         over this configuration otherwise — measured: the same
+                         NoSuchFileException persisted WITH this argLine set until
+                         parsing was switched off; the trial's targetTests are
+                         explicit, so surefire's include/exclude patterns are not
+                         needed). The JaCoCo agent is deliberately absent from the
+                         mutation JVM — instrumentation over mutants would skew PIT's
+                         own measurement (the mutation score IS the instrument here). -->
+                    <parseSurefireConfig>false</parseSurefireConfig>
+                    <argLine>-Duser.language=en -Duser.country=US</argLine>
+                    <targetClasses>
+                        <param>com.marketplace.payments.PaymentIntentStatus</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>com.marketplace.payments.PaymentIntentStatusTest</param>
+                    </targetTests>
+                    <timestampedReports>false</timestampedReports>
+                    <outputFormats>
+                        <param>XML</param>
+                        <param>HTML</param>
+                    </outputFormats>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
