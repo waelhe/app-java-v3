@@ -160,9 +160,47 @@ class WebSocketTokenAuthenticationIntegrationTest {
         String accessToken = loginGateAccessToken();
         WebSocketStompClient stompClient = stompClient();
 
-        // Spring Framework 7 declares the adapter class itself abstract —
-        // the empty anonymous subclass is the minimal concrete handler.
-        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter() { };
+        // CI round 6: the guard is SELF-DIAGNOSING — every client-visible
+        // event (frames, transport errors, closures, the CONNECTED
+        // negotiation) is recorded, and a failure answers with the whole
+        // trace instead of a bare timeout. The rounds so far measured: the
+        // CONNECT establishes (round 2+), the session stays open with NO
+        // rejection exception in the server log (round 5 — the subscribe is
+        // not denied), yet neither a receipt (rounds 3-4 — receipts are the
+        // external relay's feature, bytecode-proven) nor a delivered MESSAGE
+        // (round 5) arrives. The trace closes the remaining unknowns in ONE
+        // round: heartbeat negotiation, late delivery, silent closure.
+        java.util.List<String> trace =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        CompletableFuture<String> pushed = new CompletableFuture<>();
+
+        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter() {
+            @Override
+            public void afterConnected(StompSession s, StompHeaders connectedHeaders) {
+                trace.add("CONNECTED heartbeat=" + java.util.Arrays.toString(connectedHeaders.getHeartbeat()));
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                trace.add("FRAME " + headers.getCommand() + " destination=" + headers.getDestination());
+            }
+
+            @Override
+            public void handleException(StompSession s, StompCommand command, StompHeaders headers,
+                                        byte[] payload, Throwable ex) {
+                trace.add("EXCEPTION " + command + ": " + ex);
+            }
+
+            @Override
+            public void handleTransportError(StompSession s, Throwable ex) {
+                trace.add("TRANSPORT-ERROR: " + ex);
+            }
+
+            @Override
+            public void afterConnectionClosed(StompSession s, StompHeaders headers) {
+                trace.add("CLOSED");
+            }
+        };
 
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + accessToken);
@@ -182,7 +220,6 @@ class WebSocketTokenAuthenticationIntegrationTest {
         // a server-side push to the authenticated principal's own topic
         // actually ARRIVES at the subscribed session — the same delivery path
         // NotificationService drives in production.
-        CompletableFuture<String> pushed = new CompletableFuture<>();
         StompHeaders subscribe = new StompHeaders();
         subscribe.setDestination("/topic/notifications/" + USER);
         session.subscribe(subscribe, new StompFrameHandler() {
@@ -195,19 +232,26 @@ class WebSocketTokenAuthenticationIntegrationTest {
             public void handleFrame(StompHeaders headers, Object payload) {
                 // MESSAGE frames for the notification topic — the
                 // channel-alive proof itself.
+                trace.add("MESSAGE-PAYLOAD " + payload);
                 pushed.complete(String.valueOf(payload));
             }
         });
+        trace.add("SUBSCRIBED destination=/topic/notifications/" + USER);
 
         // The server-side push, retried while the broker's async subscription
         // registration settles (each send delivers to whatever is registered
         // by then — one landing completes the proof).
-        for (int attempt = 0; attempt < 6 && !pushed.isDone(); attempt++) {
-            Thread.sleep(300);
+        for (int attempt = 1; attempt <= 12 && !pushed.isDone(); attempt++) {
+            Thread.sleep(400);
             messagingTemplate.convertAndSend("/topic/notifications/" + USER, "s4-channel-alive");
+            trace.add("SENT attempt=" + attempt + " connected=" + session.isConnected());
         }
 
-        assertThat(pushed.get(10, TimeUnit.SECONDS)).isEqualTo("s4-channel-alive");
+        assertThat(pushed.get(15, TimeUnit.SECONDS))
+                .as("the channel-alive proof — the push to the authenticated principal's own topic "
+                        + "must ARRIVE at the subscribed session. Client-side trace:\n  %s",
+                        String.join("\n  ", trace))
+                .isEqualTo("s4-channel-alive");
 
         session.disconnect();
     }
