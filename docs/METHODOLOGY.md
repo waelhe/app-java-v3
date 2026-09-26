@@ -829,10 +829,11 @@ METHODOLOGY.md (this document)
   │   └── rollout-strategy.md   ← Canary + rollback
   ├── security/
   │   └── secrets-policy.md     ← Secrets + rotation
-  ├── deployment/
-  │   ├── README.md             ← 5 deployment options
-  │   └── aot-cache.md          ← AOT evaluation
-  ├── external-services.md      ← Setup guide for 5 external services
+  ├── observability/
+  │   ├── slo.md                ← SLOs + the alerting contract
+  │   └── runbooks.md           ← Per-alert incident runbooks
+  ├── operating/                ← Operator runbooks (DB backup, trial renewal/migration)
+  ├── railway-deployment-reference.md ← Deployment reference (Railway, live-measured)
   ├── backend-execution-plan.md ← Phases + DoD
   ├── clean-development-plan.md ← Exceptions registry
   └── phase-0-baseline-checklist.md ← Pre-implementation checklist
@@ -865,7 +866,6 @@ METHODOLOGY.md (this document)
 | Topic | URL |
 |-------|-----|
 | RFC 7807 (Problem Details) | https://datatracker.ietf.org/doc/html/rfc7807 |
-| RFC 6238 (TOTP) | https://datatracker.ietf.org/doc/html/rfc6238 |
 | RFC 6749 (OAuth 2.0) | https://datatracker.ietf.org/doc/html/rfc6749 |
 | RFC 8252 (PKCE) | https://datatracker.ietf.org/doc/html/rfc8252 |
 | RFC 9068 (JWT) | https://datatracker.ietf.org/doc/html/rfc9068 |
