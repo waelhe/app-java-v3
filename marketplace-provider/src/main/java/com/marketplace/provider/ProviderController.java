@@ -86,7 +86,8 @@ public class ProviderController {
     @PostMapping("/admin/providers/{id}/suspend")
     @Operation(summary = "Suspend a provider (administrative)",
             description = "Suspends the provider — the administrative protective exit; a "
-                    + "suspended provider's surface leaves public visibility.")
+                    + "suspended provider's inventory is hidden from the public page, while "
+                    + "the profile itself stays visible with its status.")
     public ResponseEntity<ProviderResponse> suspend(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.suspend(id)));
     }

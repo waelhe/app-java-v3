@@ -54,7 +54,8 @@ public class AdminController {
     @GetMapping("/users")
     @Operation(summary = "List all accounts",
             description = "Paginated user summaries — the admin roster surface. Every account "
-                    + "across roles (CONSUMER/PROVIDER/ADMIN), newest-first by persistence order.")
+                    + "across roles (CONSUMER/PROVIDER/ADMIN), in repository natural order "
+                    + "(unordered — pass sort on the pageable when an order is needed).")
     public ResponseEntity<PagedResponse<UserSummary>> listUsers(Pageable pageable) {
         return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
     }
@@ -201,9 +202,10 @@ public class AdminController {
 
     @PostMapping("/listings/{id}/archive")
     @Operation(summary = "Archive a listing",
-            description = "Administrative archive of a listing in any live state — the admin-side "
-                    + "exit the provider's own archive action mirrors; answers the archived "
-                    + "summary. An archived listing disappears from every public surface.")
+            description = "Administrative archive of a listing in any live state — the "
+                    + "administrative equivalent of the provider's own archive action; answers "
+                    + "the archived summary. An archived listing disappears from every public "
+                    + "surface.")
     public ResponseEntity<ProviderListingSummary> archiveListing(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(catalogSpi.archiveListing(id, authentication));
     }
