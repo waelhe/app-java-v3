@@ -85,7 +85,7 @@ L1: 13 domain modules            ← Bounded contexts (each owns its data + logi
 |---|--------|-------|------|---------------|
 | 1 | `marketplace-shared` | L2 | API contracts | Port interfaces, event records, exceptions |
 | 2 | `marketplace-platform-infra` | L3 | Infra | JPA, Security, Cache, Observability, Email, JWK keystore signing |
-| 3 | `marketplace-identity` | L1 | Domain core | Users, auth, MFA/2FA, OAuth2, brute-force |
+| 3 | `marketplace-identity` | L1 | Domain core | Users, roles, user lookup SPI, data export/purge |
 | 4 | `marketplace-catalog` | L1 | Domain core | Listings, GraphQL, CatalogSpi |
 | 5 | `marketplace-booking` | L1 | Domain core | Bookings, expiration, 3 events |
 | 6 | `marketplace-payments` | L1 | Domain core | Payment intents, refunds, webhooks |
@@ -165,12 +165,15 @@ spring-modulith-moments → publishes DayHasPassed (daily)
             → catch DataAccessException only (programming errors propagate for retry)
 ```
 
-#### Flow 4 — Two-Step Login with MFA
+#### Flow 4 — OAuth2 Token Issuance (Spring Authorization Server)
 ```
-POST /login/step1 → verify password → issue mfaToken (Redis, TTL 5min)
-POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery code
-    → publish LOGIN_SUCCESS → AuthAuditService.log()
-    → issue JWT (JWKSource — persistent JKS keystore in prod, runbook `keys/README.md`)
+public client → /oauth2/authorize (AUTHORIZATION_CODE + PKCE, ClientAuthenticationMethod.NONE)
+    → /oauth2/token → JWT access token only — no refresh token is minted for the
+        public client (the measured contract:
+        PublicPkceClientGateIntegrationTest.publicClientExchangesCodeWithoutAuthenticationAndMintsNoRefreshToken)
+        (JWKSource — persistent JKS keystore in prod, runbook `keys/README.md`)
+confidential client → /oauth2/token (CLIENT_SECRET_BASIC; authorization_code/refresh_token/client_credentials)
+    → JWT access token (+ refresh token via the refresh_token grant) — same JWKSource, same resource-server validation chain
 ```
 
 ### Exception Handling Policy
@@ -231,7 +234,7 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 **Mitigations:**
 - `sleepAfter: "30m"` (keep instances warm)
 - `instance_type: "standard-1"` (½ vCPU + 4 GiB RAM)
-- Optional: enable Spring AOT Cache (see `docs/deployment/aot-cache.md`)
+- Spring AOT Cache is built into the production image (Dockerfile `trainer` stage — the Boot 4.1 official recipe; see `docs/railway-deployment-reference.md`)
 - No built-in autoscaling yet — use N instances with `getRandom` helper for stateless load balancing
 
 ### Implementation Plan (5 phases)
@@ -250,14 +253,22 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 
 ![Security Architecture](diagrams/05-security-auth.png)
 
-### Authentication Mechanisms (4 paths, all converge on JWT)
+### Authentication Mechanisms (3 paths, all converge on JWT)
 
 | Mechanism | Spec | Implementation |
 |-----------|------|----------------|
-| Password + MFA/2FA | RFC 6238 (TOTP), RFC 4648 (Base32) | TwoStepLoginService, MfaService, TotpService |
-| OAuth2 social login | RFC 6749, RFC 8252 (PKCE), RFC 9068 (JWT) | OAuth2LoginSuccessHandler (GitHub + Google) |
-| JWT resource server | Spring Security 7 | SecurityConfig, JwtDecoder, JwtRevocationValidator |
-| Brute-force protection | OWASP Authentication Cheat Sheet | BruteForceProtectionService, DistributedRateLimiter |
+| OAuth2 authorization-code login (public client) | RFC 6749, RFC 8252 (PKCE), RFC 9068 (JWT) | OAuth2PublicClientInitializer (ClientAuthenticationMethod.NONE + AUTHORIZATION_CODE) |
+| OAuth2 confidential clients (BFF / service) | RFC 6749 | OAuth2ClientSecretInitializer (CLIENT_SECRET_BASIC + AUTHORIZATION_CODE + REFRESH_TOKEN + CLIENT_CREDENTIALS) |
+| JWT resource server | Spring Security 7 | SecurityConfig (NimbusJwtDecoder + JwtAuthenticationConverter), CurrentUserProvider, AuthHelper |
+
+### Request Protection (in-process)
+
+Not an authentication mechanism — a request-shaped protection layer beside the
+security chains:
+
+| Concern | Implementation |
+|---------|----------------|
+| In-process rate limiting | resilience4j `@RateLimiter` on search/reviews/messaging controllers (instances in `application.yml`) |
 
 ### Security HTTP Headers (applied to both SecurityFilterChains)
 
@@ -314,9 +325,9 @@ POST /login/step2 → verify TOTP (constant-time + replay guard) OR recovery cod
 
 | Technology | Version | Usage |
 |-----------|---------|-------|
-| PostgreSQL | 17 | Primary OLTP (Neon managed) |
-| Redis | 7 | Cache, sessions, rate-limit, TOTP replay guard (Upstash managed) |
-| Flyway | (Spring-managed) | Migrations (V1–V30) |
+| PostgreSQL | 18 | Primary OLTP (Neon managed — live 18.6; repo standard `postgis/postgis:18-3.6`) |
+| Redis | 8 | Cache, sessions, cache-invalidation pub/sub (prod = Upstash managed; repo standard `redis:8-alpine`) |
+| Flyway | (Spring-managed) | Migrations — versioned set in `marketplace-app/src/main/resources/db/migration` (live count tracked in SYSTEM.md §1) |
 | Spring Data JPA | (Spring 4.1) | ORM |
 
 ### Infrastructure

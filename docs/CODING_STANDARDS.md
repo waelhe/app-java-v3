@@ -494,7 +494,7 @@ public Booking create(...) { ... }
 | `@Observed` on all public service methods that represent business operations | Metrics + tracing | [Micrometer — Observation](https://micrometer.io/docs/observation) |
 | Observation name format: `<module>.<operation>` (e.g., `booking.create`) | Discoverable in dashboards | Existing pattern |
 | Actuator endpoints exposed: `health`, `info`, `prometheus`, `metrics` | Standard | [Spring Boot Actuator](https://docs.spring.io/spring-boot/reference/actuator/index.html) |
-| `logback-spring.xml` for redaction (passwords, tokens, JWTs) | Security | OWASP Logging |
+| Logback `%replace` scrubbing in `logging.pattern.console` (prod profile, `application-prod.yml`) | Security | [Logback — Pattern Layout](https://logback.qos.ch/manual/layouts.html) · OWASP Logging |
 
 ---
 
@@ -528,9 +528,8 @@ UUID userId = currentUserProvider.getCurrentUserId(authentication);
 | `@PreAuthorize` on every mutating endpoint | Defense in depth | [Spring Security — Method Security](https://docs.spring.io/spring-security/reference/servlet/authorization/method-security.html) |
 | Never trust client-sent user IDs | Use `CurrentUserProvider` | OWASP |
 | Password max length = 64 (NIST SP 800-63B) | Prevents DoS | [NIST SP 800-63B §5.1.1](https://pages.nist.gov/800-63-3/sp800-63b.html) |
-| TOTP comparison via `MessageDigest.isEqual` (constant-time) | Timing-attack resistant | [RFC 6238 §5.2](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2) |
 | JWT in `HttpOnly + Secure + SameSite=Strict` cookie | Prevents XSS theft | [RFC 6749 §10.6](https://datatracker.ietf.org/doc/html/rfc6749#section-10.6) |
-| Never log secrets (passwords, tokens, JWTs) | logback-spring.xml redaction | OWASP Logging |
+| Never log secrets (passwords, tokens, JWTs) | Logback `%replace` scrubbing in the prod console pattern | OWASP Logging |
 | `server.forward-headers-strategy=framework` in prod | Trusted proxy handling | [Spring Boot — Forwarded Headers](https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.forwarded-headers) |
 
 ---
@@ -562,10 +561,10 @@ log.info("password=" + password);  // ❌ secret in log
 | Use `{}` placeholders (not string concatenation) | Performance (lazy eval) | SLF4J docs |
 | `private static final Logger log` | One per class | Convention |
 | Log levels: `ERROR` (failures), `WARN` (recoverable), `INFO` (business events), `DEBUG` (diagnostics) | Standard | Convention |
-| **Never** log secrets | Security | OWASP |
+| **Never** log secrets — the primary rule (the prod console scrub below is a secondary net, never permission) | Security | OWASP |
 | **Never** `System.out` / `System.err` | Use logger | Convention |
 | **Never** `e.printStackTrace()` | Use `log.error("msg", e)` | Convention |
-| Logback redaction filter strips secrets automatically | Defense in depth | `logback-spring.xml` |
+| Logback `%replace` masks the single whitespace/comma-delimited value following each occurrence of the supported labels (password/secret/token/api-key/authorization) in console output (prod pattern, `application-prod.yml`) — defense in depth, **not** complete secret/JWT protection (a `Bearer <jwt>` value keeps the JWT after the masked scheme word) | Defense in depth | [Logback — layouts](https://logback.qos.ch/manual/layouts.html) |
 
 ---
 
