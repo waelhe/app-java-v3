@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -182,7 +183,8 @@ class WebSocketTokenAuthenticationIntegrationTest {
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                trace.add("FRAME " + headers.getCommand() + " destination=" + headers.getDestination());
+                trace.add("FRAME destination=" + headers.getDestination()
+                        + " receipt-id=" + headers.getReceiptId());
             }
 
             @Override
@@ -194,11 +196,6 @@ class WebSocketTokenAuthenticationIntegrationTest {
             @Override
             public void handleTransportError(StompSession s, Throwable ex) {
                 trace.add("TRANSPORT-ERROR: " + ex);
-            }
-
-            @Override
-            public void afterConnectionClosed(StompSession s, StompHeaders headers) {
-                trace.add("CLOSED");
             }
         };
 
