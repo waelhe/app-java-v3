@@ -3,6 +3,7 @@ package com.marketplace.disputes;
 import com.marketplace.shared.api.ApiConstants;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
@@ -24,9 +25,19 @@ public class DisputeController {
         this.disputeMapper = disputeMapper;
     }
 
+    /**
+     * Plan item 2.7: the dispute's creation answers 201 Created — RFC 9110
+     * §15.3.2 ("The 201 (Created) status code indicates that the request has
+     * been fulfilled and has led to the creation of a new resource") — the
+     * same in-repo creation precedent as {@code MessagingController
+     * #createConversation}. The measured 200 was the wrong creation
+     * semantics; the OpenAPI gate documents this intentional contract change
+     * as a dated exception in {@code .ci/openapi-compat-allowlist.yml}
+     * (removed when the next release tag re-baselines the gate).
+     */
     @PostMapping("/bookings/{bookingId}/disputes")
     public ResponseEntity<DisputeResponse> open(@PathVariable UUID bookingId, @RequestParam @NotBlank String reason, Authentication authentication) {
-        return ResponseEntity.ok(disputeMapper.toResponse(service.open(bookingId, reason, authentication)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(disputeMapper.toResponse(service.open(bookingId, reason, authentication)));
     }
 
     @GetMapping("/bookings/{bookingId}/disputes")
