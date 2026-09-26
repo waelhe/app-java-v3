@@ -159,6 +159,50 @@ class GeoModuleIntegrationTest {
                 .contains("rif-dimashq");
     }
 
+    /**
+     * Plan item 2.8's measured gap, closed and guarded on the real schema:
+     * the seed's Latin names are Title Case ("Rif Dimashq", "Syria"), so a
+     * case-sensitive LIKE could never answer the lowercase prefix an
+     * autocomplete box actually receives. PostgreSQL's official ILIKE makes
+     * the prefix match case-insensitive (Official Docs, Pattern Matching).
+     */
+    @Test
+    void suggest_byLowercaseLatinPrefix_findsTheTitleCaseNames() {
+        assertThat(geoService.suggest("rif"))
+                .extracting(GeoNode::slug)
+                .contains("rif-dimashq");
+        assertThat(geoService.suggest("syr"))
+                .extracting(GeoNode::slug)
+                .contains("syria");
+    }
+
+    /**
+     * The slug surface under ILIKE: slugs are lowercase by validation, so a
+     * capitalized user prefix now reaches them too — the uniform
+     * case-insensitive autocomplete contract on all three surfaces.
+     */
+    @Test
+    void suggest_byUppercasePrefix_findsTheLowercaseSlug() {
+        assertThat(geoService.suggest("QUDS"))
+                .extracting(GeoNode::slug)
+                .contains("qudsayya");
+    }
+
+    /**
+     * The wildcards stay literal under ILIKE exactly as under LIKE (the
+     * CodeRabbit round 1 adoption, now guarded on the case-insensitive
+     * operator): q=%% must not degrade into match-everything.
+     */
+    @Test
+    void suggest_escapedWildcardPrefix_isNotAMatchAll() {
+        // "%%" as a literal two-character prefix: no seeded name or slug
+        // starts with a percent sign, so the honest answer is empty.
+        assertThat(geoService.suggest("%%")).isEmpty();
+        // The floor still stands before any query.
+        assertThatThrownBy(() -> geoService.suggest("%"))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+    }
+
     @Test
     void suggest_belowFloor_is400BeforeAnyQuery() {
         assertThatThrownBy(() -> geoService.suggest("ق"))
