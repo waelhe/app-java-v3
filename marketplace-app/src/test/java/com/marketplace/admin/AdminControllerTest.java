@@ -176,14 +176,16 @@ class AdminControllerTest {
     }
 
     @Test
-    void updateUserRole_callsSpiAndReturnsOk() {
+    void updateUserRole_callsSpiWithActorAndReturnsOk() {
         UUID userId = UUID.randomUUID();
         var request = new AdminController.ChangeRoleRequest("ADMIN");
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn("admin-actor");
 
-        ResponseEntity<Void> result = controller.updateUserRole(userId, request);
+        ResponseEntity<Void> result = controller.updateUserRole(userId, request, authentication);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
-        verify(identitySpi).updateUserRole(userId, "ADMIN");
+        verify(identitySpi).updateUserRole(userId, "ADMIN", "admin-actor");
     }
 
     @Test
