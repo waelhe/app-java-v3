@@ -170,7 +170,9 @@ jobs:
       #   3. the SAME visitor attempts a protected write without a token ->
       #      401 + AUTHN-001 problem+json with the taxonomy type URI (the
       #      measured contract of problemDetailAuthenticationEntryPoint);
-      #   4. the GraphQL surface answers introspection -> 200 + query type;
+      #   4. the GraphQL surface is a PROTECTED surface: anonymous introspection
+      #      answers the same 401 AUTHN-001 problem contract (measured on CI —
+      #      the old probe's curl -sf | jq . masked the 401);
       #   5. the API chain's catch-all: an unrouted anonymous GET (bare /api)
       #      answers the same 401 AUTHN-001 problem contract — the old soft
       #      Data REST check ("No repositories exposed yet") was masking it.
@@ -208,14 +210,28 @@ jobs:
           jq -e '.errorCode == "AUTHN-001" and .type == "https://marketplace.com/errors/unauthorized"' /tmp/smoke-write.json > /dev/null \
             || fail "the 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-write.json))"
 
-          echo "=== [4/5] The GraphQL surface answers introspection ==="
-          code=$(curl -s -o /tmp/smoke-graphql.json -w '%{http_code}' -X POST "$BASE/graphql" \
+          echo "=== [4/5] The GraphQL surface is protected: anonymous introspection is rejected ==="
+          # Measured contract (this PR's first CI run): POST /graphql without
+          # a token answers 401 — /graphql sits in the resource-server
+          # chain's securityMatcher with no permitAll line covering it, so
+          # anyRequest().authenticated() applies (SecurityConfig chain 2).
+          # The old probe's `curl -sf | jq .` masked this 401: jq exits 0 on
+          # curl's empty output, so the step "passed" while the endpoint
+          # rejected the request — the exact lie this composed scenario
+          # exists to retire. Public introspection would be a security
+          # posture decision, not a smoke default; this leg pins the
+          # boundary as built — the same AUTHN-001 problem contract as
+          # legs 3 and 5.
+          answer=$(curl -s -o /tmp/smoke-graphql.json -w '%{http_code} %{content_type}' -X POST "$BASE/graphql" \
             -H 'Content-Type: application/json' \
             -d '{"query":"{ __schema { queryType { name } } }"}')
-          echo "POST /graphql (introspection) -> $code"
-          [ "$code" = "200" ] || fail "GraphQL introspection answered $code (expected 200)"
-          jq -e '.data.__schema.queryType.name != null' /tmp/smoke-graphql.json > /dev/null \
-            || fail "the introspection answer carries no query type ($(cat /tmp/smoke-graphql.json))"
+          echo "POST /graphql (introspection, anonymous) -> $answer"
+          code=${answer%% *}
+          ctype=${answer#* }
+          [ "$code" = "401" ] || fail "anonymous GraphQL introspection answered $code (expected the protected-surface 401)"
+          case "$ctype" in application/problem+json*) ;; *) fail "the GraphQL 401 content type is $ctype (expected application/problem+json)";; esac
+          jq -e '.errorCode == "AUTHN-001"' /tmp/smoke-graphql.json > /dev/null \
+            || fail "the GraphQL 401 body is not the AUTHN-001 problem contract ($(cat /tmp/smoke-graphql.json))"
 
           echo "=== [5/5] The API chain's catch-all rejects an unrouted anonymous path ==="
           # Measured fact: Spring Data REST is not on the classpath, so /api is
