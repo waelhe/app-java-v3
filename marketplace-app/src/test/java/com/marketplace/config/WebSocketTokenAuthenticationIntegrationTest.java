@@ -84,13 +84,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
         "marketplace.security.oauth2.client.secret=it-app-secret",
         "marketplace.security.oauth2.client.redirect-uris=http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client",
-        // CI round 7: the SERVER-side instrument — every frame the broker
-        // layer receives and routes, logged at TRACE, so the next round's
-        // evidence shows whether the SUBSCRIBE arrives at the broker and
-        // where the pushed MESSAGE dies (subscription lookup miss? outbound
-        // delivery? never sent?).
-        "logging.level.org.springframework.messaging=TRACE",
-        "logging.level.org.springframework.web.socket=TRACE",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -342,12 +335,21 @@ class WebSocketTokenAuthenticationIntegrationTest {
     private WebSocketStompClient stompClient() {
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         // CI round 3 (the framework's own contract, measured: "To track
-        // receipts, a TaskScheduler must be configured"): the SUBSCRIBE's
-        // receipt header — the channel-alive proof this guard asserts — needs
-        // receipt tracking, and the STOMP client only tracks receipts when a
-        // scheduler is configured (Spring Framework Reference › STOMP Client
-        // › Receipts). One class-level scheduler, shut down after the class.
+        // receipts, a TaskScheduler must be configured"): receipt tracking
+        // needs a scheduler (Spring Framework Reference › STOMP Client ›
+        // Receipts). One class-level scheduler, shut down after the class.
         client.setTaskScheduler(STOMP_RECEIPT_SCHEDULER);
+        // CI round 8 (bytecode-proven against spring-messaging 7.0.9):
+        // StompClientSupport's DEFAULT converter is SimpleMessageConverter —
+        // whose fromMessage passes the payload through ONLY when the
+        // handler's declared type is assignable from the payload's ACTUAL
+        // type (byte[]) — a String-declaring handler answers "No suitable
+        // converter" for the text/plain MESSAGE frames the server demonstrably
+        // sends (the round-7 TRACE evidence: 12 MESSAGE frames received,
+        // 12 conversion failures). The explicit StringMessageConverter is the
+        // honest wiring for a text-payload channel: byte[] <-> String under
+        // text/plain.
+        client.setMessageConverter(new org.springframework.messaging.converter.StringMessageConverter());
         return client;
     }
 
