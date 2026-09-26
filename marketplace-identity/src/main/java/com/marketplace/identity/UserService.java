@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.api.UserSummary;
+import com.marketplace.shared.api.UserRoleChanged;
 import com.marketplace.shared.security.SubjectPseudonymizer;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -174,7 +177,7 @@ public class UserService implements IdentitySpi {
                                 "Account for this subject was pseudonymized and cannot be "
                                         + "re-provisioned: " + subject);
                     }
-                    UserRole role = resolveRole(token);
+                    UserRole role = resolveRole(subject, token);
                     User newUser = User.create(subject, email, name, role);
                     profileChanged.set(true);
                     return userRepository.save(newUser);
@@ -185,15 +188,105 @@ public class UserService implements IdentitySpi {
         return user;
     }
 
-    private UserRole resolveRole(JwtAuthenticationToken token) {
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the creation
+     * path derives the role from the LIVE login-side store —
+     * {@code auth_authorities} read through the framework
+     * {@code UserDetailsManager} — not from the JWT's {@code roles} claim.
+     * The claim is a snapshot of the authorities taken when the token was
+     * minted (up to its 900s TTL); reading the live store closes the
+     * window where an administrative role change lands between issuance
+     * and the account's first {@code /me} bootstrap — the new row records
+     * the operative role, not the stale one. This is the truth-direction
+     * flip the plan mandates: the login store is the authority projection
+     * (kept in sync by {@link #updateUserRole}), the {@code users.role}
+     * column its domain mirror.
+     *
+     * <p>The JWT-claim fallback stays for subjects with no login account
+     * ({@code UsernameNotFoundException} — the documented manager
+     * contract): a token minted by this AS implies an account, so the
+     * fallback only serves foreign/test-minted tokens, and the account
+     * bootstrap keeps working exactly as before in every environment.
+     */
+    private UserRole resolveRole(String subject, JwtAuthenticationToken token) {
+        try {
+            UserDetails stored = userDetailsManager.loadUserByUsername(subject);
+            return fromAuthorities(stored.getAuthorities());
+        } catch (UsernameNotFoundException ex) {
+            return resolveRoleFromClaim(token);
+        }
+    }
+
+    /** The stored authority set → the domain role (the seed's shape: one {@code ROLE_<role>}). */
+    private static UserRole fromAuthorities(Collection<? extends GrantedAuthority> authorities) {
+        for (GrantedAuthority authority : authorities) {
+            String name = authority.getAuthority();
+            if ("ROLE_ADMIN".equals(name)) return UserRole.ADMIN;
+            if ("ROLE_PROVIDER".equals(name)) return UserRole.PROVIDER;
+        }
+        return UserRole.CONSUMER;
+    }
+
+    private static UserRole resolveRoleFromClaim(JwtAuthenticationToken token) {
         var roles = token.getToken().getClaimAsStringList("roles");
         if (roles != null && roles.contains("ADMIN")) return UserRole.ADMIN;
         if (roles != null && roles.contains("PROVIDER")) return UserRole.PROVIDER;
         return UserRole.CONSUMER;
     }
 
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the role
+     * change as one transaction on BOTH stores of truth. Before this fix
+     * the command wrote {@code users.role} alone — the {@code roles} claim
+     * of every future token is minted from the login-side
+     * {@code auth_authorities} projection
+     * ({@code SecurityConfig.jwtTokenCustomizer} reads
+     * {@code context.getPrincipal().getAuthorities()}), so the upgrade was
+     * a silent no-op on authorization (N4) and the two stores drifted with
+     * no reconciliation in either direction (N6).
+     *
+     * <p><b>The official contract doing the sync:</b>
+     * {@code JdbcUserDetailsManager.updateUser} (spring-security-core
+     * 7.1.1, bytecode-verified this change) executes {@code updateUserSql},
+     * then — {@code enableAuthorities} default true —
+     * {@code deleteUserAuthoritiesSql} followed by
+     * {@code insertUserAuthorities} per authority via
+     * {@code createAuthoritySql} (both wired in {@code SecurityConfig}).
+     * The manager is plain JDBC (no transaction annotation of its own), so
+     * inside this {@code @Transactional} service the whole replacement is
+     * atomic with the {@code users.role} write — the "same transaction"
+     * guarantee the plan demands. Password and account flags are replayed
+     * verbatim from the loaded row (the L23 {@code updateUserStatus}
+     * pattern); the authorities are REPLACED with the target role's single
+     * {@code ROLE_<role>} authority — the system's authority shape since
+     * the seed (one {@code ROLE_ADMIN} row), and the role enum is the
+     * authority set by design.
+     *
+     * <p><b>Issued authorizations die with the change</b> (the L23
+     * documented basis, verified against the SAS 7.1.1 source): the
+     * {@code refresh_token} grant deserializes the principal stored in
+     * {@code oauth2_authorization} instead of re-reading the account, so a
+     * pre-change refresh token would keep minting old-role access tokens
+     * until its own expiry. Deleting the rows forces a re-login — the next
+     * token is minted from the updated authorities. Access tokens already
+     * in flight are self-contained and die by their 900s TTL (the same
+     * documented L23 basis).
+     *
+     * <p><b>The last-active-ADMIN counting constraint</b> (L23 acceptance 2,
+     * verbatim reuse — {@link #LOCK_ACTIVE_ADMINS}): a change that removes
+     * the {@code ROLE_ADMIN} authority from the only enabled account
+     * holding it is rejected. The documented invariant is "the last active
+     * ADMIN is untouchable"; an operative role change must not open the
+     * lockout hole the disable guard already closes.
+     *
+     * <p><b>The audit record</b> (payments convention): actor, target,
+     * old→new role — the same structured line {@code updateUserStatus}
+     * writes.
+     */
     @Observed(name = "user.role.update")
-    public void updateUserRole(UUID userId, String newRole) {
+    @Override
+    public void updateUserRole(UUID userId, String newRole, String actor) {
+        UserRole target = UserRole.valueOf(newRole);
         // The write path reads the source of truth directly — NOT the
         // @Cacheable getById (a cache hit hands back a JDK-deserialized
         // DETACHED copy, and dirty checking never sees its mutations: the
@@ -202,8 +295,54 @@ public class UserService implements IdentitySpi {
         // pseudonymizeAccount write path; the read cache stays for readers.
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        user.changeRole(UserRole.valueOf(newRole));
+        UserRole previous = user.getRole();
+        user.changeRole(target);
+
+        String username = user.getSubject();
+        UserDetails stored;
+        try {
+            stored = userDetailsManager.loadUserByUsername(username);
+        } catch (UsernameNotFoundException ex) {
+            throw new ResourceNotFoundException(
+                    "No authentication account for user: " + userId + " (subject: " + username + ")");
+        }
+
+        // The counting constraint protects the authority REMOVAL (an
+        // ADMIN→anything change), exactly like the disable surface it was
+        // built for — same lock, same FOR UPDATE serialization rationale.
+        if (previous == UserRole.ADMIN && target != UserRole.ADMIN
+                && stored.isEnabled() && hasAdminAuthority(stored)) {
+            List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
+            if (activeAdmins.size() <= 1) {
+                throw new ConflictException("Cannot remove the last active ADMIN role");
+            }
+        }
+
+        // The login-side projection: authorities replaced with the target
+        // role's, everything else replayed verbatim (the L23 builder shape
+        // — the manager's updateUser SQL pair writes password/enabled and
+        // re-creates the authority rows atomically in THIS transaction).
+        // roles() is the builder's own ROLE_-prefixing contract — the
+        // authority shape the seed and every hasRole gate already speak.
+        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
+                .withUsername(username)
+                .password(stored.getPassword())
+                .roles(target.name())
+                .accountExpired(!stored.isAccountNonExpired())
+                .accountLocked(!stored.isAccountNonLocked())
+                .credentialsExpired(!stored.isCredentialsNonExpired())
+                .disabled(!stored.isEnabled())
+                .build());
+
+        // Issued authorizations die with the change (refresh resurrection
+        // kill — the L23 documented SAS basis, see the javadoc above).
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
+
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
+        eventPublisher.publishEvent(new UserRoleChanged(userId, previous.name(), target.name()));
+
+        log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
+                userId, username, previous, target, actor);
     }
 
     /**

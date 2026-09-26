@@ -5,6 +5,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.api.UserSummary;
+import com.marketplace.shared.api.UserRoleChanged;
 import com.marketplace.shared.security.SubjectPseudonymizer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -135,6 +136,10 @@ class UserServiceTest {
         when(jwt.getClaimAsStringList("roles")).thenReturn(null);
         when(userRepository.findBySubject("new-sub")).thenReturn(Optional.empty());
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // S2/N4/N6 fix: the creation path consults the live login store
+        // first — no account for a test-minted token falls back to the claim.
+        when(userDetailsManager.loadUserByUsername("new-sub"))
+                .thenThrow(new UsernameNotFoundException("new-sub"));
 
         User result = userService.syncFromOidc(token);
 
@@ -197,22 +202,92 @@ class UserServiceTest {
         when(jwt.getClaimAsStringList("roles")).thenReturn(List.of("ADMIN"));
         when(userRepository.findBySubject("admin-sub")).thenReturn(Optional.empty());
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(userDetailsManager.loadUserByUsername("admin-sub"))
+                .thenThrow(new UsernameNotFoundException("admin-sub"));
 
         User result = userService.syncFromOidc(token);
 
         assertEquals(UserRole.ADMIN, result.getRole());
     }
 
-    @Test
-    void updateUserRole_changesRole() {
-        UUID id = UUID.randomUUID();
-        User user = User.create("sub-1", "a@b.com", "Alice", UserRole.CONSUMER);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+    // -- S2/N4/N6: updateUserRole (the two-store synchronization) ---------
 
-        userService.updateUserRole(id, "ADMIN");
+    @Test
+    void updateUserRole_changesRoleOnBothStoresKillsRefreshAndPublishesEvents() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "CONSUMER"));
+
+        userService.updateUserRole(id, "ADMIN", "admin-actor");
 
         assertEquals(UserRole.ADMIN, user.getRole());
-        verify(userRepository).findById(id);
+        // The login-side projection is replaced through the framework
+        // contract: authorities = ROLE_ADMIN only, password and flags
+        // replayed verbatim (the L23 builder shape).
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).updateUser(captured.capture());
+        assertEquals("target-user", captured.getValue().getUsername());
+        assertEquals("{noop}secret", captured.getValue().getPassword());
+        assertTrue(captured.getValue().isEnabled());
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")),
+                "the new authority must be present");
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")),
+                "the old authority must be gone (replacement, not merge)");
+        // Issued authorizations die with the change (refresh resurrection
+        // kill — the L23 documented SAS basis) and nothing else is written.
+        verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
+        verifyNoMoreInteractions(jdbcTemplate);
+        // Both publications: the standing cache channel and the domain fact.
+        verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
+        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "CONSUMER", "ADMIN"));
+    }
+
+    @Test
+    void updateUserRole_adminDowngradeReplacesAuthorityAndKillsRefresh() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-one", "admin-two"));
+
+        userService.updateUserRole(id, "CONSUMER", "admin-actor");
+
+        assertEquals(UserRole.CONSUMER, user.getRole());
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).updateUser(captured.capture());
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")),
+                "the removed authority must be gone from the replacement");
+        verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
+        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "ADMIN", "CONSUMER"));
+    }
+
+    @Test
+    void updateUserRole_rejectsRemovingTheLastActiveAdminRole() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("target-user"));
+
+        assertThrows(ConflictException.class,
+                () -> userService.updateUserRole(id, "CONSUMER", "admin-actor"));
+
+        // The counting constraint rejected the authority removal BEFORE any
+        // store was written — the L23 "last active ADMIN is untouchable"
+        // invariant now covers the role surface too.
+        verify(userDetailsManager, never()).updateUser(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -220,7 +295,58 @@ class UserServiceTest {
         UUID id = UUID.randomUUID();
         when(userRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> userService.updateUserRole(id, "ADMIN"));
+        assertThrows(ResourceNotFoundException.class,
+                () -> userService.updateUserRole(id, "ADMIN", "admin-actor"));
+    }
+
+    @Test
+    void updateUserRole_throwsWhenAuthenticationAccountMissing() {
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenThrow(new UsernameNotFoundException("target-user"));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> userService.updateUserRole(id, "ADMIN", "admin-actor"));
+
+        verify(userDetailsManager, never()).updateUser(any());
+        verifyNoInteractions(jdbcTemplate);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void updateUserRole_rejectsUnknownRole() {
+        UUID id = UUID.randomUUID();
+
+        // No repository stub: the enum contract rejects the value before any load.
+        assertThrows(IllegalArgumentException.class,
+                () -> userService.updateUserRole(id, "SUPERUSER", "admin-actor"));
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void syncFromOidc_creationRoleComesFromTheLiveLoginStoreNotTheStaleClaim() {
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("fresh-sub");
+        when(jwt.getClaimAsString("email")).thenReturn("fresh@b.com");
+        when(jwt.getClaimAsString("name")).thenReturn("Fresh");
+        // The stale claim says ADMIN; the live login store says CONSUMER —
+        // the truth-direction flip: the store wins. Lenient by design: the
+        // fixed code never reads the claim when the login account exists —
+        // the unused stub IS the assertion's twin (the claim is ignored).
+        lenient().when(jwt.getClaimAsStringList("roles")).thenReturn(List.of("ADMIN"));
+        when(userRepository.findBySubject("fresh-sub")).thenReturn(Optional.empty());
+        when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(userDetailsManager.loadUserByUsername("fresh-sub"))
+                .thenReturn(userDetails(true, "CONSUMER"));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals(UserRole.CONSUMER, result.getRole(),
+                "the live login store is the authority projection — the claim is a stale snapshot");
     }
 
     @Test
@@ -234,6 +360,8 @@ class UserServiceTest {
         when(jwt.getClaimAsStringList("roles")).thenReturn(List.of("PROVIDER"));
         when(userRepository.findBySubject("provider-sub")).thenReturn(Optional.empty());
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(userDetailsManager.loadUserByUsername("provider-sub"))
+                .thenThrow(new UsernameNotFoundException("provider-sub"));
 
         User result = userService.syncFromOidc(token);
 
@@ -513,7 +641,6 @@ class UserServiceTest {
                 .thenReturn(List.of(DERIVED_SUBJECT));
         // The tombstone: a row already carries the derived replacement.
         when(userRepository.existsBySubjectIn(List.of(DERIVED_SUBJECT))).thenReturn(true);
-
         ConflictException ex = assertThrows(ConflictException.class, () -> userService.syncFromOidc(token));
 
         assertThat(ex.getMessage()).contains("pseudonymized");
@@ -575,6 +702,10 @@ class UserServiceTest {
         // An empty ring (no key ever bound) — the probe's inert state.
         when(subjectPseudonymizer.deriveAll("fresh-subject")).thenReturn(List.of());
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // Creation consults the live login store first — no account for a
+        // test-minted token falls back to the claim.
+        when(userDetailsManager.loadUserByUsername("fresh-subject"))
+                .thenThrow(new UsernameNotFoundException("fresh-subject"));
 
         User result = userService.syncFromOidc(token);
 

@@ -55,11 +55,21 @@ public class AdminController {
         return ResponseEntity.ok(PagedResponse.of(identitySpi.findAllSummaries(pageable)));
     }
 
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the
+     * administrative role change. The actor is part of the contract
+     * exactly like the L23 status surface and the I7 pseudonymize
+     * surface — it is recorded with the action in the identity module's
+     * structured audit line.
+     */
     public record ChangeRoleRequest(@NotBlank String role) {}
 
     @PutMapping("/users/{id}/role")
-    public ResponseEntity<Void> updateUserRole(@PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
-        identitySpi.updateUserRole(id, request.role());
+    public ResponseEntity<Void> updateUserRole(@PathVariable UUID id,
+                                               @Valid @RequestBody ChangeRoleRequest request,
+                                               Authentication authentication) {
+        identitySpi.updateUserRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok().build();
     }
 
