@@ -39,6 +39,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -83,6 +84,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
         "marketplace.security.oauth2.client.secret=it-app-secret",
         "marketplace.security.oauth2.client.redirect-uris=http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client",
+        // CI round 7: the SERVER-side instrument — every frame the broker
+        // layer receives and routes, logged at TRACE, so the next round's
+        // evidence shows whether the SUBSCRIBE arrives at the broker and
+        // where the pushed MESSAGE dies (subscription lookup miss? outbound
+        // delivery? never sent?).
+        "logging.level.org.springframework.messaging=TRACE",
+        "logging.level.org.springframework.web.socket=TRACE",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -244,9 +252,19 @@ class WebSocketTokenAuthenticationIntegrationTest {
             trace.add("SENT attempt=" + attempt + " connected=" + session.isConnected());
         }
 
-        assertThat(pushed.get(15, TimeUnit.SECONDS))
-                .as("the channel-alive proof — the push to the authenticated principal's own topic "
-                        + "must ARRIVE at the subscribed session. Client-side trace:\n  %s",
+        // Round 7: the timeout itself must CARRY the trace — a bare
+        // TimeoutException from get() never reaches the .as() decoration
+        // (the round-6 lesson: the trace was collected but never shown).
+        String delivered;
+        try {
+            delivered = pushed.get(15, TimeUnit.SECONDS);
+        } catch (TimeoutException ex) {
+            throw new AssertionError("the channel-alive proof — the push to the authenticated "
+                    + "principal's own topic never ARRIVED at the subscribed session. "
+                    + "Client-side trace:\n  " + String.join("\n  ", trace), ex);
+        }
+        assertThat(delivered)
+                .as("the channel-alive proof — the delivered payload. Client-side trace:\n  %s",
                         String.join("\n  ", trace))
                 .isEqualTo("s4-channel-alive");
 
