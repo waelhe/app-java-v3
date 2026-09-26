@@ -53,7 +53,9 @@ class PaymentsServicePspTest {
     private PaymentsService service(ObjectProvider<PspChannel> channel) {
         return new PaymentsService(intentRepository, paymentRepository, webhookEventRepository,
                 eventPublisher, currentUserProvider, bookingParticipantProvider, webhookSecurity,
-                new WebhookEventRecorder(webhookEventRepository), channel);
+                new WebhookEventRecorder(webhookEventRepository),
+                new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher),
+                channel);
     }
 
     private PaymentIntent ownedIntent() {

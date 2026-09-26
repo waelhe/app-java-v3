@@ -51,6 +51,7 @@ public class PaymentsService implements PaymentsSpi {
     private final BookingParticipantProvider bookingParticipantProvider;
     private final PaymentWebhookSecurity paymentWebhookSecurity;
     private final WebhookEventRecorder webhookEventRecorder;
+    private final PaymentIntentSettlementService paymentIntentSettlementService;
     private final ObjectProvider<PspChannel> pspChannel;
 
     public PaymentsService(PaymentIntentRepository paymentIntentRepository,
@@ -61,6 +62,7 @@ public class PaymentsService implements PaymentsSpi {
                            BookingParticipantProvider bookingParticipantProvider,
                            PaymentWebhookSecurity paymentWebhookSecurity,
                            WebhookEventRecorder webhookEventRecorder,
+                           PaymentIntentSettlementService paymentIntentSettlementService,
                            ObjectProvider<PspChannel> pspChannel) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
@@ -70,6 +72,7 @@ public class PaymentsService implements PaymentsSpi {
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentWebhookSecurity = paymentWebhookSecurity;
         this.webhookEventRecorder = webhookEventRecorder;
+        this.paymentIntentSettlementService = paymentIntentSettlementService;
         this.pspChannel = pspChannel;
     }
 
@@ -199,7 +202,7 @@ public class PaymentsService implements PaymentsSpi {
             case "payment_intent.succeeded" -> {
                 if (paymentIntentId != null) {
                     log.info("Webhook dispatch: payment_intent.succeeded for intent {}", paymentIntentId);
-                    confirmIntent(paymentIntentId, externalId);
+                    paymentIntentSettlementService.confirm(paymentIntentId, externalId);
                 } else {
                     log.warn("Webhook payment_intent.succeeded missing paymentIntentId: eventType={}", eventType);
                 }
@@ -212,7 +215,7 @@ public class PaymentsService implements PaymentsSpi {
                 // of dying as a log line while the booking stays "paid".
                 if (paymentIntentId != null) {
                     log.warn("Webhook dispatch: payment_intent.payment_failed for intent {}", paymentIntentId);
-                    failIntent(paymentIntentId);
+                    paymentIntentSettlementService.fail(paymentIntentId);
                 } else {
                     log.warn("Webhook payment_intent.payment_failed missing paymentIntentId: eventType={}", eventType);
                 }
@@ -339,38 +342,18 @@ public class PaymentsService implements PaymentsSpi {
         return new ProcessIntentResult(intent, clientSecret);
     }
 
-    @Observed(name = "payment.confirm")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Retry(name = "paymentProcessing")
-    public PaymentIntent confirmIntent(UUID id, String externalId) {
-        PaymentIntent intent = getIntent(id);
-        intent.markSucceeded();
-        // Mark the payment as completed
-        paymentRepository.findByPaymentIntentId(id)
-                .ifPresent(p -> p.markCompleted(externalId));
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
-        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
-        return intent;
-    }
-
     /**
-     * L19 — the failure half of the closed payment loop: mirrors
-     * {@link #confirmIntent(UUID, String)} exactly (state machine, payment
-     * row, event, cache invalidation) so a provider-confirmed failure lands
-     * the same way a provider-confirmed success does. Webhook-driven —
-     * {@code payment_intent.payment_failed} via dispatch; the ledger listener
-     * ignores non-COMPLETED states, so nothing is ever credited for a
-     * failed payment.
+     * Admin command shell (POST /intents/{id}/confirm): the role check
+     * lives HERE — on the command surface — while the domain transition
+     * lives in {@link PaymentIntentSettlementService} (N2: the pre-fix
+     * self-invocation from the webhook dispatch bypassed this proxy, so
+     * the {@code @PreAuthorize} below read as a boundary that one path
+     * silently went around). The webhook reaches the same domain
+     * transition with provider-signature authorization instead.
      */
-    @Observed(name = "payment.fail")
-    public PaymentIntent failIntent(UUID id) {
-        PaymentIntent intent = getIntent(id);
-        intent.markFailed();
-        paymentRepository.findByPaymentIntentId(id)
-                .ifPresent(Payment::markFailed);
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
-        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
-        return intent;
+    @PreAuthorize("hasRole('ADMIN')")
+    public PaymentIntent confirmIntent(UUID id, String externalId) {
+        return paymentIntentSettlementService.confirm(id, externalId);
     }
 
     @Observed(name = "payment.cancel")

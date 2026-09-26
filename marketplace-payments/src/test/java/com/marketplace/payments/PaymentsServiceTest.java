@@ -37,6 +37,8 @@ class PaymentsServiceTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
     private final Authentication authentication = mock(Authentication.class);
+    private final PaymentIntentSettlementService settlementService = new PaymentIntentSettlementService(
+            intentRepository, paymentRepository, eventPublisher);
     private final PaymentsService service = new PaymentsService(
             intentRepository,
             paymentRepository,
@@ -46,6 +48,7 @@ class PaymentsServiceTest {
             bookingParticipantProvider,
             webhookSecurity,
             new WebhookEventRecorder(webhookEventRepository),
+            settlementService,
             pspChannel
     );
 

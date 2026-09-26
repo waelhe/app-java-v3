@@ -32,15 +32,26 @@ import static org.mockito.Mockito.when;
 class PaymentsServiceSecurityTest {
 
     /**
-     * The webhook dedup recorder (CodeRabbit #241 hardening) is a real
-     * collaborator of the service: it gets the SAME mocked repository so the
-     * security slice stays a slice.
+     * Real collaborators of the service, built over the SAME mocked
+     * repositories so the security slice stays a slice:
+     * the webhook dedup recorder (CodeRabbit #241 hardening) and the
+     * settlement service (N2) that the confirmIntent admin command
+     * delegates through — the method-security assertions exercise the
+     * real call path, proxies included.
      */
     @org.springframework.context.annotation.Configuration
     static class TestConfig {
         @org.springframework.context.annotation.Bean
         WebhookEventRecorder webhookEventRecorder(PaymentWebhookEventRepository repository) {
             return new WebhookEventRecorder(repository);
+        }
+
+        @org.springframework.context.annotation.Bean
+        PaymentIntentSettlementService paymentIntentSettlementService(
+                PaymentIntentRepository intentRepository,
+                PaymentRepository paymentRepository,
+                ApplicationEventPublisher eventPublisher) {
+            return new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher);
         }
     }
 
