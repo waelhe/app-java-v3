@@ -41,9 +41,15 @@ See also: [Error Taxonomy & Codes](./error-codes.md).
 
 ## Validation extensions
 
-Validation errors MAY include this extension field:
+Both validation legs answer this extension field — the body leg
+(`@Valid @RequestBody` → `MethodArgumentNotValidException`) and the method leg
+(`@Validated` parameters → `ConstraintViolationException`, §5 contract
+completeness: the field is the violation's leaf name, i.e. the rejected
+parameter):
 
-- `fieldErrors`: array of field-level validation violations.
+- `fieldErrors`: array of field-level validation violations (an empty array
+  when the violation set is empty — the shape is always present on a 400
+  validation answer).
 
 Example:
 

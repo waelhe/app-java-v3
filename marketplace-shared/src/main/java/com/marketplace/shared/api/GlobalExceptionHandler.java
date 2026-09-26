@@ -75,8 +75,34 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
-        return problem(ApiErrorTaxonomy.VALIDATION, "Constraint violation", request, null,
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, "Constraint violation", request, null,
                 "constraint-violation-detail");
+        // §5 contract completeness (platform-readiness audit): the body-
+        // validation path (@Valid @RequestBody → MethodArgumentNotValidException)
+        // already answers fieldErrors; the method-validation path
+        // (@Validated parameters → ConstraintViolationException) answers the
+        // SAME extension, the documented MAY made real on both legs — a client
+        // renders one violations list for every 400, never a bare VAL-001.
+        List<ApiErrorPayload.FieldError> fieldErrors = ex.getConstraintViolations().stream()
+                .map(violation -> new ApiErrorPayload.FieldError(leafName(violation), violation.getMessage()))
+                .toList();
+        pd.setProperty("fieldErrors", fieldErrors);
+        return pd;
+    }
+
+    /**
+     * The most specific node of the violation's property path — the
+     * parameter (method validation: {@code open.reason} → {@code reason})
+     * or property (bean validation) the constraint rejected. The plain-name
+     * shape matches the body-validation path's {@code fieldErrors[].field}
+     * exactly, so both legs of the validation contract carry one shape.
+     */
+    private static String leafName(jakarta.validation.ConstraintViolation<?> violation) {
+        String leaf = null;
+        for (jakarta.validation.Path.Node node : violation.getPropertyPath()) {
+            leaf = node.getName();
+        }
+        return leaf != null ? leaf : violation.getPropertyPath().toString();
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)

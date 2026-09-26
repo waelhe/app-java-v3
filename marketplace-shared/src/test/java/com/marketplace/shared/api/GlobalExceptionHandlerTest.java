@@ -12,6 +12,10 @@ import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.constraints.NotBlank;
+import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
@@ -120,6 +124,39 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getTitle()).isEqualTo("Bad Request");
         assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
         assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        // §5: no violations (the synthetic empty set) → the extension is an
+        // empty list, still present — one shape on every 400.
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(List.of());
+    }
+
+    /**
+     * §5 (platform-readiness audit — the fieldErrors row): the method-
+     * validation leg answers the same fieldErrors extension as the body leg,
+     * with the violation's leaf name (the parameter) as the field — the real
+     * executable validator produces the exact production path shape
+     * ("convert.from").
+     */
+    @Test
+    void handleConstraintViolation_answersFieldErrorsWithTheLeafParameterName() throws NoSuchMethodException {
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        Method convert = Constrained.class.getDeclaredMethod("convert", String.class);
+        var violations = validator.forExecutables()
+                .validateParameters(new Constrained(), convert, new Object[]{""});
+        var ex = new ConstraintViolationException(violations);
+        var request = new StubHttpServletRequest("/api/v1/pricing/convert");
+
+        var response = handler.handleConstraintViolation(ex, request);
+
+        @SuppressWarnings("unchecked")
+        var fieldErrors = (List<ApiErrorPayload.FieldError>) response.getProperties().get("fieldErrors");
+        assertThat(fieldErrors).hasSize(1);
+        assertThat(fieldErrors.getFirst().field()).isEqualTo("from");
+        assertThat(fieldErrors.getFirst().message()).isEqualTo("must not be blank");
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+    }
+
+    static class Constrained {
+        public void convert(@NotBlank String from) {}
     }
 
     @Test
