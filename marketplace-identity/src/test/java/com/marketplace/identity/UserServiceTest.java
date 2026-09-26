@@ -58,6 +58,14 @@ class UserServiceTest {
     @Mock
     private AuditHistoryPurgeService auditHistoryPurgeService;
 
+    /**
+     * S1/B1: the register surface's encoder mock — the unit guards assert the
+     * ENCODED value crosses to the manager verbatim (the encoding itself is
+     * the framework's tested behavior); other tests stub nothing on it.
+     */
+    @Mock
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UserService userService;
 
@@ -70,6 +78,66 @@ class UserServiceTest {
         User result = userService.getById(id);
 
         assertEquals(user, result);
+    }
+
+    // ---- S1/B1: the registration surface ---------------------------------------
+
+    @Test
+    void register_createsBothStoresInOneCallWithTheConsumerRole() {
+        when(userRepository.existsBySubject("new@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("new@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(passwordEncoder.encode("clear-password")).thenReturn("{bcrypt}$2a$10$encoded");
+
+        User created = userService.register("new@example.com", "clear-password", "New Member");
+
+        // The domain row: CONSUMER (the only self-serviceable role), the
+        // subject IS the email (the native world's login handle).
+        assertEquals(UserRole.CONSUMER, created.getRole());
+        assertEquals("new@example.com", created.getSubject());
+        assertEquals("new@example.com", created.getEmail());
+        assertEquals("New Member", created.getDisplayName());
+
+        // The login rows: through the framework's manager — the ENCODED value
+        // verbatim (never the clear password), the ROLE_CONSUMER authority.
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).createUser(captured.capture());
+        assertEquals("new@example.com", captured.getValue().getUsername());
+        assertEquals("{bcrypt}$2a$10$encoded", captured.getValue().getPassword());
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
+        assertTrue(captured.getValue().isAccountNonLocked(), "the account is born enabled — no verification hold");
+        // Registration grants NOTHING above CONSUMER — no admin, no provider.
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+        assertFalse(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PROVIDER")));
+    }
+
+    @Test
+    void register_duplicateDomainSubjectAnswersConflictBeforeAnyWrite() {
+        when(userRepository.existsBySubject("taken@example.com")).thenReturn(true);
+
+        assertThrows(ConflictException.class,
+                () -> userService.register("taken@example.com", "clear-password", "Dup"));
+
+        verify(userRepository, never()).save(any());
+        verify(userDetailsManager, never()).createUser(any());
+    }
+
+    @Test
+    void register_loginSideRemnantWithoutDomainRowAlsoAnswersConflict() {
+        // The drifted-pair stock the S2/N4/N6 work documented: a login side
+        // without its domain row must not be silently re-adopted by a
+        // registration — the honest 409 covers both stores.
+        when(userRepository.existsBySubject("remnant@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("remnant@example.com")).thenReturn(true);
+
+        assertThrows(ConflictException.class,
+                () -> userService.register("remnant@example.com", "clear-password", "Remnant"));
+
+        verify(userRepository, never()).save(any());
+        verify(userDetailsManager, never()).createUser(any());
     }
 
     @Test

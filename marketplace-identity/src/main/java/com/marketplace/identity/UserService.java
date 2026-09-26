@@ -43,6 +43,7 @@ public class UserService implements IdentitySpi {
     private final SubjectPseudonymizer subjectPseudonymizer;
     private final AuthoredContentPurgeService authoredContentPurgeService;
     private final AuditHistoryPurgeService auditHistoryPurgeService;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
 
@@ -82,7 +83,8 @@ public class UserService implements IdentitySpi {
                        JdbcTemplate jdbcTemplate,
                        SubjectPseudonymizer subjectPseudonymizer,
                        AuthoredContentPurgeService authoredContentPurgeService,
-                       AuditHistoryPurgeService auditHistoryPurgeService) {
+                       AuditHistoryPurgeService auditHistoryPurgeService,
+                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.userDetailsManager = userDetailsManager;
@@ -90,6 +92,7 @@ public class UserService implements IdentitySpi {
         this.subjectPseudonymizer = subjectPseudonymizer;
         this.authoredContentPurgeService = authoredContentPurgeService;
         this.auditHistoryPurgeService = auditHistoryPurgeService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
@@ -109,6 +112,60 @@ public class UserService implements IdentitySpi {
     @Transactional(readOnly = true)
     public Page<User> findAll(Pageable pageable) {
         return userRepository.findAll(pageable);
+    }
+
+    /**
+     * S1/B1 (platform-readiness audit §6 gate B1 — the registration surface):
+     * self-service account creation, BOTH stores in ONE transaction — the
+     * same single-transaction truth the role-change surface established
+     * (S2/N4/N6): the domain row ({@code users}, CONSUMER — the platform's
+     * default role, the only self-serviceable one) and the login rows
+     * ({@code auth_users} + {@code auth_authorities}, written through the
+     * framework's {@link UserDetailsManager#createUser} — the official
+     * registration entry, D7's custom-SQL manager).
+     *
+     * <p><b>The password never crosses a boundary raw:</b> encoded HERE, in
+     * the service, before the manager persists it — {@code JdbcUserDetailsManager}
+     * stores the given value verbatim (encoding is the caller's contract),
+     * and the {@code DelegatingPasswordEncoder} (SecurityConfig, the official
+     * default) answers {@code {bcrypt}...} — the stored form the login gate's
+     * DaoAuthenticationProvider already verifies. The subject IS the email:
+     * the marketplace's natural login handle (the OIDC world's opaque
+     * subjects are minted by the IdP; the native world's handle is the
+     * account's own address — the unique constraint enforces one account
+     * per address).
+     *
+     * <p><b>What registration deliberately does NOT grant:</b> any role above
+     * CONSUMER (provider upgrades are the administrative flow with its own
+     * guard), enabled=false (no email-verification hold — the declared debt
+     * below), or an audit row (self-service birth, not an administrative
+     * act on another account — the actor IS the account).
+     *
+     * @param email       the account's address — becomes the subject and the
+     *                    login username; uniqueness enforced per address
+     * @param rawPassword the CLEAR password — validated by the request layer
+     *                    (8..72, the bcrypt byte ceiling — longer input is
+     *                    rejected, never silently truncated) and encoded here
+     * @param displayName the optional display name
+     * @return the created domain row (the response shape /me already speaks)
+     * @throws ConflictException the address already owns an account — the
+     *                          honest 409 before any store is written
+     */
+    public User register(String email, String rawPassword, String displayName) {
+        String subject = email;
+        if (userRepository.existsBySubject(subject)
+                || userDetailsManager.userExists(subject)) {
+            throw new ConflictException("An account already exists for this email");
+        }
+        User user = userRepository.save(
+                User.create(subject, email, displayName, UserRole.CONSUMER));
+        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                .withUsername(subject)
+                .password(passwordEncoder.encode(rawPassword))
+                .roles("CONSUMER")
+                .build());
+        log.info("Account registered: subject={}, role=CONSUMER", subject);
+        return user;
     }
 
     @Transactional(readOnly = true)

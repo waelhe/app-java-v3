@@ -180,6 +180,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
                         .requestMatchers("/api/v1/payments/webhooks/**").permitAll()
+                        // S1/B1 (platform-readiness audit §6 gate B1 — the
+                        // registration surface): the public account-birth
+                        // POST — the webhooks and leads public-POST precedent
+                        // one line down. The request's own body IS the
+                        // credential being created (email + password); the
+                        // service writes BOTH stores in one transaction and
+                        // the role is fixed at CONSUMER — nothing here trusts
+                        // the caller. Every other AUTH surface stays
+                        // authenticated; the password lifecycle items of the
+                        // gate will each carry their own line when they open.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
                         // L34 (realestate systems plan §5): the public lead
                         // submission — the plan's "بلا مصادقة إلزامية" (the
                         // guest fills name and phone). A public POST is the
