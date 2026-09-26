@@ -45,11 +45,17 @@ CREATE TABLE categories (
         NOT VALID
 );
 
--- Code uniqueness is PARTIAL (the V47 slug precedent): a soft-deleted
--- registry row releases its code for reuse, while ACTIVE rows stay unique —
--- aligned with the soft-delete-aware application precheck, no TOCTOU window.
-CREATE UNIQUE INDEX uq_categories_code_active
-    ON categories (code) WHERE is_deleted = FALSE;
+-- Code uniqueness is GLOBAL (CodeRabbit round 1, adopted): the code is the
+-- registry's identity — the value the declared-debt FK
+-- (provider_listings.category -> categories.code) will reference. Identity
+-- values are never recycled: a soft-deleted row keeps its code reserved so a
+-- later row cannot silently re-point legacy listings that still carry it.
+-- The slug precedent does not apply here — a slug is presentation identity
+-- (recycling is cosmetic); this code is referential identity. Aligned with
+-- the soft-delete-aware application precheck (findByCode never resolves a
+-- soft-deleted row, so a reserved code answers the same clean 400).
+CREATE UNIQUE INDEX uq_categories_code
+    ON categories (code);
 
 ALTER TABLE categories VALIDATE CONSTRAINT chk_categories_position_nonnegative;
 ALTER TABLE categories VALIDATE CONSTRAINT chk_categories_code_shape;

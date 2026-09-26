@@ -79,6 +79,7 @@ class CategoryRegistryIntegrationTest {
 
     @BeforeEach
     void seed() {
+        cleanUp();
         jdbcTemplate.update(
                 "INSERT INTO users (id, subject, email, display_name, role) VALUES (?, ?, ?, ?, 'PROVIDER')",
                 PROVIDER_USER_ID, "s6-provider-subject",
@@ -91,6 +92,22 @@ class CategoryRegistryIntegrationTest {
                 "INSERT INTO provider_listings (id, provider_id, title, description, category, price_cents, currency, status, created_at, updated_at, version, is_deleted) "
                         + "VALUES (?, ?, 'S6 Owned', null, 'stay', 1000, 'SAR', 'DRAFT', now(), now(), 0, false)",
                 OWNED_LISTING_ID, PROVIDER_USER_ID);
+    }
+
+    /**
+     * The per-method reset the reference integration tests use
+     * (ListingCompletenessIntegrationTest#cleanUp, verbatim shape): the class
+     * seeds fixed IDs for every test method on ONE container, so the previous
+     * method's rows must go first — child tables before parents — or the
+     * second seed dies on users_pkey. CI round 1 measured exactly that
+     * cascade (only the first method to run survived; CodeRabbit round 1
+     * flagged the same). The provider_listings sweep is by provider_id so the
+     * listing the creation test POSTs is cleaned with the seed's own rows.
+     */
+    void cleanUp() {
+        jdbcTemplate.update("DELETE FROM provider_listings WHERE provider_id = ?", PROVIDER_USER_ID);
+        jdbcTemplate.update("DELETE FROM provider_profiles WHERE user_id = ?", PROVIDER_USER_ID);
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", PROVIDER_USER_ID);
     }
 
     @Test
@@ -145,5 +162,29 @@ class CategoryRegistryIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(
                         org.hamcrest.Matchers.stringContainsInOrder("Unknown listing category", "made-up")));
+    }
+
+    /**
+     * CodeRabbit round 1, adopted — the legacy-preservation leg: a listing
+     * whose stored category predates the registry (the FK debt's documented
+     * population) stays UPDATABLE while submitting that same unchanged value.
+     * The seed's own row is re-seeded here with a legacy code ("home" — a
+     * value the registry does NOT carry) for this test only, and the update
+     * submits it unchanged: 200, not the frozen-listing 400.
+     */
+    @Test
+    void listingUpdateSubmittingTheStoredLegacyCategoryUnchangedIsPreserved() throws Exception {
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(PROVIDER_USER_ID);
+        jdbcTemplate.update(
+                "UPDATE provider_listings SET category = 'home' WHERE id = ?", OWNED_LISTING_ID);
+
+        mockMvc.perform(put("/api/v1/listings/{id}", OWNED_LISTING_ID)
+                        .with(jwt().authorities(() -> "ROLE_PROVIDER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title": "S6 Owned Relisted", "category": "home", "priceCents": 1000}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.category").value("home"));
     }
 }

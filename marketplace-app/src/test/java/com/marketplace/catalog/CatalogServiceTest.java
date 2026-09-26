@@ -362,6 +362,52 @@ class CatalogServiceTest {
                 com.marketplace.catalog.Category.create("stay", "Stay", "إقامة", 0)));
     }
 
+    // ---- S6: the update leg's category semantics (CodeRabbit round 1) --------
+
+    /**
+     * The legacy-preservation leg: a stored listing whose category predates
+     * the registry (a legacy value the vocabulary never carried) stays
+     * updatable while submitting that SAME value — the registry is never
+     * consulted (verify: zero findByCode calls; the unchanged value is not
+     * a vocabulary write).
+     */
+    @Test
+    void update_submittingTheStoredLegacyCategoryUnchanged_neverConsultsTheRegistry() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        stubOwnership(stored);
+        // The registry answers EMPTY for everything — the only way this update
+        // passes is the unchanged-value bypass (the blanket stub would mask it).
+        org.mockito.Mockito.reset(categoryRepository);
+
+        String legacyCategory = stored.getCategory(); // Instancio's random value — legacy by construction
+        catalogService.update(stored.getId(), "Legacy Loft", "desc",
+                legacyCategory, 12_000L, null, null, null);
+
+        org.mockito.Mockito.verify(categoryRepository, org.mockito.Mockito.never()).findByCode(any());
+        assertThat(stored.getCategory()).isEqualTo(legacyCategory); // preserved, never rejected
+    }
+
+    /**
+     * The changed-category leg: submitting a value the registry does not
+     * carry answers the clean 400 with the pointer to the public registry
+     * read — the same contract creation enforces.
+     */
+    @Test
+    void update_toADifferentUnknownCategory_answersTheCleanBadRequest() {
+        ProviderListing stored = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+        stubOwnership(stored);
+        when(categoryRepository.findByCode(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> catalogService.update(stored.getId(), "Loft 2", "desc",
+                "bogus", 12_000L, null, null, null))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("Unknown listing category")
+                .hasMessageContaining("bogus")
+                .hasMessageContaining("GET /api/v1/listings/categories");
+    }
+
     // ---- L38: the owned-listing read (the completeness surface's gate) --------
 
     /**

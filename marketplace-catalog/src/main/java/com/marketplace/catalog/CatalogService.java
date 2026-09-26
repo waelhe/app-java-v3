@@ -554,12 +554,29 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, String currency,
                                   Integer maxGuests, Authentication authentication) {
-        requireKnownCategory(category);
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
+        requireKnownCategoryUnlessUnchanged(listing, category);
         listing.update(title, description, category, priceCents, currency, maxGuests);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
+    }
+
+    /**
+     * S6 update leg (CodeRabbit round 1, adopted): an UNCHANGED category is
+     * not a vocabulary write. A pre-registry listing carrying a legacy
+     * category (seeded before V70, or by the SQL fixtures the FK debt
+     * documents) keeps that value through any update — only a CHANGED
+     * category must be a registered code. Without this leg every legacy
+     * listing with a non-registry category would be frozen out of updates
+     * entirely (400 on every save, even category-untouched ones) — the
+     * exact regression the review measured. Creation keeps the strict gate:
+     * a new listing is always a new vocabulary write.
+     */
+    private void requireKnownCategoryUnlessUnchanged(ProviderListing listing, String category) {
+        if (!listing.getCategory().equals(category)) {
+            requireKnownCategory(category);
+        }
     }
 
     /**
