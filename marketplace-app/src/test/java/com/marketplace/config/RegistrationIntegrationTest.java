@@ -95,28 +95,31 @@ class RegistrationIntegrationTest {
         String email = uniqueEmail();
         String password = "s1-valid-password";
 
-        // (1) The anonymous registration — 201 with the CONSUMER profile.
+        // (1) The anonymous registration — 201 with the profile in the /me
+        // response shape (the EXISTING UserResponse contract: id, email,
+        // displayName — no role/subject fields; the role proof lives in the
+        // unit guards' captured authorities, the stores' own truth).
         HttpResponse<String> registered = postJson("/api/v1/auth/register", """
                 {"email": "%s", "password": "%s", "displayName": "S1 Member"}
                 """.formatted(email, password));
         assertThat(registered.statusCode()).as("registration: %s", body(registered)).isEqualTo(201);
         JsonNode profile = objectMapper.readTree(registered.body());
-        assertThat(profile.path("subject").asString()).isEqualTo(email);
         assertThat(profile.path("email").asString()).isEqualTo(email);
         assertThat(profile.path("displayName").asString()).isEqualTo("S1 Member");
-        assertThat(profile.path("role").asString()).isEqualTo("CONSUMER");
+        assertThat(profile.path("id").asString()).isNotBlank();
 
         // (2) The full L23 login gate with THOSE credentials — a real token.
         String accessToken = loginGateAccessToken(email, password);
         assertThat(accessToken).as("the registered account is loginable — the gate mints a real token").isNotBlank();
 
         // (3) The token is a first-class API caller: /users/me answers the
-        // registered profile (syncFromOidc resolves the row by subject).
+        // registered profile (syncFromOidc resolves the row registration
+        // created — the subject IS the email).
         HttpResponse<String> me = getJson("/api/v1/users/me", accessToken);
         assertThat(me.statusCode()).as("the minted token calls the API: %s", body(me)).isEqualTo(200);
         JsonNode meProfile = objectMapper.readTree(me.body());
-        assertThat(meProfile.path("subject").asString()).isEqualTo(email);
-        assertThat(meProfile.path("role").asString()).isEqualTo("CONSUMER");
+        assertThat(meProfile.path("email").asString()).isEqualTo(email);
+        assertThat(meProfile.path("displayName").asString()).isEqualTo("S1 Member");
     }
 
     @Test
