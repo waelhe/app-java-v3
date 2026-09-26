@@ -22,6 +22,15 @@
             <groupId>io.swagger.core.v3</groupId>
             <artifactId>swagger-annotations-jakarta</artifactId>
         </dependency>
+        <!-- Plan item 2.6: @ParameterObject — springdoc's official annotation that
+             renders the paginated feed's Pageable as its documented OPTIONAL
+             page/size/sort query parameters. The common artifact of the SAME
+             springdoc train the app serves (managed at the root, Exception #7);
+             annotations-and-models scope with no runtime footprint of its own. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-common</artifactId>
+        </dependency>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-platform-infra</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>

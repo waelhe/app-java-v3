@@ -31,14 +31,29 @@ class NotificationControllerTest {
     private NotificationController controller;
 
     @Test
-    void getMineReturnsNotificationList() {
-        var notifications = List.of(mock(Notification.class));
-        when(service.getMyNotifications(authentication)).thenReturn(notifications);
+    void getMineReturnsPagedNotifications() {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        var page = new org.springframework.data.domain.PageImpl<>(
+                List.of(mock(Notification.class)), pageable, 1);
+        when(service.getMyNotifications(authentication, pageable)).thenReturn(page);
 
-        ResponseEntity<List<Notification>> result = controller.getMine(authentication);
+        ResponseEntity<com.marketplace.shared.api.PagedResponse<Notification>> result =
+                controller.getMine(pageable, authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).isSameAs(notifications);
+        assertThat(result.getBody().content()).hasSize(1);
+        assertThat(result.getBody().totalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void getUnreadCountReturnsTheBadgeNumber() {
+        when(service.getUnreadCount(authentication)).thenReturn(5L);
+
+        ResponseEntity<NotificationController.UnreadCountResponse> result =
+                controller.getMyUnreadCount(authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody().unreadCount()).isEqualTo(5L);
     }
 
     @Test

@@ -158,11 +158,14 @@ class NotificationPreferencesIntegrationTest {
         firePaymentState(consumerId, providerId, intentId, bookingId);
 
         // The always-on in-app channel: both rows landed.
-        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(consumerId))
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                consumerId, Pageable.unpaged()).getContent())
                 .hasSize(1);
-        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(consumerId)
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                consumerId, Pageable.unpaged()).getContent()
                 .getFirst().getType()).isEqualTo(NotificationType.PAYMENT_STATE.name());
-        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(providerId))
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                providerId, Pageable.unpaged()).getContent())
                 .hasSize(1);
 
         // WS still pushed to both.
@@ -198,8 +201,10 @@ class NotificationPreferencesIntegrationTest {
         UUID bookingId = UUID.randomUUID();
         firePaymentState(consumerId, providerId, intentId, bookingId);
 
-        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(consumerId)).hasSize(1);
-        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(providerId)).hasSize(1);
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                consumerId, Pageable.unpaged()).getContent()).hasSize(1);
+        assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
+                providerId, Pageable.unpaged()).getContent()).hasSize(1);
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(consumerEmail), anyString(), anyString(), anyMap());
         verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
