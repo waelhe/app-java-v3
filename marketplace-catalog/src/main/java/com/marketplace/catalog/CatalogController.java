@@ -78,6 +78,24 @@ public class CatalogController {
         return ResponseEntity.ok(PagedResponse.of(catalogService.listActive(pageable)));
     }
 
+    /**
+     * S6 (comprehensive repair plan §10/2.3): the category registry's public
+     * read — the storefront's category picker, in display order. Reference
+     * data (the geo public-read pattern): the exact-literal path wins over
+     * the {@code /{id}} template below it, and the blanket public listings
+     * GET line in the security chain already covers this surface — no new
+     * security line. The registry's codes are the only values the listing
+     * write surfaces accept (the service's write gate).
+     */
+    @GetMapping("/categories")
+    @RateLimiter(name = "catalog")
+    @Operation(summary = "List the listing categories",
+            description = "The category registry in display order — the vocabulary the listing "
+                    + "write surfaces accept (create/update reject unknown codes with 400).")
+    public ResponseEntity<java.util.List<CatalogService.CategoryView>> listCategories() {
+        return ResponseEntity.ok(catalogService.listCategories());
+    }
+
     @GetMapping("/category/{category}")
     @RateLimiter(name = "catalog")
     @Operation(summary = "Browse active listings by category",

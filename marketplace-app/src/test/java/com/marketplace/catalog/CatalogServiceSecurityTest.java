@@ -56,6 +56,9 @@ class CatalogServiceSecurityTest {
     private ProviderListingRepository listingRepository;
 
     @MockitoBean
+    private CategoryRepository categoryRepository;
+
+    @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     @MockitoBean
@@ -153,6 +156,9 @@ class CatalogServiceSecurityTest {
     void create_whenProvider_thenInvokes() {
         UUID currentUserId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
+        // S6: the write gate's registry lookup must pass before the create.
+        when(categoryRepository.findByCode("cat")).thenReturn(Optional.of(
+                com.marketplace.catalog.Category.create("cat", "Cat", "قط", 0)));
         when(providerLookupPort.findByUserId(providerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "Provider", "VERIFIED", currentUserId)));
         when(listingRepository.save(any(ProviderListing.class)))
@@ -176,6 +182,9 @@ class CatalogServiceSecurityTest {
         UUID providerId = UUID.randomUUID();
         ProviderListing listing = ProviderListing.create(providerId, "old", "desc", "cat", 1000L);
         UUID listingId = listing.getId();
+        // S6: the write gate's registry lookup must pass before the update.
+        when(categoryRepository.findByCode("cat")).thenReturn(Optional.of(
+                com.marketplace.catalog.Category.create("cat", "Cat", "قط", 0)));
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing));
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(currentUserId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
