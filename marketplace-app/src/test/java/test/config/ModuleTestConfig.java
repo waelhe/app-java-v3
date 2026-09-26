@@ -76,7 +76,17 @@ public class ModuleTestConfig {
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
-                    new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()))
+                    new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()),
+                        // N1 round 3 (CI-measured root): the blank seed — the module
+                        // slice's designed no-op shape. This slot was NULL before: the
+                        // N1 change added the AdminSeed component to the Security
+                        // record, this manual construction's argument list silently
+                        // shifted, and AdminUserInitializer.run() NPE'd on
+                        // security().adminSeed().password() in every module-slice
+                        // boot (PricingModuleIntegrationTest / AdminModuleIntegrationTest
+                        // — the CI round-2 failures). Blank keeps the documented
+                        // contract: not configured = the break-glass bootstrap skips.
+                        new MarketplaceProperties.Security.AdminSeed(""))
         );
     }
 }

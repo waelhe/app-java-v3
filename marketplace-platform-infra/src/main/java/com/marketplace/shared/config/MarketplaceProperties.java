@@ -39,8 +39,28 @@ public record MarketplaceProperties(
         @DefaultValue Jwt jwt,
         @DefaultValue Session session,
         @DefaultValue OAuth2 oauth2,
-        @DefaultValue Pseudonymization pseudonymization
+        @DefaultValue Pseudonymization pseudonymization,
+        @DefaultValue AdminSeed adminSeed
     ) {
+        /**
+         * N1 (admin-seed hardening): the break-glass administrator's password
+         * channel. The pre-fix source was a fixed bcrypt hash inside the
+         * repeatable migration {@code R__seed_oauth2_client.sql} — a credential
+         * shipped in the repository and the jar for EVERY environment. The
+         * official path is now {@code AdminUserInitializer}
+         * (env → DB convergence through {@code JdbcUserDetailsManager}, the
+         * same architecture as the registered-client bootstrap):
+         * {@code marketplace.security.admin-seed.password} is bound from
+         * {@code ADMIN_SEED_PASSWORD} — mandatory in the {@code prod} profile
+         * (fail-fast), falling back to the documented development constant
+         * outside it. The seeded user is environment-owned break-glass
+         * tooling: every boot converges it to exactly what the environment
+         * says (password, {@code ROLE_ADMIN}, enabled) — rotation is an env
+         * change, exactly like {@code OAUTH_CLIENT_SECRET}.
+         */
+        public record AdminSeed(
+            @DefaultValue("") String password
+        ) {}
         /**
          * I7 (account-pseudonymization-plan §5-أ / gate b-2(b)): the HMAC
          * secret for account-subject pseudonymization — the "additional

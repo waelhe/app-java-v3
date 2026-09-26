@@ -1,18 +1,27 @@
--- Repeatable seed for the initial admin user.
--- NOTE: rotate seeded passwords immediately in non-local environments.
+-- Repeatable seed RETIRED of every credential (N1 — admin-seed hardening).
 --
--- The OAuth2 client (marketplace-web-client) is deliberately NOT seeded here. Its sole
--- official bootstrap path is OAuth2ClientSecretInitializer (RegisteredClientRepository.save
--- via the framework builders), because the row's client_settings/token_settings columns
--- hold a Jackson-serialized map whose format is owned by Spring Authorization Server, not
--- this application. Hand-written seed JSON drifted from that format (missing
--- id-token-signature-algorithm/access-token-format), which JwtGenerator rejected on any
--- openid flow. The initializer converges existing rows and bootstraps absent ones.
-
-INSERT INTO auth_users (username, password, enabled)
-VALUES ('admin', '{bcrypt}$2a$10$3eQPPvN8p6E0fG6x0Q2BbuAsEeheUSM6nu6G0jTLQVDWjzS4PQBFe', true)
-ON CONFLICT (username) DO NOTHING;
-
-INSERT INTO auth_authorities (username, authority)
-VALUES ('admin', 'ROLE_ADMIN')
-ON CONFLICT (username, authority) DO NOTHING;
+-- History and the two retirements this file carries:
+--
+-- 1. The OAuth2 client (marketplace-web-client) was removed first: its sole
+--    official bootstrap path is OAuth2ClientSecretInitializer
+--    (RegisteredClientRepository.save via the framework builders), because the
+--    row's client_settings/token_settings columns hold a Jackson-serialized
+--    map whose format is owned by Spring Authorization Server, not this
+--    application. Hand-written seed JSON drifted from that format (missing
+--    id-token-signature-algorithm/access-token-format), which JwtGenerator
+--    rejected on any openid flow. The initializer converges existing rows and
+--    bootstraps absent ones.
+--
+-- 2. The admin user is retired by this change: the fixed bcrypt hash below
+--    was a credential shipped in the repository and the jar for EVERY
+--    environment (dev, CI, production), with only a comment asking operators
+--    to "rotate immediately" — a documented-but-unresolved debt. The sole
+--    official path is now AdminUserInitializer: the password comes from the
+--    environment (ADMIN_SEED_PASSWORD; mandatory and fail-fast in prod) and
+--    the row converges through the official JdbcUserDetailsManager API
+--    (createUser when absent, updateUser when the environment rotated it) —
+--    the same env-to-DB convergence architecture as the client bootstrap.
+--
+-- The file itself is kept (an applied repeatable migration must remain
+-- resolvable for Flyway validation); its statement list is now empty, so the
+-- re-run after this checksum change is a deliberate no-op.
