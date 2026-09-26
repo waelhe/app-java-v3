@@ -104,8 +104,10 @@ class PaymentsControllerWebMvcTest {
         var payment = mockPayment(id);
         var response = mockPaymentResponse(id);
 
-        when(paymentsService.refundPayment(id)).thenReturn(payment);
-        when(paymentMapper.toResponse(payment)).thenReturn(response);
+        var intent = org.mockito.Mockito.mock(com.marketplace.payments.PaymentIntent.class);
+        var refunded = new com.marketplace.payments.PaymentsService.RefundedPayment(payment, intent);
+        when(paymentsService.refundPayment(id)).thenReturn(refunded);
+        when(paymentMapper.toResponse(refunded)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/payments/{paymentId}/refund", id))
                 .andExpect(status().isOk());
@@ -175,6 +177,6 @@ class PaymentsControllerWebMvcTest {
     }
 
     private static PaymentResponse mockPaymentResponse(UUID id) {
-        return new PaymentResponse(id, null, null, null, null);
+        return new PaymentResponse(id, null, null, null, null, null);
     }
 }

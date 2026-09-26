@@ -48,7 +48,8 @@ class PaymentRefundAdapterTest {
         refunded.markRefunded();
         when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
-        when(paymentsService.refundPayment(paymentId, null)).thenReturn(refunded);
+        when(paymentsService.refundPayment(paymentId, null))
+                .thenReturn(new PaymentsService.RefundedPayment(refunded, intent));
 
         RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
 
@@ -100,7 +101,8 @@ class PaymentRefundAdapterTest {
         full.markRefunded();
         when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(partial));
-        when(paymentsService.refundPayment(paymentId, null)).thenReturn(full);
+        when(paymentsService.refundPayment(paymentId, null))
+                .thenReturn(new PaymentsService.RefundedPayment(full, intent));
 
         RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
 

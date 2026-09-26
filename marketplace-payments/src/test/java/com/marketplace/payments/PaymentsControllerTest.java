@@ -121,10 +121,12 @@ class PaymentsControllerTest {
     void refundPayment_returnsRefunded() {
         UUID paymentId = UUID.randomUUID();
         Payment payment = Payment.create(UUID.randomUUID(), 5000L);
-        PaymentResponse response = new PaymentResponse(paymentId, 5000L, "REFUNDED", null, null);
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, "SAR", null);
+        PaymentsService.RefundedPayment refunded = new PaymentsService.RefundedPayment(payment, intent);
+        PaymentResponse response = new PaymentResponse(paymentId, 5000L, "SAR", "REFUNDED", null, null);
 
-        when(paymentsService.refundPayment(paymentId)).thenReturn(payment);
-        when(paymentMapper.toResponse(payment)).thenReturn(response);
+        when(paymentsService.refundPayment(paymentId)).thenReturn(refunded);
+        when(paymentMapper.toResponse(refunded)).thenReturn(response);
 
         ResponseEntity<PaymentResponse> result = controller.refundPayment(paymentId);
 

@@ -64,7 +64,7 @@ public class PaymentRefundAdapter implements PaymentRefundPort {
         if (amountCents == null && payment.getStatus() == PaymentStatus.REFUNDED) {
             return new RefundOutcome(payment.getId(), payment.getRefundedAmountCents());
         }
-        Payment refunded = paymentsService.refundPayment(payment.getId(), amountCents);
-        return new RefundOutcome(refunded.getId(), refunded.getRefundedAmountCents());
+        PaymentsService.RefundedPayment refunded = paymentsService.refundPayment(payment.getId(), amountCents);
+        return new RefundOutcome(refunded.payment().getId(), refunded.payment().getRefundedAmountCents());
     }
 }
