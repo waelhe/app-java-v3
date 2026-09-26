@@ -58,6 +58,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final ProviderLookupPort providerLookupPort;
     private final java.time.Clock clock;
     private final CatalogProperties catalogProperties;
+    private final CategoryRepository categoryRepository;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
@@ -65,7 +66,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                           ApplicationEventPublisher eventPublisher,
                           ProviderLookupPort providerLookupPort,
                           java.time.Clock clock,
-                          CatalogProperties catalogProperties) {
+                          CatalogProperties catalogProperties,
+                          CategoryRepository categoryRepository) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
@@ -73,6 +75,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         this.providerLookupPort = providerLookupPort;
         this.clock = clock;
         this.catalogProperties = catalogProperties;
+        this.categoryRepository = categoryRepository;
     }
 
     @Override
@@ -513,6 +516,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public ProviderListingView create(UUID providerId, String title, String description,
                                       String category, Long priceCents, String currency,
                                       Integer maxGuests) {
+        requireKnownCategory(category);
         providerLookupPort.findByUserId(providerId)
                 .filter(p -> "VERIFIED".equals(p.status()))
                 .orElseThrow(() -> new BadRequestException("Provider is not verified"));
@@ -550,11 +554,43 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public ProviderListing update(UUID id, String title, String description,
                                   String category, Long priceCents, String currency,
                                   Integer maxGuests, Authentication authentication) {
+        requireKnownCategory(category);
         ProviderListing listing = getById(id);
         verifyOwnership(listing, authentication);
         listing.update(title, description, category, priceCents, currency, maxGuests);
         eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));
         return listing;
+    }
+
+    /**
+     * S6 (comprehensive repair plan §10/2.3): the write gate — the listing's
+     * category must be an ACTIVE registry row (V70). The clean 400 precedes
+     * any DB-level rejection; the DB FK is the declared debt that completes
+     * this gate when the product vocabulary decision lands (the PR body's
+     * measured rationale — an enforced FK with the one-value starter
+     * vocabulary would either break the category-diversity tests or pollute
+     * the vocabulary with test artifacts).
+     */
+    private void requireKnownCategory(String category) {
+        categoryRepository.findByCode(category)
+                .orElseThrow(() -> new BadRequestException(
+                        "Unknown listing category: " + category
+                                + " (see GET /api/v1/listings/categories)"));
+    }
+
+    /**
+     * S6: the public registry read — the storefront's category picker, in the
+     * registry's display order. Reference data (the geo public-read pattern).
+     */
+    @Transactional(readOnly = true)
+    public java.util.List<CategoryView> listCategories() {
+        return categoryRepository.findAllByOrderByPositionAsc().stream()
+                .map(c -> new CategoryView(c.getCode(), c.getNameEn(), c.getNameAr()))
+                .toList();
+    }
+
+    /** The registry's public read shape — the code plus the display names. */
+    public record CategoryView(String code, String nameEn, String nameAr) {
     }
 
     /**

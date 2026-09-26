@@ -64,6 +64,9 @@ class CatalogServiceTest {
     private ProviderListingRepository listingRepository;
 
     @MockitoBean
+    private CategoryRepository categoryRepository;
+
+    @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     @MockitoBean
@@ -341,6 +344,10 @@ class CatalogServiceTest {
         var summary = new com.marketplace.shared.api.ProviderSummary(
                 java.util.UUID.randomUUID(), "provider", "VERIFIED", null);
         when(providerLookupPort.findByUserId(any())).thenReturn(Optional.of(summary));
+        // S6: the write gate's registry lookup (any category string — these
+        // tests exercise the capacity path, not the vocabulary).
+        when(categoryRepository.findByCode(any())).thenReturn(Optional.of(
+                com.marketplace.catalog.Category.create("stay", "Stay", "إقامة", 0)));
     }
 
     private void stubOwnership(ProviderListing listing) {
@@ -349,6 +356,10 @@ class CatalogServiceTest {
         when(currentUserProvider.isAdmin(any())).thenReturn(false);
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(listing.getProviderId());
         when(providerLookupPort.findByUserId(listing.getProviderId())).thenReturn(Optional.of(owner));
+        // S6: the write gate's registry lookup (any category string — these
+        // tests exercise the ownership path, not the vocabulary).
+        when(categoryRepository.findByCode(any())).thenReturn(Optional.of(
+                com.marketplace.catalog.Category.create("stay", "Stay", "إقامة", 0)));
     }
 
     // ---- L38: the owned-listing read (the completeness surface's gate) --------
