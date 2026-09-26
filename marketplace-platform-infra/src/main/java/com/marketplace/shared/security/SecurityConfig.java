@@ -130,12 +130,47 @@ public class SecurityConfig {
                                                           CorrelationIdFilter correlationIdFilter) throws Exception {
         http
                 .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**",
-                        "/sitemap.xml", "/robots.txt")
+                        "/sitemap.xml", "/robots.txt", "/ws/**")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**"))
+                // S4/N3 (comprehensive repair plan §10/2.1): /ws/** joins the
+                // web-layer CSRF relaxation — the documented pattern, verbatim
+                // (Spring Security Reference › WebSocket Security › "SockJS &
+                // Relaxing CSRF": "we want to disable CSRF protection for our
+                // connect URLs. We do NOT want to disable CSRF protection for
+                // every URL. Otherwise, our site is vulnerable to CSRF
+                // attacks"). Without this line the CsrfFilter mints an
+                // HttpSession + CsrfToken on the stateless handshake itself,
+                // the session attribute rides into the WebSocket session, and
+                // the STOMP-level XorCsrfChannelInterceptor then demands a
+                // token the stateless token client never has — the exact
+                // rejection measured in CI round 1. The STOMP message layer
+                // keeps the same-origin defense for cookie-session clients
+                // (their pre-existing session token is enforced by the
+                // csrfChannelInterceptor override); the token flow is
+                // CSRF-immune by construction.
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql",
+                        "/v3/api-docs/**", "/ws/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // S4/N3 root fix (comprehensive repair plan §10/2.1): the
+                        // STOMP handshake joins THIS stateless resource-server chain.
+                        // Before the fix the endpoint fell to the form-login default
+                        // chain and answered 302 to the login page instead of the 101
+                        // protocol switch — every token client's WebSocket died at the
+                        // handshake, taking the notification push channel with it (N3).
+                        // The handshake itself is permitAll BY DESIGN: the WebSocket
+                        // protocol upgrade is protocol plumbing, not data — the
+                        // authorization boundary is the STOMP message layer
+                        // (@EnableWebSocketSecurity + messageAuthorizationManager with
+                        // denyAll() defaults), where a CONNECT must be authenticated
+                        // (a bearer header on the handshake — the framework hands the
+                        // HTTP Principal off to the WebSocket session — or the token on
+                        // the CONNECT frame, lifted by the documented
+                        // JwtChannelAuthenticationInterceptor). Header-capable clients
+                        // (Java/Node STOMP clients, the edge BFF) get the handshake
+                        // itself authenticated through this chain's bearer filter.
+                        .requestMatchers(HttpMethod.GET, "/ws/**").permitAll()
                         // L39 (realestate systems plan §5 — SEO): the two
                         // crawler surfaces at the root paths the standards
                         // fix (robots.txt "MUST be located … in the top-level
