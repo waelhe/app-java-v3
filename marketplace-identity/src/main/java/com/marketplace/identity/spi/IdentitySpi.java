@@ -15,7 +15,34 @@ public interface IdentitySpi {
 
     Page<UserSummary> findAllSummaries(Pageable pageable);
 
-    void updateUserRole(UUID userId, String newRole);
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the
+     * administrative role change as one transaction on BOTH stores of
+     * truth — {@code users.role} (the domain record) and the login-side
+     * {@code auth_authorities} projection (replaced through the framework
+     * {@code UserDetailsManager.updateUser} contract) that every future
+     * token's {@code roles} claim is minted from. The account's issued
+     * authorizations are removed with the change (a pre-change refresh
+     * token would otherwise keep minting old-role access tokens — the L23
+     * documented SAS basis), the caches are invalidated through the
+     * standing AFTER_COMMIT channel, a {@code UserRoleChanged} domain
+     * event is published in-transaction, and the action is recorded in
+     * the structured audit line.
+     *
+     * <p>The L23 last-active-ADMIN counting constraint applies to the
+     * downgrade surface verbatim: removing the {@code ROLE_ADMIN}
+     * authority from the only enabled account holding it is rejected —
+     * the documented invariant is "the last active ADMIN is untouchable",
+     * and an operative role change must not open the lockout hole the
+     * disable guard already closes.
+     *
+     * @param userId  the identity projection id (the {@code users} row)
+     * @param newRole the stored {@code UserRole} name
+     *                ({@code CONSUMER}/{@code PROVIDER}/{@code ADMIN})
+     * @param actor   the acting administrator (JWT subject), recorded with
+     *                the action in the audit line
+     */
+    void updateUserRole(UUID userId, String newRole, String actor);
 
     /**
      * L23 (feature-expansion roadmap §5): administrative account disable/enable.
