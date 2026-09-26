@@ -41,9 +41,9 @@ public class PaymentsController {
     @PostMapping("/intents")
     @Operation(summary = "Create a payment intent for a booking",
             description = "Starts the money loop for a booking: the intent carries the booking's "
-                    + "amount and ISO 4217 currency under the current consumer. Idempotency-Key "
-                    + "is the caller's dedupe surface (a replay answers the existing intent). "
-                    + "Answers 201.")
+                    + "amount and ISO 4217 currency under the current consumer. The request "
+                    + "body's idempotencyKey field is the caller's deduplication surface "
+                    + "(a replay answers the existing intent). Answers 201.")
     public ResponseEntity<PaymentIntentResponse> createIntent(@Valid @RequestBody CreateIntentRequest request,
                                                               Authentication authentication) {
         UUID consumerId = currentUserProvider.getCurrentUserId(authentication);
@@ -55,8 +55,10 @@ public class PaymentsController {
     @PostMapping("/intents/{id}/process")
     @Operation(summary = "Process a payment intent",
             description = "Drives the intent through the bound payment channel — with a real PSP "
-                    + "this is the remote charge step (clientSecret in the answer); without one, "
-                    + "the documented inert local path. Ownership-verified against the caller.")
+                    + "this is the remote charge step (clientSecret in the answer); without "
+                    + "one, the local-only path: the intent still advances to PROCESSING and a "
+                    + "Payment row is written, with no remote charge. Ownership-verified "
+                    + "against the caller.")
     public ResponseEntity<PaymentIntentResponse> processIntent(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.processIntent(id, authentication)));
     }
