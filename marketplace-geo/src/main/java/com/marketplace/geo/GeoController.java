@@ -60,8 +60,8 @@ public class GeoController {
     @GetMapping("/suggest")
     @RateLimiter(name = "geoSuggest")
     @Operation(summary = "Location autocomplete",
-            description = "Prefix search (>= 2 characters) over Arabic and Latin names "
-                    + "and slugs, ordered shallow-first. Answers 400 below the floor.")
+            description = "Case-insensitive prefix search (>= 2 characters) over Arabic and "
+                    + "Latin names and slugs, ordered shallow-first. Answers 400 below the floor.")
     public ResponseEntity<List<GeoNode>> suggest(
             @Parameter(description = "Name or slug prefix (at least 2 characters)", example = "قد")
             @RequestParam String q) {
