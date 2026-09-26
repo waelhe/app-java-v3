@@ -4,47 +4,62 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.security.messaging.web.csrf.XorCsrfChannelInterceptor;
-import org.springframework.security.web.csrf.CsrfToken;
-
-import java.util.Map;
 
 /**
- * S4/N3 root fix (comprehensive repair plan §10/2.1): the CSRF leg of the
- * WebSocket authentication architecture. The {@code @EnableWebSocketSecurity}
- * wiring registers {@link XorCsrfChannelInterceptor} by default — measured
- * against the 7.1.1 bytecode, it reads the {@link CsrfToken} from the
- * WebSocket session attributes and throws {@code MissingCsrfTokenException}
- * when absent, which would reject the CONNECT of EVERY stateless token
- * client (no {@code HttpSession} means no session attributes means no
- * token). The same bytecode shows the official extension point: the
- * configuration looks up a bean NAMED {@code csrfChannelInterceptor}
- * ({@code getBeanOrNull("csrfChannelInterceptor", ChannelInterceptor.class)}
- * in {@code WebSocketMessageBrokerSecurityConfiguration#configureClientInboundChannel})
- * and uses it instead of the default when present.
+ * S4/N3 (comprehensive repair plan §10/2.1): the CSRF leg of the WebSocket
+ * architecture — <b>the documented pass-through</b>, replacing the default
+ * {@code XorCsrfChannelInterceptor} through the official bean-name extension
+ * point ({@code getBeanOrNull("csrfChannelInterceptor", ChannelInterceptor.class)}
+ * in {@code WebSocketMessageBrokerSecurityConfiguration#configureClientInboundChannel},
+ * bytecode-verified against spring-security-config 7.1.1).
  *
- * <p><b>The semantics (same-origin protection kept where it applies):</b>
- * <ul>
- *   <li>A session {@code CsrfToken} IS present (the cookie-session flow —
- *       the handshake carried an {@code HttpSession} with the token the
- *       login chain stored) — the CONNECT is enforced by the framework's
- *       own {@link XorCsrfChannelInterceptor}, byte-identical semantics:
- *       the STOMP header must carry the matching token or the CONNECT is
- *       rejected. Cross-origin browser attacks against session clients
- *       keep the full same-origin defense.</li>
- *   <li>No session token (the stateless token flow this fix opens) — the
- *       CONNECT passes the CSRF leg: the JWT on the CONNECT frame is an
- *       EXPLICIT credential, not ambient cookie authority, so the
- *       cross-site-request-forgery threat model does not apply (the
- *       attacker's page cannot know or attach the victim's token). The
- *       CONNECT is still authenticated by
- *       {@link JwtChannelAuthenticationInterceptor} and authorized by the
- *       {@code messageAuthorizationManager} ({@code nullDestMatcher()
- *       .authenticated()} + {@code denyAll()} defaults) — nothing is
- *       anonymous here.</li>
- * </ul>
+ * <p><b>Why pass-through is the threat-model-exact semantics here — the full
+ * measured chain:</b></p>
+ * <ol>
+ *   <li><b>The minted token proves nothing about the client.</b> Spring
+ *       Security's own {@code CsrfTokenHandshakeInterceptor} (registered FIRST
+ *       among the endpoint's handshake interceptors by the same configuration,
+ *       bytecode-verified) reads the {@code DeferredCsrfToken} request
+ *       attribute — which {@code CsrfFilter} sets unconditionally before its
+ *       ignoring-matcher check — calls {@code .get()} (materializing a token
+ *       AND an HttpSession), and puts a fresh {@code DefaultCsrfToken} into
+ *       EVERY connection's WebSocket session attributes. The CI round-2 logs
+ *       show four distinct minted tokens for four stateless connections: a
+ *       session-attribute token is NOT a cookie-session marker — it is
+ *       framework noise present for everyone, so a "token present → enforce"
+ *       branch would reject every stateless client's CONNECT.</li>
+ *   <li><b>No ambient CONNECT can exist in this architecture.</b> The /ws
+ *       handshake lives in the STATELESS resource-server chain (the S4 root
+ *       fix) — chain 2 never loads a session principal, so even a
+ *       cookie-carrying browser arrives anonymous at the WebSocket layer.
+ *       Every authentication this channel knows is EXPLICIT: the Bearer on
+ *       the handshake (header-capable clients) or the Bearer on the CONNECT
+ *       frame (browsers — the documented token-authentication pattern this
+ *       PR implements). An explicit credential is CSRF-immune by
+ *       construction: the attacker's page cannot know or attach the victim's
+ *       token. The Same-Origin Policy defense for browsers remains where it
+ *       belongs for WebSockets — the transport layer's
+ *       {@code OriginHandshakeInterceptor} (the endpoint's
+ *       {@code setAllowedOrigins}, enforced at every handshake).</li>
+ *   <li><b>The authorization boundary is the message layer.</b> A CONNECT
+ *       with a supplied token is authenticated by
+ *       {@code JwtChannelAuthenticationInterceptor} (an invalid supplied
+ *       token rejects the CONNECT — resource-server semantics); a tokenless
+ *       CONNECT stays anonymous and is rejected by the
+ *       {@code messageAuthorizationManager}'s
+ *       {@code nullDestMatcher().authenticated()} — the integration guard
+ *       proves both. Nothing anonymous reaches the broker.</li>
+ * </ol>
+ *
+ * <p>This is the documented shape of "CSRF is not configurable when using
+ * {@code @EnableWebSocketSecurity}" (Spring Security Reference › WebSocket
+ * Security › Disable CSRF within WebSockets): the bean override is the
+ * sanctioned way to neutralize the STOMP CSRF leg while keeping the
+ * annotation's security-context and authorization machinery. The alternative
+ * the reference shows — dropping {@code @EnableWebSocketSecurity} and wiring
+ * the interceptors by hand — would re-implement what the annotation already
+ * provides correctly.</p>
  */
 @Configuration
 class WebSocketCsrfConfiguration {
@@ -53,28 +68,13 @@ class WebSocketCsrfConfiguration {
      * The bean NAME is the contract — the {@code @EnableWebSocketSecurity}
      * wiring looks this exact name up through the documented
      * {@code getBeanOrNull} extension point and replaces its default with it.
+     * The pass-through is the empty interceptor: every
+     * {@link ChannelInterceptor} default method already returns the message
+     * unchanged — the bean's PRESENCE is the entire replacement (its absence
+     * would hand every CONNECT to the framework's XOR enforcement).
      */
     @Bean
     ChannelInterceptor csrfChannelInterceptor() {
-        XorCsrfChannelInterceptor frameworkDefault = new XorCsrfChannelInterceptor();
-        return new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                Map<String, Object> sessionAttributes =
-                        SimpMessageHeaderAccessor.getSessionAttributes(message.getHeaders());
-                boolean sessionCsrfTokenPresent = sessionAttributes != null
-                        && sessionAttributes.get(CsrfToken.class.getName()) != null;
-                if (!sessionCsrfTokenPresent) {
-                    // The stateless token flow — no session, no ambient
-                    // credential, CSRF-immune by construction. The JWT
-                    // interceptor and the message authorization manager own
-                    // this CONNECT.
-                    return message;
-                }
-                // The cookie-session flow — the framework's own enforcement,
-                // unchanged (XOR token comparison against the STOMP header).
-                return frameworkDefault.preSend(message, channel);
-            }
-        };
+        return new ChannelInterceptor() {};
     }
 }
