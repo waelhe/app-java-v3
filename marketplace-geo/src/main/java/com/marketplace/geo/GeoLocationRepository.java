@@ -25,22 +25,35 @@ public interface GeoLocationRepository
     List<GeoLocation> findByParentIdIsNullOrderBySlugAsc();
 
     /**
-     * Prefix autocomplete over the three searchable surfaces. Plain LIKE
-     * on a prefix: {@code nameAr} has no case; {@code nameEn} is stored
-     * trimmed as authored and matched case-sensitively (Latin names are
-     * conventionally capitalized consistently in the seed); {@code slug}
-     * is lowercase by validation. The service gates the prefix to >= 2
-     * characters and ESCAPES the LIKE wildcards ({@code %}/{@code _}) in the
-     * prefix before any query runs (CodeRabbit round 1 adoption — {@code
-     * q=%%} must not match everything); the ESCAPE clause below matches the
-     * service's escaping.
+     * Prefix autocomplete over the three searchable surfaces, matched
+     * case-insensitively with PostgreSQL's official {@code ILIKE} operator:
+     * "The key word ILIKE can be used instead of LIKE to make the match
+     * case-insensitive according to the active locale" (PostgreSQL Official
+     * Documentation, Functions & Operators, Pattern Matching — fetched live
+     * 2026-09-26, saved at {@code scripts/doc-verify/postgres-pattern-matching.html}).
+     * The comprehensive plan item 2.8 closed the measured gap here: the seed's
+     * Latin names are Title Case ("Rif Dimashq"), so a case-sensitive LIKE
+     * could never answer a lowercase user prefix ("rif") — the exact input
+     * shape an autocomplete box receives. {@code nameAr} has no case, and
+     * {@code slug} is lowercase by validation, so ILIKE changes their
+     * matching only by letting capitalized user input reach them. The
+     * service gates the prefix to >= 2 characters and ESCAPES the LIKE
+     * wildcards ({@code %}/{@code _}) in the prefix before any query runs
+     * (CodeRabbit round 1 adoption — {@code q=%%} must not match everything);
+     * ILIKE supports the ESCAPE clause exactly as LIKE does, so the ESCAPE
+     * clause below is unchanged. The functional-index escalation path
+     * ({@code lower(name_en) text_pattern_ops}, per the same official
+     * Pattern Matching section) stays deliberately unbuilt at the measured
+     * six-row administrative-geography scale — a seq scan on it is already
+     * the cheapest plan; the index becomes honest engineering when the
+     * table's size says so.
      */
     @Query(value = """
             SELECT * FROM geo_locations
             WHERE is_deleted = false
-              AND (name_ar LIKE :prefixPattern ESCAPE '\\'
-                   OR name_en LIKE :prefixPattern ESCAPE '\\'
-                   OR slug LIKE :prefixPattern ESCAPE '\\')
+              AND (name_ar ILIKE :prefixPattern ESCAPE '\\'
+                   OR name_en ILIKE :prefixPattern ESCAPE '\\'
+                   OR slug ILIKE :prefixPattern ESCAPE '\\')
             ORDER BY level, slug
             LIMIT :limit
             """,
