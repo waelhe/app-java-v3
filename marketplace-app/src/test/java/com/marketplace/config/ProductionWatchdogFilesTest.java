@@ -31,15 +31,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       hour or quarter boundary. A regression to a plain aligned 15-minute
  *       cron (0/15) would silently re-align every probe with the worst
  *       delay window.</li>
- *   <li><b>probe contract</b> - the five measured public endpoints with
+ *   <li><b>probe contract</b> - the six measured public endpoints with
  *       their expected codes (liveness/readiness/jwks/OIDC discovery =
- *       200; the modulith actuator endpoint = 401). The 401 pin is the one
- *       that keeps the security boundary observable: 404 means the
- *       exposure list drifted, 200 means the boundary is gone - both are
- *       incidents the watchdog must catch. The full health endpoint
- *       probe is pinned <b>absent</b>: it 503s on the documented MAIL_*
- *       provider placeholder (SYSTEM.md section 15, debt item 3 - a
- *       user-owned gate), so probing it would be a permanent false alarm.</li>
+ *       200; the modulith actuator endpoint = 401; the aggregate health
+ *       endpoint = 200). The 401 pin is the one that keeps the security
+ *       boundary observable: 404 means the exposure list drifted, 200
+ *       means the boundary is gone - both are incidents the watchdog must
+ *       catch. The aggregate health probe is pinned <b>present</b> (plan
+ *       item 3.2 - "probe the point that revealed the sickness"): with
+ *       mail taken out of platform health (management.health.mail.enabled:
+ *       false - the S10 fix), a DOWN verdict there means a core contributor
+ *       (db/redis/diskSpace/ping/modulithEventBus) is failing. Merge order
+ *       matters: this probe is honest only after the S10 fix lands, which
+ *       the PR body of item 3.2 documents.</li>
  *   <li><b>anti-flap retries</b> - three attempts with backoff before
  *       declaring an incident, so a zero-downtime redeploy blip does not
  *       page anyone.</li>
@@ -84,7 +88,7 @@ class ProductionWatchdogFilesTest {
     }
 
     @Test
-    void watchdogProbesExactlyTheFiveVerifiedPublicEndpoints() throws IOException {
+    void watchdogProbesExactlyTheSixVerifiedPublicEndpoints() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
                         + "(SYSTEM.md §15)")
@@ -97,10 +101,11 @@ class ProductionWatchdogFilesTest {
         assertThat(yml).as("the 401 boundary probe keeps the security perimeter "
                         + "observable: 404 = exposure drifted, 200 = boundary gone")
                 .contains("[\"/actuator/modulith\"]=\"401\"");
-        assertThat(yml).as("full health is deliberately NOT a probe: it 503s on the "
-                        + "documented MAIL_* provider gate - probing it would be a "
-                        + "permanent false alarm")
-                .doesNotContain("[\"/actuator/health\"]=\"");
+        assertThat(yml).as("the aggregate health probe (plan item 3.2 - \"the point "
+                        + "that revealed the sickness\", honest now that mail is out "
+                        + "of platform health): DOWN here = a core contributor "
+                        + "(db/redis/diskSpace/ping/modulithEventBus) is failing")
+                .contains("[\"/actuator/health\"]=\"200\"");
         assertThat(yml).as("bounded probe: curl must always carry --max-time so a "
                         + "hung endpoint cannot wedge the job")
                 .contains("--max-time 30");

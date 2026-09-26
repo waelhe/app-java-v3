@@ -50,6 +50,7 @@ class AlertRulesYamlTest {
             "marketplace_payments_completed_total",
             "marketplace_cache_invalidation_evict_failure_total",
             "marketplace_eventbus_stale",
+            "marketplace_health_aggregate",
             "resilience4j_circuitbreaker_state",
             "hikaricp_connections_active",
             "hikaricp_connections_max"
