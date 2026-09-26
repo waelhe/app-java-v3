@@ -72,12 +72,15 @@ public class MediaController {
 
     /**
      * Presigned read URLs for every uploaded asset of the listing, in display
-     * order. Authenticated read — same visibility as the listing endpoints.
+     * order. Public read (S5, comprehensive repair plan §10/2.2) — the same
+     * visibility the listing endpoints grant the listing itself: a guest
+     * reading the public detail page sees its photos too. The response
+     * carries only time-limited presigned GET URLs for UPLOADED assets.
      */
     @GetMapping("/media/listings/{listingId}")
     @Operation(summary = "List a listing's media",
             description = "Every UPLOADED asset in display order, each with a freshly presigned "
-                    + "GET URL.")
+                    + "GET URL. Public read — same visibility as the listing endpoints.")
     public ResponseEntity<List<MediaService.MediaAssetView>> listByListing(
             @PathVariable UUID listingId) {
         return ResponseEntity.ok(mediaService.listByListing(listingId));
