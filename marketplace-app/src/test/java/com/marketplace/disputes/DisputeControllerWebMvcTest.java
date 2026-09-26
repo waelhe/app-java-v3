@@ -36,9 +36,14 @@ class DisputeControllerWebMvcTest {
     @MockitoBean
     private DisputeMapper disputeMapper;
 
+    /**
+     * Plan item 2.7: the creation answers 201 Created (RFC 9110 §15.3.2) —
+     * the guarded contract change, documented as a dated OpenAPI-gate
+     * exception in .ci/openapi-compat-allowlist.yml.
+     */
     @Test
     @WithMockUser
-    void open_returnsOk() throws Exception {
+    void open_returnsCreated() throws Exception {
         UUID bookingId = UUID.randomUUID();
         var dispute = mockDispute();
         var response = mockResponse();
@@ -48,7 +53,7 @@ class DisputeControllerWebMvcTest {
 
         mockMvc.perform(post("/api/v1/bookings/{bookingId}/disputes", bookingId)
                         .param("reason", "Not as described"))
-                .andExpect(status().isOk());
+                .andExpect(status().isCreated());
     }
 
     @Test

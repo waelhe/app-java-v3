@@ -1,3 +1,14 @@
 # Documented temporary exceptions for backward-incompatible OpenAPI changes.
 # Each entry must include a ticket, reason, and expiry date (YYYY-MM-DD).
-exceptions: []
+#
+# Exception lifecycle (the gate's own design): an entry exists only while
+# the change is NOT yet part of a release baseline tag; when the next
+# release tag is cut, the baseline regenerates from it, the exception
+# turns STALE (the gate fails main until it is removed), and the re-baseline
+# PR must delete it — the mechanism that keeps this list temporary.
+exceptions:
+  - path: POST /api/v1/bookings/{bookingId}/disputes
+    status: "200"
+    ticket: plan item 2.7 (comprehensive-reverification-repair-plan-2026-09-26.md section 10, PR fix/s27-disputes-created)
+    reason: Intentional creation-semantics correction per RFC 9110 section 15.3.2 (201 Created = a new resource was created) — the dispute-open operation creates a resource, so its success status moves from 200 to 201, the same in-repo creation precedent as MessagingController.createConversation; the response body schema is unchanged (DisputeResponse) and no parameters change; remove this entry in the release re-baseline PR that follows the next tag.
+    expiry: 2026-12-31

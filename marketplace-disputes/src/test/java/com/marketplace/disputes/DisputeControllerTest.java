@@ -30,8 +30,13 @@ class DisputeControllerTest {
     @InjectMocks
     private DisputeController disputeController;
 
+    /**
+     * Plan item 2.7: the creation answers 201 Created (RFC 9110 section
+     * 15.3.2) — the guarded contract change, documented as a dated
+     * OpenAPI-gate exception in .ci/openapi-compat-allowlist.yml.
+     */
     @Test
-    void open_returnsOk() {
+    void open_returnsCreated() {
         UUID bookingId = UUID.randomUUID();
         String reason = "late arrival";
         Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), reason);
@@ -43,7 +48,7 @@ class DisputeControllerTest {
 
         ResponseEntity<DisputeResponse> result = disputeController.open(bookingId, reason, authentication);
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getBody()).isEqualTo(response);
     }
 
