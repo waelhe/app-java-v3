@@ -250,8 +250,13 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
         // ALSO the «فشل الناشر لا يُسقط الطلب الأصلي» fact: the eviction
         // runs after the transaction, by design.
         Authentication admin = jwtAuthentication("i5-invalidation-provider@example.com");
+        // The write goes through the PRODUCTION service path, so it carries a
+        // registry-registered category ("stay" — V70's starter vocabulary):
+        // the S6 write gate rejects unknown codes, and "home" was never a
+        // registered value. The SQL seed below keeps "stay" for the same
+        // reason — one vocabulary across the whole fixture.
         ProviderListing updated = catalogService.update(LISTING_ID, TITLE_AFTER,
-                "Cross-instance invalidation proof listing", "home", 100_00L, null, admin);
+                "Cross-instance invalidation proof listing", "stay", 100_00L, null, admin);
         assertThat(updated.getTitle()).isEqualTo(TITLE_AFTER);
 
         // (4) Replica B's next browse shows the NEW title — only a MISS and
@@ -301,7 +306,7 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
                 ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title
                 """,
                 LISTING_ID, PROVIDER_ID, title,
-                "Cross-instance invalidation proof listing", "home", 100_00L);
+                "Cross-instance invalidation proof listing", "stay", 100_00L);
     }
 
     /**

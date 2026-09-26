@@ -53,13 +53,17 @@ class ListingExpiryPolicyTest {
     private final org.springframework.security.core.Authentication authentication =
             mock(org.springframework.security.core.Authentication.class);
 
+    @org.mockito.Mock
+    private CategoryRepository categoryRepository;
+
     @BeforeEach
     void setUp() {
         service = new CatalogService(listingRepository, currentUserProvider,
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(90, 1),
                     new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
-                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))));
+                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))),
+                categoryRepository);
     }
 
     private ProviderListing draftListing() {
@@ -135,7 +139,8 @@ class ListingExpiryPolicyTest {
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(null, 1),
                 new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
-                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))));
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))),
+                categoryRepository);
         ProviderListing draft = draftListing();
 
         assertThatThrownBy(() -> unpolicy.activate(draft.getId(), null, authentication))
