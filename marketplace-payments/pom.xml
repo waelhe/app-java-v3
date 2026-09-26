@@ -14,6 +14,14 @@
     <name>marketplace-payments</name>
 
     <dependencies>
+        <!-- S11 (platform-readiness audit §4): OpenAPI annotation vocabulary for the
+             springdoc-generated contract — the same root-managed declaration
+             (Exception #12) every documenting domain module carries; payments
+             joins them so its 8 operations document like the rest. -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-shared</artifactId>
