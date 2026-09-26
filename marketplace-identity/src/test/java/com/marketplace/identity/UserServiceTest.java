@@ -246,6 +246,54 @@ class UserServiceTest {
     }
 
     @Test
+    void syncFromOidc_withoutProfileClaims_keepsTheStoredProfile() {
+        // S1/B1 (measured by the full-loop guard — the CI round that caught the
+        // wipe): the NATIVE login's tokens carry no email/name claims (the
+        // DaoAuthentication principal holds only the username + authorities).
+        // Under the old unconditional-write semantics the first /me call after
+        // registration erased the just-stored profile. An ABSENT claim is not
+        // an erase command — the stored values survive; nothing changes so
+        // not even an invalidation event fires.
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("native-user@example.com");
+        when(jwt.getClaimAsString("email")).thenReturn(null);
+        when(jwt.getClaimAsString("name")).thenReturn(null);
+
+        User existing = User.create("native-user@example.com", "native-user@example.com",
+                "Native Member", UserRole.CONSUMER);
+        when(userRepository.findBySubject("native-user@example.com")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals("native-user@example.com", result.getEmail(), "the registered email survives");
+        assertEquals("Native Member", result.getDisplayName(), "the registered display name survives");
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(CacheInvalidationRequested.class));
+    }
+
+    @Test
+    void syncFromOidc_withOnlyOneClaim_updatesOnlyThatField() {
+        // The partial-claim shape (an IdP that sends the name but not the
+        // email): the present claim updates, the absent one survives.
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
+        when(token.getToken()).thenReturn(jwt);
+        when(jwt.getSubject()).thenReturn("partial-sub");
+        when(jwt.getClaimAsString("email")).thenReturn(null);
+        when(jwt.getClaimAsString("name")).thenReturn("Refreshed Name");
+
+        User existing = User.create("partial-sub", "kept@b.com", "Old Name", UserRole.CONSUMER);
+        when(userRepository.findBySubject("partial-sub")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncFromOidc(token);
+
+        assertEquals("kept@b.com", result.getEmail(), "the absent claim keeps the stored email");
+        assertEquals("Refreshed Name", result.getDisplayName());
+    }
+
+    @Test
     void syncFromOidc_whenProfileUnchanged_doesNotPublishInvalidation() {
         Jwt jwt = mock(Jwt.class);
         JwtAuthenticationToken token = mock(JwtAuthenticationToken.class);
