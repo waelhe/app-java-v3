@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
@@ -47,11 +48,20 @@ class JwtChannelAuthenticationInterceptorTest {
     @Mock
     private JwtAuthenticationConverter jwtAuthenticationConverter;
 
+    @Mock
+    private ObjectProvider<JwtDecoder> jwtDecoderProvider;
+
+    @Mock
+    private ObjectProvider<JwtAuthenticationConverter> converterProvider;
+
     private JwtChannelAuthenticationInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new JwtChannelAuthenticationInterceptor(jwtDecoder, jwtAuthenticationConverter);
+        // The full-application wiring: the providers always resolve.
+        lenient().when(jwtDecoderProvider.getIfAvailable()).thenReturn(jwtDecoder);
+        lenient().when(converterProvider.getIfAvailable()).thenReturn(jwtAuthenticationConverter);
+        interceptor = new JwtChannelAuthenticationInterceptor(jwtDecoderProvider, converterProvider);
     }
 
     private static Jwt jwt(String subject) {
@@ -181,6 +191,33 @@ class JwtChannelAuthenticationInterceptorTest {
         assertThat(lifted.getAuthorities())
                 .extracting(Object::toString)
                 .containsExactly("ROLE_PROVIDER");
+    }
+
+    @Test
+    void connectWithBearerHeaderIsInertWhenTheSecurityInfrastructureIsAbsent() {
+        // The module-slice shape (messaging's own @ApplicationModuleTest): the
+        // providers resolve nothing — no decoder means no token flow exists
+        // there; the CONNECT stays for the message layer to decide.
+        ObjectProvider<JwtDecoder> emptyDecoder = providerOf(null);
+        ObjectProvider<JwtAuthenticationConverter> emptyConverter = providerOf(null);
+        JwtChannelAuthenticationInterceptor sliceInterceptor =
+                new JwtChannelAuthenticationInterceptor(emptyDecoder, emptyConverter);
+
+        StompHeaderAccessor accessor = connectAccessor();
+        accessor.setNativeHeader("Authorization", "Bearer token-value");
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        sliceInterceptor.preSend(message, null);
+
+        assertThat(accessor.getUser()).isNull();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> providerOf(T value) {
+        org.springframework.beans.factory.ObjectProvider<T> provider =
+                org.mockito.Mockito.mock(ObjectProvider.class);
+        org.mockito.Mockito.lenient().when(provider.getIfAvailable()).thenReturn(value);
+        return provider;
     }
 
     private void verifyNoInteractionsDecoding() {

@@ -217,7 +217,9 @@ class WebSocketTokenAuthenticationIntegrationTest {
 
                             @Override
                             public void handleFrame(StompHeaders headers, Object payload) {
-                                failure.complete(payload);
+                                // An ERROR frame may carry a null body — the
+                                // frame ITSELF is the rejection fact.
+                                failure.complete("ERROR frame: " + headers.getDestination());
                             }
                         })
                 .whenComplete((session, ex) -> {
@@ -247,7 +249,9 @@ class WebSocketTokenAuthenticationIntegrationTest {
 
                             @Override
                             public void handleFrame(StompHeaders headers, Object payload) {
-                                failure.complete(payload);
+                                // An ERROR frame may carry a null body — the
+                                // frame ITSELF is the rejection fact.
+                                failure.complete("ERROR frame: " + headers.getDestination());
                             }
                         })
                 .whenComplete((session, ex) -> {

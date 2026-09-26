@@ -132,7 +132,24 @@ public class SecurityConfig {
                 .securityMatcher("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**",
                         "/sitemap.xml", "/robots.txt", "/ws/**")
                 .addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql", "/v3/api-docs/**"))
+                // S4/N3 (comprehensive repair plan §10/2.1): /ws/** joins the
+                // web-layer CSRF relaxation — the documented pattern, verbatim
+                // (Spring Security Reference › WebSocket Security › "SockJS &
+                // Relaxing CSRF": "we want to disable CSRF protection for our
+                // connect URLs. We do NOT want to disable CSRF protection for
+                // every URL. Otherwise, our site is vulnerable to CSRF
+                // attacks"). Without this line the CsrfFilter mints an
+                // HttpSession + CsrfToken on the stateless handshake itself,
+                // the session attribute rides into the WebSocket session, and
+                // the STOMP-level XorCsrfChannelInterceptor then demands a
+                // token the stateless token client never has — the exact
+                // rejection measured in CI round 1. The STOMP message layer
+                // keeps the same-origin defense for cookie-session clients
+                // (their pre-existing session token is enforced by the
+                // csrfChannelInterceptor override); the token flow is
+                // CSRF-immune by construction.
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql",
+                        "/v3/api-docs/**", "/ws/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth

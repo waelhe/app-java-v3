@@ -1,6 +1,7 @@
 package com.marketplace.messaging;
 
 import com.marketplace.shared.config.MarketplaceProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -16,12 +17,12 @@ import org.springframework.web.socket.config.annotation.WebSocketTransportRegist
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final MarketplaceProperties properties;
-    private final JwtDecoder jwtDecoder;
-    private final JwtAuthenticationConverter jwtAuthenticationConverter;
+    private final ObjectProvider<JwtDecoder> jwtDecoder;
+    private final ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter;
 
     public WebSocketConfig(MarketplaceProperties properties,
-                           JwtDecoder jwtDecoder,
-                           JwtAuthenticationConverter jwtAuthenticationConverter) {
+                           ObjectProvider<JwtDecoder> jwtDecoder,
+                           ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter) {
         this.properties = properties;
         this.jwtDecoder = jwtDecoder;
         this.jwtAuthenticationConverter = jwtAuthenticationConverter;
@@ -47,6 +48,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      * The interceptor only lifts a supplied CONNECT-frame bearer token;
      * handshake-level and session authentications pass it untouched, and
      * the message authorization manager stays the authorization boundary.
+     *
+     * <p><b>ObjectProvider (the Modulith module-slice shape — CI round 1
+     * root):</b> the decoder/converter beans live in the shared security
+     * infrastructure; a module-slice context (messaging's own
+     * {@code @ApplicationModuleTest}) boots WITHOUT them, so constructor
+     * injection fails the whole context. The providers resolve lazily at
+     * CONNECT time: in the full application they are always present (the
+     * same beans the resource-server chain uses); in a module slice the
+     * interceptor is inert — no real tokens exist there to lift.
      */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {

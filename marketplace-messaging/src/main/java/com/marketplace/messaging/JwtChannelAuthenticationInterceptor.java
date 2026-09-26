@@ -1,9 +1,9 @@
 package com.marketplace.messaging;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -11,9 +11,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 
 /**
  * S4/N3 root fix (comprehensive repair plan §10/2.1): the documented
@@ -56,11 +56,11 @@ import org.springframework.security.oauth2.server.resource.InvalidBearerTokenExc
  */
 final class JwtChannelAuthenticationInterceptor implements ChannelInterceptor {
 
-    private final JwtDecoder jwtDecoder;
-    private final JwtAuthenticationConverter jwtAuthenticationConverter;
+    private final ObjectProvider<JwtDecoder> jwtDecoder;
+    private final ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter;
 
-    JwtChannelAuthenticationInterceptor(JwtDecoder jwtDecoder,
-                                        JwtAuthenticationConverter jwtAuthenticationConverter) {
+    JwtChannelAuthenticationInterceptor(ObjectProvider<JwtDecoder> jwtDecoder,
+                                        ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter) {
         this.jwtDecoder = jwtDecoder;
         this.jwtAuthenticationConverter = jwtAuthenticationConverter;
     }
@@ -83,17 +83,26 @@ final class JwtChannelAuthenticationInterceptor implements ChannelInterceptor {
             // layer's authorization manager decides the CONNECT's fate.
             return message;
         }
+        // Module-slice contexts (messaging's own @ApplicationModuleTest) boot
+        // without the shared security infrastructure — no decoder means no
+        // token flow exists there at all; the CONNECT stays for the message
+        // layer to decide (the documented inert state).
+        JwtDecoder decoder = jwtDecoder.getIfAvailable();
+        JwtAuthenticationConverter converter = jwtAuthenticationConverter.getIfAvailable();
+        if (decoder == null || converter == null) {
+            return message;
+        }
         String token = authorization.substring("Bearer ".length());
         Jwt jwt;
         try {
-            jwt = jwtDecoder.decode(token);
+            jwt = decoder.decode(token);
         } catch (JwtException ex) {
             // A SUPPLIED token that fails validation rejects the CONNECT — the
             // resource-server contract for a bad supplied token, never a
             // fall-through to anonymous.
             throw new InvalidBearerTokenException("Invalid WebSocket CONNECT token", ex);
         }
-        Authentication authentication = jwtAuthenticationConverter.convert(jwt);
+        Authentication authentication = converter.convert(jwt);
         JwtAuthenticationToken authenticationToken = authentication instanceof JwtAuthenticationToken jwtToken
                 ? jwtToken
                 : new JwtAuthenticationToken(jwt, authentication.getAuthorities());
