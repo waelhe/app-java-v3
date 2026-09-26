@@ -25,11 +25,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.only;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +119,11 @@ class CatalogControllerTest {
 
         ResponseEntity<PagedResponse<ListingResponse>> result =
                 controller.listByProvider(UUID.randomUUID(), Pageable.unpaged());
+
+        // CodeRabbit round 1 (adopted): the batch lookup must run exactly once,
+        // for exactly the page's response IDs — any() would hide a wrong ID set
+        // or repeated lookups from this guard.
+        verify(propertyDetailsPort, only()).findByListingIds(Set.of(LISTING_ID, otherId));
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody().content())
