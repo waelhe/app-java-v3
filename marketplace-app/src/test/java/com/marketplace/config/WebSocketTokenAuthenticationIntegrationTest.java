@@ -153,18 +153,7 @@ class WebSocketTokenAuthenticationIntegrationTest {
         String accessToken = loginGateAccessToken();
         WebSocketStompClient stompClient = stompClient();
 
-        // The N3 completion: the subscription receipt completes through the
-        // session handler's handleFrame (the client routes RECEIPT frames
-        // there) — the push channel is alive for token clients.
-        CompletableFuture<String> subscriptionReceipt = new CompletableFuture<>();
-        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter() {
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                if (headers.getReceipt() != null) {
-                    subscriptionReceipt.complete(headers.getReceipt());
-                }
-            }
-        };
+        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter();
 
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + accessToken);
@@ -176,10 +165,18 @@ class WebSocketTokenAuthenticationIntegrationTest {
         assertThat(session.isConnected()).isTrue();
         assertThat(session.getSessionId()).isNotBlank();
 
+        // The N3 completion: the subscription's receipt — the official
+        // Receiptable API (bytecode-verified against spring-messaging 7.0.9:
+        // DefaultStompSession.handleMessage routes RECEIPT frames to the
+        // INTERNAL ReceiptHandler — they never reach the session handler's
+        // handleFrame — and the handler runs the tasks registered through
+        // addReceiptTask; that IS the documented receipt contract). The push
+        // channel is alive for token clients when the broker acknowledges the
+        // subscription.
         StompHeaders subscribe = new StompHeaders();
         subscribe.setDestination("/topic/notifications/" + USER);
         subscribe.setReceipt("sub-receipt-" + UUID.randomUUID());
-        session.subscribe(subscribe, new StompFrameHandler() {
+        StompSession.Subscription subscription = session.subscribe(subscribe, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return String.class;
@@ -191,6 +188,8 @@ class WebSocketTokenAuthenticationIntegrationTest {
                 // test; the subscription RECEIPT is the channel-alive proof.
             }
         });
+        CompletableFuture<String> subscriptionReceipt = new CompletableFuture<>();
+        subscription.addReceiptTask(() -> subscriptionReceipt.complete(subscription.getReceiptId()));
 
         String receiptId = subscriptionReceipt.get(10, TimeUnit.SECONDS);
         assertThat(receiptId).isNotBlank();
