@@ -261,7 +261,20 @@
                 <artifactId>prometheus-metrics-tracer-common</artifactId>
                 <version>${prometheus-client.version}</version>
             </dependency>
-            <!-- Exception #7: springdoc-openapi — community OpenAPI auto-generation -->
+            <!-- Exception #7: springdoc-openapi — community OpenAPI auto-generation.
+                 The ui starter serves the app; the common artifact is the SAME
+                 springdoc train (same groupId + ${springdoc.version}), declared so
+                 library modules can use the @ParameterObject annotation that makes
+                 springdoc render a Pageable as its documented optional page/size/sort
+                 query parameters (org.springdoc.core.converters.models.Pageable,
+                 measured from the 3.1.0 sources jar). It is already in the app's
+                 dependency tree via the ui starter — declaring it in a library
+                 module adds zero new bytes to any final artifact. -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-common</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
