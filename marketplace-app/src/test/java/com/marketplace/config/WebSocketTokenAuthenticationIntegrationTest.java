@@ -108,6 +108,13 @@ class WebSocketTokenAuthenticationIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    /**
+     * The server-side push channel (the same template NotificationService
+     * uses) — the MESSAGE-delivery proof's sender.
+     */
+    @Autowired
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+
     @Value("${local.server.port}")
     private int port;
 
@@ -167,18 +174,18 @@ class WebSocketTokenAuthenticationIntegrationTest {
         assertThat(session.isConnected()).isTrue();
         assertThat(session.getSessionId()).isNotBlank();
 
-        // The N3 completion: the subscription's receipt — the official
-        // Receiptable API (bytecode-verified against spring-messaging 7.0.9:
-        // DefaultStompSession.handleMessage routes RECEIPT frames to the
-        // INTERNAL ReceiptHandler — they never reach the session handler's
-        // handleFrame — and the handler runs the tasks registered through
-        // addReceiptTask; that IS the documented receipt contract). The push
-        // channel is alive for token clients when the broker acknowledges the
-        // subscription.
+        // The N3 completion — the MESSAGE-delivery proof (bytecode-verified
+        // against spring-messaging 7.0.9: SimpleBrokerMessageHandler carries
+        // ZERO receipt support — receipts are the EXTERNAL broker relay's
+        // feature; the simple broker acknowledges a subscription only by
+        // DELIVERING to it). The push channel is alive for token clients when
+        // a server-side push to the authenticated principal's own topic
+        // actually ARRIVES at the subscribed session — the same delivery path
+        // NotificationService drives in production.
+        CompletableFuture<String> pushed = new CompletableFuture<>();
         StompHeaders subscribe = new StompHeaders();
         subscribe.setDestination("/topic/notifications/" + USER);
-        subscribe.setReceipt("sub-receipt-" + UUID.randomUUID());
-        StompSession.Subscription subscription = session.subscribe(subscribe, new StompFrameHandler() {
+        session.subscribe(subscribe, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return String.class;
@@ -186,15 +193,21 @@ class WebSocketTokenAuthenticationIntegrationTest {
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                // MESSAGE frames for the notification topic — none in this
-                // test; the subscription RECEIPT is the channel-alive proof.
+                // MESSAGE frames for the notification topic — the
+                // channel-alive proof itself.
+                pushed.complete(String.valueOf(payload));
             }
         });
-        CompletableFuture<String> subscriptionReceipt = new CompletableFuture<>();
-        subscription.addReceiptTask(() -> subscriptionReceipt.complete(subscription.getReceiptId()));
 
-        String receiptId = subscriptionReceipt.get(10, TimeUnit.SECONDS);
-        assertThat(receiptId).isNotBlank();
+        // The server-side push, retried while the broker's async subscription
+        // registration settles (each send delivers to whatever is registered
+        // by then — one landing completes the proof).
+        for (int attempt = 0; attempt < 6 && !pushed.isDone(); attempt++) {
+            Thread.sleep(300);
+            messagingTemplate.convertAndSend("/topic/notifications/" + USER, "s4-channel-alive");
+        }
+
+        assertThat(pushed.get(10, TimeUnit.SECONDS)).isEqualTo("s4-channel-alive");
 
         session.disconnect();
     }
