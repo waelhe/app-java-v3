@@ -384,13 +384,22 @@ public class PaymentsService implements PaymentsSpi {
 
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    public Payment refundPayment(UUID paymentId) {
+    public RefundedPayment refundPayment(UUID paymentId) {
         return refundPayment(paymentId, null);
     }
 
+    /**
+     * S7 carrier (the {@link ProcessIntentResult} shape): the refunded
+     * payment together with its intent — the response layer needs the
+     * intent's ISO 4217 currency to answer a complete money shape, and the
+     * refund flow already loads both in one transaction. Domain consumers
+     * (the dispute refund adapter) read {@link #payment()}.
+     */
+    public record RefundedPayment(Payment payment, PaymentIntent intent) {}
+
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
-    public Payment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())
@@ -427,7 +436,7 @@ public class PaymentsService implements PaymentsSpi {
                 log.info("Remote refund {} for payment {} is pending at the provider — local books"
                                 + " await the charge.refunded webhook (nothing refunded yet: {} cents)",
                         remote.refundId(), paymentId, remote.refundedTotalCents());
-                return payment;
+                return new RefundedPayment(payment, intent);
             }
             if (!"succeeded".equals(remote.status())) {
                 throw new ConflictException("Remote refund " + remote.refundId() + " for payment "
@@ -438,7 +447,7 @@ public class PaymentsService implements PaymentsSpi {
             paymentIntentRepository.save(intent);
             eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
             eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
-            return payment;
+            return new RefundedPayment(payment, intent);
         }
         boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());
         if (isFullRefund) {
@@ -451,7 +460,7 @@ public class PaymentsService implements PaymentsSpi {
         paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
-        return payment;
+        return new RefundedPayment(payment, intent);
     }
 
     /**

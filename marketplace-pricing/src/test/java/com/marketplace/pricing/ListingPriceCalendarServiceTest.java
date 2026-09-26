@@ -97,6 +97,7 @@ class ListingPriceCalendarServiceTest {
         ListingCalendarResponse calendar = service.getCalendar(LISTING, authentication);
 
         assertEquals(LISTING, calendar.listingId());
+        assertEquals("SAR", calendar.currency(), "S7: the listing's currency rides the calendar");
         assertNull(calendar.weekendRule(), "no weekend rule — the flat model");
         assertTrue(calendar.seasonalRates().isEmpty());
     }
@@ -113,6 +114,7 @@ class ListingPriceCalendarServiceTest {
 
         assertEquals(new BigDecimal("1.2"), calendar.weekendRule().multiplier());
         assertEquals(20_000L, calendar.seasonalRates().getFirst().priceCents());
+        assertEquals("SAR", calendar.currency(), "S7: the listing's currency rides the calendar");
     }
 
     @Test

@@ -105,13 +105,18 @@ public class ListingPriceCalendarService {
      */
     @Transactional(readOnly = true)
     public ListingCalendarResponse getCalendar(UUID listingId, Authentication authentication) {
-        requireOwnedListing(listingId, authentication);
+        // S7: the listing info is loaded once — the ownership check consumes
+        // its providerId and the response carries its ISO 4217 currency (the
+        // money context of every amount in the calendar).
+        ListingPriceProvider.ListingInfo info = listingPriceProvider.getListingInfo(listingId);
+        verifyOwnership(info.providerId(), authentication);
         ListingWeekendRule weekendRule = weekendRuleRepository.findByListingId(listingId).orElse(null);
         List<SeasonalRateResponse> rates = seasonalRateRepository
                 .findByListingIdOrderByFromDateAsc(listingId).stream()
                 .map(ListingPriceCalendarService::toSeasonalRateResponse)
                 .toList();
         return new ListingCalendarResponse(listingId,
+                info.currency(),
                 weekendRule == null ? null : toWeekendRuleResponse(weekendRule),
                 rates);
     }

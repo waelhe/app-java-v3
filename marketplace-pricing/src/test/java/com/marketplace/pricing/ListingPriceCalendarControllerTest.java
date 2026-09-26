@@ -28,7 +28,7 @@ class ListingPriceCalendarControllerTest {
     @Test
     void getCalendar_returnsTheServiceBody() {
         UUID listingId = UUID.randomUUID();
-        ListingCalendarResponse body = new ListingCalendarResponse(listingId, null, java.util.List.of());
+        ListingCalendarResponse body = new ListingCalendarResponse(listingId, "SAR", null, java.util.List.of());
         when(calendarService.getCalendar(listingId, authentication)).thenReturn(body);
 
         assertEquals(body, controller.getCalendar(listingId, authentication));
