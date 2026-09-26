@@ -308,10 +308,18 @@ public class UserService implements IdentitySpi {
         }
 
         // The counting constraint protects the authority REMOVAL (an
-        // ADMIN→anything change), exactly like the disable surface it was
-        // built for — same lock, same FOR UPDATE serialization rationale.
-        if (previous == UserRole.ADMIN && target != UserRole.ADMIN
-                && stored.isEnabled() && hasAdminAuthority(stored)) {
+        // anything→non-ADMIN replacement of an enabled account that HOLDS
+        // ROLE_ADMIN), exactly like the disable surface it was built for —
+        // same lock, same FOR UPDATE serialization rationale (concurrent
+        // admin removals serialize on the counted rows). CodeRabbit round 1,
+        // adopted from the root: the decision reads the STORED authority (the
+        // login-side rows this update is about to replace), never
+        // {@code previous} (the users.role mirror) — a drifted pair (role
+        // CONSUMER, authority ROLE_ADMIN — the pre-fix stock) must still hit
+        // the guard, because what the replacement removes is the ROLE_ADMIN
+        // row; and a reverse drift (role ADMIN, authority gone) removes
+        // nothing and correctly skips.
+        if (target != UserRole.ADMIN && stored.isEnabled() && hasAdminAuthority(stored)) {
             List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
             if (activeAdmins.size() <= 1) {
                 throw new ConflictException("Cannot remove the last active ADMIN role");

@@ -291,6 +291,51 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUserRole_theGuardReadsTheStoredAuthorityNotTheDriftedRoleMirror() {
+        // CodeRabbit round 1 (adopted from the root): the pre-fix drift stock
+        // — users.role says CONSUMER while the login side still holds
+        // ROLE_ADMIN. The replacement is about to remove that authority, so
+        // the counting constraint MUST engage even though the domain mirror
+        // never said ADMIN.
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.CONSUMER);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("target-user"));
+
+        assertThrows(ConflictException.class,
+                () -> userService.updateUserRole(id, "CONSUMER", "admin-actor"));
+
+        verify(userDetailsManager, never()).updateUser(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void updateUserRole_theGuardSkipsAReverseDriftThatRemovesNothing() {
+        // The mirror image: users.role says ADMIN but the login side has no
+        // ROLE_ADMIN row (a drifted stock in the other direction) — the
+        // replacement writes ROLE_CONSUMER over authorities that held none,
+        // so nothing admin-shaped is removed and the constraint correctly
+        // stays out of the way.
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "CONSUMER"));
+
+        userService.updateUserRole(id, "CONSUMER", "admin-actor");
+
+        ArgumentCaptor<UserDetails> captured = ArgumentCaptor.forClass(UserDetails.class);
+        verify(userDetailsManager).updateUser(captured.capture());
+        assertTrue(captured.getValue().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
+        // No admin-removal guard query ran — the lock is only for removals.
+        verify(jdbcTemplate, never()).queryForList(anyString(), eq(String.class));
+    }
+
+    @Test
     void updateUserRole_throwsWhenNotFound() {
         UUID id = UUID.randomUUID();
         when(userRepository.findById(id)).thenReturn(Optional.empty());
