@@ -153,7 +153,9 @@ class WebSocketTokenAuthenticationIntegrationTest {
         String accessToken = loginGateAccessToken();
         WebSocketStompClient stompClient = stompClient();
 
-        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter();
+        // Spring Framework 7 declares the adapter class itself abstract —
+        // the empty anonymous subclass is the minimal concrete handler.
+        StompSessionHandlerAdapter sessionHandler = new StompSessionHandlerAdapter() { };
 
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + accessToken);
