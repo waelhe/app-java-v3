@@ -291,6 +291,30 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUserRole_theAdvisoryInvariantLockPrecedesTheCountingRead() {
+        // CodeRabbit round 2 (adopted): every admin-removal decision
+        // serializes on ONE transaction-scoped advisory lock BEFORE the
+        // counting read — the ORDER is the guarantee. The row-level FOR
+        // UPDATE alone can leave the EXISTS subquery on a pre-wait snapshot
+        // (READ COMMITTED EvalPlanQual), letting two concurrent removals each
+        // count two on a two-admin system; the advisory lock makes the waiter
+        // re-count the committed truth instead.
+        UUID id = UUID.randomUUID();
+        User user = User.create("target-user", "t@b.com", "Target", UserRole.ADMIN);
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername("target-user"))
+                .thenReturn(userDetails(true, "ADMIN"));
+        when(jdbcTemplate.queryForList(eq(UserService.LOCK_ACTIVE_ADMINS), eq(String.class)))
+                .thenReturn(List.of("admin-one", "admin-two"));
+
+        userService.updateUserRole(id, "CONSUMER", "admin-actor");
+
+        var inOrder = inOrder(jdbcTemplate);
+        inOrder.verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+        inOrder.verify(jdbcTemplate).queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
+    }
+
+    @Test
     void updateUserRole_theGuardReadsTheStoredAuthorityNotTheDriftedRoleMirror() {
         // CodeRabbit round 1 (adopted from the root): the pre-fix drift stock
         // — users.role says CONSUMER while the login side still holds
@@ -543,6 +567,12 @@ class UserServiceTest {
 
         userService.updateUserStatus(id, "DISABLED", "handover", "admin-actor");
 
+        // CodeRabbit round 2 (adopted): the disable surface serializes on the
+        // same advisory invariant lock BEFORE its counting read.
+        var inOrder = inOrder(jdbcTemplate);
+        inOrder.verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+        inOrder.verify(jdbcTemplate).queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
+
         verify(userDetailsManager).updateUser(any());
     }
 
@@ -649,6 +679,11 @@ class UserServiceTest {
                 () -> userService.pseudonymizeAccount(id, "x", "admin-actor"));
 
         assertThat(ex.getMessage()).contains("last active ADMIN");
+        // CodeRabbit round 2 (adopted): the pseudonymize surface serializes on
+        // the same advisory invariant lock BEFORE its counting read.
+        var inOrder = inOrder(jdbcTemplate);
+        inOrder.verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+        inOrder.verify(jdbcTemplate).queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
         verify(userDetailsManager, never()).deleteUser(any());
         verify(jdbcTemplate, never()).update(anyString(), (Object) any());
         verify(eventPublisher, never()).publishEvent(any());

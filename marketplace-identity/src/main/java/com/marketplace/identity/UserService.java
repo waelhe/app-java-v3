@@ -79,6 +79,28 @@ public class UserService implements IdentitySpi {
              FOR UPDATE
             """;
 
+    /**
+     * The serialization point for every active-ADMIN removal (CodeRabbit
+     * round 2, adopted): ONE transaction-scoped advisory lock on ONE stable
+     * key. The row-level {@code FOR UPDATE} in {@link #LOCK_ACTIVE_ADMINS}
+     * serializes transactions on the COUNTED ROWS, but at PostgreSQL READ
+     * COMMITTED a waited-on row is re-checked with EvalPlanQual — the outer
+     * {@code auth_users} row is re-read post-wait while the
+     * {@code auth_authorities} EXISTS subquery can still evaluate against the
+     * pre-wait statement snapshot: two concurrent removals on a two-admin
+     * system can each count two, each pass, and each replace its ROLE_ADMIN
+     * rows — zero admins left standing. The advisory lock closes the window
+     * at the decision level: removal transactions serialize whole, the waiter
+     * re-counts AFTER the leader committed (a fresh snapshot that sees the
+     * replacement), and the second removal answers the same 409. Keyed by
+     * {@code hashtextextended} (stable across sessions) and transaction-scoped
+     * (released at commit/rollback — no unlock path to forget, no orphan lock
+     * on an exception).
+     */
+    static final String LOCK_ACTIVE_ADMIN_INVARIANT = """
+            SELECT pg_advisory_xact_lock(hashtextextended('marketplace.active-admins', 0))
+            """;
+
     public UserService(UserRepository userRepository,
                        ApplicationEventPublisher eventPublisher,
                        UserDetailsManager userDetailsManager,
@@ -320,6 +342,10 @@ public class UserService implements IdentitySpi {
         // row; and a reverse drift (role ADMIN, authority gone) removes
         // nothing and correctly skips.
         if (target != UserRole.ADMIN && stored.isEnabled() && hasAdminAuthority(stored)) {
+            // The advisory lock serializes the decision itself (see
+            // LOCK_ACTIVE_ADMIN_INVARIANT) — the count below then reads a
+            // post-commit truth, not a pre-wait snapshot.
+            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);
             List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
             if (activeAdmins.size() <= 1) {
                 throw new ConflictException("Cannot remove the last active ADMIN role");
@@ -408,9 +434,13 @@ public class UserService implements IdentitySpi {
         }
 
         if (disable && stored.isEnabled() && hasAdminAuthority(stored)) {
-            // The lock is taken BEFORE the guard's decision (see LOCK_ACTIVE_ADMINS):
-            // the counted rows stay locked through the flip, so concurrent
-            // disables serialize on the same set instead of racing the count.
+            // The lock is taken BEFORE the guard's decision (see
+            // LOCK_ACTIVE_ADMINS) — and the advisory invariant lock first
+            // (LOCK_ACTIVE_ADMIN_INVARIANT): the counted rows stay locked
+            // through the flip, and the decision itself is serialized against
+            // every other admin removal, so concurrent disables queue and the
+            // waiter re-counts the committed truth instead of racing it.
+            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);
             List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
             if (activeAdmins.size() <= 1) {
                 throw new ConflictException("Cannot disable the last active ADMIN account");
@@ -540,8 +570,11 @@ public class UserService implements IdentitySpi {
         }
 
         // Step 1 — the last-active-ADMIN counting constraint (L23 verbatim;
-        // the lock rationale on LOCK_ACTIVE_ADMINS applies unchanged).
+        // the lock rationale on LOCK_ACTIVE_ADMINS applies unchanged, and the
+        // advisory invariant lock serializes the decision against every other
+        // admin removal — see LOCK_ACTIVE_ADMIN_INVARIANT).
         if (stored.isEnabled() && hasAdminAuthority(stored)) {
+            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);
             List<String> activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);
             if (activeAdmins.size() <= 1) {
                 throw new ConflictException("Cannot pseudonymize the last active ADMIN account");
