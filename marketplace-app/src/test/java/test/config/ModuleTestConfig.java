@@ -74,7 +74,7 @@ public class ModuleTestConfig {
                         ),
                         new MarketplaceProperties.Security.Session(2),
                         new MarketplaceProperties.Security.OAuth2(
-                                new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
+                                new MarketplaceProperties.Security.OAuth2.Client("", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
                     new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()),
                         // N1 round 3 (CI-measured root): the blank seed — the module
