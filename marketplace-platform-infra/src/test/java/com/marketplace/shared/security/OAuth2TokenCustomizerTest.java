@@ -43,6 +43,54 @@ class OAuth2TokenCustomizerTest {
         assertThat(rolesClaim.toString()).contains("ADMIN", "USER");
     }
 
+    /**
+     * R10 (frontend battery card BE-06): the user-grant access token carries the
+     * login handle as the {@code email} claim — the source the identity module's
+     * {@code syncFromOidc} reads to keep the {@code users} row's email non-null
+     * (the resolver chain displayName → email → "Provider" was falling all the
+     * way through for every pre-registration account).
+     */
+    @Test
+    void customizerAddsEmailClaimToUserGrantAccessTokens() {
+        var principal = new UsernamePasswordAuthenticationToken(
+                "qa-tester@marketplace.dev", null, AuthorityUtils.createAuthorityList("ROLE_PROVIDER"));
+        JwtEncodingContext context = buildContextWithPrincipal(principal,
+                OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.AUTHORIZATION_CODE);
+
+        customizer.customize(context);
+
+        assertThat(context.getClaims().build().getClaims())
+                .containsEntry("email", "qa-tester@marketplace.dev");
+    }
+
+    /** The refresh leg carries it too — /me runs on refreshed tokens, not only first ones. */
+    @Test
+    void customizerAddsEmailClaimToRefreshedUserGrants() {
+        var principal = new UsernamePasswordAuthenticationToken(
+                "qa-tester@marketplace.dev", null, AuthorityUtils.createAuthorityList("ROLE_PROVIDER"));
+        JwtEncodingContext context = buildContextWithPrincipal(principal,
+                OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.REFRESH_TOKEN);
+
+        customizer.customize(context);
+
+        assertThat(context.getClaims().build().getClaims())
+                .containsEntry("email", "qa-tester@marketplace.dev");
+    }
+
+    /** client_credentials principals are clients, not users — a client id is not an email. */
+    @Test
+    void customizerDoesNotAddEmailToClientCredentialsTokens() {
+        var principal = new UsernamePasswordAuthenticationToken(
+                "marketplace-api-client", null, AuthorityUtils.createAuthorityList("ROLE_CLIENT"));
+        JwtEncodingContext context = buildContextWithPrincipal(principal,
+                OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.CLIENT_CREDENTIALS);
+
+        customizer.customize(context);
+
+        assertThat(context.getClaims().build().getClaims())
+                .doesNotContainKey("email");
+    }
+
     @Test
     void customizerAddsAudienceToAccessToken() {
         JwtEncodingContext context = buildContext(
@@ -71,14 +119,20 @@ class OAuth2TokenCustomizerTest {
     private static JwtEncodingContext buildContext(
             List<? extends org.springframework.security.core.GrantedAuthority> authorities,
             OAuth2TokenType tokenType) {
+        var principal = new UsernamePasswordAuthenticationToken("user", null, authorities);
+        return buildContextWithPrincipal(principal, tokenType, AuthorizationGrantType.AUTHORIZATION_CODE);
+    }
+
+    private static JwtEncodingContext buildContextWithPrincipal(
+            org.springframework.security.core.Authentication principal,
+            OAuth2TokenType tokenType,
+            AuthorizationGrantType grantType) {
         RegisteredClient registeredClient = RegisteredClient.withId("test-client")
                 .clientId("test-client")
                 .clientSecret("secret")
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .scope("read")
                 .build();
-
-        var principal = new UsernamePasswordAuthenticationToken("user", null, authorities);
 
         JwsHeader.Builder jwsHeaderBuilder = JwsHeader.with(SignatureAlgorithm.RS256);
         JwtClaimsSet.Builder claimsBuilder = JwtClaimsSet.builder()
@@ -87,6 +141,7 @@ class OAuth2TokenCustomizerTest {
         return JwtEncodingContext.with(jwsHeaderBuilder, claimsBuilder)
                 .registeredClient(registeredClient)
                 .principal(principal)
+                .authorizationGrantType(grantType)
                 .tokenType(tokenType)
                 .build();
     }
