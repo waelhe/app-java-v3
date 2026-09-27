@@ -1,15 +1,12 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.ListingSummary;
-import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.api.SpringPagination;
-import com.marketplace.shared.api.SpringPagination;
-
 import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.PropertyDetailsPort.PropertyView;
 import com.marketplace.shared.api.ProviderListingView;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
