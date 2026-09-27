@@ -3,18 +3,27 @@
 **Setup:** frontend teams develop against the shared **staging** backend
 (`https://app-java-v3-staging-staging.up.railway.app`), never against local
 backend checkouts and never against production. Staging owns its Neon branch,
-its `marketplace-web-staging` client row, and its secret — all managed
+its `marketplace-bff` client row, and its secret — all managed
 backend-side.
 
 ## 1. Frontend `.env` (local, git-ignored)
 
 ```bash
-OAUTH_CLIENT_ID=marketplace-web-staging
+OAUTH_CLIENT_ID=marketplace-bff
 OAUTH_CLIENT_SECRET=<staging-secret-from-backend-team>
 BACKEND_URL=https://app-java-v3-staging-staging.up.railway.app
 # Send this exact redirect_uri:
 # http://localhost:3000/api/auth/callback/marketplace-web
 ```
+
+> **Client id truth (measured 2026-09-26/27, write-battery 33 card BE-07):**
+> the LIVE confidential client on staging is **`marketplace-bff`** (200 +
+> token sweep in the battery's four-way client×environment measurement). The
+> earlier `marketplace-web-staging` row still EXISTS on the staging
+> authorization server (authorize issues a code) but its token exchange
+> answers 401 `invalid_client` — an orphan row whose secret is not the one
+> the backend team hands out. A correct secret against the wrong row fails
+> exactly this way; the doc previously pointed at the orphan.
 
 Backend requirement (verified live): `OAUTH_CLIENT_REDIRECT_URIS` holds the
 localhost callback and the row is confidential (`client_secret_basic`) —
@@ -47,7 +56,8 @@ never reuse it in production (`marketplace-bff` + Railway-managed secret).
   `DelegatingPasswordEncoder` throws on bare hashes and kills boot
   (measured staging outage). Always verify with `bcrypt.checkpw` first.
 - New frontends reuse `qa-tester`-style accounts (CONSUMER+PROVIDER);
-  request them from the backend team — no signup surface exists (see §5).
+  request them from the backend team — or self-register via §5 now that
+  the surface exists.
 
 ## 4. Adding ANOTHER frontend (no code changes)
 
@@ -59,12 +69,16 @@ automatic on next boot). A second *production* confidential client needs
 the multi-client extension (deferred architectural decision — single-slot
 design collides on cloned DBs: stable row UUID vs copied rows).
 
-## 5. Signup: deliberately absent
+## 5. Signup: the registration surface exists
 
-No `POST /register` exists backend- or frontend-side (measured across both
-repos). Onboarding is closed: seed + admin/user creation by the backend
-team. Opening it is an architectural decision (abuse controls, provider
-verification queue, invite tokens) — not a missing endpoint.
+`POST /auth/register` is live and published in the OpenAPI contract
+(measured: the operation is present in the staging `/v3/api-docs`; added by
+the S1/B1 registration surface — profile row and login rows in one
+transaction, CONSUMER role, email capped at 50 chars per the login store's
+domain, password 8–72 bytes per bcrypt's ceiling). Onboarding is OPEN:
+self-registration first, backend-seeded accounts for specific roles on
+request. (The previous "deliberately absent" text was true when written —
+measured false by write-battery 33 card BE-07 — and is corrected here.)
 
 ## 6. Domain hygiene (learned the hard way)
 
