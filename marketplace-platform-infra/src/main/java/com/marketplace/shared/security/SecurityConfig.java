@@ -37,6 +37,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -645,6 +646,20 @@ public class SecurityConfig {
      *       How-to: Customize JWT Claims</a>.</li>
      *   <li>{@code aud} — the resource server audience per
      *       <a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3">RFC 7519 §4.1.3</a>.</li>
+     *   <li>{@code email} — the login handle of the user principal, on the
+     *       user-grant access tokens only (authorization_code/refresh_token).
+     *       R10 (frontend battery card BE-06): the identity module's
+     *       {@code syncFromOidc} bootstraps its {@code users} row from the
+     *       ACCESS token's claims, and a token without an {@code email}
+     *       claim left the row's email and displayName null — so every
+     *       listing surfaced the resolver's terminal fallback "Provider"
+     *       (measured live: {@code providerName: "Provider"} on the public
+     *       page). For this authorization server the login username IS the
+     *       email (the registration surface makes it so; {@code auth_users}
+     *       keys on it), so the principal name is the claim's honest source.
+     *       The same official customization guide as {@code roles}. Not
+     *       added on {@code client_credentials} tokens — those principals
+     *       are clients, not users, and a client id is not an email.</li>
      * </ul>
      *
      * <p>The {@code aud} claim is set with a mutable {@code ArrayList} on purpose:
@@ -664,6 +679,11 @@ public class SecurityConfig {
     OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
         return context -> {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+                boolean userGrant = AuthorizationGrantType.AUTHORIZATION_CODE.equals(context.getAuthorizationGrantType())
+                        || AuthorizationGrantType.REFRESH_TOKEN.equals(context.getAuthorizationGrantType());
+                if (userGrant) {
+                    context.getClaims().claim("email", context.getPrincipal().getName());
+                }
                 context.getClaims()
                         .claim("roles", context.getPrincipal().getAuthorities().stream()
                                 .map(org.springframework.security.core.GrantedAuthority::getAuthority)
