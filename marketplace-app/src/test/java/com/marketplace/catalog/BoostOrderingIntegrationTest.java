@@ -287,7 +287,7 @@ class BoostOrderingIntegrationTest {
         var page = catalogService.searchByCriteriaFaceted(
                 new SearchCriteria(null, "home", null, null),
                 com.marketplace.shared.api.PagedRequest.of(0, 10,
-                        new com.marketplace.shared.api.PagedRequest.Order("priceCents", false))));
+                        new com.marketplace.shared.api.PagedRequest.Order("priceCents", false)));
         assertThat(page.map(ListingSummary::id).content())
                 .containsExactly(ID_03, ID_02, ID_01);
         assertThat(page.totalElements()).isEqualTo(3L);
