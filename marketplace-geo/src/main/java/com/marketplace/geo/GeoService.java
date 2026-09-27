@@ -159,10 +159,23 @@ public class GeoService implements GeoLookupPort {
      * Deletes a node — refused while children exist (409): removing a
      * parent silently would orphan a subtree, and cascading is a policy
      * the tree refuses to guess (the acceptance criterion).
+     *
+     * <p>R10 hardening (frontend battery BE-01/BE-03 defense-in-depth): the
+     * level-0 root is seed-owned and refuses deletion even when childless —
+     * the children guard alone protected it only while descendants existed,
+     * so a bottom-up manual deletion could reach the root and leave
+     * {@code getTree()}'s "rows without root" state. One tree, by design
+     * (the same design {@link #createChild} documents: the admin surface
+     * never creates a second country).
      */
     @PreAuthorize("hasRole('ADMIN')")
     public void delete(UUID id) {
         GeoLocation location = requireExisting(id);
+        if (location.getLevel() == 0) {
+            throw new ConflictException(
+                    "geo location " + id + " is the seed-owned root — one tree by design;"
+                            + " it cannot be deleted");
+        }
         if (repository.existsByParentId(id)) {
             throw new ConflictException(
                     "geo location " + id + " has children — move or delete them first");
