@@ -4,12 +4,11 @@ import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
 import com.marketplace.shared.api.SearchCriteria;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -41,7 +40,8 @@ import java.util.UUID;
 @Component
 public class SavedSearchMatcher {
 
-    private static final Pageable EXISTENCE_PROBE = PageRequest.of(0, 1);
+    /** The existence probe: page 0, size 1, unsorted — membership is all that is asked. */
+    private static final PagedRequest EXISTENCE_PROBE = PagedRequest.of(0, 1);
 
     private final CatalogSearchPort catalogSearchPort;
     private final GeoLookupPort geoLookupPort;
@@ -102,7 +102,7 @@ public class SavedSearchMatcher {
         // forms the dispatch composes.
         String query = criteria.query();
         boolean textQuery = query != null && !query.isBlank();
-        Page<ListingSummary> page = textQuery
+        PagedResponse<ListingSummary> page = textQuery
                 ? catalogSearchPort.searchFullTextRestrictedToListings(query.trim(), single, EXISTENCE_PROBE)
                 : catalogSearchPort.searchByCriteriaRestrictedToListings(criteria, single, EXISTENCE_PROBE);
         return !page.isEmpty();

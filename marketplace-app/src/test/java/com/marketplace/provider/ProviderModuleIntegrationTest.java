@@ -116,10 +116,11 @@ class ProviderModuleIntegrationTest {
                 .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ReviewStats(
                         ownerUserId, 4.5, 12)));
         when(catalogSearchPort.listActiveByProvider(any(), any()))
-                .thenReturn(new org.springframework.data.domain.PageImpl<>(
-                        java.util.List.of(new com.marketplace.shared.api.ListingSummary(
-                                UUID.randomUUID(), "Flat", "APARTMENT",
-                                java.math.BigDecimal.TEN, "SAR", "Broker"))));
+                .thenReturn(com.marketplace.shared.api.PagedResponse.of(
+                        new org.springframework.data.domain.PageImpl<>(
+                                java.util.List.of(new com.marketplace.shared.api.ListingSummary(
+                                        UUID.randomUUID(), "Flat", "APARTMENT",
+                                        java.math.BigDecimal.TEN, "SAR", "Broker")))));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
                 org.springframework.data.domain.PageRequest.of(0, 20));

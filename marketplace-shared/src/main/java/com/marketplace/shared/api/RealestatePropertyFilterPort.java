@@ -1,8 +1,5 @@
 package com.marketplace.shared.api;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import java.math.BigDecimal;
 import java.util.Set;
 import java.util.UUID;
@@ -36,6 +33,14 @@ import java.util.UUID;
  * clause grows with the qualified-results size — sufficient for a
  * Qudsayya-scale catalog by multiples; the closure threshold is a
  * measured 10K qualified listings per typical query.
+ *
+ * <p><b>Neutral pagination:</b> the paged forms speak {@link PagedRequest}
+ * and answer {@link PagedResponse} — no Spring Data type crosses this
+ * interface (pinned by the {@code sharedPortsAreFrameworkNeutral}
+ * architecture rule); the realestate adapter maps the neutral request
+ * onto Spring Data pagination internally. The {@code area} sort marker
+ * rides the request's ordering steps; the distance forms' ORDER BY is
+ * baked in the native queries and reads only the page and size.
  */
 public interface RealestatePropertyFilterPort {
 
@@ -52,19 +57,19 @@ public interface RealestatePropertyFilterPort {
     Set<UUID> findListingIdsMatchingRestricted(PropertyCriteria criteria, Set<UUID> providerIds);
 
     /**
-     * A DB-side paged slice of the matches, ordered per the pageable
-     * (the {@code area} sort marker maps to the realestate-owned
+     * A DB-side paged slice of the matches, ordered per the request's
+     * ordering steps (the {@code area} sort marker maps to the realestate-owned
      * {@code areaM2} column + id tiebreak). {@code activeListingIds} is
      * the catalog-resolved ACTIVE set — the realestate table does not know
      * listing status (and must not), so the caller supplies it.
      */
-    Page<PropertyMatch> findMatchingPaged(PropertyCriteria criteria,
-                                          Set<UUID> activeListingIds, Pageable pageable);
+    PagedResponse<PropertyMatch> findMatchingPaged(PropertyCriteria criteria,
+                                                   Set<UUID> activeListingIds, PagedRequest request);
 
     /** The provider-restricted paged form (window + area sort). */
-    Page<PropertyMatch> findMatchingPagedRestricted(PropertyCriteria criteria,
-                                                    Set<UUID> activeListingIds,
-                                                    Set<UUID> providerIds, Pageable pageable);
+    PagedResponse<PropertyMatch> findMatchingPagedRestricted(PropertyCriteria criteria,
+                                                             Set<UUID> activeListingIds,
+                                                             Set<UUID> providerIds, PagedRequest request);
 
     // ------------------------------------------------------------------
     // P1 (postgis integration plan §D-P3/D-P4): the radius operations.
@@ -117,17 +122,17 @@ public interface RealestatePropertyFilterPort {
      * computes display distance from the listing coordinates it already
      * holds; the server orders by it, that is all).
      */
-    Page<UUID> findWithinRadiusPaged(BigDecimal latitude,
-                                     BigDecimal longitude,
-                                     long radiusMeters,
-                                     Set<UUID> activeListingIds, Pageable pageable);
+    PagedResponse<UUID> findWithinRadiusPaged(BigDecimal latitude,
+                                            BigDecimal longitude,
+                                            long radiusMeters,
+                                            Set<UUID> activeListingIds, PagedRequest request);
 
     /** The provider-restricted paged form (window + distance sort). */
-    Page<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude,
-                                               BigDecimal longitude,
-                                               long radiusMeters,
-                                               Set<UUID> activeListingIds,
-                                               Set<UUID> providerIds, Pageable pageable);
+    PagedResponse<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude,
+                                                       BigDecimal longitude,
+                                                       long radiusMeters,
+                                                       Set<UUID> activeListingIds,
+                                                       Set<UUID> providerIds, PagedRequest request);
 
     /**
      * One matching listing with the sort-relevant field (the area). The

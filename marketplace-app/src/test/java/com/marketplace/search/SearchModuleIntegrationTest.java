@@ -4,6 +4,7 @@ import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.PagedResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -100,7 +101,7 @@ class SearchModuleIntegrationTest {
 
     @Test
     void searchAll_returnsEmptyPage() {
-        when(catalogSearchPort.listActive(any())).thenReturn(Page.empty());
+        when(catalogSearchPort.listActive(any())).thenReturn(PagedResponse.of(Page.empty()));
         var page = searchService.searchAll(Pageable.ofSize(10));
         assertThat(page).isEmpty();
     }
@@ -111,7 +112,7 @@ class SearchModuleIntegrationTest {
         when(availabilityLookupPort.findAvailableProviderIds(any(), any()))
                 .thenReturn(Set.of(availableProvider));
         when(catalogSearchPort.searchByCriteriaRestricted(any(), any(), any()))
-                .thenReturn(Page.empty());
+                .thenReturn(PagedResponse.of(Page.empty()));
 
         var page = searchService.search(
                 new com.marketplace.shared.api.SearchCriteria(

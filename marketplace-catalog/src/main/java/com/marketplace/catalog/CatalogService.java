@@ -17,6 +17,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -80,8 +83,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-active-v2", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> listActive(Pageable pageable) {
+    @Cacheable(cacheNames = "catalog-active-v2", key = "#request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> listActive(PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         // L37: the derived query rides the official Specifications path now —
         // boost-first + the L32 total order (see findBoostFirst). The cache
         // key keeps the ARGUMENT pageable's shape (page/size/sort), so the
@@ -89,17 +93,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // (arbitrary pre-L37 order) age out within the 1h TTL.
         Page<ProviderListing> page = findBoostFirst(
                 ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
+    @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(
                 ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)
                         .and(ProviderListingSpecifications.hasCategory(category)), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Transactional(readOnly = true)
@@ -134,11 +139,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable) {
-        return toSummaryPage(findBoostFirst(
+    public PagedResponse<ListingSummary> listActiveByProvider(UUID providerUserId, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
+        return PagedResponse.of(toSummaryPage(findBoostFirst(
                 ProviderListingSpecifications.hasProviderId(providerUserId)
                         .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),
-                pageable));
+                pageable)));
     }
 
     @Transactional(readOnly = true)
@@ -149,8 +155,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-search-v2", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
+    @Cacheable(cacheNames = "catalog-search-v2", key = "#query + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> searchFullText(String query, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         // L37: one read, one "now" — the FTS page and its typo-tolerance
         // fallback share the same instant, so the boost state cannot
         // straddle a window boundary between them.
@@ -165,23 +172,24 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
             // Cached as the final result of this query either way.
             page = listingRepository.searchSimilar(query, now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteria(SearchCriteria criteria, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteria(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), clock.instant(), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /**
      * L27 (feature-expansion roadmap §5): the window-restricted criteria
      * search — the same branch coverage and price mapping as
-     * {@link #searchByCriteria(SearchCriteria, Pageable)} (category / price
+     * {@link #searchByCriteria(SearchCriteria, PagedRequest)} (category / price
      * / browse-all are optional predicates of the same query), plus the
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
@@ -191,17 +199,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, clock.instant(), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /**
      * L27: the window-restricted full-text search — mirrors
-     * {@link #searchFullText(String, Pageable)} (official
+     * {@link #searchFullText(String, PagedRequest)} (official
      * {@code websearch_to_tsquery} ranking, plus the pg_trgm
      * typo-tolerance fallback), with the
      * {@code provider_id IN (:providerIds)} restriction applied to both
@@ -216,23 +225,26 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
         Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, now, pageable);
         if (page.getTotalElements() == 0) {
             page = listingRepository.searchSimilarRestricted(query, providerIds, now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
-        return listByCategory(category, pageable);
+        return SpringPagination.toPage(
+                listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActiveSummary(Pageable pageable) {
-        return listActive(pageable);
+        return SpringPagination.toPage(
+                listActive(SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     @Transactional(readOnly = true)
@@ -313,20 +325,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
+    public PagedResponse<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
                                                                      Set<UUID> listingIds,
-                                                                     Pageable pageable) {
+                                                                     PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         var predicates = criteriaSpecification(criteria)
                 .and(ProviderListingSpecifications.hasListingIdIn(listingIds));
         Page<ProviderListing> page = findBoostFirst(predicates, pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /** The shared optional-predicate specification of the faceted paths. */
@@ -347,13 +361,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
         Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, now, pageable);
         if (page.getTotalElements() == 0) {
             page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override

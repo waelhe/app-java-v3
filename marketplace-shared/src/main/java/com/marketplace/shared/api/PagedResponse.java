@@ -25,4 +25,27 @@ public record PagedResponse<T>(
                 page.isLast()
         );
     }
+
+    /**
+     * The honest empty page for a neutral request — the ports'
+     * early-exit form (an empty whitelist or empty restriction set is an
+     * honest empty page, never a query): same shape
+     * {@code Page.empty(pageable)} produced, derived without any
+     * framework type.
+     */
+    public static <T> PagedResponse<T> empty(PagedRequest request) {
+        return new PagedResponse<>(
+                List.of(),
+                request.page(),
+                request.size(),
+                0L,
+                0,
+                true
+        );
+    }
+
+    /** Whether the page carries no content ({@code Page.isEmpty()} analog). */
+    public boolean isEmpty() {
+        return content.isEmpty();
+    }
 }
