@@ -158,6 +158,25 @@ class GeoServiceTest {
         verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
     }
 
+    /**
+     * R10 hardening (frontend battery BE-01/BE-03 defense-in-depth): the
+     * seed-owned root refuses deletion even when childless — the children
+     * guard alone left a bottom-up deletion able to reach the root and strand
+     * the tree in getTree()'s "rows without root" state.
+     */
+    @Test
+    void delete_seedOwnedRoot_is409EvenWhenChildless() {
+        UUID id = root.getId();
+        when(repository.findById(id)).thenReturn(Optional.of(root));
+        when(repository.existsByParentId(id)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.delete(id))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("seed-owned root")
+                .hasMessageContaining("one tree by design");
+        verify(repository, never()).delete(any(GeoLocation.class));
+    }
+
     @Test
     void update_reSlugToExistingSlug_is409() {
         UUID id = city.getId();

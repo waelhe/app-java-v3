@@ -28,4 +28,13 @@ ON CONFLICT (id) DO UPDATE SET
     level     = EXCLUDED.level,
     name_ar   = EXCLUDED.name_ar,
     name_en   = EXCLUDED.name_en,
-    slug      = EXCLUDED.slug;
+    slug      = EXCLUDED.slug,
+    -- R10 hardening (frontend battery BE-01/BE-03 defense-in-depth): the seed's
+    -- fixed-id skeleton rows are reference data and converge VISIBLE — a row
+    -- soft-deleted through the admin surface is restored by the seed's next
+    -- re-run (checksum change), the same convergence this file already applies
+    -- to every other column. Without it a soft-deleted root stayed invisible
+    -- forever (Hibernate @SoftDelete filters it out of findAll) while its
+    -- children remained — getTree()'s "rows without root" state. Admin-created
+    -- rows are never touched here: their ids never conflict.
+    is_deleted = FALSE;
