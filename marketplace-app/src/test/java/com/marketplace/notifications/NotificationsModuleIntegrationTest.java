@@ -99,7 +99,7 @@ class NotificationsModuleIntegrationTest {
 
         assertThat(page.getTotalElements()).isEqualTo(2);   // the other user's rows never leak
         assertThat(page.getNumberOfElements()).isEqualTo(1); // the page honors its size
-        assertThat(page.getContent()).allMatch(n -> n.getRecipientId().equals(me));
+        assertThat(page.getContent()).allMatch(n -> n.recipientId().equals(me));
     }
 
     @Test

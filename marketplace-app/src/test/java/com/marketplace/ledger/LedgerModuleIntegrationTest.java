@@ -95,7 +95,7 @@ class LedgerModuleIntegrationTest {
     void creditFromPayment_createsBalance() {
         var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L);
         assertThat(balance).isNotNull();
-        assertThat(balance.getAvailableCents()).isEqualTo(1000L);
+        assertThat(balance.availableCents()).isEqualTo(1000L);
     }
 
     /**
@@ -143,8 +143,8 @@ class LedgerModuleIntegrationTest {
      */
         awaitBalance(providerId, priceCents - commissionCents);
 
-        ProviderBalance balance = ledgerService.getBalanceForOwner(providerId);
-        assertThat(balance.getAvailableCents()).isEqualTo(priceCents - commissionCents);
+        var balance = ledgerService.getBalanceForOwner(providerId);
+        assertThat(balance.availableCents()).isEqualTo(priceCents - commissionCents);
 
         Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
         assertThat(statement.getContent())
@@ -177,7 +177,7 @@ class LedgerModuleIntegrationTest {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
         while (System.nanoTime() < deadline) {
-            last = ledgerService.getBalance(providerId).getAvailableCents();
+            last = ledgerService.getBalance(providerId).availableCents();
             if (last == expectedCents) {
                 return;
             }

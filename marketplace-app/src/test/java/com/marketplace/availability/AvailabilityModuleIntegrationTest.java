@@ -55,11 +55,11 @@ class AvailabilityModuleIntegrationTest {
         var endsAt = startsAt.plusSeconds(3600);
 
         var slot = availabilityService.createSlot(providerId, startsAt, endsAt);
-        assertThat(slot.getId()).isNotNull();
-        assertThat(slot.getProviderId()).isEqualTo(providerId);
+        assertThat(slot.id()).isNotNull();
+        assertThat(slot.providerId()).isEqualTo(providerId);
 
         var slots = availabilityService.getSlots(providerId, startsAt.minusSeconds(60), endsAt.plusSeconds(60));
         assertThat(slots).isNotEmpty();
-        assertThat(slots.stream().anyMatch(s -> s.getId().equals(slot.getId()))).isTrue();
+        assertThat(slots.stream().anyMatch(s -> s.id().equals(slot.id()))).isTrue();
     }
 }

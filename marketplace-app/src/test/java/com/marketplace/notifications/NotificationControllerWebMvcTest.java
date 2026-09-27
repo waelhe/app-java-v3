@@ -47,9 +47,9 @@ class NotificationControllerWebMvcTest {
     @Test
     @WithMockUser
     void getMine_returnsPagedFeed() throws Exception {
-        org.springframework.data.domain.Page<Notification> page =
+        org.springframework.data.domain.Page<NotificationResponse> page =
                 new org.springframework.data.domain.PageImpl<>(
-                        java.util.List.<Notification>of(),
+                        java.util.List.<NotificationResponse>of(),
                         org.springframework.data.domain.PageRequest.of(0, 20), 0);
         when(service.getMyNotifications(any(), any())).thenReturn(page);
 
@@ -69,9 +69,9 @@ class NotificationControllerWebMvcTest {
     @Test
     @WithMockUser
     void getMine_acceptsPageAndSize() throws Exception {
-        org.springframework.data.domain.Page<Notification> page =
+        org.springframework.data.domain.Page<NotificationResponse> page =
                 new org.springframework.data.domain.PageImpl<>(
-                        java.util.List.<Notification>of(),
+                        java.util.List.<NotificationResponse>of(),
                         org.springframework.data.domain.PageRequest.of(1, 5), 7);
         when(service.getMyNotifications(any(), any())).thenReturn(page);
 
@@ -101,7 +101,8 @@ class NotificationControllerWebMvcTest {
     @WithMockUser
     void markRead_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
-        when(service.markAsRead(any(), any())).thenReturn(org.mockito.Mockito.mock(Notification.class));
+        when(service.markAsRead(any(), any())).thenReturn(
+                new NotificationResponse(id, null, null, null, true, null, null, null, null, null));
 
         mockMvc.perform(post("/api/v1/notifications/{id}/read", id))
                 .andExpect(status().isOk());
