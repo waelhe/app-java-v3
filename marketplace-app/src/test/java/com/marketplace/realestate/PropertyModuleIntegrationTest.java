@@ -1,5 +1,7 @@
 package com.marketplace.realestate;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.catalog.ProviderListing;
 import com.marketplace.catalog.ProviderListingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -59,10 +60,7 @@ class PropertyModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private RealestateService realestateService;
