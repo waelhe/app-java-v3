@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
@@ -18,6 +19,17 @@ import org.springframework.data.domain.Sort;
  * area/distance markers.
  */
 class SpringPaginationTest {
+
+    @Test
+    void toPagedRequest_unpagedPageable_mapsToTheUnboundedFirstPage() {
+        // Pageable.unpaged() throws from getPageNumber()/getPageSize() (the
+        // documented contract) — the conversion must survive the legal input
+        var request = SpringPagination.toPagedRequest(Pageable.unpaged());
+
+        assertThat(request.page()).isZero();
+        assertThat(request.size()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(request.isSorted()).isFalse();
+    }
 
     @Test
     void toPagedRequest_unsortedPageable_mapsToTheUnsortedRequest() {

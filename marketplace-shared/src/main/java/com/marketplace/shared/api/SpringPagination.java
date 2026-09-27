@@ -37,6 +37,14 @@ public final class SpringPagination {
 
     /** Maps the Spring request onto the neutral port request. */
     public static PagedRequest toPagedRequest(Pageable pageable) {
+        if (!pageable.isPaged()) {
+            // Pageable.unpaged() throws UnsupportedOperationException from
+            // getPageNumber()/getPageSize() (the documented contract) — the
+            // neutral equivalent is the first page with an unbounded size;
+            // every real controller resolution is paged, the unpaged form
+            // is the GraphQL/compatibility surface's vocabulary
+            return PagedRequest.of(0, Integer.MAX_VALUE);
+        }
         if (pageable.getSort().isUnsorted()) {
             return PagedRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         }
