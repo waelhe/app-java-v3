@@ -32,11 +32,12 @@ class AvailabilityControllerTest {
         UUID providerId = UUID.randomUUID();
         Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
         Instant endsAt = Instant.parse("2026-06-01T10:00:00Z");
-        AvailabilitySlot slot = AvailabilitySlot.open(providerId, startsAt, endsAt);
+        AvailabilitySlotResponse slot = AvailabilitySlotResponse.from(
+                AvailabilitySlot.open(providerId, startsAt, endsAt));
 
         when(availabilityService.createSlot(providerId, startsAt, endsAt)).thenReturn(slot);
 
-        ResponseEntity<AvailabilitySlot> result = controller.createSlot(providerId, startsAt, endsAt);
+        ResponseEntity<AvailabilitySlotResponse> result = controller.createSlot(providerId, startsAt, endsAt);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(slot);
@@ -47,11 +48,12 @@ class AvailabilityControllerTest {
         UUID providerId = UUID.randomUUID();
         Instant from = Instant.parse("2026-06-01T00:00:00Z");
         Instant to = Instant.parse("2026-06-30T00:00:00Z");
-        List<AvailabilitySlot> slots = List.of(mock(AvailabilitySlot.class));
+        List<AvailabilitySlotResponse> slots = List.of(AvailabilitySlotResponse.from(
+                AvailabilitySlot.open(providerId, from, to)));
 
         when(availabilityService.getSlots(providerId, from, to)).thenReturn(slots);
 
-        ResponseEntity<List<AvailabilitySlot>> result = controller.getSlots(providerId, from, to);
+        ResponseEntity<List<AvailabilitySlotResponse>> result = controller.getSlots(providerId, from, to);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(slots);
@@ -63,11 +65,12 @@ class AvailabilityControllerTest {
         DayOfWeek dayOfWeek = DayOfWeek.MONDAY;
         LocalTime startTime = LocalTime.of(9, 0);
         LocalTime endTime = LocalTime.of(17, 0);
-        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime);
+        ProviderAvailabilityRuleResponse rule = ProviderAvailabilityRuleResponse.from(
+                ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
 
         when(availabilityService.createRule(providerId, dayOfWeek, startTime, endTime)).thenReturn(rule);
 
-        ResponseEntity<ProviderAvailabilityRule> result = controller.createRule(providerId, dayOfWeek, startTime, endTime);
+        ResponseEntity<ProviderAvailabilityRuleResponse> result = controller.createRule(providerId, dayOfWeek, startTime, endTime);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(rule);
@@ -78,11 +81,12 @@ class AvailabilityControllerTest {
         UUID providerId = UUID.randomUUID();
         Instant startsAt = Instant.parse("2026-07-01T00:00:00Z");
         Instant endsAt = Instant.parse("2026-07-07T00:00:00Z");
-        ProviderTimeOff timeOff = ProviderTimeOff.create(providerId, startsAt, endsAt);
+        ProviderTimeOffResponse timeOff = ProviderTimeOffResponse.from(
+                ProviderTimeOff.create(providerId, startsAt, endsAt));
 
         when(availabilityService.createTimeOff(providerId, startsAt, endsAt)).thenReturn(timeOff);
 
-        ResponseEntity<ProviderTimeOff> result = controller.createTimeOff(providerId, startsAt, endsAt);
+        ResponseEntity<ProviderTimeOffResponse> result = controller.createTimeOff(providerId, startsAt, endsAt);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(timeOff);

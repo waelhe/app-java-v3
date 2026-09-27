@@ -59,15 +59,16 @@ public class AvailabilityService implements AvailabilityPort {
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
-    public AvailabilitySlot createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+    public AvailabilitySlotResponse createSlot(UUID providerId, Instant startsAt, Instant endsAt) {
         AvailabilitySlot saved = repository.save(AvailabilitySlot.open(providerId, startsAt, endsAt));
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
-        return saved;
+        return AvailabilitySlotResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
-    public List<AvailabilitySlot> getSlots(UUID providerId, Instant from, Instant to) {
-        return repository.findByProviderIdAndStartsAtGreaterThanEqualAndEndsAtLessThanEqual(providerId, from, to);
+    public List<AvailabilitySlotResponse> getSlots(UUID providerId, Instant from, Instant to) {
+        return repository.findByProviderIdAndStartsAtGreaterThanEqualAndEndsAtLessThanEqual(providerId, from, to)
+                .stream().map(AvailabilitySlotResponse::from).toList();
     }
 
     @Override
@@ -90,8 +91,9 @@ public class AvailabilityService implements AvailabilityPort {
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
-    public ProviderAvailabilityRule createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
-        return ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime));
+    public ProviderAvailabilityRuleResponse createRule(UUID providerId, java.time.DayOfWeek dayOfWeek, java.time.LocalTime startTime, java.time.LocalTime endTime) {
+        return ProviderAvailabilityRuleResponse.from(
+                ruleRepository.save(ProviderAvailabilityRule.create(providerId, dayOfWeek, startTime, endTime)));
     }
 
     @ApplicationModuleListener
@@ -155,10 +157,10 @@ public class AvailabilityService implements AvailabilityPort {
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Observed(name = "availability.timeoff.create")
-    public ProviderTimeOff createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
+    public ProviderTimeOffResponse createTimeOff(UUID providerId, Instant startsAt, Instant endsAt) {
         ProviderTimeOff saved = timeOffRepository.save(ProviderTimeOff.create(providerId, startsAt, endsAt));
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
-        return saved;
+        return ProviderTimeOffResponse.from(saved);
     }
 
     @Override

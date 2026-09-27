@@ -83,8 +83,9 @@ class ProviderLedgerControllerWebMvcTest {
     @Test
     void getMyBalance_returnsOwnBalance() throws Exception {
         UUID userId = stubOwnProvider();
-        ProviderBalance balance = ProviderBalance.empty(userId);
-        balance.credit(4500L);
+        ProviderBalance credited = ProviderBalance.empty(userId);
+        credited.credit(4500L);
+        ProviderBalanceResponse balance = ProviderBalanceResponse.from(credited);
         when(ledgerService.getBalanceForOwner(userId)).thenReturn(balance);
 
         mockMvc.perform(get("/api/v1/providers/me/ledger/balance"))

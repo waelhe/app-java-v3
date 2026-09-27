@@ -27,7 +27,7 @@ public class AvailabilityController {
     @PostMapping("/providers/{providerId}/availability/slots")
     @Operation(summary = "Create an availability slot",
             description = "Publishes one bookable slot window [startsAt, endsAt) for a provider.")
-    public ResponseEntity<AvailabilitySlot> createSlot(
+    public ResponseEntity<AvailabilitySlotResponse> createSlot(
             @PathVariable UUID providerId,
             @Parameter(description = "Slot start (inclusive), ISO-8601 instant", example = "2026-10-01T14:00:00Z")
             @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startsAt,
@@ -40,7 +40,7 @@ public class AvailabilityController {
     @Operation(summary = "Read a provider's availability",
             description = "The provider's slots in the requested window — the search-side "
                     + "availability source (L27 consumes the same data via a port).")
-    public ResponseEntity<List<AvailabilitySlot>> getSlots(
+    public ResponseEntity<List<AvailabilitySlotResponse>> getSlots(
             @PathVariable UUID providerId,
             @Parameter(description = "Window start, ISO-8601 instant", example = "2026-10-01T00:00:00Z")
             @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
@@ -52,7 +52,7 @@ public class AvailabilityController {
     @PostMapping("/providers/{providerId}/availability/rules")
     @Operation(summary = "Create a weekly availability rule",
             description = "A recurring weekly window the slot generator expands into concrete slots.")
-    public ResponseEntity<ProviderAvailabilityRule> createRule(
+    public ResponseEntity<ProviderAvailabilityRuleResponse> createRule(
             @PathVariable UUID providerId,
             @Parameter(description = "Day of the week the rule applies to", example = "FRIDAY")
             @RequestParam DayOfWeek dayOfWeek,
@@ -67,7 +67,7 @@ public class AvailabilityController {
     @Operation(summary = "Block time off",
             description = "Marks a window unavailable — conflicts with booking and search "
                     + "availability.")
-    public ResponseEntity<ProviderTimeOff> createTimeOff(
+    public ResponseEntity<ProviderTimeOffResponse> createTimeOff(
             @PathVariable UUID providerId,
             @Parameter(description = "Time-off start (inclusive), ISO-8601 instant", example = "2026-10-12T00:00:00Z")
             @RequestParam @NotNull @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startsAt,

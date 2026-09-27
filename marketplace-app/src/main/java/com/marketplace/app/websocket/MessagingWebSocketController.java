@@ -1,7 +1,5 @@
 package com.marketplace.app.websocket;
 
-import com.marketplace.messaging.Message;
-import com.marketplace.messaging.MessageMapper;
 import com.marketplace.messaging.MessageResponse;
 import com.marketplace.messaging.MessagingService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -19,12 +17,9 @@ import java.util.UUID;
 public class MessagingWebSocketController {
 
     private final MessagingService messagingService;
-    private final MessageMapper messageMapper;
 
-    public MessagingWebSocketController(MessagingService messagingService,
-                                        MessageMapper messageMapper) {
+    public MessagingWebSocketController(MessagingService messagingService) {
         this.messagingService = messagingService;
-        this.messageMapper = messageMapper;
     }
 
     @MessageMapping("/chat.sendMessage/{conversationId}")
@@ -33,8 +28,7 @@ public class MessagingWebSocketController {
                                        Principal principal) {
         UUID senderId = authenticatedUserId(principal);
         String content = payload.get("content");
-        Message message = messagingService.sendMessage(conversationId, senderId, content);
-        return messageMapper.toResponse(message);
+        return messagingService.sendMessage(conversationId, senderId, content);
     }
 
     @MessageMapping("/chat.markRead/{conversationId}")

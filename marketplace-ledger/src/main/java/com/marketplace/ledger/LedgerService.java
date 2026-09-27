@@ -30,18 +30,20 @@ public class LedgerService {
      * returns the current balance without writing a zero-impact entry.
      */
     @Observed(name = "ledger.credit.payment")
-    public ProviderBalance creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
+    public ProviderBalanceResponse creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return ProviderBalanceResponse.from(
+                    balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId)));
         }
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return ProviderBalanceResponse.from(
+                    balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId)));
         }
         entryRepository.save(LedgerEntry.paymentCredit(providerId, paymentIntentId, amountCents));
         ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
         balance.credit(amountCents);
-        return balanceRepository.save(balance);
+        return ProviderBalanceResponse.from(balanceRepository.save(balance));
     }
 
     /**
@@ -113,8 +115,9 @@ public class LedgerService {
      * entry has been written yet (read-only projection).
      */
     @Transactional(readOnly = true)
-    public ProviderBalance getBalance(UUID providerId) {
-        return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+    public ProviderBalanceResponse getBalance(UUID providerId) {
+        return ProviderBalanceResponse.from(
+                balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId)));
     }
 
     /**
@@ -141,7 +144,7 @@ public class LedgerService {
      */
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Transactional(readOnly = true)
-    public ProviderBalance getBalanceForOwner(UUID providerId) {
+    public ProviderBalanceResponse getBalanceForOwner(UUID providerId) {
         return getBalance(providerId);
     }
 

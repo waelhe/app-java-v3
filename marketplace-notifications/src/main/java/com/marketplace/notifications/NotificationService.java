@@ -232,9 +232,10 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Notification> getMyNotifications(Authentication authentication, Pageable pageable) {
+    public Page<NotificationResponse> getMyNotifications(Authentication authentication, Pageable pageable) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable);
+        return repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable)
+                .map(NotificationResponse::from);
     }
 
     /**
@@ -248,7 +249,7 @@ public class NotificationService {
     }
 
     @Observed(name = "notification.mark.read")
-    public Notification markAsRead(UUID id, Authentication authentication) {
+    public NotificationResponse markAsRead(UUID id, Authentication authentication) {
         Notification notification = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + id));
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -256,6 +257,13 @@ public class NotificationService {
             throw new AccessDeniedException("Not allowed to access this notification");
         }
         notification.markRead();
-        return notification;
+        // Flush the managed update BEFORE mapping the response so the wire
+        // metadata (version, updatedAt) reflects the persisted row, not the
+        // pre-flush in-memory state (CodeRabbit review on #427; the same
+        // staleness existed when the controller serialized the entity — the
+        // DTO boundary makes it explicit and fixable). saveAndFlush runs in
+        // the repository's own transaction (SimpleJpaRepository pattern).
+        repository.saveAndFlush(notification);
+        return NotificationResponse.from(notification);
     }
 }

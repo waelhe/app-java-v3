@@ -77,9 +77,9 @@ class LedgerServiceSecurityTest {
         existing.credit(4500L);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
 
-        ProviderBalance result = ledgerService.getBalanceForOwner(providerId);
+        ProviderBalanceResponse result = ledgerService.getBalanceForOwner(providerId);
 
-        assertThat(result.getAvailableCents()).isEqualTo(4500L);
+        assertThat(result.availableCents()).isEqualTo(4500L);
     }
 
     @Test

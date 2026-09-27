@@ -27,10 +27,10 @@ class LedgerControllerTest {
         UUID providerId = UUID.randomUUID();
         UUID paymentIntentId = UUID.randomUUID();
         long amountCents = 5000;
-        var balance = ProviderBalance.empty(providerId);
+        var balance = ProviderBalanceResponse.from(ProviderBalance.empty(providerId));
         when(ledgerService.creditFromPayment(providerId, paymentIntentId, amountCents)).thenReturn(balance);
 
-        ResponseEntity<ProviderBalance> result = controller.creditProvider(providerId, paymentIntentId, amountCents);
+        ResponseEntity<ProviderBalanceResponse> result = controller.creditProvider(providerId, paymentIntentId, amountCents);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(balance);
@@ -39,10 +39,10 @@ class LedgerControllerTest {
     @Test
     void getProviderBalanceReturnsOk() {
         UUID providerId = UUID.randomUUID();
-        var balance = ProviderBalance.empty(providerId);
+        var balance = ProviderBalanceResponse.from(ProviderBalance.empty(providerId));
         when(ledgerService.getBalance(providerId)).thenReturn(balance);
 
-        ResponseEntity<ProviderBalance> result = controller.getProviderBalance(providerId);
+        ResponseEntity<ProviderBalanceResponse> result = controller.getProviderBalance(providerId);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(balance);

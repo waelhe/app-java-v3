@@ -204,9 +204,9 @@ class NotificationServiceTest {
         when(repository.findById(notification.getId())).thenReturn(Optional.of(notification));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
 
-        Notification updated = service.markAsRead(notification.getId(), authentication);
+        NotificationResponse updated = service.markAsRead(notification.getId(), authentication);
 
-        assertThat(updated.isRead()).isTrue();
+        assertThat(updated.read()).isTrue();
     }
 
     @Test
@@ -336,13 +336,15 @@ class NotificationServiceTest {
         UUID userId = UUID.randomUUID();
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         var page = new org.springframework.data.domain.PageImpl<>(
-                List.of(mock(Notification.class)), pageable, 1);
+                List.of(Notification.create(userId, "BOOKING_CREATED", "msg")), pageable, 1);
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable)).thenReturn(page);
 
         var result = service.getMyNotifications(authentication, pageable);
 
-        assertThat(result).isSameAs(page);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).recipientId()).isEqualTo(userId);
+        assertThat(result.getContent().get(0).type()).isEqualTo("BOOKING_CREATED");
     }
 
     @Test

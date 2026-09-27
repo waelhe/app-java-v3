@@ -4,7 +4,6 @@ import com.marketplace.ledger.LedgerEntry;
 import com.marketplace.ledger.LedgerEntryRepository;
 import com.marketplace.ledger.LedgerEntryType;
 import com.marketplace.ledger.LedgerService;
-import com.marketplace.ledger.ProviderBalance;
 import com.marketplace.payments.Payment;
 import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentRepository;
@@ -274,7 +273,7 @@ class DisputeFinancialResolutionIntegrationTest {
         long deadline = System.nanoTime() + 30_000_000_000L;
         Long last = null;
         while (System.nanoTime() < deadline) {
-            last = ledgerService.getBalance(providerId).getAvailableCents();
+            last = ledgerService.getBalance(providerId).availableCents();
             if (last != null && last == expectedCents) {
                 return;
             }
