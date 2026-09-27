@@ -257,6 +257,13 @@ public class NotificationService {
             throw new AccessDeniedException("Not allowed to access this notification");
         }
         notification.markRead();
+        // Flush the managed update BEFORE mapping the response so the wire
+        // metadata (version, updatedAt) reflects the persisted row, not the
+        // pre-flush in-memory state (CodeRabbit review on #427; the same
+        // staleness existed when the controller serialized the entity — the
+        // DTO boundary makes it explicit and fixable). saveAndFlush runs in
+        // the repository's own transaction (SimpleJpaRepository pattern).
+        repository.saveAndFlush(notification);
         return NotificationResponse.from(notification);
     }
 }

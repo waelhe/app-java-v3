@@ -123,4 +123,28 @@ class NotificationsModuleIntegrationTest {
 
         assertThat(notificationService.getUnreadCount(auth)).isEqualTo(1);
     }
+
+    /**
+     * CodeRabbit review on #427 (adopted): the mark-read response carries the
+     * PERSISTED metadata — version and updatedAt are read after the explicit
+     * flush, and the row's read flag is durable before the client sees 200.
+     */
+    @Test
+    void markAsRead_returnsPersistedMetadataForUnread() {
+        UUID me = UUID.randomUUID();
+        Notification unread = notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "unread"));
+        notificationRepository.flush();
+
+        when(currentUserProvider.getCurrentUserId(org.mockito.ArgumentMatchers.any(Authentication.class)))
+                .thenReturn(me);
+        Authentication auth = new TestingAuthenticationToken("u", "p");
+
+        NotificationResponse response = notificationService.markAsRead(unread.getId(), auth);
+
+        assertThat(response.read()).isTrue();
+        assertThat(response.version()).isNotNull();
+        assertThat(response.updatedAt()).isNotNull();
+        assertThat(notificationRepository.findById(unread.getId()).orElseThrow().isRead()).isTrue();
+    }
 }
