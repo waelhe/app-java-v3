@@ -45,7 +45,7 @@ public class NotificationController {
     @GetMapping("/notifications")
     @Operation(summary = "List my notifications", description = "The caller's in-app "
             + "notification feed, newest first, paginated (page/size/sort).")
-    public ResponseEntity<PagedResponse<Notification>> getMine(
+    public ResponseEntity<PagedResponse<NotificationResponse>> getMine(
             @ParameterObject Pageable pageable, Authentication authentication) {
         return ResponseEntity.ok(PagedResponse.of(
                 service.getMyNotifications(authentication, pageable)));
@@ -67,7 +67,7 @@ public class NotificationController {
     @PostMapping("/notifications/{id}/read")
     @Operation(summary = "Mark a notification read", description = "Marks one in-app "
             + "notification as read by its owner.")
-    public ResponseEntity<Notification> markRead(@PathVariable UUID id, Authentication authentication) {
+    public ResponseEntity<NotificationResponse> markRead(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(service.markAsRead(id, authentication));
     }
 

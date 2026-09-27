@@ -41,12 +41,12 @@ class AvailabilityServiceTest {
 
         when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        AvailabilitySlot slot = service.createSlot(providerId, startsAt, endsAt);
+        AvailabilitySlotResponse slot = service.createSlot(providerId, startsAt, endsAt);
 
-        assertThat(slot.getProviderId()).isEqualTo(providerId);
-        assertThat(slot.getStartsAt()).isEqualTo(startsAt);
-        assertThat(slot.getEndsAt()).isEqualTo(endsAt);
-        assertThat(slot.isBooked()).isFalse();
+        assertThat(slot.providerId()).isEqualTo(providerId);
+        assertThat(slot.startsAt()).isEqualTo(startsAt);
+        assertThat(slot.endsAt()).isEqualTo(endsAt);
+        assertThat(slot.booked()).isFalse();
         verify(repository).save(any(AvailabilitySlot.class));
     }
 
@@ -55,14 +55,18 @@ class AvailabilityServiceTest {
         UUID providerId = create(UUID.class);
         Instant from = Instant.parse("2026-06-01T00:00:00Z");
         Instant to = Instant.parse("2026-06-30T00:00:00Z");
-        List<AvailabilitySlot> expected = List.of(mock(AvailabilitySlot.class));
+        AvailabilitySlot slot = AvailabilitySlot.open(providerId, from, to);
+        List<AvailabilitySlot> saved = List.of(slot);
 
         when(repository.findByProviderIdAndStartsAtGreaterThanEqualAndEndsAtLessThanEqual(providerId, from, to))
-                .thenReturn(expected);
+                .thenReturn(saved);
 
-        List<AvailabilitySlot> result = service.getSlots(providerId, from, to);
+        List<AvailabilitySlotResponse> result = service.getSlots(providerId, from, to);
 
-        assertThat(result).isSameAs(expected);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).providerId()).isEqualTo(providerId);
+        assertThat(result.get(0).startsAt()).isEqualTo(from);
+        assertThat(result.get(0).endsAt()).isEqualTo(to);
     }
 
     @Test
@@ -148,9 +152,9 @@ class AvailabilityServiceTest {
 
         when(ruleRepository.save(any(ProviderAvailabilityRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ProviderAvailabilityRule rule = service.createRule(providerId, dayOfWeek, startTime, endTime);
+        ProviderAvailabilityRuleResponse rule = service.createRule(providerId, dayOfWeek, startTime, endTime);
 
-        assertThat(rule.getId()).isNotNull();
+        assertThat(rule.id()).isNotNull();
         verify(ruleRepository).save(any(ProviderAvailabilityRule.class));
     }
 
@@ -162,9 +166,9 @@ class AvailabilityServiceTest {
 
         when(timeOffRepository.save(any(ProviderTimeOff.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ProviderTimeOff timeOff = service.createTimeOff(providerId, startsAt, endsAt);
+        ProviderTimeOffResponse timeOff = service.createTimeOff(providerId, startsAt, endsAt);
 
-        assertThat(timeOff.getId()).isNotNull();
+        assertThat(timeOff.id()).isNotNull();
         verify(timeOffRepository).save(any(ProviderTimeOff.class));
     }
 

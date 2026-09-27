@@ -260,10 +260,10 @@ class MessagingServiceTest {
         when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
         when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Message msg = service.sendMessage(conv.getId(), participantA, "Hello!");
+        MessageResponse msg = service.sendMessage(conv.getId(), participantA, "Hello!");
 
-        assertEquals("Hello!", msg.getContent());
-        assertEquals(participantA, msg.getSenderId());
+        assertEquals("Hello!", msg.content());
+        assertEquals(participantA, msg.senderId());
     }
 
     @Test

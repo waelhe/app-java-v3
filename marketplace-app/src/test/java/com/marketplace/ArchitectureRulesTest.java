@@ -13,6 +13,7 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import jakarta.persistence.Entity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -21,6 +22,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 
 @AnalyzeClasses(packages = "com.marketplace", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureRulesTest {
@@ -33,6 +36,19 @@ class ArchitectureRulesTest {
     static final ArchRule controllersMustNotAccessRepositoriesDirectly =
             noClasses().that().haveSimpleNameEndingWith("Controller")
                     .should().dependOnClassesThat().haveSimpleNameEndingWith("Repository");
+
+    @ArchTest
+    static final ArchRule controllersMustNotDependOnJpaEntities =
+            noClasses().that().areAnnotatedWith(RestController.class)
+                    .or().areAnnotatedWith(Controller.class)
+                    .should().dependOnClassesThat().areAnnotatedWith(Entity.class)
+                    .because("the HTTP boundary speaks DTO records only — a JPA entity in a controller "
+                            + "signature couples the wire contract to the persistence schema (lazy-loading "
+                            + "semantics included) and lets schema evolution break the API. Audit 2026-09-25 "
+                            + "finding 1: MessagingWebSocketController imported the Message entity and four "
+                            + "controllers exposed entities in 9 REST signatures; this rule makes the "
+                            + "repaired boundary regression-proof (Spring Modulith module-API model: "
+                            + "published interfaces and DTOs, entities internal).");
 
     @ArchTest
     static final ArchRule controllersMustNotAccessPlatformInfra =

@@ -25,7 +25,7 @@ public class LedgerController {
                     + "source id; a replay answers the current balance without a second "
                     + "entry). Amounts are non-negative cents; zero is a no-op.")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ProviderBalance> creditProvider(@PathVariable UUID providerId,
+    public ResponseEntity<ProviderBalanceResponse> creditProvider(@PathVariable UUID providerId,
                                                           @RequestParam UUID paymentIntentId,
                                                           @RequestParam long amountCents) {
         return ResponseEntity.ok(ledgerService.creditFromPayment(providerId, paymentIntentId, amountCents));
@@ -36,7 +36,7 @@ public class LedgerController {
             description = "The provider's current ledger balance in cents — the balance the "
                     + "credit/debit money paths maintain.")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ProviderBalance> getProviderBalance(@PathVariable UUID providerId) {
+    public ResponseEntity<ProviderBalanceResponse> getProviderBalance(@PathVariable UUID providerId) {
         return ResponseEntity.ok(ledgerService.getBalance(providerId));
     }
 }

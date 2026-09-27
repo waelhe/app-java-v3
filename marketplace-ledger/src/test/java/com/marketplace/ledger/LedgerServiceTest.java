@@ -47,9 +47,9 @@ class LedgerServiceTest {
         ProviderBalance balance = ProviderBalance.empty(providerId);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
 
-        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 0L);
+        ProviderBalanceResponse result = service.creditFromPayment(providerId, paymentIntentId, 0L);
 
-        assertThat(result.getAvailableCents()).isZero();
+        assertThat(result.availableCents()).isZero();
         verify(entryRepository, never()).save(any());
         verify(balanceRepository, never()).save(any());
     }
@@ -157,9 +157,9 @@ class LedgerServiceTest {
         ProviderBalance balance = ProviderBalance.empty(providerId);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.of(balance));
 
-        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, 1000);
+        ProviderBalanceResponse result = service.creditFromPayment(providerId, paymentIntentId, 1000);
 
-        assertThat(result.getAvailableCents()).isZero();
+        assertThat(result.availableCents()).isZero();
         verify(entryRepository, never()).save(any());
     }
 
@@ -179,9 +179,9 @@ class LedgerServiceTest {
         saved.credit(amountCents);
         when(balanceRepository.save(any())).thenReturn(saved);
 
-        ProviderBalance result = service.creditFromPayment(providerId, paymentIntentId, amountCents);
+        ProviderBalanceResponse result = service.creditFromPayment(providerId, paymentIntentId, amountCents);
 
-        assertThat(result.getAvailableCents()).isEqualTo(amountCents);
+        assertThat(result.availableCents()).isEqualTo(amountCents);
         verify(entryRepository).save(any(LedgerEntry.class));
         verify(balanceRepository).save(any(ProviderBalance.class));
     }
@@ -194,9 +194,9 @@ class LedgerServiceTest {
         UUID providerId = create(UUID.class);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.empty());
 
-        ProviderBalance result = service.getBalance(providerId);
+        ProviderBalanceResponse result = service.getBalance(providerId);
 
-        assertThat(result.getAvailableCents()).isZero();
+        assertThat(result.availableCents()).isZero();
     }
 
     @Test
@@ -210,9 +210,9 @@ class LedgerServiceTest {
         existing.credit(3000L);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
 
-        ProviderBalance result = service.getBalance(providerId);
+        ProviderBalanceResponse result = service.getBalance(providerId);
 
-        assertThat(result.getAvailableCents()).isEqualTo(3000L);
+        assertThat(result.availableCents()).isEqualTo(3000L);
     }
 
     @Test
@@ -316,9 +316,9 @@ class LedgerServiceTest {
         existing.credit(4500L);
         when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
 
-        ProviderBalance result = service.getBalanceForOwner(providerId);
+        ProviderBalanceResponse result = service.getBalanceForOwner(providerId);
 
-        assertThat(result.getAvailableCents()).isEqualTo(4500L);
+        assertThat(result.availableCents()).isEqualTo(4500L);
     }
 
     @Test

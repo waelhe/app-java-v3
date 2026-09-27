@@ -175,11 +175,12 @@ public class MessagingService {
     }
 
     @Observed(name = "messaging.send")
-    public Message sendMessage(UUID conversationId, UUID senderId, String content) {
+    public MessageResponse sendMessage(UUID conversationId, UUID senderId, String content) {
         getConversation(conversationId, senderId);
         Message saved = messageRepository.save(Message.create(conversationId, senderId, content));
-        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, messageMapper.toResponse(saved));
-        return saved;
+        MessageResponse response = messageMapper.toResponse(saved);
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, response);
+        return response;
     }
 
     public void markAsRead(UUID conversationId, UUID userId) {

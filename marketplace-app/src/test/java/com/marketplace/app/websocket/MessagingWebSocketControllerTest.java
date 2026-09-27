@@ -1,7 +1,6 @@
 package com.marketplace.app.websocket;
 
-import com.marketplace.messaging.Message;
-import com.marketplace.messaging.MessageMapper;
+import com.marketplace.messaging.MessageResponse;
 import com.marketplace.messaging.MessagingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,11 +15,8 @@ import java.security.Principal;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.instancio.Select.field;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,9 +26,6 @@ class MessagingWebSocketControllerTest {
 
     @Mock
     private MessagingService messagingService;
-
-    @Mock
-    private MessageMapper messageMapper;
 
     @Mock
     private Principal principal;
@@ -50,22 +43,16 @@ class MessagingWebSocketControllerTest {
         UUID conversationId = Instancio.create(UUID.class);
         UUID senderId = Instancio.create(UUID.class);
         when(principal.getName()).thenReturn(senderId.toString());
-        Message msg = Instancio.of(Message.class)
-                .set(field(Message::getConversationId), conversationId)
-                .set(field(Message::getSenderId), senderId)
-                .set(field(Message::getContent), "hello")
-                .create();
+        MessageResponse response = new MessageResponse(
+                Instancio.create(UUID.class), conversationId, senderId, "hello", false, null, null);
         when(messagingService.sendMessage(eq(conversationId), eq(senderId), eq("hello")))
-                .thenReturn(msg);
+                .thenReturn(response);
 
-        when(messageMapper.toResponse(msg)).thenReturn(
-                new com.marketplace.messaging.MessageResponse(msg.getId(), msg.getConversationId(), msg.getSenderId(), msg.getContent(), msg.isRead(), null, null));
+        var result = controller.sendMessage(conversationId, Map.of("content", "hello"), principal);
 
-        var response = controller.sendMessage(conversationId, Map.of("content", "hello"), principal);
-
-        assertThat(response.id()).isEqualTo(msg.getId());
-        assertThat(response.senderId()).isEqualTo(senderId);
-        assertThat(response.content()).isEqualTo("hello");
+        assertThat(result.id()).isEqualTo(response.id());
+        assertThat(result.senderId()).isEqualTo(senderId);
+        assertThat(result.content()).isEqualTo("hello");
     }
 
 

@@ -105,7 +105,7 @@ public class MessagingController {
                                                        Authentication authentication) {
         UUID senderId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(messageMapper.toResponse(messagingService.sendMessage(conversationId, senderId, request.content())));
+                .body(messagingService.sendMessage(conversationId, senderId, request.content()));
     }
 
     @PostMapping("/conversations/{conversationId}/read")

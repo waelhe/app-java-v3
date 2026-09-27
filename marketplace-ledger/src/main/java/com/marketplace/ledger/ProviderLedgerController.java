@@ -66,7 +66,7 @@ public class ProviderLedgerController {
     @Operation(summary = "Get my ledger balance",
             description = "The calling provider's current ledger balance in minor units — the "
                     + "amount credited from completed payments.")
-    public ResponseEntity<ProviderBalance> getMyBalance(Authentication authentication) {
+    public ResponseEntity<ProviderBalanceResponse> getMyBalance(Authentication authentication) {
         return ResponseEntity.ok(ledgerService.getBalanceForOwner(requireOwnProviderUserId(authentication)));
     }
 
