@@ -23,7 +23,7 @@
 ## 1. قنوات التواصل والأمن
 
 - الأخطاء غير الأمنية: Issues عامة بقالب القسم 2.
-- **الثغرات الأمنية: لا تُفتح Issue ولا PR عام أبدًا** — البلاغ عبر **GitHub Private Vulnerability Reporting المفعَّل** (قياس 2026-09-27: التفعيل عبر REST API أجاب 204 والحالة `enabled: true`): `https://github.com/waelhe/app-java-v3/security/advisories/new` — أو قناة خاصة إلى مالك المستودع (@waelhe). النمط مقتبس من منظمة code4romania («security via email» بصيغتها الناضجة: ملف `SECURITY.md` منفصل بقناة إبلاغ خاصة).
+- **الثغرات الأمنية: لا تُفتح Issue ولا PR عام أبدًا** — البلاغ عبر **GitHub Private Vulnerability Reporting المفعَّل** (قياس 2026-09-27: التفعيل عبر REST API أجاب 204 والحالة `enabled: true`): `https://github.com/waelhe/app-java-v3/security/advisories/new` — أو قناة خاصة إلى مالك المستودع (@waelhe). النمط مقتبس من منظمة code4romania («security via email» بصيغتها الناضجة: ملف `SECURITY.md` منفصل بقناة إبلاغ خاصة). إعادة التحقق من حالة التفعيل (R1 — بأدواتك الخاصة، بلا كشف أي اعتماد): `gh api repos/waelhe/app-java-v3/private-vulnerability-reporting --jq .enabled`.
 - **الأسرار ممنوعة نهائيًا من الملفات المتتبعة** — المستودع عام. تُذكر أسماء المتغيرات ومسار الاسترجاع فقط (القسم 5)، وبوابة gitleaks في CI تحرس هذا.
 
 ## 2. بلاغ عيب — القالب الإلزامي
