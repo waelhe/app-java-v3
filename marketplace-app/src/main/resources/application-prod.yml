@@ -203,6 +203,13 @@ marketplace:
         # Mandatory in prod: the development redirect constant (127.0.0.1) is not a valid
         # production BFF callback (closes the documented gate-B debt).
         redirect-uris: ${OAUTH_CLIENT_REDIRECT_URIS}
+        # R10 (frontend battery card BE-02) — RP-initiated logout's landing origin
+        # (OIDC RP-Initiated Logout 1.0: post_logout_redirect_uri). Mandatory in prod:
+        # the fixed development constant (127.0.0.1:8080/) previously registered here
+        # made every production/staging logout land on the authorization server's own
+        # whitelabel error page instead of the BFF. Same explicit-config contract as
+        # redirect-uris above.
+        post-logout-redirect-uri: ${OAUTH_POST_LOGOUT_REDIRECT_URI}
       public-client:
         # Gate B pattern (3) — public (secret-less) native client with PKCE (plan §4):
         # classified by secret location, not by technology. Redirect URIs are the client
