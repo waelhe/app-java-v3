@@ -48,4 +48,20 @@ public record PagedResponse<T>(
     public boolean isEmpty() {
         return content.isEmpty();
     }
+
+    /**
+     * Maps the page's content, keeping the page metadata — the analog of
+     * Spring Data's {@code Page.map(Function)} (the REST layer and the
+     * tests already speak this shape on pages).
+     */
+    public <R> PagedResponse<R> map(java.util.function.Function<? super T, ? extends R> mapper) {
+        return new PagedResponse<>(
+                content.stream().map(mapper).toList(),
+                pageNumber,
+                pageSize,
+                totalElements,
+                totalPages,
+                last
+        );
+    }
 }

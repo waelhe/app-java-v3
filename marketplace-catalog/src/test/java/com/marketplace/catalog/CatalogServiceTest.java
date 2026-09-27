@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
-import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.ProviderListingSummary;import com.marketplace.shared.api.PagedRequest;
+
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -13,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -121,17 +121,16 @@ class CatalogServiceTest {
     @Test
     void listActiveByProvider_queriesActiveOnlyMapsSummariesThroughTheBoostFirstRead() {
         UUID providerUserId = UUID.randomUUID();
-        Pageable pageable = PageRequest.of(0, 20);
         ProviderListing active = listing(ListingStatus.ACTIVE);
         when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                 any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
                 .thenAnswer(inv -> new PageImpl<>(List.of(active),
                         inv.getArgument(2, Pageable.class), 1));
 
-        var page = catalogService.listActiveByProvider(providerUserId, pageable);
+        var page = catalogService.listActiveByProvider(providerUserId, PagedRequest.of(0, 20));
 
-        assertThat(page.getTotalElements()).isEqualTo(1);
-        assertThat(page.getContent()).singleElement()
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.content()).singleElement()
                 .satisfies(summary -> assertThat(summary.id()).isEqualTo(active.getId()));
         // The pageable the repository saw: same page/size, UNSORTED — the
         // total order is the boost specification's own contract now.
@@ -187,9 +186,9 @@ class CatalogServiceTest {
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(20));
 
-        var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
+        assertThat(result.content()).hasSize(1);
         // BigDecimal 10 -> 1000 cents: the same movePointRight(2) mapping as
         // the unrestricted path rides the restricted query. guests rides
         // through as null (criterion-less). The :now instant (L37) is the
@@ -209,7 +208,7 @@ class CatalogServiceTest {
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, null, null, null, null, 4);
 
-        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
+        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
 
         verify(listingRepository).searchByCriteriaRestricted(
                 eq(null), eq(null), eq(null), eq(4), eq(PROVIDER_IDS), any(java.time.Instant.class),
@@ -225,9 +224,9 @@ class CatalogServiceTest {
         when(listingRepository.searchSimilarRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
-        var result = catalogService.searchFullTextRestricted("gardn", PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchFullTextRestricted("gardn", PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
+        assertThat(result.content()).hasSize(1);
         verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS),
                 any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
         verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS),
@@ -243,10 +242,10 @@ class CatalogServiceTest {
         when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
 
-        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(5, 10));
+        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PagedRequest.of(5, 10));
 
-        assertThat(result).isEmpty();
-        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.isEmpty()).isTrue();
+        assertThat(result.totalElements()).isEqualTo(1);
         verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
     }
 
@@ -255,9 +254,9 @@ class CatalogServiceTest {
         when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
-        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
+        assertThat(result.content()).hasSize(1);
         verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
     }
 

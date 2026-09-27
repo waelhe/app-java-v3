@@ -15,9 +15,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
@@ -209,8 +207,8 @@ class BoostOrderingIntegrationTest {
     }
 
     private List<UUID> activeIds() {
-        return catalogService.listActive(Pageable.ofSize(10))
-                .map(ListingSummary::id).getContent();
+        return catalogService.listActive(com.marketplace.shared.api.PagedRequest.of(0, 10))
+                .map(ListingSummary::id).content();
     }
 
     private void clearCaches() {
@@ -255,18 +253,18 @@ class BoostOrderingIntegrationTest {
     void boostedListingRanksFirst_andExpiryRestoresTheNaturalOrder_onTheNativeCriteriaPath() {
         seedThreeHomeListings();
         catalogService.setListingPromotion(ID_02, T0.plus(Duration.ofHours(1)));
-        Pageable pageable = Pageable.ofSize(10);
+
         SearchCriteria criteria = new SearchCriteria(null, "home", null, null);
 
         // The native path is uncached: the clock's advance flips the
         // ordering directly — the pure criterion-1 semantics.
-        Page<ListingSummary> boosted = catalogService.searchByCriteria(criteria, pageable);
-        assertThat(boosted.map(ListingSummary::id).getContent())
+        com.marketplace.shared.api.PagedResponse<ListingSummary> boosted = catalogService.searchByCriteria(criteria, com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(boosted.map(ListingSummary::id).content())
                 .containsExactly(ID_02, ID_01, ID_03);
 
         MutableClockConfig.CLOCK.advanceTo(T0.plus(Duration.ofHours(2)));
-        Page<ListingSummary> natural = catalogService.searchByCriteria(criteria, pageable);
-        assertThat(natural.map(ListingSummary::id).getContent())
+        com.marketplace.shared.api.PagedResponse<ListingSummary> natural = catalogService.searchByCriteria(criteria, com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(natural.map(ListingSummary::id).content())
                 .containsExactly(ID_01, ID_02, ID_03);
     }
 
@@ -288,10 +286,11 @@ class BoostOrderingIntegrationTest {
         // aggregate/ORDER-BY rejection cannot happen on this path.
         var page = catalogService.searchByCriteriaFaceted(
                 new SearchCriteria(null, "home", null, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "priceCents")));
-        assertThat(page.map(ListingSummary::id).getContent())
+                com.marketplace.shared.api.PagedRequest.of(0, 10,
+                        new com.marketplace.shared.api.PagedRequest.Order("priceCents", false))));
+        assertThat(page.map(ListingSummary::id).content())
                 .containsExactly(ID_03, ID_02, ID_01);
-        assertThat(page.getTotalElements()).isEqualTo(3L);
+        assertThat(page.totalElements()).isEqualTo(3L);
     }
 
     /** Q1's resolved rule: the boost outranks FTS relevance. */
@@ -306,10 +305,10 @@ class BoostOrderingIntegrationTest {
                 active(ID_02, "Cozy House with a garden", 100_00L, "home")));
         catalogService.setListingPromotion(ID_02, T0.plus(Duration.ofDays(7)));
 
-        Page<ListingSummary> page = catalogService.searchFullText("garden", Pageable.ofSize(10));
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText("garden", com.marketplace.shared.api.PagedRequest.of(0, 10));
 
-        assertThat(page.getContent()).hasSize(2);
-        assertThat(page.getContent().getFirst().id()).isEqualTo(ID_02);
+        assertThat(page.content()).hasSize(2);
+        assertThat(page.content().getFirst().id()).isEqualTo(ID_02);
     }
 
     // ---- Criterion 2: the boost never changes filtering -----------------
@@ -323,25 +322,25 @@ class BoostOrderingIntegrationTest {
         // The shaded listing lives OUTSIDE the home category.
         catalogService.setListingPromotion(ID_03, T0.plus(Duration.ofDays(7)));
 
-        var homes = catalogService.listByCategory("home", Pageable.ofSize(10));
-        assertThat(homes.map(ListingSummary::id).getContent())
+        var homes = catalogService.listByCategory("home", com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(homes.map(ListingSummary::id).content())
                 .containsExactly(ID_01, ID_02);
-        assertThat(homes.getTotalElements()).isEqualTo(2L);
+        assertThat(homes.totalElements()).isEqualTo(2L);
 
-        var cars = catalogService.listByCategory("cars", Pageable.ofSize(10));
-        assertThat(cars.map(ListingSummary::id).getContent())
+        var cars = catalogService.listByCategory("cars", com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(cars.map(ListingSummary::id).content())
                 .containsExactly(ID_03);
-        assertThat(cars.getTotalElements()).isEqualTo(1L);
+        assertThat(cars.totalElements()).isEqualTo(1L);
 
         // The price filter too: a boosted listing beyond the ceiling never
         // appears (the native WHERE is untouched — the boost only reorders
         // what already matched).
         var cheap = catalogService.searchByCriteria(
                 new SearchCriteria(null, "home", null, java.math.BigDecimal.valueOf(200)),
-                Pageable.ofSize(10));
-        assertThat(cheap.map(ListingSummary::id).getContent())
+                com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(cheap.map(ListingSummary::id).content())
                 .containsExactly(ID_01, ID_02);
-        assertThat(cheap.getTotalElements()).isEqualTo(2L);
+        assertThat(cheap.totalElements()).isEqualTo(2L);
     }
 
     // ---- Criterion 3: an expired boost on page 2 does not jump ----------
@@ -358,12 +357,12 @@ class BoostOrderingIntegrationTest {
         UUID id04 = UUID.fromString("00000000-0000-4000-8000-000000000004");
         UUID id05 = UUID.fromString("00000000-0000-4000-8000-000000000005");
         catalogService.setListingPromotion(id05, T0.plus(Duration.ofHours(1)));
-        Pageable page0 = PageRequest.of(0, 2);
-        Pageable page1 = PageRequest.of(1, 2);
-        Pageable page2 = PageRequest.of(2, 2);
+        com.marketplace.shared.api.PagedRequest page0 = com.marketplace.shared.api.PagedRequest.of(0, 2);
+        com.marketplace.shared.api.PagedRequest page1 = com.marketplace.shared.api.PagedRequest.of(1, 2);
+        com.marketplace.shared.api.PagedRequest page2 = com.marketplace.shared.api.PagedRequest.of(2, 2);
 
         // While the window is live: the boosted listing leads page 0.
-        assertThat(catalogService.listActive(page0).map(ListingSummary::id).getContent())
+        assertThat(catalogService.listActive(page0).map(ListingSummary::id).content())
                 .containsExactly(id05, ID_01);
 
         // The window passes; the cached surface's staleness bound is
@@ -372,20 +371,20 @@ class BoostOrderingIntegrationTest {
         clearCaches();
 
         // The expired listing sits at its NATURAL position — page 2, last.
-        assertThat(catalogService.listActive(page0).map(ListingSummary::id).getContent())
+        assertThat(catalogService.listActive(page0).map(ListingSummary::id).content())
                 .containsExactly(ID_01, ID_02);
-        assertThat(catalogService.listActive(page1).map(ListingSummary::id).getContent())
+        assertThat(catalogService.listActive(page1).map(ListingSummary::id).content())
                 .containsExactly(ID_03, id04);
-        assertThat(catalogService.listActive(page2).map(ListingSummary::id).getContent())
+        assertThat(catalogService.listActive(page2).map(ListingSummary::id).content())
                 .containsExactly(id05);
 
         // Time moves on — the position is STABLE (no further jump, no
         // cleanup job: the CASE flag is evaluated per read).
         MutableClockConfig.CLOCK.advanceTo(T0.plus(Duration.ofDays(8)));
         clearCaches();
-        assertThat(catalogService.listActive(page2).map(ListingSummary::id).getContent())
+        assertThat(catalogService.listActive(page2).map(ListingSummary::id).content())
                 .containsExactly(id05);
-        assertThat(catalogService.listActive(Pageable.ofSize(10)).getTotalElements())
+        assertThat(catalogService.listActive(com.marketplace.shared.api.PagedRequest.of(0, 10)).totalElements())
                 .isEqualTo(5L);
     }
 
@@ -424,7 +423,7 @@ class BoostOrderingIntegrationTest {
         var page = catalogService.listByProvider(PROVIDER_USER_ID, Pageable.ofSize(10));
         assertThat(page.map(ProviderListing::getId).getContent())
                 .containsExactly(ID_03, ID_01, ID_02);
-        assertThat(page.getTotalElements()).isEqualTo(3L);
+        assertThat(page.totalElements()).isEqualTo(3L);
     }
 
     // ---- The window-restricted native path carries the same ordering ----
@@ -437,9 +436,9 @@ class BoostOrderingIntegrationTest {
         var page = catalogService.searchByCriteriaRestricted(
                 new SearchCriteria(null, "home", null, null),
                 java.util.Set.of(PROVIDER_USER_ID),
-                Pageable.ofSize(10));
-        assertThat(page.map(ListingSummary::id).getContent())
+                com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(page.map(ListingSummary::id).content())
                 .containsExactly(ID_03, ID_01, ID_02);
-        assertThat(page.getTotalElements()).isEqualTo(3L);
+        assertThat(page.totalElements()).isEqualTo(3L);
     }
 }
