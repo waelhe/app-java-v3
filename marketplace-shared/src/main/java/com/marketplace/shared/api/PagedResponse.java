@@ -2,10 +2,21 @@ package com.marketplace.shared.api;
 
 import org.springframework.data.domain.Page;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
- * Generic paged response wrapper for REST API list endpoints.
+ * Generic paged response wrapper for REST API list endpoints — and, since
+ * the shared ports went framework-neutral, the ports' paged answer type.
+ *
+ * <p><b>Serializable for the Redis cache value path</b> (the contract
+ * {@code ListingSummary}'s javadoc documents): the catalog's four
+ * {@code @Cacheable} sites cache this record ({@code JdkSerializationRedisSerializer});
+ * the previous cached type was {@code PageImpl}, which Spring ships
+ * Serializable. For record classes the Object Serialization Specification
+ * declares serialVersionUID as 0L unless explicitly declared and waives the
+ * match requirement — the canonical-constructor form is the serialization
+ * contract.
  */
 public record PagedResponse<T>(
         List<T> content,
@@ -14,7 +25,7 @@ public record PagedResponse<T>(
         long totalElements,
         int totalPages,
         boolean last
-) {
+) implements Serializable {
     public static <T> PagedResponse<T> of(Page<T> page) {
         return new PagedResponse<>(
                 page.getContent(),
