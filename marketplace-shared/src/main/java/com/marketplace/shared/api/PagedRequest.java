@@ -53,12 +53,12 @@ public record PagedRequest(int page, int size, List<Order> sort) {
      * browses).
      */
     public static PagedRequest of(int page, int size) {
-        return new PagedRequest(page, size, List.of());
+        return new PagedRequest<>(page, size, List.of());
     }
 
     /** The sorted request with one or more ordering steps. */
     public static PagedRequest of(int page, int size, Order... sort) {
-        return new PagedRequest(page, size, List.of(sort));
+        return new PagedRequest<>(page, size, List.of(sort));
     }
 
     public boolean isSorted() {

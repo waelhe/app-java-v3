@@ -34,7 +34,7 @@ public record PagedResponse<T>(
      * framework type.
      */
     public static <T> PagedResponse<T> empty(PagedRequest request) {
-        return new PagedResponse<>(
+        return new PagedResponse<T>(
                 List.of(),
                 request.page(),
                 request.size(),
@@ -55,7 +55,12 @@ public record PagedResponse<T>(
      * tests already speak this shape on pages).
      */
     public <R> PagedResponse<R> map(java.util.function.Function<? super T, ? extends R> mapper) {
-        return new PagedResponse<>(
+        // explicit type argument: javac's diamond inference cannot resolve
+        // the class type arguments when the target type mentions the
+        // ENCLOSING METHOD's type variable (PagedResponse<R>) — measured
+        // as CI round 2's single compile error; naming <R> removes the
+        // inference corner entirely
+        return new PagedResponse<R>(
                 content.stream().map(mapper).toList(),
                 pageNumber,
                 pageSize,
