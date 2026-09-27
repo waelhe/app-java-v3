@@ -23,7 +23,7 @@
 ## 1. قنوات التواصل والأمن
 
 - الأخطاء غير الأمنية: Issues عامة بقالب القسم 2.
-- **الثغرات الأمنية: لا تُفتح Issue ولا PR عام أبدًا** — البلاغ عبر قناة خاصة إلى مالك المستودع (@waelhe). النمط مقتبس من منظمة code4romania («security via email» بصيغتها الناضجة: ملف `SECURITY.md` منفصل بقناة إبلاغ خاصة) — وسنفعّل GitHub Private Vulnerability Reporting عندما تتوفر قناة تشغيل مستقرة.
+- **الثغرات الأمنية: لا تُفتح Issue ولا PR عام أبدًا** — البلاغ عبر **GitHub Private Vulnerability Reporting المفعَّل** (قياس 2026-09-27: التفعيل عبر REST API أجاب 204 والحالة `enabled: true`): `https://github.com/waelhe/app-java-v3/security/advisories/new` — أو قناة خاصة إلى مالك المستودع (@waelhe). النمط مقتبس من منظمة code4romania («security via email» بصيغتها الناضجة: ملف `SECURITY.md` منفصل بقناة إبلاغ خاصة).
 - **الأسرار ممنوعة نهائيًا من الملفات المتتبعة** — المستودع عام. تُذكر أسماء المتغيرات ومسار الاسترجاع فقط (القسم 5)، وبوابة gitleaks في CI تحرس هذا.
 
 ## 2. بلاغ عيب — القالب الإلزامي
@@ -46,8 +46,8 @@ Issue موسوم `[Feature request]` يضم: الوصف، السلوك خطوة 
 
 ## 4. قواعد العقد (API) — الفريقان معًا
 
-- مصدر الحقيقة: OpenAPI (springdoc) — **128 عملية (آخر تحقق 2026-09-27)**. إعادة التحقق:
-  `curl -s https://app-java-v3-staging-staging.up.railway.app/v3/api-docs | jq '.paths | length'`
+- مصدر الحقيقة: OpenAPI (springdoc) — **128 عملية عبر 111 مسارًا (آخر تحقق 2026-09-27)**. إعادة التحقق (عدّ مفاتيح الأفعال لا إدخالات المسارات — المسارات وحدها 111 لا تتحقق من الادعاء):
+  `curl -s https://app-java-v3-staging-staging.up.railway.app/v3/api-docs | jq '[.paths | .[] | keys[] | select(test("^(get|post|put|delete|patch|head|options|trace)$"))] | length'`
 - كل تغيير يجب أن يكون متوافقًا للخلف، **أو** مصحوبًا بإشعار مسبق لمستودع الواجهة + إعادة بطارية (القسم 7).
 - **درس مقاس (2026-09-27):** توافق `openapi-diff` يشمل مستوى العقد لا التشغيل — تحوّل `GET /notifications` من مصفوفة عارية إلى غلاف `PagedResponseNotification` كسر صفحة `/inbox` في الواجهة رغم «توافق» diff. القاعدة الناتجة: أي تغيير في **شكل** الاستجابة (شكل/غلاف/ترقيم صفحات) = إشعار الواجهة قبل الدمج + إعادة تشغيل بطارية 33.
 - لا إزالة عمليات أو حقول بلا دورة إهمال (deprecation) موثقة.
