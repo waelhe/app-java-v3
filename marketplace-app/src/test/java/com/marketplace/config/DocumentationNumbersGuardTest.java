@@ -120,7 +120,7 @@ class DocumentationNumbersGuardTest {
         int maxV = 0;
         int repeatable = 0;
         try (Stream<Path> files = Files.list(folder)) {
-            for (Path f : files.sorted()) {
+            for (Path f : files.sorted().toList()) {
                 String name = f.getFileName().toString();
                 Matcher v = Pattern.compile("^V(\\d+)__.*\\.sql$").matcher(name);
                 if (v.matches()) {
