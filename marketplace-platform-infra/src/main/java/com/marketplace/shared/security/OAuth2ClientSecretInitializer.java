@@ -132,13 +132,30 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
                             + " (OAUTH_CLIENT_REDIRECT_URIS) — the development redirect constant is not a"
                             + " valid production BFF callback");
         }
+        if (prodProfile && !StringUtils.hasText(client.postLogoutRedirectUri())) {
+            throw new IllegalStateException(
+                    "marketplace.security.oauth2.client.postLogoutRedirectUri must be configured in"
+                            + " production (OAUTH_POST_LOGOUT_REDIRECT_URI) — the development post-logout"
+                            + " constant (127.0.0.1:8080/) is not a valid production logout landing origin"
+                            + " (the registered value is what RP-initiated logout validates"
+                            + " post_logout_redirect_uri against; a mismatch lands on the authorization"
+                            + " server's own error page — the measured BE-02 whitelabel logout)");
+        }
 
         Set<String> redirectUris = parseRedirectUris(client.redirectUris());
+
+        // R10 (BE-02): the post-logout landing origin is env-driven exactly like
+        // the redirect URIs — the development constant is the non-prod fallback,
+        // never the production truth.
+        String postLogoutRedirectUri = StringUtils.hasText(client.postLogoutRedirectUri())
+                ? client.postLogoutRedirectUri().trim()
+                : POST_LOGOUT_REDIRECT_URI;
 
         RegisteredClient existing = registeredClientRepository.findByClientId(clientId);
         boolean secretChanged = existing == null || !passwordEncoder.matches(rawSecret, existing.getClientSecret());
 
-        RegisteredClient target = buildTarget(existing, clientId, rawSecret, secretChanged, redirectUris);
+        RegisteredClient target = buildTarget(existing, clientId, rawSecret, secretChanged, redirectUris,
+                postLogoutRedirectUri);
 
         if (existing == null) {
             try {
@@ -158,7 +175,8 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
                     throw ex;
                 }
                 boolean winnerSecretChanged = !passwordEncoder.matches(rawSecret, winner.getClientSecret());
-                RegisteredClient converged = buildTarget(winner, clientId, rawSecret, winnerSecretChanged, redirectUris);
+                RegisteredClient converged = buildTarget(winner, clientId, rawSecret, winnerSecretChanged, redirectUris,
+                        postLogoutRedirectUri);
                 if (needsSave(winner, converged)) {
                     registeredClientRepository.save(converged);
                 }
@@ -177,14 +195,15 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
     /**
      * Full re-derivation (identity preserved via {@code withId}): the stored row is never
      * a source of truth — the definition always comes from configuration (clientId,
-     * secret, redirect URIs) plus the spec §4.1 constants, so every boot converges the
-     * row to exactly what the environment says it should be.
+     * secret, redirect URIs, post-logout URI) plus the spec §4.1 constants, so every boot
+     * converges the row to exactly what the environment says it should be.
      */
     private RegisteredClient buildTarget(RegisteredClient existing,
                                          String clientId,
                                          String rawSecret,
                                          boolean secretChanged,
-                                         Set<String> redirectUris) {
+                                         Set<String> redirectUris,
+                                         String postLogoutRedirectUri) {
         String id = existing == null ? CLIENT_ID : existing.getId();
         RegisteredClient.Builder builder = RegisteredClient.withId(id)
                 .clientId(clientId)
@@ -198,7 +217,7 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
         } else {
             redirectUris.forEach(builder::redirectUri);
         }
-        builder.postLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI)
+        builder.postLogoutRedirectUri(postLogoutRedirectUri)
                 .scope("openid")
                 .scope("profile")
                 .clientSettings(buildClientSettings())
