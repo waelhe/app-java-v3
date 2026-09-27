@@ -55,12 +55,16 @@ public record PagedResponse<T>(
      * tests already speak this shape on pages).
      */
     public <R> PagedResponse<R> map(java.util.function.Function<? super T, ? extends R> mapper) {
-        // Spring Data's own PageImpl.map formulation: a typed local pins the
-        // stream's element type to exactly R (a wildcard-typed mapper passed
-        // straight through would leave javac a capture — CI round 2's
-        // "cannot infer type arguments" at the diamond), and the explicit
-        // type argument on the construction removes the last inference corner
-        List<R> mapped = content.stream().map(mapper::apply).toList();
+        // zero-inference formulation: a wildcard-typed mapper fed through
+        // Stream.map leaves javac a capture (List<capture of ? extends R>
+        // is NOT a List<R> — CI rounds 2 and 3 measured both the diamond
+        // failure and the explicit-type-argument failure), while the plain
+        // loop adds each ? extends R value into the List<R> directly —
+        // subtypes assign to their bound, no inference anywhere
+        List<R> mapped = new java.util.ArrayList<>(content.size());
+        for (T element : content) {
+            mapped.add(mapper.apply(element));
+        }
         return new PagedResponse<R>(mapped, pageNumber, pageSize, totalElements, totalPages, last);
     }
 }

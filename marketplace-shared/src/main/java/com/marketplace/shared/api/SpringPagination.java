@@ -44,7 +44,7 @@ public final class SpringPagination {
                 .map(order -> new PagedRequest.Order(
                         order.getProperty(), order.getDirection().isDescending()))
                 .toList();
-        return new PagedRequest<>(pageable.getPageNumber(), pageable.getPageSize(), orders);
+        return new PagedRequest(pageable.getPageNumber(), pageable.getPageSize(), orders);
     }
 
     /**
