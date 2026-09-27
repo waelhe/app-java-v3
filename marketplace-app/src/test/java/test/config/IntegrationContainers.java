@@ -58,10 +58,14 @@ public final class IntegrationContainers {
     /**
      * The PostgreSQL container the schema migrations target: PostGIS
      * (the production image family) as a postgres-compatible substitute,
-     * with the {@code marketplace} database name.
+     * with the {@code marketplace} database name. The return type is the
+     * non-generic {@link PostgreSQLContainer} this Testcontainers version
+     * ships — the raw-typed fields across the integration tree match it
+     * exactly (no diamond, no wildcard; see CacheRedisTtlIntegrationTest's
+     * note on the same version fact).
      */
-    public static PostgreSQLContainer<?> postgres() {
-        return new PostgreSQLContainer<>(
+    public static PostgreSQLContainer postgres() {
+        return new PostgreSQLContainer(
                         DockerImageName.parse("postgis/postgis:18-3.6-alpine")
                                 .asCompatibleSubstituteFor("postgres"))
                 .withDatabaseName("marketplace");
