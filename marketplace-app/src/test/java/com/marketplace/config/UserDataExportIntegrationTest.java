@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import test.config.AuthorizationServerFixture;
+
 import test.config.IntegrationContainers;
 
 import java.net.URI;
@@ -37,6 +39,11 @@ import tools.jackson.databind.ObjectMapper;
 import com.marketplace.MarketplaceApplication;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static test.config.AuthorizationServerFixture.AUTHORIZE_PATH;
+import static test.config.AuthorizationServerFixture.CLIENT_ID;
+import static test.config.AuthorizationServerFixture.CLIENT_SECRET;
+import static test.config.AuthorizationServerFixture.REDIRECT_URI;
+import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 
 /**
  * I7 Phase 2 (account-pseudonymization-plan §5-ج — the Art. 20 export
@@ -127,12 +134,7 @@ class UserDataExportIntegrationTest {
     private static final String PASSWORD = "it-export-password";
     private static final String REQUESTER = "it-export-requester";
     private static final String COUNTERPARTY = "it-export-counterparty";
-    private static final String CLIENT_ID = "it-login-gate-client";
-    private static final String CLIENT_SECRET = "it-login-gate-secret";
-    private static final String REDIRECT_URI = "https://login-gate.test.example/callback";
     private static final String LOGIN_PATH = "/login";
-    private static final String AUTHORIZE_PATH = "/oauth2/authorize";
-    private static final String TOKEN_PATH = "/oauth2/token";
 
     private static final Pattern SESSION_COOKIE = Pattern.compile("(SESSION|JSESSIONID)=([^;]+)");
     private static final Pattern CSRF_INPUT = Pattern.compile("<input[^>]*name=\"_csrf\"[^>]*value=\"([^\"]+)\"");
@@ -581,24 +583,8 @@ class UserDataExportIntegrationTest {
     }
 
     private void registerLoginGateClient() {
-        if (registeredClientRepository.findByClientId(CLIENT_ID) != null) {
-            return;
-        }
-        RegisteredClient loginGateClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId(CLIENT_ID)
-                .clientSecret("{noop}" + CLIENT_SECRET)
-                .clientName("Data-Subject Export Gate Integration Test Client")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri(REDIRECT_URI)
-                .scope("openid")
-                .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
-                        .build())
-                .build();
-        registeredClientRepository.save(loginGateClient);
+        AuthorizationServerFixture.registerLoginGateClient(registeredClientRepository,
+                "Data-Subject Export Gate Integration Test Client");
     }
 
     /**

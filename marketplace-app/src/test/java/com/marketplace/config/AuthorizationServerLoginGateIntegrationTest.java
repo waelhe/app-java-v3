@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import test.config.AuthorizationServerFixture;
+
 import test.config.IntegrationContainers;
 
 import java.net.URI;
@@ -45,6 +47,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static test.config.AuthorizationServerFixture.AUTHORIZE_PATH;
+import static test.config.AuthorizationServerFixture.CLIENT_ID;
+import static test.config.AuthorizationServerFixture.CLIENT_SECRET;
+import static test.config.AuthorizationServerFixture.REDIRECT_URI;
+import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 
 /**
  * Real end-to-end login gate for the framework-managed authorization server:
@@ -107,17 +114,11 @@ class AuthorizationServerLoginGateIntegrationTest {
     private static final String USER_USERNAME = "it-login-gate-user";
     private static final String PASSWORD = "it-login-gate-password";
 
-    private static final String CLIENT_ID = "it-login-gate-client";
-    private static final String CLIENT_SECRET = "it-login-gate-secret";
-    private static final String REDIRECT_URI = "https://login-gate.test.example/callback";
-
     private static final String APP_CLIENT_ID = "marketplace-web-client";
     private static final String APP_CLIENT_SECRET = "it-app-secret";
     private static final String APP_REDIRECT_URI = "http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client";
 
     private static final String LOGIN_PATH = "/login";
-    private static final String AUTHORIZE_PATH = "/oauth2/authorize";
-    private static final String TOKEN_PATH = "/oauth2/token";
     private static final String PROTECTED_ADMIN_PATH = "/api/v1/admin/system";
 
     private static final Pattern SESSION_COOKIE = Pattern.compile("(SESSION|JSESSIONID)=([^;]+)");
@@ -675,24 +676,8 @@ class AuthorizationServerLoginGateIntegrationTest {
     }
 
     private void registerLoginGateClient() {
-        if (registeredClientRepository.findByClientId(CLIENT_ID) != null) {
-            return;
-        }
-        RegisteredClient loginGateClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId(CLIENT_ID)
-                .clientSecret("{noop}" + CLIENT_SECRET)
-                .clientName("Login Gate Integration Test Client")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri(REDIRECT_URI)
-                .scope("openid")
-                .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
-                        .build())
-                .build();
-        registeredClientRepository.save(loginGateClient);
+        AuthorizationServerFixture.registerLoginGateClient(registeredClientRepository,
+                "Login Gate Integration Test Client");
     }
 
     private void registerUser(String username, String role) {
