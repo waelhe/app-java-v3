@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.0 + Java 25 LTS** with **Spring Modulith 2.1.0** enforcing bounded contexts. It comprises **16 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **22 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -44,7 +44,7 @@ The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.0 +
 |------|---------|---------|------------|
 | **1. Client** | End-user devices | Browser / mobile | React SPA, Admin Console, OAuth2 providers |
 | **2. Edge** | Global CDN + edge compute | Cloudflare (300+ POPs) | Worker (proxy), Hyperdrive, R2, Pages |
-| **3. Application** | Business logic | Cloudflare Container | Spring Boot 4.1 (16 modules) |
+| **3. Application** | Business logic | Cloudflare Container | Spring Boot 4.1 (22 modules) |
 | **4. Data** | Persistence | External managed | Neon (PostgreSQL), Upstash (Redis), SES (SMTP) |
 | **5. Observability** | Cross-cutting monitoring | Mixed | Cloudflare Analytics, Prometheus, audit log |
 
@@ -76,17 +76,18 @@ User → HTTPS → CF Worker (proxy + CORS) → HTTP → CF Container (Spring Bo
 L4: marketplace-app              ← Composition root (REST, admin, bootstrap)
 L3: marketplace-platform-infra   ← Cross-cutting (JPA, Security, Cache, Observability)
 L2: marketplace-shared           ← API contracts (SPIs, events, exceptions, DTOs)
-L1: 13 domain modules            ← Bounded contexts (each owns its data + logic)
+L1: 18 domain modules            ← Bounded contexts (each owns its data + logic)
+L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero domain dependencies)
 ```
 
-### The 16 Modules
+### The 22 Modules
 
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
 | 1 | `marketplace-shared` | L2 | API contracts | Port interfaces, event records, exceptions |
 | 2 | `marketplace-platform-infra` | L3 | Infra | JPA, Security, Cache, Observability, Email, JWK keystore signing |
 | 3 | `marketplace-identity` | L1 | Domain core | Users, roles, user lookup SPI, data export/purge |
-| 4 | `marketplace-catalog` | L1 | Domain core | Listings, GraphQL, CatalogSpi |
+| 4 | `marketplace-catalog` | L1 | Domain core | Listings, GraphQL, CatalogSpi, category registry |
 | 5 | `marketplace-booking` | L1 | Domain core | Bookings, expiration, 3 events |
 | 6 | `marketplace-payments` | L1 | Domain core | Payment intents, refunds, webhooks |
 | 7 | `marketplace-provider` | L1 | Domain core | Provider profiles, verification |
@@ -95,10 +96,16 @@ L1: 13 domain modules            ← Bounded contexts (each owns its data + logi
 | 10 | `marketplace-reviews` | L1 | Domain core | Reviews, ratings, ReviewUpdatedEvent |
 | 11 | `marketplace-disputes` | L1 | Domain core | Disputes, resolution workflow |
 | 12 | `marketplace-availability` | L1 | Domain core | Slots, rules, @ApplicationModuleListener |
-| 13 | `marketplace-messaging` | L1 | Domain support | Conversations, WebSocket STOMP |
-| 14 | `marketplace-notifications` | L1 | Domain support | Email + WS dispatch, event listeners |
-| 15 | `marketplace-search` | L1 | Domain support | Full-text search |
-| 16 | `marketplace-app` | L4 | Composition | @SpringBootApplication, Admin REST |
+| 13 | `marketplace-realestate` | L1 | Domain core | Property listings, JSON-LD, RealEstateSpi |
+| 14 | `marketplace-geo` | L1 | Domain core | Geo tree, sitemap, seed reference data |
+| 15 | `marketplace-media` | L1 | Domain core | S3 media storage, signed assets |
+| 16 | `marketplace-messaging` | L1 | Domain support | Conversations, WebSocket STOMP |
+| 17 | `marketplace-notifications` | L1 | Domain support | Email + WS dispatch, event listeners |
+| 18 | `marketplace-search` | L1 | Domain support | Full-text search |
+| 19 | `marketplace-community` | L1 | Domain support | Neighborhoods, posts, moderation |
+| 20 | `marketplace-ai` | L1 | Domain support | Provider-agnostic AI chat gateway |
+| 21 | `marketplace-app` | L4 | Composition | @SpringBootApplication, Admin REST |
+| 22 | `marketplace-edge` | L5 | Edge BFF | Spring Cloud Gateway Server MVC, TokenRelay, shared sessions |
 
 ### Spring Modulith Boundaries
 
@@ -348,7 +355,7 @@ security chains:
 
 ### ADR-001: Modular Monolith over Microservices
 
-**Context:** 16 bounded contexts with shared data and frequent cross-domain queries.
+**Context:** 18 bounded contexts with shared data and frequent cross-domain queries.
 **Decision:** Single deployable unit (modular monolith) with Spring Modulith enforcing boundaries.
 **Rationale:** Operational simplicity (single deployment, single database), while preserving domain separation. Microservices would add distributed transaction complexity without proportional benefit at this scale.
 **Trade-off:** Cannot independently scale individual modules. Acceptable for current load.
