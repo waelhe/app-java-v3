@@ -59,6 +59,29 @@ public interface GeoLookupPort {
      * 2=city, 3=neighborhood) — an int, not an enum, because cross-module
      * consumers only compare and display it.
      *
+     * <p><b>Serializable — the geo-tree cache value (R10, live-measured
+     * defect family):</b> the full tree is cached under {@code geo-tree}
+     * and the production cache type is Redis
+     * (spring-boot-cache 4.1.1 {@code RedisCacheConfiguration} — the
+     * house-documented default {@code RedisValueSerializer}, which requires
+     * cached types to be {@link java.io.Serializable}). A non-Serializable
+     * value makes every cold-cache PUT throw {@code IllegalStateException("Cannot
+     * serialize value of type … without a serializer")}, which the shared
+     * {@code GlobalExceptionHandler} maps to 409 CONFLICT-001 — the exact
+     * live verdict measured deterministically on production and staging
+     * ({@code GET /api/v1/geo/tree} → 409; every geo-linked listing detail
+     * → 409 through {@code addressChain → getTree()}). This closes the same
+     * seam the house closed for {@code Page<ListingSummary>}, seven entities
+     * and {@code PriceBreakdown} (see
+     * {@code ColdCacheRedisSerializationIntegrationTest}) — the two
+     * DTO-record cache values that fix round left uncovered were exactly
+     * this record and {@code ProviderStatsResponse}.
+     *
+     * <p>The {@code serialVersionUID} is fixed so an evolved record (a new
+     * component) degrades to {@code InvalidClassException} on old entries
+     * instead of corrupting reads — the TTL-bounded cache makes that failure
+     * self-healing (the next cold read repopulates).
+     *
      * @param id       stable identifier (seeded rows keep fixed UUIDs)
      * @param parentId the parent location, {@code null} for the root only
      * @param level    depth in the hierarchy (0-3)
@@ -74,7 +97,11 @@ public interface GeoLookupPort {
             String nameEn,
             String slug,
             List<GeoNode> children
-    ) {
+    ) implements java.io.Serializable {
+
+        @java.io.Serial
+        private static final long serialVersionUID = 1L;
+
         /**
          * The tree is cached (geo-tree); a consumer mutating the children
          * list would corrupt every later cached read until invalidation.
