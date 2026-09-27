@@ -13,6 +13,12 @@ numbers in the table below, and the module/`pom.xml` boundaries. Security and
 performance were measured directly. One security agent returned output
 unrelated to this repository and was discarded; no claim here rests on it.
 
+**Corrections (2026-09-27, review adoption).** Four edits were applied under
+peer review, each by re-measurement: the permitAll row is now scoped to the
+audit baseline with the PR-head drift noted; the secret-scan control is scoped
+to the scanned markers; two internal counting slips are fixed (unbounded
+`findAll()` is 2, not 3; 2 of 24 ports couple to Spring types, not 24).
+
 **Weighting.** security 25% · clean architecture 20% · maintainability 20% ·
 performance 20% · code quality 15%. Security carries the most weight because
 this is a production marketplace holding credentials, payments and PII.
@@ -36,10 +42,10 @@ Weighted total: **7.47 / 10**.
 | Control | Evidence | Official basis |
 |---|---|---|
 | Delegating password encoder (bcrypt with `{bcrypt}` prefix) | `marketplace-platform-infra/src/main/java/com/marketplace/shared/security/SecurityConfig.java:272-273` — `PasswordEncoderFactories.createDelegatingPasswordEncoder()` | Spring Security, password encoders |
-| No hardcoded secret in main code | 456 main sources scanned for `sk_`/`pk_`/`whsec_`/`gho_`/`AKIA`/PEM headers: **0 hits**. The single match is a header-stripping string in a dev tool, `marketplace-app/src/test/java/com/marketplace/dev/DevJwtGenerator.java:74` | — |
+| No matches for the scanned secret markers in main code | 456 main sources scanned for `sk_`/`pk_`/`whsec_`/`gho_`/`AKIA`/PEM headers: **0 hits** — the claim is scoped to these markers, not to all secret formats. The single match is a header-stripping string in a dev tool, `marketplace-app/src/test/java/com/marketplace/dev/DevJwtGenerator.java:74` | — |
 | Parameterized native SQL | 14 `nativeQuery = true` sites, all with named parameters, `Pageable` and `countQuery`; 0 concatenations — e.g. `marketplace-catalog/src/main/java/com/marketplace/catalog/ProviderListingRepository.java:127-136` | Spring Data JPA, `@Query` |
 | Bean validation present | 41 `@RequestBody` endpoints · 43 `@Valid` · 104 constraint annotations · 157 record DTOs | Jakarta Bean Validation |
-| Public surface enumerated | 12 `permitAll` rules in `SecurityConfig.java:153-214` — public reads (listings/reviews/search/geo/sitemap), `actuator/health|info`, `/v3/api-docs`, `payments/webhooks/**`, `listings/*/leads` POST, `/assets/**`, `/login` | Spring Security filter chain |
+| Public surface enumerated | 12 `permitAll` rules in `SecurityConfig.java:153-214` **at the audit baseline (`24e1e998`, 2026-09-25)** — public reads (listings/reviews/search/geo/sitemap), `actuator/health` and `actuator/info`, `/v3/api-docs`, `payments/webhooks/**`, `listings/*/leads` POST, `/assets/**`, `/login`. Drift at the PR-head tree (`70638fe`, 2026-09-27): **15 rules** (`:174-274`) — added `GET /ws/**`, `GET /api/v1/media/listings/*`, `POST /api/v1/auth/register` | Spring Security filter chain |
 | No client-facing exception leakage | `marketplace-shared/src/main/java/com/marketplace/shared/api/GlobalExceptionHandler.java:145,158` forward `IllegalArgumentException`/`IllegalStateException` messages — application-thrown text, not SQL or stack traces. The 23505 path extracts a message for a log line only (`:175`, `:210`). Taxonomy messages are externalized via `messageSource` (`:256`). 0 `printStackTrace` in main. | RFC 7807 |
 
 ### Gaps (verified)
@@ -65,7 +71,7 @@ Weighted total: **7.47 / 10**.
 
 | Measurement | Value | Evidence |
 |---|---:|---|
-| Unbounded `findAll()` in main code | 3 | `marketplace-geo/src/main/java/com/marketplace/geo/GeoService.java:71` (reference data), `marketplace-pricing/src/main/java/com/marketplace/pricing/PricingService.java:281` (rules) |
+| Unbounded `findAll()` in main code | 2 | `marketplace-geo/src/main/java/com/marketplace/geo/GeoService.java:71` (reference data), `marketplace-pricing/src/main/java/com/marketplace/pricing/PricingService.java:281` (rules) |
 | Batch rehydration instead of per-row loads | present | `marketplace-catalog/src/main/java/com/marketplace/catalog/CatalogService.java:387` `findAllById(idsInOrder)`, `marketplace-identity/src/main/java/com/marketplace/identity/IdentityProviderNameResolver.java:31` |
 | Caches | 15 names, `-v2` versioned, event-driven invalidation (0 `@CacheEvict`) | `marketplace-app/src/main/resources/application.yml:188-212` |
 | Cache key discrimination | page, size, sort, plus query/category | `CatalogService.java:80,94,149` |
@@ -104,7 +110,7 @@ trigram path holds at current row counts.
 3. **medium** — packages are flat in all 18 domains (0 `api`/`internal`/`persistence` directories), e.g. `marketplace-catalog/.../catalog/package-info.java:1-5`.
 4. **medium** — 17/18 domains depend directly on `marketplace-platform-infra` while owning concrete adapters: `marketplace-media/src/main/java/com/marketplace/media/S3MediaStorage.java:3-21`, `marketplace-payments/src/main/java/com/marketplace/payments/StripePspChannel.java:3-11`.
 5. **medium** — six classes exceed 400 lines (`CatalogService.java:52` 742, `SecurityConfig.java:89`, `PaymentsService.java:42`, …) and three beans exceed seven constructor collaborators (`MediaService` 8, `PaymentsService` 9, `SavedSearchService` 9). 0 production methods exceed 80 lines.
-6. **medium** — `marketplace-shared` places 87 main files in one package and couples 24 ports to Spring `Page`/`Pageable`/`Authentication` (e.g. `CatalogSearchPort.java:3-4`).
+6. **medium** — `marketplace-shared` places 87 main files in one package and couples 2 of its 24 ports to Spring `Page`/`Pageable`/`Authentication` (e.g. `CatalogSearchPort.java:3-4`).
 7. **low** — 7 switch-on-type sites; `ContentReportService.java:130,163,191` and `PaymentsService.java:198` centralize dispatch that strategy objects would carry.
 
 ### Strengths
