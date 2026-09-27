@@ -33,8 +33,15 @@ import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OA
  * L20 HTTP contract (roadmap §5): the two provider "me" ledger endpoints.
  * Authorization itself (ownsProvider) is pinned in
  * {@code LedgerServiceSecurityTest}; this slice pins the routes, the "me"
- * resolution (user → provider via {@link ProviderLookupPort}) and the 404
- * for a caller without a provider profile.
+ * resolution and the 404 for a caller without a provider profile.
+ *
+ * <p><b>R10 regression pin (frontend battery card BE-04, LEDGER-403):</b>
+ * the "me" resolution must pass the authenticated USER id into the
+ * service — the A1 cross-module {@code provider_id} space — never the
+ * {@code provider_profiles.PK}. The pre-fix code passed the PK; the mock
+ * here stubbed the service with that same PK and the defect sailed through
+ * this very slice. The stubs and the explicit {@code verify(...)} below now
+ * pin the id SPACE, not just the route.
  */
 @WebMvcTest(controllers = ProviderLedgerController.class,
     excludeAutoConfiguration = {
@@ -60,35 +67,47 @@ class ProviderLedgerControllerWebMvcTest {
     static class MethodSecurityConfig {
     }
 
+    /** The profile PK created by the last stubOwnProvider call — the id that must NEVER reach the service (the BE-04 trap). */
+    private UUID lastProfileId;
+
     private UUID stubOwnProvider() {
         UUID userId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
+        UUID providerProfileId = UUID.randomUUID(); // deliberately DIFFERENT from userId — the two ID spaces must never be conflated (the BE-04 trap)
+        lastProfileId = providerProfileId;
         when(currentUserProvider.getCurrentUserId(ArgumentMatchers.<Authentication>any())).thenReturn(userId);
         when(providerLookupPort.findByUserId(userId)).thenReturn(Optional.of(
-                new ProviderSummary(providerId, "Test Provider", "VERIFIED", userId)));
-        return providerId;
+                new ProviderSummary(providerProfileId, "Test Provider", "VERIFIED", userId)));
+        return userId; // the id the service must receive — the USER id, not the profile PK
     }
 
     @Test
     void getMyBalance_returnsOwnBalance() throws Exception {
-        UUID providerId = stubOwnProvider();
-        ProviderBalance balance = ProviderBalance.empty(providerId);
+        UUID userId = stubOwnProvider();
+        ProviderBalance balance = ProviderBalance.empty(userId);
         balance.credit(4500L);
-        when(ledgerService.getBalanceForOwner(providerId)).thenReturn(balance);
+        when(ledgerService.getBalanceForOwner(userId)).thenReturn(balance);
 
         mockMvc.perform(get("/api/v1/providers/me/ledger/balance"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(providerId.toString()))
+                .andExpect(jsonPath("$.id").value(userId.toString()))
                 .andExpect(jsonPath("$.availableCents").value(4500L));
+
+        // BE-04 regression pin: the service receives the USER id (the A1
+        // cross-module space), never the provider_profiles.PK — the exact
+        // argument mismatch that made the legitimate owner always-denied.
+        org.mockito.Mockito.verify(ledgerService).getBalanceForOwner(
+                org.mockito.ArgumentMatchers.eq(userId));
+        org.mockito.Mockito.verify(ledgerService, org.mockito.Mockito.never())
+                .getBalanceForOwner(org.mockito.ArgumentMatchers.eq(lastProfileId));
     }
 
     @Test
     void getMyStatement_returnsPagedMovements() throws Exception {
-        UUID providerId = stubOwnProvider();
+        UUID userId = stubOwnProvider();
         UUID sourceId = UUID.randomUUID();
-        when(ledgerService.getStatementForOwner(any(UUID.class), any(Pageable.class)))
+        when(ledgerService.getStatementForOwner(org.mockito.ArgumentMatchers.eq(userId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
-                        List.of(LedgerEntry.paymentCredit(providerId, sourceId, 5000L)),
+                        List.of(LedgerEntry.paymentCredit(userId, sourceId, 5000L)),
                         PageRequest.of(0, 20),
                         1));
 
@@ -111,15 +130,15 @@ class ProviderLedgerControllerWebMvcTest {
      */
     @Test
     void getMyStatement_commissionDebitPresentsNegativeAmount() throws Exception {
-        UUID providerId = stubOwnProvider();
+        UUID userId = stubOwnProvider();
         UUID paymentIntentId = UUID.randomUUID();
         UUID commissionSourceId = UUID.nameUUIDFromBytes(
                 ("commission-" + paymentIntentId).getBytes());
         when(ledgerService.getStatementForOwner(any(UUID.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
                         List.of(
-                                LedgerEntry.paymentCredit(providerId, paymentIntentId, 5000L),
-                                LedgerEntry.commissionDebit(providerId, commissionSourceId, 500L)),
+                                LedgerEntry.paymentCredit(userId, paymentIntentId, 5000L),
+                                LedgerEntry.commissionDebit(userId, commissionSourceId, 500L)),
                         PageRequest.of(0, 20),
                         2));
 
