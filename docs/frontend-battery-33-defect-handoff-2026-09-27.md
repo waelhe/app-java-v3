@@ -97,7 +97,7 @@
 **الجذر مقيسًا من الكود (عند `ed16eb9`) — فخّ «فضاءين للمعرّفات»:**
 - `marketplace-ledger/.../ProviderLedgerController.java:69-76` — `requireOwnProviderId` يحوّل userId إلى `findByUserId(userId).map(ProviderSummary::id)` أي **`provider_profiles.PK`**.
 - يمرر ذلك الـPK إلى `LedgerService` المحروس بـ `@PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")` (`LedgerService.java:142,153`).
-- `marketplace-platform-infra/.../AuthHelper.java:46-51` — `ownsProvider` يستدعي `findByUserId(providerId)` أي يبحث عن الـPK داخل فضاء **users.id** ← فارغ دائمًا ← deny دائم.
+- `marketplace-platform-infra/.../AuthHelper.java:46-51` — `ownsProvider` يستدعي `findByUserId(providerId)` أي يبحث عن الـPK داخل فضاء **users.id**: البحث يعود فارغًا — والمالك الشرعي يُرفض — كلما اختلف الفضاءان (`ProviderSummary.id` من `provider_profiles.id` لا يساوي أي `users.id`)؛ وهو الحالة الفعلية هنا لأن `requireOwnProviderId` يمرر PK لا هوية مستخدم.
 - الـjavadoc نفسه يحذّر من هذا حرفيًا (`AuthHelper.java:37-44`): كل عمود `provider_id` عابر للوحدات يحمل **user id** لا `provider_profiles.id`، «otherwise the legitimate owner is always denied».
 
 **الأثر:** السطح المالي للمزوّد (رصيد + كشف حركات) مغلق كليًا أمام مالكه — والحوارس مكتوبة بحيث توافق الفخّ بدل أن تمنعه.
