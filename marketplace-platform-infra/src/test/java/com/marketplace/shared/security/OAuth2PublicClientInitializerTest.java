@@ -2,7 +2,6 @@ package com.marketplace.shared.security;
 
 import com.marketplace.shared.config.MarketplaceProperties;
 import java.time.Duration;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;

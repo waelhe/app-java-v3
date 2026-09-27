@@ -1,7 +1,5 @@
 package com.marketplace.shared.api;
 
-import java.time.Instant;
-import java.util.UUID;
 
 /**
  * L25 (feature-expansion roadmap §5): the provider's slot-window aggregates —

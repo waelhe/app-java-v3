@@ -7,7 +7,6 @@ import com.marketplace.catalog.ProviderListingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.marketplace.shared.api.BadRequestException;
-import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.PropertyType;
