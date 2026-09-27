@@ -55,9 +55,9 @@ exists to end this class of failure, not to fix these eight instances by hand on
 
 ## Track 1 — Documentation truth guards [priority 1 · effort S]
 
-**Problem.** Eight stale numeric claims plus one version drift (table above). The project's
-own map misinforms every reader and every tooling session — the audit rates this **high**,
-and it is confirmed live on `main` today.
+**Problem.** Ten stale numeric claims plus one version drift (the Boot and Modulith
+versions — table above). The project's own map misinforms every reader and every tooling
+session — the audit rates this **high**, and it is confirmed live on `main` today.
 
 **Design — official basis.**
 - JUnit 5 tests as governance guards, exactly the established pattern in this repo:
@@ -232,12 +232,22 @@ domains).
 - Transactions: Spring Framework reference, "Declarative Transaction Management" —
   proxy-based AOP makes `@Transactional` effective only on public methods invoked through
   the proxy; self-invocation and non-public methods are the documented pitfalls. The repo
-  standard (services only, public methods only) mirrors the official semantics; the audit
-  measured 121 of 151 production `@Transactional` already in `*Service` classes and 0 on
-  controllers. Enforcement turns the standard into a rule.
+  standard's hard prohibitions (CODING_STANDARDS.md §3.2: not on controllers, not on
+  private methods) mirror the official semantics. Live re-measurement (2026-09-27,
+  adoption of the CodeRabbit finding on this plan): ~162 production `@Transactional`
+  occurrences — ~125 on `*Service` classes and ~37 on SPI adapters implementing shared
+  ports (`*Adapter`, e.g. `AvailabilityLookupAdapter`) plus scheduled jobs
+  (`LeadsFingerprintCleanupJob`); **0 on controllers and 0 on private methods — the two
+  documented prohibitions are green today.** Adapters and jobs are business-boundary
+  beans in the standard's intent, so "services only" would be a rule the code legitimately
+  violates 37 times; the rules below encode the prohibitions the standard actually states.
 - Two new ArchUnit rules in `ArchitectureRulesTest`:
-  1. `transactionsLiveOnServicesOnly` — no `@Transactional` outside `*Service` classes and
-     none on private methods, `because(...)` citing the proxy semantics.
+  1. `transactionsMustNotLiveOnControllers` — no class annotated `@RestController`/
+     `@Controller` (or named `*Controller`) may use `@Transactional`, `because(...)`
+     citing the proxy semantics + the standard's controller prohibition — **green today
+     (measured 0) and made permanent**.
+     `transactionsMustNotBePrivate` — no private method carries `@Transactional`, same
+     official basis — **green today (measured 0) and made permanent**.
   2. `sharedPortsAreFrameworkNeutral` — classes in the shared-contracts package named
      `*Port` must not depend on `org.springframework..` (this rule is red today — by
      design, it drives the fix below).
@@ -253,8 +263,9 @@ domains).
   it is not silent debt.
 
 **Steps.**
-1. Add the transaction rule (green immediately — the codebase already conforms; the rule
-   makes it permanent).
+1. Add the two transaction rules — both green today by measurement (0 controller usages,
+   0 private usages); they make the documented prohibitions permanent instead of waiting
+   for review.
 2. Add the ports rule (red), decouple the two ports with the neutral record, adapters map
    to `Pageable` (green) — same PR.
 3. Record the layering deferral in `SYSTEM.md` governance section with a pointer to §6.
