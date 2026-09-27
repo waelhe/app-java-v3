@@ -52,6 +52,72 @@ class OAuth2ClientSecretInitializerTest {
                 .hasMessageContaining("OAUTH_CLIENT_REDIRECT_URIS");
     }
 
+    /**
+     * R10 (frontend battery card BE-02): the post-logout landing origin is
+     * explicit-config in production exactly like the redirect URIs — a blank
+     * value fails fast instead of silently registering the development
+     * constant (the whitelabel-logout defect the battery measured).
+     */
+    @Test
+    void failsWhenPostLogoutRedirectUriBlankInProductionProfile() {
+        OAuth2ClientSecretInitializer prodInitializer = new OAuth2ClientSecretInitializer(
+                properties("web", "raw", "https://bff.example.com/callback", ""),
+                repository, passwordEncoder, environment(true));
+
+        assertThatThrownBy(() -> prodInitializer.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("postLogoutRedirectUri must be configured in production")
+                .hasMessageContaining("OAUTH_POST_LOGOUT_REDIRECT_URI")
+                .hasMessageContaining("not a valid production logout landing origin");
+    }
+
+    /**
+     * R10 (BE-02, the non-prod leg): with no configured value the development
+     * constant remains the fallback — the dev flow keeps working unchanged.
+     */
+    @Test
+    void blankPostLogoutRedirectUriBindsTheDevelopmentFallbackOutsideProduction() {
+        when(repository.findByClientId("web")).thenReturn(null);
+        when(passwordEncoder.encode("raw")).thenReturn("encoded");
+
+        new OAuth2ClientSecretInitializer(
+                properties("web", "raw"), repository, passwordEncoder, environment(false))
+                .run(null);
+
+        RegisteredClient saved = savedClientArgument();
+        assertThat(saved.getPostLogoutRedirectUris())
+                .containsExactly("http://127.0.0.1:8080/");
+    }
+
+    /**
+     * R10 (BE-02, the prod leg): the env-driven value replaces the stored one
+     * and the row converges (the same re-derivation discipline as the
+     * redirect URIs — the stored row is never the source of truth).
+     */
+    @Test
+    void convergesEnvDrivenPostLogoutRedirectUriWhilePreservingRowIdentity() {
+        String existingRowId = UUID.randomUUID().toString();
+        RegisteredClient existing = completeClientWithRedirect(existingRowId, "https://bff.example.com/callback").build();
+        when(repository.findByClientId("web")).thenReturn(existing);
+        when(passwordEncoder.matches("raw", existing.getClientSecret())).thenReturn(true);
+
+        new OAuth2ClientSecretInitializer(
+                properties("web", "raw", "https://bff.example.com/callback", "https://app.example.com/"),
+                repository, passwordEncoder, environment(false))
+                .run(null);
+
+        RegisteredClient saved = savedClientArgument();
+        assertThat(saved.getId())
+                .as("converge re-derives the definition but preserves the row identity")
+                .isEqualTo(existingRowId);
+        assertThat(saved.getPostLogoutRedirectUris())
+                .as("the env-driven post-logout origin replaces the development constant on the row")
+                .containsExactly("https://app.example.com/");
+        assertThat(saved.getClientSecret())
+                .as("secret unchanged means the stored encoded secret is reused")
+                .isEqualTo(existing.getClientSecret());
+    }
+
     @Test
     void failsWhenClientNotConfiguredInProductionProfile() {
         OAuth2ClientSecretInitializer prodInitializer = new OAuth2ClientSecretInitializer(
@@ -279,17 +345,22 @@ class OAuth2ClientSecretInitializerTest {
     }
 
     private static MarketplaceProperties properties(String clientId, String secret) {
-        return properties(clientId, secret, "");
+        return properties(clientId, secret, "", "");
     }
 
     private static MarketplaceProperties properties(String clientId, String secret, String redirectUris) {
+        return properties(clientId, secret, redirectUris, "");
+    }
+
+    private static MarketplaceProperties properties(String clientId, String secret, String redirectUris,
+                                                    String postLogoutRedirectUri) {
         return new MarketplaceProperties(
                 null,
                 new MarketplaceProperties.Security(
                         null,
                         null,
                         new MarketplaceProperties.Security.OAuth2(
-                                new MarketplaceProperties.Security.OAuth2.Client(clientId, secret, redirectUris),
+                                new MarketplaceProperties.Security.OAuth2.Client(clientId, secret, redirectUris, postLogoutRedirectUri),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
                         new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()),
                                 null));
