@@ -1,5 +1,7 @@
 package com.marketplace.notifications;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
@@ -20,7 +22,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.List;
@@ -75,10 +76,7 @@ class NotificationPreferencesIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches AuditedWritesIntegrationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;

@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.MarketplaceApplication;
 import com.marketplace.catalog.CatalogService;
 import com.marketplace.catalog.ProviderListing;
@@ -16,7 +18,6 @@ import org.springframework.cache.CacheManager;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -25,7 +26,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -100,17 +100,12 @@ class CacheInvalidationAcrossReplicasIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches the established container pattern (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings("resource") // Lifecycle managed by @Testcontainers extension; connection details via RedisContainerConnectionDetailsFactory
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     /** Replica B: a second full application context on its own random port. */
     private static ConfigurableApplicationContext replicaB;
