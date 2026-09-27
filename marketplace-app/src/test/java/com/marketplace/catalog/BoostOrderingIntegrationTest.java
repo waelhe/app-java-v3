@@ -423,7 +423,7 @@ class BoostOrderingIntegrationTest {
         var page = catalogService.listByProvider(PROVIDER_USER_ID, Pageable.ofSize(10));
         assertThat(page.map(ProviderListing::getId).getContent())
                 .containsExactly(ID_03, ID_01, ID_02);
-        assertThat(page.totalElements()).isEqualTo(3L);
+        assertThat(page.getTotalElements()).isEqualTo(3L);
     }
 
     // ---- The window-restricted native path carries the same ordering ----
