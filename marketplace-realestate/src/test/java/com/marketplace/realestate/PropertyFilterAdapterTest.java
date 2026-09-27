@@ -1,5 +1,6 @@
 package com.marketplace.realestate;
 
+import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.PropertyType;
@@ -11,9 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.List;
@@ -85,17 +84,17 @@ class PropertyFilterAdapterTest {
     void findMatchingPaged_mapsMatchesAndOrdersByAreaWithIdTiebreak() {
         UUID small = UUID.randomUUID();
         UUID large = UUID.randomUUID();
-        Pageable areaDesc = PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "area"));
+        PagedRequest areaDesc = PagedRequest.of(0, 10, new PagedRequest.Order("area", true));
         when(repository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(details(large, 120), details(small, 80))));
 
         var page = adapter.findMatchingPaged(new PropertyCriteria(
                 null, null, null, null, null, null), Set.of(small, large), areaDesc);
 
-        assertThat(page.getContent())
+        assertThat(page.content())
                 .extracting(PropertyMatch::listingId)
                 .containsExactly(large, small);
-        assertThat(page.getContent())
+        assertThat(page.content())
                 .extracting(PropertyMatch::areaM2)
                 .containsExactly(120, 80);
 
@@ -116,10 +115,10 @@ class PropertyFilterAdapterTest {
 
         var page = adapter.findMatchingPagedRestricted(new PropertyCriteria(
                         PropertyPurpose.SALE, null, null, null, null, null),
-                Set.of(active), Set.of(provider), PageRequest.of(0, 10));
+                Set.of(active), Set.of(provider), PagedRequest.of(0, 10));
 
-        assertThat(page.getTotalElements()).isEqualTo(1);
-        assertThat(page.getContent().get(0).listingId()).isEqualTo(active);
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.content().get(0).listingId()).isEqualTo(active);
     }
 
     // ---- P1 (postgis plan): the radius operations ----------------------
@@ -155,7 +154,7 @@ class PropertyFilterAdapterTest {
     void findWithinRadiusPaged_mapsToIds_andConsumesTheSortMarker() {
         UUID nearest = UUID.randomUUID();
         UUID next = UUID.randomUUID();
-        Pageable distanceSorted = PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance"));
+        PagedRequest distanceSorted = PagedRequest.of(0, 10, new PagedRequest.Order("distance", false));
         when(repository.findWithinRadiusPaged(eq(LAT), eq(LNG), eq(10_000L),
                 eq(Set.of(nearest, next)), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
@@ -165,7 +164,7 @@ class PropertyFilterAdapterTest {
                 Set.of(nearest, next), distanceSorted);
 
         // ids only — the distance never leaves the module (D-P11)
-        assertThat(page.getContent()).containsExactly(nearest, next);
+        assertThat(page.content()).containsExactly(nearest, next);
         // the baked ORDER BY owns the order — the pageable arrives UNSORTED
         // (LIMIT/OFFSET only), the areaOrdered analog
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
@@ -179,9 +178,9 @@ class PropertyFilterAdapterTest {
     @Test
     void findWithinRadiusPaged_emptyActiveSet_isAnHonestEmptyPage_noQuery() {
         var page = adapter.findWithinRadiusPaged(LAT, LNG, 10_000L, Set.of(),
-                PageRequest.of(0, 10));
+                PagedRequest.of(0, 10));
 
-        assertThat(page.getTotalElements()).isZero();
+        assertThat(page.totalElements()).isZero();
         verifyNoInteractions(repository);
     }
 
@@ -195,17 +194,17 @@ class PropertyFilterAdapterTest {
 
         var page = adapter.findWithinRadiusPagedRestricted(LAT, LNG, 10_000L,
                 Set.of(active), Set.of(provider),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
+                PagedRequest.of(0, 10, new PagedRequest.Order("distance", false)));
 
-        assertThat(page.getContent()).containsExactly(active);
+        assertThat(page.content()).containsExactly(active);
     }
 
     @Test
     void findWithinRadiusPagedRestricted_emptyActiveSet_shortCircuits() {
         var page = adapter.findWithinRadiusPagedRestricted(LAT, LNG, 10_000L, Set.of(),
-                Set.of(UUID.randomUUID()), PageRequest.of(0, 10));
+                Set.of(UUID.randomUUID()), PagedRequest.of(0, 10));
 
-        assertThat(page.getTotalElements()).isZero();
+        assertThat(page.totalElements()).isZero();
         verifyNoInteractions(repository);
     }
 }

@@ -4,6 +4,8 @@ import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
@@ -14,7 +16,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -62,11 +63,11 @@ class SavedSearchMatcherTest {
 
     private void catalogAnswers(List<ListingSummary> content) {
         lenient().when(catalogSearchPort.searchByCriteriaRestrictedToListings(
-                        any(SearchCriteria.class), anySet(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(content));
+                        any(SearchCriteria.class), anySet(), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(content)));
         lenient().when(catalogSearchPort.searchFullTextRestrictedToListings(
-                        anyString(), anySet(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(content));
+                        anyString(), anySet(), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(content)));
     }
 
     private static SearchCriteria legacy() {
@@ -94,7 +95,7 @@ class SavedSearchMatcherTest {
         catalogAnswers(List.of(ListingSummary.class.cast(summary())));
         assertThat(matcher.matches(legacy(), LISTING, PROVIDER)).isTrue();
         verify(catalogSearchPort).searchByCriteriaRestrictedToListings(
-                any(SearchCriteria.class), eq(Set.of(LISTING)), any(Pageable.class));
+                any(SearchCriteria.class), eq(Set.of(LISTING)), any(PagedRequest.class));
     }
 
     @Test
@@ -103,7 +104,7 @@ class SavedSearchMatcherTest {
         catalogAnswers(List.of(summary()));
         assertThat(matcher.matches(text, LISTING, PROVIDER)).isTrue();
         verify(catalogSearchPort).searchFullTextRestrictedToListings(
-                eq("\"sea view\" jeddah"), eq(Set.of(LISTING)), any(Pageable.class));
+                eq("\"sea view\" jeddah"), eq(Set.of(LISTING)), any(PagedRequest.class));
     }
 
     @Test
@@ -126,7 +127,7 @@ class SavedSearchMatcherTest {
         assertThat(criteriaCaptor.getValue().locationIds()).containsExactly(LOCATION);
         assertThat(criteriaCaptor.getValue().minRooms()).isEqualTo(2);
         verify(catalogSearchPort).searchByCriteriaRestrictedToListings(
-                any(SearchCriteria.class), eq(Set.of(LISTING)), any(Pageable.class));
+                any(SearchCriteria.class), eq(Set.of(LISTING)), any(PagedRequest.class));
     }
 
     @Test
@@ -137,7 +138,7 @@ class SavedSearchMatcherTest {
 
         assertThat(matcher.matches(property(2), LISTING, PROVIDER)).isFalse();
         verify(catalogSearchPort, never()).searchByCriteriaRestrictedToListings(
-                any(SearchCriteria.class), anySet(), any(Pageable.class));
+                any(SearchCriteria.class), anySet(), any(PagedRequest.class));
     }
 
     @Test
@@ -160,7 +161,7 @@ class SavedSearchMatcherTest {
 
         assertThat(matcher.matches(window(), LISTING, PROVIDER)).isFalse();
         verify(catalogSearchPort, never()).searchByCriteriaRestrictedToListings(
-                any(SearchCriteria.class), anySet(), any(Pageable.class));
+                any(SearchCriteria.class), anySet(), any(PagedRequest.class));
     }
 
     @Test

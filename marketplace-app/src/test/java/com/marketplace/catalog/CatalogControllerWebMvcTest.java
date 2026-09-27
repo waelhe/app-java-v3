@@ -73,7 +73,9 @@ class CatalogControllerWebMvcTest {
 
     @Test
     void listActive_returnsOk() throws Exception {
-        when(catalogService.listActive(any())).thenReturn(org.springframework.data.domain.Page.empty());
+        when(catalogService.listActive(any()))
+                .thenReturn(com.marketplace.shared.api.PagedResponse.of(
+                        org.springframework.data.domain.Page.empty()));
 
         mockMvc.perform(get("/api/v1/listings"))
                 .andExpect(status().isOk());

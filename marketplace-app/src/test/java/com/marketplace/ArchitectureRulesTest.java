@@ -7,12 +7,17 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.annotation.Annotation;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import jakarta.persistence.Entity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +28,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RestController;
 
 @AnalyzeClasses(packages = "com.marketplace", importOptions = ImportOption.DoNotIncludeTests.class)
@@ -49,6 +55,55 @@ class ArchitectureRulesTest {
                             + "controllers exposed entities in 9 REST signatures; this rule makes the "
                             + "repaired boundary regression-proof (Spring Modulith module-API model: "
                             + "published interfaces and DTOs, entities internal).");
+
+    /**
+     * Track 5 (plan e803a53): the transaction prohibitions the coding
+     * standard states (CODING_STANDARDS.md §3.2) become permanent build
+     * gates instead of waiting for review. Measured 2026-09-28 on 0a950ca:
+     * 0 controller usages, 0 private-method usages — both green today by
+     * measurement, not by hope.
+     */
+    @ArchTest
+    static final ArchRule transactionsMustNotLiveOnControllers =
+            classes().that().areAnnotatedWith(RestController.class)
+                    .or().areAnnotatedWith(Controller.class)
+                    .or().haveSimpleNameEndingWith("Controller")
+                    .should(notUseTransactionalAnywhere())
+                    .because("@Transactional on the web layer starts a transaction in the controller — "
+                            + "the service layer owns transaction boundaries (Spring Framework reference, "
+                            + "Declarative Transaction Management: @Transactional declares the transactional "
+                            + "boundary of a business operation; CODING_STANDARDS.md §3.2 prohibits it on "
+                            + "controllers). 0 usages measured at adoption (2026-09-28).");
+
+    @ArchTest
+    static final ArchRule transactionsMustNotBePrivate =
+            classes().that().resideInAPackage("com.marketplace..")
+                    .should(notHaveTransactionalOnPrivateMethods())
+                    .because("proxy-based AOP makes @Transactional on a non-public method a silent no-op — "
+                            + "the Spring Framework reference (Using @Transactional) is explicit: only "
+                            + "public methods invoked through the proxy get the advice; a private "
+                            + "@Transactional method runs WITHOUT a transaction while reading as if it "
+                            + "had one. CODING_STANDARDS.md §3.2 states the same prohibition. "
+                            + "0 usages measured at adoption (2026-09-28).");
+
+    /**
+     * Track 5 (plan e803a53): the shared ports stay framework-neutral. Red
+     * with exactly the two measured offenders (CatalogSearchPort,
+     * RealestatePropertyFilterPort importing Spring Data Page/Pageable)
+     * before this PR's repair; green after — and permanent.
+     */
+    @ArchTest
+    static final ArchRule sharedPortsAreFrameworkNeutral =
+            noClasses().that().resideInAPackage("com.marketplace.shared.api..")
+                    .and().haveSimpleNameEndingWith("Port")
+                    .should().dependOnClassesThat().resideInAPackage("org.springframework..")
+                    .because("the shared-contract module is the last place framework types should leak "
+                            + "(Spring Modulith boundary model: the module API is what consumers depend "
+                            + "on — a port speaking Spring Data's Pageable drags every consumer module "
+                            + "into that type system). Audit 2026-09-25: 2 of 24 ports imported "
+                            + "org.springframework.data.domain — repaired in the same change that "
+                            + "installed this rule; the neutral contracts are PagedRequest/PagedResponse "
+                            + "with SpringPagination as the documented interop corner.");
 
     @ArchTest
     static final ArchRule controllersMustNotAccessPlatformInfra =
@@ -114,6 +169,43 @@ class ArchitectureRulesTest {
         return new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages("com.marketplace");
+    }
+
+    private static ArchCondition<JavaClass> notUseTransactionalAnywhere() {
+        return new ArchCondition<>("not use @Transactional on the class or any method") {
+            @Override
+            public void check(JavaClass clazz, ConditionEvents events) {
+                boolean classLevel = clazz.isAnnotatedWith(Transactional.class);
+                boolean methodLevel = clazz.getMethods().stream()
+                        .anyMatch(method -> method.isAnnotatedWith(Transactional.class));
+                if (classLevel || methodLevel) {
+                    events.add(SimpleConditionEvent.violated(clazz, String.format(
+                            "%s carries @Transactional in the web layer — the service layer owns "
+                                    + "transaction boundaries (Spring Framework reference, Declarative "
+                                    + "Transaction Management; CODING_STANDARDS.md §3.2)",
+                            clazz.getName())));
+                }
+            }
+        };
+    }
+
+    private static ArchCondition<JavaClass> notHaveTransactionalOnPrivateMethods() {
+        return new ArchCondition<>("not carry @Transactional on a private method") {
+            @Override
+            public void check(JavaClass clazz, ConditionEvents events) {
+                boolean violated = clazz.getMethods().stream()
+                        .anyMatch(method -> method.isAnnotatedWith(Transactional.class)
+                                && method.getModifiers().contains(JavaModifier.PRIVATE));
+                if (violated) {
+                    events.add(SimpleConditionEvent.violated(clazz, String.format(
+                            "%s has a private @Transactional method — proxy-based AOP does not advise "
+                                    + "it, so the method silently runs without a transaction while "
+                                    + "reading as if it had one (Spring Framework reference, Using "
+                                    + "@Transactional; CODING_STANDARDS.md §3.2)",
+                            clazz.getName())));
+                }
+            }
+        };
     }
 
     private static boolean hasAnnotationOnAnyClass(JavaClasses classes, Class<? extends Annotation> annotation) {

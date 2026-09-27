@@ -6,6 +6,7 @@ import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.PropertyDetailsPort.PropertyView;
 import com.marketplace.shared.api.ProviderListingView;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.security.CurrentUserProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,6 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -82,9 +82,10 @@ class CatalogControllerTest {
 
     @Test
     void listActive_servesTheServicePage() {
-        Page<ListingSummary> page = new PageImpl<>(List.of(
-                new ListingSummary(LISTING_ID, "شالية مطلة", "stay", BigDecimal.TEN, "SAR", "مزوّن قدسيا")));
-        when(catalogService.listActive(Pageable.unpaged())).thenReturn(page);
+        PagedResponse<ListingSummary> page = PagedResponse.of(new PageImpl<>(List.of(
+                new ListingSummary(LISTING_ID, "شالية مطلة", "stay", BigDecimal.TEN, "SAR", "مزوّن قدسيا"))));
+        when(catalogService.listActive(SpringPagination.toPagedRequest(Pageable.unpaged())))
+                .thenReturn(page);
 
         ResponseEntity<PagedResponse<ListingSummary>> result = controller.listActive(Pageable.unpaged());
 
@@ -94,13 +95,13 @@ class CatalogControllerTest {
 
     @Test
     void listByCategory_delegatesTheCategoryAndPage() {
-        when(catalogService.listByCategory("stay", Pageable.unpaged()))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(catalogService.listByCategory("stay", SpringPagination.toPagedRequest(Pageable.unpaged())))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of())));
 
         ResponseEntity<PagedResponse<ListingSummary>> result = controller.listByCategory("stay", Pageable.unpaged());
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(catalogService).listByCategory("stay", Pageable.unpaged());
+        verify(catalogService).listByCategory("stay", SpringPagination.toPagedRequest(Pageable.unpaged()));
     }
 
     @Test

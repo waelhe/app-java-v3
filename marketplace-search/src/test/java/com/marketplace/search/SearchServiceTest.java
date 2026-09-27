@@ -7,6 +7,8 @@ import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.PropertyType;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
 import com.marketplace.shared.api.SearchCriteria;
 import org.springframework.data.domain.Sort;
@@ -35,8 +37,8 @@ class SearchServiceTest {
     private final SearchService service =
             new SearchService(port, availabilityPort, geoPort, filterPort);
 
-    private static Page<ListingSummary> emptyPage() {
-        return new PageImpl<>(List.of());
+    private static PagedResponse<ListingSummary> emptyPage() {
+        return PagedResponse.of(new PageImpl<>(List.of()));
     }
 
     // ---- L27: the window path -------------------------------------------------
@@ -57,7 +59,7 @@ class SearchServiceTest {
         // record passes through as-is (the catalog contract reads only its
         // category/price components, the window itself is already resolved
         // into the whitelist), and the unrestricted branches are never taken.
-        verify(port).searchByCriteriaRestricted(argThat(SearchCriteria::hasWindow), eq(Set.of(available)), eq(PageRequest.of(0, 10)));
+        verify(port).searchByCriteriaRestricted(argThat(SearchCriteria::hasWindow), eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
         verify(port, never()).listActive(any());
         verify(port, never()).searchByCriteria(any(), any());
     }
@@ -70,7 +72,7 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria("yoga retreat", null, null, null, CHECK_IN, CHECK_OUT), PageRequest.of(0, 10));
 
-        verify(port).searchFullTextRestricted(eq("yoga retreat"), eq(Set.of(available)), eq(PageRequest.of(0, 10)));
+        verify(port).searchFullTextRestricted(eq("yoga retreat"), eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
         // The unrestricted FTS branch is never taken when a window is present.
         verify(port, never()).searchFullText(anyString(), any());
     }
@@ -112,7 +114,7 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria(null, null, null, null, null, null, 4), PageRequest.of(0, 10));
 
-        verify(port).searchByCriteria(argThat(c -> c.guests() != null && c.guests().equals(4)), eq(PageRequest.of(0, 10)));
+        verify(port).searchByCriteria(argThat(c -> c.guests() != null && c.guests().equals(4)), eq(PagedRequest.of(0, 10)));
         verify(port, never()).listActive(any());
         verify(port, never()).listByCategory(anyString(), any());
     }
@@ -126,7 +128,7 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria(null, "stay", null, null, null, null, 2), PageRequest.of(0, 10));
 
-        verify(port).searchByCriteria(argThat(c -> "stay".equals(c.category()) && Integer.valueOf(2).equals(c.guests())), eq(PageRequest.of(0, 10)));
+        verify(port).searchByCriteria(argThat(c -> "stay".equals(c.category()) && Integer.valueOf(2).equals(c.guests())), eq(PagedRequest.of(0, 10)));
         verify(port, never()).listByCategory(anyString(), any());
     }
 
@@ -139,7 +141,7 @@ class SearchServiceTest {
         service.search(new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, 3), PageRequest.of(0, 10));
 
         verify(port).searchByCriteriaRestricted(
-                argThat(c -> c.hasWindow() && Integer.valueOf(3).equals(c.guests())), eq(Set.of(available)), eq(PageRequest.of(0, 10)));
+                argThat(c -> c.hasWindow() && Integer.valueOf(3).equals(c.guests())), eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
     }
 
     @Test
@@ -149,7 +151,7 @@ class SearchServiceTest {
         service.search(new SearchCriteria("hello world", null, null, null), PageRequest.of(0, 10));
 
         // Raw pass-through (trim only): websearch_to_tsquery owns the parsing.
-        verify(port).searchFullText("hello world", PageRequest.of(0, 10));
+        verify(port).searchFullText("hello world", PagedRequest.of(0, 10));
     }
 
     @Test
@@ -162,7 +164,7 @@ class SearchServiceTest {
         service.search(new SearchCriteria("\"garden view\" -crab ((", null, null, null),
                 PageRequest.of(0, 10));
 
-        verify(port).searchFullText("\"garden view\" -crab ((", PageRequest.of(0, 10));
+        verify(port).searchFullText("\"garden view\" -crab ((", PagedRequest.of(0, 10));
     }
 
     @Test
@@ -171,7 +173,7 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria(null, "tech", null, null), PageRequest.of(0, 10));
 
-        verify(port).listByCategory("tech", PageRequest.of(0, 10));
+        verify(port).listByCategory("tech", PagedRequest.of(0, 10));
     }
 
     @Test
@@ -180,7 +182,7 @@ class SearchServiceTest {
 
         service.search(new SearchCriteria(null, null, null, null), PageRequest.of(0, 10));
 
-        verify(port).listActive(PageRequest.of(0, 10));
+        verify(port).listActive(PagedRequest.of(0, 10));
     }
 
     @Test
@@ -189,7 +191,7 @@ class SearchServiceTest {
 
         service.searchByCategory("books", PageRequest.of(0, 5));
 
-        verify(port).listByCategory("books", PageRequest.of(0, 5));
+        verify(port).listByCategory("books", PagedRequest.of(0, 5));
     }
 
     @Test
@@ -198,7 +200,7 @@ class SearchServiceTest {
 
         service.searchAll(PageRequest.of(0, 20));
 
-        verify(port).listActive(PageRequest.of(0, 20));
+        verify(port).listActive(PagedRequest.of(0, 20));
     }
 
     // ---- L32: the property-facet flow -----------------------------------------
@@ -265,7 +267,7 @@ class SearchServiceTest {
                 criteria.purpose() == PropertyPurpose.RENT
                         && criteria.locationIds() != null
                         && criteria.locationIds().contains(location)));
-        verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(matched)), eq(PageRequest.of(0, 10)));
+        verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(matched)), eq(PagedRequest.of(0, 10)));
     }
 
     @Test
@@ -315,7 +317,7 @@ class SearchServiceTest {
         var matchTwo = new RealestatePropertyFilterPort.PropertyMatch(activeTwo, 120);
         when(port.findActiveListingIds()).thenReturn(Set.of(activeOne, activeTwo));
         when(filterPort.findMatchingPaged(any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(matchTwo, matchOne), PageRequest.of(0, 2), 2));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(matchTwo, matchOne), PageRequest.of(0, 2), 2)));
         when(port.findSummariesByIds(anyList())).thenReturn(List.of(
                 summaryOf(activeTwo), summaryOf(activeOne)));
 
@@ -370,9 +372,10 @@ class SearchServiceTest {
         // property criteria — no realestate round trip at all)
         verify(filterPort, never()).findListingIdsMatching(any());
         verify(port).searchByCriteriaFaceted(any(),
-                argThat((org.springframework.data.domain.Pageable pageable) ->
-                        pageable.getSort().toString().equals("priceCents: DESC,id: ASC")
-                                || pageable.getSort().toString().equals("priceCents: DESC,id:ASC")));
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("priceCents", true),
+                                new com.marketplace.shared.api.PagedRequest.Order("id", false)))));
     }
 
     @Test
@@ -388,9 +391,10 @@ class SearchServiceTest {
                         .and(Sort.by(Sort.Direction.ASC, "id"))));
 
         verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(matched)),
-                argThat((org.springframework.data.domain.Pageable pageable) ->
-                        pageable.getSort().toString().equals("priceCents: DESC,id: ASC")
-                                || pageable.getSort().toString().equals("priceCents: DESC,id:ASC")));
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("priceCents", true),
+                                new com.marketplace.shared.api.PagedRequest.Order("id", false)))));
     }
 
     @Test
@@ -543,8 +547,8 @@ class SearchServiceTest {
         when(port.findActiveListingIds()).thenReturn(Set.of(active));
         when(filterPort.findWithinRadiusPaged(eq(LAT), eq(LNG), eq(RADIUS_METERS),
                 eq(Set.of(active)), any()))
-                .thenReturn(new PageImpl<>(List.of(nearest, next),
-                        PageRequest.of(0, 10), 2));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(nearest, next),
+                        PageRequest.of(0, 10), 2)));
         when(port.findSummariesByIds(List.of(nearest, next)))
                 .thenReturn(List.of(summaryOf(nearest), summaryOf(next)));
 
@@ -561,8 +565,9 @@ class SearchServiceTest {
         // the unsorted delivery to the native query is the adapter's own
         // guarded contract, see PropertyFilterAdapterTest)
         verify(filterPort).findWithinRadiusPaged(eq(LAT), eq(LNG), eq(RADIUS_METERS), eq(Set.of(active)),
-                argThat((org.springframework.data.domain.Pageable pageable) ->
-                        pageable.getSort().toString().equals("distance: ASC")));
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("distance", false)))));
     }
 
     @Test
@@ -597,7 +602,7 @@ class SearchServiceTest {
         when(port.findActiveListingIds()).thenReturn(Set.of(active));
         when(filterPort.findWithinRadiusPagedRestricted(eq(LAT), eq(LNG), eq(RADIUS_METERS),
                 eq(Set.of(active)), eq(Set.of(available)), any()))
-                .thenReturn(new PageImpl<>(List.of(nearest), PageRequest.of(0, 10), 1));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(nearest), PageRequest.of(0, 10), 1)));
         when(port.findSummariesByIds(List.of(nearest))).thenReturn(List.of(summaryOf(nearest)));
 
         SearchCriteria windowed = new SearchCriteria(null, null, null, null,
@@ -630,9 +635,10 @@ class SearchServiceTest {
         // ("unsupported sort property: priceCents") and a price-sorted
         // radius request answered 400 instead of a sorted page
         verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(near)),
-                argThat((org.springframework.data.domain.Pageable pageable) ->
-                        pageable.getSort().toString().equals("priceCents: DESC,id: ASC")
-                                || pageable.getSort().toString().equals("priceCents: DESC,id:ASC")));
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("priceCents", true),
+                                new com.marketplace.shared.api.PagedRequest.Order("id", false)))));
         verify(filterPort, never()).findMatchingPaged(any(), any(), any());
     }
 
@@ -646,7 +652,7 @@ class SearchServiceTest {
         var matchNear = new RealestatePropertyFilterPort.PropertyMatch(near, 70);
         var matchFarther = new RealestatePropertyFilterPort.PropertyMatch(farther, 120);
         when(filterPort.findMatchingPaged(any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(matchNear, matchFarther), PageRequest.of(0, 10), 2));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(matchNear, matchFarther), PageRequest.of(0, 10), 2)));
         when(port.findSummariesByIds(anyList()))
                 .thenReturn(List.of(summaryOf(near), summaryOf(farther)));
 
@@ -659,8 +665,9 @@ class SearchServiceTest {
         // (formerly the set flow's second normalize() rejected marker+id as
         // a "mixed marker" 400 — the flow did not exist)
         verify(filterPort).findMatchingPaged(any(), eq(Set.of(near, farther)),
-                argThat((org.springframework.data.domain.Pageable pageable) ->
-                        pageable.getSort().toString().equals("area: ASC")));
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("area", false)))));
         verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
         assertThat(page.getContent()).extracting(ListingSummary::id)
                 .containsExactly(near, farther);
@@ -674,7 +681,7 @@ class SearchServiceTest {
         when(port.findActiveListingIdsMatching(any())).thenReturn(Set.of(eligible));
         when(filterPort.findWithinRadiusPaged(eq(LAT), eq(LNG), eq(RADIUS_METERS),
                 eq(Set.of(eligible)), any()))
-                .thenReturn(new PageImpl<>(List.of(nearest), PageRequest.of(0, 10), 1));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(nearest), PageRequest.of(0, 10), 1)));
         when(port.findSummariesByIds(List.of(nearest))).thenReturn(List.of(summaryOf(nearest)));
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
@@ -702,7 +709,7 @@ class SearchServiceTest {
         var match = new RealestatePropertyFilterPort.PropertyMatch(eligible, 90);
         when(port.findActiveListingIdsMatching(any())).thenReturn(Set.of(eligible));
         when(filterPort.findMatchingPaged(any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(match), PageRequest.of(0, 10), 1));
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(match), PageRequest.of(0, 10), 1)));
         when(port.findSummariesByIds(anyList())).thenReturn(List.of(summaryOf(eligible)));
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
