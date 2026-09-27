@@ -159,11 +159,23 @@ public record MarketplaceProperties(
              * {@code OAUTH_CLIENT_REDIRECT_URIS} environment variable and a blank value
              * fails fast — closing the documented gate-B debt (production redirect was
              * previously pinned to the development constant).
+             *
+             * <p>{@code postLogoutRedirectUri} is where RP-initiated logout returns the
+             * user (OIDC RP-Initiated Logout 1.0 — {@code post_logout_redirect_uri};
+             * the authorization server validates it against the registered value, and a
+             * mismatch lands on the server's own error page). The same explicit-config
+             * contract as {@code redirectUris}: blank binds the development fallback in
+             * the initializer ({@code 127.0.0.1:8080/}), while the {@code prod} profile
+             * binds the mandatory {@code OAUTH_POST_LOGOUT_REDIRECT_URI} and fails fast
+             * when blank — closing the R10-measured defect (frontend battery card
+             * BE-02: production/staging logout landed on a whitelabel error page because
+             * the registered post-logout URI was the fixed development constant).
              */
             public record Client(
                 @DefaultValue("") String clientId,
                 @DefaultValue("") String secret,
-                @DefaultValue("") String redirectUris
+                @DefaultValue("") String redirectUris,
+                @DefaultValue("") String postLogoutRedirectUri
             ) {}
 
             /**
