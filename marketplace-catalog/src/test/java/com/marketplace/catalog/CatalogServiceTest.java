@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
-import com.marketplace.shared.api.ProviderListingSummary;import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.ProviderListingSummary;
 
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.ProviderLookupPort;

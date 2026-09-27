@@ -1,6 +1,8 @@
 package com.marketplace.catalog;
 
-import com.marketplace.shared.api.ListingSummary;import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.api.SpringPagination;
 
 import com.marketplace.shared.api.MediaLookupPort;
