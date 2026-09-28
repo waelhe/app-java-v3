@@ -91,6 +91,43 @@ class OAuth2TokenCustomizerTest {
                 .doesNotContainKey("email");
     }
 
+    /**
+     * The break-glass principal (CodeRabbit's unresolved #416 thread, re-verified
+     * against main 2026-09-28): its login handle is {@code "admin"} — deliberately
+     * not an email address. Emitting it as the {@code email} claim would violate
+     * the claim's own contract ("the login username IS the email") and let the
+     * identity module's {@code syncFromOidc} persist {@code "admin"} into the
+     * break-glass account's profile row on the next {@code /me}. The claim stays
+     * absent on its authorization-code tokens — {@code User.updateProfile}'s
+     * null-safety then keeps the stored profile untouched.
+     */
+    @Test
+    void customizerDoesNotAddEmailToBreakGlassPrincipalOnAuthorizationCode() {
+        var principal = new UsernamePasswordAuthenticationToken(
+                AdminUserInitializer.ADMIN_USERNAME, null, AuthorityUtils.createAuthorityList("ROLE_ADMIN"));
+        JwtEncodingContext context = buildContextWithPrincipal(principal,
+                OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.AUTHORIZATION_CODE);
+
+        customizer.customize(context);
+
+        assertThat(context.getClaims().build().getClaims())
+                .doesNotContainKey("email");
+    }
+
+    /** The refresh leg carries the same exclusion — /me also runs on refreshed tokens. */
+    @Test
+    void customizerDoesNotAddEmailToBreakGlassPrincipalOnRefreshedGrants() {
+        var principal = new UsernamePasswordAuthenticationToken(
+                AdminUserInitializer.ADMIN_USERNAME, null, AuthorityUtils.createAuthorityList("ROLE_ADMIN"));
+        JwtEncodingContext context = buildContextWithPrincipal(principal,
+                OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.REFRESH_TOKEN);
+
+        customizer.customize(context);
+
+        assertThat(context.getClaims().build().getClaims())
+                .doesNotContainKey("email");
+    }
+
     @Test
     void customizerAddsAudienceToAccessToken() {
         JwtEncodingContext context = buildContext(
