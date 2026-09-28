@@ -659,7 +659,16 @@ public class SecurityConfig {
      *       keys on it), so the principal name is the claim's honest source.
      *       The same official customization guide as {@code roles}. Not
      *       added on {@code client_credentials} tokens — those principals
-     *       are clients, not users, and a client id is not an email.</li>
+     *       are clients, not users, and a client id is not an email. Nor on
+     *       the break-glass principal ({@link AdminUserInitializer#ADMIN_USERNAME}):
+     *       its login handle is deliberately not an email address, so the
+     *       claim would violate its own contract AND {@code syncFromOidc}
+     *       would persist {@code "admin"} into the break-glass account's
+     *       profile row on the next {@code /me} — the data-integrity hazard
+     *       CodeRabbit measured on the #416 review thread. With the claim
+     *       absent, {@code User.updateProfile}'s null-safety (null = "no
+     *       information — keep the stored value") leaves the stored profile
+     *       untouched — the same semantics a pre-BE-06 token already had.</li>
      * </ul>
      *
      * <p>The {@code aud} claim is set with a mutable {@code ArrayList} on purpose:
@@ -681,7 +690,13 @@ public class SecurityConfig {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
                 boolean userGrant = AuthorizationGrantType.AUTHORIZATION_CODE.equals(context.getAuthorizationGrantType())
                         || AuthorizationGrantType.REFRESH_TOKEN.equals(context.getAuthorizationGrantType());
-                if (userGrant) {
+                // The break-glass principal's login handle is "admin", not an email —
+                // emitting it as the email claim would violate the claim's own contract
+                // ("the login username IS the email") and let syncFromOidc persist
+                // "admin" into the identity profile row (CodeRabbit #416 thread).
+                boolean emailValuedPrincipal = !AdminUserInitializer.ADMIN_USERNAME
+                        .equals(context.getPrincipal().getName());
+                if (userGrant && emailValuedPrincipal) {
                     context.getClaims().claim("email", context.getPrincipal().getName());
                 }
                 context.getClaims()
