@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
@@ -69,9 +70,42 @@ public class PaymentIntentSettlementService {
      * Provider-confirmed success: the intent lands SUCCEEDED, its payment
      * row COMPLETED, and the domain events fire (ledger credit + booking
      * auto-confirm listen for COMPLETED; cache evicted after commit).
+     *
+     * <p><b>REQUIRES_NEW — the settlement owns its transaction (CodeRabbit
+     * #431, adopted from the root 2026-09-28):</b> this method runs under
+     * {@code @Retry(name = "paymentProcessing")}, and the carrier it is
+     * called from is itself transactional on BOTH paths (the class-level
+     * {@code @Transactional} on {@code PaymentsService}). Under the default
+     * REQUIRED propagation a first attempt that throws a retryable exception
+     * crosses this method's transaction boundary and marks the SHARED
+     * carrier transaction rollback-only (Spring Framework Reference,
+     * Declarative Transaction Management: a runtime exception thrown through
+     * a participating REQUIRED scope marks the whole transaction
+     * rollback-only — the successful retry then joins the same poisoned
+     * transaction and commits nothing, surfacing
+     * {@code UnexpectedRollbackException} at the carrier's commit). That
+     * failure mode is worst on the webhook path: the commit failure fires
+     * from the interceptor AFTER {@code handleVerifiedWebhook}'s body — the
+     * compensating dedup delete (the catch inside the body) never runs, the
+     * already-committed dedup row (its own REQUIRES_NEW in
+     * {@link WebhookEventRecorder}) survives, and the provider's retry is
+     * acknowledged as already-processed — the payment never settles.
+     * {@code REQUIRES_NEW} breaks the poisoning at the root: each confirm
+     * attempt is its own transaction, so a failed attempt rolls back only
+     * itself, the carrier is never marked, and the retry can actually
+     * commit. The admin carrier is safe to suspend: {@code confirmIntent}'s
+     * transaction contains nothing but this call (the command shell
+     * delegates directly), so the settlement's independence breaks no
+     * atomicity. The webhook carrier is equally safe: it holds only the
+     * dedup SELECT (no write locks for the classic REQUIRES_NEW
+     * self-deadlock to bite on). And if the settlement's OWN commit fails,
+     * the exception surfaces inside the dispatch body where the documented
+     * compensating delete (dedup row removed, provider retry re-processes)
+     * already runs.
      */
     @Observed(name = "payment.confirm")
     @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentIntent confirm(UUID id, String externalId) {
         PaymentIntent intent = requireIntent(id);
         intent.markSucceeded();

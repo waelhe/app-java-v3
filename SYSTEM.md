@@ -52,7 +52,7 @@
 |---|---|---|
 | compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
 | test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
-| integration-test / verify | failsafe | اختبارات التكامل — **79 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
+| integration-test / verify | failsafe | اختبارات التكامل — **80 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
 | verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:242-244`) |
 | validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.9,)` (`:230`) وJava `[21,)` (`:233`) |
 | package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
