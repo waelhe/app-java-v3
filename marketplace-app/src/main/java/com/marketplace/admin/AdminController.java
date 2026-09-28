@@ -5,6 +5,7 @@ import com.marketplace.catalog.spi.CatalogSpi;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.payments.spi.PaymentsSpi;
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PaymentSummary;
@@ -13,6 +14,7 @@ import com.marketplace.shared.api.UserSummary;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.modulith.NamedInterface;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +23,8 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import tools.jackson.databind.JsonNode;
+
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,17 +40,20 @@ public class AdminController {
     private final BookingSpi bookingSpi;
     private final PaymentsSpi paymentsSpi;
     private final RevisionService revisionService;
+    private final SystemSettingsService systemSettings;
 
     public AdminController(IdentitySpi identitySpi,
                            CatalogSpi catalogSpi,
                            BookingSpi bookingSpi,
                            PaymentsSpi paymentsSpi,
-                           RevisionService revisionService) {
+                           RevisionService revisionService,
+                           SystemSettingsService systemSettings) {
         this.identitySpi = identitySpi;
         this.catalogSpi = catalogSpi;
         this.bookingSpi = bookingSpi;
         this.paymentsSpi = paymentsSpi;
         this.revisionService = revisionService;
+        this.systemSettings = systemSettings;
     }
 
     // -- Users ----------------------------------------------------------
@@ -300,5 +307,78 @@ public class AdminController {
     public ResponseEntity<List<RevisionService.RevisionEntry>> getRevisions(
             @PathVariable String entityName, @PathVariable UUID id) {
         return ResponseEntity.ok(revisionService.getRevisions(entityName, id));
+    }
+    // -- System settings (W0 — yelp-level plan §4.6) ---------------------------
+
+    /**
+     * The admin view of one setting: the key, its value in its native JSON type,
+     * and the accountability columns (who/when, optimistic-lock version). The
+     * value is echoed as JSON — the same shape the store holds — so an operator
+     * sees exactly what a reader will parse.
+     */
+    public record SystemSettingResponse(String key, JsonNode value, String description,
+                                        Long version, String updatedBy, java.time.Instant updatedAt) {
+
+        static SystemSettingResponse from(SystemSetting setting) {
+            return new SystemSettingResponse(setting.getSettingKey(), setting.value(), setting.getDescription(),
+                    setting.getVersion(), setting.getUpdatedBy(), setting.getUpdatedAt());
+        }
+    }
+
+    /** Creation carries the full identity: the key, its value, and what it means. */
+    public record CreateSystemSettingRequest(@NotBlank String key, JsonNode value, String description) {}
+
+    /** PATCH carries the change: value and/or description, each optional. */
+    public record UpdateSystemSettingRequest(JsonNode value, String description) {}
+
+    @GetMapping("/settings")
+    @Operation(summary = "List platform settings",
+            description = "W0 control layer (yelp plan §4.6): every runtime control the platform reads "
+                    + "without a redeploy — key, JSON value, description, and the who/when bookkeeping. "
+                    + "Ordered by key.")
+    public ResponseEntity<PagedResponse<SystemSettingResponse>> listSystemSettings(Pageable pageable) {
+        return ResponseEntity.ok(
+                PagedResponse.of(systemSettings.findAll(pageable).map(SystemSettingResponse::from)));
+    }
+
+    @GetMapping("/settings/{key}")
+    @Operation(summary = "Read one platform setting",
+            description = "404 when the key does not exist — an absent control is absent, not defaulted: "
+                    + "in that case the reader's own default is what governs.")
+    public ResponseEntity<SystemSettingResponse> getSystemSetting(@PathVariable String key) {
+        return ResponseEntity.ok(SystemSettingResponse.from(systemSettings.findByKey(key)));
+    }
+
+    @PostMapping("/settings")
+    @Operation(summary = "Create a platform setting",
+            description = "An existing key answers 409 (PATCH it instead) — creation introduces a new "
+                    + "control and never silently re-aims an existing one.")
+    public ResponseEntity<SystemSettingResponse> createSystemSetting(
+            @Valid @RequestBody CreateSystemSettingRequest request,
+            Authentication authentication) {
+        if (request.value() == null) {
+            throw new BadRequestException("value is required — a setting without a value is not a setting");
+        }
+        SystemSetting created = systemSettings.create(request.key(), request.value(), request.description(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.status(HttpStatus.CREATED).body(SystemSettingResponse.from(created));
+    }
+
+    @PatchMapping("/settings/{key}")
+    @Operation(summary = "Change a platform setting",
+            description = "PATCH semantics pinned at the boundary: at least one of value/description is "
+                    + "required (400 otherwise), and a supplied value replaces the stored one in its native "
+                    + "JSON type. The change is audited (Envers) and broadcast to every reader through the "
+                    + "cache invalidation relay.")
+    public ResponseEntity<SystemSettingResponse> updateSystemSetting(
+            @PathVariable String key,
+            @RequestBody UpdateSystemSettingRequest request,
+            Authentication authentication) {
+        if (request.value() == null && request.description() == null) {
+            throw new BadRequestException("provide value and/or description");
+        }
+        SystemSetting updated = systemSettings.update(key, request.value(), request.description(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(SystemSettingResponse.from(updated));
     }
 }

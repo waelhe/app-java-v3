@@ -182,8 +182,12 @@ spring:
     # component change so stale pre-change entries are never read. See
     # CatalogService.CATALOG_CACHE_NAMES. geo-tree (L30) is the 14th named
     # cache — the administrative tree is rebuilt-on-read reference data,
-    # evicted through the same AFTER_COMMIT relay as the rest.
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree
+    # evicted through the same AFTER_COMMIT relay as the rest. system-settings
+    # (W0, yelp-level plan §4.6) is the control-plane read path added with the
+    # settings table — keyed by setting key, evicted by SystemSettingsService
+    # through the same relay (its absent case is cached too, so a create evicts
+    # as well).
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache

@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +50,9 @@ class AdminControllerWebMvcTest {
 
     @MockitoBean
     private RevisionService revisionService;
+
+    @MockitoBean
+    private SystemSettingsService systemSettings;
 
     @TestConfiguration
     @EnableMethodSecurity
@@ -196,5 +200,75 @@ class AdminControllerWebMvcTest {
                                 {"reason": ""}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    // -- System settings (W0 — yelp-level plan §4.6) --------------------------
+
+    private static SystemSetting setting(String key, String json) {
+        return SystemSetting.create(UUID.randomUUID(), key,
+                tools.jackson.databind.json.JsonMapper.builder().build().readTree(json), "test");
+    }
+
+    @Test
+    void listSystemSettings_returnsOk() throws Exception {
+        when(systemSettings.findAll(any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/admin/settings"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getSystemSetting_returnsTheStoredJsonValue() throws Exception {
+        when(systemSettings.findByKey("reviews.mode")).thenReturn(setting("reviews.mode", "\"VERIFIED_ONLY\""));
+
+        mockMvc.perform(get("/api/v1/admin/settings/{key}", "reviews.mode"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .jsonPath("$.key").value("reviews.mode"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .jsonPath("$.value").value("VERIFIED_ONLY"));
+    }
+
+    @Test
+    void createSystemSetting_returnsCreated() throws Exception {
+        when(systemSettings.create(any(), any(), any(), any())).thenReturn(setting("reviews.mode", "\"OPEN\""));
+
+        mockMvc.perform(post("/api/v1/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {"key": "reviews.mode", "value": "OPEN", "description": "creation gate"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .jsonPath("$.value").value("OPEN"));
+    }
+
+    @Test
+    void createSystemSetting_withBlankKey_returnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {"key": " ", "value": "OPEN"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateSystemSetting_withEmptyBody_returnsBadRequest() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/settings/{key}", "reviews.mode")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void updateSystemSetting_withUserRole_returnsForbidden() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/settings/{key}", "reviews.mode")
+                        .contentType("application/json")
+                        .content("""
+                                {"value": "OPEN"}
+                                """))
+                .andExpect(status().isForbidden());
     }
 }

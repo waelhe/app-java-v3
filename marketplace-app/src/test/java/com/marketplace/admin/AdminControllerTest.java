@@ -45,6 +45,9 @@ class AdminControllerTest {
     @Mock
     private RevisionService revisionService;
 
+    @Mock
+    private SystemSettingsService systemSettings;
+
     @InjectMocks
     private AdminController controller;
 
