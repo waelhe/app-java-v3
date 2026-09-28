@@ -49,7 +49,7 @@ This file adds project-specific conventions.
 - **`@ConfigurationProperties` binding**: a nested record section with absent keys binds to `null` (official constructor-binding rule); prime the component with an empty `@DefaultValue` to always bind a non-null defaulted instance (Spring Boot reference — Features › Externalized Configuration › Constructor binding)
 - **Protocols enforced**: Planning → Execution → Surgical Editing (see global AGENTS.md)
 
-## 1. بروتوكول تشغيل الوكيل — النسخة الدائمة على GitHub (مضاف 2026-09-29)
+## 1. بروتوكول تشغيل الوكيل — النسخة الدائمة على GitHub (مضاف 2026-09-28)
 
 - الوكيل الذي يستلم المستودع **بذاكرة صفرية** يبدأ من `docs/agent-protocol.md` — طبقة الإقلاع والاستحواذ التي تربط عائلة ملفات الجذر (هذا الملف / SYSTEM.md / PROJECT_MAP.md / docs/METHODOLOGY.md / CONTRIBUTING.md) في سلسلة واحدة تُبنى من GitHub وحده. ومهارة الإقلاع القابلة للاشتقاق لأي نظام وكلاء في `docs/agent-skill.md`.
 - عند أي خلاف بين الملف العالمي المحلي (`~/.config/opencode/AGENTS.md`) أو مهارة `protocol-enforcer` المحلية وهذين التوأمين: **التوأم في المستودع يحكم** وتُرقَّى النسخ المحلية لمطابقته (النسخ المحلية conveniences تُعاد بناؤها منه، لا اعتماديات).

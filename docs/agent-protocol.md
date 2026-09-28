@@ -13,7 +13,7 @@
 > Effective: 2026-09-29. Provenance: built by the frontend platform agent
 > (waelhe/web-marketplace) under the owner's one-time role exception
 > («قم باستثناء لدورك هذه المرة وقم بتصميم وهندسة و ببناء هذا النظام
-> لهم. لانك الاكثر معرفة به. ثم عد لدورك», 2026-09-29 — "make an
+> لهم. لانك الاكثر معرفة به. ثم عد لدورك», 2026-09-28 — "make an
 > exception to your role this once: design, engineer, and build this
 > system for them, because you know it best; then return to your role"),
 > transferred from the frontend twin
@@ -80,13 +80,13 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 |---|---|
 | Owner | GitHub **waelhe** (repo `waelhe/app-java-v3`, public) — day-to-day engineering owned by the **backend team**; the frontend repo's agent treats this repo as read-and-measure (its standing rule), except owner-granted documented exceptions |
 | Stack | Java 25 (`--release 25`, `pom.xml:41`), Spring Boot 4.1.1 (parent, `pom.xml:7-10`), Spring Modulith 2.1.1 (BOM), Spring Authorization Server 7.1.1, Maven wrapper 3.9.16 with enforcer `[3.9,)` (`pom.xml:230`) — all evidenced in SYSTEM.md §1 |
-| Modules | **22** Maven modules in the root reactor (measured 2026-09-29; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
-| Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-29) |
+| Modules | **22** Maven modules in the root reactor (measured 2026-09-28; guarded in README/SYSTEM by `DocumentationNumbersGuardTest`, derived from `<modules>`) |
+| Data | PostgreSQL 18 + PostGIS (CI service `postgis/postgis:18-3.6-alpine`, `ci.yml:24`); production DB channel = external Neon (since 2026-09-18, SYSTEM.md §1); Redis 8 (`ci.yml:37`; production 8.2); Flyway with `ddl-auto: none` — latest migration **V70** (measured 2026-09-28) |
 | Quality | JaCoCo 0.8.15, BUNDLE ≥ 70% per module (`pom.xml:61-62, 242-244`); `failOnWarning` at compile; unit (`*Test`, surefire) strictly separated from integration (`*IT`/`*IntegrationTest`, failsafe; environmental ones skip without Docker) |
-| OpenAPI | `GET /v3/api-docs` — **128 operations across 111 paths** (re-measured live on staging 2026-09-29; matches CONTRIBUTING.md §4 @2026-09-27; its re-verification jq command is the authority) |
-| CI | 7 workflows (measured 2026-09-29, `.github/workflows/`): `ci.yml` (gitleaks high-policy with anchored `.gitleaks.toml` allowlist → OpenAPI backward-compatibility gate `.ci/check-openapi-compat.sh` → `./mvnw verify` with services), `codeql.yml`, `container-scan.yml`, `integration-test.yml`, `fork-sync.yml`, `maven-publish.yml`, `watchdog.yml` |
-| Production | `app-java-v3-production.up.railway.app` (measured 200 on `/v3/api-docs` 2026-09-29) — Railway, GitHub-connected `waelhe/app-java-v3@main`, **auto-deploy on every merge** (measured repeatedly in PROJECT_MAP: functional builds ~2-3 min, docs-only warm builds ~44-61 s, staging ~68 s) — **so merging to main IS the production deploy trigger** |
-| Staging | `app-java-v3-staging-staging.up.railway.app` (measured 200 + 128 ops 2026-09-29) — the frontend repo's dev backend |
+| OpenAPI | `GET /v3/api-docs` — **128 operations across 111 paths** (re-measured live on staging 2026-09-28; matches CONTRIBUTING.md §4 @2026-09-27; its re-verification jq command is the authority) |
+| CI | 7 workflows (measured 2026-09-28, `.github/workflows/`): `ci.yml` (gitleaks high-policy with anchored `.gitleaks.toml` allowlist → OpenAPI backward-compatibility gate `.ci/check-openapi-compat.sh` → `./mvnw verify` with services), `codeql.yml`, `container-scan.yml`, `integration-test.yml`, `fork-sync.yml`, `maven-publish.yml`, `watchdog.yml` |
+| Production | `app-java-v3-production.up.railway.app` (measured 200 on `/v3/api-docs` 2026-09-28) — Railway, GitHub-connected `waelhe/app-java-v3@main`, **auto-deploy on every merge** (measured repeatedly in PROJECT_MAP: functional builds ~2-3 min, docs-only warm builds ~44-61 s, staging ~68 s) — **so merging to main IS the production deploy trigger** |
+| Staging | `app-java-v3-staging-staging.up.railway.app` (measured 200 + 128 ops 2026-09-28) — the frontend repo's dev backend |
 | Frontend consumer | `waelhe/web-marketplace` (Next.js BFF) consumes this OpenAPI — contract changes ripple there (see §6, the shape-compat lesson) |
 | Secrets | Live in Railway only, rotate (CONTRIBUTING.md §5); `client_id` is an environmental fact, not a doc constant; gitleaks guards the repo |
 | Language | Owner: Arabic. Code + METHODOLOGY + this protocol: English. PR bodies: Arabic with measured numbers |
@@ -109,11 +109,11 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    agent frameworks and re-read here.
 4. **Read the in-flight work**: `git log --oneline -15` + open PRs and
    issues via the API, **with full pagination** — a capped page silently
-   truncates the list (measured 2026-09-29: `per_page=10` showed 10 of
+   truncates the list (measured 2026-09-28: `per_page=10` showed 10 of
    28 open PRs — the retro review campaign `review/retro-*` #431-#457
    plus fix branches). Open PRs are forward-contract risk: a merged wave
    can change the OpenAPI the frontend consumes. Note that
-   `PROJECT_MAP.md` can LAG behind merged waves (measured 2026-09-29:
+   `PROJECT_MAP.md` can LAG behind merged waves (measured 2026-09-28:
    its newest section recorded merge #383 while main sat at #458 — the
    repo's own recorded truth-sync-gap pattern) — `git log` + the PR
    list are the fresher truth; the map is a dated snapshot.
@@ -240,7 +240,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 | Secrets | Railway service variables only (45 app variables measured at migration); rotate; never in tracked files — gitleaks (high/critical policy, anchored allowlist) runs first in CI |
 | Security disclosure | GitHub Private Vulnerability Reporting (measured enabled 2026-09-27) — never a public issue |
 | Local conveniences | The global `~/.config/opencode/AGENTS.md` and the local `protocol-enforcer` skill are conveniences — the repo twin governs; rebuild them from this document |
-| Resting state | Zero open PRs/issues between waves (the current 28 open retro-campaign PRs are an in-flight wave, measured 2026-09-29 with full pagination) |
+| Resting state | Zero open PRs/issues between waves (the current 28 open retro-campaign PRs are an in-flight wave, measured 2026-09-28 with full pagination) |
 
 ## 8. The truth map (recovery map — all GitHub-durable)
 
@@ -284,7 +284,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
   can make wrongly).
 - Numbers in docs without a last-verified date + re-verification
   command (R1) — and stale duplicate numbers that survive beside the
-  guarded canonical phrase (measured 2026-09-29: a retired module count
+  guarded canonical phrase (measured 2026-09-28: a retired module count
   persists in prose while the reactor moved on).
 - Truth-sync debt: PROJECT_MAP/SYSTEM sections lagging the merged waves
   (the repo's own recorded gap pattern) — cross-check `git log` + PRs

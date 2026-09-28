@@ -6,7 +6,7 @@
 > skills mechanism (opencode, Claude, Cursor-style rules, or any
 > framework that loads skill files). The protocol twin governs; this
 > spec is the copy-paste-able bootstrap map. Provenance: same as the
-> twin (owner's one-time exception, 2026-09-29; transferred from the
+> twin (owner's one-time exception, 2026-09-28; transferred from the
 > frontend `marketplace-platform-agent` skill, A/B-validated with six
 > zero-context agents).
 
