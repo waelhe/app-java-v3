@@ -3,7 +3,6 @@ package com.marketplace.booking;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;

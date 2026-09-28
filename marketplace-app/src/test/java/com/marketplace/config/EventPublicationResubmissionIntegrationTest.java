@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import test.config.IntegrationContainers;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -29,7 +31,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -89,10 +90,7 @@ class EventPublicationResubmissionIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private ApplicationEventPublisher events;

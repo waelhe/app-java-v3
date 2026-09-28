@@ -1,5 +1,7 @@
 package com.marketplace.reviews;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.booking.BookingParticipantProviderAdapter;
 import com.marketplace.identity.User;
 import com.marketplace.identity.UserRepository;
@@ -20,7 +22,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.List;
@@ -80,10 +81,7 @@ class ReviewsOwnershipGateIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private ReviewsService reviewsService;

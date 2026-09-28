@@ -1,5 +1,7 @@
 package com.marketplace.config;
 
+import test.config.IntegrationContainers;
+
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -15,7 +17,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -72,17 +73,12 @@ class CacheRedisTtlIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
     static org.testcontainers.postgresql.PostgreSQLContainer postgres =
-            new org.testcontainers.postgresql.PostgreSQLContainer(
-                    DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+            IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings("resource") // Lifecycle managed by @Testcontainers extension; connection details via RedisContainerConnectionDetailsFactory
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @Autowired
     private CacheManager cacheManager;
