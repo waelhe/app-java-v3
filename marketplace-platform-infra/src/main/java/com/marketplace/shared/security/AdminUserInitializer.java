@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -126,7 +127,27 @@ public class AdminUserInitializer implements ApplicationRunner {
     }
 
     private void convergeExisting(String rawPassword) {
-        UserDetails existing = userDetailsManager.loadUserByUsername(ADMIN_USERNAME);
+        UserDetails existing;
+        try {
+            existing = userDetailsManager.loadUserByUsername(ADMIN_USERNAME);
+        } catch (UsernameNotFoundException ex) {
+            // CodeRabbit #432 (root-adopted 2026-09-28): userExists() returned
+            // true moments ago, so the row IS in auth_users — the manager
+            // throws "not found" here for exactly one repairable state: the
+            // user has NO authority rows (JdbcDaoImpl's documented semantics:
+            // a user with no authorities is considered not found). An
+            // incomplete bootstrap or an operator-stripped authority set must
+            // CONVERGE — this class's own contract: the stored row is never a
+            // source of truth — instead of failing startup: updateUser
+            // rewrites the user row and re-creates its authorities through
+            // the official provisioning path. (If the row vanished in a
+            // mid-boot deletion race instead, the authorities insert hits the
+            // fk_auth_authorities_users foreign key and fails loudly.)
+            userDetailsManager.updateUser(derivedUser(rawPassword));
+            log.info("Repaired break-glass admin user whose authority rows were missing"
+                    + " (converged back to ROLE_ADMIN through the provisioning path)");
+            return;
+        }
         if (matchesDerivedDefinition(existing, rawPassword)) {
             return;
         }

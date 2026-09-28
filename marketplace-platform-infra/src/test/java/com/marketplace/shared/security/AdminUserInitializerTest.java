@@ -10,6 +10,7 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import java.util.List;
 
@@ -158,6 +159,30 @@ class AdminUserInitializerTest {
         assertThatThrownBy(() -> initializer.run(null))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("something else");
+    }
+
+    @Test
+    void repairsAnAdminRowWhoseAuthorityRowsAreMissing() {
+        // CodeRabbit #432 (adopted from the root 2026-09-28): userExists()==true
+        // but the authority rows are gone — JdbcDaoImpl's own semantics throw
+        // UsernameNotFoundException ("has no authorities and is considered 'not
+        // found'"), which used to abort startup before updateUser could run.
+        // The converge-on-boot contract (the stored row is never a source of
+        // truth) instead repairs through the official provisioning path.
+        when(userDetailsManager.userExists("admin")).thenReturn(true);
+        when(userDetailsManager.loadUserByUsername("admin"))
+                .thenThrow(new UsernameNotFoundException(
+                        "User admin has no authorities and is considered 'not found'"));
+        when(passwordEncoder.encode("raw-secret")).thenReturn("encoded");
+
+        new AdminUserInitializer(properties("raw-secret"), userDetailsManager, passwordEncoder, environment(false))
+                .run(null);
+
+        UserDetails repaired = updatedUserArgument();
+        assertThat(repaired.getAuthorities()).map(Object::toString).containsExactly("ROLE_ADMIN");
+        assertThat(repaired.getPassword()).isEqualTo("encoded");
+        assertThat(repaired.isEnabled()).isTrue();
+        verify(userDetailsManager, never()).createUser(any());
     }
 
     private UserDetails createdUserArgument() {
