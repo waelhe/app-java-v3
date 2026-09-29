@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataAccessException;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,7 +18,6 @@ import io.micrometer.observation.annotation.Observed;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,6 +32,14 @@ public class AvailabilityService implements AvailabilityPort {
     private final ProviderAvailabilityRuleRepository ruleRepository;
     private final ProviderTimeOffRepository timeOffRepository;
     private final ApplicationEventPublisher eventPublisher;
+    /**
+     * CodeRabbit round 1 on PR #471 (adopted from the root): the per-rule
+     * generation unit lives in its own bean behind a proxied
+     * {@code REQUIRES_NEW} transaction — a flush-time constraint failure
+     * rolls back exactly one rule instead of poisoning the listener's whole
+     * transaction (the rollback-only trap the catch cannot recover from).
+     */
+    private final AvailabilitySlotGenerator slotGenerator;
 
     private static final int SLOT_GENERATION_DAYS_AHEAD = 7;
 
@@ -44,18 +52,22 @@ public class AvailabilityService implements AvailabilityPort {
      * {@code CatalogService.CATALOG_CACHE_NAMES}. The name is shared with
      * the catalog's invalidation set and the yml {@code spring.cache.cache-names}
      * list (pinned by {@code ListingSummaryCacheContractFilesTest}).
+     * Package-private: {@link AvailabilitySlotGenerator} publishes the same
+     * set for the daily generation writes.
      */
-    private static final Set<String> AVAILABILITY_DEPENDENT_CACHE_NAMES =
+    static final Set<String> AVAILABILITY_DEPENDENT_CACHE_NAMES =
             Set.of("availability", "search-results-v4");
 
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,
                                ProviderTimeOffRepository timeOffRepository,
-                               ApplicationEventPublisher eventPublisher) {
+                               ApplicationEventPublisher eventPublisher,
+                               AvailabilitySlotGenerator slotGenerator) {
         this.repository = repository;
         this.ruleRepository = ruleRepository;
         this.timeOffRepository = timeOffRepository;
         this.eventPublisher = eventPublisher;
+        this.slotGenerator = slotGenerator;
     }
 
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
@@ -107,42 +119,36 @@ public class AvailabilityService implements AvailabilityPort {
     /**
      * Generates availability slots for a given date based on configured rules.
      *
-     * <p><b>R3 (comprehensive-review-ar-fix plan §4/R3 — duplicate slot
-     * prevention):</b> the existence probe is
-     * {@code existsByProviderIdAndStartsAtAndEndsAt} — window existence
-     * REGARDLESS of {@code booked}. The old probe filtered {@code booked = false},
-     * so a booked slot was invisible to the check and this generator inserted a
-     * fresh OPEN duplicate of the same window; the duplicate rode next to the
-     * held row and reopened a confirmed window for booking. A booked slot IS
-     * the window — generation skips it exactly like an open one. The DB backstop
-     * underneath is V73's {@code uq_availability_slots_live_window} partial
-     * unique index: a racing insert past any application check gets 23505,
-     * which this loop's documented {@link DataAccessException} catch absorbs as
-     * the best-effort per-rule outcome.
+     * <p><b>CodeRabbit round 1 on PR #471 (adopted from the root — verified
+     * against the code before action):</b> the per-rule unit now runs through
+     * {@link AvailabilitySlotGenerator#generateFrom} — a SEPARATE bean behind
+     * a proxied {@code REQUIRES_NEW} transaction. The old loop kept every
+     * rule inside this listener's single transaction: {@code save()} queues
+     * the INSERT, Hibernate may flush it before a later existence query or
+     * at commit, and a flush-time 23505 (V73's backstop) leaves the
+     * transaction rollback-only — the per-rule catch absorbs the Java
+     * exception but cannot recover the transaction, so earlier generated
+     * slots rolled back and a commit-time failure escaped the catch
+     * entirely, leaving the Modulith event publication entry incomplete for
+     * retry. One rule, one transaction: a duplicate-window failure now rolls
+     * back exactly that rule and the batch stays healthy.
      *
-     * <p><b>Exception handling policy (Spring Modulith event publication log)</b>:
-     * The prior implementation used {@code catch (Exception e)} which swallowed
-     * <em>all</em> exceptions -- including programming errors (NPE, ClassCastException)
-     * and data-access failures. Per Spring Modulith Reference ("The Event Publication
-     * Registry"):
+     * <p><b>Exception handling policy (Spring Modulith event publication
+     * log):</b> the catch stays narrowed to {@link DataAccessException} — the
+     * best-effort per-rule behavior (a single bad rule does not abort the
+     * whole batch) while programming errors propagate to the event
+     * publication log for retry. Spring Modulith Reference ("The Event
+     * Publication Registry"):
      * <blockquote>
-     * "Each transactional event listener is wrapped into an aspect that marks that log
-     * entry as completed if the execution of the listener succeeds. In case the listener
-     * fails, the log entry stays untouched so that retry mechanisms can be deployed."
+     * "Each transactional event listener is wrapped into an aspect that marks
+     * that log entry as completed if the execution of the listener succeeds.
+     * In case the listener fails, the log entry stays untouched so that
+     * retry mechanisms can be deployed."
      * </blockquote>
-     * A {@code catch (Exception)} that returns normally makes the aspect see "success"
-     * and marks the log entry COMPLETED -- silently losing the event and defeating
-     * the retry mechanism.
-     *
-     * <p><b>Fix</b>: narrow the catch to {@link org.springframework.dao.DataAccessException}
-     * only. This preserves the "best-effort per rule" behavior (a single bad rule does
-     * not abort the whole batch) while letting programming errors propagate to the
-     * event publication log for retry. DataAccessException is the Spring Data root
-     * exception for all data-access failures (constraint violations, deadlocks, etc.).
      *
      * <p>Reference:
      * <a href="https://docs.spring.io/spring-modulith/reference/events.html">Spring Modulith Reference -- Event Publication Registry</a>
-     * <a href="https://docs.spring.io/spring-framework/reference/data-access/dao.html">Spring Framework Reference -- Data Access</a>
+     * <a href="https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html">Spring Framework Reference -- Declarative Transaction Management (REQUIRES_NEW)</a>
      */
     private void generateSlotsForDate(LocalDate date) {
         List<ProviderAvailabilityRule> rules = ruleRepository.findByDayOfWeek(date.getDayOfWeek());
@@ -152,17 +158,14 @@ public class AvailabilityService implements AvailabilityPort {
         }
         for (ProviderAvailabilityRule rule : rules) {
             try {
-                Instant startsAt = date.atTime(rule.getStartTime()).toInstant(ZoneOffset.UTC);
-                Instant endsAt = date.atTime(rule.getEndTime()).toInstant(ZoneOffset.UTC);
-                if (!repository.existsByProviderIdAndStartsAtAndEndsAt(
-                        rule.getProviderId(), startsAt, endsAt)) {
-                    createSlot(rule.getProviderId(), startsAt, endsAt);
-                    log.info("Generated slot for provider {}: {} - {}", rule.getProviderId(), startsAt, endsAt);
-                }
-            } catch (org.springframework.dao.DataAccessException e) {
-                // Best-effort per rule: log data-access failures but continue the batch.
-                // Programming errors (NPE, etc.) MUST propagate to the event publication
-                // log so Spring Modulith can retry them.
+                // Through the bean, never self-invoked: the REQUIRES_NEW
+                // propagation only applies behind the proxy.
+                slotGenerator.generateFrom(rule, date);
+            } catch (DataAccessException e) {
+                // Best-effort per rule: the rule's own transaction already
+                // rolled back cleanly; log and continue the batch.
+                // Programming errors (NPE, etc.) MUST propagate to the event
+                // publication log so Spring Modulith can retry them.
                 log.error("Failed to generate slot from rule {} (data error)", rule.getId(), e);
             }
         }

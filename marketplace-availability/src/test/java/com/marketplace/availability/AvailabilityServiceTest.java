@@ -22,17 +22,27 @@ import com.marketplace.shared.api.ConflictException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.modulith.moments.DayHasPassed;
 
+import java.util.List;
+
+import static org.mockito.Mockito.doThrow;
+
 class AvailabilityServiceTest {
 
     private final AvailabilitySlotRepository repository = mock(AvailabilitySlotRepository.class);
     private final ProviderAvailabilityRuleRepository ruleRepository = mock(ProviderAvailabilityRuleRepository.class);
     private final ProviderTimeOffRepository timeOffRepository = mock(ProviderTimeOffRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    /**
+     * CodeRabbit round 1 on PR #471: the per-rule generation unit — a
+     * separate bean with its own REQUIRES_NEW transaction.
+     */
+    private final AvailabilitySlotGenerator slotGenerator = mock(AvailabilitySlotGenerator.class);
     private AvailabilityService service;
 
     @BeforeEach
     void setUp() {
-        service = new AvailabilityService(repository, ruleRepository, timeOffRepository, eventPublisher);
+        service = new AvailabilityService(repository, ruleRepository, timeOffRepository, eventPublisher,
+                slotGenerator);
     }
 
     @Test
@@ -182,14 +192,12 @@ class AvailabilityServiceTest {
         DayHasPassed event = DayHasPassed.of(date);
 
         when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
-        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
-                .thenReturn(false);
-        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.onDayHasPassed(event);
 
         verify(ruleRepository, atLeastOnce()).findByDayOfWeek(date.getDayOfWeek());
-        verify(repository, atLeastOnce()).save(any(AvailabilitySlot.class));
+        // Through the bean proxy — the REQUIRES_NEW unit runs per rule.
+        verify(slotGenerator).generateFrom(rule, date);
     }
 
     @Test
@@ -206,62 +214,12 @@ class AvailabilityServiceTest {
         when(ruleRepository.findByDayOfWeek(DayOfWeek.FRIDAY)).thenReturn(List.of());
         when(ruleRepository.findByDayOfWeek(DayOfWeek.SATURDAY)).thenReturn(List.of());
         when(ruleRepository.findByDayOfWeek(DayOfWeek.SUNDAY)).thenReturn(List.of());
-        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
-                .thenReturn(false);
-        when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.onDayHasPassed(event);
 
         verify(ruleRepository, times(7)).findByDayOfWeek(any(DayOfWeek.class));
-        verify(repository).save(any(AvailabilitySlot.class));
-    }
-
-    @Test
-    void onDayHasPassed_skipsWhenSlotAlreadyExists() {
-        LocalDate date = LocalDate.now();
-        UUID providerId = create(UUID.class);
-        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(17, 0));
-        DayHasPassed event = DayHasPassed.of(date);
-
-        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
-        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
-                .thenReturn(true);
-
-        service.onDayHasPassed(event);
-
-        verify(ruleRepository, atLeastOnce()).findByDayOfWeek(date.getDayOfWeek());
-        verify(repository, never()).save(any(AvailabilitySlot.class));
-    }
-
-    /**
-     * R3 (comprehensive-review-ar-fix plan §4/R3 — the review's measured
-     * finding): the existence probe must see a BOOKED slot too — the old
-     * {@code booked = false} probe made the held row invisible and the
-     * generator inserted a fresh open duplicate of the same window.
-     * The stub here answers the booked-blind predicate
-     * {@code existsByProviderIdAndStartsAtAndEndsAt} (no booked filter).
-     */
-    @Test
-    void onDayHasPassed_skipsWhenSlotAlreadyBooked_r3() {
-        LocalDate date = LocalDate.now();
-        UUID providerId = create(UUID.class);
-        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(17, 0));
-        DayHasPassed event = DayHasPassed.of(date);
-
-        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
-        // The R3 predicate — existence regardless of booked. A true answer
-        // models the BOOKED row the old probe missed.
-        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
-                .thenReturn(true);
-
-        service.onDayHasPassed(event);
-
-        verify(repository, never()).save(any(AvailabilitySlot.class));
-        // The discriminator against the old code: the booked-blind probe
-        // (findFirstBy...BookedFalse) must never be consulted — on the old
-        // code it answered Optional.empty (Mockito default) and the generator
-        // SAVED the duplicate this test forbids.
-        verify(repository, never()).findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any());
+        verify(slotGenerator).generateFrom(rule, monday);
+        verifyNoMoreInteractions(slotGenerator);
     }
 
     @Test
@@ -274,7 +232,33 @@ class AvailabilityServiceTest {
         service.onDayHasPassed(event);
 
         verify(ruleRepository, times(7)).findByDayOfWeek(any(DayOfWeek.class));
-        verifyNoInteractions(repository);
+        verifyNoInteractions(slotGenerator);
+    }
+
+    /**
+     * CodeRabbit round 1 on PR #471 (adopted): the batch survives a rule's
+     * data failure — the failing rule's REQUIRES_NEW transaction already
+     * rolled back on its own, the per-rule catch absorbs the exception, and
+     * the NEXT rule is still handed to the generator. On the old single
+     * transaction this was impossible: the poisoned transaction took the
+     * whole batch down at commit, outside the catch.
+     */
+    @Test
+    void onDayHasPassed_dataFailureAbsorbedPerRule_batchContinues() {
+        LocalDate date = LocalDate.now();
+        UUID providerId = create(UUID.class);
+        ProviderAvailabilityRule failing = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(10, 0));
+        ProviderAvailabilityRule healthy = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(11, 0), LocalTime.of(12, 0));
+        DayHasPassed event = DayHasPassed.of(date);
+
+        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(failing, healthy));
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("flush-time 23505 absorbed"))
+                .when(slotGenerator).generateFrom(failing, date);
+
+        service.onDayHasPassed(event);
+
+        verify(slotGenerator).generateFrom(failing, date);
+        verify(slotGenerator).generateFrom(healthy, date);
     }
 
     // ==================== R2: slot ownership (bookSlot / releaseSlot) ====================
