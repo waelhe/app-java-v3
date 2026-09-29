@@ -90,11 +90,11 @@ jobs:
           MANAGEMENT_TRACING_ENABLED: false
         run: ./.ci/check-openapi-compat.sh
 
-      # TEMPORARY (content/seed-qudsayya-v1): the baseline-tag boot of the
-      # OpenAPI gate is failing deterministically on this branch; the gate's
-      # app boot logs (current.log / baseline.log) live only on the runner.
-      # Upload them on failure so the root cause is visible. Remove before
-      # merge or keep as a permanent improvement at the owner's discretion.
+      # The gate boots two app instances (current + baseline tag) whose
+      # stdout goes to runner-local logs; on failure those logs were
+      # invisible. This upload found the 2026-09-29 baseline-boot root
+      # cause (stale target/ resources ghosting into the tag jar) in a
+      # single run — keep the visibility permanent.
       - name: Upload OpenAPI gate boot logs
         if: failure()
         uses: actions/upload-artifact@v7

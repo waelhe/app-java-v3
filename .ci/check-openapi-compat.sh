@@ -24,7 +24,18 @@ generate_spec() {
   local label="$1"
   local out_file="$2"
 
-  ./mvnw -q -pl marketplace-app -am -DskipTests package
+  # `clean` is load-bearing (measured 2026-09-29, content/seed-qudsayya-v1):
+  # the baseline phase does `git checkout <tag>` and rebuilds WITHOUT
+  # touching target/ — Maven's incremental resource copy keeps target/classes
+  # entries for files the checkout DELETES (deletion does not refresh source
+  # mtimes, so the stale classpath copy looks up-to-date). The baseline jar
+  # then ships resources the tag never had. Latent since the tag path was
+  # born: the geo seed ghosted in silently (checksum matched => no-op). The
+  # placeholder-gated content seed turned it into a hard boot failure
+  # (FlywayException: no value provided for placeholder ${seedContent} —
+  # the tag's application.yml does not define it). A clean build guarantees
+  # each phase's jar contains exactly its own tree.
+  ./mvnw -q -pl marketplace-app -am clean package -DskipTests
   java -jar marketplace-app/target/marketplace-app-*.jar >"$WORK_DIR/${label}.log" 2>&1 &
   local app_pid=$!
   trap 'kill $app_pid >/dev/null 2>&1 || true' RETURN
