@@ -3,7 +3,7 @@
 # (docs.railway.com/guides/dockerfiles — "Cache mounts":
 #   --mount=type=cache,id=s/<service id>-<target path>,target=<target path>
 # copy saved at scripts/prod-design-docs/railway-dockerfiles.txt). The id embeds
-# this service's Railway id (30294a45-…, rebind 2026-09-19 for the v3 account
+# this service's Railway id (221b33de-…, rebind 2026-09-29 for the v4 account
 # migration — see the PR body for the measured validation failure this closes)
 # so Maven's local repository
 # (~/.m2 of the build-stage root user, including the mvnw 3.9.16 wrapper
@@ -14,7 +14,7 @@
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/30294a45-82cf-4c92-8aed-8b4e87af42be-/root/.m2,target=/root/.m2 \
+RUN --mount=type=cache,id=s/221b33de-25ac-4df6-be61-911af3f9da18-/root/.m2,target=/root/.m2 \
     chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
 
 # ── Extract layers stage ─────────────────────────────
