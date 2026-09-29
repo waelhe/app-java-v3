@@ -90,6 +90,20 @@ jobs:
           MANAGEMENT_TRACING_ENABLED: false
         run: ./.ci/check-openapi-compat.sh
 
+      # TEMPORARY (content/seed-qudsayya-v1): the baseline-tag boot of the
+      # OpenAPI gate is failing deterministically on this branch; the gate's
+      # app boot logs (current.log / baseline.log) live only on the runner.
+      # Upload them on failure so the root cause is visible. Remove before
+      # merge or keep as a permanent improvement at the owner's discretion.
+      - name: Upload OpenAPI gate boot logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi-gate-logs-java-${{ matrix.java }}
+          path: .ci/openapi-compat/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Run Maven verify (unit + integration tests)
         env:
           SPRING_PROFILES_ACTIVE: test
