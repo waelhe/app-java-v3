@@ -1,0 +1,114 @@
+package com.marketplace.shared.security;
+
+import java.util.List;
+
+import com.marketplace.shared.api.AccountStatusChanged;
+import com.marketplace.shared.api.UserRoleChanged;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.security.core.session.SessionInformation;
+import org.springframework.session.Session;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
+import org.springframework.stereotype.Component;
+
+/**
+ * R8 (comprehensive-review-ar fix plan §4, Wave 1): expires the Spring
+ * Session-backed sessions of an account the moment its login-side status or
+ * role changes on the database, closing the "surviving session" gap of the
+ * comprehensive review: {@code UserService.updateUserStatus} already removed
+ * the account's {@code oauth2_authorization} rows (the refresh-resurrection
+ * kill, L23), but a live form-login session kept authenticating and could
+ * mint fresh authorization codes for the disabled account.
+ *
+ * <p><b>The official path, end to end.</b> The registry is the one
+ * {@code SecurityConfig} already wires —
+ * {@link SpringSessionBackedSessionRegistry} over the indexed
+ * {@code FindByIndexNameSessionRepository} (Redis, {@code repository-type:
+ * indexed}): its javadoc is the design contract ("A SessionRegistry that
+ * retrieves session information from Spring Session, rather than maintaining
+ * it itself"), Spring Session's {@code PrincipalNameIndexResolver} indexes
+ * every saved session by {@code authentication.getName()} (the email
+ * principal the form-login chain authenticates), and
+ * {@link SessionInformation#expireNow()} persists the official expiry marker
+ * ({@code EXPIRED_ATTR}) back into the session store. Enforcement is
+ * framework-native: {@code ConcurrentSessionFilter} — registered by
+ * {@code sessionManagement().maximumSessions()} in BOTH filter chains that
+ * authenticate sessions (the form-login default chain and the authorization
+ * server chain, see {@code SecurityConfig}) — reads
+ * {@code getSessionInformation(sessionId)}, observes the expired marker,
+ * invokes the logout handlers (the session row is invalidated in Redis) and
+ * stops the chain, so the authorization endpoint never sees the request and
+ * no code can be minted. The two-argument
+ * {@code getAllSessions(principal, false)} is the only form the
+ * {@code SessionRegistry} interface declares (spring-security-core 7.1.1) —
+ * {@code false} skips already-expired sessions, which keeps a framework
+ * resubmission idempotent.
+ *
+ * <p><b>Durability is the framework's, not ours.</b> The listeners carry
+ * {@code @ApplicationModuleListener} — the documented Modulith
+ * annotation (AFTER_COMMIT phase, {@code REQUIRES_NEW} transaction) — so the
+ * publication row commits atomically with the status/role flip and a failed
+ * invalidation (for example a Redis blip) is resubmitted by
+ * {@code EventPublicationResubmission} instead of being lost: the security
+ * fact survives the failure. No {@code catch} block by design — the house
+ * convention (five removals predate this class) lets the failure surface to
+ * the registry.
+ *
+ * <p><b>Asymmetry by direction.</b> A disable (or any role change) expires
+ * every live session of the account; an enable expires nothing — zero
+ * security value in dropping an enabled account's sessions, and the negative
+ * test pins it. The role-change leg rides {@link UserRoleChanged} (which now
+ * carries the username): the authorities cached inside every live session
+ * are stale the moment the projection is replaced, so the sessions are
+ * expired and the next authorization request re-authenticates against the
+ * new {@code roles} claim source.
+ */
+@Component
+public class AccountStatusSessionInvalidator {
+
+    private static final Logger logger = LoggerFactory.getLogger(AccountStatusSessionInvalidator.class);
+
+    private final SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry;
+
+    public AccountStatusSessionInvalidator(
+            SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) {
+        this.sessionRegistry = sessionRegistry;
+    }
+
+    /**
+     * Disabling an account expires all of its live sessions. Enabling keeps
+     * them — the activation leg of the event is the complete domain fact for
+     * future consumers, not an invalidation trigger (CodeRabbit round 1 on
+     * the fix plan, adopted from the root, commit {@code e27a94b}).
+     */
+    @ApplicationModuleListener
+    public void onAccountStatusChanged(AccountStatusChanged event) {
+        if (event.enabled()) {
+            logger.debug("Account enabled — sessions kept intact: {}", event.username());
+            return;
+        }
+        expireAllSessions(event.username(), "account disabled");
+    }
+
+    /**
+     * A role change expires all of the account's live sessions: the
+     * authorities inside each session's security context are stale against
+     * the replaced {@code auth_authorities} projection.
+     */
+    @ApplicationModuleListener
+    public void onUserRoleChanged(UserRoleChanged event) {
+        expireAllSessions(event.username(),
+                "role changed: " + event.previousRole() + " -> " + event.newRole());
+    }
+
+    private void expireAllSessions(String username, String reason) {
+        List<SessionInformation> sessions = sessionRegistry.getAllSessions(username, false);
+        for (SessionInformation session : sessions) {
+            session.expireNow();
+        }
+        logger.info("Sessions expired: principal={}, count={}, reason={}",
+                username, sessions.size(), reason);
+    }
+}

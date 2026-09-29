@@ -2,6 +2,7 @@ package com.marketplace.identity;
 
 import com.marketplace.identity.spi.AuditHistoryPurgeResult;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -447,7 +448,11 @@ public class UserService implements IdentitySpi {
         jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
 
         eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));
-        eventPublisher.publishEvent(new UserRoleChanged(userId, previous.name(), target.name()));
+        // R8 Wave 1: username joins the payload so the session invalidator
+        // consumes the fact without a query back into this module — the
+        // authorities inside every live session are stale against the
+        // replaced projection, so they all expire.
+        eventPublisher.publishEvent(new UserRoleChanged(userId, username, previous.name(), target.name()));
 
         log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
                 userId, username, previous, target, actor);
@@ -538,6 +543,18 @@ public class UserService implements IdentitySpi {
         if (disable) {
             jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
         }
+
+        // R8 (comprehensive-review-ar fix plan §4, Wave 1): the surviving-session
+        // gap. Removing the authorization rows kills the refresh grant, but the
+        // live form-login session keeps authenticating and can mint fresh
+        // authorization codes for the disabled account. The domain fact is
+        // published inside this transaction (the Modulith house pattern —
+        // CacheInvalidationRequested/UserRoleChanged precedents) so the
+        // publication row commits atomically with the flip and the
+        // AccountStatusSessionInvalidator consumer runs AFTER_COMMIT with the
+        // framework's resubmission on failure. Both directions publish: the
+        // fact stays complete; the security consumer acts on disable only.
+        eventPublisher.publishEvent(new AccountStatusChanged(userId, username, !disable));
 
         log.info("Account status audit: userId={}, username={}, status: {} -> {}, actor={}, reason='{}'",
                 userId, username, wasEnabled ? "ENABLED" : "DISABLED",
