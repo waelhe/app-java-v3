@@ -39,6 +39,16 @@ class AvailabilityServiceSecurityTest {
     @MockitoBean
     private ProviderTimeOffRepository timeOffRepository;
 
+    /**
+     * CodeRabbit round 1 adoption on PR #471: the daily generation unit is a
+     * separate bean (REQUIRES_NEW through the proxy) — AvailabilityService's
+     * constructor now takes it. This slice tests the @PreAuthorize surface of
+     * createSlot/createRule/createTimeOff only, so the generator rides as a
+     * mock bean.
+     */
+    @MockitoBean
+    private AvailabilitySlotGenerator slotGenerator;
+
     @MockitoBean(name = "authHelper")
     private AuthHelper authHelper;
 
