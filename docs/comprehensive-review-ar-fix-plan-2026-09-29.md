@@ -80,7 +80,7 @@
 
 **التصميم (نمط المستودع القائم — أحداث Modulith):**
 1. حدث جديد `AccountStatusChanged(userId, username, enabled)` في `shared/api` (نمط `UserRoleChanged` القائم نفسه) — ينشره `UserService` عند التعطيل/التفعيل (وليس داخل معاملة القراءة؛ النشر بعد الالتزام بنمط `@TransactionalEventListener(AFTER_COMMIT)` في المستمع).
-2. مستمع `AccountStatusSessionInvalidator` في `marketplace-platform-infra/.../shared/security` (نفس حزمة `SecurityConfig` و`ExpiredAuthorizationsCleanup` — المالك الطبيعي للسجل) يستقبل الحدث ويستدعي `sessionRegistry.getAllSessions(username).forEach(SessionInformation::expireNow)`.
+2. مستمع `AccountStatusSessionInvalidator` في `marketplace-platform-infra/.../shared/security` (نفس حزمة `SecurityConfig` و`ExpiredAuthorizationsCleanup` — المالك الطبيعي للسجل) يستقبل الحدث ويُبطل الجلسات **فقط عند التعطيل** (`enabled=false`): التفعيل لا يمس الجلسات — قيمة أمنية صفرية وإسقاط جلسات مستخدم مُفعَّل تشويش بلا مبرر (اعتماد ملاحظة CodeRabbit ج1 على هذا الـPR — مؤكدة منطقًا قبل الإجراء). الاستدعاء بالشكل الثنائي الرسمي `sessionRegistry.getAllSessions(username, false)` — وهو **الشكل الوحيد الموجود** في واجهة `SessionRegistry` (spring-security-core 7.1.1 — تحقق بايتكود مباشر: لا يوجد overload أحادي الوسيطة؛ الوسيطة `false` تستبعد المنتهية أصلًا فلا يُعاد إبطالها).
 3. مسار تغيير الدور (`:447`) يستفيد من نفس المستمع عبر `UserRoleChanged` (الدور في الجلسة صار متقادمًا — نفس مبرر الوثيقة).
 4. الإبقاء على حذف `oauth2_authorization` القائم (قرار D2: قاعدة البيانات هي الحقيقة) — الإبطال الجديد **يكمّله** ولا يستبدله.
 
@@ -120,7 +120,7 @@
 
 ### R4 — نموذج محاولة الدفع الواحدة (الموجة 4)
 
-**قرار النموذج (تعليق الوثيقة — القرار المنتجي):** محاولة قابلة للتحصيل **واحدة** للحجز في آنٍ واحدًا. 1) ترحيلة جديدة: فهرس فريد جزئي `ON (booking_id) WHERE is_deleted = false AND status IN ('CREATED','PROCESSING')` (سابقة V64/V67 الجزئية نفسها) — حارس قاعدة بيانات ضد التزامن؛ 2) نية جديدة للحجز المحتمل فقط بعد فشل/إلغاء السابقة (الشرط في `createIntent` يقرأ الحالة)؛ 3) `findByBookingId` ‏Optional يبقى سليمًا بموجب القيد (الصف النشط واحد) — صفر كسر للعقد القائم.
+**قرار النموذج (تعليق الوثيقة — القرار المنتجي):** محاولة قابلة للتحصيل **واحدة** للحجز في آنٍ واحدًا. 1) ترحيلة جديدة: فهرس فريد جزئي `ON (booking_id) WHERE is_deleted = false AND status IN ('CREATED','PROCESSING')` (سابقة V64/V67 الجزئية نفسها) — حارس قاعدة بيانات ضد التزامن؛ 2) نية جديدة للحجز المحتمل فقط بعد فشل/إلغاء السابقة (الشرط في `createIntent` يقرأ الحالة)؛ 3) **تصحيح عقد البحث (اعتماد ملاحظة CodeRabbit ج3 — Major، مؤكدة بالكود قبل الإجراء):** الصفوف النهائية (`REFUNDED`/`FAILED`/`CANCELLED`) تتعايش مع الصف النشط بعد هذا النموذج، فالبحث غير المفلتر `Optional<PaymentIntent> findByBookingId` (`PaymentIntentRepository.java:16` — مستخدم في مساري الاسترداد `PaymentsService.java:551` و`PaymentRefundAdapter.java:47`) يصبح غير حتمي (استثناء نتيجة غير وحيدة عند تزامن صفّين). يستبدل في نفس الموجة ببحثين صريحين: (أ) **بحث الحالة النشطة** مقيد بـ`status IN (CREATED, PROCESSING)` لحارس الإنشاء، و(ب) **بحث حتمي للمسارات المالية/التاريخية** (آخر صف نهائي بترتيب ثابت — `createdAt` ثم `id`) لمساري الاسترداد — لا يُترك أي بحث غير مفلتر على `booking_id`.
 
 ### R9 — عملة الدفتر (الموجة 4)
 
