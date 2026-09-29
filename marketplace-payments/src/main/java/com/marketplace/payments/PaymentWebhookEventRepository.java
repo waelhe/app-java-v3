@@ -3,6 +3,8 @@ package com.marketplace.payments;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,4 +24,13 @@ public interface PaymentWebhookEventRepository extends JpaRepository<PaymentWebh
      * compensates (B5).
      */
     void deleteByProviderAndEventId(String provider, String eventId);
+
+    /**
+     * R10 — the recovery sweep's read: inbox rows still RECEIVED whose record
+     * committed before the cutoff, i.e. every row old enough that no original
+     * delivery can still be mid-dispatch (the staleness threshold exceeds any
+     * dispatch's lifetime). Served by V71's partial recovery index.
+     */
+    List<PaymentWebhookEvent> findByProcessingStateAndCreatedAtBefore(
+            WebhookProcessingState processingState, Instant cutoff);
 }

@@ -50,8 +50,10 @@ class PaymentsServiceSecurityTest {
         PaymentIntentSettlementService paymentIntentSettlementService(
                 PaymentIntentRepository intentRepository,
                 PaymentRepository paymentRepository,
-                ApplicationEventPublisher eventPublisher) {
-            return new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher);
+                ApplicationEventPublisher eventPublisher,
+                WebhookEventRecorder webhookEventRecorder) {
+            return new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher,
+                    webhookEventRecorder);
         }
     }
 
