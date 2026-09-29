@@ -178,8 +178,16 @@ class AccountStatusSessionInvalidationIntegrationTest {
 
         // The fix, measured on the same cookie: the authorization server chain
         // no longer authenticates the session — ConcurrentSessionFilter's
-        // official expired-session response, and no code minted.
-        AuthorizeAttempt afterDisable = authorizeRaw(targetSession);
+        // official expired-session response, and no code minted. The bounded
+        // await is pure robustness: @ApplicationModuleListener's AFTER_COMMIT
+        // phase runs in the committing thread (bytecode-verified against
+        // spring-tx 7.0.1 — TransactionalApplicationListenerSynchronization.
+        // afterCommit invokes processEvent synchronously), so the marker is
+        // already in Redis before the disable PUT's 200 response and the loop
+        // degenerates to a single attempt; CodeRabbit round 1's bounded-wait
+        // shape is adopted as zero-cost insurance against scheduling hiccups
+        // in CI runners.
+        AuthorizeAttempt afterDisable = awaitExpired(targetSession, 10);
         assertThat(afterDisable.body())
                 .as("the expired-session marker must be the framework's own: %s", afterDisable.body())
                 .contains(EXPIRED_MARKER);
@@ -227,7 +235,7 @@ class AccountStatusSessionInvalidationIntegrationTest {
                 adminAccessToken, "{\"role\":\"PROVIDER\"}");
         assertThat(roleChange.statusCode()).as("role change call: %s", body(roleChange)).isEqualTo(200);
 
-        AuthorizeAttempt afterRoleChange = authorizeRaw(targetSession);
+        AuthorizeAttempt afterRoleChange = awaitExpired(targetSession, 10);
         assertThat(afterRoleChange.body())
                 .as("the expired-session marker must be the framework's own: %s", afterRoleChange.body())
                 .contains(EXPIRED_MARKER);
@@ -350,6 +358,23 @@ class AccountStatusSessionInvalidationIntegrationTest {
         HttpResponse<String> response = get(authorizeUrl(UUID.randomUUID().toString(), randomCodeVerifier()),
                 sessionCookie);
         return new AuthorizeAttempt(response.headers().firstValue("Location").orElse(""), response.body());
+    }
+
+    /**
+     * Bounded wait for the expired-session marker — the CodeRabbit round-1
+     * robustness shape. With the synchronous AFTER_COMMIT listener the first
+     * attempt already observes the marker and the loop never iterates; the
+     * bound only guards against scheduling hiccups in CI runners. A probe
+     * that mints a code does not change the session, so retrying is safe.
+     */
+    private AuthorizeAttempt awaitExpired(String sessionCookie, int timeoutSeconds) throws Exception {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(timeoutSeconds).toNanos();
+        AuthorizeAttempt attempt = authorizeRaw(sessionCookie);
+        while (!attempt.body().contains(EXPIRED_MARKER) && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+            attempt = authorizeRaw(sessionCookie);
+        }
+        return attempt;
     }
 
     private String authorizeWithSession(String sessionCookie) throws Exception {
