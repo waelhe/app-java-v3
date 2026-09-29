@@ -197,3 +197,56 @@ mutation { serviceInstanceUpdate(projectId:"<new>", environmentId:"<new>", servi
 - دوران مفتاح JWT ‏r3 قبل **2026-12-08** (موثق §15).
 - متغيرات القدرة AI عند تفعيلها (`SPRING_AI_MODEL_CHAT=none` حالياً — القدرة مطفأة والنشر آمن بلا أي خطوة).
 - اختيار مزوّد `OTEL_*` لتفعيل الرصد (نقاط التصدير الحالية لا تصدّر — موثق).
+
+---
+
+## 10. سجل دورة v4 — الترحيل الفعلي المنفَّذ 2026-09-29 (حساب `successful-simplicity`)
+
+> **السياق:** انتهت تجربة حساب v3 (`app-java-v3`‏ `c8ba2537`) وقرر المستخدم الانتقال لحساب تجريبي رابع. هذا القسم هو القياس الحي لدورة §5 كاملة كما نُفِّذت فعلاً — يُقرأ مع §5 خطوة-بخطوة؛ ما هنا هو الإضافات والانحرافات المقيسة عن دورة v3.
+
+### 10.1 الأرقام التعريفية الجديدة (مقيسة بالتوكن الجديد)
+
+| البند | القيمة (حساب v4) | ملاحظة القياس |
+|---|---|---|
+| المشروع | `successful-simplicity` ‏(`bf8053b0-8021-4a13-af3a-45695223f5a2`) | أنشأه المستخدم من اللوحة 2026-09-29T11:53:59Z |
+| البيئة | production (`2f49b83a-ebe8-4c14-8e83-ba5678fce752`) | البيئة الوحيدة |
+| الخدمة | `app-java-v3` ‏(`221b33de-25ac-4df6-be61-911af3f9da18`) | أنشأها المستخدم موصولة بالمستودع — **هذا هو مفتاح الـcache-mount الجديد** |
+| النطاق العام | `https://app-java-v3-production-59bf.up.railway.app` | أُنشئ عبر `serviceDomainCreate` خلال الدورة (المعرف السابق يُنسخ منه للقيم الثلاث الحاملة للنطاق) |
+| مصدر النشر | **fork جديد: `waelhe88-coder/app-java-v3@main`** | انحراف مقيس عن v3: المستخدم أعاد إنشاء fork النشر القديم المتقاعد (نمط git-frog) بدل القناة المباشرة — الـfork عند إنشائه كان متطابقًا مع `waelhe/app-java-v3@main` بايت-ببايت (كوميت `73da739`) |
+| التوكن | project-scoped — يرفض `me` (سلوك صحيح كما في v3) | محفوظ محليًا خارج المستودع |
+
+### 10.2 ما نُفِّذ خلال الدورة (بترتيب التنفيذ)
+
+1. **التشخيص:** أول نشر على الخدمة الجديدة (`aeee318f`، كوميت `73da739` من الـfork) فشل خلال ~6 ثوانٍ — نفس بصمة فخ الـcache-mount المقيسة في دورة v3 (فشل 4 ثوانٍ): سطر `Dockerfile:17` كان يحمل معرف خدمة v3 القديم (`30294a45-…`) بينما الخدمة الناشرة هي `221b33de-…` ⇒ الرفض قبل جدولة البناء. **لا سجلات بناء ولا أحداث نشر متاحة عبر API لخطة التجربة** — التشخيص تم بمطابقة البصمة + قياس سطر الـDockerfile مباشرة من الـfork (قياس خام عبر raw.githubusercontent).
+2. **ضبط تكوين الخدمة** (`serviceInstanceUpdate` عبر GraphQL v2 — الطفرة ترجع Boolean): `dockerfilePath="Dockerfile"` + `healthcheckPath=/actuator/health/liveness` + `healthcheckTimeout=300` — مطابق لحرفية الخطوة 6؛ تحقق عكسي بالقراءة بعدها.
+3. **إنشاء النطاق:** `serviceDomainCreate` بمدخل `{environmentId, serviceId}` فقط — حقل `term` غير موجود في المخطط الحالي (دورة v3 استخدمت لوحة المستخدم)؛ النطاق وُلد باسم `app-java-v3-production-59bf.up.railway.app`.
+4. **إصلاح الجذر:** فرع `fix/deploy-v4-cache-id` — كوميت واحد يبدّل المعرف في سطر الـcache-mount + تعليقه (لا شيء آخر — بوابات `PlatformGovernanceFilesTest` تقرأ الـDockerfile لكن لا تثبّت المعرف؛ مسجل أن `DeploymentChannelFilesTest` يثبّت ملف `fork-sync.yml` لا يُمس).
+5. **فخ صلاحيات الدفع المقيس:** توكن `waelhe` يملك `push:false` على الـfork (قياس API: `permissions.push=false`) — فلا يمكن دفع الإصلاح للـfork مباشرة ولا استدعاء `merge-upstream` عليه. القناة: **PR على المستودع الحاكم ثم مزامنة fork بيد المستخدم** (زر «Sync fork» أو تفعيل workflow المزامنة على الـfork — workflows الـfork الجديد غير مفعلّة: قياس `actions/workflows` على الـfork = قائمة فارغة).
+
+### 10.3 العنصر الوحيد الناقص — توكن الحساب القديم (v3)
+
+- توكن v3 فُقد مع إعادة ضبط الـsandbox المحلي (`.creds/railway_token` لم يعد موجودًا) — والقيم الـ45 **غير مستردة من أي مصدر آخر** (قياس شامل: لا لقطات محلية، `variables` على GitHub Actions فارغة 0/0، بيئات GitHub الخمس كلها بلا متغيرات، `/actuator/env` على الإنتاج الحي يرد 401).
+- نطاقات v3 كانت **لا تزال حية** لحظة القياس (liveness=200 على prod/staging + `/api/health`=200 للواجهة) — أي أن حساب v3 ما زال قابلًا لإصدار توكن جديد من لوحته (Settings → Project → Tokens) ما دام الحساب غير معلَّق نهائيًا.
+- **الاسترداد عند توفر التوكن** هو الخطوة 4 من §5 حرفيًا: `variablesForServiceDeployment(projectId: "c8ba2537-e585-4286-9443-b069d5b627ca", environmentId: "f6d84516-9112-47b7-85e5-404f7249b927", serviceId: "30294a45-82cf-4c92-8aed-8b4e87af42be")` ثم `variableCollectionUpsert` بكائن JSON مباشر + `replace=true` + `skipDeploys=true` على معرفات v4 أعلاه — مع مجموعة الاستثناءات §5 خطوة 5 (تحديث القيم الثلاث الحاملة للنطاق الجديد `…-59bf`).
+
+### 10.4 دروس مخطط جديدة مقيسة في دورة v4 (تضاف إلى §7)
+
+| # | الدرس | التفصيل |
+|---|---|---|
+| 8 | **`serviceInstance`/`serviceInstanceUpdate` بالتوقيع الحالي: `(environmentId, serviceId, input:)`** | لا وسيط `projectId` بعد؛ كل الضبط عبر `input: ServiceInstanceUpdateInput` (حقوله تشمل `dockerfilePath`/`healthcheckPath`/`healthcheckTimeout`/`rootDirectory`/`startCommand`/`source`) |
+| 9 | **`ServiceDomainCreateInput = {environmentId, serviceId, targetPort?}`** | لا حقل لتسمية النطاق؛ الاسم وُلّد آليًا `<service-name>-<hash>.up.railway.app` |
+| 10 | **`Builder` enum = HEROKU/NIXPACKS/PAKETO/RAILPACK — لا قيمة `DOCKERFILE`** | مسار الـDockerfile يُفعَّل بضبط `dockerfilePath` (حقل `builder` على `serviceInstance` يظل يعرض RAILPACK بينما manifest النشر يعرض `builder: DOCKERFILE` — قياس نشر `aeee318f`) |
+| 11 | **الـintrospection لقيم `INPUT_OBJECT` يحتاج `inputFields` لا `fields`** | `__type(name:)` على مدخلات الطفرات يرد بلا `fields` — القيمة في `inputFields` |
+| 12 | **حظر Cloudflare 1010 على `urllib` بلا `User-Agent` متصفح** | طلبات backboard عبر Python تحتاج UA متصفح صريح وإلا رُفضت 403 (قياس مباشر) |
+| 13 | **خطة التجربة تخفي `deploymentEvents`/`buildLogs`** | كلا الاستعلامين يردان فارغين على نشر فاشل — تشخيص الفخ يكون بمطابقة البصمة الزمنية + قراءة الملف من المصدر |
+| 14 | **`gitHubRepoAccessAvailable` مرفوض لتوكن project-scoped («Not Authorized»)** | فحص الوصول غير متاح عبر هذا التوكن — الاستدلال التجريبي الوحيد هو حالة الـfork المتصلة نفسها |
+
+### 10.5 تسلسل الإكمال المتبقي (للجلسة التالية أو المستخدم)
+
+1. كلمة «ادمج» على PR الإصلاح (هذا الـPR) ⇒ main الحاكم يحمل معرف v4.
+2. مزامنة الـfork: زر «Sync fork» على `waelhe88-coder/app-java-v3` (أو تفعيل workflow المزامنة ثم انتظار ≤30د) — **إحداثيات مقيسة**: الـfork عند `73da739` والقناة fast-forward.
+3. توكن جديد من لوحة حساب v3 القديم (ما دام حيًا) ⇒ استرداد الـ45 قيمة (§10.3) ⇒ النقل الصادق إلى خدمة v4 مع تحديث قيم النطاق الثلاث إلى `…-59bf` + قيم CORS/redirect للواجهة عند توفر نطاقها.
+4. `serviceInstanceDeployV2` أو auto-deploy من مزامنة الـfork ⇒ انتظر SUCCESS (أول بناء بارد ~25د) ⇒ قائمة الدخان §8 كاملة على `app-java-v3-production-59bf.up.railway.app`.
+5. **بعدها فقط** (وليس قبل): كوميت إعادة توجيه الـwatchdog (الخطوة 8 من §5) — `BASE_URL` إلى النطاق الجديد + `RAILWAY_STATUS_CONTEXT` إلى `successful-simplicity - app-java-v3` (اسم المشروع تغيّر!) + تحديث اختبار البوابة `ProductionWatchdogFilesTest` ومراجع النطاق في ملفات الحقيقة. إعادة التوجيه قبل إقلاع الخدمة الجديدة = جولة watchdog حمراء وحادثة كاذبة على كل دورة.
+6. خدمة الواجهة `web-marketplace` (مستودع عام — يمكن وصله مباشرة أو بfork بنمط الخلفية): إنشاء الخدمة + نطاقها ثم نقل متغيراتها الخمسة (`BETTER_AUTH_SECRET/BETTER_AUTH_URL/BACKEND_URL/OAUTH_CLIENT_ID/OAUTH_CLIENT_SECRET`) من حساب v3 وتحديث `BACKEND_URL` إلى نطاق v4 — ثم تحديث قيمتي `CORS_ALLOWED_ORIGINS`/`OAUTH_CLIENT_REDIRECT_URIS` على الخلفية لتحمل نطاق الواجهة الجديد (القيم الثلاث الحاملة للنطاق عائلتان: نطاق الخلفية في issuer، ونطاق الواجهة في CORS/redirect).
+7. الإخلاء النهائي لحساب v3 (الخطوة 9 من §5): إيقاف خدماته (scale إلى صفر — حاجز الجدولة الموثق §6) قبل ترك الجدولة للنسخة الجديدة.
