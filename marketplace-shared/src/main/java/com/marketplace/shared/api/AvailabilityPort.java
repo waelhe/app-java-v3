@@ -18,6 +18,24 @@ public interface AvailabilityPort {
      */
     boolean hasExactAvailableSlot(UUID providerId, Instant startsAt, Instant endsAt);
 
-    void bookSlot(UUID providerId, Instant startsAt, Instant endsAt);
-    void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt);
+    /**
+     * R2 (comprehensive-review-ar-fix plan §4/R2 — slot ownership): books the
+     * exact window's open slot IN THE NAME of {@code bookingId} — the
+     * confirming booking claims the hold (booked flag and owner are set
+     * together, the entity's {@code @Version} optimistic lock settles
+     * concurrent claims on the same row). Callers pass the booking's own id
+     * at confirm/autoConfirm time; a {@code ConflictException} means the
+     * window has no open slot (already held by another booking).
+     */
+    void bookSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId);
+
+    /**
+     * R2: releases the window's hold — and ONLY the hold this booking itself
+     * placed. The slot is freed when its {@code heldByBookingId} equals
+     * {@code bookingId}; a release carried by any other booking (the
+     * PENDING sibling of the holder) is a no-op by contract, which is what
+     * closes the review's measured finding (a non-owner cancel used to free
+     * the slot a CONFIRMED booking owned).
+     */
+    void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId);
 }

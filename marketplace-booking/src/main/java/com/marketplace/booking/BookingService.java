@@ -165,7 +165,9 @@ public class BookingService implements BookingSpi {
         verifyProviderOwnership(booking, authentication);
         booking.confirm();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
@@ -193,7 +195,10 @@ public class BookingService implements BookingSpi {
         verifyParticipantOwnership(booking, authentication);
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window).
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
@@ -208,7 +213,10 @@ public class BookingService implements BookingSpi {
         }
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window).
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
@@ -221,7 +229,9 @@ public class BookingService implements BookingSpi {
         }
         booking.confirm();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));

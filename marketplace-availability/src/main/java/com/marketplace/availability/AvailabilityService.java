@@ -107,6 +107,19 @@ public class AvailabilityService implements AvailabilityPort {
     /**
      * Generates availability slots for a given date based on configured rules.
      *
+     * <p><b>R3 (comprehensive-review-ar-fix plan §4/R3 — duplicate slot
+     * prevention):</b> the existence probe is
+     * {@code existsByProviderIdAndStartsAtAndEndsAt} — window existence
+     * REGARDLESS of {@code booked}. The old probe filtered {@code booked = false},
+     * so a booked slot was invisible to the check and this generator inserted a
+     * fresh OPEN duplicate of the same window; the duplicate rode next to the
+     * held row and reopened a confirmed window for booking. A booked slot IS
+     * the window — generation skips it exactly like an open one. The DB backstop
+     * underneath is V73's {@code uq_availability_slots_live_window} partial
+     * unique index: a racing insert past any application check gets 23505,
+     * which this loop's documented {@link DataAccessException} catch absorbs as
+     * the best-effort per-rule outcome.
+     *
      * <p><b>Exception handling policy (Spring Modulith event publication log)</b>:
      * The prior implementation used {@code catch (Exception e)} which swallowed
      * <em>all</em> exceptions -- including programming errors (NPE, ClassCastException)
@@ -141,8 +154,8 @@ public class AvailabilityService implements AvailabilityPort {
             try {
                 Instant startsAt = date.atTime(rule.getStartTime()).toInstant(ZoneOffset.UTC);
                 Instant endsAt = date.atTime(rule.getEndTime()).toInstant(ZoneOffset.UTC);
-                if (repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(
-                        rule.getProviderId(), startsAt, endsAt).isEmpty()) {
+                if (!repository.existsByProviderIdAndStartsAtAndEndsAt(
+                        rule.getProviderId(), startsAt, endsAt)) {
                     createSlot(rule.getProviderId(), startsAt, endsAt);
                     log.info("Generated slot for provider {}: {} - {}", rule.getProviderId(), startsAt, endsAt);
                 }
@@ -164,18 +177,27 @@ public class AvailabilityService implements AvailabilityPort {
     }
 
     @Override
-    public void bookSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+    public void bookSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId) {
         AvailabilitySlot slot = repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt)
                 .orElseThrow(() -> new ConflictException("No available slot for provider " + providerId));
-        slot.markBooked();
+        // R2: the claim is one atomic entity mutation — booked flag and owner
+        // set together (AvailabilitySlot.markBooked). Concurrent claims on the
+        // same row are settled by the entity's @Version optimistic lock
+        // (BaseEntity — the losing flush fails its transaction and rolls the
+        // confirm back), with V73's one-live-row-per-window index underneath.
+        slot.markBooked(bookingId);
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
     }
 
     @Override
-    public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt) {
+    public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId) {
+        // R2: only the hold THIS booking placed is released — the ownership
+        // filter makes a non-owner cancel (the PENDING sibling of the holder)
+        // a no-op instead of freeing a CONFIRMED booking's window.
         repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt)
+                .filter(slot -> bookingId.equals(slot.getHeldByBookingId()))
                 .ifPresent(AvailabilitySlot::markAvailable);
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
     }

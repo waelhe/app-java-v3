@@ -12,9 +12,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.instancio.Instancio.create;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+
+import com.marketplace.shared.api.ConflictException;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.modulith.moments.DayHasPassed;
@@ -179,8 +182,8 @@ class AvailabilityServiceTest {
         DayHasPassed event = DayHasPassed.of(date);
 
         when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
-        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
-                .thenReturn(Optional.empty());
+        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
+                .thenReturn(false);
         when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.onDayHasPassed(event);
@@ -203,8 +206,8 @@ class AvailabilityServiceTest {
         when(ruleRepository.findByDayOfWeek(DayOfWeek.FRIDAY)).thenReturn(List.of());
         when(ruleRepository.findByDayOfWeek(DayOfWeek.SATURDAY)).thenReturn(List.of());
         when(ruleRepository.findByDayOfWeek(DayOfWeek.SUNDAY)).thenReturn(List.of());
-        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
-                .thenReturn(Optional.empty());
+        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
+                .thenReturn(false);
         when(repository.save(any(AvailabilitySlot.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.onDayHasPassed(event);
@@ -221,13 +224,44 @@ class AvailabilityServiceTest {
         DayHasPassed event = DayHasPassed.of(date);
 
         when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
-        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any()))
-                .thenReturn(Optional.of(mock(AvailabilitySlot.class)));
+        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
+                .thenReturn(true);
 
         service.onDayHasPassed(event);
 
         verify(ruleRepository, atLeastOnce()).findByDayOfWeek(date.getDayOfWeek());
         verify(repository, never()).save(any(AvailabilitySlot.class));
+    }
+
+    /**
+     * R3 (comprehensive-review-ar-fix plan §4/R3 — the review's measured
+     * finding): the existence probe must see a BOOKED slot too — the old
+     * {@code booked = false} probe made the held row invisible and the
+     * generator inserted a fresh open duplicate of the same window.
+     * The stub here answers the booked-blind predicate
+     * {@code existsByProviderIdAndStartsAtAndEndsAt} (no booked filter).
+     */
+    @Test
+    void onDayHasPassed_skipsWhenSlotAlreadyBooked_r3() {
+        LocalDate date = LocalDate.now();
+        UUID providerId = create(UUID.class);
+        ProviderAvailabilityRule rule = ProviderAvailabilityRule.create(providerId, date.getDayOfWeek(), LocalTime.of(9, 0), LocalTime.of(17, 0));
+        DayHasPassed event = DayHasPassed.of(date);
+
+        when(ruleRepository.findByDayOfWeek(date.getDayOfWeek())).thenReturn(List.of(rule));
+        // The R3 predicate — existence regardless of booked. A true answer
+        // models the BOOKED row the old probe missed.
+        when(repository.existsByProviderIdAndStartsAtAndEndsAt(any(), any(), any()))
+                .thenReturn(true);
+
+        service.onDayHasPassed(event);
+
+        verify(repository, never()).save(any(AvailabilitySlot.class));
+        // The discriminator against the old code: the booked-blind probe
+        // (findFirstBy...BookedFalse) must never be consulted — on the old
+        // code it answered Optional.empty (Mockito default) and the generator
+        // SAVED the duplicate this test forbids.
+        verify(repository, never()).findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(any(), any(), any());
     }
 
     @Test
@@ -241,5 +275,87 @@ class AvailabilityServiceTest {
 
         verify(ruleRepository, times(7)).findByDayOfWeek(any(DayOfWeek.class));
         verifyNoInteractions(repository);
+    }
+
+    // ==================== R2: slot ownership (bookSlot / releaseSlot) ====================
+
+    /**
+     * R2 (comprehensive-review-ar-fix plan §4/R2): {@code bookSlot} claims the
+     * open slot IN THE NAME of the confirming booking — the booked flag and
+     * the owner are one mutation.
+     */
+    @Test
+    void bookSlotClaimsTheSlotInTheBookingName_r2() {
+        UUID providerId = create(UUID.class);
+        UUID bookingId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T10:00:00Z");
+        AvailabilitySlot slot = AvailabilitySlot.open(providerId, startsAt, endsAt);
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt))
+                .thenReturn(Optional.of(slot));
+
+        service.bookSlot(providerId, startsAt, endsAt, bookingId);
+
+        assertThat(slot.isBooked()).isTrue();
+        assertThat(slot.getHeldByBookingId()).isEqualTo(bookingId);
+    }
+
+    /** R2: no open slot — the window is already held; the confirmer gets the conflict. */
+    @Test
+    void bookSlotThrowsConflictWhenWindowAlreadyHeld_r2() {
+        UUID providerId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T10:00:00Z");
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedFalse(providerId, startsAt, endsAt))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.bookSlot(providerId, startsAt, endsAt, create(UUID.class)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    /** R2: the owner's release frees the window — flag and owner clear together. */
+    @Test
+    void releaseSlotByOwnerReleasesTheHold_r2() {
+        UUID providerId = create(UUID.class);
+        UUID bookingId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T10:00:00Z");
+        AvailabilitySlot slot = AvailabilitySlot.open(providerId, startsAt, endsAt);
+        slot.markBooked(bookingId);
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt))
+                .thenReturn(Optional.of(slot));
+
+        service.releaseSlot(providerId, startsAt, endsAt, bookingId);
+
+        assertThat(slot.isBooked()).isFalse();
+        assertThat(slot.getHeldByBookingId()).isNull();
+    }
+
+    /**
+     * R2 — the review's measured finding, verbatim: the release carried by a
+     * DIFFERENT booking (the PENDING sibling of the holder) is a no-op — the
+     * slot a CONFIRMED booking owns stays booked, so the window can never be
+     * double-booked through a sibling cancel.
+     */
+    @Test
+    void releaseSlotByNonOwnerKeepsTheHold_r2() {
+        UUID providerId = create(UUID.class);
+        UUID holderBookingId = create(UUID.class);
+        UUID siblingBookingId = create(UUID.class);
+        Instant startsAt = Instant.parse("2026-06-01T09:00:00Z");
+        Instant endsAt = Instant.parse("2026-06-01T10:00:00Z");
+        AvailabilitySlot slot = AvailabilitySlot.open(providerId, startsAt, endsAt);
+        slot.markBooked(holderBookingId);
+
+        when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt))
+                .thenReturn(Optional.of(slot));
+
+        service.releaseSlot(providerId, startsAt, endsAt, siblingBookingId);
+
+        assertThat(slot.isBooked()).as("the hold survives a non-owner cancel").isTrue();
+        assertThat(slot.getHeldByBookingId()).isEqualTo(holderBookingId);
     }
 }
