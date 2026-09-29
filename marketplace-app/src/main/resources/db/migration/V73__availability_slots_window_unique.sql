@@ -79,6 +79,28 @@
 -- try again; a FAILED V73 leaves the migration failed (loud, Flyway
 -- records it), never a silent skip.
 --
+-- DEPLOY-OVERLAP WINDOW (CodeRabbit round 4 on this PR, verified against
+-- the deployment facts before action): Railway keeps the PREVIOUS
+-- deployment serving while the new one boots — and Flyway runs during
+-- that boot, so the OLD deployment's generator (still carrying the
+-- booked-blind probe this wave fixes) can in principle commit a
+-- duplicate between this script's repair statements and the concurrent
+-- build's scans, leaving an INVALID index and a failed migration. The
+-- governing plan MANDATES this exact tradeoff: the V67-verbatim
+-- non-blocking pattern WITH this documented recovery — PostgreSQL
+-- cannot hold a lock across a CONCURRENTLY build, and a locking plain
+-- build (the alternative) is the pattern the repository's V51/V67
+-- lesson deliberately rejects. The exposure is bounded and measured:
+-- the racing insert needs the daily generation tick to land inside the
+-- deploy's migration seconds AND a booked window with no open duplicate
+-- (the old probe's only miss case); the terminal state is a LOUD failed
+-- deploy with NO downtime (Railway retains the previous deployment —
+-- the new one never became healthy) and NO corruption; and the repair
+-- is idempotent, so the retried deploy re-cleans whatever committed in
+-- the window and rebuilds. Recovery runbook, should it ever fire: drop
+-- the INVALID uq_availability_slots_live_window, re-run the deployment
+-- — this script's three repair statements are safe to re-execute.
+--
 -- Checksum registered in migration-checksums.properties in this same
 -- PR (MigrationChecksumGuardTest — the 2026-09-14 incident class).
 
