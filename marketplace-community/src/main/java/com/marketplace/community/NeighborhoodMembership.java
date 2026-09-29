@@ -25,9 +25,8 @@ import java.util.UUID;
  *       location through {@code GeoLookupPort} (D-N2: the neighborhood IS
  *       a level-3 geo node of the ONE administrative hierarchy; there is
  *       no parallel geography).</li>
- *   <li>{@code verificationState} carries {@code SELF_DECLARED} only
- *       (D-N3 — {@link MembershipVerificationState} documents the G-N2
- *       reservation); the V60 CHECK backs the floor at the database.</li>
+ *   <li>{@code verificationState} is the single residency-trust lifecycle;
+ *       there is no parallel identity. Provider verification remains behind G-N2.</li>
  *   <li>{@code memberSince} is the domain's own timestamp — the moment
  *       the user (re)joined. It equals the row's creation instant by
  *       construction (a rejoin after leaving is a NEW row, so the
@@ -85,7 +84,7 @@ public class NeighborhoodMembership extends BaseEntity {
     public static NeighborhoodMembership join(UUID userId, UUID locationId, Clock clock) {
         NeighborhoodMembership membership =
                 new NeighborhoodMembership(UUID.randomUUID(), userId, locationId);
-        membership.verificationState = MembershipVerificationState.SELF_DECLARED;
+        membership.verificationState = MembershipVerificationState.UNVERIFIED;
         membership.memberSince = clock.instant();
         return membership;
     }
@@ -96,4 +95,30 @@ public class NeighborhoodMembership extends BaseEntity {
     public UUID getLocationId() { return locationId; }
     public MembershipVerificationState getVerificationState() { return verificationState; }
     public Instant getMemberSince() { return memberSince; }
+
+    /** UNVERIFIED/PENDING/VERIFIED retain baseline compatibility; rejected claims cannot write. */
+    public boolean mayUseCommunityWrites() {
+        return verificationState != MembershipVerificationState.REJECTED;
+    }
+
+    public void requestVerification() {
+        if (verificationState == MembershipVerificationState.UNVERIFIED
+                || verificationState == MembershipVerificationState.REJECTED) {
+            verificationState = MembershipVerificationState.PENDING;
+        }
+    }
+
+    public void approveVerification() {
+        if (verificationState != MembershipVerificationState.PENDING) {
+            throw new IllegalStateException("Only PENDING memberships can be approved");
+        }
+        verificationState = MembershipVerificationState.VERIFIED;
+    }
+
+    public void rejectVerification() {
+        if (verificationState != MembershipVerificationState.PENDING) {
+            throw new IllegalStateException("Only PENDING memberships can be rejected");
+        }
+        verificationState = MembershipVerificationState.REJECTED;
+    }
 }

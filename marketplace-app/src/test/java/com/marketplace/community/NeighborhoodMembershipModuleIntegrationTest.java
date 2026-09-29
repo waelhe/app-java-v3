@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -144,6 +145,30 @@ class NeighborhoodMembershipModuleIntegrationTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
+    void verificationLifecycle_approvesRejectsAndAuditsEveryTransition() {
+        UUID approvedUser = UUID.randomUUID();
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID approvedMembership = membershipService.join(approvedUser, location).view().id();
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+
+        membershipService.requestVerification(approvedUser);
+        membershipService.reviewVerification(approvedMembership, true);
+        membershipService.requestVerification(rejectedUser);
+        membershipService.reviewVerification(rejectedMembership, false);
+
+        assertThat(jdbc.queryForObject("SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, approvedMembership)).isEqualTo("VERIFIED");
+        assertThat(jdbc.queryForObject("SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neighborhood_memberships_aud WHERE id = ?",
+                Integer.class, approvedMembership)).isGreaterThanOrEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neighborhood_memberships_aud WHERE id = ?",
+                Integer.class, rejectedMembership)).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
     void criterion1_joinLevel3_thenReadReturnsIt() throws Exception {
         UUID userId = asCaller(UUID.randomUUID());
 
@@ -157,7 +182,7 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.locationId").value(QUDSAYYA_OLD_TOWN))
-                .andExpect(jsonPath("$.verificationState").value("SELF_DECLARED"))
+                .andExpect(jsonPath("$.verificationState").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.memberSince").exists());
         assertThat(activeRows(userId)).isEqualTo(1);
     }
@@ -344,7 +369,7 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 .containsExactly(UUID.fromString(QUDSAYYA_SUBURB));
         assertThat(entries.stream().filter(com.marketplace.shared.api.CommunityMembershipExportEntry::deleted))
                 .hasSize(1);
-        assertThat(entries.get(0).verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(entries.get(0).verificationState()).isEqualTo("UNVERIFIED");
 
         // b-3: the documented exception — the membership row is keys and
         // state (no authored texts), so the purge reports zero and the

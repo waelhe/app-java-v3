@@ -205,8 +205,12 @@ public class NeighborhoodPostService {
 
     /** The caller's ACTIVE membership, or the explicit 403 (G-N3). */
     private NeighborhoodMembership requireActiveMembership(UUID callerId, String noMembershipMessage) {
-        return membershipRepository.findByUserId(callerId)
+        NeighborhoodMembership membership = membershipRepository.findByUserId(callerId)
                 .orElseThrow(() -> new AccessDeniedException(noMembershipMessage));
+        if (!membership.mayUseCommunityWrites()) {
+            throw new AccessDeniedException("Rejected neighborhood verification cannot publish, comment, or recommend");
+        }
+        return membership;
     }
 
     /**

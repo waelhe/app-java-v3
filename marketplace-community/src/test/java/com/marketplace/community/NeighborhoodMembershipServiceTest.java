@@ -125,7 +125,7 @@ class NeighborhoodMembershipServiceTest {
 
         assertThat(result.created()).isTrue();
         assertThat(result.view().locationId()).isEqualTo(locationId);
-        assertThat(result.view().verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(result.view().verificationState()).isEqualTo("UNVERIFIED");
         verify(repository, never()).delete(any());
     }
 

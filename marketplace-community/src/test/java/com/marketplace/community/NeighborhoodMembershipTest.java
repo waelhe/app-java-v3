@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L41 — the anchor entity's factory contract: the join produces exactly
@@ -28,16 +29,31 @@ class NeighborhoodMembershipTest {
         assertThat(membership.getId()).isNotNull();
         assertThat(membership.getUserId()).isEqualTo(userId);
         assertThat(membership.getLocationId()).isEqualTo(locationId);
-        assertThat(membership.getVerificationState()).isEqualTo(MembershipVerificationState.SELF_DECLARED);
+        assertThat(membership.getVerificationState()).isEqualTo(MembershipVerificationState.UNVERIFIED);
         assertThat(membership.getMemberSince()).isEqualTo(FIXED);
     }
 
     @Test
-    void theVocabularyCarriesOnlyTheSelfDeclaredState() {
-        // D-N3: VERIFIED is reserved behind G-N2 — the anchor's vocabulary
-        // is exactly one value; the DB CHECK (V60) backs this floor for raw
-        // writers too.
+    void theVocabularyCarriesTheExplicitTrustLifecycle() {
         assertThat(MembershipVerificationState.values())
-                .containsExactly(MembershipVerificationState.SELF_DECLARED);
+                .containsExactly(MembershipVerificationState.UNVERIFIED,
+                        MembershipVerificationState.PENDING,
+                        MembershipVerificationState.VERIFIED,
+                        MembershipVerificationState.REJECTED);
+    }
+
+    @Test
+    void pendingVerification_canBeApprovedOrRejected_andRecordsTheEntityTransition() {
+        NeighborhoodMembership approved = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        approved.requestVerification();
+        approved.approveVerification();
+        assertThat(approved.getVerificationState()).isEqualTo(MembershipVerificationState.VERIFIED);
+
+        NeighborhoodMembership rejected = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        assertThat(rejected.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
+        assertThat(rejected.mayUseCommunityWrites()).isFalse();
+        assertThatThrownBy(rejected::approveVerification).isInstanceOf(IllegalStateException.class);
     }
 }

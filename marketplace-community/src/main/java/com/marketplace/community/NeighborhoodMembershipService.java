@@ -5,6 +5,7 @@ import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ConflictException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -144,6 +145,36 @@ public class NeighborhoodMembershipService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No neighborhood membership to leave"));
         repository.delete(membership);
+    }
+
+    /** Manual, provider-free verification request. An administrator is the first runnable verifier. */
+    @Observed(name = "community.membership.verification.request")
+    public NeighborhoodMembershipView requestVerification(UUID userId) {
+        NeighborhoodMembership membership = repository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No neighborhood membership to verify"));
+        if (membership.getVerificationState() == MembershipVerificationState.PENDING
+                || membership.getVerificationState() == MembershipVerificationState.VERIFIED) {
+            throw new ConflictException("Membership verification is already " + membership.getVerificationState());
+        }
+        membership.requestVerification();
+        return NeighborhoodMembershipView.of(repository.save(membership));
+    }
+
+    @Observed(name = "community.membership.verification.review")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public NeighborhoodMembershipView reviewVerification(UUID membershipId, boolean approve) {
+        NeighborhoodMembership membership = repository.findById(membershipId)
+                .orElseThrow(() -> new ResourceNotFoundException("NeighborhoodMembership", membershipId));
+        try {
+            if (approve) {
+                membership.approveVerification();
+            } else {
+                membership.rejectVerification();
+            }
+        } catch (IllegalStateException invalidTransition) {
+            throw new ConflictException(invalidTransition.getMessage());
+        }
+        return NeighborhoodMembershipView.of(repository.save(membership));
     }
 
     /**
