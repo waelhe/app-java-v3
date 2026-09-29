@@ -62,7 +62,17 @@ public class PaymentWebhookEvent extends BaseEntity {
     @Column(name = "processing_state", nullable = false, length = 20)
     private WebhookProcessingState processingState;
 
-    /** The raw provider notification, kept byte-identical for inspection. */
+    /**
+     * The raw provider notification, kept byte-identical for inspection.
+     * String + {@code SqlTypes.JSON} is the RAW-document mapping, verified
+     * against the shipped Hibernate 7.4.5 bytecode:
+     * {@code AbstractJsonFormatMapper.toString} returns the value as-is when
+     * the Java type is String (and {@code fromString} parses nothing) — the
+     * JSON document is the string itself, never a double-encoded JSON string
+     * (the same bytecode-verification discipline the repository applies to
+     * framework claims; the integration test asserts the stored column
+     * round-trips and parses as a JSON object).
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", columnDefinition = "jsonb")
     private String payload;
