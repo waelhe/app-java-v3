@@ -8,9 +8,10 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -91,8 +93,25 @@ class SystemSettingsIntegrationTest {
         assertThat(settings.getString(SystemSettingKeys.REVIEWS_MODE)).contains("VERIFIED_ONLY");
     }
 
+    /**
+     * The admin identity for the MockMvc calls. The house convention (the
+     * community module's admin resolve calls) is a request-scoped
+     * {@code jwt()} processor carrying the authority explicitly:
+     * {@code @WithMockUser} populates a SecurityContext that the stateless
+     * JWT filter never sees, so every such request answered 401 before
+     * authorization could even run.
+     */
+    private static RequestPostProcessor asAdmin() {
+        return jwt().jwt(jwt -> jwt.subject("w0-admin"))
+                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+    }
+
+    private static RequestPostProcessor asUser() {
+        return jwt().jwt(jwt -> jwt.subject("w0-user"))
+                .authorities(new SimpleGrantedAuthority("ROLE_USER"));
+    }
+
     @Test
-    @WithMockUser(roles = "ADMIN")
     void anAdminPatchSwitchesTheValueAndHealsTheCachedMiss() throws Exception {
         String key = "reviews.mode.probe" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         String id = UUID.randomUUID().toString();
@@ -103,6 +122,7 @@ class SystemSettingsIntegrationTest {
         assertThat(settings.getString(key)).contains("VERIFIED_ONLY");
 
         mockMvc.perform(patch("/api/v1/admin/settings/{key}", key)
+                        .with(asAdmin())
                         .contentType("application/json")
                         .content("""
                                 {"value": "OPEN"}
@@ -125,9 +145,9 @@ class SystemSettingsIntegrationTest {
     }
 
     @Test
-    @WithMockUser(roles = "USER")
     void aNonAdminWriterIsRefused() throws Exception {
         mockMvc.perform(patch("/api/v1/admin/settings/{key}", SystemSettingKeys.REVIEWS_MODE)
+                        .with(asUser())
                         .contentType("application/json")
                         .content("""
                                 {"value": "OPEN"}
@@ -136,16 +156,16 @@ class SystemSettingsIntegrationTest {
     }
 
     @Test
-    @WithMockUser(roles = "ADMIN")
     void anUnknownKeyIs404() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/settings/{key}", "reviews.mode.absent"))
+        mockMvc.perform(get("/api/v1/admin/settings/{key}", "reviews.mode.absent")
+                        .with(asAdmin()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @WithMockUser(roles = "ADMIN")
     void theSurfaceListsTheSeededKey() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/settings"))
+        mockMvc.perform(get("/api/v1/admin/settings")
+                        .with(asAdmin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.key == 'reviews.mode')].value").exists());
     }
