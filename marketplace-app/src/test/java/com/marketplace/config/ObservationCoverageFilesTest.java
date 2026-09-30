@@ -66,7 +66,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
- *       http.server.requests)</li>
+ *       http.server.requests); upload.request.post (L48 — the SAME channel's
+ *       post-targeted declare, its own command point: the member flow's
+ *       author gate and per-post position lock are its own work, measured
+ *       apart from the provider flow's)</li>
  *   <li>messaging — send</li>
  *   <li>notifications — mark.read, preferences.update (L22 — the
  *       per-channel unsubscribe switch write)</li>
@@ -116,7 +119,7 @@ class ObservationCoverageFilesTest {
                     "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.thumbnail.process", "media.upload.confirm",
-                    "media.upload.request")),
+                    "media.upload.request", "media.upload.request.post")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.mark.read", "notification.preferences.update")),
