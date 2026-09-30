@@ -62,6 +62,9 @@ class ContentReportServiceTest {
     private PostCommentRepository commentRepository;
 
     @Mock
+    private com.marketplace.shared.api.ReviewLookupPort reviewLookupPort;
+
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
@@ -78,7 +81,7 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         service = new ContentReportService(reportRepository, postRepository,
-                commentRepository, eventPublisher, clock);
+                commentRepository, reviewLookupPort, eventPublisher, clock);
     }
 
     private NeighborhoodPost visiblePost(UUID author) {

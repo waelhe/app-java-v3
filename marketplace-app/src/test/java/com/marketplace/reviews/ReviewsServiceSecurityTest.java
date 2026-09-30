@@ -2,7 +2,12 @@ package com.marketplace.reviews;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.SystemSettingsPort;
+import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +28,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +52,48 @@ class ReviewsServiceSecurityTest {
 
     @MockitoBean
     private BookingParticipantProvider bookingParticipantProvider;
+
+    // W1 (the organic path's collaborators, §4.4/§4.5): the slice builds the
+    // real ReviewsService, so every constructor seam needs a bean — the tests
+    // below exercise only the booking-origin commands, so the ports answer
+    // Mockito's defaults (SystemSettingsPort.getString → Optional.empty, i.e.
+    // the VERIFIED_ONLY default mode).
+    @MockitoBean
+    private SystemSettingsPort systemSettingsPort;
+
+    @MockitoBean
+    private UserLookupPort userLookupPort;
+
+    @MockitoBean
+    private ProviderLookupPort providerLookupPort;
+
+    @MockitoBean
+    private ListingPriceProvider listingPriceProvider;
+
+    @MockitoBean
+    private ReviewVoteRepository reviewVoteRepository;
+
+    @MockitoBean
+    private ReviewFlagRepository reviewFlagRepository;
+
+    @MockitoBean
+    private java.time.Clock clock;
+
+    /**
+     * Mockito intercepts interface DEFAULT methods too (answering null, which
+     * {@code ReviewMode.parse} refuses loudly — the W0 no-silent-fallback
+     * contract). Calling through to the real default makes the mock behave
+     * like the platform's absent-row case: {@code getString → Optional.empty}
+     * → the caller's own default (VERIFIED_ONLY), which is what the
+     * booking-origin commands below run under.
+     */
+    @BeforeEach
+    void settingsPortAnswersWithTheirDefaults() {
+        when(systemSettingsPort.getStringOrDefault(anyString(), anyString()))
+                .thenCallRealMethod();
+        when(systemSettingsPort.getIntOrDefault(anyString(), anyInt()))
+                .thenCallRealMethod();
+    }
 
     // The ProviderLookupPort bean is GONE (the §9 surgical gate fix): the
     // reply/createReverse gates read the ruling from the row itself

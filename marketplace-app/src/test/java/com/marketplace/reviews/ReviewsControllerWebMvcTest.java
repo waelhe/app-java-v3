@@ -33,24 +33,26 @@ class ReviewsControllerWebMvcTest {
     private ReviewsService reviewsService;
 
     @MockitoBean
-    private CurrentUserProvider currentUserProvider;
+    private ReviewsViewService reviewsViewService;
 
     @MockitoBean
-    private ReviewMapper reviewMapper;
+    private CurrentUserProvider currentUserProvider;
 
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
     }
 
+    private static ReviewResponse mockResponse(UUID id) {
+        return new ReviewResponse(id, null, null, null, null, null, null, null, null,
+                null, null, null, null, 0L, 0L);
+    }
+
     @Test
     void getById_returnsOk() throws Exception {
         UUID id = UUID.randomUUID();
-        var review = mockReview(id);
         var response = mockResponse(id);
-
-        when(reviewsService.getById(id)).thenReturn(review);
-        when(reviewMapper.toResponse(review)).thenReturn(response);
+        when(reviewsViewService.getVisible(any(), any())).thenReturn(response);
 
         mockMvc.perform(get("/api/v1/reviews/{id}", id))
                 .andExpect(status().isOk());
@@ -66,13 +68,37 @@ class ReviewsControllerWebMvcTest {
 
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(UUID.randomUUID());
         when(reviewsService.create(any(), any(), any(), any())).thenReturn(review);
-        when(reviewMapper.toResponse(review)).thenReturn(response);
+        when(reviewsViewService.toResponse(review)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/reviews")
                         .contentType("application/json")
                         .content("""
                                 {"bookingId": "%s", "rating": 5}
                                 """.formatted(bookingId)))
+                .andExpect(status().isCreated());
+    }
+
+    /**
+     * W1 §4.1/§4.5 — the organic write's slice: 201 through the delegated
+     * mode-gated service path (the gates themselves are the unit and
+     * integration tests' subject).
+     */
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void createOrganic_returnsCreated() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        var review = mockReview(id);
+        var response = mockResponse(id);
+
+        when(reviewsService.createOrganic(any(), any(), any(), any(), any())).thenReturn(review);
+        when(reviewsViewService.toResponse(review)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/reviews/organic")
+                        .contentType("application/json")
+                        .content("""
+                                {"providerId": "%s", "rating": 5, "comment": "Great"}
+                                """.formatted(providerId)))
                 .andExpect(status().isCreated());
     }
 
@@ -97,7 +123,7 @@ class ReviewsControllerWebMvcTest {
         var response = mockResponse(id);
 
         when(reviewsService.reply(any(), any(), any())).thenReturn(review);
-        when(reviewMapper.toResponse(review)).thenReturn(response);
+        when(reviewsViewService.toResponse(review)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/reviews/{id}/reply", id)
                         .contentType("application/json")
@@ -130,10 +156,6 @@ class ReviewsControllerWebMvcTest {
         return review;
     }
 
-    private static ReviewResponse mockResponse(UUID id) {
-        return new ReviewResponse(id, null, null, null, null, null, null, null, null);
-    }
-
     // -- I8: the reverse review -------------------------------------------
 
     @Test
@@ -145,7 +167,7 @@ class ReviewsControllerWebMvcTest {
         var response = mockResponse(id);
 
         when(reviewsService.createReverse(any(), any(), any(), any())).thenReturn(review);
-        when(reviewMapper.toResponse(review)).thenReturn(response);
+        when(reviewsViewService.toResponse(review)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/reviews/reverse")
                         .contentType("application/json")
@@ -173,12 +195,11 @@ class ReviewsControllerWebMvcTest {
     @Test
     void listByReviewee_returnsOk() throws Exception {
         UUID consumerId = UUID.randomUUID();
-        var review = mockReview(UUID.randomUUID());
         var response = mockResponse(UUID.randomUUID());
 
-        when(reviewsService.listByReviewee(org.mockito.ArgumentMatchers.eq(consumerId), any()))
-                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));
-        when(reviewMapper.toResponse(review)).thenReturn(response);
+        when(reviewsViewService.listByReviewee(
+                        org.mockito.ArgumentMatchers.eq(consumerId), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(response)));
 
         mockMvc.perform(get("/api/v1/reviews/consumer/{consumerId}", consumerId))
                 .andExpect(status().isOk());

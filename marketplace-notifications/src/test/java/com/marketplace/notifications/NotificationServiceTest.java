@@ -68,9 +68,9 @@ class NotificationServiceTest {
         UserLookupPort lookup = mock(UserLookupPort.class);
         when(lookup.findById(any())).thenReturn(Optional.empty());
         when(lookup.findById(CONSUMER_ID)).thenReturn(Optional.of(
-                new UserSummary(CONSUMER_ID, CONSUMER_EMAIL, "Consumer", "CONSUMER", Instant.now(), Instant.now())));
+                new UserSummary(CONSUMER_ID, CONSUMER_EMAIL, "Consumer", "CONSUMER", Instant.now(), Instant.now(), null)));
         when(lookup.findById(PROVIDER_ID)).thenReturn(Optional.of(
-                new UserSummary(PROVIDER_ID, PROVIDER_EMAIL, "Provider", "PROVIDER", Instant.now(), Instant.now())));
+                new UserSummary(PROVIDER_ID, PROVIDER_EMAIL, "Provider", "PROVIDER", Instant.now(), Instant.now(), null)));
         return lookup;
     }
 

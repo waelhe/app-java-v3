@@ -22,8 +22,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -48,13 +46,10 @@ public class MediaService {
 
     private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
-    /** Server-controlled extension mapping — the client never touches the key. */
-    private static final Map<String, String> EXTENSION_BY_TYPE = Map.of(
-            "image/jpeg", "jpg",
-            "image/png", "png",
-            "image/webp", "webp",
-            "image/gif", "gif"
-    );
+    // The upload rules (storage gate, content-type allowlist, size bound,
+    // server-generated key shape) live in MediaUploadRules — now shared
+    // with the review-media service (W1): one implementation, so the two
+    // surfaces cannot drift apart silently.
 
     private final MediaAssetRepository mediaAssetRepository;
     private final ObjectProvider<S3MediaStorage> storage;
@@ -325,36 +320,19 @@ public class MediaService {
     }
 
     private S3MediaStorage requireStorage() {
-        S3MediaStorage s3 = storage.getIfAvailable();
-        if (s3 == null) {
-            throw new ServiceUnavailableException(
-                    "Media storage is not configured. Set MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, "
-                            + "MEDIA_S3_ACCESS_KEY and MEDIA_S3_SECRET_KEY to enable listing media.");
-        }
-        return s3;
+        return MediaUploadRules.requireStorage(storage);
     }
 
     private String normalizeContentType(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            throw new BadRequestException("Content type is required");
-        }
-        return contentType.trim().toLowerCase(Locale.ROOT);
+        return MediaUploadRules.normalizeContentType(contentType);
     }
 
     private void validateContentType(String normalizedType) {
-        if (!properties.limits().allowedContentTypes().contains(normalizedType)) {
-            throw new BadRequestException(
-                    "Unsupported media content type: " + normalizedType
-                            + " (allowed: " + properties.limits().allowedContentTypes() + ")");
-        }
+        MediaUploadRules.validateContentType(properties, normalizedType);
     }
 
     private void validateSize(long sizeBytes) {
-        if (sizeBytes <= 0 || sizeBytes > properties.limits().maxUploadBytes()) {
-            throw new BadRequestException(
-                    "Media size " + sizeBytes + " bytes is outside the allowed range (max "
-                            + properties.limits().maxUploadBytes() + ")");
-        }
+        MediaUploadRules.validateSize(properties, sizeBytes);
     }
 
     /**
@@ -383,8 +361,7 @@ public class MediaService {
     }
 
     private String buildObjectKey(UUID listingId, String contentType) {
-        String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
-        return "listings/" + listingId + "/" + UUID.randomUUID() + "." + extension;
+        return MediaUploadRules.buildObjectKey("listings", listingId, contentType);
     }
 
     /**

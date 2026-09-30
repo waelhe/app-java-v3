@@ -118,7 +118,7 @@ class ProviderControllerTest {
         UUID id = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         var page = new ProviderPublicPageResponse(id, "John", "Bio", ProviderStatus.VERIFIED,
-                ProviderActorType.INDEPENDENT_BROKER, "Qudsia Prime", "BR-1", null, 4.5, 12L, null);
+                ProviderActorType.INDEPENDENT_BROKER, "Qudsia Prime", "BR-1", null, 4.5, 12L, null, 0L, null);
 
         when(providerPublicPageService.getPublicPage(id, pageable)).thenReturn(page);
 

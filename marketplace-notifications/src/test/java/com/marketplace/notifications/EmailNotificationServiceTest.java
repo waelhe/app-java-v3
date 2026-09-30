@@ -22,7 +22,7 @@ class EmailNotificationServiceTest {
     private UserLookupPort mockUserLookup() {
         UserLookupPort lookup = mock(UserLookupPort.class);
         when(lookup.findById(USER_ID)).thenReturn(Optional.of(
-                new UserSummary(USER_ID, USER_EMAIL, "Test", "USER", Instant.now(), Instant.now())));
+                new UserSummary(USER_ID, USER_EMAIL, "Test", "USER", Instant.now(), Instant.now(), null)));
         return lookup;
     }
 

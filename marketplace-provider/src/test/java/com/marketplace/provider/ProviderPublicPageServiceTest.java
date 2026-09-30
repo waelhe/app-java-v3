@@ -3,8 +3,11 @@ package com.marketplace.provider;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
+import com.marketplace.shared.api.SystemSettingKeys;
+import com.marketplace.shared.api.SystemSettingsPort;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -32,9 +35,21 @@ class ProviderPublicPageServiceTest {
     private final ProviderService providerService = mock(ProviderService.class);
     private final CatalogSearchPort catalogSearchPort = mock(CatalogSearchPort.class);
     private final ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
+    private final SystemSettingsPort systemSettingsPort = mock(SystemSettingsPort.class);
 
-    private final ProviderPublicPageService service =
-            new ProviderPublicPageService(providerService, catalogSearchPort, reviewStatsPort);
+    private final ProviderPublicPageService service = publicPageService(ReviewMode.VERIFIED_ONLY);
+
+    /**
+     * W1 §4.4: a fresh service per tested mode (re-stubbing the shared
+     * {@code reviews.mode} answer); the default instance is the seeded mode
+     * so every pre-W1 test runs the old composition byte for byte.
+     */
+    private ProviderPublicPageService publicPageService(ReviewMode mode) {
+        when(systemSettingsPort.getStringOrDefault(
+                eq(SystemSettingKeys.REVIEWS_MODE), anyString())).thenReturn(mode.name());
+        return new ProviderPublicPageService(providerService, catalogSearchPort,
+                reviewStatsPort, systemSettingsPort);
+    }
 
     private static ProviderProfile profile(ProviderStatus status, UUID userId) {
         return Instancio.of(ProviderProfile.class)
@@ -66,8 +81,61 @@ class ProviderPublicPageServiceTest {
         assertThat(result.licenseNumber()).isEqualTo("BR-2026-1149");
         assertThat(result.ratingAverage()).isEqualTo(4.5);
         assertThat(result.reviewCount()).isEqualTo(12L);
+        assertThat(result.ratingGeneralAverage())
+                .as("the seeded mode shows no second badge")
+                .isNull();
+        assertThat(result.ratingGeneralCount()).isZero();
         assertThat(result.listings().totalElements()).isEqualTo(2);
         verify(catalogSearchPort).listActiveByProvider(userId, pageable);
+    }
+
+    /**
+     * W1 §4.4 — HYBRID displays the two badges separately (the plan's
+     * «موثّق 4.8 (23) · عام 4.2 (156)»).
+     */
+    @Test
+    void hybridMode_showsBothBadgesSeparately() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
+        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
+        when(reviewStatsPort.findStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.8, 23)));
+        when(reviewStatsPort.findGeneralStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.2, 156)));
+
+        var result = publicPageService(ReviewMode.HYBRID).getPublicPage(providerId, pageable);
+
+        assertThat(result.ratingAverage()).isEqualTo(4.8);
+        assertThat(result.reviewCount()).isEqualTo(23L);
+        assertThat(result.ratingGeneralAverage()).isEqualTo(4.2);
+        assertThat(result.ratingGeneralCount()).isEqualTo(156L);
+    }
+
+    /**
+     * W1 §4.4 — OPEN merges the two aggregates into one count-weighted
+     * number («يُدمج المجموعان في رقم واحد»), no second badge: (4.8×23 +
+     * 4.2×156) / 179.
+     */
+    @Test
+    void openMode_mergesBothOriginsIntoOneNumber() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
+        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
+        when(reviewStatsPort.findStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.8, 23)));
+        when(reviewStatsPort.findGeneralStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.2, 156)));
+
+        var result = publicPageService(ReviewMode.OPEN).getPublicPage(providerId, pageable);
+
+        assertThat(result.ratingAverage()).isEqualTo((4.8 * 23 + 4.2 * 156) / 179.0);
+        assertThat(result.reviewCount()).isEqualTo(179L);
+        assertThat(result.ratingGeneralAverage()).isNull();
+        assertThat(result.ratingGeneralCount()).isZero();
     }
 
     @Test

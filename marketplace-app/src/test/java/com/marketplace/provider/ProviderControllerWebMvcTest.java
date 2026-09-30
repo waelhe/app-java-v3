@@ -75,6 +75,7 @@ class ProviderControllerWebMvcTest {
                 id, "Qudsia Prime", "Bio", com.marketplace.provider.ProviderStatus.VERIFIED,
                 com.marketplace.provider.ProviderActorType.AGENCY, "Qudsia Prime Estates",
                 "BR-2026-1149", java.time.Instant.parse("2026-09-15T00:00:00Z"), 4.5, 12L,
+                4.2, 156L,
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(
                                 UUID.randomUUID(), "Sunny flat", "APARTMENT",
@@ -95,6 +96,8 @@ class ProviderControllerWebMvcTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.licenseNumber").value("BR-2026-1149"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.ratingAverage").value(4.5))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.reviewCount").value(12))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.ratingGeneralAverage").value(4.2))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.ratingGeneralCount").value(156))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.listings.totalElements").value(1))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.listings.content[0].title").value("Sunny flat"));
     }

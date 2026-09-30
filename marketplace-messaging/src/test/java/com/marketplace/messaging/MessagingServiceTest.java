@@ -244,7 +244,8 @@ class MessagingServiceTest {
     }
 
     private static UserSummary userSummary(UUID userId) {
-        return new UserSummary(userId, "neighbor@example.com", "A Neighbor", "CONSUMER", null, null);
+        return new UserSummary(userId, "neighbor@example.com", "A Neighbor", "CONSUMER",
+                null, null, null);
     }
 
     @Test

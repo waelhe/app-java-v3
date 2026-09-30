@@ -24,36 +24,47 @@ import java.util.UUID;
 public class ReviewsController {
 
     private final ReviewsService reviewsService;
+    private final ReviewsViewService reviewsViewService;
     private final CurrentUserProvider currentUserProvider;
-    private final ReviewMapper reviewMapper;
 
-    public ReviewsController(ReviewsService reviewsService, CurrentUserProvider currentUserProvider, ReviewMapper reviewMapper) {
+    public ReviewsController(ReviewsService reviewsService,
+                             ReviewsViewService reviewsViewService,
+                             CurrentUserProvider currentUserProvider) {
         this.reviewsService = reviewsService;
+        this.reviewsViewService = reviewsViewService;
         this.currentUserProvider = currentUserProvider;
-        this.reviewMapper = reviewMapper;
     }
 
+    /**
+     * W1 §4.5: the single read rides the visibility gate — a PUBLISHED
+     * review is public; a pending/hidden one is the author's own (or an
+     * admin's), everyone else gets the honest 404.
+     */
     @GetMapping("/{id}")
     @Operation(summary = "Get one review", description = "A single published review with the "
-            + "provider reply when one exists.")
-    public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.getById(id)));
+            + "provider reply when one exists. A non-published review is visible to its author "
+            + "and to admins only (404 for everyone else).")
+    public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok(reviewsViewService.getVisible(id, authentication));
     }
 
     @GetMapping("/provider/{providerId}")
     @Operation(summary = "List a provider's reviews", description = "Paginated public reviews of a "
-            + "provider (consumer-to-provider direction), newest first.")
+            + "provider (consumer-to-provider direction), newest first. PUBLISHED reviews only — "
+            + "a pending or moderator-hidden review is absent.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByProvider(
             @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByProvider(providerId, pageable).map(reviewMapper::toResponse)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsViewService.listByProvider(providerId, pageable)));
     }
 
     @GetMapping("/reviewer/{reviewerId}")
     @Operation(summary = "List a reviewer's reviews", description = "Paginated reviews written by "
-            + "one user (public profile surface — both directions).")
+            + "one user. The reviews' author (or an admin) sees every moderation state; everyone "
+            + "else sees the published surface only.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewer(
-            @PathVariable UUID reviewerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewer(reviewerId, pageable).map(reviewMapper::toResponse)));
+            @PathVariable UUID reviewerId, Pageable pageable, Authentication authentication) {
+        return ResponseEntity.ok(PagedResponse.of(
+                reviewsViewService.listByReviewer(reviewerId, pageable, authentication)));
     }
 
     /**
@@ -67,7 +78,7 @@ public class ReviewsController {
             + "trust surface: what providers said about them after completed bookings.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewee(
             @PathVariable UUID consumerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsService.listByReviewee(consumerId, pageable).map(reviewMapper::toResponse)));
+        return ResponseEntity.ok(PagedResponse.of(reviewsViewService.listByReviewee(consumerId, pageable)));
     }
 
     /**
@@ -79,14 +90,40 @@ public class ReviewsController {
     @RateLimiter(name = "reviewCreate")
     @Operation(summary = "Create a review",
             description = "One review per completed booking, by the consumer who booked. The stored "
-                    + "provider rating average updates asynchronously.")
+                    + "provider rating average updates asynchronously. In the OPEN reviews mode the "
+                    + "booking path is refused (400) — submit an organic review instead.")
     public ResponseEntity<ReviewResponse> create(@Valid @RequestBody CreateReviewRequest request,
                                                  Authentication authentication) {
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
         Review review = reviewsService.create(
                 request.bookingId(), reviewerId,
                 request.rating(), request.comment());
-        return ResponseEntity.status(HttpStatus.CREATED).body(reviewMapper.toResponse(review));
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewsViewService.toResponse(review));
+    }
+
+    /**
+     * W1 (yelp-level plan §4.1 OPEN/HYBRID + §4.5): the organic write — a
+     * general review with no booking, behind the mode gate and the full
+     * anti-abuse set at the service (account age, daily cap, 1x1
+     * uniqueness, optional-listing ownership; the first three organic
+     * reviews of an account await moderation). Same rate-limiter budget as
+     * every review write.
+     */
+    @PostMapping("/organic")
+    @RateLimiter(name = "reviewCreate")
+    @Operation(summary = "Create an organic review",
+            description = "A general review without a booking — enabled in the OPEN/HYBRID reviews "
+                    + "mode only. The reviewed provider is resolved by profile id; the reviewer "
+                    + "must be a registered account (not the provider itself), at least 7 days "
+                    + "old, within the daily organic-review cap. An optional listingId must belong "
+                    + "to the reviewed provider. One organic review per (reviewer, provider) — "
+                    + "forever.")
+    public ResponseEntity<ReviewResponse> createOrganic(@Valid @RequestBody CreateOrganicReviewRequest request,
+                                                        Authentication authentication) {
+        Review review = reviewsService.createOrganic(
+                request.providerId(), request.listingId(),
+                request.rating(), request.comment(), authentication);
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewsViewService.toResponse(review));
     }
 
     /**
@@ -106,7 +143,7 @@ public class ReviewsController {
                                                          Authentication authentication) {
         Review review = reviewsService.createReverse(
                 request.bookingId(), request.rating(), request.comment(), authentication);
-        return ResponseEntity.status(HttpStatus.CREATED).body(reviewMapper.toResponse(review));
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviewsViewService.toResponse(review));
     }
 
     @PutMapping("/{id}")
@@ -115,7 +152,8 @@ public class ReviewsController {
     public ResponseEntity<ReviewResponse> update(@PathVariable UUID id,
                                                  @Valid @RequestBody UpdateReviewRequest request,
                                                  Authentication authentication) {
-        return ResponseEntity.ok(reviewMapper.toResponse(reviewsService.update(id, request.rating(), request.comment(), authentication)));
+        return ResponseEntity.ok(reviewsViewService.toResponse(
+                reviewsService.update(id, request.rating(), request.comment(), authentication)));
     }
 
     /**
@@ -128,8 +166,33 @@ public class ReviewsController {
     public ResponseEntity<ReviewResponse> reply(@PathVariable UUID id,
                                                  @Valid @RequestBody ReplyRequest request,
                                                  Authentication authentication) {
-        return ResponseEntity.ok(reviewMapper.toResponse(
+        return ResponseEntity.ok(reviewsViewService.toResponse(
                 reviewsService.reply(id, request.reply(), authentication)));
+    }
+
+    /**
+     * W1 (§4.5 — أصوات «مفيد»): mark a PUBLISHED review as helpful — one
+     * vote per (review, voter); the author cannot vote his own review.
+     */
+    @PostMapping("/{id}/votes")
+    @Operation(summary = "Mark a review as helpful",
+            description = "One helpful vote per (review, voter) on the PUBLISHED surface. The "
+                    + "review's own author cannot vote; a duplicate answers 409.")
+    public ResponseEntity<Void> voteHelpful(@PathVariable UUID id, Authentication authentication) {
+        reviewsService.voteHelpful(id, authentication);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    /**
+     * W1 (§4.5): remove my helpful vote — the soft delete frees the pair,
+     * so a re-vote is legal by construction.
+     */
+    @DeleteMapping("/{id}/votes")
+    @Operation(summary = "Remove my helpful vote", description = "Removes the caller's helpful vote "
+            + "from the review. 404 when no live vote exists.")
+    public ResponseEntity<Void> unvoteHelpful(@PathVariable UUID id, Authentication authentication) {
+        reviewsService.unvoteHelpful(id, authentication);
+        return ResponseEntity.noContent().build();
     }
 
     @Schema(description = "Review request: the completed booking to review plus rating and comment")
@@ -142,6 +205,28 @@ public class ReviewsController {
             @NotNull @Min(1) @Max(5) Integer rating,
             @Schema(description = "Optional public comment", example = "Spotless place, host replied "
                     + "within minutes. Would book again.")
+            String comment
+    ) {
+    }
+
+    /**
+     * W1 (§4.1/§4.2): the organic write's shape — the provider PROFILE id
+     * (the public provider page's own key; the server resolves the user-id
+     * space), the optional listing target, the shared rating floor.
+     */
+    @Schema(description = "Organic review request: the reviewed provider, an optional listing "
+            + "target, rating and comment")
+    public record CreateOrganicReviewRequest(
+            @Schema(description = "The reviewed provider's profile id", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+            @NotNull UUID providerId,
+            @Schema(description = "Optional listing the review is about — must belong to the "
+                    + "reviewed provider", example = "0d3b3f7e-1f2a-4c3b-9c2d-5e6f7a8b9c0d")
+            UUID listingId,
+            @Schema(description = "Rating from 1 (worst) to 5 (best)", example = "5", minimum = "1",
+                    maximum = "5")
+            @NotNull @Min(1) @Max(5) Integer rating,
+            @Schema(description = "Optional public comment", example = "Great local bakery — the "
+                    + "sourdough sells out by noon.")
             String comment
     ) {
     }

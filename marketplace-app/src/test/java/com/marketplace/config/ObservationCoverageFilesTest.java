@@ -63,7 +63,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
- *       http.server.requests)</li>
+ *       http.server.requests); review.upload.request, review.upload.confirm,
+ *       review.asset.delete (W1 — the review-photo channel on the same
+ *       rules, one command surface per action)</li>
  *   <li>messaging — send</li>
  *   <li>notifications — mark.read, preferences.update (L22 — the
  *       per-channel unsubscribe switch write)</li>
@@ -78,8 +80,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       calendar.seasonal.create, calendar.seasonal.update,
  *       calendar.seasonal.delete (L26 — the host's price-calendar commands;
  *       the calendar READ stays unobserved per policy)</li>
- *   <li>provider — create, update, verify, suspend</li>
- *   <li>reviews — create, update</li>
+ *   <li>provider — create, update, verify, suspend; rating.stats (L21 — the
+ *       event-driven stored-rating recompute; the reads stay unobserved)</li>
+ *   <li>reviews — create, update, create.reverse, reply (I8 + L21);
+ *       create.organic, moderate.approve, moderate.reject, moderate.hide,
+ *       vote, vote.remove (W1 §4.5 — the organic path's commands and the
+ *       moderation outcomes; the moderation queue READ stays unobserved
+ *       per the same policy)</li>
  *   <li>shared infra — email.send (the open MAIL-provider gate: whatever the
  *       provider decision, delivery latency and outcome become visible)</li>
  * </ul>
@@ -111,7 +118,9 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
-                    "media.asset.delete", "media.thumbnail.process", "media.upload.confirm",
+                    "media.asset.delete", "media.review.asset.delete",
+                    "media.review.upload.confirm", "media.review.upload.request",
+                    "media.thumbnail.process", "media.upload.confirm",
                     "media.upload.request")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
@@ -135,7 +144,10 @@ class ObservationCoverageFilesTest {
                     "provider.update", "provider.verify")),
             Map.entry("marketplace-realestate", List.of("realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
-                    "review.create", "review.create.reverse", "review.reply", "review.update")),
+                    "review.create", "review.create.organic", "review.create.reverse",
+                    "review.moderate.approve", "review.moderate.hide",
+                    "review.moderate.reject", "review.reply", "review.update",
+                    "review.vote", "review.vote.remove")),
             Map.entry("marketplace-platform-infra", List.of("email.send")));
 
     private Path repoRoot() {

@@ -1,10 +1,14 @@
 package com.marketplace.admin;
 
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.SystemSettingChangedEvent;
+import com.marketplace.shared.api.SystemSettingKeys;
 import com.marketplace.shared.api.SystemSettingsPort;
+import com.marketplace.shared.api.SystemSettingTypeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -118,6 +122,7 @@ public class SystemSettingsService implements SystemSettingsPort {
         if (repository.findBySettingKey(key).isPresent()) {
             throw new ConflictException("Setting '" + key + "' already exists — PATCH it instead");
         }
+        validateKnownValue(key, value);
         SystemSetting created = repository.saveAndFlush(
                 SystemSetting.create(UUID.randomUUID(), key, value, description));
         log.info("System setting '{}' created as {} by {}", key, created.getRawJson(), actor);
@@ -138,6 +143,9 @@ public class SystemSettingsService implements SystemSettingsPort {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Setting '" + key + "' does not exist — create it instead"));
         JsonNode before = setting.value();
+        if (value != null) {
+            validateKnownValue(key, value);
+        }
         boolean valueChanged = value != null && setting.replaceValue(value);
         boolean descriptionChanged = description != null && setting.replaceDescription(description);
         if (!valueChanged && !descriptionChanged) {
@@ -166,5 +174,40 @@ public class SystemSettingsService implements SystemSettingsPort {
     /** JSON natives for the event payload — no Jackson types leave this module. */
     private static Object plainValue(JsonNode node) {
         return JSON.convertValue(node, Object.class);
+    }
+
+    /**
+     * W1: the write-time vocabulary gate for the settings whose readers
+     * parse into a Java vocabulary — a typo must not be storable, because
+     * the reader's contract is fail-loud (the W0 no-silent-fallback rule):
+     * <ul>
+     *   <li>{@code reviews.mode} — a JSON string that must parse as a
+     *       {@link ReviewMode} (the reviews gate would otherwise fail on
+     *       every later creation);</li>
+     *   <li>{@code reviews.organic.daily-cap} — a JSON number, a positive
+     *       integer.</li>
+     * </ul>
+     * Unknown keys are deliberately not validated here — the key space
+     * stays open for future waves (the {@code chk_system_settings_key}
+     * format guard is their only constraint until each gains its
+     * vocabulary). A rejected write answers the house 400 with the same
+     * message the reader would have failed with.
+     */
+    private static void validateKnownValue(String key, JsonNode value) {
+        if (SystemSettingKeys.REVIEWS_MODE.equals(key)) {
+            if (!value.isTextual()) {
+                throw new BadRequestException("Setting '" + key + "' must be a JSON string");
+            }
+            try {
+                ReviewMode.parse(value.asText());
+            } catch (SystemSettingTypeException unknown) {
+                throw new BadRequestException(unknown.getMessage());
+            }
+        } else if (SystemSettingKeys.REVIEWS_ORGANIC_DAILY_CAP.equals(key)) {
+            if (!value.isIntegralNumber() || value.asInt() < 1) {
+                throw new BadRequestException(
+                        "Setting '" + key + "' must be a positive integer (JSON number)");
+            }
+        }
     }
 }

@@ -121,7 +121,8 @@ class MessagingModuleIntegrationTest {
         // identity seam (the unknown-recipient 404 test stubs its own miss).
         when(userLookupPort.findById(any(UUID.class)))
                 .thenAnswer(inv -> Optional.of(new UserSummary(
-                        inv.getArgument(0), "neighbor@example.com", "A Neighbor", "CONSUMER", null, null)));
+                        inv.getArgument(0), "neighbor@example.com", "A Neighbor", "CONSUMER",
+                        null, null, null)));
     }
 
     @Test

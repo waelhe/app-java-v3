@@ -180,30 +180,38 @@ class ProviderServiceTest {
         ProviderRepository repository = mock(ProviderRepository.class);
         ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
         UUID reviewId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        // The profile's id IS the provider id the listener resolves — Instancio
-        // sets it because the factory does not take an id.
+        UUID providerUserId = UUID.randomUUID();
+        // W1 §4.4 (the measured defect's correction): the profile row lives
+        // in the profiles.id space — a DIFFERENT id from the users.id the
+        // review carries (the production shape; the old flow compared the
+        // two spaces and skipped silently on every real pair).
         ProviderProfile profile = Instancio.of(ProviderProfile.class)
-                .set(field(ProviderProfile::getId), providerId)
+                .set(field(ProviderProfile::getId), UUID.randomUUID())
+                .set(field(ProviderProfile::getUserId), providerUserId)
                 .set(field(ProviderProfile::getDisplayName), "Rated")
                 .set(field(ProviderProfile::getStatus), ProviderStatus.PENDING)
                 .set(field(ProviderProfile::getRatingAverage), null)
+                .set(field(ProviderProfile::getRatingGeneralAverage), null)
+                .set(field(ProviderProfile::getRatingGeneralCount), 0L)
                 .create();
         assertThat(profile.getRatingAverage()).isNull();
-        // The initial resolution (review -> provider) may see a stale snapshot;
-        // the recompute INSIDE the lock is what lands.
-        when(reviewStatsPort.findStatsByReviewId(reviewId))
-                .thenReturn(Optional.of(new ReviewStats(providerId, 3.0, 1)));
-        when(repository.findByIdForUpdate(providerId)).thenReturn(Optional.of(profile));
-        when(reviewStatsPort.findStatsByProviderId(providerId))
-                .thenReturn(Optional.of(new ReviewStats(providerId, 4.5, 2)));
+        when(reviewStatsPort.findProviderUserIdByReviewId(reviewId))
+                .thenReturn(Optional.of(providerUserId));
+        when(repository.findByUserIdForUpdate(providerUserId)).thenReturn(Optional.of(profile));
+        when(reviewStatsPort.findStatsByProviderId(providerUserId))
+                .thenReturn(Optional.of(new ReviewStats(providerUserId, 4.5, 2)));
+        when(reviewStatsPort.findGeneralStatsByProviderId(providerUserId))
+                .thenReturn(Optional.empty());
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class),
                 eventPublisher, reviewStatsPort);
         service.refreshRatingAverage(reviewId);
 
         assertThat(profile.getRatingAverage()).isEqualTo(4.5);
-        verify(repository).findByIdForUpdate(providerId);
+        assertThat(profile.getRatingGeneralCount())
+                .as("an absent general aggregate clears/keeps the exact 0 (recompute-is-truth)")
+                .isZero();
+        verify(repository).findByUserIdForUpdate(providerUserId);
         verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
     }
 
@@ -212,10 +220,10 @@ class ProviderServiceTest {
         ProviderRepository repository = mock(ProviderRepository.class);
         ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
         UUID reviewId = UUID.randomUUID();
-        UUID providerId = UUID.randomUUID();
-        when(reviewStatsPort.findStatsByReviewId(reviewId))
-                .thenReturn(Optional.of(new ReviewStats(providerId, 3.0, 1)));
-        when(repository.findByIdForUpdate(providerId)).thenReturn(Optional.empty());
+        UUID providerUserId = UUID.randomUUID();
+        when(reviewStatsPort.findProviderUserIdByReviewId(reviewId))
+                .thenReturn(Optional.of(providerUserId));
+        when(repository.findByUserIdForUpdate(providerUserId)).thenReturn(Optional.empty());
 
         ProviderService service = new ProviderService(repository, mock(CurrentUserProvider.class),
                 eventPublisher, reviewStatsPort);

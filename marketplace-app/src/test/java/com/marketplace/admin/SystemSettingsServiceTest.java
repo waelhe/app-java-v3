@@ -1,9 +1,11 @@
 package com.marketplace.admin;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.SystemSettingChangedEvent;
+import com.marketplace.shared.api.SystemSettingKeys;
 import com.marketplace.shared.api.SystemSettingTypeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -162,12 +164,68 @@ class SystemSettingsServiceTest {
 
     @Test
     void update_keepsTheValueInItsNativeJsonType() {
-        when(repository.findBySettingKey(KEY)).thenReturn(Optional.of(stored("\"VERIFIED_ONLY\"")));
+        String probe = "telemetry.sample" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        when(repository.findBySettingKey(probe)).thenReturn(Optional.of(stored("\"VERIFIED_ONLY\"")));
 
-        SystemSetting updated = service.update(KEY, json("5"), "cap", "admin");
+        SystemSetting updated = service.update(probe, json("5"), "cap", "admin");
 
         assertThat(updated.getRawJson()).isEqualTo("5");
         assertThat(updated.getDescription()).isEqualTo("cap");
         assertThat(updated.intValue()).isEqualTo(5);
+    }
+
+    // -- W1: the write-time vocabulary gate (§4.1/§4.5) --------------------
+
+    @Test
+    void update_modeWithAnUnknownValueIsRefused_loudlyAndWithoutAWrite() {
+        when(repository.findBySettingKey(KEY)).thenReturn(Optional.of(stored("\"VERIFIED_ONLY\"")));
+
+        assertThatThrownBy(() -> service.update(KEY, json("\"EVERYTHING\""), null, "admin"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("EVERYTHING");
+        verify(repository, never()).saveAndFlush(any(SystemSetting.class));
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void update_modeWithANonStringIsRefused() {
+        when(repository.findBySettingKey(KEY)).thenReturn(Optional.of(stored("\"VERIFIED_ONLY\"")));
+
+        assertThatThrownBy(() -> service.update(KEY, json("5"), null, "admin"))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).saveAndFlush(any(SystemSetting.class));
+    }
+
+    @Test
+    void update_unknownKeysStayOpen() {
+        String probe = "telemetry.sample" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        when(repository.findBySettingKey(probe)).thenReturn(Optional.of(stored("\"whatever\"")));
+
+        service.update(probe, json("\"still-whatever\""), null, "admin");
+
+        verify(repository).saveAndFlush(any(SystemSetting.class));
+    }
+
+    @Test
+    void create_dailyCapWithANonPositiveIntegerIsRefused() {
+        String cap = SystemSettingKeys.REVIEWS_ORGANIC_DAILY_CAP;
+        when(repository.findBySettingKey(cap)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(cap, json("0"), "cap", "admin"))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.create(cap, json("\"5\""), "cap", "admin"))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).saveAndFlush(any(SystemSetting.class));
+    }
+
+    @Test
+    void create_dailyCapWithAPositiveIntegerIsAccepted() {
+        String cap = SystemSettingKeys.REVIEWS_ORGANIC_DAILY_CAP;
+        when(repository.findBySettingKey(cap)).thenReturn(Optional.empty());
+
+        SystemSetting created = service.create(cap, json("5"), "cap", "admin");
+
+        assertThat(created.getRawJson()).isEqualTo("5");
+        verify(repository).saveAndFlush(any(SystemSetting.class));
     }
 }

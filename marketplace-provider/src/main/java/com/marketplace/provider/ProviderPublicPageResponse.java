@@ -18,11 +18,19 @@ import java.util.UUID;
  * record cannot leak what it does not declare.
  *
  * <p>Rating block semantics: {@code ratingAverage}/{@code reviewCount}
- * come from ONE fresh {@code ReviewStatsPort} snapshot (the same aggregate
- * the L21 listener maintains) so the two numbers are always consistent
- * with each other; a provider with no live reviews carries a null average
- * and zero count (the honest "not yet rated" — the aggregate query's GROUP
- * BY produces no row).
+ * come from ONE fresh {@code ReviewStatsPort} snapshot so the two numbers
+ * are always consistent with each other; a provider with no live reviews
+ * carries a null average and zero count (the honest "not yet rated" — the
+ * aggregate query's GROUP BY produces no row).
+ *
+ * <p><b>W1 (§4.4 — the dual badges):</b> the block is composed per the
+ * active {@code reviews.mode}. VERIFIED_ONLY (the seed): the verified
+ * aggregate alone — byte-identical to the pre-W1 page.
+ * OPEN: the two aggregates merged into one number (the plan's "يُدمج
+ * المجموعان في رقم واحد") — the general pair stays null/0 on the
+ * response. HYBRID: the verified aggregate in the main fields plus the
+ * general pair in {@code ratingGeneralAverage}/{@code ratingGeneralCount}
+ * — the strongest trust display ("موثّق 4.8 (23) · عام 4.2 (156)").
  *
  * @param listings the provider's ACTIVE listings page — empty (total 0)
  *                 whenever the profile is not VERIFIED: the public page
@@ -41,6 +49,8 @@ public record ProviderPublicPageResponse(
         Instant createdAt,
         Double ratingAverage,
         long reviewCount,
+        Double ratingGeneralAverage,
+        long ratingGeneralCount,
         PagedResponse<ListingSummary> listings
 ) {
 }
