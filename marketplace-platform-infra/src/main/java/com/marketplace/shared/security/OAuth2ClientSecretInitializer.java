@@ -238,8 +238,26 @@ public class OAuth2ClientSecretInitializer implements ApplicationRunner {
     }
 
     private static TokenSettings buildTokenSettings() {
+        // reuseRefreshTokens(true) — the stateless-BFF contract (measured live,
+        // 2026-09-30: refresh(RT1) -> 200 + RT2; refresh(RT1) again -> 400
+        // invalid_grant). The web client's tokens live in Better Auth's signed
+        // account cookie on the BFF, and React Server Component renders call
+        // getAccessToken's auto-refresh but DROP the re-signed cookie's
+        // Set-Cookie write (the Next.js plugin skips writes in RSC contexts).
+        // With rotation (false), that dropped write is fatal: the rotation was
+        // consumed server-side, so the browser's cookie now holds a dead
+        // refresh token and the next refresh answers invalid_grant — surfacing
+        // to users as the recurring "session expired, log in again" banner
+        // every access-token TTL (15 min). With reuse (true), the refresh
+        // token's value never changes, so a dropped write only loses the fresh
+        // access token, which the next refresh (any context) re-mints — the
+        // session survives until the refresh token's own 7-day expiry. The
+        // no-rotation trade-off is acceptable here because the BFF is the only
+        // token holder: tokens never reach the browser (httpOnly encrypted
+        // server-side cookie) and the refresh grant is confidential-client
+        // only (client_secret_basic).
         return TokenSettings.builder()
-                .reuseRefreshTokens(false)
+                .reuseRefreshTokens(true)
                 .accessTokenTimeToLive(Duration.ofSeconds(900))
                 .refreshTokenTimeToLive(Duration.ofSeconds(604800))
                 .authorizationCodeTimeToLive(Duration.ofSeconds(300))
