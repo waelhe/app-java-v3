@@ -56,7 +56,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       unobserved per the same policy); report.create, report.resolve
  *       (L45 — the moderation layer's two commands: a member's report
  *       and the administrative resolve; the queue read stays
- *       unobserved per the same policy)</li>
+ *       unobserved per the same policy); post.react, post.unreact
+ *       (L47 — the reactions layer's two commands, the ONE toggle's two
+ *       directions; the feed's count/voice reads stay unobserved per
+ *       the same policy)</li>
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
@@ -103,6 +106,7 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-community", List.of(
                     "community.membership.join", "community.membership.leave",
                     "community.post.comment", "community.post.create", "community.post.delete",
+                    "community.post.react", "community.post.unreact",
                     "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(

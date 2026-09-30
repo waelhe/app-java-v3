@@ -218,6 +218,33 @@ public class NotificationService {
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
     }
 
+    /**
+     * L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+     * layer): the thanked post's author's POST_REACTED alert — the same
+     * delivery shape as the event points above (in-app row always lands;
+     * WebSocket and email ride their L22 per-type/channel preferences).
+     * The recipient is the post's author id, which lives in the
+     * users.id space — the id IS the recipient, the same seam
+     * {@code onPostCommented} uses.
+     *
+     * <p>The self-thank skip is the LISTENER's own policy (the
+     * {@code PostCommentedEvent} criterion-4 precedent) — this method
+     * delivers unconditionally, so the delivery contract stays one shape
+     * for every caller.
+     */
+    public void onPostReacted(UUID postId, UUID postAuthorId) {
+        String message = "New thank on your post: " + postId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(postAuthorId,
+                NotificationType.POST_REACTED.name(), message));
+        if (preferences.isChannelEnabled(postAuthorId,
+                NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(postAuthorId, "New Thank",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
