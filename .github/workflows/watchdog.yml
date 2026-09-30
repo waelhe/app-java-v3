@@ -65,12 +65,37 @@ name: Production Watchdog
 # fork's runs become skipped (green) instead of failing.
 #
 # Deployment-channel freshness probe (layer 15, redesigned 2026-09-19 for the
-# v3 account migration): production now deploys directly from this
-# repository's main via Railway's GitHub App — the old channel (deployment
+# v3 account migration; domain redirected 2026-09-30 for the v4 trial-account
+# cycle — runbook docs/operating/trial-renewal-and-provider-migration-
+# runbook.md §10): the v4 account (project "successful-simplicity", service
+# 221b33de, public domain app-java-v3-production-59bf.up.railway.app) took
+# over production on 2026-09-29 and the old v3 domain now answers the edge
+# fallback ("Application not found", x-railway-fallback — measured
+# 2026-09-30T16:34Z), which had every scheduled run failing on all endpoint
+# probes since 13:57Z on 2026-09-29 (runs #186-#191, incident #469) while the
+# live service was healthy the whole time (smoke station ALL PASS on -59bf:
+# readiness/liveness/jwks kid=marketplace-jwt-r3/OIDC/modulith 401/api-docs
+# 111 paths, measured 2026-09-30T16:35Z).
+#
+# Freshness-channel state on v4 (measured 2026-09-30, to be restored per the
+# runbook's §10.5 owner-gated sequence): the deploy channel is the v4 fork
+# (waelhe88-coder/app-java-v3@main, parked at bab774c1 = #468) while recent
+# production deployments were carried by manual serviceInstanceDeployV2 API
+# calls (the #472-era deployment, 2026-09-30T01:31Z); the Railway commit-
+# status context is silent on BOTH repositories' heads (0 contexts measured
+# on upstream main and on the fork's main). Until the owner restores the
+# channel (fork sync + project token + status context re-check per §10.5
+# steps 2-4), the freshness leg below runs on its documented age-tolerance
+# fallback: a fresh upstream HEAD passes within the 240-minute bound, and a
+# HEAD older than the bound fails loudly — an old-HEAD-with-no-deploy is the
+# designed dead-channel signal, not a false positive to be silenced.
+#
+# Historical (v3 era, kept for the record): production deployed directly from
+# this repository's main via Railway's GitHub App — the old channel (deployment
 # fork + scheduled fork-sync.yml) is decommissioned and a fork-vs-upstream
-# compare would measure a frozen repository, failing forever. The App reports
+# compare would measure a frozen repository, failing forever. The App reported
 # each deployment as a commit status on the exact commit it built, context
-# "<project> - <service>" (measured on this account: success on bb6da39 →
+# "<project> - <service>" (measured on that account: success on bb6da39 →
 # "Success - app-java-v3-production.up.railway.app"; failure on 7371afbb and
 # 16117d8 → "Deployment failed" — the BUILD_IMAGE cache-id validation that
 # PR #347 closes). The probe reads that status on main HEAD: success =
@@ -122,7 +147,7 @@ jobs:
       - name: Probe public production endpoints
         id: probe
         env:
-          BASE_URL: https://app-java-v3-production.up.railway.app
+          BASE_URL: https://app-java-v3-production-59bf.up.railway.app
         run: |
           set -u
           declare -A want=(

@@ -91,8 +91,9 @@ class ProductionWatchdogFilesTest {
     void watchdogProbesExactlyTheSixVerifiedPublicEndpoints() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
-                        + "(SYSTEM.md §15)")
-                .contains("BASE_URL: https://app-java-v3-production.up.railway.app");
+                        + "(SYSTEM.md §15 — the v4-account domain, redirected 2026-09-30 "
+                        + "per the trial-migration runbook §10)")
+                .contains("BASE_URL: https://app-java-v3-production-59bf.up.railway.app");
         assertThat(yml).as("liveness probe").contains("[\"/actuator/health/liveness\"]=\"200\"");
         assertThat(yml).as("readiness probe").contains("[\"/actuator/health/readiness\"]=\"200\"");
         assertThat(yml).as("auth keys probe").contains("[\"/oauth2/jwks\"]=\"200\"");
