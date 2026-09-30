@@ -56,14 +56,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       unobserved per the same policy); report.create, report.resolve
  *       (L45 — the moderation layer's two commands: a member's report
  *       and the administrative resolve; the queue read stays
- *       unobserved per the same policy)</li>
+ *       unobserved per the same policy); post.react, post.unreact
+ *       (L47 — the reactions layer's two commands, the ONE toggle's two
+ *       directions; the feed's count/voice reads stay unobserved per
+ *       the same policy)</li>
  *   <li>disputes — open, resolve</li>
  *   <li>identity — sync.oidc, role.update</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
- *       http.server.requests)</li>
+ *       http.server.requests); upload.request.post (L48 — the SAME channel's
+ *       post-targeted declare, its own command point: the member flow's
+ *       author gate and per-post position lock are its own work, measured
+ *       apart from the provider flow's)</li>
  *   <li>messaging — send</li>
  *   <li>notifications — mark.read, preferences.update (L22 — the
  *       per-channel unsubscribe switch write)</li>
@@ -103,6 +109,7 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-community", List.of(
                     "community.membership.join", "community.membership.leave",
                     "community.post.comment", "community.post.create", "community.post.delete",
+                    "community.post.react", "community.post.unreact",
                     "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
@@ -112,7 +119,7 @@ class ObservationCoverageFilesTest {
                     "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.thumbnail.process", "media.upload.confirm",
-                    "media.upload.request")),
+                    "media.upload.request", "media.upload.request.post")),
             Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.mark.read", "notification.preferences.update")),

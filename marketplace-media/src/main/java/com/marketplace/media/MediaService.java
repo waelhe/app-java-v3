@@ -2,7 +2,9 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.MediaUploadedEvent;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
@@ -21,15 +23,18 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Listing media business logic — the provider-owned half of roadmap item B1
- * (G-PROD-1): issue a presigned upload URL bound to a server-generated object
- * key, verify the object after upload, expose presigned read URLs.
+ * Media business logic — the generalized media line (L48 widened the
+ * listing-only original, roadmap item B1 / G-PROD-1): issue a presigned
+ * upload URL bound to a server-generated object key, verify the object
+ * after upload, expose presigned read URLs — for a provider LISTING or a
+ * neighborhood POST target (the community plan's D-C3 decision).
  *
  * <p>Ownership follows the exact house pattern of {@code CatalogService.verifyOwnership}:
  * the listing is resolved through the existing {@link ListingPriceProvider} port
@@ -61,6 +66,7 @@ public class MediaService {
     private final MediaProperties properties;
     private final ListingPriceProvider listingPriceProvider;
     private final ProviderLookupPort providerLookupPort;
+    private final PostLookupPort postLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final MediaThumbnailMetrics thumbnailMetrics;
@@ -70,6 +76,7 @@ public class MediaService {
                         MediaProperties properties,
                         ListingPriceProvider listingPriceProvider,
                         ProviderLookupPort providerLookupPort,
+                        PostLookupPort postLookupPort,
                         CurrentUserProvider currentUserProvider,
                         ApplicationEventPublisher eventPublisher,
                         MediaThumbnailMetrics thumbnailMetrics) {
@@ -78,6 +85,7 @@ public class MediaService {
         this.properties = properties;
         this.listingPriceProvider = listingPriceProvider;
         this.providerLookupPort = providerLookupPort;
+        this.postLookupPort = postLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.thumbnailMetrics = thumbnailMetrics;
@@ -119,6 +127,54 @@ public class MediaService {
     }
 
     /**
+     * L48 (gap #2 — post images): issues a presigned PUT URL for a new asset
+     * of the given neighborhood POST — the second target of the generalized
+     * media line (the D-C3 decision). Same discipline as the listing flow:
+     * type allowlist and size cap validated BEFORE anything is signed, the
+     * target resolved through its port (the honest 404 for an unknown,
+     * hidden or deleted post — the comment gate's visiblePost behavior at
+     * the seam), and the caller verified to be the AUTHOR (the post flow's
+     * ownership: {@code providerId} carries the author's user id directly —
+     * a member author need not hold a provider profile, so the provider-
+     * profile resolution of the listing flow does not apply here).
+     *
+     * <p>Role gate: {@code isAuthenticated()} — any authenticated member,
+     * because posting is the member domain (the feed's own gate, not the
+     * provider domain's PROVIDER role). The authorship check below is the
+     * real authority; there is deliberately NO admin bypass on THIS method —
+     * an admin uploading onto a member's post would attribute another's
+     * photo to that member, which the listing flow never allows either
+     * (an admin never upload-creates; the admin path exists on DELETE
+     * alone, where it moderates).
+     */
+    @Observed(name = "media.upload.request.post")
+    @PreAuthorize("isAuthenticated()")
+    public MediaUploadView requestPostUpload(UUID postId, String contentType,
+                                             long sizeBytes, Authentication authentication) {
+        S3MediaStorage s3 = requireStorage();
+        String normalizedType = normalizeContentType(contentType);
+        validateContentType(normalizedType);
+        validateSize(sizeBytes);
+
+        PostLookupPort.PostInfo post = postLookupPort.getPostInfo(postId);
+        verifyPostAuthorship(post.authorId(), authentication);
+
+        // Display-position allocation must be atomic per post (CodeRabbit
+        // #241, the listing flow's exact discipline): the advisory
+        // transaction lock below is held until the surrounding transaction
+        // commits, so per-post allocations are serialized in the database.
+        mediaAssetRepository.lockPostPositionAllocation(postId.toString());
+
+        String objectKey = buildPostObjectKey(postId, normalizedType);
+        MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForPost(
+                postId, post.authorId(), objectKey, normalizedType,
+                sizeBytes, (int) (mediaAssetRepository.countByPostId(postId) + 1)));
+
+        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+    }
+
+    /**
      * Confirms an upload: verifies via HeadObject that the object exists with
      * exactly the declared type and size, then moves the asset to UPLOADED
      * and publishes {@link MediaUploadedEvent} (L28) — the thumbnail pipeline
@@ -127,7 +183,7 @@ public class MediaService {
      * again.
      */
     @Observed(name = "media.upload.confirm")
-    @PreAuthorize("hasRole('PROVIDER')")
+    @PreAuthorize("isAuthenticated()")
     public MediaAssetView confirmUpload(UUID mediaId, Authentication authentication) {
         S3MediaStorage s3 = requireStorage();
         MediaAsset asset = getById(mediaId);
@@ -164,6 +220,34 @@ public class MediaService {
     }
 
     /**
+     * L48: the feed's one grouped media read for the community module —
+     * delegates the query to {@link MediaLookupAdapter} through the port
+     * (this method exists on the SERVICE only because presigning lives
+     * here; the adapter calls it). Every UPLOADED asset of the given posts
+     * in display order, original plus L28 thumbnail presigned GETs.
+     */
+    @Transactional(readOnly = true)
+    public List<MediaLookupPort.PostMediaEntry> listByPostIds(Collection<UUID> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return List.of();
+        }
+        S3MediaStorage s3 = requireStorage();
+        return mediaAssetRepository
+                .findByPostIdInAndStatusOrderByPostIdAscPositionAsc(postIds, MediaAssetStatus.UPLOADED)
+                .stream()
+                .map(asset -> new MediaLookupPort.PostMediaEntry(
+                        asset.getPostId(),
+                        asset.getId(),
+                        s3.presignDownload(asset.getObjectKey()),
+                        asset.getThumbObjectKey() == null
+                                ? null
+                                : s3.presignDownload(asset.getThumbObjectKey()),
+                        asset.getContentType(),
+                        asset.getPosition()))
+                .toList();
+    }
+
+    /**
      * Soft-deletes the asset record and best-effort removes the storage
      * objects (original + thumbnail) — only AFTER the database delete
      * commits (CodeRabbit #241): the repository delete is just scheduled
@@ -173,7 +257,7 @@ public class MediaService {
      * lifecycle rules own orphans.
      */
     @Observed(name = "media.asset.delete")
-    @PreAuthorize("hasAnyRole('PROVIDER','ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public void delete(UUID mediaId, Authentication authentication) {
         S3MediaStorage s3 = requireStorage();
         MediaAsset asset = getById(mediaId);
@@ -378,13 +462,58 @@ public class MediaService {
         verifyOwnership(providerId, authentication, "You do not own this listing");
     }
 
+    /**
+     * L48: the post flow's ownership — the caller must BE the author. A
+     * direct user-id comparison ({@code providerId} on a POST row IS the
+     * author's user id, the A1 fact): the provider-profile resolution of
+     * the listing flow does not apply, because a member author need not
+     * hold a provider profile at all. No admin bypass here by design — see
+     * {@link #requestPostUpload(UUID, String, long, Authentication)}.
+     */
+    private void verifyPostAuthorship(UUID authorId, Authentication authentication) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        if (!authorId.equals(currentUserId)) {
+            throw new AccessDeniedException("You are not the author of this post");
+        }
+    }
+
+    /**
+     * L48: the confirm/delete ownership gate became target-aware — the
+     * asset's own {@code ownerKind} selects the rule. LISTING rows keep the
+     * provider-profile resolution verbatim (admin passes, otherwise the
+     * provider record behind the asset must be linked to the caller); POST
+     * rows compare the author's user id directly, with the admin pass kept
+     * so the moderation surface (asset DELETE) still works on both targets
+     * — an admin confirming or deleting a member's photo is moderation,
+     * never authorship.
+     */
     private void verifyAssetOwnership(MediaAsset asset, Authentication authentication) {
+        if (asset.getOwnerKind() == MediaOwnerKind.POST) {
+            if (currentUserProvider.isAdmin(authentication)) {
+                return;
+            }
+            UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+            if (currentUserId != null && currentUserId.equals(asset.getProviderId())) {
+                return;
+            }
+            throw new AccessDeniedException("You do not own this media asset");
+        }
         verifyOwnership(asset.getProviderId(), authentication, "You do not own this media asset");
     }
 
     private String buildObjectKey(UUID listingId, String contentType) {
         String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
         return "listings/" + listingId + "/" + UUID.randomUUID() + "." + extension;
+    }
+
+    /**
+     * L48: the post target's own key namespace — {@code posts/{postId}/…},
+     * the sibling of the listing prefix. Same construction discipline:
+     * server-generated UUIDs only, no client input ever reaches the key.
+     */
+    private String buildPostObjectKey(UUID postId, String contentType) {
+        String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
+        return "posts/" + postId + "/" + UUID.randomUUID() + "." + extension;
     }
 
     /**
@@ -403,6 +532,7 @@ public class MediaService {
         return new MediaAssetView(
                 asset.getId(),
                 asset.getListingId(),
+                asset.getPostId(),
                 asset.getContentType(),
                 asset.getSizeBytes(),
                 asset.getStatus().name(),
@@ -438,7 +568,9 @@ public class MediaService {
      * Read/confirm response — the presigned GET URLs are freshly signed per
      * call. L28: {@code thumbUrl} is null until background processing has
      * run (fall back to {@code downloadUrl}); it equals {@code downloadUrl}
-     * when the thumbnail is the original by design.
+     * when the thumbnail is the original by design. L48: exactly one of
+     * {@code listingId}/{@code postId} is non-null — the asset's target
+     * (the V76 exactly-one-target invariant surfaced on the read model).
      */
     @io.swagger.v3.oas.annotations.media.Schema(
             description = "Media asset with presigned read links — original plus thumbnail when processed")
@@ -446,9 +578,16 @@ public class MediaService {
             @io.swagger.v3.oas.annotations.media.Schema(description = "The media asset id",
                     example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
             UUID id,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "The listing this asset belongs to",
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The listing this asset belongs to "
+                    + "(null for a post-targeted asset — L48)",
+                    nullable = true,
                     example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
             UUID listingId,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The neighborhood post this asset "
+                    + "belongs to (null for a listing-targeted asset — L48)",
+                    nullable = true,
+                    example = "9c8b7a65-4321-4fed-ba98-76543210fedc")
+            UUID postId,
             @io.swagger.v3.oas.annotations.media.Schema(description = "Image content type",
                     example = "image/jpeg")
             String contentType,

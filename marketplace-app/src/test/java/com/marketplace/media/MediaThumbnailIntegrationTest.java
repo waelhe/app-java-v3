@@ -4,6 +4,7 @@ import test.config.IntegrationContainers;
 
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.MediaUploadedEvent;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -84,6 +85,10 @@ class MediaThumbnailIntegrationTest {
 
     @MockitoBean
     ProviderLookupPort providerLookupPort;
+
+    /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
+    @MockitoBean
+    PostLookupPort postLookupPort;
 
     @MockitoBean
     S3MediaStorage storage;

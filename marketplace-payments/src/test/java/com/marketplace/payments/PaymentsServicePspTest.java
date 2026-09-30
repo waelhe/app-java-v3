@@ -51,10 +51,11 @@ class PaymentsServicePspTest {
     private final Authentication authentication = mock(Authentication.class);
 
     private PaymentsService service(ObjectProvider<PspChannel> channel) {
+        WebhookEventRecorder recorder = new WebhookEventRecorder(webhookEventRepository);
         return new PaymentsService(intentRepository, paymentRepository, webhookEventRepository,
                 eventPublisher, currentUserProvider, bookingParticipantProvider, webhookSecurity,
-                new WebhookEventRecorder(webhookEventRepository),
-                new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher),
+                recorder,
+                new PaymentIntentSettlementService(intentRepository, paymentRepository, eventPublisher, recorder),
                 channel);
     }
 
@@ -464,6 +465,45 @@ class PaymentsServicePspTest {
         verify(intentRepository, never()).save(any());
     }
 
+    /**
+     * R10 — the recorder's inbox contract: the row is born RECEIVED carrying
+     * the COMPLETE re-delivery contract — the raw provider payload, the
+     * resolved intent id, the external (PSP) id, and the refund snapshot
+     * amount — everything the recovery sweep needs to re-deliver the event
+     * without the channel being bound.
+     */
+    @Test
+    void handleStripeWebhook_recordsTheFullInboxContractAsReceived() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_inbox_1")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_inbox");
+        when(pspChannel.verifyWebhook("raw_payload", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_inbox_1", "charge.refunded",
+                        intentId, "pi_remote_inbox", new PspChannel.RefundSnapshot(300L)));
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+
+        boolean created = service(boundChannel).handleStripeWebhook("raw_payload", "t=1,v1=sig");
+
+        assertTrue(created);
+        org.mockito.ArgumentCaptor<PaymentWebhookEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(PaymentWebhookEvent.class);
+        verify(webhookEventRepository).saveAndFlush(captor.capture());
+        PaymentWebhookEvent recorded = captor.getValue();
+        assertEquals(WebhookProcessingState.RECEIVED, recorded.getProcessingState());
+        assertEquals("raw_payload", recorded.getPayload());
+        assertEquals(intentId, recorded.getPaymentIntentId());
+        assertEquals("pi_remote_inbox", recorded.getExternalId());
+        assertEquals(Long.valueOf(300L), recorded.getRefundAmountCents());
+    }
+
     /** The retry contract: same request state ⇒ same key; advanced state ⇒ new key. */
     @Test
     void refundIdempotencyKey_isDeterministicPerState() {
@@ -478,5 +518,154 @@ class PaymentsServicePspTest {
         assertNotEquals(
                 PaymentsService.refundIdempotencyKey(paymentId, 0L, 400L),
                 PaymentsService.refundIdempotencyKey(paymentId, 400L, 400L));
+    }
+
+    // ---- R1 (Wave 2): the booking-cancellation listener refunds through the ONE
+    // channel contract — no dual behaviors for one financial operation ----
+
+    /**
+     * R1's core regression: a booking cancellation refunding a remotely-charged
+     * intent MUST create the remote refund (the pre-fix behavior marked the
+     * local books REFUNDED while the provider never paid anyone back). The
+     * full-refund key is derived from the request state exactly like the admin
+     * path's — one contract, two callers.
+     */
+    @Test
+    void autoRefundByBooking_linkedIntent_refundsThroughTheChannelOnceWithDerivedKey() {
+        UUID bookingId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_a1");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_a1");
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(eq("pi_remote_a1"), eq(null),
+                eq("marketplace-refund-" + payment.getId() + "-0-full")))
+                .thenReturn(new PspChannel.RemoteRefund("re_a1", "succeeded", 5000L));
+
+        service(boundChannel).autoRefundByBooking(bookingId);
+
+        // Exactly ONE remote refund, replay-key derived from the full-refund
+        // request state (a listener retry re-derives the SAME key).
+        verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_a1"), eq(null), anyString());
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
+        assertEquals(5000L, intent.getRefundedAmountCents());
+        assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
+        assertEquals(5000L, payment.getRefundedAmountCents());
+        verify(eventPublisher).publishEvent(
+                new com.marketplace.shared.api.PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+    }
+
+    /**
+     * The honesty guarantee (plan R1 point 3): a channel failure must NOT mark
+     * the intent REFUNDED — the exception propagates to the listener's
+     * {@code @Retry(name = "paymentProcessing")} wrapper and, failing that, to
+     * Spring Modulith's Event Publication Registry, which re-delivers until
+     * the channel heals. The local books keep the true money state throughout.
+     */
+    @Test
+    void autoRefundByBooking_channelFailure_leavesIntentUnrefundedAndRetryable() {
+        UUID bookingId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_a2");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_a2");
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(any(), any(), anyString()))
+                .thenThrow(new PspChannelException("provider unreachable"));
+
+        assertThrows(PspChannelException.class, () -> service(boundChannel).autoRefundByBooking(bookingId));
+
+        // Not a single false book: the intent and payment keep their true
+        // SUCCEEDED/COMPLETED state, and no REFUNDED event ever fires.
+        assertEquals(PaymentIntentStatus.SUCCEEDED, intent.getStatus());
+        assertEquals(PaymentStatus.COMPLETED, payment.getStatus());
+        verify(intentRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /**
+     * A PENDING remote refund completes the listener cleanly: nothing is
+     * falsely refunded, and the {@code charge.refunded} webhook (the async
+     * safety net) finishes the books when the provider completes the refund.
+     */
+    @Test
+    void autoRefundByBooking_pendingRemoteRefund_completesCleanlyAndWaitsForWebhook() {
+        UUID bookingId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        intent.assignPspIntentId("pi_remote_a3");
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_a3");
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(pspChannel.createRemoteRefund(any(), any(), anyString()))
+                .thenReturn(new PspChannel.RemoteRefund("re_a3", "pending", 0L));
+
+        service(boundChannel).autoRefundByBooking(bookingId);
+
+        assertEquals(PaymentIntentStatus.SUCCEEDED, intent.getStatus());
+        assertEquals(PaymentStatus.COMPLETED, payment.getStatus());
+        verify(intentRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /**
+     * Channel bound but intent unlinked (internal/test money): the listener's
+     * documented inert local path stays byte-compatible with the pre-R1
+     * behavior — full local refund, no remote call.
+     */
+    @Test
+    void autoRefundByBooking_unlinkedIntent_keepsTheInertLocalPath() {
+        UUID bookingId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intent.getId(), 5000L);
+        payment.markCompleted("ch_a4");
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+
+        service(boundChannel).autoRefundByBooking(bookingId);
+
+        verify(pspChannel, never()).createRemoteRefund(any(), any(), any());
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
+        assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
+    }
+
+    /**
+     * The no-payment-row edge (never charged through settlement): the
+     * intent-level terminal mark is the honest state — nothing to coordinate.
+     */
+    @Test
+    void autoRefundByBooking_noPaymentRow_marksTheIntentLevelRefund() {
+        UUID bookingId = UUID.randomUUID();
+        PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
+        intent.markProcessing();
+        intent.markSucceeded();
+        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.empty());
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+
+        service(boundChannel).autoRefundByBooking(bookingId);
+
+        // No payment row exists, so no remote coordination is derivable — the
+        // intent's own terminal mark applies (the pre-R1 behavior preserved).
+        verify(pspChannel, never()).createRemoteRefund(any(), any(), any());
+        assertEquals(PaymentIntentStatus.REFUNDED, intent.getStatus());
     }
 }

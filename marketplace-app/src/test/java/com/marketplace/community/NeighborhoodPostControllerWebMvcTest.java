@@ -398,4 +398,106 @@ class NeighborhoodPostControllerWebMvcTest {
         mockMvc.perform(delete("/api/v1/posts/{id}", postId))
                 .andExpect(status().isNotFound());
     }
+
+    // ---------- L47: the reactions pair (thank / un-thank) ----------
+
+    @Test
+    void l47_react_answers201WithTheReactionBody() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-09-30T09:30:00Z");
+        when(postService.react(memberId, postId)).thenReturn(new PostReactionView(
+                UUID.randomUUID(), postId, memberId, now, now));
+
+        mockMvc.perform(post("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.postId").value(postId.toString()))
+                .andExpect(jsonPath("$.memberId").value(memberId.toString()));
+    }
+
+    @Test
+    void l47_react_oneVoicePerMember_answers409() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+        when(postService.react(memberId, postId)).thenThrow(
+                new com.marketplace.shared.api.ConflictException(
+                        "One thank per member per post — remove yours before thanking again"));
+
+        mockMvc.perform(post("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void l47_react_unknownPost_answers404() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+        when(postService.react(memberId, postId))
+                .thenThrow(new ResourceNotFoundException("Post", postId));
+
+        mockMvc.perform(post("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void l47_react_notAMemberOfThePostsNeighborhood_answers403() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+        when(postService.react(memberId, postId))
+                .thenThrow(new AccessDeniedException(
+                        "Only members of the post's neighborhood can react to it"));
+
+        mockMvc.perform(post("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void l47_removeReaction_answers204() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void l47_removeReaction_noLiveVoice_answers404() throws Exception {
+        UUID memberId = stubCaller();
+        UUID postId = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new ResourceNotFoundException("Reaction", postId))
+                .when(postService).removeReaction(memberId, postId);
+
+        mockMvc.perform(delete("/api/v1/posts/{id}/reactions", postId))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void l47_getFeed_carriesTheTwoReactionFacts() throws Exception {
+        // The feed read's widened projection: the live count and the
+        // caller's own voice ride every post row — the client's filled
+        // heart renders from the contract alone, no second read.
+        UUID memberId = stubCaller();
+        UUID locationId = UUID.randomUUID();
+        NeighborhoodPostView view = new NeighborhoodPostView(
+                UUID.randomUUID(), memberId, locationId,
+                "GENERAL", "Title", "Body", "VISIBLE",
+                3L, true,
+                List.of(new PostMediaView(UUID.randomUUID(), "https://orig", "https://thumb",
+                        "image/jpeg", 1)),
+                Instant.parse("2026-09-30T09:30:00Z"),
+                Instant.parse("2026-09-30T09:30:00Z"));
+        when(postService.getFeed(eq(memberId), isNull(), any()))
+                .thenReturn(new PageImpl<>(List.of(view)));
+
+        mockMvc.perform(get("/api/v1/neighborhood/posts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].reactionsCount").value(3))
+                .andExpect(jsonPath("$.content[0].reactedByMe").value(true))
+                // L48: the row's media rides the same projection — one
+                // entry per photo, position order, thumbUrl nullable.
+                .andExpect(jsonPath("$.content[0].media.length()").value(1))
+                .andExpect(jsonPath("$.content[0].media[0].url").value("https://orig"))
+                .andExpect(jsonPath("$.content[0].media[0].thumbUrl").value("https://thumb"))
+                .andExpect(jsonPath("$.content[0].media[0].contentType").value("image/jpeg"))
+                .andExpect(jsonPath("$.content[0].media[0].position").value(1));
+    }
 }
