@@ -228,6 +228,62 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * The administrative verification queue over the REAL chain: the
+     * request lands the membership in the PENDING page (the queue's own
+     * state axis), the review moves it out (the queue drains), and the
+     * decision trails read through their own states — the ModerationAdmin
+     * queue's own end-to-end shape applied to the lifecycle.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void verificationQueue_readsThePendingPage_andDrainsOnReview() throws Exception {
+        UUID requester = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID membershipId = membershipService.join(requester, location).view().id();
+
+        // before the request: the membership is not in the PENDING page
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isEmpty());
+
+        // the request moves it to PENDING — the queue's own page carries it
+        // (the .with(jwt()) post-processor replaces the authentication for
+        // THIS request alone; the method-level @WithMockUser ADMIN context
+        // serves the administrative reads below untouched)
+        asCaller(requester);
+        mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("PENDING"));
+
+        // the ADMIN queue read (the method-level test context restored by the
+        // annotation on THIS method — the asCaller mock switch does not affect
+        // roles): the membership appears in the PENDING page
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isNotEmpty());
+
+        // the review drains the queue and lands the trust mark
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification",
+                        membershipId).queryParam("decision", "APPROVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("VERIFIED"));
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isEmpty());
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "VERIFIED").queryParam("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isNotEmpty());
+    }
+
     @Test
     void criterion1_joinLevel3_thenReadReturnsIt() throws Exception {
         UUID userId = asCaller(UUID.randomUUID());

@@ -8,6 +8,10 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ConflictException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -175,6 +179,38 @@ public class NeighborhoodMembershipService {
             throw new ConflictException(invalidTransition.getMessage());
         }
         return NeighborhoodMembershipView.of(repository.save(membership));
+    }
+
+    /**
+     * The verification queue's complete drain order (D-N5's determinism
+     * rule): the state's own clock — {@code updatedAt} ASC (the request's
+     * UNVERIFIED→PENDING transition is the row's last write, so the oldest
+     * pending claim drains first), {@code id} breaking ties. The admin
+     * read rides the moderation queue's own shape: the optional state axis
+     * filters one state, absent = the whole membership ledger, read-only,
+     * soft-deleted rows hidden by the derived query's own filter.
+     */
+    private static final Sort VERIFICATION_QUEUE_SORT =
+            Sort.by(Sort.Direction.ASC, "updatedAt", "id");
+
+    /**
+     * The administrative verification queue (the lifecycle's review
+     * surface): {@code GET /api/v1/admin/neighborhood-memberships}. A null
+     * state reads every ACTIVE membership (the ledger); a state filters to
+     * its own page — PENDING is the reviewable queue, REJECTED/VERIFIED the
+     * decision trails, UNVERIFIED the untouched floor.
+     */
+    @Observed(name = "community.membership.verification.queue")
+    @Transactional(readOnly = true)
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public Page<NeighborhoodMembershipView> getVerificationQueue(
+            MembershipVerificationState state, Pageable pageable) {
+        Pageable queuePageable = PageRequest.of(
+                pageable.getPageNumber(), pageable.getPageSize(), VERIFICATION_QUEUE_SORT);
+        Page<NeighborhoodMembership> page = state == null
+                ? repository.findAll(queuePageable)
+                : repository.findByVerificationState(state, queuePageable);
+        return page.map(NeighborhoodMembershipView::of);
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.marketplace.community;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.history.RevisionRepository;
 
@@ -32,4 +34,14 @@ public interface NeighborhoodMembershipRepository
      * G-N1's active slot admits — a left member is never alerted.
      */
     java.util.List<NeighborhoodMembership> findByLocationId(UUID locationId);
+
+    /**
+     * The verification queue's paged read (the lifecycle's own review
+     * surface): the ACTIVE memberships of one verification state. The
+     * soft-delete filter hides left rows exactly as every derived query
+     * does — a LEFT membership holds no reviewable claim (its slot was
+     * released; the rejoin's fresh row is the claim that carries state).
+     */
+    Page<NeighborhoodMembership> findByVerificationState(
+            MembershipVerificationState verificationState, Pageable pageable);
 }
