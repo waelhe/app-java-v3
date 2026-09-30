@@ -104,7 +104,7 @@ public class PaymentsService implements PaymentsSpi {
      */
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId) {
-        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, null);
+        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, null, null);
     }
 
     /**
@@ -115,11 +115,41 @@ public class PaymentsService implements PaymentsSpi {
     boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
                                   UUID paymentIntentId, String externalId,
                                   PspChannel.RefundSnapshot refund) {
+        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, refund, null);
+    }
+
+    /**
+     * R10 (Wave 2) — the verified dispatch against the durable inbox: the
+     * recorder commits the row (RECEIVED, full re-delivery contract, raw
+     * payload) in its own transaction FIRST, the dispatch runs, and the row's
+     * terminal state follows the dispatch's own transaction discipline — the
+     * settlement events are marked SETTLED inside the settlement transaction
+     * (atomic with the money), the rest are marked by the idempotent backstop
+     * below. The measured defect this closes: a worker stop between the
+     * recorder's commit and the dispatch's completion used to strand the dedup
+     * row forever (the provider's retries answered already-processed against
+     * a tombstone) — the money transition was lost permanently. Now the
+     * stranded row stays RECEIVED and the recovery sweep re-delivers it.
+     *
+     * <p>Failure families keep their documented semantics: a dispatch that
+     * throws while the worker is alive still triggers the compensating delete
+     * (the provider retry re-processes — byte-compatible with the pre-R10
+     * contract); the backstop mark sits OUTSIDE that catch so a mark failure
+     * after a clean settlement can never delete the row of an event whose
+     * settlement already committed (the row would simply stay RECEIVED and be
+     * recovered — re-delivery completes as the settlement's own idempotent
+     * no-op).</p>
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId,
+                                  PspChannel.RefundSnapshot refund, String rawPayload) {
         if (webhookEventRepository.findByProviderAndEventId(provider, eventId).isPresent()) {
             return false;
         }
         try {
-            webhookEventRecorder.record(provider, eventId, eventType);
+            webhookEventRecorder.record(provider, eventId, eventType, rawPayload,
+                    paymentIntentId, externalId,
+                    refund != null ? refund.refundedAmountCents() : null);
         } catch (DataIntegrityViolationException ex) {
             // Distinguish a lost concurrent-duplicate race from every OTHER
             // integrity failure (CodeRabbit #242 round 2: e.g. an oversized
@@ -136,7 +166,8 @@ public class PaymentsService implements PaymentsSpi {
             return false;
         }
         try {
-            dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund);
+            dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund,
+                    new WebhookEventRef(provider, eventId));
         } catch (RuntimeException ex) {
             // The row is committed but the event was NOT processed: remove it
             // so the provider retry re-processes instead of being deduplicated
@@ -145,17 +176,19 @@ public class PaymentsService implements PaymentsSpi {
                 webhookEventRecorder.delete(provider, eventId);
             } catch (RuntimeException cleanupEx) {
                 // Never mask the ORIGINAL dispatch failure — but the surviving
-                // dedup row would acknowledge the provider's retry without
-                // processing it, so the orphan is logged as a loud operator
-                // signal (delete the payment_webhook_events row for this
-                // event to re-arm it).
-                log.error("Webhook event {} dispatch failed AND the compensating delete failed — the dedup row"
-                        + " survives and the provider retry will be acknowledged without processing. Operator"
-                        + " action: delete the payment_webhook_events row for event {}. Cleanup failure:",
-                        eventId, eventId, cleanupEx);
+                // RECEIVED row is no longer an operator action: the recovery
+                // sweep re-delivers it automatically (R10).
+                log.error("Webhook event {} dispatch failed AND the compensating delete failed — the inbox row"
+                        + " survives as RECEIVED and the recovery sweep will re-deliver it. Cleanup failure:",
+                        eventId, cleanupEx);
             }
             throw ex;
         }
+        // R10 backstop — idempotent: the settlement types were already marked
+        // inside the settlement's own transaction; the non-settlement types
+        // (charge.refunded sync, log-only) are marked here in the carrier's
+        // transaction, atomic with their dispatch effects.
+        webhookEventRecorder.markSettled(provider, eventId);
         return true;
     }
 
@@ -189,7 +222,7 @@ public class PaymentsService implements PaymentsSpi {
                             + " rejecting so the provider retries it");
         }
         return handleVerifiedWebhook("stripe", verified.eventId(), verified.eventType(),
-                intentId, verified.pspIntentId(), verified.refund());
+                intentId, verified.pspIntentId(), verified.refund(), rawPayload);
     }
 
     /**
@@ -198,11 +231,47 @@ public class PaymentsService implements PaymentsSpi {
      */
     void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId,
                               PspChannel.RefundSnapshot refund) {
+        dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund, null);
+    }
+
+    /**
+     * R10 (Wave 2) — the recovery sweep's re-delivery entry point: dispatches
+     * a recorded inbox row through the SAME verified-dispatch contract the
+     * original delivery used (signature verification already happened at
+     * record time — the row exists because the notification was verified,
+     * so the re-delivery must not re-verify anything).
+     *
+     * <p><b>Why this is public when {@link #dispatchWebhookEvent} stays
+     * package-private:</b> the recovery component calls it through the Spring
+     * proxy, and the documented proxying rule (Reference › AOP › Proxying
+     * Mechanisms — the N2 lesson this module already carries) is that
+     * non-public methods are not reliably advised; the webhook routes reach
+     * the package-private form through self-invocation inside this class,
+     * the recovery sweep reaches this public form from its own bean. The
+     * caller is always inside the payments module — the module boundary is
+     * Modulith's, not this method's.</p>
+     */
+    public void redeliverWebhookEvent(String provider, String eventId, String eventType,
+                                      UUID paymentIntentId, String externalId, Long refundAmountCents) {
+        PspChannel.RefundSnapshot refund =
+                refundAmountCents != null ? new PspChannel.RefundSnapshot(refundAmountCents) : null;
+        dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund,
+                new WebhookEventRef(provider, eventId));
+    }
+
+    /**
+     * R10 (Wave 2) — the dispatch carrying its inbox row: the settlement
+     * events hand the row to {@link PaymentIntentSettlementService} so the
+     * SETTLED mark commits atomically with the money; the other event types
+     * leave the marking to the caller's idempotent backstop.
+     */
+    void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId,
+                              PspChannel.RefundSnapshot refund, WebhookEventRef inboxRow) {
         switch (eventType) {
             case "payment_intent.succeeded" -> {
                 if (paymentIntentId != null) {
                     log.info("Webhook dispatch: payment_intent.succeeded for intent {}", paymentIntentId);
-                    paymentIntentSettlementService.confirm(paymentIntentId, externalId);
+                    paymentIntentSettlementService.confirm(paymentIntentId, externalId, inboxRow);
                 } else {
                     log.warn("Webhook payment_intent.succeeded missing paymentIntentId: eventType={}", eventType);
                 }
@@ -215,7 +284,7 @@ public class PaymentsService implements PaymentsSpi {
                 // of dying as a log line while the booking stays "paid".
                 if (paymentIntentId != null) {
                     log.warn("Webhook dispatch: payment_intent.payment_failed for intent {}", paymentIntentId);
-                    paymentIntentSettlementService.fail(paymentIntentId);
+                    paymentIntentSettlementService.fail(paymentIntentId, inboxRow);
                 } else {
                     log.warn("Webhook payment_intent.payment_failed missing paymentIntentId: eventType={}", eventType);
                 }
@@ -397,40 +466,32 @@ public class PaymentsService implements PaymentsSpi {
                 throw new ConflictException("Refund amount exceeds intent amount");
             }
         }
-        // L19 — the closed money loop: when the real channel is bound AND the
-        // intent is linked to a remote intent, the refund is created at the
-        // provider with a derived idempotency key and the local books reflect
-        // the remote cumulative actual. Not linked = the intent never left the
-        // house (internal/test money) — nothing remote to refund; no channel =
-        // the documented inert path. Either way the existing internal flow
-        // below stays byte-compatible.
-        PspChannel channel = pspChannel.getIfAvailable();
-        if (channel != null && intent.getPspIntentId() != null) {
-            String idempotencyKey = refundIdempotencyKey(paymentId, alreadyRefunded, amountCents);
-            PspChannel.RemoteRefund remote = channel.createRemoteRefund(
-                    intent.getPspIntentId(), amountCents, idempotencyKey);
-            // CodeRabbit #249 round 1: the provider's status gates the local
-            // books. Only a SUCCEEDED refund moved money (its cumulative is
-            // authoritative); a PENDING one has not moved anything yet — the
-            // charge.refunded webhook completes that sync when it lands (the
-            // async safety net); anything else is a loud conflict with no
-            // local state change.
-            if ("pending".equals(remote.status())) {
-                log.info("Remote refund {} for payment {} is pending at the provider — local books"
-                                + " await the charge.refunded webhook (nothing refunded yet: {} cents)",
-                        remote.refundId(), paymentId, remote.refundedTotalCents());
+        // L19/R1 — the closed money loop through the ONE refund contract: when
+        // the real channel is bound AND the intent is linked to a remote
+        // intent, the refund is created at the provider with a derived
+        // idempotency key and the local books reflect the remote cumulative
+        // actual. Not linked = the intent never left the house
+        // (internal/test money) — nothing remote to refund; no channel = the
+        // documented inert path. Either way the existing internal flow below
+        // stays byte-compatible. The booking-cancellation listener's full
+        // refund (refundFully) routes through the SAME contract — one
+        // behavior for one financial operation, no dual paths.
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents);
+        switch (outcome) {
+            case PENDING_AT_PROVIDER -> {
+                // Remote refund created but not completed: local books await
+                // the charge.refunded webhook (the async safety net).
                 return new RefundedPayment(payment, intent);
             }
-            if (!"succeeded".equals(remote.status())) {
-                throw new ConflictException("Remote refund " + remote.refundId() + " for payment "
-                        + paymentId + " returned status '" + remote.status()
-                        + "' — no local refund state changed");
+            case SYNCED -> {
+                paymentIntentRepository.save(intent);
+                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
+                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+                return new RefundedPayment(payment, intent);
             }
-            applyRemoteRefund(payment, intent, remote.refundedTotalCents());
-            paymentIntentRepository.save(intent);
-            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
-            eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
-            return new RefundedPayment(payment, intent);
+            case NO_CHANNEL -> {
+                // fall through to the documented inert local path below
+            }
         }
         boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());
         if (isFullRefund) {
@@ -544,6 +605,21 @@ public class PaymentsService implements PaymentsSpi {
      *   <li>FAILED / CANCELLED / REFUNDED → no-op — a redelivery must
      *       complete the publication instead of re-violating the machine.</li>
      * </ul>
+     *
+     * <p><b>R1 (Wave 2) — the money-remote half of the SUCCEEDED branch.</b>
+     * The full refund of a remotely-charged intent now routes through the one
+     * remote-refund contract ({@link #refundThroughChannel}): a PENDING remote
+     * refund completes the listener cleanly (the {@code charge.refunded}
+     * webhook finishes the books), while a CHANNEL FAILURE throws on purpose
+     * — the local books must never say REFUNDED for money the provider has
+     * not returned. That throw is not a state-machine violation (the S12
+     * family above stays legal-or-noop); it is the honest signal that keeps
+     * the publication incomplete, so the framework's own recovery owns the
+     * retry: the {@code @Retry(name = "paymentProcessing")} wrapper first,
+     * then the Event Publication Registry, then the runtime
+     * {@code EventPublicationResubmission} sweep — the refund stays pending
+     * and retryable until the channel heals, and the intent keeps its true
+     * money state throughout.</p>
      */
     @Retry(name = "paymentProcessing")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -560,16 +636,103 @@ public class PaymentsService implements PaymentsSpi {
         });
     }
 
+    /**
+     * R1 (Wave 2) — the ONE remote-refund contract every refund caller routes
+     * through (the admin command and the booking-cancellation listener's full
+     * refund — the measured defect was two behaviors for one financial
+     * operation: the admin path created the remote refund while the listener
+     * marked the local books REFUNDED without the provider ever paying anyone
+     * back). The contract:
+     * <ul>
+     *   <li>intent not linked to a remote intent, or no channel bound ⇒
+     *       {@link RemoteRefundOutcome#NO_CHANNEL} — the documented inert
+     *       local path applies (internal/test money);</li>
+     *   <li>remote refund created and PENDING ⇒
+     *       {@link RemoteRefundOutcome#PENDING_AT_PROVIDER} — the local books
+     *       await the {@code charge.refunded} webhook (the async safety net);
+     *       a channel exception propagates to the caller's existing
+     *       {@code @Retry(name = "paymentProcessing")} wrapper and, on the
+     *       listener path, to Spring Modulith's Event Publication Registry —
+     *       the refund stays pending and retryable, never falsely REFUNDED
+     *       (the framework's own retry mechanisms own the recovery, including
+     *       {@code EventPublicationResubmission} at runtime);</li>
+     *   <li>remote refund SUCCEEDED ⇒
+     *       {@link RemoteRefundOutcome#SYNCED} — the remote cumulative actual
+     *       is applied to both rows (the provider's number is authoritative,
+     *       roadmap L19 acceptance 3) and the caller persists + publishes.</li>
+     * </ul>
+     * Anything else from the provider is a loud conflict with no local state
+     * change (CodeRabbit #249 round 1).
+     */
+    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents) {
+        PspChannel channel = pspChannel.getIfAvailable();
+        if (channel == null || intent.getPspIntentId() == null) {
+            return RemoteRefundOutcome.NO_CHANNEL;
+        }
+        String idempotencyKey = refundIdempotencyKey(
+                payment.getId(), payment.getRefundedAmountCents(), amountCents);
+        PspChannel.RemoteRefund remote = channel.createRemoteRefund(
+                intent.getPspIntentId(), amountCents, idempotencyKey);
+        if ("pending".equals(remote.status())) {
+            log.info("Remote refund {} for payment {} is pending at the provider — local books"
+                            + " await the charge.refunded webhook (nothing refunded yet: {} cents)",
+                    remote.refundId(), payment.getId(), remote.refundedTotalCents());
+            return RemoteRefundOutcome.PENDING_AT_PROVIDER;
+        }
+        if (!"succeeded".equals(remote.status())) {
+            throw new ConflictException("Remote refund " + remote.refundId() + " for payment "
+                    + payment.getId() + " returned status '" + remote.status()
+                    + "' — no local refund state changed");
+        }
+        applyRemoteRefund(payment, intent, remote.refundedTotalCents());
+        return RemoteRefundOutcome.SYNCED;
+    }
+
+    /** The one contract's outcomes — see {@link #refundThroughChannel}. */
+    private enum RemoteRefundOutcome {
+        NO_CHANNEL,
+        PENDING_AT_PROVIDER,
+        SYNCED
+    }
+
     private void refundFully(PaymentIntent intent) {
-        intent.markRefunded();
-        paymentIntentRepository.save(intent);
-        paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -> {
-            payment.markRefunded();
-            paymentRepository.save(payment);
-        });
-        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
-        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
-        log.info("Auto-refund completed for intent {} (full refund)", intent.getId());
+        Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
+        if (payment == null) {
+            // Never charged through settlement — nothing remote to coordinate;
+            // the intent-level terminal mark is the honest state.
+            intent.markRefunded();
+            paymentIntentRepository.save(intent);
+            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+            eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+            log.info("Auto-refund completed for intent {} (full refund — no payment row to coordinate)",
+                    intent.getId());
+            return;
+        }
+        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null);
+        switch (outcome) {
+            case SYNCED -> {
+                paymentIntentRepository.save(intent);
+                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));
+                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+                log.info("Auto-refund completed for intent {} — remote cumulative applied",
+                        intent.getId());
+            }
+            case PENDING_AT_PROVIDER -> log.info(
+                    "Auto-refund for intent {} created a PENDING remote refund — local books await the"
+                            + " charge.refunded webhook (the async safety net); the listener completes cleanly",
+                    intent.getId());
+            case NO_CHANNEL -> {
+                // The documented inert local path — byte-compatible with the
+                // pre-R1 behavior for money that never left the house.
+                intent.markRefunded();
+                payment.markRefunded();
+                paymentIntentRepository.save(intent);
+                paymentRepository.save(payment);
+                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "REFUNDED"));
+                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), intent.getId()));
+                log.info("Auto-refund completed for intent {} (full refund — inert local path)", intent.getId());
+            }
+        }
     }
 
     private void cancelUnpaid(PaymentIntent intent) {
