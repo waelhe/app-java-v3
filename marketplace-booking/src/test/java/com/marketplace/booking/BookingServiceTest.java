@@ -529,7 +529,7 @@ class BookingServiceTest {
 
         service.cancel(id, authentication);
 
-        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId());
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId(), null);
     }
 
     @Test
@@ -557,6 +557,6 @@ class BookingServiceTest {
 
         service.autoCancel(id);
 
-        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId());
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId(), null);
     }
 }

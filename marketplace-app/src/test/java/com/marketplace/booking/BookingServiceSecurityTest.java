@@ -158,6 +158,6 @@ class BookingServiceSecurityTest {
 
         assertThat(result.getStatus()).isEqualTo(BookingStatus.CANCELLED);
         // R2: the release carries this booking's id — only its own hold frees.
-        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, bookingId);
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, bookingId, null);
     }
 }

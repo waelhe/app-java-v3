@@ -122,12 +122,39 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
 
         // B cancels (the finding's exact scenario): the release carried by a
         // DIFFERENT booking must be a no-op — the window stays A's.
-        availabilityService.releaseSlot(providerId, startsAt, endsAt, siblingBooking);
+        availabilityService.releaseSlot(providerId, startsAt, endsAt, siblingBooking, null);
         assertSlotState(providerId, startsAt, endsAt, true, holderBooking);
 
         // The reverse direction of the same finding: A cancels after its
         // confirmation — its own hold is released, the window reopens.
-        availabilityService.releaseSlot(providerId, startsAt, endsAt, holderBooking);
+        availabilityService.releaseSlot(providerId, startsAt, endsAt, holderBooking, null);
+        assertSlotState(providerId, startsAt, endsAt, false, null);
+    }
+
+    @Test
+    void r2_ownerCancelWithASurvivingActiveClaimantTransfersInsteadOfReopening() {
+        // The review round on the wave's rebased head, verbatim: a legacy
+        // window can carry older CONFIRMED/COMPLETED claimants alongside the
+        // reconciled owner (V73 assigns the newest active booking). The
+        // owner's cancellation must TRANSFER the hold to the surviving
+        // claimant — not reopen the window for a new claim while the survivor
+        // still expects it (the double-booking the round flagged).
+        UUID providerId = UUID.randomUUID();
+        Instant startsAt = Instant.parse("2026-08-04T09:00:00Z");
+        Instant endsAt = Instant.parse("2026-08-04T10:00:00Z");
+        UUID legacyClaimant = UUID.randomUUID(); // booking A — older CONFIRMED claimant
+        UUID reconciledOwner = UUID.randomUUID(); // booking B — newest active, owns the window
+
+        insertSlot(providerId, startsAt, endsAt, true, reconciledOwner);
+
+        // B (the owner) cancels; the caller carries A as the surviving active
+        // claimant — the window stays booked, now under A's name.
+        availabilityService.releaseSlot(providerId, startsAt, endsAt, reconciledOwner, legacyClaimant);
+        assertSlotState(providerId, startsAt, endsAt, true, legacyClaimant);
+
+        // A (the transferred owner, the last active claimant) cancels with no
+        // survivor — its own hold is released, the window reopens.
+        availabilityService.releaseSlot(providerId, startsAt, endsAt, legacyClaimant, null);
         assertSlotState(providerId, startsAt, endsAt, false, null);
     }
 

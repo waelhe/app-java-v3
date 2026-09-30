@@ -194,14 +194,28 @@ public class AvailabilityService implements AvailabilityPort {
     }
 
     @Override
-    public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId) {
+    public void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId,
+            UUID survivingClaimantId) {
         // R2: only the hold THIS booking placed is released — the ownership
         // filter makes a non-owner cancel (the PENDING sibling of the holder)
         // a no-op instead of freeing a CONFIRMED booking's window.
+        // Review round on the rebased head: with a surviving active claimant
+        // (the legacy-duplicates state — V73's reconciliation assigns the
+        // window to the newest active booking, leaving older active
+        // claimants in place), the owner's release TRANSFERS the hold to
+        // that claimant instead of reopening the window — the design
+        // invariant "a live window with an active booking stays booked"
+        // holds for both cancellation orders.
         repository
                 .findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt)
                 .filter(slot -> bookingId.equals(slot.getHeldByBookingId()))
-                .ifPresent(AvailabilitySlot::markAvailable);
+                .ifPresent(slot -> {
+                    if (survivingClaimantId != null) {
+                        slot.markBooked(survivingClaimantId);
+                    } else {
+                        slot.markAvailable();
+                    }
+                });
         eventPublisher.publishEvent(new CacheInvalidationRequested(AVAILABILITY_DEPENDENT_CACHE_NAMES));
     }
 }

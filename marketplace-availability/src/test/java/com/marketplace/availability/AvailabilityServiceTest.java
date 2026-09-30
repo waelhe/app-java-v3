@@ -312,7 +312,7 @@ class AvailabilityServiceTest {
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt))
                 .thenReturn(Optional.of(slot));
 
-        service.releaseSlot(providerId, startsAt, endsAt, bookingId);
+        service.releaseSlot(providerId, startsAt, endsAt, bookingId, null);
 
         assertThat(slot.isBooked()).isFalse();
         assertThat(slot.getHeldByBookingId()).isNull();
@@ -337,7 +337,7 @@ class AvailabilityServiceTest {
         when(repository.findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(providerId, startsAt, endsAt))
                 .thenReturn(Optional.of(slot));
 
-        service.releaseSlot(providerId, startsAt, endsAt, siblingBookingId);
+        service.releaseSlot(providerId, startsAt, endsAt, siblingBookingId, null);
 
         assertThat(slot.isBooked()).as("the hold survives a non-owner cancel").isTrue();
         assertThat(slot.getHeldByBookingId()).isEqualTo(holderBookingId);

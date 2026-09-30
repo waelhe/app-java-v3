@@ -36,6 +36,20 @@ public interface AvailabilityPort {
      * PENDING sibling of the holder) is a no-op by contract, which is what
      * closes the review's measured finding (a non-owner cancel used to free
      * the slot a CONFIRMED booking owned).
+     *
+     * <p><b>Review round on the wave's rebased head — the surviving-claimant
+     * transfer.</b> {@code survivingClaimantId} carries the caller's claimant
+     * knowledge (the booking module owns that data): another non-deleted
+     * CONFIRMED/COMPLETED booking on the same window — the legacy-duplicates
+     * state V73's reconciliation resolves to a single newest owner, leaving
+     * older active claimants in place. When it is non-null the hold
+     * <em>transfers</em> to that claimant instead of reopening the window
+     * (the window stays booked under the surviving claim), so the design's
+     * own invariant — a live window with an active booking stays booked —
+     * holds for BOTH cancellation orders; {@code null} means "no surviving
+     * active claimant" and the owner's release reopens the window as
+     * before.
      */
-    void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId);
+    void releaseSlot(UUID providerId, Instant startsAt, Instant endsAt, UUID bookingId,
+            UUID survivingClaimantId);
 }
