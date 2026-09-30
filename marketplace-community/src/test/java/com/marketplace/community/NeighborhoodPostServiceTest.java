@@ -3,6 +3,7 @@ package com.marketplace.community;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.PostReactedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -74,6 +75,9 @@ class NeighborhoodPostServiceTest {
     private GeoLookupPort geoLookupPort;
 
     @Mock
+    private MediaLookupPort mediaLookupPort;
+
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
@@ -83,7 +87,7 @@ class NeighborhoodPostServiceTest {
     @BeforeEach
     void setUp() {
         service = new NeighborhoodPostService(repository, commentRepository,
-                reactionRepository, membershipRepository, geoLookupPort,
+                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort,
                 eventPublisher, clock);
     }
 
@@ -536,6 +540,9 @@ class NeighborhoodPostServiceTest {
                 countOf(post.getId(), 3L), countOf(strangerPost.getId(), 0L)));
         when(reactionRepository.findByMemberIdAndPostIdIn(eq(authorId), any()))
                 .thenReturn(List.of(PostReaction.reaction(post.getId(), authorId)));
+        when(mediaLookupPort.findUploadedByPostIds(any())).thenReturn(List.of(
+                new MediaLookupPort.PostMediaEntry(post.getId(), UUID.randomUUID(),
+                        "https://u", "https://t", "image/jpeg", 1)));
 
         Page<NeighborhoodPostView> views =
                 service.getFeed(authorId, null, PageRequest.of(0, 20));
@@ -548,11 +555,53 @@ class NeighborhoodPostServiceTest {
         assertThat(strangers.reactedByMe()).isFalse();
     }
 
+    /**
+     * L48: the feed read carries each post's media — the one grouped port
+     * read over the page's ids, mapped into the view's own read model; a
+     * post with no entries rides the empty list. No storage fact (key,
+     * status) crosses the boundary.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void getFeed_carriesThePostsMedia() {
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        NeighborhoodPost post = visiblePost(authorId, locationId);
+        NeighborhoodPost strangerPost = visiblePost(UUID.randomUUID(), locationId);
+        when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(post, strangerPost)));
+        when(reactionRepository.countByPostIdIn(any())).thenReturn(List.of());
+        when(reactionRepository.findByMemberIdAndPostIdIn(any(), any())).thenReturn(List.of());
+        UUID mediaId = UUID.randomUUID();
+        when(mediaLookupPort.findUploadedByPostIds(any())).thenReturn(List.of(
+                new MediaLookupPort.PostMediaEntry(post.getId(), mediaId,
+                        "https://orig", "https://thumb", "image/jpeg", 1),
+                new MediaLookupPort.PostMediaEntry(post.getId(), UUID.randomUUID(),
+                        "https://orig2", null, "image/png", 2)));
+
+        Page<NeighborhoodPostView> views =
+                service.getFeed(authorId, null, PageRequest.of(0, 20));
+
+        NeighborhoodPostView mine = views.getContent().get(0);
+        assertThat(mine.media()).hasSize(2);
+        assertThat(mine.media().get(0).mediaId()).isEqualTo(mediaId);
+        assertThat(mine.media().get(0).url()).isEqualTo("https://orig");
+        assertThat(mine.media().get(0).thumbUrl()).isEqualTo("https://thumb");
+        assertThat(mine.media().get(0).contentType()).isEqualTo("image/jpeg");
+        assertThat(mine.media().get(0).position()).isEqualTo(1);
+        assertThat(mine.media().get(1).thumbUrl()).isNull();
+        // the port's flat (postId, position) order survives the grouping
+        assertThat(mine.media().get(1).position()).isEqualTo(2);
+        // the post with no entries rides the empty list, honestly
+        assertThat(views.getContent().get(1).media()).isEmpty();
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void getFeed_emptyPage_costsNoReactionRead() {
-        // A closed feed costs neither aggregate nor voice read — the
-        // short-circuit is the projection's own discipline.
+        // A closed feed costs neither aggregate nor voice read nor media
+        // read — the short-circuit is the projection's own discipline.
         when(membershipRepository.findByUserId(authorId))
                 .thenReturn(Optional.of(membershipOf(authorId, locationId)));
         when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
@@ -562,6 +611,7 @@ class NeighborhoodPostServiceTest {
 
         verify(reactionRepository, never()).countByPostIdIn(any());
         verify(reactionRepository, never()).findByMemberIdAndPostIdIn(any(), any());
+        verify(mediaLookupPort, never()).findUploadedByPostIds(any());
     }
 
     /** The grouped count's projection stub (the repository interface's own shape). */

@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.PostReactedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -80,6 +81,7 @@ public class NeighborhoodPostService {
     private final PostReactionRepository reactionRepository;
     private final NeighborhoodMembershipRepository membershipRepository;
     private final GeoLookupPort geoLookupPort;
+    private final MediaLookupPort mediaLookupPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -88,6 +90,7 @@ public class NeighborhoodPostService {
                                    PostReactionRepository reactionRepository,
                                    NeighborhoodMembershipRepository membershipRepository,
                                    GeoLookupPort geoLookupPort,
+                                   MediaLookupPort mediaLookupPort,
                                    ApplicationEventPublisher eventPublisher,
                                    Clock clock) {
         this.repository = repository;
@@ -95,6 +98,7 @@ public class NeighborhoodPostService {
         this.reactionRepository = reactionRepository;
         this.membershipRepository = membershipRepository;
         this.geoLookupPort = geoLookupPort;
+        this.mediaLookupPort = mediaLookupPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -148,13 +152,39 @@ public class NeighborhoodPostService {
         // heart the client renders). One grouped aggregate + one IN read
         // over the page's ids — a closed feed costs neither (the empty
         // page short-circuits below).
+        //
+        // L48: the same read now carries each post's media — ONE grouped
+        // port read over the same page's ids (the reactions pattern
+        // verbatim: no per-post reads, the empty page costs nothing). The
+        // entries arrive presigned by the media module; the view maps them
+        // to the feed's own read model (PostMediaView — no storage facts
+        // cross the boundary).
         List<NeighborhoodPost> posts = page.getContent();
         Map<UUID, Long> counts = reactionCounts(posts);
         Set<UUID> mine = myReactions(callerId, posts);
+        Map<UUID, List<MediaLookupPort.PostMediaEntry>> media = postMedia(posts);
         return page.map(post -> NeighborhoodPostView.of(
                 post,
                 counts.getOrDefault(post.getId(), 0L),
-                mine.contains(post.getId())));
+                mine.contains(post.getId()),
+                media.getOrDefault(post.getId(), List.of())));
+    }
+
+    /**
+     * L48: the page's post media, grouped by post id — one port call over
+     * the ids (the L47 grouped-aggregate pattern). The empty page
+     * short-circuits to the empty map (a closed feed costs no read);
+     * the mapping keeps the port's flat order (postId, position) honest.
+     */
+    private Map<UUID, List<MediaLookupPort.PostMediaEntry>> postMedia(List<NeighborhoodPost> posts) {
+        if (posts.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = posts.stream().map(NeighborhoodPost::getId).toList();
+        return mediaLookupPort.findUploadedByPostIds(ids).stream()
+                .collect(Collectors.groupingBy(
+                        MediaLookupPort.PostMediaEntry::postId,
+                        Collectors.toList()));
     }
 
     /**

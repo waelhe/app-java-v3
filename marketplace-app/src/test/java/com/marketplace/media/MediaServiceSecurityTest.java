@@ -1,6 +1,7 @@
 package com.marketplace.media;
 
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -52,6 +53,10 @@ class MediaServiceSecurityTest {
 
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
+
+    /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
+    @MockitoBean
+    PostLookupPort postLookupPort;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;

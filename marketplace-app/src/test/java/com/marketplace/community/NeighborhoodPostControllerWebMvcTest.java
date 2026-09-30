@@ -480,7 +480,10 @@ class NeighborhoodPostControllerWebMvcTest {
         NeighborhoodPostView view = new NeighborhoodPostView(
                 UUID.randomUUID(), memberId, locationId,
                 "GENERAL", "Title", "Body", "VISIBLE",
-                3L, true, Instant.parse("2026-09-30T09:30:00Z"),
+                3L, true,
+                List.of(new PostMediaView(UUID.randomUUID(), "https://orig", "https://thumb",
+                        "image/jpeg", 1)),
+                Instant.parse("2026-09-30T09:30:00Z"),
                 Instant.parse("2026-09-30T09:30:00Z"));
         when(postService.getFeed(eq(memberId), isNull(), any()))
                 .thenReturn(new PageImpl<>(List.of(view)));
@@ -488,6 +491,13 @@ class NeighborhoodPostControllerWebMvcTest {
         mockMvc.perform(get("/api/v1/neighborhood/posts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].reactionsCount").value(3))
-                .andExpect(jsonPath("$.content[0].reactedByMe").value(true));
+                .andExpect(jsonPath("$.content[0].reactedByMe").value(true))
+                // L48: the row's media rides the same projection — one
+                // entry per photo, position order, thumbUrl nullable.
+                .andExpect(jsonPath("$.content[0].media.length()").value(1))
+                .andExpect(jsonPath("$.content[0].media[0].url").value("https://orig"))
+                .andExpect(jsonPath("$.content[0].media[0].thumbUrl").value("https://thumb"))
+                .andExpect(jsonPath("$.content[0].media[0].contentType").value("image/jpeg"))
+                .andExpect(jsonPath("$.content[0].media[0].position").value(1));
     }
 }
