@@ -63,7 +63,13 @@ public class PaymentWebhookEvent extends BaseEntity {
     private WebhookProcessingState processingState;
 
     /**
-     * The raw provider notification, kept byte-identical for inspection.
+     * The raw provider notification for inspection — the durable JSON
+     * document, not a byte-exact copy: PostgreSQL jsonb renders the stored
+     * document back in its documented canonical form (whitespace-normalized
+     * — the official jsonb behavior), so the round-trip contract is DOCUMENT
+     * equality, never byte equality. The re-delivery contract itself is the
+     * row's structured columns (event type, resolved intent, external id,
+     * refund snapshot) — the recovery sweep never parses this column.
      * String + {@code SqlTypes.JSON} is the RAW-document mapping, verified
      * against the shipped Hibernate 7.4.5 bytecode:
      * {@code AbstractJsonFormatMapper.toString} returns the value as-is when
@@ -71,7 +77,7 @@ public class PaymentWebhookEvent extends BaseEntity {
      * JSON document is the string itself, never a double-encoded JSON string
      * (the same bytecode-verification discipline the repository applies to
      * framework claims; the integration test asserts the stored column
-     * round-trips and parses as a JSON object).
+     * round-trips the same JSON document and parses as a JSON object).
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", columnDefinition = "jsonb")

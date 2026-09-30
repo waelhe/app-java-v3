@@ -2,9 +2,12 @@ package com.marketplace.payments;
 
 import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
+import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -54,8 +57,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>Also pins the JSONB payload storage honesty (the V48/V54 official
- * Hibernate JSON mapping): the raw provider payload round-trips byte-identical
- * AND is stored as a JSON object — not a double-encoded JSON string.
+ * Hibernate JSON mapping): the recorded payload round-trips as the SAME
+ * JSON document — PostgreSQL jsonb renders the stored document back in
+ * its documented canonical form (whitespace-normalized), so the honest
+ * assertion is document equality, never byte equality — AND it is stored
+ * as a JSON object, not a double-encoded JSON string.
  */
 @ApplicationModuleTest
 @ActiveProfiles("test")
@@ -110,6 +116,9 @@ class WebhookInboxRecoveryIntegrationTest {
     @Autowired
     private DataSource dataSource;
 
+    /** The assertion-side JSON parser — document equality, not byte equality (jsonb canonical rendering). */
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     /** The direct SQL channel for the crash-simulation backdate and native checks. */
     private JdbcTemplate jdbc() {
         return new JdbcTemplate(dataSource);
@@ -131,6 +140,15 @@ class WebhookInboxRecoveryIntegrationTest {
     private void backdate(String eventId, String interval) {
         jdbc().update("UPDATE payment_webhook_events SET created_at = now() - interval '"
                 + interval + "' WHERE event_id = ?", eventId);
+    }
+
+    /** Parses a payload to a JSON tree — the honest jsonb round-trip comparison. */
+    private static JsonNode json(String raw) {
+        try {
+            return JSON.readTree(raw);
+        } catch (IOException ex) {
+            throw new IllegalStateException("payload is not valid JSON: " + raw, ex);
+        }
     }
 
     @Test
@@ -163,9 +181,15 @@ class WebhookInboxRecoveryIntegrationTest {
         assertThat(settled.getProcessingState())
                 .as("the row settled inside the settlement's own transaction")
                 .isEqualTo(WebhookProcessingState.SETTLED);
-        // JSONB honesty: the raw payload round-trips byte-identical and is
-        // stored as a JSON object, not a double-encoded string.
-        assertThat(settled.getPayload()).isEqualTo(row.getPayload());
+        // JSONB honesty: the payload round-trips as the SAME JSON document.
+        // PostgreSQL jsonb renders the stored document in its canonical form
+        // (whitespace-normalized — the documented jsonb behavior: byte equality
+        // is impossible by design), so the honest assertion is document
+        // equality — the recorded JSON and the re-read JSON parse to the same
+        // tree. The re-delivery contract itself is the row's structured columns.
+        assertThat(json(settled.getPayload()))
+                .as("the payload round-trips as the same JSON document (jsonb canonical rendering)")
+                .isEqualTo(json(row.getPayload()));
         String stored = jdbc().queryForObject(
                 "SELECT payload::text FROM payment_webhook_events WHERE event_id = ?",
                 String.class, row.getEventId());
