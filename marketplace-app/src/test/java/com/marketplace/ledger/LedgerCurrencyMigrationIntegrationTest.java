@@ -149,8 +149,9 @@ class LedgerCurrencyMigrationIntegrationTest {
                         + " VALUES (?, 18_000, now(), now(), 0)", providerId);
 
         // ---- the single-currency era's audit row (currency NULL — the
-        // column does not exist yet) riding the real Envers revision chain ----
-        jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (990001, now())");
+        // column does not exist yet) riding the real Envers revision chain
+        // (revinfo.revtstmp is the Envers bigint epoch millis) ----
+        jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (990001, 1770000000000)");
         jdbcTemplate.update(
                 "INSERT INTO provider_balances_aud (provider_id, rev, revtype, available_cents,"
                         + " version, created_at, updated_at, is_deleted)"
