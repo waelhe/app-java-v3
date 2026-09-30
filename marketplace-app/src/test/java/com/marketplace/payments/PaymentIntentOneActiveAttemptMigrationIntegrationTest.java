@@ -28,8 +28,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * the context is up, Flyway has already applied V74 to a fresh database and
  * the one-time repair had nothing to transform).
  *
- * <p>This test boots with {@code spring.flyway.target=73} — the schema stops
- * BEFORE the repair migration (V74 has not run) — seeds the exact pre-fix
+ * <p>This test boots with {@code spring.flyway.target=70} — the schema stops
+ * BEFORE the repair migration, at the highest version that EXISTS on this
+ * branch (V74 has not run; the wave-train's reserved numbers V71-V73
+ * belong to unmerged wave branches, and Flyway rejects a target that does
+ * not resolve to an existing migration file) — seeds the exact pre-fix
  * states the repair exists for, then executes the actual V74 script (the
  * real file from the classpath, through Spring's official {@link ScriptUtils}
  * on an autocommit connection, matching the migration's own
@@ -61,9 +64,12 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
-        // stop BEFORE the wave's repair migration — the pre-state this test
-        // seeds is exactly the state V74 exists to converge
-        "spring.flyway.target=73",
+        // stop BEFORE the wave's repair migration, at the highest version
+        // that EXISTS on this branch (the wave-train's reserved V71-V73
+        // belong to unmerged wave branches; Flyway rejects a target that
+        // resolves to no migration file) — the pre-state this test seeds is
+        // exactly the state V74 exists to converge
+        "spring.flyway.target=70",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
