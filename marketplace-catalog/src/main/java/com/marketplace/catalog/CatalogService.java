@@ -176,7 +176,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // fallback share the same instant, so the boost state cannot
         // straddle a window boundary between them.
         java.time.Instant now = clock.instant();
-        String query = criteria.query();
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
         Page<ProviderListing> page = listingRepository.searchFullText(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
                 criteria.guests(), now, pageable);
@@ -259,7 +263,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
-        String query = criteria.query();
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
         Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
                 criteria.guests(), providerIds, now, pageable);
@@ -409,7 +417,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public PagedResponse<ListingSummary> searchFullTextRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
-        String query = criteria.query();
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
         Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
                 criteria.guests(), listingIds, now, pageable);

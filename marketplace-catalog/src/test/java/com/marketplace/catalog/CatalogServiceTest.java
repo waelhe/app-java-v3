@@ -317,6 +317,23 @@ class CatalogServiceTest {
     }
 
     @Test
+    void searchFullText_r6TrimsTheQueryOntoTheNativeQuery() {
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers pass the
+        // full criteria now — the adapter owns the trim the call sites
+        // used to perform (the SQL parameter parity with the pre-wave
+        // text path: "  gardn  " reaches websearch_to_tsquery as "gardn").
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        catalogService.searchFullText(
+                new com.marketplace.shared.api.SearchCriteria("  gardn  ", null, null, null),
+                PagedRequest.of(0, 10));
+
+        verify(listingRepository).searchFullText(eq("gardn"), eq(null), eq(null), eq(null), eq(null),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
     void searchFullText_r6NoFallbackWhenFtsMatches() {
         // The fallback contract on the composed form: a page with content
         // (FTS matched) never triggers the similarity query.
