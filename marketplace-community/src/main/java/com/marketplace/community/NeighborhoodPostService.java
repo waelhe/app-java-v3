@@ -120,7 +120,7 @@ public class NeighborhoodPostService {
                     "locationId must reference a level-3 neighborhood node, got level "
                             + node.level() + " (" + node.slug() + ")");
         }
-        requireActiveMembershipIn(authorId, locationId,
+        requireWritableMembershipIn(authorId, locationId,
                 "Join a neighborhood before posting (PUT /api/v1/me/neighborhood)",
                 "Posts go to your own neighborhood — this location is not it");
         NeighborhoodPost saved = repository.save(
@@ -131,13 +131,14 @@ public class NeighborhoodPostService {
     /**
      * The feed — the caller's OWN neighborhood, VISIBLE posts only, on
      * the complete sort key. The one filter axis is {@code category}
-     * (absent = the whole feed). No active membership ⇒ the explicit 403
+     * (absent = the whole feed). No membership ⇒ the explicit 403
      * (G-N3's default) — there is no location parameter to read anyone
-     * else's feed: the membership IS the scope.
+     * else's feed: the membership IS the scope. ANY verification state
+     * reads (D-N3: REJECTED blocks community writes, not the feed).
      */
     @Transactional(readOnly = true)
     public Page<NeighborhoodPostView> getFeed(UUID callerId, PostCategory category, Pageable pageable) {
-        UUID locationId = requireActiveMembership(callerId,
+        UUID locationId = requireMembership(callerId,
                 "Join a neighborhood before reading its feed (PUT /api/v1/me/neighborhood)")
                 .getLocationId();
         Pageable feedPageable = PageRequest.of(
@@ -195,7 +196,7 @@ public class NeighborhoodPostService {
     @Observed(name = "community.post.comment")
     public PostCommentView comment(UUID commenterId, UUID postId, String body) {
         NeighborhoodPost post = visiblePost(postId);
-        requireActiveMembershipIn(commenterId, post.getLocationId(),
+        requireWritableMembershipIn(commenterId, post.getLocationId(),
                 "Join a neighborhood before commenting (PUT /api/v1/me/neighborhood)",
                 "Only members of the post's neighborhood can comment");
         PostComment saved = commentRepository.save(
@@ -210,12 +211,13 @@ public class NeighborhoodPostService {
      * unknown, hidden or deleted post answers the honest 404, so a
      * hidden post's comments are absent exactly as the post itself is
      * (the plan's criterion 5). Then the same membership gate as the
-     * feed, in the post's own neighborhood.
+     * feed, in the post's own neighborhood — ANY verification state
+     * reads (D-N3: REJECTED blocks writes, not comment reads).
      */
     @Transactional(readOnly = true)
     public Page<PostCommentView> getComments(UUID callerId, UUID postId, Pageable pageable) {
         NeighborhoodPost post = visiblePost(postId);
-        requireActiveMembershipIn(callerId, post.getLocationId(),
+        requireMembershipIn(callerId, post.getLocationId(),
                 "Join a neighborhood before reading comments (PUT /api/v1/me/neighborhood)",
                 "Only members of the post's neighborhood can read its comments");
         Pageable commentPageable = PageRequest.of(
@@ -262,7 +264,7 @@ public class NeighborhoodPostService {
     @Observed(name = "community.post.react")
     public PostReactionView react(UUID memberId, UUID postId) {
         NeighborhoodPost post = visiblePost(postId);
-        requireActiveMembershipIn(memberId, post.getLocationId(),
+        requireWritableMembershipIn(memberId, post.getLocationId(),
                 "Join a neighborhood before reacting (PUT /api/v1/me/neighborhood)",
                 "Only members of the post's neighborhood can react to it");
         if (reactionRepository.findByPostIdAndMemberId(postId, memberId).isPresent()) {
@@ -289,7 +291,7 @@ public class NeighborhoodPostService {
     @Observed(name = "community.post.unreact")
     public void removeReaction(UUID memberId, UUID postId) {
         NeighborhoodPost post = visiblePost(postId);
-        requireActiveMembershipIn(memberId, post.getLocationId(),
+        requireWritableMembershipIn(memberId, post.getLocationId(),
                 "Join a neighborhood before reacting (PUT /api/v1/me/neighborhood)",
                 "Only members of the post's neighborhood can react to it");
         PostReaction reaction = reactionRepository.findByPostIdAndMemberId(postId, memberId)
@@ -339,10 +341,23 @@ public class NeighborhoodPostService {
                 .collect(Collectors.toSet());
     }
 
-    /** The caller's ACTIVE membership, or the explicit 403 (G-N3). */
-    private NeighborhoodMembership requireActiveMembership(UUID callerId, String noMembershipMessage) {
-        NeighborhoodMembership membership = membershipRepository.findByUserId(callerId)
+    /**
+     * The caller's membership — ANY verification state reads (D-N3:
+     * REJECTED blocks community writes and new direct chats, never the
+     * feed or comment reads). Absent membership ⇒ the explicit 403.
+     */
+    private NeighborhoodMembership requireMembership(UUID callerId, String noMembershipMessage) {
+        return membershipRepository.findByUserId(callerId)
                 .orElseThrow(() -> new AccessDeniedException(noMembershipMessage));
+    }
+
+    /**
+     * The caller's membership WITH the community-write right — a REJECTED
+     * claim answers the explicit 403 (G-N3; the CodeRabbit #461 round: the
+     * write gate, not the shared existence gate, carries this check).
+     */
+    private NeighborhoodMembership requireWritableMembership(UUID callerId, String noMembershipMessage) {
+        NeighborhoodMembership membership = requireMembership(callerId, noMembershipMessage);
         if (!membership.mayUseCommunityWrites()) {
             throw new AccessDeniedException("Rejected neighborhood verification cannot publish, comment, or recommend");
         }
@@ -350,15 +365,30 @@ public class NeighborhoodPostService {
     }
 
     /**
-     * The active-membership-in-location gate: absent membership ⇒ 403
-     * with the join hint; a membership in a DIFFERENT neighborhood ⇒ 403
-     * with the scope fact — both before any write.
+     * The membership-in-location READ gate: absent membership ⇒ 403 with
+     * the join hint; a membership in a DIFFERENT neighborhood ⇒ 403 with
+     * the scope fact — any verification state passes (D-N3).
      */
-    private NeighborhoodMembership requireActiveMembershipIn(UUID callerId, UUID locationId,
-                                                             String noMembershipMessage,
-                                                             String wrongLocationMessage) {
+    private NeighborhoodMembership requireMembershipIn(UUID callerId, UUID locationId,
+                                                        String noMembershipMessage,
+                                                        String wrongLocationMessage) {
         NeighborhoodMembership membership =
-                requireActiveMembership(callerId, noMembershipMessage);
+                requireMembership(callerId, noMembershipMessage);
+        if (!membership.getLocationId().equals(locationId)) {
+            throw new AccessDeniedException(wrongLocationMessage);
+        }
+        return membership;
+    }
+
+    /**
+     * The membership-in-location WRITE gate: the read gate plus the
+     * community-write right — both checks land before any write.
+     */
+    private NeighborhoodMembership requireWritableMembershipIn(UUID callerId, UUID locationId,
+                                                                String noMembershipMessage,
+                                                                String wrongLocationMessage) {
+        NeighborhoodMembership membership =
+                requireWritableMembership(callerId, noMembershipMessage);
         if (!membership.getLocationId().equals(locationId)) {
             throw new AccessDeniedException(wrongLocationMessage);
         }

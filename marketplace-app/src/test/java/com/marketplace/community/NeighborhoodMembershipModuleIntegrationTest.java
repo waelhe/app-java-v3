@@ -35,6 +35,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -166,6 +167,65 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 Integer.class, approvedMembership)).isGreaterThanOrEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM neighborhood_memberships_aud WHERE id = ?",
                 Integer.class, rejectedMembership)).isGreaterThanOrEqualTo(3);
+    }
+
+    /**
+     * D-N3's own split, end to end on the REAL chain (the CodeRabbit #461
+     * round's fix): a REJECTED membership keeps the community's READ
+     * surfaces open — the feed (200) and any visible post's comments
+     * (200) — while every community WRITE answers the explicit 403:
+     * publishing, commenting, and the L47 reaction (a contribution like
+     * a comment). The REJECTED reader sees exactly what every other
+     * member sees; the write gate — never the shared existence gate —
+     * carries the refusal.
+     */
+    @Test
+    void dn3_rejectedMember_readsStayOpen_writesAnswer403() throws Exception {
+        UUID author = UUID.randomUUID();
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        membershipService.join(author, location);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        membershipService.reviewVerification(rejectedMembership, false);
+
+        // a healthy author's real post — the content the rejected member reads
+        asCaller(author);
+        String created = mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"The rejected reader's probe\","
+                                + " \"body\": \"D-N3 read/write split probe\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String postId = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(created).get("id").asText();
+
+        // the REJECTED member READS: the feed and the post's comments stay open
+        asCaller(rejectedUser);
+        mockMvc.perform(get("/api/v1/neighborhood/posts").with(jwt()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/posts/" + postId + "/comments").with(jwt()))
+                .andExpect(status().isOk());
+
+        // the REJECTED member WRITES: publish, comment, and react all answer 403
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"Should not land\","
+                                + " \"body\": \"The write the gate refuses\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/posts/" + postId + "/comments")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\": \"Should not land either\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/posts/" + postId + "/reactions").with(jwt()))
+                .andExpect(status().isForbidden());
     }
 
     @Test
