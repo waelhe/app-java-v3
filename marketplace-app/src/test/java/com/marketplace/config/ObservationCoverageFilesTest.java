@@ -51,7 +51,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>catalog — create.listing</li>
  *   <li>community — membership.join, membership.leave (L41 — the
  *       neighborhood membership anchor's two commands; the read stays
- *       unobserved per policy); post.create, post.comment, post.delete
+ *       unobserved per policy); membership.verification.request,
+ *       membership.verification.review, membership.verification.queue
+ *       (the verification lifecycle's own three command points — the
+ *       member's request, the administrative review, and the queue read
+ *       the review rides: a queue read that feeds an administrative
+ *       decision surface carries its own observation, the moderation
+ *       queue's documented exception family); post.create, post.comment, post.delete
  *       (L42 — the feed layer's three commands; the reads stay
  *       unobserved per the same policy); report.create, report.resolve
  *       (L45 — the moderation layer's two commands: a member's report
@@ -108,6 +114,9 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-community", List.of(
                     "community.membership.join", "community.membership.leave",
+                    "community.membership.verification.queue",
+                    "community.membership.verification.request",
+                    "community.membership.verification.review",
                     "community.post.comment", "community.post.create", "community.post.delete",
                     "community.post.react", "community.post.unreact",
                     "community.report.create", "community.report.resolve")),
