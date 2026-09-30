@@ -56,15 +56,27 @@ generate_spec() {
   exit 1
 }
 
-# current
-cd "$ROOT_DIR"
-generate_spec "current" "$WORK_DIR/current-openapi.json"
-
-# baseline tag
+# Baseline tag FIRST, current SECOND (order is load-bearing — measured
+# 2026-09-29, content/seed-qudsayya-v1): both phases boot against the SAME
+# service-container database. The old order (current, then baseline) made the
+# baseline boot against a history the current build had already migrated to
+# HEAD — v0.1.0's Flyway then failed validation ("Detected applied migration
+# not resolved locally: seed geo qudsaya / seed content qudsayya") on every
+# repeatable seed added after the tag. It only ever passed because stale
+# target/classes ghosts (fixed above) accidentally shipped current resources
+# inside the "baseline" jar. Generating baseline-first on the FRESH database
+# lets the tag migrate its own chain cleanly; the current phase afterwards
+# migrates FORWARD from the tag's state: V1..V31 are frozen files with
+# identical checksums (the never-edit rule + MigrationChecksumGuardTest), and
+# the tag-era R__seed_oauth2_client checksum difference is a pending
+# repeatable, not a validation error — it re-applies as the retired no-op.
 BASELINE_BRANCH="openapi-baseline-$LATEST_TAG"
 git checkout -q "$LATEST_TAG"
 generate_spec "baseline" "$WORK_DIR/baseline-openapi.json"
+
+cd "$ROOT_DIR"
 git checkout -q "$CURRENT_SHA"
+generate_spec "current" "$WORK_DIR/current-openapi.json"
 
 # Breaking-change gate: endpoint deletions, schema narrowing, status/media type changes.
 openapi_diff_exit=0
