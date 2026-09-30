@@ -366,17 +366,28 @@ class AccountStatusSessionInvalidationIntegrationTest {
 
     /**
      * Bounded wait for the expired-session marker — the CodeRabbit round-1
-     * robustness shape. With the synchronous AFTER_COMMIT listener the first
-     * attempt already observes the marker and the loop never iterates; the
-     * bound only guards against scheduling hiccups in CI runners. A probe
-     * that mints a code does not change the session, so retrying is safe.
+     * robustness shape, hardened by the round-2 nitpick adoption: every probe
+     * (including the first) asserts no code was minted, so an intermediate
+     * probe that minted a code before a later probe observed the marker can
+     * no longer slip through the overwriting loop. With the synchronous
+     * AFTER_COMMIT listener the first attempt already observes the marker
+     * and the loop never iterates; the bound only guards against scheduling
+     * hiccups in CI runners. A probe that mints a code does not change the
+     * session, so retrying the marker observation itself is safe — but the
+     * minted-code assertion fails the test on the spot, as it must.
      */
     private AuthorizeAttempt awaitExpired(String sessionCookie, int timeoutSeconds) throws Exception {
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(timeoutSeconds).toNanos();
         AuthorizeAttempt attempt = authorizeRaw(sessionCookie);
+        assertThat(attempt.codeMinted())
+                .as("no authorization code may be minted by any probe while awaiting the expired marker")
+                .isFalse();
         while (!attempt.body().contains(EXPIRED_MARKER) && System.nanoTime() < deadline) {
             Thread.sleep(100);
             attempt = authorizeRaw(sessionCookie);
+            assertThat(attempt.codeMinted())
+                    .as("no authorization code may be minted by any probe while awaiting the expired marker")
+                    .isFalse();
         }
         return attempt;
     }

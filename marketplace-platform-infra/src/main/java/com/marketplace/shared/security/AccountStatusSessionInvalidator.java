@@ -73,8 +73,19 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * advises every {@code @TransactionalEventListener(AFTER_COMMIT)} method,
  * not only {@code @ApplicationModuleListener} ones (verified against the
  * shipped advisor's pointcut). No {@code catch} block by design — the house
- * convention (five removals predate this class) lets the failure surface to
- * the operator as a 500 on the admin PUT, which is re-issuable idempotently
+ * convention (five removals predate this class). <b>The failure contract is
+ * the framework's, stated precisely (review round 2, verified against the
+ * shipped spring-tx 7.0.9 source):</b> an AFTER_COMMIT-phase listener is
+ * invoked from the synchronization's {@code afterCompletion(int)} callback —
+ * never from {@code afterCommit()} — and
+ * {@code TransactionSynchronizationUtils.invokeAfterCompletion} catches
+ * {@code Throwable} and logs it ("afterCompletion threw exception"), so a
+ * failed expiry does <em>not</em> fail the admin PUT: the 200 reflects the
+ * committed status flip, the failure lands in the error log, the publication
+ * row stays incomplete for the resubmission sweep, and the residual window
+ * self-closes because the session store <em>is</em> the Redis that would be
+ * failing — a session that cannot be read cannot mint a code. The PUT
+ * remains idempotently re-issuable
  * ({@code getAllSessions(principal, false)} skips already-expired sessions).
  *
  * <p><b>Asymmetry by direction.</b> A disable (or any role change) expires
