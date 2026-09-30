@@ -30,6 +30,16 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+    placeholders:
+      # The Qudsayya content seed must stay OUT of every test database:
+      # the flyway-enabled integration tests (inline flyway.enabled=true
+      # overrides the enabled flag above, but THIS binding still applies)
+      # hold pristine-database contracts — absolute row counts, page-0
+      # composition, full-table DELETE cleanups — that predate the seed
+      # and must not depend on production trial-zone content. Base
+      # application.yml defaults the placeholder to true; prod/dev and
+      # the migrator are untouched by this override.
+      seedContent: "false"
   mail:
     host: localhost
     port: 3025
