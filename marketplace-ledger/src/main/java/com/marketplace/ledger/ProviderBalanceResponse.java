@@ -7,18 +7,22 @@ import java.util.UUID;
 
 /**
  * The REST contract for a provider's ledger balance — a 1:1 snapshot of
- * {@link ProviderBalance}'s <em>measured</em> JSON surface. The entity's
- * {@code getId()} returns {@code providerId} (its {@code @Id}) and it
- * exposes no separate {@code getProviderId()}, so today's wire shape —
- * confirmed against the live production {@code /v3/api-docs} — carries a
- * single {@code id} property (the provider id) alongside
- * {@code availableCents} and the audit columns inherited from the shared
- * {@code BaseEntity}. This record mirrors that surface precisely;
- * {@code @Schema(name)} keeps the OpenAPI schema name stable.
+ * {@link ProviderBalance}'s <em>measured</em> JSON surface.
+ *
+ * <p><b>R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
+ * currency):</b> the balance is per-currency — the row's composite key is
+ * {@code (provider, currency)} (V75) and the read surfaces return ONE row
+ * per currency the provider holds. The {@code currency} field is the
+ * row's own ISO 4217 code; the money-path responses (credit / commission
+ * / refund) carry the touched currency's row. The {@code id} property
+ * stays the provider id (the entity's exposed id), keeping the pre-R9
+ * wire identity stable while the balance itself stops mixing
+ * currencies.</p>
  */
 @Schema(name = "ProviderBalance")
 public record ProviderBalanceResponse(
         UUID id,
+        String currency,
         long availableCents,
         Long version,
         String createdBy,
@@ -29,6 +33,7 @@ public record ProviderBalanceResponse(
     static ProviderBalanceResponse from(ProviderBalance balance) {
         return new ProviderBalanceResponse(
                 balance.getId(),
+                balance.getCurrency(),
                 balance.getAvailableCents(),
                 balance.getVersion(),
                 balance.getCreatedBy(),

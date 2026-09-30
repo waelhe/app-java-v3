@@ -11,12 +11,17 @@ import java.util.UUID;
  * that links the payment credit and its matching commission debit back to
  * the same payment intent. The ledger stores the debit magnitude; the sign
  * is presentation.
+ *
+ * <p><b>R9 (comprehensive-review-ar-fix plan §4/R9):</b> each movement
+ * carries its ISO 4217 currency — a client summing the page reproduces the
+ * balance PER CURRENCY (summing across currencies was the defect).</p>
  */
 public record LedgerEntryResponse(
         UUID id,
         UUID sourceId,
         String entryType,
         long amountCents,
+        String currency,
         Instant createdAt
 ) {
     static LedgerEntryResponse from(LedgerEntry entry) {
@@ -27,6 +32,7 @@ public record LedgerEntryResponse(
                 entry.getEntryType() == LedgerEntryType.PAYMENT_CREDIT
                         ? entry.getAmountCents()
                         : -entry.getAmountCents(),
+                entry.getCurrency(),
                 entry.getCreatedAt()
         );
     }

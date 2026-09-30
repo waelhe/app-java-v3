@@ -81,25 +81,31 @@ class ProviderLedgerControllerWebMvcTest {
     }
 
     @Test
-    void getMyBalance_returnsOwnBalance() throws Exception {
+    void getMyBalance_returnsOneRowPerCurrencyHeld() throws Exception {
         UUID userId = stubOwnProvider();
-        ProviderBalance credited = ProviderBalance.empty(userId);
-        credited.credit(4500L);
-        ProviderBalanceResponse balance = ProviderBalanceResponse.from(credited);
-        when(ledgerService.getBalanceForOwner(userId)).thenReturn(balance);
+        ProviderBalance sarCredited = ProviderBalance.empty(userId, "SAR");
+        sarCredited.credit(4500L);
+        ProviderBalance usdCredited = ProviderBalance.empty(userId, "USD");
+        usdCredited.credit(1200L);
+        when(ledgerService.getBalancesForOwner(userId))
+                .thenReturn(List.of(ProviderBalanceResponse.from(sarCredited),
+                        ProviderBalanceResponse.from(usdCredited)));
 
         mockMvc.perform(get("/api/v1/providers/me/ledger/balance"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(userId.toString()))
-                .andExpect(jsonPath("$.availableCents").value(4500L));
+                .andExpect(jsonPath("$[0].id").value(userId.toString()))
+                .andExpect(jsonPath("$[0].currency").value("SAR"))
+                .andExpect(jsonPath("$[0].availableCents").value(4500L))
+                .andExpect(jsonPath("$[1].currency").value("USD"))
+                .andExpect(jsonPath("$[1].availableCents").value(1200L));
 
         // BE-04 regression pin: the service receives the USER id (the A1
         // cross-module space), never the provider_profiles.PK — the exact
         // argument mismatch that made the legitimate owner always-denied.
-        org.mockito.Mockito.verify(ledgerService).getBalanceForOwner(
+        org.mockito.Mockito.verify(ledgerService).getBalancesForOwner(
                 org.mockito.ArgumentMatchers.eq(userId));
         org.mockito.Mockito.verify(ledgerService, org.mockito.Mockito.never())
-                .getBalanceForOwner(org.mockito.ArgumentMatchers.eq(lastProfileId));
+                .getBalancesForOwner(org.mockito.ArgumentMatchers.eq(lastProfileId));
     }
 
     @Test
@@ -108,7 +114,7 @@ class ProviderLedgerControllerWebMvcTest {
         UUID sourceId = UUID.randomUUID();
         when(ledgerService.getStatementForOwner(org.mockito.ArgumentMatchers.eq(userId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
-                        List.of(LedgerEntry.paymentCredit(userId, sourceId, 5000L)),
+                        List.of(LedgerEntry.paymentCredit(userId, sourceId, 5000L, "SAR")),
                         PageRequest.of(0, 20),
                         1));
 
@@ -127,7 +133,8 @@ class ProviderLedgerControllerWebMvcTest {
     /**
      * Signed statement contract (CodeRabbit #248 round 1): the commission
      * debit presents a NEGATIVE amountCents so a client summing the page
-     * reproduces the balance (5000 credit − 500 commission = 4500).
+     * reproduces the balance PER CURRENCY (5000 credit − 500 commission =
+     * 4500 SAR; R9 — entries carry their currency).
      */
     @Test
     void getMyStatement_commissionDebitPresentsNegativeAmount() throws Exception {
@@ -138,8 +145,8 @@ class ProviderLedgerControllerWebMvcTest {
         when(ledgerService.getStatementForOwner(any(UUID.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
                         List.of(
-                                LedgerEntry.paymentCredit(userId, paymentIntentId, 5000L),
-                                LedgerEntry.commissionDebit(userId, commissionSourceId, 500L)),
+                                LedgerEntry.paymentCredit(userId, paymentIntentId, 5000L, "SAR"),
+                                LedgerEntry.commissionDebit(userId, commissionSourceId, 500L, "SAR")),
                         PageRequest.of(0, 20),
                         2));
 

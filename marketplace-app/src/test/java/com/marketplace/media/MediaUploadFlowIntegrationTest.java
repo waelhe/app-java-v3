@@ -64,6 +64,10 @@ class MediaUploadFlowIntegrationTest {
     @MockitoBean
     ListingPriceProvider listingPriceProvider;
 
+    /** R5: the publication-state gate's port — public by default (the read path the flow exercises). */
+    @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
+
     @MockitoBean
     ProviderLookupPort providerLookupPort;
 
@@ -97,6 +101,10 @@ class MediaUploadFlowIntegrationTest {
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
+        // R5: the seeded listing reads on the public surface — the upload
+        // flow's read path serves it without consulting identity.
+        org.mockito.Mockito.lenient()
+                .when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(true);
     }
 
     /**
@@ -154,7 +162,7 @@ class MediaUploadFlowIntegrationTest {
 
         // 3) read path: only UPLOADED assets, presigned per call — thumbUrl
         // still null until processing runs (L28)
-        var listing = mediaService.listByListing(listingId);
+        var listing = mediaService.listByListing(listingId, null);
         assertThat(listing).hasSize(1);
         assertThat(listing.get(0).id()).isEqualTo(view.mediaId());
         assertThat(listing.get(0).thumbUrl()).isNull();
@@ -163,7 +171,7 @@ class MediaUploadFlowIntegrationTest {
         // directly for determinism) — the small original keeps itself as
         // thumb, and the read then returns both links.
         mediaService.processThumbnail(view.mediaId());
-        var afterProcessing = mediaService.listByListing(listingId);
+        var afterProcessing = mediaService.listByListing(listingId, null);
         assertThat(afterProcessing.get(0).thumbUrl())
                 .isEqualTo("https://storage.example/signed-get");
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow()
@@ -172,7 +180,7 @@ class MediaUploadFlowIntegrationTest {
         // 4) delete: soft-deleted record, storage object removed best-effort
         mediaService.delete(view.mediaId(), null);
         assertThat(mediaAssetRepository.findById(view.mediaId())).isEmpty();
-        assertThat(mediaService.listByListing(listingId)).isEmpty();
+        assertThat(mediaService.listByListing(listingId, null)).isEmpty();
     }
 
     @Test

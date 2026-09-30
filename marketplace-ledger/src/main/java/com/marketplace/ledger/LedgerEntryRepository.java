@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,23 +23,29 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
     Page<LedgerEntry> findByProviderIdOrderByCreatedAtDescIdDesc(UUID providerId, Pageable pageable);
 
     /**
-     * L25 (feature-expansion roadmap §5): the provider's net ledger
-     * movement inside {@code [from, to)} (by {@code createdAt}, the
-     * statement's own ordering key) — credits minus commission debits minus
-     * refund debits, signed by entry type. Backs
-     * {@link LedgerStatsPort#findNetCentsForProviderBetween} through
-     * {@code LedgerStatsAdapter}. COALESCE: an empty window sums to 0, not
-     * NULL.
+     * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency):
+     * the provider's windowed net movement PER CURRENCY — credits minus
+     * commission debits minus refund debits (the L25 sign convention),
+     * grouped by the entry's ISO 4217 currency (the plan's own wording:
+     * aggregations group by the {@code (provider, currency)} pair). The
+     * pre-fix single-currency sum mixed different currencies into one
+     * number and is gone with the port it served. Rows come back as
+     * {@code [currency (String), netCents (Long)]} tuples ordered by
+     * currency; the COALESCE per group keeps an all-debit window at its
+     * honest negative, and an empty window returns no rows at all.
      */
     @Query("""
-            SELECT COALESCE(SUM(CASE WHEN e.entryType = com.marketplace.ledger.LedgerEntryType.PAYMENT_CREDIT
-                                     THEN e.amountCents ELSE -e.amountCents END), 0)
+            SELECT e.currency AS currency,
+                   COALESCE(SUM(CASE WHEN e.entryType = com.marketplace.ledger.LedgerEntryType.PAYMENT_CREDIT
+                                     THEN e.amountCents ELSE -e.amountCents END), 0) AS netCents
             FROM LedgerEntry e
             WHERE e.providerId = :providerId
               AND e.createdAt >= :from
               AND e.createdAt < :to
+            GROUP BY e.currency
+            ORDER BY e.currency
             """)
-    long sumNetCentsForProviderBetween(@Param("providerId") UUID providerId,
-                                       @Param("from") Instant from,
-                                       @Param("to") Instant to);
+    List<Object[]> sumNetCentsByCurrencyForProviderBetween(@Param("providerId") UUID providerId,
+                                                           @Param("from") Instant from,
+                                                           @Param("to") Instant to);
 }

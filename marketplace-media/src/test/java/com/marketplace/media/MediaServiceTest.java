@@ -2,6 +2,7 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -34,6 +35,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,6 +49,8 @@ class MediaServiceTest {
     private S3MediaStorage storage;
     @Mock
     private ListingPriceProvider listingPriceProvider;
+    @Mock
+    private ListingPublicStatePort listingPublicStatePort;
     @Mock
     private ProviderLookupPort providerLookupPort;
     @Mock
@@ -71,8 +75,12 @@ class MediaServiceTest {
     @BeforeEach
     void setUp() {
         service = new MediaService(repository, storageProvider, mediaProperties(),
-                listingPriceProvider, providerLookupPort, currentUserProvider, eventPublisher,
-                new MediaThumbnailMetrics(meterRegistry));
+                listingPriceProvider, listingPublicStatePort, providerLookupPort, currentUserProvider,
+                eventPublisher, new MediaThumbnailMetrics(meterRegistry));
+        // R5 default: the listing is on the public surface — every test that
+        // does not stub the publication state explicitly reads the public
+        // path (the pre-fix behavior's surface).
+        lenient().when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(true);
     }
 
     /**
@@ -250,6 +258,8 @@ class MediaServiceTest {
 
     @Test
     void listByListing_onlyReturnsUploadedPresigned() {
+        // R5: an ACTIVE listing serves EVERYONE — the public read consults
+        // no identity at all (the anonymous caller's shape).
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset uploaded = pendingAsset();
         uploaded.markUploaded();
@@ -257,10 +267,89 @@ class MediaServiceTest {
                 .thenReturn(java.util.List.of(uploaded));
         when(storage.presignDownload(uploaded.getObjectKey())).thenReturn("https://storage.example/signed-get");
 
-        var views = service.listByListing(listingId);
+        var views = service.listByListing(listingId, authentication);
 
         assertEquals(1, views.size());
         assertEquals("https://storage.example/signed-get", views.get(0).downloadUrl());
+        verify(listingPublicStatePort).isPubliclyVisible(listingId);
+        verifyNoInteractions(currentUserProvider);
+    }
+
+    // ---- R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy) ----
+
+    @Test
+    void listByListing_nonPublicListing_answersThePublicSurface404ToTheAnonymousCaller() {
+        // The measured defect: a PAUSED (or ARCHIVED / DRAFT) listing's
+        // photos were fully readable by any anonymous caller. The gate now
+        // answers the public listing surface's own 404 shape.
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L, "SAR"));
+        when(currentUserProvider.tryGetCurrentUserId(authentication)).thenReturn(Optional.empty());
+
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.listByListing(listingId, authentication));
+        assertTrue(ex.getMessage().contains("Listing not found"));
+        verify(repository, never()).findByListingIdAndStatusOrderByPositionAsc(any(), any());
+    }
+
+    @Test
+    void listByListing_nonPublicListing_answers404ToTheForeignAuthenticatedCaller() {
+        // Appearance consistency: the public listing surface confirms
+        // nothing to non-owners — the foreign authenticated caller gets the
+        // same 404, not a 403 that reveals the listing's existence.
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L, "SAR"));
+        when(currentUserProvider.tryGetCurrentUserId(authentication)).thenReturn(Optional.of(UUID.randomUUID()));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.listByListing(listingId, authentication));
+        verify(repository, never()).findByListingIdAndStatusOrderByPositionAsc(any(), any());
+    }
+
+    @Test
+    void listByListing_nonPublicListing_servesTheOwningProvider() {
+        // The owner-viewer path: the provider keeps reading his paused/
+        // draft listing's media through the same read point (the L34
+        // optional-identity seam resolving his JWT).
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L, "SAR"));
+        when(currentUserProvider.tryGetCurrentUserId(authentication)).thenReturn(Optional.of(userId));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(providerLookupPort.findByUserId(providerId))
+                .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
+        MediaAsset uploaded = pendingAsset();
+        uploaded.markUploaded();
+        when(repository.findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of(uploaded));
+        when(storage.presignDownload(uploaded.getObjectKey())).thenReturn("https://storage.example/signed-get");
+
+        var views = service.listByListing(listingId, authentication);
+
+        assertEquals(1, views.size());
+        assertEquals("https://storage.example/signed-get", views.get(0).downloadUrl());
+    }
+
+    @Test
+    void listByListing_unknownListing_answersThePublicSurface404() {
+        // Unknown id: not publicly visible, and the listing resolution
+        // itself answers the public path's own 404 (getListingInfo routes
+        // through getById).
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
+        when(listingPriceProvider.getListingInfo(listingId))
+                .thenThrow(new ResourceNotFoundException("Listing", listingId));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.listByListing(listingId, authentication));
+        verify(repository, never()).findByListingIdAndStatusOrderByPositionAsc(any(), any());
     }
 
     @Test

@@ -60,9 +60,9 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).debitFromRefund(providerId, paymentIntentId, priceCents);
-        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong());
-        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong());
+        verify(ledgerService).debitFromRefund(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
     }
 
     @Test
@@ -81,12 +81,15 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents);
+        // R9: the booking's currency rides EVERY money call — the pre-fix
+        // listener was measured to ignore the field it already had.
+        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
                 BigDecimal.valueOf(priceCents)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
                         .setScale(0, RoundingMode.HALF_UP)
-                        .longValue());
+                        .longValue(),
+                "USD");
     }
 
     @Test
@@ -101,7 +104,7 @@ class LedgerPaymentEventListenerTest {
 
         assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
 
-        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong());
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
     }
 
     @Test
@@ -118,11 +121,11 @@ class LedgerPaymentEventListenerTest {
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
         doThrow(new RuntimeException("DB connection lost"))
-                .when(ledgerService).debitFromCommission(any(), any(), anyLong());
+                .when(ledgerService).debitFromCommission(any(), any(), anyLong(), any());
 
         assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
 
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents);
-        verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong());
+        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong(), eq("USD"));
     }
 }

@@ -54,21 +54,31 @@ public class LedgerPaymentEventListener {
     private void processLedgerEntry(PaymentIntentDetails intent) {
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
-        ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents);
+        // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
+        // currency): the booking's currency rides EVERY money call — the
+        // field was there all along (BookingInfo's own validated member;
+        // the pre-fix listener was measured to ignore it), and the balances
+        // are keyed (provider, currency) now, so the credit, the commission
+        // and the refund all move the payment's own currency.
+        String currency = bookingInfo.currency();
+        ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
         long commissionCents = BigDecimal.valueOf(priceCents)
                 .multiply(BigDecimal.valueOf(commissionRate))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValue();
-        ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents);
-        log.info("Ledger processed: credited {} to provider {}, debited {} as commission",
-                priceCents, bookingInfo.providerId(), commissionCents);
+        ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents, currency);
+        log.info("Ledger processed: credited {} {} to provider {}, debited {} {} as commission",
+                priceCents, currency, bookingInfo.providerId(), commissionCents, currency);
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
-        ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents);
-        log.info("Ledger processed: debited {} from provider {} — the refund mirrors the original credit",
-                priceCents, bookingInfo.providerId());
+        // R9: the refund mirrors the ORIGINAL credit — same amount, same
+        // currency — so the debit lands on the balance the credit moved.
+        String currency = bookingInfo.currency();
+        ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
+        log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
+                priceCents, currency, bookingInfo.providerId());
     }
 }

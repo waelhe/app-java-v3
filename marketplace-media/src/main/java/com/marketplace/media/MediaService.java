@@ -2,6 +2,7 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.MediaUploadedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -60,6 +61,7 @@ public class MediaService {
     private final ObjectProvider<S3MediaStorage> storage;
     private final MediaProperties properties;
     private final ListingPriceProvider listingPriceProvider;
+    private final ListingPublicStatePort listingPublicStatePort;
     private final ProviderLookupPort providerLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
@@ -69,6 +71,7 @@ public class MediaService {
                         ObjectProvider<S3MediaStorage> storage,
                         MediaProperties properties,
                         ListingPriceProvider listingPriceProvider,
+                        ListingPublicStatePort listingPublicStatePort,
                         ProviderLookupPort providerLookupPort,
                         CurrentUserProvider currentUserProvider,
                         ApplicationEventPublisher eventPublisher,
@@ -77,6 +80,7 @@ public class MediaService {
         this.storage = storage;
         this.properties = properties;
         this.listingPriceProvider = listingPriceProvider;
+        this.listingPublicStatePort = listingPublicStatePort;
         this.providerLookupPort = providerLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
@@ -148,10 +152,28 @@ public class MediaService {
      * in display order — original plus thumbnail (L28). The thumbnail link
      * is null until background processing has run; clients fall back to the
      * original. Presigning is local computation — no cache, no network.
+     *
+     * <p><b>R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy):</b>
+     * the links are gated by the listing's PUBLICATION STATE — the measured
+     * defect had a PAUSED/ARCHIVED listing's photos fully readable by any
+     * anonymous caller. The gate mirrors the public listing surface's own
+     * appearance: a listing that is not on the public surface (DRAFT/PAUSED/
+     * ARCHIVED — {@code ListingPublicStatePort}, implemented by the catalog
+     * owner with {@code getActiveById}'s exact filter) answers the SAME 404
+     * shape {@code GET /api/v1/listings/{id}} answers, for the anonymous
+     * caller and the foreign authenticated caller alike — existence is
+     * not confirmed to non-owners. The OWNING provider keeps reading his
+     * draft/paused listing's media through this same read point (the L34
+     * optional-identity seam: a valid JWT on a public surface resolves the
+     * caller, no token stays anonymous) under the unit's ownership
+     * convention — admin passes, the provider record behind the listing
+     * must be linked to the current user. Zero new module code: one port in
+     * shared/api, the data owner's implementation, this gate.</p>
      */
     @Transactional(readOnly = true)
-    public List<MediaAssetView> listByListing(UUID listingId) {
+    public List<MediaAssetView> listByListing(UUID listingId, Authentication authentication) {
         S3MediaStorage s3 = requireStorage();
+        requireReadableListing(listingId, authentication);
         return mediaAssetRepository
                 .findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED)
                 .stream()
@@ -161,6 +183,39 @@ public class MediaService {
                                 ? null
                                 : s3.presignDownload(asset.getThumbObjectKey())))
                 .toList();
+    }
+
+    /**
+     * R5 gate: public listing ⇒ everyone (anonymous included); otherwise
+     * only the owning provider (or an admin) — anyone else gets the public
+     * listing surface's own 404 shape.
+     */
+    private void requireReadableListing(UUID listingId, Authentication authentication) {
+        if (listingPublicStatePort.isPubliclyVisible(listingId)) {
+            return;
+        }
+        // Not on the public surface: resolve the listing (an unknown id
+        // answers the public path's own 404 — getListingInfo routes through
+        // getById) and demand the owner-viewer identity.
+        ListingPriceProvider.ListingInfo listing = listingPriceProvider.getListingInfo(listingId);
+        UUID userId = currentUserProvider.tryGetCurrentUserId(authentication).orElse(null);
+        if (userId != null && currentUserProvider.isAdmin(authentication)) {
+            return;
+        }
+        if (userId == null || !isListingOwner(listing.providerId(), userId)) {
+            throw new ResourceNotFoundException("Listing", listingId);
+        }
+    }
+
+    /**
+     * The owner test of {@link #verifyOwnership} as a predicate — the same
+     * A1 resolution (the listing's providerId is a user id; the user-owned
+     * profile behind it must match the caller).
+     */
+    private boolean isListingOwner(UUID providerId, UUID userId) {
+        return providerLookupPort.findByUserId(providerId)
+                .filter(provider -> provider.userId() != null && provider.userId().equals(userId))
+                .isPresent();
     }
 
     /**

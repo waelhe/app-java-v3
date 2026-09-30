@@ -3,6 +3,7 @@ package com.marketplace.payments.spi;
 import com.marketplace.payments.Payment;
 import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentRepository;
+import com.marketplace.payments.PaymentIntentStatus;
 import com.marketplace.payments.PaymentRepository;
 import com.marketplace.payments.PaymentStatus;
 import com.marketplace.payments.PaymentsService;
@@ -44,7 +45,17 @@ public class PaymentRefundAdapter implements PaymentRefundPort {
 
     @Override
     public RefundOutcome refundForBooking(UUID bookingId, Long amountCents) {
-        PaymentIntent intent = paymentIntentRepository.findByBookingId(bookingId)
+        // R4 (comprehensive-review-ar-fix plan §4/R4 — the deterministic
+        // financial search): the booking's money-carrying intent — latest
+        // by (createdAt, id) among the COLLECTED states (SUCCEEDED /
+        // PARTIALLY_REFUNDED / REFUNDED). The pre-fix unfiltered
+        // findByBookingId returned an arbitrary row once several intents
+        // coexisted for one booking (the R4 defect) and would throw a
+        // non-unique result the moment two rows race; a booking that never
+        // collected answers the same 404 it always did.
+        PaymentIntent intent = paymentIntentRepository
+                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                        bookingId, PaymentIntentStatus.COLLECTED)
                 .orElseThrow(() -> new ResourceNotFoundException("No payment intent for booking: " + bookingId));
         Payment payment = paymentRepository.findByPaymentIntentId(intent.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No payment for booking: " + bookingId));
