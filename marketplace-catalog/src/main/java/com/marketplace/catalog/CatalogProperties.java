@@ -175,6 +175,19 @@ public record CatalogProperties(
         }
 
         /**
+         * The public site's home URL — the service-root landing's redirect
+         * target. Empty when the capability is off: the root then answers
+         * the honest service document, never a fabricated URL (the same
+         * gate rule as every other accessor).
+         */
+        public Optional<String> publicSiteHomeUrl() {
+            if (capabilityOff()) {
+                return Optional.empty();
+            }
+            return Optional.of(normalizedBase() + "/");
+        }
+
+        /**
          * The robots.txt {@code Disallow} lines' source — only entries
          * that start with {@code /} (RFC 9309: a path-pattern starts with
          * the first octet of the path); a non-conforming entry would
