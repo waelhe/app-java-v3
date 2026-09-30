@@ -2,6 +2,7 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,17 @@ class MediaModuleIntegrationTest {
 
     @MockitoBean
     ProviderLookupPort providerLookupPort;
+
+    /**
+     * W1 (§4.4): the review-photo surface resolves the review's author
+     * through the reviews port. {@code @ApplicationModuleTest} boots only
+     * the media module, so the port's implementation (ReviewsLookupAdapter,
+     * in the reviews module) is not part of this context — every
+     * cross-module port this test needs is declared as a @MockitoBean above,
+     * and this is the one W1 added.
+     */
+    @MockitoBean
+    ReviewLookupPort reviewLookupPort;
 
     @Autowired
     private MediaService mediaService;
