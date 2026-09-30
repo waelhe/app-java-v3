@@ -111,12 +111,27 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * total-order rule — equal {@code ts_rank} values must not wobble across
      * pages; this closes the latent gap where the unrestricted text path
      * ordered by rank alone).
+     *
+     * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5 — the composed
+     * text+filter search):</b> the optional catalog predicates (category /
+     * price bounds / guests) join the text predicate in BOTH the content and
+     * the count query — the exact optional-predicate blocks
+     * {@link #searchByCriteria} has carried since I6 (a NULL parameter
+     * deactivates its block; the guests block honors the undeclared-capacity
+     * contract {@code max_guests IS NOT NULL AND max_guests >= :guests}).
+     * A text query no longer drops the filters that ride it — the review's
+     * R6 finding; the composition happens BEFORE the count and the
+     * pagination, so the page totals describe the filtered set.
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
                     to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
@@ -128,9 +143,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                           @@ websearch_to_tsquery('simple', :query)
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchFullText(@Param("query") String query,
+                                         @Param("category") String category,
+                                         @Param("minPrice") Long minPrice,
+                                         @Param("maxPrice") Long maxPrice,
+                                         @Param("guests") Integer guests,
                                          @Param("now") java.time.Instant now,
                                          Pageable pageable);
 
@@ -147,11 +170,20 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * {@code word_similarity(query, text) >= pg_trgm.word_similarity_threshold}
      * — the framework default (0.6), deliberately not overridden: threshold
      * tuning is a measurement-backed decision, not a code default.
+     *
+     * <p><b>R6 (Wave 5):</b> the fallback carries the SAME optional catalog
+     * predicates as {@link #searchFullText} — a fallback that dropped the
+     * filters would answer the typo-tolerated text match set unfiltered
+     * (the count and the pages would lie about the filtered reality).
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
@@ -159,9 +191,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchSimilar(@Param("query") String query,
+                                        @Param("category") String category,
+                                        @Param("minPrice") Long minPrice,
+                                        @Param("maxPrice") Long maxPrice,
+                                        @Param("guests") Integer guests,
                                         @Param("now") java.time.Instant now,
                                         Pageable pageable);
 
@@ -231,12 +271,34 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                                      @Param("now") java.time.Instant now,
                                                      Pageable pageable);
 
+    /**
+     * L27: the window-restricted full-text search — mirrors
+     * {@link #searchFullText} (official {@code websearch_to_tsquery}
+     * ranking, plus the pg_trgm typo-tolerance fallback), with the
+     * {@code provider_id IN (:providerIds)} restriction applied to both
+     * queries and their counts.
+     *
+     * <p>Fallback condition (PR #256 full-review round): the fallback runs
+     * only when NO full-text match exists at all
+     * ({@code getTotalElements() == 0}) — an out-of-range page over real
+     * matches is legitimately empty ({@code isEmpty()} is true while
+     * {@code getTotalElements() > 0}) and must stay an honest empty page,
+     * not be replaced by the similarity result set.
+     *
+     * <p><b>R6 (Wave 5):</b> the optional catalog predicates join the text
+     * predicate and the provider restriction in BOTH queries and counts —
+     * the windowed text search no longer drops the filters that ride it.
+     */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND provider_id IN (:providerIds)
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
                     to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
@@ -249,9 +311,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                       AND provider_id IN (:providerIds)
                       AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                           @@ websearch_to_tsquery('simple', :query)
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchFullTextRestricted(@Param("query") String query,
+                                                   @Param("category") String category,
+                                                   @Param("minPrice") Long minPrice,
+                                                   @Param("maxPrice") Long maxPrice,
+                                                   @Param("guests") Integer guests,
                                                    @Param("providerIds") java.util.Collection<UUID> providerIds,
                                                    @Param("now") java.time.Instant now,
                                                    Pageable pageable);
@@ -259,12 +329,20 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     /**
      * Typo-tolerant fallback of the restricted FTS — same contract as
      * {@link #searchSimilar}, plus the provider whitelist.
+     *
+     * <p><b>R6 (Wave 5):</b> carries the SAME optional catalog predicates
+     * as {@link #searchFullTextRestricted} — the fallback never drops the
+     * filters.
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND provider_id IN (:providerIds)
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
@@ -273,9 +351,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND provider_id IN (:providerIds)
                       AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchSimilarRestricted(@Param("query") String query,
+                                                  @Param("category") String category,
+                                                  @Param("minPrice") Long minPrice,
+                                                  @Param("maxPrice") Long maxPrice,
+                                                  @Param("guests") Integer guests,
                                                   @Param("providerIds") java.util.Collection<UUID> providerIds,
                                                   @Param("now") java.time.Instant now,
                                                   Pageable pageable);
@@ -287,12 +373,23 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     // to an honest empty page before any query). Text queries keep their
     // relevance ranking with id as the tiebreaker.
 
+    /**
+     * <p><b>R6 (Wave 5):</b> the optional catalog predicates join the text
+     * predicate and the id restriction in BOTH the content and the count
+     * query — the property flow's text branch no longer drops the filters
+     * that ride it, and the saved-search matcher's membership probe composes
+     * the same way.</p>
+     */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND id IN (:listingIds)
               AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                   @@ websearch_to_tsquery('simple', :query)
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
                     to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
@@ -305,9 +402,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                       AND id IN (:listingIds)
                       AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
                           @@ websearch_to_tsquery('simple', :query)
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchFullTextRestrictedToListings(@Param("query") String query,
+                                                             @Param("category") String category,
+                                                             @Param("minPrice") Long minPrice,
+                                                             @Param("maxPrice") Long maxPrice,
+                                                             @Param("guests") Integer guests,
                                                              @Param("listingIds") Collection<UUID> listingIds,
                                                              @Param("now") java.time.Instant now,
                                                              Pageable pageable);
@@ -315,12 +420,20 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     /**
      * Typo-tolerant fallback of the listing-id-restricted FTS — same
      * contract as {@link #searchSimilar}, plus the listing whitelist.
+     *
+     * <p><b>R6 (Wave 5):</b> carries the SAME optional catalog predicates
+     * as {@link #searchFullTextRestrictedToListings} — the fallback never
+     * drops the filters.</p>
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND id IN (:listingIds)
               AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+              AND (:category IS NULL OR category = :category)
+              AND (:minPrice IS NULL OR price_cents >= :minPrice)
+              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
@@ -329,9 +442,17 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND id IN (:listingIds)
                       AND :query <% (coalesce(title,'') || ' ' || coalesce(description,''))
+                      AND (:category IS NULL OR category = :category)
+                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
+                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
+                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
                     """,
             nativeQuery = true)
     Page<ProviderListing> searchSimilarRestrictedToListings(@Param("query") String query,
+                                                            @Param("category") String category,
+                                                            @Param("minPrice") Long minPrice,
+                                                            @Param("maxPrice") Long maxPrice,
+                                                            @Param("guests") Integer guests,
                                                             @Param("listingIds") Collection<UUID> listingIds,
                                                             @Param("now") java.time.Instant now,
                                                             Pageable pageable);

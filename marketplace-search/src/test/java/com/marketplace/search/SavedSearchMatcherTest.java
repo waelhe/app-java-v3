@@ -26,6 +26,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -66,7 +67,7 @@ class SavedSearchMatcherTest {
                         any(SearchCriteria.class), anySet(), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(content)));
         lenient().when(catalogSearchPort.searchFullTextRestrictedToListings(
-                        anyString(), anySet(), any(PagedRequest.class)))
+                        any(SearchCriteria.class), anySet(), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(content)));
     }
 
@@ -104,7 +105,29 @@ class SavedSearchMatcherTest {
         catalogAnswers(List.of(summary()));
         assertThat(matcher.matches(text, LISTING, PROVIDER)).isTrue();
         verify(catalogSearchPort).searchFullTextRestrictedToListings(
-                eq("\"sea view\" jeddah"), eq(Set.of(LISTING)), any(PagedRequest.class));
+                argThat(c -> "\"sea view\" jeddah".equals(c.query())), eq(Set.of(LISTING)), any(PagedRequest.class));
+    }
+
+    @Test
+    void textQueryWithFilters_passesTheFullCriteria_neverDropsTheFilters() {
+        // R6 (comprehensive-review-ar fix plan §4, Wave 5): the matcher's
+        // own copy of the defect — a text-bearing saved search used to
+        // alert on the UNFILTERED text match set. The faithfulness rule
+        // (the class javadoc) demands the SAME composition the dispatch
+        // now makes: the text query AND its filters ride the membership
+        // probe together.
+        SearchCriteria textWithFilters = new SearchCriteria(
+                "\"sea view\" jeddah", "stay", null, BigDecimal.valueOf(800), null, null, 4);
+        catalogAnswers(List.of(summary()));
+
+        assertThat(matcher.matches(textWithFilters, LISTING, PROVIDER)).isTrue();
+
+        verify(catalogSearchPort).searchFullTextRestrictedToListings(
+                argThat(c -> "\"sea view\" jeddah".equals(c.query())
+                        && "stay".equals(c.category())
+                        && BigDecimal.valueOf(800).compareTo(c.maxPrice()) == 0
+                        && Integer.valueOf(4).equals(c.guests())),
+                eq(Set.of(LISTING)), any(PagedRequest.class));
     }
 
     @Test
@@ -177,9 +200,5 @@ class SavedSearchMatcherTest {
     private static ListingSummary summary() {
         return new ListingSummary(LISTING, "title", "stay", new java.math.BigDecimal("10.00"),
                 null, null);
-    }
-
-    private static String anyString() {
-        return org.mockito.ArgumentMatchers.anyString();
     }
 }
