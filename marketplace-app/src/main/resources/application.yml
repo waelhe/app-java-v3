@@ -92,6 +92,17 @@ spring:
     # Spring Boot maps the setting to spring.flyway.postgresql.*.
     postgresql:
       transactional-lock: false
+    # The Qudsayya trial-zone content (R__seed_content_qudsayya.sql) is
+    # production/dev data, NOT a test fixture: its whole body sits inside
+    # one placeholder-gated DO block. Default true here (prod + dev +
+    # the migrator all inherit it); ONLY the test profile binds false
+    # (application-test.yml) so the flyway-enabled integration tests keep
+    # their pristine-database contracts (absolute counts, page-0
+    # composition, full-table cleanups) exactly as before the seed.
+    # Where the placeholder is left unresolved (raw psql), the gate
+    # evaluates false and the seed stays a no-op — fail-safe.
+    placeholders:
+      seedContent: "true"
 
   modulith:
     events:
