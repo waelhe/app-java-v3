@@ -55,7 +55,19 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *       sum. The pre-fix corrupted row (the mixed aggregate the defect
  *       wrote) is replaced by the entry-derived truth.</li>
  *   <li><b>The composite key:</b> the second {@code (provider, SAR)}
- *       balance row is rejected with 23505 by the database itself.</li>
+ *       balance row is rejected with 23505 by the database itself — and
+ *       the key is in place BEFORE the grouped insert (CodeRabbit round 1:
+ *       a provider holding two currencies must not die on the OLD
+ *       single-column key mid-insert).</li>
+ *   <li><b>The Envers mirror:</b> the single-currency era's pre-existing
+ *       audit rows (NULL currency) are backfilled to the house default
+ *       and the mirror's key widens to (provider, currency, rev) — the
+ *       composite-id audit shape Envers itself maps.</li>
+ *   <li><b>The runtime write path (end-to-end):</b> a balance saved
+ *       through the REAL repository against the converged schema — the
+ *       entity INSERT and the Envers audit INSERT must both fit — and the
+ *       multi-currency read through the REAL service (the composite-key
+ *       derived query) returns the converged rows.</li>
  * </ol>
  */
 @SpringBootTest(properties = {
@@ -79,6 +91,12 @@ class LedgerCurrencyMigrationIntegrationTest {
 
     @Autowired
     private DataSource dataSource;
+
+    @Autowired
+    private com.marketplace.ledger.ProviderBalanceRepository balanceRepository;
+
+    @Autowired
+    private com.marketplace.ledger.LedgerService ledgerService;
 
     @Test
     void v75_derivesEntryCurrencies_recomputesBalancesPerCurrency_enforcesTheCompositeKey() throws Exception {
@@ -129,6 +147,14 @@ class LedgerCurrencyMigrationIntegrationTest {
         jdbcTemplate.update(
                 "INSERT INTO provider_balances (provider_id, available_cents, created_at, updated_at, version)"
                         + " VALUES (?, 18_000, now(), now(), 0)", providerId);
+
+        // ---- the single-currency era's audit row (currency NULL — the
+        // column does not exist yet) riding the real Envers revision chain ----
+        jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (990001, now())");
+        jdbcTemplate.update(
+                "INSERT INTO provider_balances_aud (provider_id, rev, revtype, available_cents,"
+                        + " version, created_at, updated_at, is_deleted)"
+                        + " VALUES (?, 990001, 0, 18_000, 0, now(), now(), false)", providerId);
 
         // ---- execute the actual V75 script (the real file) ----
         try (var connection = dataSource.getConnection()) {
@@ -182,6 +208,34 @@ class LedgerCurrencyMigrationIntegrationTest {
         } catch (DataIntegrityViolationException expected) {
             // the null rejection
         }
+
+        // ---- the Envers mirror: the era's audit row is backfilled and the
+        // mirror's key widened (the composite-id audit shape) ----
+        String audCurrency = jdbcTemplate.queryForObject(
+                "SELECT currency FROM provider_balances_aud WHERE provider_id = ? AND rev = 990001",
+                String.class, providerId);
+        assertThat(audCurrency)
+                .as("the single-currency era's audit row carries the house default")
+                .isEqualTo("SAR");
+
+        // ---- the runtime write path, end-to-end (CodeRabbit round 1's
+        // composite-key proof): a balance saved through the REAL repository —
+        // entity INSERT + Envers audit INSERT must both fit the converged
+        // schema — then read back through the composite id and the REAL
+        // multi-currency read (the derived query's composite property path) ----
+        com.marketplace.ledger.ProviderBalance fresh =
+                com.marketplace.ledger.ProviderBalance.empty(providerId, "EUR");
+        ProviderBalance saved = balanceRepository.save(fresh);
+        assertThat(saved.getKey().currency()).isEqualTo("EUR");
+        assertThat(balanceRepository
+                .findById(new com.marketplace.ledger.ProviderBalance.ProviderBalanceId(providerId, "EUR")))
+                .as("the composite id resolves the saved row")
+                .isPresent();
+        var readable = ledgerService.getBalances(providerId);
+        assertThat(readable)
+                .as("the multi-currency read returns every currency the provider now holds")
+                .extracting(com.marketplace.ledger.ProviderBalanceResponse::currency)
+                .containsExactly("EUR", "SAR", "USD");
     }
 
     // ---------- seeding helpers ----------

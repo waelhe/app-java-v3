@@ -143,7 +143,7 @@ public class LedgerService {
      */
     @Transactional(readOnly = true)
     public List<ProviderBalanceResponse> getBalances(UUID providerId) {
-        return balanceRepository.findByProviderIdOrderByCurrencyAsc(providerId).stream()
+        return balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId).stream()
                 .map(ProviderBalanceResponse::from)
                 .toList();
     }

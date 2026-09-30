@@ -41,9 +41,15 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *       collectible intent; the older stale retry is CANCELLED (the state
  *       machine's own terminal state for an abandoned attempt).</li>
  *   <li><b>The double-charge window (the defect's worst case):</b> a
- *       SUCCEEDED intent (the booking is PAID) riding next to a later
- *       CREATED sibling — the sibling is exactly the second charge the
- *       defect made possible, and the repair cancels it.</li>
+ *       SUCCEEDED intent (the booking is PAID) riding next to later
+ *       siblings — a CREATED one (cancelled — cancelUnpaid's own mapping)
+ *       and an in-flight PROCESSING one carrying a PENDING payment row
+ *       (failed with its payment synced — failInFlight's own mapping,
+ *       TRANSITIONS admits no PROCESSING -> CANCELLED; CodeRabbit round 1
+ *       on this PR).</li>
+ *   <li><b>The stale in-flight retry:</b> an older PROCESSING attempt with
+ *       a PENDING payment under a latest CREATED attempt — the older one
+ *       fails (intent and payment together), the latest survives.</li>
  *   <li><b>Single-attempt and terminal rows are untouched:</b> a lone
  *       CREATED attempt keeps its state; FAILED / CANCELLED history keeps
  *       its state.</li>
@@ -98,13 +104,19 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
         insertIntent(olderRetry, booking1, consumerId, "CREATED", "2026-09-20 10:00:00");
         insertIntent(latestAttempt, booking1, consumerId, "CREATED", "2026-09-21 10:00:00");
 
-        // ---- Booking 2: the double-charge window (PAID + a later sibling) ----
+        // ---- Booking 2: the double-charge window (PAID + later siblings —
+        // a CREATED one AND an in-flight PROCESSING one carrying a PENDING
+        // payment row) ----
         UUID booking2 = UUID.randomUUID();
         insertBooking(booking2, consumerId, providerId, listingId);
         UUID paidIntent = UUID.randomUUID();
         UUID doubleChargeSibling = UUID.randomUUID();
+        UUID inFlightSibling = UUID.randomUUID();
+        UUID inFlightPayment = UUID.randomUUID();
         insertIntent(paidIntent, booking2, consumerId, "SUCCEEDED", "2026-09-20 10:00:00");
         insertIntent(doubleChargeSibling, booking2, consumerId, "CREATED", "2026-09-22 10:00:00");
+        insertIntent(inFlightSibling, booking2, consumerId, "PROCESSING", "2026-09-23 10:00:00");
+        insertPayment(inFlightPayment, inFlightSibling, "PENDING");
 
         // ---- Booking 3: a lone live attempt (nothing to repair) ----
         UUID booking3 = UUID.randomUUID();
@@ -119,6 +131,18 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
         insertIntent(failedHistory, booking4, consumerId, "FAILED", "2026-09-19 10:00:00");
         UUID cancelledHistory = UUID.randomUUID();
         insertIntent(cancelledHistory, booking4, consumerId, "CANCELLED", "2026-09-18 10:00:00");
+
+        // ---- Booking 5: the stale-retry repair with an IN-FLIGHT older
+        // sibling (no money ever collected; the latest attempt is CREATED,
+        // the older one is PROCESSING with a PENDING payment row) ----
+        UUID booking5 = UUID.randomUUID();
+        insertBooking(booking5, consumerId, providerId, listingId);
+        UUID olderInFlight = UUID.randomUUID();
+        UUID olderInFlightPayment = UUID.randomUUID();
+        UUID latestAttempt5 = UUID.randomUUID();
+        insertIntent(olderInFlight, booking5, consumerId, "PROCESSING", "2026-09-20 10:00:00");
+        insertPayment(olderInFlightPayment, olderInFlight, "PENDING");
+        insertIntent(latestAttempt5, booking5, consumerId, "CREATED", "2026-09-24 10:00:00");
 
         // ---- execute the actual V74 script (the real file,
         // non-transactional shape: autocommit connection) ----
@@ -141,13 +165,30 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
                 .as("the collected intent keeps its state — it is the booking's money truth")
                 .isEqualTo("SUCCEEDED");
         assertThat(intentStatus(doubleChargeSibling))
-                .as("the post-payment sibling is cancelled — the second charge is no longer possible")
+                .as("the post-payment CREATED sibling is cancelled — cancelUnpaid's own mapping")
                 .isEqualTo("CANCELLED");
+        assertThat(intentStatus(inFlightSibling))
+                .as("the post-payment PROCESSING sibling is FAILED — failInFlight's own mapping "
+                        + "(TRANSITIONS admits no PROCESSING -> CANCELLED; CodeRabbit round 1)")
+                .isEqualTo("FAILED");
+        assertThat(paymentStatus(inFlightPayment))
+                .as("the in-flight sibling's payment row follows its intent in the same statement")
+                .isEqualTo("FAILED");
 
-        // ---- Bookings 3 and 4: untouched ----
+        // ---- Bookings 3, 4 and 5: the lone live attempt and terminal
+        // history untouched; the stale-retry repair maps by state machine ----
         assertThat(intentStatus(loneAttempt)).isEqualTo("PROCESSING");
         assertThat(intentStatus(failedHistory)).isEqualTo("FAILED");
         assertThat(intentStatus(cancelledHistory)).isEqualTo("CANCELLED");
+        assertThat(intentStatus(olderInFlight))
+                .as("the stale in-flight retry is FAILED — failInFlight's mapping")
+                .isEqualTo("FAILED");
+        assertThat(paymentStatus(olderInFlightPayment))
+                .as("its payment row follows")
+                .isEqualTo("FAILED");
+        assertThat(intentStatus(latestAttempt5))
+                .as("the latest attempt is THE attempt — the total order alone decides")
+                .isEqualTo("CREATED");
 
         // ---- the backstop index completed its concurrent build ----
         Boolean[] index = jdbcTemplate.queryForObject(
@@ -202,8 +243,20 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
                 id, bookingId, consumerId, status, createdAt, createdAt);
     }
 
+    private void insertPayment(UUID id, UUID intentId, String status) {
+        jdbcTemplate.update(
+                "INSERT INTO payments (id, payment_intent_id, amount_cents, status, created_at, updated_at)"
+                        + " VALUES (?, ?, 1000, ?, '2026-09-21 10:00:00+00', '2026-09-21 10:00:00+00')",
+                id, intentId, status);
+    }
+
     private String intentStatus(UUID intentId) {
         return jdbcTemplate.queryForObject(
                 "SELECT status FROM payment_intents WHERE id = ?", String.class, intentId);
+    }
+
+    private String paymentStatus(UUID paymentId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, paymentId);
     }
 }

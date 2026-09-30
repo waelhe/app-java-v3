@@ -241,7 +241,7 @@ class LedgerServiceTest {
         ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
         LedgerService service = new LedgerService(entryRepository, balanceRepository);
         UUID providerId = create(UUID.class);
-        when(balanceRepository.findByProviderIdOrderByCurrencyAsc(providerId)).thenReturn(List.of());
+        when(balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId)).thenReturn(List.of());
 
         List<ProviderBalanceResponse> result = service.getBalances(providerId);
 
@@ -259,7 +259,7 @@ class LedgerServiceTest {
         sar.credit(3000L);
         ProviderBalance usd = ProviderBalance.empty(providerId, USD);
         usd.credit(2500L);
-        when(balanceRepository.findByProviderIdOrderByCurrencyAsc(providerId))
+        when(balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId))
                 .thenReturn(List.of(sar, usd));
 
         List<ProviderBalanceResponse> result = service.getBalances(providerId);
@@ -403,7 +403,7 @@ class LedgerServiceTest {
         UUID providerId = UUID.randomUUID();
         ProviderBalance existing = ProviderBalance.empty(providerId, SAR);
         existing.credit(4500L);
-        when(balanceRepository.findByProviderIdOrderByCurrencyAsc(providerId)).thenReturn(List.of(existing));
+        when(balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId)).thenReturn(List.of(existing));
 
         List<ProviderBalanceResponse> result = service.getBalancesForOwner(providerId);
 

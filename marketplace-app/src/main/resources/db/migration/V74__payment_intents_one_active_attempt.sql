@@ -30,24 +30,32 @@
 --
 -- (1) a booking that already COLLECTED money (a live row in SUCCEEDED /
 --     PARTIALLY_REFUNDED / REFUNDED — the states where money moved) has
---     every live collectible row CANCELLED: those rows are the defect's
+--     every live collectible row repaired: those rows are the defect's
 --     double-charge window itself (the booking is paid; a collectible
---     sibling could still be processed and charged again). CANCELLED —
---     the state machine's own terminal state for an abandoned attempt,
---     the same outcome `cancelIntent`/`cancelUnpaid` produce — keeps the
---     row visible to history with its Envers runtime trail intact; the
+--     sibling could still be processed and charged again). The repair
+--     uses the state machine's OWN outcome per state (CodeRabbit round 1,
+--     verified against PaymentIntentStatus.TRANSITIONS before action):
+--     CREATED -> CANCELLED (cancelUnpaid's mapping — the abandoned
+--     attempt, history visible, Envers runtime trail intact) and
+--     PROCESSING -> FAILED (failInFlight's mapping — TRANSITIONS admits
+--     no PROCESSING -> CANCELLED) with the intent's in-flight payments
+--     row marked FAILED in the SAME statement (failInFlight marks both;
+--     the data-modifying CTE leaves no window between them). The
 --     migration's convergence is a one-time data repair documented here
 --     (the V73 precedent: reconciliation SQL does not write Envers
 --     revisions).
 --
 -- (2) a booking that collected NOTHING keeps its LATEST collectible
 --     attempt (the consumer's most recent initiation — the one they
---     would process) and cancels the OLDER siblings. The tuple
---     comparison (created_at, id) is PostgreSQL's row-value ordering — a
---     total order that makes "latest" well-defined even under timestamp
---     ties, the same deterministic order the scoped repository searches
---     (findFirstByBookingIdAndStatusIn...OrderByCreatedAtDescIdDesc) read
---     with.
+--     would process; the total order (created_at, id) alone decides,
+--     no preference between CREATED and PROCESSING rows) and repairs the
+--     OLDER siblings with the same state-machine outcomes and payment
+--     sync. The tuple comparison (created_at, id) is PostgreSQL's
+--     row-value ordering — a total order that makes "latest"
+--     well-defined even under timestamp ties, the same deterministic
+--     order the scoped repository searches
+--     (findFirstByBookingIdAndStatusIn...OrderByCreatedAtDescIdDesc)
+--     read with.
 --
 --     Both statements are IDEMPOTENT (guards: is_deleted = false, status
 --     IN the collectible set) — safe on the rerun after repair, which
@@ -93,35 +101,67 @@
 -- PR (MigrationChecksumGuardTest — the 2026-09-14 incident class).
 
 -- (1) a booking that already collected money: every live collectible row
--- is a post-payment duplicate (the double-charge window) — cancelled.
-UPDATE payment_intents dup
-SET status = 'CANCELLED',
+-- is a post-payment duplicate (the double-charge window) — repaired with
+-- the state machine's OWN outcomes (CodeRabbit round 1 on this PR,
+-- verified against the code before action): CREATED -> CANCELLED
+-- (cancelUnpaid's own mapping) and PROCESSING -> FAILED (failInFlight's
+-- own mapping — PaymentIntentStatus.TRANSITIONS admits no
+-- PROCESSING -> CANCELLED). The FAILED intents' in-flight payments row
+-- follows in the SAME statement (a data-modifying CTE — no window between
+-- the intent and its payment): failInFlight marks both.
+WITH repaired AS (
+    UPDATE payment_intents dup
+    SET status = CASE WHEN dup.status = 'PROCESSING' THEN 'FAILED' ELSE 'CANCELLED' END,
+        updated_at = now()
+    WHERE dup.is_deleted = false
+      AND dup.status IN ('CREATED', 'PROCESSING')
+      AND EXISTS (
+            SELECT 1
+            FROM payment_intents money
+            WHERE money.booking_id = dup.booking_id
+              AND money.is_deleted = false
+              AND money.status IN ('SUCCEEDED', 'PARTIALLY_REFUNDED', 'REFUNDED')
+      )
+    RETURNING dup.id, dup.status
+)
+UPDATE payments p
+SET status = 'FAILED',
     updated_at = now()
-WHERE dup.is_deleted = false
-  AND dup.status IN ('CREATED', 'PROCESSING')
-  AND EXISTS (
-        SELECT 1
-        FROM payment_intents money
-        WHERE money.booking_id = dup.booking_id
-          AND money.is_deleted = false
-          AND money.status IN ('SUCCEEDED', 'PARTIALLY_REFUNDED', 'REFUNDED')
-  );
+FROM repaired r
+WHERE p.payment_intent_id = r.id
+  AND p.is_deleted = false
+  AND p.status = 'PENDING'
+  AND r.status = 'FAILED';
 
 -- (2) a booking that collected nothing: keep the LATEST collectible
--- attempt, cancel the older stale retries.
-UPDATE payment_intents older
-SET status = 'CANCELLED',
+-- attempt (the total order (created_at, id) — no preference between
+-- CREATED and PROCESSING, the repository contract is the LATEST row),
+-- repair the older stale retries with the same state-machine outcomes
+-- and the same payment sync.
+WITH repaired AS (
+    UPDATE payment_intents older
+    SET status = CASE WHEN older.status = 'PROCESSING' THEN 'FAILED' ELSE 'CANCELLED' END,
+        updated_at = now()
+    WHERE older.is_deleted = false
+      AND older.status IN ('CREATED', 'PROCESSING')
+      AND EXISTS (
+            SELECT 1
+            FROM payment_intents newer
+            WHERE newer.booking_id = older.booking_id
+              AND newer.is_deleted = false
+              AND newer.status IN ('CREATED', 'PROCESSING')
+              AND (newer.created_at, newer.id) > (older.created_at, older.id)
+      )
+    RETURNING older.id, older.status
+)
+UPDATE payments p
+SET status = 'FAILED',
     updated_at = now()
-WHERE older.is_deleted = false
-  AND older.status IN ('CREATED', 'PROCESSING')
-  AND EXISTS (
-        SELECT 1
-        FROM payment_intents newer
-        WHERE newer.booking_id = older.booking_id
-          AND newer.is_deleted = false
-          AND newer.status IN ('CREATED', 'PROCESSING')
-          AND (newer.created_at, newer.id) > (older.created_at, older.id)
-  );
+FROM repaired r
+WHERE p.payment_intent_id = r.id
+  AND p.is_deleted = false
+  AND p.status = 'PENDING'
+  AND r.status = 'FAILED';
 
 CREATE UNIQUE INDEX CONCURRENTLY uq_payment_intents_one_active_attempt
     ON payment_intents (booking_id)

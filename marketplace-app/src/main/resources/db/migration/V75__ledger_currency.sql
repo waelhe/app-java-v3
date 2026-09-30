@@ -68,11 +68,33 @@
 -- V72 ALTER shape): all statements run inside Flyway's transaction; the
 -- tables are small (the ledger's own content) and the deploy-overlap
 -- window holds no writer that can race the recomputation into a wrong
--- sum (the old deployment writes LIVE-entry-currency-agnostic amounts to
--- the single balance row — a write that lands mid-migration simply rolls
--- the transaction back with the migration and retries on the redeploy;
--- the entries the write would have produced are the recomputation's own
--- input, so the converged state stays entry-derived either way).
+-- sum (a write that lands mid-migration simply rolls the transaction
+-- back with the migration and retries on the redeploy; the entries the
+-- write would have produced are the recomputation's own input, so the
+-- converged state stays entry-derived either way).
+--
+-- DEPLOY-OVERLAP WINDOW (CodeRabbit round 1 on this PR — the exposure
+-- documented instead of a two-release expand-and-contract, the V73
+-- round-4 governing decision applied to this wave): Railway keeps the
+-- PREVIOUS deployment serving while the new one boots and runs Flyway —
+-- during that window the OLD deployment's ledger listener still writes
+-- the PRE-R9 shapes: its LedgerEntry INSERT omits currency (fails on the
+-- new NOT NULL) and its ProviderBalance lookup keys provider_id alone
+-- (non-unique once currencies split). Those listener runs FAIL LOUDLY as
+-- FAILED event publications — never silently lost — and the framework's
+-- OWN recovery converges them: the Modulith publication registry plus
+-- EventPublicationResubmission (#210's measured loop,
+-- completion_attempts < 2 => immediate) replays each failed publication
+-- under the NEW code with the booking's true currency. The exposure is
+-- minutes-bounded, self-healing, and corruption-free. A column DEFAULT
+-- was deliberately REJECTED: it would convert the loud self-healing
+-- failure into silent WRONG-CURRENCY rows (an old-listener USD credit
+-- landing as SAR forever). A two-release expand-and-contract was
+-- deliberately REJECTED too: it needs a manual orchestration step
+-- between two deployments — exactly the intervention the repository's
+-- one-PR-one-squash-one-auto-deploy cadence exists to avoid, and the
+-- governing plan's own wording for this risk class is "document the
+-- limit" (§10).
 --
 -- Checksum registered in migration-checksums.properties in this same
 -- PR (MigrationChecksumGuardTest — the 2026-09-14 incident class).
@@ -131,6 +153,40 @@ ALTER TABLE provider_balances_aud
 -- by the entry-derived truth, one row per (provider_id, currency).
 DELETE FROM provider_balances;
 
+-- ---------- (3) the composite key BEFORE the grouped insert --------------
+-- (CodeRabbit round 1 on this PR, verified against V19 before action:
+-- the OLD provider_balances_pkey (provider_id) is still in place while
+-- the insert runs — a provider holding TWO currencies would insert two
+-- rows with the SAME provider_id and die on the OLD key before the
+-- composite one exists. The key is swapped on the JUST-EMPTIED table —
+-- instant, and the PK itself makes both key columns NOT NULL.)
+
+ALTER TABLE provider_balances
+    DROP CONSTRAINT provider_balances_pkey;
+
+ALTER TABLE provider_balances
+    ADD PRIMARY KEY (provider_id, currency);
+
+-- the Envers mirror's key widens the same way (two currency rows of one
+-- provider mutated in one revision must not collide on
+-- (provider_id, rev)) — but its PRE-EXISTING revision rows carry NULL in
+-- the freshly added currency column, and a PK column cannot be NULL: the
+-- single-currency era's history gets the house default SAR (the same
+-- fallback the entry convergence uses for unresolvable rows — those
+-- snapshots WERE the mixed-era's rows; no per-currency truth exists to
+-- derive for them), then the key widens.
+UPDATE provider_balances_aud
+SET currency = 'SAR'
+WHERE currency IS NULL;
+
+ALTER TABLE provider_balances_aud
+    DROP CONSTRAINT provider_balances_aud_pkey;
+
+ALTER TABLE provider_balances_aud
+    ADD PRIMARY KEY (provider_id, currency, rev);
+
+-- ---------- the grouped insert, under the new key ------------------------
+
 INSERT INTO provider_balances (provider_id, currency, available_cents,
                                created_at, updated_at, version)
 SELECT e.provider_id,
@@ -143,20 +199,3 @@ SELECT e.provider_id,
 FROM ledger_entries e
 WHERE e.is_deleted = false
 GROUP BY e.provider_id, e.currency;
-
-ALTER TABLE provider_balances
-    ALTER COLUMN currency SET NOT NULL;
-
--- ---------- (3) the composite keys ---------------------------------------
-
-ALTER TABLE provider_balances
-    DROP CONSTRAINT provider_balances_pkey;
-
-ALTER TABLE provider_balances
-    ADD PRIMARY KEY (provider_id, currency);
-
-ALTER TABLE provider_balances_aud
-    DROP CONSTRAINT provider_balances_aud_pkey;
-
-ALTER TABLE provider_balances_aud
-    ADD PRIMARY KEY (provider_id, currency, rev);

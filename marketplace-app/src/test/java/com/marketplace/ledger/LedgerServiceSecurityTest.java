@@ -75,7 +75,7 @@ class LedgerServiceSecurityTest {
         when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         ProviderBalance existing = ProviderBalance.empty(providerId, "SAR");
         existing.credit(4500L);
-        when(balanceRepository.findByProviderIdOrderByCurrencyAsc(providerId))
+        when(balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId))
                 .thenReturn(List.of(existing));
 
         List<ProviderBalanceResponse> result = ledgerService.getBalancesForOwner(providerId);
