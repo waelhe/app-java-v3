@@ -96,7 +96,7 @@ class MediaPostTargetFlywayIntegrationTest {
         Authentication auth = new TestingAuthenticationToken(POST_AUTHOR.toString(), "n/a");
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(POST_AUTHOR);
 
-        MediaUploadView view = mediaService.requestPostUpload(
+        MediaService.MediaUploadView view = mediaService.requestPostUpload(
                 postId, "image/jpeg", 8486L, auth);
 
         assertThat(view.mediaId()).isNotNull();
