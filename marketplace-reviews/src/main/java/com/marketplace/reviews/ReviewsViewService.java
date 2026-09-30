@@ -63,9 +63,21 @@ public class ReviewsViewService {
         return assemble(List.of(review)).getFirst();
     }
 
-    /** W1 §4.5: the single read through the visibility gate (published OR author/admin, else 404). */
+    /**
+     * W1 §4.5: the single read through the visibility gate (published OR
+     * author/admin, else 404).
+     *
+     * <p>The fetch is {@link ReviewsService#getById} — the {@code @Cacheable}
+     * one — and the gate is the data layer's {@code assertVisible}. Calling
+     * the cached method from here, across the bean boundary, is what keeps
+     * the {@code reviews} cache populated on the single-read path (an
+     * in-class call would be a self-invocation that Spring's cache proxy
+     * never sees).
+     */
     public ReviewResponse getVisible(UUID id, Authentication authentication) {
-        return toResponse(reviewsService.getVisible(id, authentication));
+        Review review = reviewsService.getById(id);
+        reviewsService.assertVisible(review, authentication);
+        return toResponse(review);
     }
 
     public Page<ReviewResponse> listByProvider(UUID providerId, Pageable pageable) {

@@ -106,17 +106,27 @@ public class ReviewsService {
     }
 
     /**
-     * W1 §4.5 — the single-read visibility gate: a PUBLISHED row is public;
-     * any other moderation state is the author's own (or an admin's) view —
-     * everyone else answers the honest 404 (a pending review never leaks
-     * its existence). {@code tryGetCurrentUserId} keeps the real anonymous
-     * caller (no JWT) out without an exception.
+     * W1 §4.5 — the single-read visibility gate, as a decision over an
+     * already-loaded row: a PUBLISHED row is public; any other moderation
+     * state is the author's own (or an admin's) view — everyone else answers
+     * the honest 404 (a pending review never leaks its existence).
+     * {@code tryGetCurrentUserId} keeps the real anonymous caller (no JWT)
+     * out without an exception.
+     *
+     * <p><b>Why the gate is separate from the fetch:</b> {@link #getById} is
+     * {@code @Cacheable("reviews")} and keyed by id alone — the entity is
+     * caller-independent, so the cache entry is too. A gate that called
+     * {@code this.getById(...)} would be a self-invocation, which bypasses
+     * Spring's cache proxy: nothing would ever be PUT into the cache and the
+     * documented cold-cache contract (a read whose DB row is gone still
+     * answered from Redis) would silently stop holding. Keeping the fetch in
+     * {@code getById} and the decision here lets the caller reach the cached
+     * method across the bean boundary, while the rule itself still lives in
+     * the data layer.
      */
-    @Transactional(readOnly = true)
-    public Review getVisible(UUID id, Authentication authentication) {
-        Review review = getById(id);
+    public void assertVisible(Review review, Authentication authentication) {
         if (review.getModerationStatus() == ReviewModerationStatus.PUBLISHED) {
-            return review;
+            return;
         }
         if (authentication != null) {
             boolean admin = currentUserProvider.isAdmin(authentication);
@@ -124,10 +134,10 @@ public class ReviewsService {
                     .map(caller -> caller.equals(review.getReviewerId()))
                     .orElse(false);
             if (admin || author) {
-                return review;
+                return;
             }
         }
-        throw new ResourceNotFoundException("Review not found: " + id);
+        throw new ResourceNotFoundException("Review not found: " + review.getId());
     }
 
     @Transactional(readOnly = true)

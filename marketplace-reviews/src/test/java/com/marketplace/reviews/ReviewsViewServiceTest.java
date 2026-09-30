@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -186,13 +188,13 @@ class ReviewsViewServiceTest {
         UUID reviewId = UUID.randomUUID();
         UUID reviewerId = UUID.randomUUID();
         Review review = Review.create(reviewerId, reviewerId, UUID.randomUUID(), 5, "visible");
-        when(reviewsService.getVisible(reviewId, authentication)).thenReturn(review);
+        when(reviewsService.getById(review.getId())).thenReturn(review);
         when(userLookupPort.findAllByIds(anyCollection()))
                 .thenReturn(Map.of(reviewerId, summary(reviewerId, "Sara", null)));
         when(reviewRepository.countPublishedByReviewerIds(anyCollection())).thenReturn(List.of());
         when(reviewVoteRepository.countByReviewIds(anyCollection())).thenReturn(List.of());
 
-        ReviewResponse response = viewService.getVisible(reviewId, authentication);
+        ReviewResponse response = viewService.getVisible(review.getId(), authentication);
 
         assertEquals(review.getId(), response.id());
         assertEquals("Sara", response.reviewerName());
@@ -201,12 +203,19 @@ class ReviewsViewServiceTest {
     @Test
     void getVisible_propagatesTheGatesHonest404() {
         UUID reviewId = UUID.randomUUID();
-        when(reviewsService.getVisible(reviewId, authentication))
-                .thenThrow(new ResourceNotFoundException("Review not found: " + reviewId));
+        Review review = Review.create(reviewerIdOf(reviewId), reviewerIdOf(reviewId),
+                UUID.randomUUID(), 5, "hidden");
+        when(reviewsService.getById(reviewId)).thenReturn(review);
+        doThrow(new ResourceNotFoundException("Review not found: " + reviewId))
+                .when(reviewsService).assertVisible(any(Review.class), eq(authentication));
 
         ResourceNotFoundException thrown = assertThrows(ResourceNotFoundException.class,
                 () -> viewService.getVisible(reviewId, authentication));
 
         assertTrue(thrown.getMessage().contains(reviewId.toString()));
+    }
+
+    private static UUID reviewerIdOf(UUID reviewId) {
+        return UUID.nameUUIDFromBytes(reviewId.toString().getBytes());
     }
 }
