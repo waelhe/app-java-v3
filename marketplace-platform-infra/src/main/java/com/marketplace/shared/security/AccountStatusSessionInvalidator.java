@@ -7,11 +7,14 @@ import com.marketplace.shared.api.UserRoleChanged;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.session.Session;
 import org.springframework.session.security.SpringSessionBackedSessionRegistry;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * R8 (comprehensive-review-ar fix plan §4, Wave 1): expires the Spring
@@ -46,15 +49,33 @@ import org.springframework.stereotype.Component;
  * {@code false} skips already-expired sessions, which keeps a framework
  * resubmission idempotent.
  *
- * <p><b>Durability is the framework's, not ours.</b> The listeners carry
- * {@code @ApplicationModuleListener} — the documented Modulith
- * annotation (AFTER_COMMIT phase, {@code REQUIRES_NEW} transaction) — so the
- * publication row commits atomically with the status/role flip and a failed
- * invalidation (for example a Redis blip) is resubmitted by
- * {@code EventPublicationResubmission} instead of being lost: the security
- * fact survives the failure. No {@code catch} block by design — the house
+ * <p><b>Durability is the framework's, and so is the timing (CodeRabbit
+ * round on the invalidator, adopted from the root).</b> The listeners carry
+ * plain {@code @TransactionalEventListener(phase = AFTER_COMMIT)} plus
+ * {@code @Transactional(REQUIRES_NEW)} — <em>not</em> Modulith's
+ * {@code @ApplicationModuleListener} — because that composed annotation is
+ * meta-annotated {@code @Async} (verified against the shipped
+ * spring-modulith-events-api 2.1.1 source: {@code @Async} +
+ * {@code @Transactional(REQUIRES_NEW)} + {@code @TransactionalEventListener}),
+ * and async processing is <em>on</em> in this application by the framework's
+ * own decision: {@code EventPublicationAutoConfiguration} (spring-modulith-
+ * events-core 2.1.1, active here via {@code spring-modulith-events-jpa})
+ * imports {@code AsyncEnablingConfiguration}, an {@code @EnableAsync}
+ * configuration that only backs off when the application declares its own
+ * async infrastructure — this application declares none. An async listener
+ * would hand the expiry to the task executor and let the admin's 200 leave
+ * before the markers land: the in-flight window the review round flagged. The
+ * plain AFTER_COMMIT form runs in the <em>committing</em> thread — the
+ * disable response and the session expiry are the same request — while the
+ * publication row still commits atomically with the status/role flip and a
+ * failed or crashed invalidation is still resubmitted by
+ * {@code EventPublicationResubmission}: the registry's completion advisor
+ * advises every {@code @TransactionalEventListener(AFTER_COMMIT)} method,
+ * not only {@code @ApplicationModuleListener} ones (verified against the
+ * shipped advisor's pointcut). No {@code catch} block by design — the house
  * convention (five removals predate this class) lets the failure surface to
- * the registry.
+ * the operator as a 500 on the admin PUT, which is re-issuable idempotently
+ * ({@code getAllSessions(principal, false)} skips already-expired sessions).
  *
  * <p><b>Asymmetry by direction.</b> A disable (or any role change) expires
  * every live session of the account; an enable expires nothing — zero
@@ -83,7 +104,8 @@ public class AccountStatusSessionInvalidator {
      * future consumers, not an invalidation trigger (CodeRabbit round 1 on
      * the fix plan, adopted from the root, commit {@code e27a94b}).
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onAccountStatusChanged(AccountStatusChanged event) {
         if (event.enabled()) {
             logger.debug("Account enabled — sessions kept intact: {}", event.username());
@@ -97,7 +119,8 @@ public class AccountStatusSessionInvalidator {
      * authorities inside each session's security context are stale against
      * the replaced {@code auth_authorities} projection.
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onUserRoleChanged(UserRoleChanged event) {
         expireAllSessions(event.username(),
                 "role changed: " + event.previousRole() + " -> " + event.newRole());

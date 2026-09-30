@@ -179,14 +179,18 @@ class AccountStatusSessionInvalidationIntegrationTest {
         // The fix, measured on the same cookie: the authorization server chain
         // no longer authenticates the session — ConcurrentSessionFilter's
         // official expired-session response, and no code minted. The bounded
-        // await is pure robustness: @ApplicationModuleListener's AFTER_COMMIT
-        // phase runs in the committing thread (bytecode-verified against
-        // spring-tx 7.0.1 — TransactionalApplicationListenerSynchronization.
-        // afterCommit invokes processEvent synchronously), so the marker is
-        // already in Redis before the disable PUT's 200 response and the loop
-        // degenerates to a single attempt; CodeRabbit round 1's bounded-wait
-        // shape is adopted as zero-cost insurance against scheduling hiccups
-        // in CI runners.
+        // await is pure robustness: the invalidator's plain
+        // @TransactionalEventListener(AFTER_COMMIT) + REQUIRES_NEW runs in
+        // the committing thread (bytecode-verified against spring-tx 7.0.1 —
+        // TransactionalApplicationListenerSynchronization.afterCommit invokes
+        // processEvent synchronously, and with no @Async on the method there
+        // is no executor hop — see the invalidator's javadoc for why
+        // @ApplicationModuleListener's composed @Async was rejected:
+        // Modulith's own AsyncEnablingConfiguration activates @EnableAsync
+        // here), so the marker is already in Redis before the disable PUT's
+        // 200 response and the loop degenerates to a single attempt;
+        // CodeRabbit round 1's bounded-wait shape is adopted as zero-cost
+        // insurance against scheduling hiccups in CI runners.
         AuthorizeAttempt afterDisable = awaitExpired(targetSession, 10);
         assertThat(afterDisable.body())
                 .as("the expired-session marker must be the framework's own: %s", afterDisable.body())
