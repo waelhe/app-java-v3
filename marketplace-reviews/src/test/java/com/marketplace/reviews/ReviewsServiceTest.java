@@ -199,7 +199,7 @@ class ReviewsServiceTest {
                 .set(field(Review::getProviderId), providerId)
                 .set(field(Review::getRating), 4)
                 .create();
-        when(reviewRepository.findByProviderIdAndDirectionAndModerationStatus(
+        when(reviewRepository.findByProviderIdAndDirectionAndModerationStatusOrderByCreatedAtDescIdDesc(
                         providerId, ReviewDirection.CONSUMER_TO_PROVIDER,
                         ReviewModerationStatus.PUBLISHED, pageable))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(review)));

@@ -21,8 +21,12 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
      * historical meaning — reviews ABOUT the provider (forward direction
      * only) — now PUBLISHED-gated: a pending or moderator-hidden review is
      * absent from the public list (the plan's named visibility path 1).
+     * Greptile W1 r3-frontend (adopted): the derived ordering is explicit —
+     * {@code createdAt DESC, id DESC}, the D-N5 complete key — because the
+     * published-reviews port promises newest-first and an unordered page
+     * both shuffles rows and shifts them across page boundaries.
      */
-    Page<Review> findByProviderIdAndDirectionAndModerationStatus(
+    Page<Review> findByProviderIdAndDirectionAndModerationStatusOrderByCreatedAtDescIdDesc(
             UUID providerId, ReviewDirection direction, ReviewModerationStatus moderationStatus, Pageable pageable);
 
     /** The reviewer's own surface (all moderation states — the owner view). */

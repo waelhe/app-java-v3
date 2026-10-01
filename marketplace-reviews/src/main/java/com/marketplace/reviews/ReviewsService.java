@@ -146,7 +146,7 @@ public class ReviewsService {
         // forward direction (reverse reviews are the author's, not the
         // reviewed party's, surface). W1 §4.5: the public list is the
         // PUBLISHED gate — the plan's named visibility path 1.
-        return reviewRepository.findByProviderIdAndDirectionAndModerationStatus(
+        return reviewRepository.findByProviderIdAndDirectionAndModerationStatusOrderByCreatedAtDescIdDesc(
                 providerId, ReviewDirection.CONSUMER_TO_PROVIDER,
                 ReviewModerationStatus.PUBLISHED, pageable);
     }
