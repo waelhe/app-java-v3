@@ -224,3 +224,44 @@ record with `@DefaultValue`.
 | r8 | Public review photos answered 401 (greptile, P1) | confirmed: the security chain permitted listing-media GETs only | `/api/v1/media/reviews/by-review/*` GET permitted — the service's own moderation-visibility gate stays the authority |
 | r9 | Concurrent submissions exceed the caps (greptile, P1) | confirmed: daily-cap, 1x1 uniqueness, and first-N counts are all count-then-insert | `pg_advisory_xact_lock(hashtextextended(reviewerId, 7))` — the measured #241 shape, seed-namespaced away from the media locks |
 | r10 | Soft-deleted photos cause duplicate positions (greptile, P1) | confirmed: count-based allocation re-issues held positions | max-based allocation on ALL THREE channels (review/listing/post) — same defect class, same root fix |
+
+
+---
+
+## D-W1-5 — The provider public page composes the reviews block (a read surface the plan leaves to W2's "full business page")
+
+**The plan says (§5-W2 scope):** «صفحة مزوّد كاملة: ساعات + خدمات + توزيع نجوم + إشارتا
+التقييم» — the reviews LIST on the provider page reads as W2 territory, and W1's acceptance
+names the three public READ PATHS as the reviews module's own endpoints.
+
+**What this wave adds (the frontend-consumer completion):** `ProviderPublicPageResponse` gains
+`reviewsMode` + a `reviews` page block (`PagedResponse<PublishedReviewView>`), served through a
+new shared `PublishedReviewsPort` (the `ReviewStatsPort` pattern verbatim — the provider module
+already resolves the profile-to-user mapping internally for the rating block).
+
+**Why this is forced by the wave's own contract, not chosen:**
+
+1. **The votes and the reviewer-identity blocks have no public home without it.** §4.5 builds
+   helpful votes; §4.4 builds the identity blocks — both serve `GET /reviews/provider/{userId}`,
+   a path keyed by the provider USER id. The frontend's measured, declared seam (frontend
+   ARCHITECTURE §10 + `reputation-contract.ts`): no public read exposes the profile→user
+   mapping, so no surface can render the rows the wave's own acceptance criteria describe.
+2. **`reviewsMode` is not inferable from the rating fields.** A HYBRID page with zero published
+   organic reviews is byte-identical to VERIFIED_ONLY by the aggregate pair alone — the honest
+   mode-driven display (mount the organic form only when the mode admits it) needs the mode
+   itself, which the service already reads.
+3. **The alternative is worse than the extension.** Inferring the mode client-side is guessing;
+   always-mounting the form and letting the 400 teach is a degraded surface in the DEFAULT
+   (seeded) mode — the exact "لوحة إعلانات" feel the owner's re-foundation directive rejects.
+
+**Boundaries measured:** zero new modules, zero new tables, zero new gates — one shared port +
+one shared projection (`PublishedReviewView`, the field whitelist documented on the record:
+no bookingId, no direction, no moderationStatus, no listingId, no user id), the
+`ReviewsPublishedPageAdapter` in the reviews module's `spi` package (the `ReviewStatsAdapter`
+precedent), and the provider page's own composition. `ArchitectureRulesTest` stays green (the
+provider module's `shared` dependency is pre-existing). W2's full business page remains
+untouched — hours, services, service areas, category attributes, JSON-LD are all still W2's.
+
+**Closing point:** `ProviderPublicPageServiceTest.reviewsBlock_ridesThePortWithTheUserId_`
++ `ReviewsPublishedPageAdapterTest` + the WebMvc serialization pins
+(`reviewsMode`, `reviews.content[0].*`).

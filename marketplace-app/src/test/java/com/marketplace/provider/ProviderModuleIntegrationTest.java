@@ -131,7 +131,8 @@ class ProviderModuleIntegrationTest {
                                         java.math.BigDecimal.TEN, "SAR", "Broker")))));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
-                org.springframework.data.domain.PageRequest.of(0, 20));
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.VERIFIED);
         assertThat(page.ratingAverage()).isEqualTo(4.5);
@@ -145,7 +146,8 @@ class ProviderModuleIntegrationTest {
         providerService.suspend(profile.getId());
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
-                org.springframework.data.domain.PageRequest.of(0, 20));
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.SUSPENDED);
         assertThat(page.listings().totalElements()).isZero();

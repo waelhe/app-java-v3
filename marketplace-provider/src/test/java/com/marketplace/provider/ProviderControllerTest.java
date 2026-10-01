@@ -117,18 +117,21 @@ class ProviderControllerTest {
     void getPublicPage_delegatesToPublicPageService() {
         UUID id = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
+        Pageable reviewsPageable = PageRequest.of(0, 10);
         var page = new ProviderPublicPageResponse(id, "John", "Bio", ProviderStatus.VERIFIED,
-                ProviderActorType.INDEPENDENT_BROKER, "Qudsia Prime", "BR-1", null, 4.5, 12L, null, 0L, null);
+                ProviderActorType.INDEPENDENT_BROKER, "Qudsia Prime", "BR-1", null,
+                "VERIFIED_ONLY", 4.5, 12L, null, 0L, null, null);
 
-        when(providerPublicPageService.getPublicPage(id, pageable)).thenReturn(page);
+        when(providerPublicPageService.getPublicPage(id, pageable, reviewsPageable)).thenReturn(page);
 
-        ResponseEntity<ProviderPublicPageResponse> result = controller.getPublicPage(id, pageable);
+        ResponseEntity<ProviderPublicPageResponse> result = controller.getPublicPage(id, pageable, 0, 10);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(id, result.getBody().id());
         assertEquals(ProviderStatus.VERIFIED, result.getBody().status());
         assertEquals(4.5, result.getBody().ratingAverage());
         assertEquals(12L, result.getBody().reviewCount());
+        assertEquals("VERIFIED_ONLY", result.getBody().reviewsMode());
     }
 
     @Test

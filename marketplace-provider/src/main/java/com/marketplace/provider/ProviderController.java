@@ -5,6 +5,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -63,16 +64,31 @@ public class ProviderController {
                         authentication)));
     }
 
+    /**
+     * W1 (§4.4/§4.5): the reviews block rides the same page response, paged
+     * by its own request parameters — one endpoint, two independently paged
+     * blocks (the listings ride the standard pageable, the reviews ride
+     * {@code reviewsPage}/{@code reviewsSize}). The manual floor (0/1) keeps
+     * a hostile parameter from reaching {@code PageRequest.of} with a
+     * negative value — the resolver's own clamp equivalent for the manual
+     * path.
+     */
     @GetMapping("/providers/{id}/public")
     @Operation(summary = "Get a provider's public page",
             description = "L36: the agent/office public page — profile with the L36 persona "
-                    + "fields, the VERIFIED badge status, the rating block (fresh aggregate) "
-                    + "and the ACTIVE listings page. Non-VERIFIED profiles get an empty "
-                    + "listings block (a suspended broker's inventory is hidden on his "
-                    + "page); the response carries no private contact data.")
+                    + "fields, the VERIFIED badge status, the rating block (fresh aggregate, "
+                    + "W1 dual badges per the active reviews mode) and the ACTIVE listings "
+                    + "page, plus the W1 reviews block: the provider's PUBLISHED forward "
+                    + "reviews paged by reviewsPage/reviewsSize (default 0/10). Non-VERIFIED "
+                    + "profiles get an empty listings block (a suspended broker's inventory "
+                    + "is hidden on his page); the response carries no private contact data "
+                    + "and no user id.")
     public ResponseEntity<ProviderPublicPageResponse> getPublicPage(@PathVariable UUID id,
-                                                                    Pageable pageable) {
-        return ResponseEntity.ok(providerPublicPageService.getPublicPage(id, pageable));
+                                                                    Pageable pageable,
+                                                                    @RequestParam(name = "reviewsPage", defaultValue = "0") int reviewsPage,
+                                                                    @RequestParam(name = "reviewsSize", defaultValue = "10") int reviewsSize) {
+        Pageable reviewsPageable = PageRequest.of(Math.max(reviewsPage, 0), Math.max(reviewsSize, 1));
+        return ResponseEntity.ok(providerPublicPageService.getPublicPage(id, pageable, reviewsPageable));
     }
 
     @PostMapping("/admin/providers/{id}/verify")
