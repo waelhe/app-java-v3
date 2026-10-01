@@ -165,7 +165,9 @@ public class BookingService implements BookingSpi {
         verifyProviderOwnership(booking, authentication);
         booking.confirm();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
@@ -193,7 +195,15 @@ public class BookingService implements BookingSpi {
         verifyParticipantOwnership(booking, authentication);
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window) — and the surviving active
+            // claimant when one exists (review round on the rebased head: a
+            // legacy window can carry older CONFIRMED/COMPLETED claimants
+            // alongside the reconciled owner; the owner's cancel TRANSFERS the
+            // hold to the survivor instead of reopening the window).
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(),
+                    booking.getId(), survivingActiveClaimant(booking));
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
@@ -208,10 +218,37 @@ public class BookingService implements BookingSpi {
         }
         booking.cancel();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window) — and the surviving active
+            // claimant when one exists (the auto-cancel leg of the same
+            // review-round transfer contract).
+            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(),
+                    booking.getId(), survivingActiveClaimant(booking));
         }
         eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));
+    }
+
+    /**
+     * R2 review round (the wave's rebased head): the booking module owns the
+     * claimant data, so the release's survivor knowledge is resolved HERE and
+     * carried into the availability port call — the most recent non-deleted
+     * CONFIRMED/COMPLETED booking on the same exact window other than the one
+     * being cancelled, in V73's reconciliation total order (createdAt, id)
+     * newest-first. {@code null} when the cancelled booking was the only
+     * active claimant (the release then reopens the window). PENDING
+     * bookings never claim a window (the claim happens at confirm), so they
+     * are not survivors by contract.
+     */
+    private UUID survivingActiveClaimant(Booking cancelled) {
+        return bookingRepository
+                .findFirstByProviderIdAndStartsAtAndEndsAtAndStatusInAndIdNotOrderByCreatedAtDescIdDesc(
+                        cancelled.getProviderId(), cancelled.getStartsAt(), cancelled.getEndsAt(),
+                        java.util.List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED),
+                        cancelled.getId())
+                .map(Booking::getId)
+                .orElse(null);
     }
 
     public void autoConfirm(UUID id) {
@@ -221,7 +258,9 @@ public class BookingService implements BookingSpi {
         }
         booking.confirm();
         if (booking.getStartsAt() != null && booking.getEndsAt() != null) {
-            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt());
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
         }
         eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("bookings"), id));

@@ -52,9 +52,16 @@ import static org.mockito.Mockito.when;
  * <p>Acceptance criterion 1 — known dataset, the three numbers match a
  * manual calculation documented right here:
  * <pre>
- *   slots starting in [2026-09-01, 2026-10-01): 6 (Sep 1, 2, 3 + exactly-at-
- *   from + Sep 10 + Sep 20), booked among them: 2 (Sep 10, Sep 20)
- *     -> occupancy = 2/6 = 0.3333...
+ *   slots starting in [2026-09-01, 2026-10-01): 5 (Sep 1 — which IS the
+ *   exactly-at-from case, the inclusive bound — Sep 2, Sep 3 free + Sep 10
+ *   and Sep 20 booked), booked among them: 2 (Sep 10, Sep 20)
+ *     -> occupancy = 2/5 = 0.4
+ *   (R2+R3 wave note — PR #471: the fixture now seeds DISTINCT windows only:
+ *   V73's uq_availability_slots_live_window makes one live row per provider
+ *   window a database invariant. The old fixture seeded Sep 1 twice — the
+ *   loop's day-1 slot AND a separate exactly-at-FROM slot are the same
+ *   window — which the new invariant correctly rejects. The exactly-at-from
+ *   boundary case stays covered by the loop's Sep 1 slot itself.)
  *   ledger entries created in the window (created_at 2026-09-15):
  *   PAYMENT_CREDIT 10_000, COMMISSION_DEBIT 1_000, REFUND_DEBIT 3_000
  *     -> net = 10_000 - 1_000 - 3_000 = 6_000 cents
@@ -138,14 +145,16 @@ class ProviderStatsIntegrationTest {
                 """,
                 LISTING_ID, OWNER_USER_ID);
 
-        // --- slots: 6 start inside [FROM, TO) — Sep 1, 2, 3 (free) + one
-        // starting EXACTLY at FROM (free, the inclusive bound) + Sep 10 and
-        // Sep 20 (booked). Outside: one before FROM, one starting exactly
-        // at TO (the exclusive bound) — neither counts.
+        // --- slots: 5 start inside [FROM, TO) — Sep 1 (free, and itself the
+        // exactly-at-FROM case: the inclusive bound), Sep 2 and Sep 3 (free)
+        // + Sep 10 and Sep 20 (booked). Outside: one before FROM, one
+        // starting exactly at TO (the exclusive bound) — neither counts.
+        // (R2+R3 wave note: DISTINCT windows only — V73's partial unique
+        // index makes one live row per provider window; the old fixture's
+        // second Sep 1 row was the duplicate the invariant rejects.)
         for (int day : new int[]{1, 2, 3}) {
             slot(LocalDate.of(2026, 9, day).atStartOfDay(ZoneOffset.UTC).toInstant(), false);
         }
-        slot(FROM, false);
         slot(LocalDate.of(2026, 9, 10).atStartOfDay(ZoneOffset.UTC).toInstant(), true);
         slot(LocalDate.of(2026, 9, 20).atStartOfDay(ZoneOffset.UTC).toInstant(), true);
         slot(FROM.minusSeconds(3600), false);
@@ -194,7 +203,7 @@ class ProviderStatsIntegrationTest {
         ProviderStatsResponse stats = statsService.getStats(OWNER_USER_ID, new StatsWindow(FROM, TO));
 
         // The documented manual calculation (acceptance criterion 1):
-        assertThat(stats.occupancyRate()).isCloseTo(2.0 / 6.0, offset(1e-9));
+        assertThat(stats.occupancyRate()).isCloseTo(2.0 / 5.0, offset(1e-9));
         assertThat(stats.netRevenueCents()).isEqualTo(6_000L);
         assertThat(stats.completedBookings()).isEqualTo(2L);
         assertThat(stats.from()).isEqualTo(FROM);
