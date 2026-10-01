@@ -77,11 +77,13 @@ class RootControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getHeaders().getContentType())
                 .isEqualTo(MediaType.APPLICATION_JSON);
+        // three same-origin truths — health is deliberately absent (greptile r2,
+        // adopted): production binds management on its own port, so a
+        // same-origin /actuator/health pointer would be a fabricated URL
         assertThat(response.getBody()).containsExactlyInAnyOrderEntriesOf(Map.of(
                 "service", "marketplace",
                 "api", "/api/v1",
-                "docs", "/v3/api-docs",
-                "health", "/actuator/health"));
+                "docs", "/v3/api-docs"));
     }
 
     @Test
@@ -96,4 +98,25 @@ class RootControllerTest {
         assertThat(response.getHeaders().getLocation()).isNull();
         assertThat(response.getStatusCode().is3xxRedirection()).isFalse();
     }
+
+    /**
+     * Greptile r3 (adopted from the root): a non-blank but malformed
+     * public-site base fails AT CONSTRUCTION — the D6 fail-fast posture for
+     * configuration. A blank value stays the legal capability-OFF state.
+     */
+    @Test
+    void seoRecord_malformedOrigin_failsConstructionWithAReadableMessage() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> new CatalogProperties.Seo("htp:/oops", "/listings/{id}", List.of()),
+                "a malformed bound origin must stop startup, never reach traffic");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> new CatalogProperties.Seo("not a url", "/listings/{id}", List.of()),
+                "a relative or unparseable origin must stop startup too");
+        // the legal states: blank (capability OFF) and a well-formed origin
+        new CatalogProperties.Seo("", "/listings/{id}", List.of());
+        new CatalogProperties.Seo("https://public.example/", "/listings/{id}", List.of());
+    }
+
 }

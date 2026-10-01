@@ -51,9 +51,11 @@ public class RootController {
     /**
      * The authenticated service root: {@code 302} to the public site's home
      * when the SEO capability is bound; the honest service document
-     * otherwise.
+     * otherwise. No {@code produces} constraint (greptile r1, adopted): a
+     * pure {@code Accept: text/html} client must not be answered 406 on a
+     * landing route — the document carries its own explicit content type.
      */
-    @GetMapping(value = "/", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping("/")
     @Operation(summary = "The service root — a redirect to the public site when bound",
             description = "The post-authentication landing (the saved-request-less "
                     + "POST /login fallback) and any stray authenticated navigation to "
@@ -75,17 +77,20 @@ public class RootController {
 
     /**
      * The capability-OFF body: what this deployment actually serves. The
-     * paths are the deployed API's own fixed surfaces — the versioned API
-     * root, the OpenAPI document, and the health endpoints the orchestrator
-     * probes — so a human landing here learns the truth about the service
-     * they reached.
+     * paths are the deployed API's own fixed same-origin surfaces — the
+     * versioned API root and the OpenAPI document. The health surface is
+     * deliberately absent (greptile r2, adopted): production binds the
+     * management endpoints on their own port
+     * ({@code management.server.port}, 8081 by default), so a same-origin
+     * {@code /actuator/health} pointer would be a fabricated URL — the exact
+     * thing this controller's own rule forbids. The orchestrator's probes
+     * already know where they configured health to live.
      */
     private Map<String, String> serviceDocument() {
         Map<String, String> document = new LinkedHashMap<>(4);
         document.put("service", "marketplace");
         document.put("api", "/api/v1");
         document.put("docs", "/v3/api-docs");
-        document.put("health", "/actuator/health");
         return document;
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -79,11 +80,29 @@ class RootControllerWebMvcTest {
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", aMapWithSize(4)))
+                // three same-origin truths — the health surface is deliberately
+                // absent (greptile r2, adopted): production binds management on
+                // its own port, so a same-origin /actuator/health pointer would
+                // be a fabricated URL
+                .andExpect(jsonPath("$", aMapWithSize(3)))
                 .andExpect(jsonPath("$", hasEntry("service", "marketplace")))
                 .andExpect(jsonPath("$", hasEntry("api", "/api/v1")))
-                .andExpect(jsonPath("$", hasEntry("docs", "/v3/api-docs")))
-                .andExpect(jsonPath("$", hasEntry("health", "/actuator/health")));
+                .andExpect(jsonPath("$", hasEntry("docs", "/v3/api-docs")));
+    }
+
+    /**
+     * Greptile r1 (adopted): a pure {@code Accept: text/html} client must not
+     * be answered 406 on a landing route — the mapping carries no produces
+     * constraint and the document sets its own content type.
+     */
+    @Test
+    void root_capabilityOff_htmlOnlyAccept_isNotRejected() throws Exception {
+        when(catalogProperties.seo()).thenReturn(
+                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+
+        mockMvc.perform(get("/").accept(MediaType.TEXT_HTML))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasEntry("service", "marketplace")));
     }
 
     @TestConfiguration
