@@ -1,6 +1,7 @@
 package com.marketplace.identity;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.Utf8ByteSize;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -69,7 +70,13 @@ public class AuthController {
      * guidance converges on) and a maximum of 72 BYTES — bcrypt's documented
      * ceiling; a longer password is REJECTED here rather than silently
      * truncated by the hash (the honest contract — the stored verifier always
-     * covers the whole accepted password). No composition rules: length is
+     * covers the whole accepted password). The retro #435 review round
+     * completed the byte half of that contract: {@code @Size(max = 72)} measures
+     * CHARACTERS, so a 69-ASCII-plus-emoji password (71 characters, 73 UTF-8
+     * bytes) used to reach the encoder and die as an internal exception instead
+     * of the contract's field error — {@code @Utf8ByteSize} now measures the
+     * encoding bcrypt itself measures, and the boundary answers the clean 400
+     * with the password field error. No composition rules: length is
      * the complexity that survives real adversaries, and the encoder does the
      * rest.
      */
@@ -82,6 +89,7 @@ public class AuthController {
 
             @NotBlank
             @Size(min = 8, max = 72)
+            @Utf8ByteSize(max = 72)
             String password,
 
             @Size(max = 100)

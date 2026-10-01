@@ -48,8 +48,19 @@ completeness: the field is the violation's leaf name, i.e. the rejected
 parameter):
 
 - `fieldErrors`: array of field-level validation violations (an empty array
-  when the violation set is empty — the shape is always present on a 400
-  validation answer).
+  when the violation set is empty — the shape is always present on THESE two
+  legs' 400 answers).
+
+**Scope (the retro #437 review round's clarification):** the extension belongs
+to the two BEAN-VALIDATION legs alone. Other 400s under the same
+`validation` taxonomy — a business rejection raised as `BadRequestException`
+(a domain rule the bean graph cannot express) or an `IllegalArgumentException`
+guard (the §5 resolver-leg mapping) — answer the BASE shape with no
+`fieldErrors` property: there is no field-level violation to enumerate. A
+boundary that must answer the field error (e.g. a format limit the request
+contract itself owns) belongs on the bean graph — the constraint, not the
+handler, carries it (the registration password's UTF-8 byte ceiling is the
+worked example).
 
 Example:
 

@@ -156,18 +156,48 @@ class RegistrationIntegrationTest {
         assertThat(response.statusCode()).as("over-length email: %s", body(response)).isEqualTo(400);
     }
 
+    /**
+     * The retro #435 review round's boundary, end to end: 69 ASCII characters
+     * plus one emoji is 71 Java characters (it PASSES the character-bound
+     * {@code @Size(max = 72)}) but 73 UTF-8 bytes — beyond bcrypt's documented
+     * ceiling. Before the {@code @Utf8ByteSize} constraint the request reached
+     * the encoder and died as an internal exception instead of the contract's
+     * field error; the boundary now answers the clean 400 with the password
+     * field's own violation in {@code fieldErrors}.
+     */
+    @Test
+    void aPasswordBeyondBcryptsByteCeilingAnswersThePasswordFieldError() throws Exception {
+        String seventyOneCharactersSeventyThreeBytes = "a".repeat(69) + "😀";
+        HttpResponse<String> response = postJson("/api/v1/auth/register", """
+                {"email": "%s", "password": "%s", "displayName": "S1 Member"}
+                """.formatted(uniqueEmail(), seventyOneCharactersSeventyThreeBytes));
+        assertThat(response.statusCode())
+                .as("71 characters but 73 UTF-8 bytes: %s", body(response))
+                .isEqualTo(400);
+        assertThat(body(response)).contains("fieldErrors");
+        assertThat(body(response)).contains("password");
+    }
+
     // -- HTTP helpers + the L23 login gate (browser-less five-step PKCE) -------
 
     private HttpResponse<String> postJson(String path, String json) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                 .header("Content-Type", "application/json")
+                // The retro #435 review round: connectTimeout bounds CONNECTION
+                // establishment only — a request-level deadline is what keeps a
+                // stalled-but-accepted response from blocking the whole Failsafe
+                // workflow indefinitely (httpClient.send is synchronous).
+                .timeout(Duration.ofSeconds(30))
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> getJson(String path, String bearer) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path)).GET();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(30))
+                .GET();
         if (bearer != null) {
             builder.header("Authorization", "Bearer " + bearer);
         }
@@ -219,6 +249,7 @@ class RegistrationIntegrationTest {
         String code = param(redirect, "code");
 
         HttpRequest tokenRequest = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/oauth2/token"))
+                .timeout(Duration.ofSeconds(30))
                 .header("Authorization", "Basic " + Base64.getEncoder()
                         .encodeToString((clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8)))
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -236,7 +267,9 @@ class RegistrationIntegrationTest {
     }
 
     private HttpResponse<String> get(String url, String sessionCookie) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .GET();
         if (sessionCookie != null) {
             builder.header("Cookie", sessionCookie);
         }
@@ -245,6 +278,7 @@ class RegistrationIntegrationTest {
 
     private HttpResponse<String> postForm(String path, String form, String sessionCookie) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form));
         if (sessionCookie != null) {
