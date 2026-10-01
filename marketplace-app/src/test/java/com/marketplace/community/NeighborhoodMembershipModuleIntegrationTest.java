@@ -256,6 +256,38 @@ class NeighborhoodMembershipModuleIntegrationTest {
     }
 
     /**
+     * The #484 review round's root closure, end to end on the REAL chain:
+     * the member-controlled re-request used to move REJECTED → PENDING —
+     * and because every state except REJECTED passes the community write
+     * gate, the rejected member regained publish/comment/react rights
+     * without any administrator ever reviewing the claim again. The
+     * re-request now answers its own explicit 409 and the stored verdict
+     * stays REJECTED (the row AND the audit trail both prove it).
+     */
+    @Test
+    void dn3_rejectedMember_cannotSelfReverseTheVerdict_overHttp() throws Exception {
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        rejectOverHttp(rejectedMembership);
+
+        asCaller(rejectedUser);
+        mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
+                .andExpect(status().isConflict());
+
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+        // the audit trail carries no resurrection: the last audited state
+        // after the refused re-request is still the REJECT verdict
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships_aud WHERE id = ? "
+                        + "ORDER BY rev DESC LIMIT 1",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+    }
+
+    /**
      * The administrative verification queue over the REAL chain: the
      * request lands the membership in the PENDING page (the queue's own
      * state axis), the review moves it out (the queue drains), and the

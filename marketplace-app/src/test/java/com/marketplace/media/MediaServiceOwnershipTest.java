@@ -146,11 +146,17 @@ class MediaServiceOwnershipTest {
     @WithMockUser(roles = "CONSUMER")
     void confirmUpload_postAsset_byAuthor_reachesTheStorageVerification() {
         UUID author = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
         MediaAsset asset = MediaAsset.createForPost(
-                UUID.randomUUID(), author, "posts/x/y.jpg", "image/jpeg", 1L, 1);
+                postId, author, "posts/x/y.jpg", "image/jpeg", 1L, 1);
         when(mediaAssetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(null)).thenReturn(author);
         when(currentUserProvider.isAdmin(null)).thenReturn(false);
+        // The #484 review round: the confirm path re-resolves the post fresh
+        // — a visible post by a still-writable author lets the confirm reach
+        // the storage verification itself.
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, author, true));
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 1L)).thenReturn(false);
 
         assertThatExceptionOfType(BadRequestException.class).isThrownBy(

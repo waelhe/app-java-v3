@@ -92,7 +92,7 @@ class MediaPostTargetFlywayIntegrationTest {
     void postTargetedUpload_landsOnTheFlywaySchema_withListingIdNull() {
         UUID postId = UUID.randomUUID();
         when(postLookupPort.getPostInfo(postId)).thenReturn(
-                new PostLookupPort.PostInfo(postId, POST_AUTHOR));
+                new PostLookupPort.PostInfo(postId, POST_AUTHOR, true));
         Authentication auth = new TestingAuthenticationToken(POST_AUTHOR.toString(), "n/a");
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(POST_AUTHOR);
 

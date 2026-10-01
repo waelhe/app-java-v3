@@ -4,6 +4,7 @@ import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
+import com.marketplace.shared.api.CommunityReactionExportEntry;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,11 @@ import java.util.UUID;
  * subject's own authored texts, base facts verbatim, stable
  * {@code (created_at, id)} order, the post's location as the stored
  * {@code geo_locations} id, the enums as their stored names.
+ *
+ * <p>L47 + the #484 review round adds the reactions read in the same
+ * shape — which posts the subject thanked and when, live and removed
+ * alike (the reaction layer had ridden V73 with no export leg: a member
+ * requesting their data received no record of their reactions).
  */
 @Component
 public class CommunityExportAdapter implements CommunityExportPort {
@@ -95,6 +101,25 @@ public class CommunityExportAdapter implements CommunityExportPort {
                         UUID.fromString(rs.getString("id")),
                         UUID.fromString(rs.getString("post_id")),
                         rs.getString("body"),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityReactionExportEntry> exportReactionsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, post_id, created_at, updated_at, is_deleted
+                FROM post_reactions
+                WHERE member_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new CommunityReactionExportEntry(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("post_id")),
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getTimestamp("updated_at").toInstant(),
                         rs.getBoolean("is_deleted")),

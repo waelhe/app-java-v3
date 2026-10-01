@@ -151,14 +151,28 @@ public class NeighborhoodMembershipService {
         repository.delete(membership);
     }
 
-    /** Manual, provider-free verification request. An administrator is the first runnable verifier. */
+    /**
+     * Manual, provider-free verification request. An administrator is the
+     * first runnable verifier — and the only one who can UNDO a verdict:
+     * the #484 review round closed the measured self-reversal hole (a
+     * rejected member re-requesting moved REJECTED → PENDING and regained
+     * the write gate without any review), so a REJECTED claim now answers
+     * its own explicit 409 — the member's honest recovery paths are an
+     * administrator's fresh review, or leave-and-rejoin (a new UNVERIFIED
+     * row the queue sees with fresh eyes).
+     */
     @Observed(name = "community.membership.verification.request")
     public NeighborhoodMembershipView requestVerification(UUID userId) {
         NeighborhoodMembership membership = repository.findByUserId(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No neighborhood membership to verify"));
-        if (membership.getVerificationState() == MembershipVerificationState.PENDING
-                || membership.getVerificationState() == MembershipVerificationState.VERIFIED) {
-            throw new ConflictException("Membership verification is already " + membership.getVerificationState());
+        MembershipVerificationState state = membership.getVerificationState();
+        if (state == MembershipVerificationState.REJECTED) {
+            throw new ConflictException(
+                    "Membership verification was rejected — only an administrator review can change that verdict");
+        }
+        if (state == MembershipVerificationState.PENDING
+                || state == MembershipVerificationState.VERIFIED) {
+            throw new ConflictException("Membership verification is already " + state);
         }
         membership.requestVerification();
         return NeighborhoodMembershipView.of(repository.save(membership));

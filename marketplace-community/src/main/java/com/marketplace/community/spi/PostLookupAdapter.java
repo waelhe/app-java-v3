@@ -1,5 +1,7 @@
 package com.marketplace.community.spi;
 
+import com.marketplace.community.NeighborhoodMembership;
+import com.marketplace.community.NeighborhoodMembershipRepository;
 import com.marketplace.community.NeighborhoodPost;
 import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.PostStatus;
@@ -25,22 +27,51 @@ import java.util.UUID;
  * photos, and Hibernate's {@code @SoftDelete} already hides the deleted
  * from {@code findById} itself. The media write path lands on exactly the
  * post the feed would return.
+ *
+ * <p><b>The author's community-write right (the #484 review round):</b>
+ * the carrier's {@code authorMayWriteCommunity} leg is THIS module's own
+ * D-N3 computation — {@code mayUseCommunityWrites()} on the author's
+ * ACTIVE membership, with an absent membership answering {@code false}
+ * (a non-member holds no community write; the post service's own
+ * {@code requireWritableMembership} 403 is the same fact on its side of
+ * the boundary). The media line's request and confirm paths gate on it,
+ * so a membership rejected AFTER a post was published cannot keep
+ * attaching photos to it — the one place the media target's authorization
+ * and the author's community-write right genuinely meet.
  */
 @Component
 @Transactional(readOnly = true)
 public class PostLookupAdapter implements PostLookupPort {
 
     private final NeighborhoodPostRepository postRepository;
+    private final NeighborhoodMembershipRepository membershipRepository;
 
-    public PostLookupAdapter(NeighborhoodPostRepository postRepository) {
+    public PostLookupAdapter(NeighborhoodPostRepository postRepository,
+                             NeighborhoodMembershipRepository membershipRepository) {
         this.postRepository = postRepository;
+        this.membershipRepository = membershipRepository;
     }
 
     @Override
     public PostInfo getPostInfo(UUID postId) {
         return postRepository.findById(postId)
                 .filter(post -> post.getStatus() == PostStatus.VISIBLE)
-                .map(post -> new PostInfo(post.getId(), post.getAuthorId()))
+                .map(post -> new PostInfo(post.getId(), post.getAuthorId(),
+                        authorMayWriteCommunity(post.getAuthorId())))
                 .orElseThrow(() -> new ResourceNotFoundException("Post", postId));
+    }
+
+    /**
+     * The author's CURRENT community-write right — the membership
+     * domain's own D-N3 gate, computed at resolution time so every media
+     * write step sees the same verdict the post service's own commands
+     * see. A REJECTED membership answers {@code false}; so does an absent
+     * membership (the author left, or the row never existed — either way
+     * there is no community-write right to attach photos with).
+     */
+    private boolean authorMayWriteCommunity(UUID authorId) {
+        return membershipRepository.findByUserId(authorId)
+                .map(NeighborhoodMembership::mayUseCommunityWrites)
+                .orElse(false);
     }
 }

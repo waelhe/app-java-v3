@@ -1,5 +1,8 @@
 package com.marketplace.community.spi;
 
+import com.marketplace.community.MembershipVerificationState;
+import com.marketplace.community.NeighborhoodMembership;
+import com.marketplace.community.NeighborhoodMembershipRepository;
 import com.marketplace.community.NeighborhoodPost;
 import com.marketplace.community.NeighborhoodPostRepository;
 import com.marketplace.community.PostCategory;
@@ -29,8 +32,14 @@ import static org.mockito.Mockito.when;
  * author-deleted post answers the honest 404 (the soft-deleted never
  * even reaches the filter — Hibernate's {@code @SoftDelete} hides them
  * from {@code findById} itself), and a VISIBLE post resolves to exactly
- * its id and its author (no JPA relation crosses the boundary — the
- * port's plain-UUID carrier).
+ * its id, its author, and the author's CURRENT community-write right (no
+ * JPA relation crosses the boundary — the port's plain-UUID carrier).
+ *
+ * <p><b>The #484 review round:</b> the carrier's
+ * {@code authorMayWriteCommunity} leg is the membership domain's own
+ * D-N3 verdict — every verification state except REJECTED passes, an
+ * absent membership fails. The media line's write paths gate on it, so a
+ * member rejected after publishing cannot keep attaching photos.
  */
 @ExtendWith(MockitoExtension.class)
 class PostLookupAdapterTest {
@@ -39,6 +48,9 @@ class PostLookupAdapterTest {
 
     @Mock
     private NeighborhoodPostRepository postRepository;
+
+    @Mock
+    private NeighborhoodMembershipRepository membershipRepository;
 
     @InjectMocks
     private PostLookupAdapter adapter;
@@ -53,15 +65,62 @@ class PostLookupAdapterTest {
                 Clock.fixed(FIXED, ZoneOffset.UTC));
     }
 
+    private NeighborhoodMembership membershipInState(MembershipVerificationState state) {
+        // state is produced through the entity's own lifecycle below — the
+        // factory + transitions are the ONLY honest paths to each state.
+        NeighborhoodMembership membership =
+                NeighborhoodMembership.join(authorId, locationId, Clock.fixed(FIXED, ZoneOffset.UTC));
+        if (state != MembershipVerificationState.UNVERIFIED) {
+            membership.requestVerification();
+        }
+        if (state == MembershipVerificationState.REJECTED) {
+            membership.rejectVerification();
+        }
+        if (state == MembershipVerificationState.VERIFIED) {
+            membership.approveVerification();
+        }
+        return membership;
+    }
+
     @Test
-    void visiblePost_resolvesIdAndAuthor() {
+    void visiblePost_resolvesIdAuthorAndTheWriteRight() {
         NeighborhoodPost post = post();
         when(postRepository.findById(post.getId())).thenReturn(Optional.of(post));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipInState(MembershipVerificationState.UNVERIFIED)));
 
         PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
 
         assertThat(info.postId()).isEqualTo(post.getId());
         assertThat(info.authorId()).isEqualTo(authorId);
+        assertThat(info.authorMayWriteCommunity()).isTrue();
+    }
+
+    @Test
+    void visiblePost_byRejectedAuthor_carriesTheRefusedWriteRight() {
+        NeighborhoodPost post = post();
+        when(postRepository.findById(post.getId())).thenReturn(Optional.of(post));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipInState(MembershipVerificationState.REJECTED)));
+
+        PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
+
+        assertThat(info.authorMayWriteCommunity()).isFalse();
+    }
+
+    @Test
+    void visiblePost_byAuthorWithoutMembership_carriesTheRefusedWriteRight() {
+        // The author left (or the row never existed) — there is no
+        // community-write right to attach photos with; the media line's
+        // gate sees the same refusal the post service's own
+        // requireWritableMembership would answer.
+        NeighborhoodPost post = post();
+        when(postRepository.findById(post.getId())).thenReturn(Optional.of(post));
+        when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.empty());
+
+        PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
+
+        assertThat(info.authorMayWriteCommunity()).isFalse();
     }
 
     @Test

@@ -56,4 +56,25 @@ class NeighborhoodMembershipTest {
         assertThat(rejected.mayUseCommunityWrites()).isFalse();
         assertThatThrownBy(rejected::approveVerification).isInstanceOf(IllegalStateException.class);
     }
+
+    /**
+     * The #484 review round's root fix: a REJECTED claim cannot
+     * self-reverse. The member-controlled request used to move REJECTED →
+     * PENDING — and because every state except REJECTED passes the
+     * community write gate, the rejected member regained publish/comment/
+     * react rights without any administrator review. The entity now
+     * ignores the request from REJECTED entirely (the service layer above
+     * answers the explicit 409 so the silence never reaches a client).
+     */
+    @Test
+    void rejectedVerification_cannotSelfReverse_theClaimStaysRejected() {
+        NeighborhoodMembership rejected = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+
+        rejected.requestVerification();
+
+        assertThat(rejected.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
+        assertThat(rejected.mayUseCommunityWrites()).isFalse();
+    }
 }

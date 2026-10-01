@@ -124,7 +124,7 @@ class MediaServiceTest {
     private void mockAuthor() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(postLookupPort.getPostInfo(postId))
-                .thenReturn(new PostLookupPort.PostInfo(postId, userId));
+                .thenReturn(new PostLookupPort.PostInfo(postId, userId, true));
     }
 
     private MediaAsset pendingPostAsset() {
@@ -176,12 +176,31 @@ class MediaServiceTest {
     void requestPostUpload_byNonAuthor_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         when(postLookupPort.getPostInfo(postId))
-                .thenReturn(new PostLookupPort.PostInfo(postId, UUID.randomUUID()));
+                .thenReturn(new PostLookupPort.PostInfo(postId, UUID.randomUUID(), true));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
 
         assertThrows(AccessDeniedException.class,
                 () -> service.requestPostUpload(postId, "image/jpeg", 1024L, authentication));
         verify(repository, never()).save(any());
+    }
+
+    /**
+     * The #484 review round: the community-write gate rides the post
+     * target's request path — a REJECTED membership (or an absent one)
+     * answers the same 403 the post service's own publish/comment/react
+     * commands answer, BEFORE anything is signed or persisted.
+     */
+    @Test
+    void requestPostUpload_byRejectedAuthor_isDeniedBeforeAnyWrite() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, userId, false));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.requestPostUpload(postId, "image/jpeg", 1024L, authentication));
+        verify(repository, never()).save(any());
+        verify(storage, never()).presignUpload(any(), any());
     }
 
     /**
@@ -197,6 +216,10 @@ class MediaServiceTest {
         when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        // The #484 review round: the confirm path re-resolves the post fresh
+        // — the author's write right and the post's visibility both hold
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, userId, true));
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
 
         var view = service.confirmUpload(asset.getId(), authentication);
@@ -206,6 +229,53 @@ class MediaServiceTest {
         assertNull(view.listingId());
         verify(providerLookupPort, never()).findByUserId(any());
         verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.MediaUploadedEvent.class));
+    }
+
+    /**
+     * The #484 review round's measured window, closed: a presigned URL
+     * issued while the author was writable must NOT confirm after the
+     * membership's rejection — the re-resolution refuses with the same
+     * 403, and the asset stays PENDING (never UPLOADED, never served).
+     */
+    @Test
+    void confirmUpload_postAsset_whenAuthorRejected_refusesAndStaysPending() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = pendingPostAsset();
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, userId, false));
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.confirmUpload(asset.getId(), authentication));
+
+        assertEquals(MediaAssetStatus.PENDING_UPLOAD, asset.getStatus());
+        verify(storage, never()).verifyUploaded(any(), any(), org.mockito.ArgumentMatchers.anyLong());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * The confirm re-resolution honors the seam's own VISIBLE-only
+     * contract: a post moderated-hidden between request and confirm
+     * answers the honest 404 (attaching to the dead is nonsense), and
+     * the asset stays PENDING.
+     */
+    @Test
+    void confirmUpload_postAsset_whenPostHidden_answersTheHonest404() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = pendingPostAsset();
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(postLookupPort.getPostInfo(postId))
+                .thenThrow(new ResourceNotFoundException("Post", postId));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.confirmUpload(asset.getId(), authentication));
+
+        assertEquals(MediaAssetStatus.PENDING_UPLOAD, asset.getStatus());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     /**

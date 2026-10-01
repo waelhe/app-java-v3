@@ -83,8 +83,10 @@ public class NeighborhoodMembershipController {
 
     @PostMapping("/me/neighborhood/verification-requests")
     @Operation(summary = "Request manual neighborhood verification",
-            description = "Moves UNVERIFIED (or a previously REJECTED) membership to PENDING. "
-                    + "No SMS, email, or postal provider is contacted; external delivery remains behind G-N2.")
+            description = "Moves an UNVERIFIED membership to PENDING. A REJECTED verdict answers "
+                    + "409 — only an administrator review can change it (the verdict is "
+                    + "administrator-owned in both directions). No SMS, email, or postal provider "
+                    + "is contacted; external delivery remains behind G-N2.")
     public ResponseEntity<NeighborhoodMembershipView> requestVerification(Authentication authentication) {
         return ResponseEntity.ok(membershipService.requestVerification(
                 currentUserProvider.getCurrentUserId(authentication)));

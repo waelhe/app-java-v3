@@ -35,7 +35,15 @@ public interface PostLookupPort {
      * @param postId the community module's post id
      * @return the post's author carrier — {@code authorId} is a plain user
      *         id in the identity seams' space (never a JPA relation across
-     *         the boundary, the V32/V61 discipline)
+     *         the boundary, the V32/V61 discipline), and
+     *         {@code authorMayWriteCommunity} is the author's CURRENT
+     *         community-write right as the membership domain computes it
+     *         (D-N3: every verification state except REJECTED passes; an
+     *         absent membership fails — a non-member holds no community
+     *         write). The #484 review round added the carrier leg so the
+     *         media line's write paths can honor the SAME gate the post
+     *         service's own publish/comment/react commands honor, without
+     *         the media module ever depending on the community module.
      * @throws ResourceNotFoundException if the post does not exist, is
      *         hidden, or is soft-deleted
      */
@@ -44,7 +52,12 @@ public interface PostLookupPort {
     /**
      * Carrier of the post facts the media attachment flow needs. Immutable
      * value object — no behaviour.
+     *
+     * @param authorMayWriteCommunity the author's current community-write
+     *        right (D-N3) — {@code false} for a REJECTED membership or no
+     *        active membership; the media write paths refuse with the
+     *        post service's own 403 when it is {@code false}
      */
-    record PostInfo(UUID postId, UUID authorId) {
+    record PostInfo(UUID postId, UUID authorId, boolean authorMayWriteCommunity) {
     }
 }

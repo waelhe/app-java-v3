@@ -101,9 +101,22 @@ public class NeighborhoodMembership extends BaseEntity {
         return verificationState != MembershipVerificationState.REJECTED;
     }
 
+    /**
+     * The member-controlled re-application: UNVERIFIED → PENDING only.
+     * A REJECTED claim cannot self-reverse (the #484 review round's
+     * measured hole: rejection followed by a member-controlled request
+     * used to move REJECTED → PENDING, and because the write gate admits
+     * every state except REJECTED, the rejected member regained publish/
+     * comment/react rights without any administrator ever looking at the
+     * claim again). Rejection now stays until an administrator acts —
+     * the plan's own "التدفق الأول يدوي إداري فقط" (the review flow is
+     * manual-administrative, in BOTH directions); a rejected member's
+     * honest recovery paths are a fresh review by an administrator, or
+     * leaving and rejoining (a new row — the documented G-N1 trust reset,
+     * visible to the queue as a fresh UNVERIFIED claim).
+     */
     public void requestVerification() {
-        if (verificationState == MembershipVerificationState.UNVERIFIED
-                || verificationState == MembershipVerificationState.REJECTED) {
+        if (verificationState == MembershipVerificationState.UNVERIFIED) {
             verificationState = MembershipVerificationState.PENDING;
         }
     }

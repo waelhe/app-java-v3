@@ -162,6 +162,7 @@ public class MediaService {
 
         PostLookupPort.PostInfo post = postLookupPort.getPostInfo(postId);
         verifyPostAuthorship(post.authorId(), authentication);
+        verifyPostWriteRight(post);
 
         // Display-position allocation must be atomic per post (CodeRabbit
         // #241, the listing flow's exact discipline): the advisory
@@ -185,6 +186,19 @@ public class MediaService {
      * listens AFTER_COMMIT, so the event only exists once this state is
      * durable. A failed verification leaves the asset PENDING — confirmable
      * again.
+     *
+     * <p><b>POST-target assets re-gate at confirm (the #484 review
+     * round):</b> the request path's authorization is a snapshot — the
+     * author's community-write right and the post's visibility can both
+     * change between the presign and the confirm (a membership rejected, a
+     * post moderated-hidden). The listing flow has no equivalent because a
+     * listing has no author-membership concept; the post target does, so
+     * the confirm resolves the post fresh through the same port and re-runs
+     * both gates — a hidden post answers the honest 404 (attaching to the
+     * dead is nonsense the seam already refuses at request time), and a
+     * rejected author answers the same 403 the publish/comment/react
+     * commands answer. The asset stays PENDING on either refusal —
+     * confirmable again only through an honest path.
      */
     @Observed(name = "media.upload.confirm")
     @PreAuthorize("isAuthenticated()")
@@ -192,6 +206,11 @@ public class MediaService {
         S3MediaStorage s3 = requireStorage();
         MediaAsset asset = getById(mediaId);
         verifyAssetOwnership(asset, authentication);
+        if (asset.getPostId() != null && !currentUserProvider.isAdmin(authentication)) {
+            PostLookupPort.PostInfo post = postLookupPort.getPostInfo(asset.getPostId());
+            verifyPostAuthorship(post.authorId(), authentication);
+            verifyPostWriteRight(post);
+        }
 
         boolean verified = s3.verifyUploaded(asset.getObjectKey(), asset.getContentType(), asset.getSizeBytes());
         if (!verified) {
@@ -554,6 +573,23 @@ public class MediaService {
         UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
         if (!authorId.equals(currentUserId)) {
             throw new AccessDeniedException("You are not the author of this post");
+        }
+    }
+
+    /**
+     * L48 + the #484 review round: the post target's community-write gate —
+     * the SAME D-N3 verdict the post service's own publish/comment/react
+     * commands enforce, carried through the port's carrier leg (the
+     * membership domain computes it; this module never sees a membership).
+     * A REJECTED membership (or an absent one — the author left) answers
+     * the explicit 403, so a member rejected after publishing cannot keep
+     * attaching photos to their still-visible post: the reaction/comment
+     * 403 and the photo 403 are one policy, not two.
+     */
+    private void verifyPostWriteRight(PostLookupPort.PostInfo post) {
+        if (!post.authorMayWriteCommunity()) {
+            throw new AccessDeniedException(
+                    "Rejected neighborhood verification cannot publish, comment, or recommend");
         }
     }
 
