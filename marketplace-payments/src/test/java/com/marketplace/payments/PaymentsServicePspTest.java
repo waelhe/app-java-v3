@@ -521,6 +521,9 @@ class PaymentsServicePspTest {
     }
 
     // ---- R1 (Wave 2): the booking-cancellation listener refunds through the ONE
+    // (merge note, waves 2+4): the mocks below stub the R4 COLLECTED scoped search
+    // (SUCCEEDED intents = money-carrying) — the unfiltered findByBookingId the R1
+    // tests were written against was retired by wave 4's one-attempt invariant.
     // channel contract — no dual behaviors for one financial operation ----
 
     /**
@@ -539,7 +542,8 @@ class PaymentsServicePspTest {
         intent.assignPspIntentId("pi_remote_a1");
         Payment payment = Payment.create(intent.getId(), 5000L);
         payment.markCompleted("ch_a1");
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
@@ -576,7 +580,8 @@ class PaymentsServicePspTest {
         intent.assignPspIntentId("pi_remote_a2");
         Payment payment = Payment.create(intent.getId(), 5000L);
         payment.markCompleted("ch_a2");
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.createRemoteRefund(any(), any(), anyString()))
@@ -606,7 +611,8 @@ class PaymentsServicePspTest {
         intent.assignPspIntentId("pi_remote_a3");
         Payment payment = Payment.create(intent.getId(), 5000L);
         payment.markCompleted("ch_a3");
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         when(pspChannel.createRemoteRefund(any(), any(), anyString()))
@@ -633,7 +639,8 @@ class PaymentsServicePspTest {
         intent.markSucceeded();
         Payment payment = Payment.create(intent.getId(), 5000L);
         payment.markCompleted("ch_a4");
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -656,7 +663,8 @@ class PaymentsServicePspTest {
         PaymentIntent intent = PaymentIntent.create(bookingId, UUID.randomUUID(), 5000L, null);
         intent.markProcessing();
         intent.markSucceeded();
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.empty());
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);

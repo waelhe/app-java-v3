@@ -159,9 +159,11 @@ class GeoTreeRedisCacheIntegrationTest {
         assertThat(roundTrip(root)).isEqualTo(root);
         assertThat(roundTrip(root).children().get(0).children()).hasSize(2);
 
+        // R9: the cached stats value carries the per-currency net list —
+        // the CurrencyAmount carrier is Serializable for exactly this seam.
         ProviderStatsResponse stats = new ProviderStatsResponse(
                 Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-30T23:59:59Z"),
-                0.75, 123_456L, 9L);
+                0.75, List.of(new com.marketplace.shared.api.CurrencyAmount("SAR", 123_456L)), 9L);
         assertThat(roundTrip(stats)).isEqualTo(stats);
     }
 

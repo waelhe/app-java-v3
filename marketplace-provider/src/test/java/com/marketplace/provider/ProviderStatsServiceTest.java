@@ -2,12 +2,14 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.BookingStatsPort;
+import com.marketplace.shared.api.CurrencyAmount;
 import com.marketplace.shared.api.LedgerStatsPort;
 import com.marketplace.shared.api.SlotWindowStats;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,25 +48,27 @@ class ProviderStatsServiceTest {
     void threeAggregates_matchTheManualCalculation() {
         // Manual calculation, written down (acceptance criterion 1):
         //   slots in window: 5, of which booked: 2  -> occupancy = 2/5 = 0.4
-        //   ledger net (post-commission, post-refund): 4500 cents
+        //   ledger net PER CURRENCY (R9): 9000 SAR, 4500 USD — never a
+        //   single number summed across currencies
         //   completed bookings in window: 3
         when(availabilityLookupPort.findProviderSlotStats(PROVIDER_ID, FROM, TO))
                 .thenReturn(new SlotWindowStats(5, 2));
-        when(ledgerStatsPort.findNetCentsForProviderBetween(PROVIDER_ID, FROM, TO))
-                .thenReturn(4500L);
+        when(ledgerStatsPort.findNetByCurrencyForProviderBetween(PROVIDER_ID, FROM, TO))
+                .thenReturn(List.of(new CurrencyAmount("SAR", 9000L), new CurrencyAmount("USD", 4500L)));
         when(bookingStatsPort.countCompletedForProviderBetween(PROVIDER_ID, FROM, TO))
                 .thenReturn(3L);
 
         ProviderStatsResponse stats = service.getStats(PROVIDER_ID, WINDOW);
 
         assertThat(stats.occupancyRate()).isCloseTo(2.0 / 5.0, within(1e-9));
-        assertThat(stats.netRevenueCents()).isEqualTo(4500L);
+        assertThat(stats.netRevenue())
+                .containsExactly(new CurrencyAmount("SAR", 9000L), new CurrencyAmount("USD", 4500L));
         assertThat(stats.completedBookings()).isEqualTo(3L);
         assertThat(stats.from()).isEqualTo(FROM);
         assertThat(stats.to()).isEqualTo(TO);
 
         verify(availabilityLookupPort).findProviderSlotStats(PROVIDER_ID, FROM, TO);
-        verify(ledgerStatsPort).findNetCentsForProviderBetween(PROVIDER_ID, FROM, TO);
+        verify(ledgerStatsPort).findNetByCurrencyForProviderBetween(PROVIDER_ID, FROM, TO);
         verify(bookingStatsPort).countCompletedForProviderBetween(PROVIDER_ID, FROM, TO);
         verifyNoMoreInteractions(availabilityLookupPort, ledgerStatsPort, bookingStatsPort);
     }
@@ -73,17 +77,18 @@ class ProviderStatsServiceTest {
     void providerWithoutSlots_reportsZeroOccupancy_neverNaN() {
         when(availabilityLookupPort.findProviderSlotStats(PROVIDER_ID, FROM, TO))
                 .thenReturn(new SlotWindowStats(0, 0));
-        when(ledgerStatsPort.findNetCentsForProviderBetween(PROVIDER_ID, FROM, TO))
-                .thenReturn(0L);
+        when(ledgerStatsPort.findNetByCurrencyForProviderBetween(PROVIDER_ID, FROM, TO))
+                .thenReturn(List.of());
         when(bookingStatsPort.countCompletedForProviderBetween(PROVIDER_ID, FROM, TO))
                 .thenReturn(0L);
 
         ProviderStatsResponse stats = service.getStats(PROVIDER_ID, WINDOW);
 
         // 0 slots is a legitimate answer (a new provider), not a division
-        // error: the ratio is 0.0, the response is honest.
+        // error: the ratio is 0.0, the response is honest. A window with no
+        // ledger movement answers the empty per-currency list.
         assertThat(stats.occupancyRate()).isZero();
-        assertThat(stats.netRevenueCents()).isZero();
+        assertThat(stats.netRevenue()).isEmpty();
         assertThat(stats.completedBookings()).isZero();
     }
 
@@ -93,13 +98,13 @@ class ProviderStatsServiceTest {
         // house exclusive-end convention carried by the window record.
         when(availabilityLookupPort.findProviderSlotStats(PROVIDER_ID, FROM, TO))
                 .thenReturn(new SlotWindowStats(0, 0));
-        when(ledgerStatsPort.findNetCentsForProviderBetween(PROVIDER_ID, FROM, TO)).thenReturn(0L);
+        when(ledgerStatsPort.findNetByCurrencyForProviderBetween(PROVIDER_ID, FROM, TO)).thenReturn(List.of());
         when(bookingStatsPort.countCompletedForProviderBetween(PROVIDER_ID, FROM, TO)).thenReturn(0L);
 
         service.getStats(PROVIDER_ID, WINDOW);
 
         verify(availabilityLookupPort).findProviderSlotStats(PROVIDER_ID, FROM, TO);
-        verify(ledgerStatsPort).findNetCentsForProviderBetween(PROVIDER_ID, FROM, TO);
+        verify(ledgerStatsPort).findNetByCurrencyForProviderBetween(PROVIDER_ID, FROM, TO);
         verify(bookingStatsPort).countCompletedForProviderBetween(PROVIDER_ID, FROM, TO);
     }
 

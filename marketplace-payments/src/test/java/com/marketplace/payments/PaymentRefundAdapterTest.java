@@ -46,7 +46,8 @@ class PaymentRefundAdapterTest {
         Payment refunded = new Payment(paymentId, intentId, 5000L);
         refunded.markCompleted("evt_adapter");
         refunded.markRefunded();
-        when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(paymentsService.refundPayment(paymentId, null))
                 .thenReturn(new PaymentsService.RefundedPayment(refunded, intent));
@@ -73,7 +74,8 @@ class PaymentRefundAdapterTest {
         Payment refunded = new Payment(paymentId, intentId, 5000L);
         refunded.markCompleted("evt_adapter");
         refunded.markRefunded();
-        when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(refunded));
 
         RefundOutcome outcome = adapter.refundForBooking(bookingId, null);
@@ -99,7 +101,8 @@ class PaymentRefundAdapterTest {
         full.markCompleted("evt_adapter");
         full.markPartiallyRefunded(2000L);
         full.markRefunded();
-        when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(partial));
         when(paymentsService.refundPayment(paymentId, null))
                 .thenReturn(new PaymentsService.RefundedPayment(full, intent));
@@ -113,7 +116,8 @@ class PaymentRefundAdapterTest {
     @Test
     void refundForBooking_missingIntent_throws() {
         UUID bookingId = UUID.randomUUID();
-        when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+        when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null));
         verifyNoInteractions(paymentsService);
@@ -124,7 +128,8 @@ class PaymentRefundAdapterTest {
         UUID bookingId = UUID.randomUUID();
         UUID intentId = UUID.randomUUID();
         PaymentIntent intent = new PaymentIntent(intentId, bookingId, UUID.randomUUID(), 5000L, null);
-        when(paymentIntentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(paymentIntentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> adapter.refundForBooking(bookingId, null));

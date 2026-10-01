@@ -81,7 +81,16 @@ class AuditedWritesIntegrationTest {
     private static final UUID CONSUMER_ID = UUID.randomUUID();
     private static final UUID PROVIDER_USER_ID = UUID.randomUUID();
     private static final UUID LISTING_ID = UUID.randomUUID();
-    private static final UUID BOOKING_ID = UUID.randomUUID();
+    /**
+     * R4 (comprehensive-review-ar-fix plan §4/R4): ONE collectible payment
+     * intent per booking is now a database invariant
+     * (uq_payment_intents_one_active_attempt, V74) — each test method gets
+     * its OWN booking (a per-instance id; JUnit builds a fresh instance per
+     * method) so the class's several audited-write tests never collide on
+     * the invariant. The test's subject is the AUDIT COLUMNS surviving on
+     * the Flyway schema, not any specific booking's identity.
+     */
+    private final UUID bookingId = UUID.randomUUID();
 
     /**
      * The real IdentityUserProvider resolves users from JWT subjects — this
@@ -125,7 +134,7 @@ class AuditedWritesIntegrationTest {
                 INSERT INTO bookings (id, listing_id, consumer_id, provider_id, status, price_cents, currency)
                 VALUES (?, ?, ?, ?, 'CONFIRMED', 5000, 'SAR')
                 ON CONFLICT (id) DO NOTHING
-                """, BOOKING_ID, LISTING_ID, CONSUMER_ID, PROVIDER_USER_ID);
+                """, bookingId, LISTING_ID, CONSUMER_ID, PROVIDER_USER_ID);
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(CONSUMER_ID);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
     }
@@ -133,7 +142,7 @@ class AuditedWritesIntegrationTest {
     @Test
     void auditedPaymentWritesSurviveOnTheFlywaySchema() {
         UUID intentId = transactionTemplate.execute(status -> {
-            PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 5000L,
+            PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 5000L,
                     "audit-" + UUID.randomUUID());
             intent = paymentIntentRepository.save(intent);
             Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
@@ -160,7 +169,7 @@ class AuditedWritesIntegrationTest {
     @Test
     void auditedPaymentWriteCarriesThePspLinkColumn() {
         UUID intentId = transactionTemplate.execute(status -> {
-            PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 1000L, null);
+            PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 1000L, null);
             return paymentIntentRepository.save(intent).getId();
         });
 
@@ -179,7 +188,7 @@ class AuditedWritesIntegrationTest {
         SecurityContextHolder.getContext().setAuthentication(consumer);
         try {
             UUID intentId = transactionTemplate.execute(status -> {
-                PaymentIntent intent = PaymentIntent.create(BOOKING_ID, CONSUMER_ID, 2500L, null);
+                PaymentIntent intent = PaymentIntent.create(bookingId, CONSUMER_ID, 2500L, null);
                 return paymentIntentRepository.save(intent).getId();
             });
 

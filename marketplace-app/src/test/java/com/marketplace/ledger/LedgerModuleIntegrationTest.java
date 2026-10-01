@@ -88,9 +88,10 @@ class LedgerModuleIntegrationTest {
      */
     @Test
     void creditFromPayment_createsBalance() {
-        var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L);
+        var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L, "SAR");
         assertThat(balance).isNotNull();
         assertThat(balance.availableCents()).isEqualTo(1000L);
+        assertThat(balance.currency()).isEqualTo("SAR");
     }
 
     /**
@@ -138,8 +139,10 @@ class LedgerModuleIntegrationTest {
      */
         awaitBalance(providerId, priceCents - commissionCents);
 
-        var balance = ledgerService.getBalanceForOwner(providerId);
-        assertThat(balance.availableCents()).isEqualTo(priceCents - commissionCents);
+        var balances = ledgerService.getBalancesForOwner(providerId);
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).availableCents()).isEqualTo(priceCents - commissionCents);
+        assertThat(balances.get(0).currency()).isEqualTo("SAR");
 
         Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
         assertThat(statement.getContent())
@@ -167,12 +170,19 @@ class LedgerModuleIntegrationTest {
                         pageOne.getContent().get(0).getId(), pageTwo.getContent().get(0).getId());
     }
 
-    /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */
+    /**
+     * Plain poll loop (30s / 200ms) — no Awaitility dependency in this
+     * reactor. R9: the poll reads the SAR row (the seeded booking's
+     * currency) through the composite key.
+     */
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
         while (System.nanoTime() < deadline) {
-            last = ledgerService.getBalance(providerId).availableCents();
+            last = ledgerService.getBalances(providerId).stream()
+                    .filter(b -> "SAR".equals(b.currency()))
+                    .mapToLong(ProviderBalanceResponse::availableCents)
+                    .findFirst().orElse(Long.MIN_VALUE);
             if (last == expectedCents) {
                 return;
             }

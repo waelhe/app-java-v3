@@ -54,12 +54,19 @@ class ProviderStatsControllerWebMvcTest {
         when(statsService.getStats(eq(USER_ID), any())).thenReturn(new ProviderStatsResponse(
                 java.time.Instant.parse("2026-09-01T00:00:00Z"),
                 java.time.Instant.parse("2026-10-01T00:00:00Z"),
-                0.4, 4500L, 3L));
+                0.4,
+                java.util.List.of(
+                        new com.marketplace.shared.api.CurrencyAmount("SAR", 4500L),
+                        new com.marketplace.shared.api.CurrencyAmount("USD", 1200L)),
+                3L));
 
         mockMvc.perform(get("/api/v1/providers/me/stats"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.occupancyRate").value(0.4))
-                .andExpect(jsonPath("$.netRevenueCents").value(4500))
+                .andExpect(jsonPath("$.netRevenue[0].currency").value("SAR"))
+                .andExpect(jsonPath("$.netRevenue[0].amountCents").value(4500))
+                .andExpect(jsonPath("$.netRevenue[1].currency").value("USD"))
+                .andExpect(jsonPath("$.netRevenue[1].amountCents").value(1200))
                 .andExpect(jsonPath("$.completedBookings").value(3));
 
         ArgumentCaptor<StatsWindow> window = ArgumentCaptor.forClass(StatsWindow.class);
@@ -75,7 +82,7 @@ class ProviderStatsControllerWebMvcTest {
         when(statsService.getStats(eq(USER_ID), any())).thenReturn(new ProviderStatsResponse(
                 java.time.Instant.parse("2026-09-05T00:00:00Z"),
                 java.time.Instant.parse("2026-09-15T00:00:00Z"),
-                0.5, 0L, 0L));
+                0.5, java.util.List.of(), 0L));
 
         mockMvc.perform(get("/api/v1/providers/me/stats")
                         .param("from", "2026-09-05T00:00:00Z")

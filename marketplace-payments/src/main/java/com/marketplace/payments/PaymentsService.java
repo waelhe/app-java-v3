@@ -369,6 +369,27 @@ public class PaymentsService implements PaymentsSpi {
         bookingInfo.requireParticipant(consumerId);
         bookingInfo.requireStatus("CONFIRMED", "create payment intent");
 
+        // R4 (comprehensive-review-ar-fix plan §4/R4 — one collectible
+        // attempt per booking): a fresh intent requires the booking's
+        // previous attempt to have FAILED or been CANCELLED — any other
+        // live row blocks the creation. The pre-fix code's only dedup
+        // surface was the CALLER-SUPPLIED (optional) idempotency key, so
+        // multiple intents per booking were reachable by construction and
+        // processing each charged the booking again. The guard is the
+        // friendly failure; the partial unique index
+        // uq_payment_intents_one_active_attempt (V74) is the concurrency
+        // backstop for the race past it (the V67 house shape).
+        paymentIntentRepository
+                .findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
+                        bookingId, PaymentIntentStatus.RETRYABLE)
+                .ifPresent(blocking -> {
+                    throw new ConflictException(
+                            "Booking " + bookingId + " already has a payment intent in state "
+                                    + blocking.getStatus() + " (" + blocking.getId()
+                                    + ") — a new attempt requires the previous one to have failed"
+                                    + " or been cancelled");
+                });
+
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(),
                 bookingInfo.currency(), idempotencyKey);
         PaymentIntent saved = paymentIntentRepository.save(intent);
@@ -606,6 +627,13 @@ public class PaymentsService implements PaymentsSpi {
      *       complete the publication instead of re-violating the machine.</li>
      * </ul>
      *
+     * <p><b>R4 scoping (comprehensive-review-ar-fix plan §4/R4):</b> the
+     * intent is resolved through the two STATUS-SCOPED deterministic
+     * searches — the collectible attempt and the money-carrying attempt,
+     * each latest by {@code (createdAt, id)} — never the pre-fix
+     * unfiltered per-booking lookup that returned an arbitrary row once
+     * several intents coexisted for one booking.</p>
+ *
      * <p><b>R1 (Wave 2) — the money-remote half of the SUCCEEDED branch.</b>
      * The full refund of a remotely-charged intent now routes through the one
      * remote-refund contract ({@link #refundThroughChannel}): a PENDING remote
@@ -619,21 +647,47 @@ public class PaymentsService implements PaymentsSpi {
      * then the Event Publication Registry, then the runtime
      * {@code EventPublicationResubmission} sweep — the refund stays pending
      * and retryable until the channel heals, and the intent keeps its true
-     * money state throughout.</p>
-     */
+     * money state throughout.</p>     */
     @Retry(name = "paymentProcessing")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void autoRefundByBooking(UUID bookingId) {
-        paymentIntentRepository.findByBookingId(bookingId).ifPresent(intent -> {
-            switch (intent.getStatus()) {
-                case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
-                case CREATED -> cancelUnpaid(intent);
-                case PROCESSING -> failInFlight(intent);
-                case FAILED, CANCELLED, REFUNDED ->
-                        log.info("Auto-refund for booking {} skipped — intent {} already terminal in {}",
-                                bookingId, intent.getId(), intent.getStatus());
-            }
-        });
+        // R4 (comprehensive-review-ar-fix plan §4/R4): the booking's money
+        // half is STATUS-SCOPED, never an unfiltered per-booking search —
+        // the pre-fix findByBookingId returned an arbitrary row once the
+        // defect let several intents coexist. Two scoped deterministic
+        // searches (latest by (createdAt, id)) carry the S12 contract:
+        // the COLLECTIBLE attempt (if any) is aborted where it stands,
+        // and the COLLECTED attempt (if any) is refunded. Under the R4
+        // invariant the two are mutually exclusive per booking; the
+        // scoped searches stay individually idempotent for redeliveries.
+        paymentIntentRepository
+                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                        bookingId, PaymentIntentStatus.COLLECTIBLE)
+                .ifPresent(intent -> {
+                    switch (intent.getStatus()) {
+                        case CREATED -> cancelUnpaid(intent);
+                        case PROCESSING -> failInFlight(intent);
+                        default ->
+                                log.info("Auto-refund for booking {} skipped — collectible intent {}"
+                                                + " already left the collectible states in {}",
+                                        bookingId, intent.getId(), intent.getStatus());
+                    }
+                });
+        paymentIntentRepository
+                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                        bookingId, PaymentIntentStatus.COLLECTED)
+                .ifPresent(intent -> {
+                    switch (intent.getStatus()) {
+                        case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
+                        case REFUNDED ->
+                                log.info("Auto-refund for booking {} skipped — intent {} already"
+                                                + " terminal in REFUNDED",
+                                        bookingId, intent.getId());
+                        default ->
+                                log.info("Auto-refund for booking {} skipped — intent {} already terminal in {}",
+                                        bookingId, intent.getId(), intent.getStatus());
+                    }
+                });
     }
 
     /**

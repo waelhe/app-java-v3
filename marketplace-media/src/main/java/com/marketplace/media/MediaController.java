@@ -76,14 +76,27 @@ public class MediaController {
      * visibility the listing endpoints grant the listing itself: a guest
      * reading the public detail page sees its photos too. The response
      * carries only time-limited presigned GET URLs for UPLOADED assets.
+     *
+     * <p><b>R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy):</b>
+     * the read is gated by the listing's publication state — ACTIVE
+     * listings serve everyone (anonymous included); DRAFT/PAUSED/ARCHIVED
+     * listings answer the public listing surface's own 404 to everyone but
+     * the owning provider (and admins). The optional {@code Authentication}
+     * parameter is the L34 optional-identity seam — the same shape
+     * {@code POST /api/v1/listings/{id}/leads} (lead capture) carries for
+     * public surfaces that accept both anonymous and authenticated
+     * callers; an invalid presented token never reaches here (the
+     * resource-server filter rejects it with 401 first).</p>
      */
     @GetMapping("/media/listings/{listingId}")
     @Operation(summary = "List a listing's media",
             description = "Every UPLOADED asset in display order, each with a freshly presigned "
-                    + "GET URL. Public read — same visibility as the listing endpoints.")
+                    + "GET URL. Public read for ACTIVE listings — same visibility as the listing "
+                    + "endpoints; non-public listings (draft/paused/archived) answer 404 to "
+                    + "everyone but the owning provider.")
     public ResponseEntity<List<MediaService.MediaAssetView>> listByListing(
-            @PathVariable UUID listingId) {
-        return ResponseEntity.ok(mediaService.listByListing(listingId));
+            @PathVariable UUID listingId, Authentication authentication) {
+        return ResponseEntity.ok(mediaService.listByListing(listingId, authentication));
     }
 
     @DeleteMapping("/media/{id}")

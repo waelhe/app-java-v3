@@ -53,6 +53,9 @@ class MediaModuleIntegrationTest {
     ListingPriceProvider listingPriceProvider;
 
     @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
+
+    @MockitoBean
     ProviderLookupPort providerLookupPort;
 
     @Autowired
@@ -73,7 +76,9 @@ class MediaModuleIntegrationTest {
 
     @Test
     void listByListing_whenUnconfigured_answers503() {
-        assertThatThrownBy(() -> mediaService.listByListing(UUID.randomUUID()))
+        // R5: the storage gate fires before the publication-state gate's
+        // port call (requireStorage() first) — the honest inert answer.
+        assertThatThrownBy(() -> mediaService.listByListing(UUID.randomUUID(), null))
                 .isInstanceOf(ServiceUnavailableException.class);
     }
 
