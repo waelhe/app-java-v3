@@ -251,6 +251,37 @@ class MediaServiceTest {
                 java.util.List.of(postId), MediaAssetStatus.UPLOADED);
     }
 
+    /**
+     * The 2026-10-01 CI round's measured fix, pinned: a feed page whose
+     * posts carry NO photos never requires the storage channel — the
+     * text feed survives an unconfigured storage (the honest degradation)
+     * instead of the whole surface failing with the 503 that killed three
+     * NeighborhoodPostModuleIntegrationTest criteria and two
+     * ContentReportModuleIntegrationTest criteria.
+     */
+    @Test
+    void listByPostIds_noRowsAndNoStorage_answersTheHonestEmptyList() {
+        when(storageProvider.getIfAvailable()).thenReturn(null);
+        when(repository.findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
+                java.util.List.of(postId), MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of());
+
+        assertEquals(List.of(), service.listByPostIds(java.util.List.of(postId)));
+    }
+
+    /**
+     * The mirror for the listing gallery: a photo-less listing's read
+     * survives an unconfigured storage channel the same way.
+     */
+    @Test
+    void listByListing_noRowsAndNoStorage_answersTheHonestEmptyList() {
+        when(storageProvider.getIfAvailable()).thenReturn(null);
+        when(repository.findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of());
+
+        assertEquals(List.of(), service.listByListing(listingId));
+    }
+
     @Test
     void requestUpload_withoutStorageConfigured_answers503() {
         when(storageProvider.getIfAvailable()).thenReturn(null);

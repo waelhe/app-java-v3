@@ -207,9 +207,20 @@ public class MediaService {
      */
     @Transactional(readOnly = true)
     public List<MediaAssetView> listByListing(UUID listingId) {
+        // Query FIRST, require storage only when presigning is actually
+        // needed (the 2026-10-01 CI round's measured fix): a photo-less
+        // listing's read never touches storage, so an unconfigured
+        // storage channel degrades to the honest empty gallery instead
+        // of failing the WHOLE surface — the same empty-page-costs-nothing
+        // rule the feed's grouped read documents. Production (storage
+        // configured) is byte-identical: rows exist, presigning runs.
+        List<MediaAsset> assets = mediaAssetRepository
+                .findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED);
+        if (assets.isEmpty()) {
+            return List.of();
+        }
         S3MediaStorage s3 = requireStorage();
-        return mediaAssetRepository
-                .findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED)
+        return assets
                 .stream()
                 .map(asset -> toView(asset,
                         s3.presignDownload(asset.getObjectKey()),
@@ -231,9 +242,20 @@ public class MediaService {
         if (postIds == null || postIds.isEmpty()) {
             return List.of();
         }
+        // Query FIRST, require storage only when presigning is actually
+        // needed (the 2026-10-01 CI round's measured fix): a feed page
+        // whose posts carry NO photos never touches storage — the
+        // "empty page costs nothing" rule generalized to "no rows, no
+        // storage" — so every text-only feed read works on an
+        // unconfigured channel instead of failing the whole surface with
+        // a 503. Production (storage configured) is byte-identical.
+        List<MediaAsset> assets = mediaAssetRepository
+                .findByPostIdInAndStatusOrderByPostIdAscPositionAsc(postIds, MediaAssetStatus.UPLOADED);
+        if (assets.isEmpty()) {
+            return List.of();
+        }
         S3MediaStorage s3 = requireStorage();
-        return mediaAssetRepository
-                .findByPostIdInAndStatusOrderByPostIdAscPositionAsc(postIds, MediaAssetStatus.UPLOADED)
+        return assets
                 .stream()
                 .map(asset -> new MediaLookupPort.PostMediaEntry(
                         asset.getPostId(),
