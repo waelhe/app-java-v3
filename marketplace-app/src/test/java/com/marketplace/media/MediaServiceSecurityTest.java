@@ -127,8 +127,18 @@ class MediaServiceSecurityTest {
     @Test
     @WithMockUser(roles = "CONSUMER")
     void listByListing_isOpenToAuthenticatedRoles() {
-        // read path carries no @PreAuthorize — any authenticated role reaches it
+        // read path carries no @PreAuthorize — any authenticated role reaches it.
+        // The 2026-10-01 reorder made a no-rows read return the honest empty
+        // list WITHOUT asking the (inert) storage seam, so the gate-passed
+        // proof now rides one UPLOADED row: the read reaches presigning and
+        // answers the honest 503 — never AccessDenied.
+        UUID listingId = UUID.randomUUID();
+        MediaAsset uploaded = MediaAsset.create(listingId, UUID.randomUUID(),
+                "listings/" + listingId + "/proof.jpg", "image/jpeg", 1024L, 1);
+        uploaded.markUploaded();
+        org.mockito.Mockito.when(mediaAssetRepository.findByListingIdAndStatusOrderByPositionAsc(
+                listingId, MediaAssetStatus.UPLOADED)).thenReturn(java.util.List.of(uploaded));
         assertThatExceptionOfType(ServiceUnavailableException.class).isThrownBy(
-                () -> mediaService.listByListing(UUID.randomUUID()));
+                () -> mediaService.listByListing(listingId));
     }
 }
