@@ -9,6 +9,8 @@ import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.api.SystemSettingKeys;
+import com.marketplace.shared.api.PublishedReviewView;
+import com.marketplace.shared.api.PublishedReviewsPort;
 import com.marketplace.shared.api.SystemSettingsPort;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,7 @@ class ProviderPublicPageServiceTest {
     private final CatalogSearchPort catalogSearchPort = mock(CatalogSearchPort.class);
     private final ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
     private final SystemSettingsPort systemSettingsPort = mock(SystemSettingsPort.class);
+    private final PublishedReviewsPort publishedReviewsPort = mock(PublishedReviewsPort.class);
 
     private final ProviderPublicPageService service = publicPageService(ReviewMode.VERIFIED_ONLY);
 
@@ -48,8 +51,12 @@ class ProviderPublicPageServiceTest {
     private ProviderPublicPageService publicPageService(ReviewMode mode) {
         when(systemSettingsPort.getStringOrDefault(
                 eq(SystemSettingKeys.REVIEWS_MODE), anyString())).thenReturn(mode.name());
+        // W1: the reviews block's port — the honest empty page unless a
+        // test stubs real rows (the neutral request answered empty).
+        when(publishedReviewsPort.findPublishedByProviderUserId(any(UUID.class), any(PagedRequest.class)))
+                .thenAnswer(invocation -> PagedResponse.empty(invocation.getArgument(1, PagedRequest.class)));
         return new ProviderPublicPageService(providerService, catalogSearchPort,
-                reviewStatsPort, systemSettingsPort);
+                reviewStatsPort, systemSettingsPort, publishedReviewsPort);
     }
 
     private static ProviderProfile profile(ProviderStatus status, UUID userId) {
@@ -74,7 +81,7 @@ class ProviderPublicPageServiceTest {
         when(reviewStatsPort.findStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(providerId, 4.5, 12)));
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.status()).isEqualTo(ProviderStatus.VERIFIED);
         assertThat(result.actorType()).isEqualTo(ProviderActorType.INDEPENDENT_BROKER);
@@ -106,7 +113,7 @@ class ProviderPublicPageServiceTest {
         when(reviewStatsPort.findGeneralStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(userId, 4.2, 156)));
 
-        var result = publicPageService(ReviewMode.HYBRID).getPublicPage(providerId, pageable);
+        var result = publicPageService(ReviewMode.HYBRID).getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.ratingAverage()).isEqualTo(4.8);
         assertThat(result.reviewCount()).isEqualTo(23L);
@@ -131,7 +138,7 @@ class ProviderPublicPageServiceTest {
         when(reviewStatsPort.findGeneralStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(userId, 4.2, 156)));
 
-        var result = publicPageService(ReviewMode.OPEN).getPublicPage(providerId, pageable);
+        var result = publicPageService(ReviewMode.OPEN).getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.ratingAverage()).isEqualTo((4.8 * 23 + 4.2 * 156) / 179.0);
         assertThat(result.reviewCount()).isEqualTo(179L);
@@ -147,7 +154,7 @@ class ProviderPublicPageServiceTest {
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
         when(reviewStatsPort.findStatsByProviderId(providerId)).thenReturn(Optional.empty());
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.status()).isEqualTo(ProviderStatus.SUSPENDED);
         assertThat(result.listings().totalElements()).isZero();
@@ -163,7 +170,7 @@ class ProviderPublicPageServiceTest {
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.PENDING, UUID.randomUUID()));
         when(reviewStatsPort.findStatsByProviderId(providerId)).thenReturn(Optional.empty());
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.listings().totalElements()).isZero();
         verifyNoInteractions(catalogSearchPort);
@@ -178,7 +185,7 @@ class ProviderPublicPageServiceTest {
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, null));
         when(reviewStatsPort.findStatsByProviderId(providerId)).thenReturn(Optional.empty());
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.listings().totalElements()).isZero();
         verifyNoInteractions(catalogSearchPort);
@@ -193,7 +200,7 @@ class ProviderPublicPageServiceTest {
                 .thenReturn(PagedResponse.empty(PagedRequest.of(0, 20)));
         when(reviewStatsPort.findStatsByProviderId(any())).thenReturn(Optional.empty());
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.ratingAverage()).isNull();
         assertThat(result.reviewCount()).isZero();
@@ -208,12 +215,43 @@ class ProviderPublicPageServiceTest {
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, null));
 
-        var result = service.getPublicPage(providerId, pageable);
+        var result = service.getPublicPage(providerId, pageable, pageable);
 
         assertThat(result.ratingAverage()).isNull();
         assertThat(result.reviewCount()).isZero();
         assertThat(result.listings().totalElements()).isZero();
-        verifyNoInteractions(catalogSearchPort, reviewStatsPort);
+        assertThat(result.reviews().totalElements()).isZero();
+        verifyNoInteractions(catalogSearchPort, reviewStatsPort, publishedReviewsPort);
+    }
+
+    /**
+     * W1 (§4.4/§4.5): the reviews block rides the page through the shared
+     * port with the provider's USER id (never the profile id), the mode
+     * is declared on the response, and the block is served for a
+     * non-VERIFIED provider too (reviews are the reviewed party's public
+     * record, not inventory).
+     */
+    @Test
+    void reviewsBlock_ridesThePortWithTheUserId_andTheModeIsDeclared() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable listingsPageable = PageRequest.of(0, 20);
+        Pageable reviewsPageable = PageRequest.of(0, 10);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
+        PublishedReviewView row = new PublishedReviewView(UUID.randomUUID(), 5, "Sourdough sells out by noon",
+                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", "Nour", 7L, 3L);
+        when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(row), reviewsPageable, 1)));
+
+        var result = service.getPublicPage(providerId, listingsPageable, reviewsPageable);
+
+        assertThat(result.reviewsMode()).isEqualTo("VERIFIED_ONLY");
+        assertThat(result.reviews().totalElements()).isEqualTo(1);
+        assertThat(result.reviews().content().getFirst().reviewerName()).isEqualTo("Nour");
+        assertThat(result.reviews().content().getFirst().helpfulCount()).isEqualTo(3);
+        // the block is NOT VERIFIED-gated: a suspended provider's reviews
+        // stay public while his inventory is hidden (the listings gate).
+        assertThat(result.listings().totalElements()).isZero();
     }
 
     @Test
@@ -221,7 +259,7 @@ class ProviderPublicPageServiceTest {
         UUID providerId = UUID.randomUUID();
         when(providerService.getById(providerId)).thenThrow(new ResourceNotFoundException("Provider not found"));
 
-        assertThatThrownBy(() -> service.getPublicPage(providerId, PageRequest.of(0, 20)))
+        assertThatThrownBy(() -> service.getPublicPage(providerId, PageRequest.of(0, 20), PageRequest.of(0, 20)))
                 .isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(catalogSearchPort, reviewStatsPort);
     }

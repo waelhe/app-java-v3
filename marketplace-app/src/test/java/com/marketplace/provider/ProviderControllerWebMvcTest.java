@@ -74,15 +74,22 @@ class ProviderControllerWebMvcTest {
         var page = new com.marketplace.provider.ProviderPublicPageResponse(
                 id, "Qudsia Prime", "Bio", com.marketplace.provider.ProviderStatus.VERIFIED,
                 com.marketplace.provider.ProviderActorType.AGENCY, "Qudsia Prime Estates",
-                "BR-2026-1149", java.time.Instant.parse("2026-09-15T00:00:00Z"), 4.5, 12L,
+                "BR-2026-1149", java.time.Instant.parse("2026-09-15T00:00:00Z"),
+                "HYBRID", 4.5, 12L,
                 4.2, 156L,
+                new com.marketplace.shared.api.PagedResponse<>(
+                        List.of(new com.marketplace.shared.api.PublishedReviewView(
+                                UUID.randomUUID(), 5, "Great local bakery", "Thank you",
+                                null, java.time.Instant.parse("2026-09-20T00:00:00Z"),
+                                "ORGANIC", "Nour", 7L, 3L)),
+                        0, 10, 1, 1, true),
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(
                                 UUID.randomUUID(), "Sunny flat", "APARTMENT",
                                 java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime")),
                         0, 20, 1, 1, true));
 
-        when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class)))
+        when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class), any(Pageable.class)))
                 .thenReturn(page);
 
         mockMvc.perform(get("/api/v1/providers/{id}/public", id))
@@ -98,13 +105,18 @@ class ProviderControllerWebMvcTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.reviewCount").value(12))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.ratingGeneralAverage").value(4.2))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.ratingGeneralCount").value(156))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.reviewsMode").value("HYBRID"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.reviews.totalElements").value(1))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.reviews.content[0].origin").value("ORGANIC"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.reviews.content[0].reviewerName").value("Nour"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.reviews.content[0].helpfulCount").value(3))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.listings.totalElements").value(1))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.listings.content[0].title").value("Sunny flat"));
     }
 
     @Test
     void getPublicPage_unknownProvider_answers404() throws Exception {
-        when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class)))
+        when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class), any(Pageable.class)))
                 .thenThrow(new com.marketplace.shared.api.ResourceNotFoundException("Provider not found"));
 
         mockMvc.perform(get("/api/v1/providers/{id}/public", UUID.randomUUID()))

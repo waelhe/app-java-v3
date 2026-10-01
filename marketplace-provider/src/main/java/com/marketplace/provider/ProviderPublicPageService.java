@@ -2,7 +2,10 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.PublishedReviewView;
+import com.marketplace.shared.api.PublishedReviewsPort;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.SpringPagination;import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
@@ -63,21 +66,25 @@ public class ProviderPublicPageService {
     private final CatalogSearchPort catalogSearchPort;
     private final ReviewStatsPort reviewStatsPort;
     private final SystemSettingsPort systemSettingsPort;
+    private final PublishedReviewsPort publishedReviewsPort;
 
     public ProviderPublicPageService(ProviderService providerService,
                                      CatalogSearchPort catalogSearchPort,
                                      ReviewStatsPort reviewStatsPort,
-                                     SystemSettingsPort systemSettingsPort) {
+                                     SystemSettingsPort systemSettingsPort,
+                                     PublishedReviewsPort publishedReviewsPort) {
         this.providerService = providerService;
         this.catalogSearchPort = catalogSearchPort;
         this.reviewStatsPort = reviewStatsPort;
         this.systemSettingsPort = systemSettingsPort;
+        this.publishedReviewsPort = publishedReviewsPort;
     }
 
-    public ProviderPublicPageResponse getPublicPage(UUID providerId, Pageable pageable) {
+    public ProviderPublicPageResponse getPublicPage(UUID providerId, Pageable listingsPageable,
+                                                       Pageable reviewsPageable) {
         ProviderProfile profile = providerService.getById(providerId);
 
-        Page<ListingSummary> listingsPage = listingsBlock(profile, pageable);
+        Page<ListingSummary> listingsPage = listingsBlock(profile, listingsPageable);
         PagedResponse<ListingSummary> listings = PagedResponse.of(listingsPage);
 
         Optional<ReviewStats> verified = profile.getUserId() == null
@@ -129,6 +136,19 @@ public class ProviderPublicPageService {
             }
         };
 
+        // W1 (§4.4/§4.5): the reviews block — the PUBLISHED forward page of
+        // this provider, composed through the shared port (the NEUTRAL
+        // contracts: the reviews pageable translates through the documented
+        // SpringPagination interop corner before it crosses the boundary).
+        // The block is NOT VERIFIED-gated (reviews are the reviewed party's
+        // public record, not inventory) and a profile without a linked user
+        // id can own no reviews (the same honest empty block as the rating
+        // pair).
+        PagedRequest reviewsRequest = SpringPagination.toPagedRequest(reviewsPageable);
+        PagedResponse<PublishedReviewView> reviews = profile.getUserId() == null
+                ? PagedResponse.empty(reviewsRequest)
+                : publishedReviewsPort.findPublishedByProviderUserId(profile.getUserId(), reviewsRequest);
+
         return new ProviderPublicPageResponse(
                 profile.getId(),
                 profile.getDisplayName(),
@@ -138,10 +158,12 @@ public class ProviderPublicPageService {
                 profile.getAgencyName(),
                 profile.getLicenseNumber(),
                 profile.getCreatedAt(),
+                mode.name(),
                 block.ratingAverage(),
                 block.reviewCount(),
                 block.ratingGeneralAverage(),
                 block.ratingGeneralCount(),
+                reviews,
                 listings);
     }
 

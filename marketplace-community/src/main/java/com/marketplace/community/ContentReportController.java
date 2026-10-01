@@ -82,7 +82,7 @@ public class ContentReportController {
             return ReportTargetType.valueOf(raw.trim());
         } catch (IllegalArgumentException invalid) {
             throw new BadRequestException(
-                    "Invalid targetType '" + raw + "' — valid values: POST, COMMENT");
+                    "Invalid targetType '" + raw + "' — valid values: POST, COMMENT, REVIEW");
         }
     }
 

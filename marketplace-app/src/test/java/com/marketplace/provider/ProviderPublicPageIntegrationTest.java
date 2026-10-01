@@ -166,7 +166,7 @@ class ProviderPublicPageIntegrationTest {
      */
     @Test
     void verifiedBrokerPage_showsPersonaActiveListingsAndRating() {
-        var page = publicPageService.getPublicPage(profileId, PageRequest.of(0, 20));
+        var page = publicPageService.getPublicPage(profileId, PageRequest.of(0, 20), PageRequest.of(0, 10));
 
         // The persona block (criterion 1's VERIFIED broker with his page):
         assertThat(page.status()).isEqualTo(ProviderStatus.VERIFIED);
@@ -201,7 +201,7 @@ class ProviderPublicPageIntegrationTest {
         assertThat(profile.getStatus()).isEqualTo(ProviderStatus.VERIFIED);
         providerService.suspend(profileId);
 
-        var page = publicPageService.getPublicPage(profileId, PageRequest.of(0, 20));
+        var page = publicPageService.getPublicPage(profileId, PageRequest.of(0, 20), PageRequest.of(0, 10));
 
         assertThat(page.status()).isEqualTo(ProviderStatus.SUSPENDED);
         assertThat(page.listings().totalElements()).isZero();
@@ -214,7 +214,7 @@ class ProviderPublicPageIntegrationTest {
 
     @Test
     void unknownProvider_answers404() {
-        assertThatThrownBy(() -> publicPageService.getPublicPage(UUID.randomUUID(), PageRequest.of(0, 20)))
+        assertThatThrownBy(() -> publicPageService.getPublicPage(UUID.randomUUID(), PageRequest.of(0, 20), PageRequest.of(0, 10)))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
     }
 
