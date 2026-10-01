@@ -1,26 +1,34 @@
--- W0 (yelp-level-plan §5 — التحكم): جدول إعدادات المنصة. هذا هو التحكم
--- الأول في السلسلة: صفوف قابلة للتعديل من السطح الإداري دون إعادة نشر،
--- تُقرأ عبر منفذ مكاشد في W1 (بوابة إنشاء المراجعات تقرأ reviews.mode).
+-- W0 (yelp-level-plan §5 — the control layer): the platform settings table.
+-- The first control of its kind in the codebase: rows editable from the
+-- administrative surface without a redeploy, read through a cached port in
+-- W1 (the review-creation gate reads reviews.mode).
 --
--- قواعد الإسناد (§1.4 من الخطة الحاكمة):
---   * أعمدة BaseEntity كاملة من اليوم الأول (درس V25/V32 — كل عمود يُنشأ
---     مع الجدول لا يُضاف لاحقاً).
---   * CHECK بنمط V44: NOT VALID (فهرس الميتاداتا فقط — قيد فوري للصفوف
---     الجديدة) ثم VALIDATE في معاملتها الخاصة (درس V66: داخل معاملة واحدة
---     يبقى القفل المحتجز حتى الالتزام).
---   * الفهرس الفريد عالمي على المفتاح: المفتاح هوية الإعداد ولا يُعاد
---     تدويره — قرار V70 المضاد (uq_categories_code: الهوية لا تُعفى
---     بالحذف الناعم كي لا يُعاد تدوير مفتاح بجوار بيانات قديمة تحمله).
---   * المرآة system_settings_aud بنمط V24: كل الأعمدة قابلة للإفراغ (سجل
---     DEL يحمل (id, rev, revtype) وحدها — درس V24/الذي عولج في V54).
---   * القيمة JSONB عبر الرسم الرسمي Hibernate (V48 amenities / V54
---     criteria — @JdbcTypeCode(SqlTypes.JSON)) — الشكل polymorphic:
---     نص/عدد/منطق/كائن كما تحتاجه سياسات W1+.
---   * البذرة تتجاوز Envers بطبعها (سابقة geo D-E11 وV70 categories: المرآة
---     تسجّل أول كتابة إدارية حقيقية).
+-- Attribution rules (the governing plan's §1.4):
+--   * Full BaseEntity columns from day one (the V25/V32 lesson — every
+--     column is born with the table, never added later).
+--   * CHECK in the V44 shape: NOT VALID (metadata-only index — an
+--     immediate constraint for new rows) then VALIDATE in its own
+--     transaction (the V66 lesson: inside one transaction the held lock
+--     stays held until commit).
+--   * The unique index over the key is GLOBAL: the key is the setting's
+--     identity and is never recycled — the V70 counter-decision
+--     (uq_categories_code: an identity is not released by soft deletion,
+--     so a recreated row can never sit beside stale data carrying the
+--     same key).
+--   * The system_settings_aud mirror in the V24 shape: all columns
+--     nullable (a DEL revision carries (id, rev, revtype) alone — the
+--     V24 lesson, addressed again in V54).
+--   * The JSONB value through Hibernate's official mapping (V48
+--     amenities / V54 criteria — @JdbcTypeCode(SqlTypes.JSON)) — the
+--     polymorphic shape: string/number/boolean/object as the W1+
+--     policies need.
+--   * The seed bypasses Envers by nature (the geo D-E11 and V70
+--     categories precedent: the mirror records the first real
+--     administrative write).
 --
--- حقوق العبور: /api/v1/admin/** => hasRole(ADMIN) في سلسلة SecurityConfig
--- (L30) + المستوى الصنفي على AdminController + مستوى الخدمة — ثلاث طبقات.
+-- Access rights: /api/v1/admin/** => hasRole(ADMIN) in the SecurityConfig
+-- chain (L30) + the class level on AdminController + the service level —
+-- three layers.
 
 CREATE TABLE system_settings (
     id          UUID PRIMARY KEY,
@@ -33,7 +41,7 @@ CREATE TABLE system_settings (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by  VARCHAR(200),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- شكل المفتاح: فولذي منقوط (reviews.mode / reviews.organic.daily-cap).
+    -- The key shape: a lowercase dotted identifier (reviews.mode / reviews.organic.daily-cap).
     CONSTRAINT chk_system_settings_key
         CHECK (setting_key = lower(setting_key)
            AND length(setting_key) BETWEEN 1 AND 100
@@ -43,12 +51,12 @@ CREATE TABLE system_settings (
 
 ALTER TABLE system_settings VALIDATE CONSTRAINT chk_system_settings_key;
 
--- المفتاح هوية الإعداد (عالمي، لا شرط الحذف الناعم — قرار V70 للهوية).
+-- The key is the setting's identity (global, no soft-delete predicate — the V70 identity decision).
 CREATE UNIQUE INDEX uq_system_settings_key
     ON system_settings (setting_key);
 
--- البذرة: بوابة المراجعات تبقى في وضعها الراهن تماماً (صفر تغيير سلوك
--- مرئي — معيار قبول W0). معرف ثابت لِماَ يُقرأ من الـ seed نفسه.
+-- The seed: the review gate stays exactly in its current mode (zero visible
+-- behavior change — W0's acceptance criterion). A fixed id, read from the seed itself.
 INSERT INTO system_settings (id, setting_key, setting_value, description)
 VALUES ('71717171-7171-4171-8171-717171717171',
         'reviews.mode',

@@ -1,5 +1,6 @@
--- W1 (yelp-level plan §4.5 — إبلاغ المراجعة): the content_reports target_type
--- widening by REVIEW — "توسيع CHECK + ثابت enum بنمط V68/V69".
+-- W1 (yelp-level plan §4.5 — review reporting): the content_reports target_type
+-- widening by REVIEW — "توسيع CHECK + ثابت enum بنمط V68/V69" (the CHECK widening
+-- + enum constant pair in the V68/V69 shape).
 --
 -- The V68 shape verbatim: DROP the old constraint + ADD the widened list
 -- NOT VALID. NOT VALID is the V44 locking shape — a metadata-only statement,
