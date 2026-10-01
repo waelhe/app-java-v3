@@ -124,6 +124,29 @@ class NeighborhoodMembershipModuleIntegrationTest {
         return userId;
     }
 
+    /**
+     * The administrative post-processor — the REAL resource-server chain on
+     * the full integration context accepts JWT authentications only (the
+     * moderation queue's own green pattern, ContentReportModuleIntegrationTest):
+     * a method-level @WithMockUser mock token answers 401 on the web layer,
+     * and a bare direct service call past @PreAuthorize answers
+     * AuthenticationCredentialsNotFound — the admin JWT post-processor is
+     * the one shape both layers accept.
+     */
+    private static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j.subject("n5-verification-admin"))
+                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+    }
+
+    /** The REJECT review over the REAL admin channel (the setup the dn3 split probes needs). */
+    private void rejectOverHttp(UUID membershipId) throws Exception {
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification", membershipId)
+                        .queryParam("decision", "REJECT")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("REJECTED"));
+    }
+
     /** Joins the given node over the REAL chain; asserts the given status. */
     private void joinOverHttp(UUID userId, String locationId, int expectedStatus) throws Exception {
         mockMvc.perform(put("/api/v1/me/neighborhood")
@@ -187,7 +210,11 @@ class NeighborhoodMembershipModuleIntegrationTest {
         membershipService.join(author, location);
         UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
         membershipService.requestVerification(rejectedUser);
-        membershipService.reviewVerification(rejectedMembership, false);
+        // the REJECT review rides the REAL admin channel: @PreAuthorize on the
+        // service answers AuthenticationCredentialsNotFound for a bare direct
+        // call (no security context), so the setup goes through HTTP with the
+        // admin JWT — exactly the channel the queue below audits
+        rejectOverHttp(rejectedMembership);
 
         // a healthy author's real post — the content the rejected member reads
         asCaller(author);
@@ -236,7 +263,6 @@ class NeighborhoodMembershipModuleIntegrationTest {
      * queue's own end-to-end shape applied to the lifecycle.
      */
     @Test
-    @WithMockUser(roles = "ADMIN")
     void verificationQueue_readsThePendingPage_andDrainsOnReview() throws Exception {
         UUID requester = UUID.randomUUID();
         UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
@@ -244,41 +270,45 @@ class NeighborhoodMembershipModuleIntegrationTest {
 
         // before the request: the membership is not in the PENDING page
         mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
-                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
                         .isEmpty());
 
         // the request moves it to PENDING — the queue's own page carries it
-        // (the .with(jwt()) post-processor replaces the authentication for
-        // THIS request alone; the method-level @WithMockUser ADMIN context
-        // serves the administrative reads below untouched)
+        // (the .with(jwt()) post-processor carries the member's own
+        // authentication for THIS request alone; the administrative reads
+        // below carry the adminJwt() post-processor — the REAL chain's one
+        // accepted admin shape, the helper's own javadoc above)
         asCaller(requester);
         mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verificationState").value("PENDING"));
 
-        // the ADMIN queue read (the method-level test context restored by the
-        // annotation on THIS method — the asCaller mock switch does not affect
-        // roles): the membership appears in the PENDING page
+        // the ADMIN queue read: the membership appears in the PENDING page
         mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
-                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
                         .isNotEmpty());
 
         // the review drains the queue and lands the trust mark
         mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification",
-                        membershipId).queryParam("decision", "APPROVE"))
+                        membershipId).queryParam("decision", "APPROVE")
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verificationState").value("VERIFIED"));
         mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
-                        .queryParam("state", "PENDING").queryParam("size", "50"))
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
                         .isEmpty());
         mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
-                        .queryParam("state", "VERIFIED").queryParam("size", "50"))
+                        .queryParam("state", "VERIFIED").queryParam("size", "50")
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
                         .isNotEmpty());
@@ -556,11 +586,17 @@ class NeighborhoodMembershipModuleIntegrationTest {
         UUID rowId = view.view().id();
 
         // A raw SQL writer that bypasses the entity floor cannot invent a
-        // verification state (D-N3: VERIFIED is reserved behind G-N2) —
-        // PostgreSQL SQLSTATE 23514 with V60's constraint name.
+        // state OUTSIDE the measured vocabulary — V78's CHECK answers
+        // PostgreSQL SQLSTATE 23514 with the constraint's own name.
+        // (VERIFIED itself stays column-writable BY DESIGN: the trust mark's
+        // reservation is the state machine's own — the entity's transition
+        // methods plus the service's @PreAuthorize ADMIN gate over the real
+        // chain, exactly what the queue test above drives end to end; the
+        // DB floor guards the vocabulary, not the transitions.)
         Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(() ->
-                jdbc.update("UPDATE neighborhood_memberships SET verification_state = 'VERIFIED' "
+                jdbc.update("UPDATE neighborhood_memberships SET verification_state = 'TRUSTED-BY-NOBODY' "
                         + "WHERE id = ?", rowId));
+        assertThat(thrown).isNotNull();
         Throwable root = thrown;
         while (root.getCause() != null && root.getCause() != root) {
             root = root.getCause();

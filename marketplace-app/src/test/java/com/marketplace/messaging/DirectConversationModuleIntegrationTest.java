@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -324,5 +325,44 @@ class DirectConversationModuleIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"recipientId\": \"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void v78_rejectedVerification_opensNoNewDirectConversation() throws Exception {
+        // The V78 trust gate on the direct-open point, over the REAL chain:
+        // the membership lifecycle (join → the verification request → the
+        // administrative REJECT) rides the real endpoints, then the REJECTED
+        // member's direct-open answers the explicit 403 — new threads are
+        // closed to rejected membership, exactly the gate the residency-
+        // verification wave documented (MessagingModuleIntegrationTest's
+        // slice mock cannot pin this: only the full context wires the
+        // community module's real NeighborhoodTrustLookupPort).
+        UUID rejected = seededUser("v78-rejected");
+        UUID recipient = seededUser("v78-recipient");
+
+        // the lifecycle over the real channel (the geo seed's fixed
+        // Qudsayya old-town level-3 node)
+        asCaller(rejected);
+        mockMvc.perform(put("/api/v1/me/neighborhood")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"11111111-1111-4111-8111-111111111104\"}"))
+                .andExpect(status().isCreated());
+        String pending = mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("PENDING"))
+                .andReturn().getResponse().getContentAsString();
+        UUID membershipId = UUID.fromString(
+                com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                        .readTree(pending).get("id").asText());
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification", membershipId)
+                        .queryParam("decision", "REJECT")
+                        .with(jwt().jwt(j -> j.subject("v78-admin"))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("REJECTED"));
+
+        // the gate: the REJECTED member's direct-open answers 403
+        openDirectOverHttp(rejected, recipient, 403);
     }
 }
