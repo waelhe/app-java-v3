@@ -5,8 +5,13 @@ import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ConflictException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -115,8 +120,18 @@ public class NeighborhoodMembershipService {
             // transaction: a later failure rolls this back with the insert.
             repository.flush();
         }
-        NeighborhoodMembership saved =
-                repository.save(NeighborhoodMembership.join(userId, locationId, clock));
+        // The #484 review round's verdict carry: the REJECTED verdict is
+        // the one admin decision that follows the USER — read the latest
+        // row INCLUDING soft-deleted ones BEFORE creating the fresh claim,
+        // so a leave/rejoin or a neighborhood switch cannot mint an
+        // UNVERIFIED row that resurrects the write gate the administrator
+        // closed. Every other state births UNVERIFIED (the status quo).
+        NeighborhoodMembership fresh = NeighborhoodMembership.join(userId, locationId, clock);
+        if (MembershipVerificationState.REJECTED.name()
+                .equals(repository.findLatestVerificationStateIncludingDeleted(userId))) {
+            fresh.inheritRejectedVerdict();
+        }
+        NeighborhoodMembership saved = repository.save(fresh);
         return new MembershipCommandResult(NeighborhoodMembershipView.of(saved), true);
     }
 
@@ -144,6 +159,92 @@ public class NeighborhoodMembershipService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No neighborhood membership to leave"));
         repository.delete(membership);
+    }
+
+    /**
+     * Manual, provider-free verification request. An administrator is the
+     * first runnable verifier — and the only one who can UNDO a verdict:
+     * the #484 review round closed the measured self-reversal hole (a
+     * rejected member re-requesting moved REJECTED → PENDING and regained
+     * the write gate without any review), so a REJECTED claim now answers
+     * its own explicit 409 — the member's ONE honest recovery path is an
+     * administrator's APPROVE (the re-admission lever); leave-and-rejoin
+     * carries the verdict forward, so the fresh row is born REJECTED.
+     */
+    @Observed(name = "community.membership.verification.request")
+    public NeighborhoodMembershipView requestVerification(UUID userId) {
+        NeighborhoodMembership membership = repository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No neighborhood membership to verify"));
+        MembershipVerificationState state = membership.getVerificationState();
+        if (state == MembershipVerificationState.REJECTED) {
+            throw new ConflictException(
+                    "Membership verification was rejected — only an administrator review can change that verdict");
+        }
+        if (state == MembershipVerificationState.PENDING
+                || state == MembershipVerificationState.VERIFIED) {
+            throw new ConflictException("Membership verification is already " + state);
+        }
+        membership.requestVerification();
+        return NeighborhoodMembershipView.of(repository.save(membership));
+    }
+
+    /**
+     * The administrative review — the verdict's ONLY mover, in BOTH
+     * directions (the #484 review round's completion): APPROVE admits a
+     * PENDING claim and RE-ADMITS a REJECTED one (the recovery lever
+     * that makes the carried verdict honest — without it, a rejection
+     * inherited across a rejoin would be a permanent user-level ban with
+     * no recourse); REJECT refuses a PENDING claim. Nothing else in the
+     * system moves these states: the member-controlled request only
+     * UNVERIFIED → PENDING.
+     */
+    @Observed(name = "community.membership.verification.review")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public NeighborhoodMembershipView reviewVerification(UUID membershipId, boolean approve) {
+        NeighborhoodMembership membership = repository.findById(membershipId)
+                .orElseThrow(() -> new ResourceNotFoundException("NeighborhoodMembership", membershipId));
+        try {
+            if (approve) {
+                membership.approveVerification();
+            } else {
+                membership.rejectVerification();
+            }
+        } catch (IllegalStateException invalidTransition) {
+            throw new ConflictException(invalidTransition.getMessage());
+        }
+        return NeighborhoodMembershipView.of(repository.save(membership));
+    }
+
+    /**
+     * The verification queue's complete drain order (D-N5's determinism
+     * rule): the state's own clock — {@code updatedAt} ASC (the request's
+     * UNVERIFIED→PENDING transition is the row's last write, so the oldest
+     * pending claim drains first), {@code id} breaking ties. The admin
+     * read rides the moderation queue's own shape: the optional state axis
+     * filters one state, absent = the whole membership ledger, read-only,
+     * soft-deleted rows hidden by the derived query's own filter.
+     */
+    private static final Sort VERIFICATION_QUEUE_SORT =
+            Sort.by(Sort.Direction.ASC, "updatedAt", "id");
+
+    /**
+     * The administrative verification queue (the lifecycle's review
+     * surface): {@code GET /api/v1/admin/neighborhood-memberships}. A null
+     * state reads every ACTIVE membership (the ledger); a state filters to
+     * its own page — PENDING is the reviewable queue, REJECTED/VERIFIED the
+     * decision trails, UNVERIFIED the untouched floor.
+     */
+    @Observed(name = "community.membership.verification.queue")
+    @Transactional(readOnly = true)
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public Page<NeighborhoodMembershipView> getVerificationQueue(
+            MembershipVerificationState state, Pageable pageable) {
+        Pageable queuePageable = PageRequest.of(
+                pageable.getPageNumber(), pageable.getPageSize(), VERIFICATION_QUEUE_SORT);
+        Page<NeighborhoodMembership> page = state == null
+                ? repository.findAll(queuePageable)
+                : repository.findByVerificationState(state, queuePageable);
+        return page.map(NeighborhoodMembershipView::of);
     }
 
     /**

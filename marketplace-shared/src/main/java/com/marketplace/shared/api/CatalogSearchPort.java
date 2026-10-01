@@ -24,13 +24,26 @@ public interface CatalogSearchPort {
     /**
      * Full-text search over listing title and description.
      *
-     * @param query raw user input — parsed by the official PostgreSQL
-     *              {@code websearch_to_tsquery}, which accepts unformatted text
-     *              and the web-search operators {@code "quoted phrase"},
-     *              {@code OR} and {@code -exclusion}. Never pre-mangled by
-     *              callers; arbitrary special characters are not an error.
+     * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5 — the composed
+     * text+filter search):</b> the contract carries the FULL criteria —
+     * the text query AND the optional catalog predicates (category /
+     * price bounds / guests) compose into ONE query whose count and
+     * pagination apply the same restriction. The former text-only
+     * contract let a text query silently drop every riding filter (the
+     * review's R6: a {@code q + category + maxPrice + guests} request
+     * answered the unfiltered text match set).</p>
+     *
+     * @param criteria the full search criteria — {@code criteria.query()}
+     *                 is the raw user input parsed by the official
+     *                 PostgreSQL {@code websearch_to_tsquery}, which
+     *                 accepts unformatted text and the web-search
+     *                 operators {@code "quoted phrase"}, {@code OR} and
+     *                 {@code -exclusion}. Never pre-mangled by callers;
+     *                 arbitrary special characters are not an error. The
+     *                 optional predicates ride the same native query's
+     *                 predicate blocks.
      */
-    PagedResponse<ListingSummary> searchFullText(String query, PagedRequest request);
+    PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request);
 
     PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request);
 
@@ -49,8 +62,13 @@ public interface CatalogSearchPort {
      * Full-text search restricted to the given providers — same ranking and
      * the same typo-tolerance fallback as {@link #searchFullText}, plus the
      * {@code provider_id} restriction.
+     *
+     * <p><b>R6 (Wave 5):</b> carries the FULL criteria like
+     * {@link #searchFullText} — the text query composes with the optional
+     * catalog predicates inside the same restricted query (and its
+     * count), instead of dropping them.</p>
      */
-    PagedResponse<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, PagedRequest request);
+    PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request);
 
     /**
      * Criteria search restricted to the given providers — covers the
@@ -92,8 +110,15 @@ public interface CatalogSearchPort {
      * typo-tolerance fallback as {@link #searchFullText}, plus the
      * {@code id} restriction. Text searches rank by relevance: the facet
      * sort whitelist does not apply (documented).
+     *
+     * <p><b>R6 (Wave 5):</b> carries the FULL criteria like
+     * {@link #searchFullText} — the text query composes with the optional
+     * catalog predicates inside the same id-restricted query (and its
+     * count), instead of dropping them. The property flow's text branch
+     * and the saved-search matcher's membership probe ride this
+     * composition.</p>
      */
-    PagedResponse<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, PagedRequest request);
+    PagedResponse<ListingSummary> searchFullTextRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request);
 
     /**
      * The ids of every ACTIVE listing (soft-delete filtered) — the

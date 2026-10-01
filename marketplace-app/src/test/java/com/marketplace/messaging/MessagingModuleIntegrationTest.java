@@ -101,6 +101,19 @@ class MessagingModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ListingPriceProvider listingPriceProvider;
 
+    // V78 (residency verification — REJECTED members open no NEW direct
+    // chats): the trust seam the direct-open gate consults. The community
+    // module owns the implementation; this standalone slice cannot see it,
+    // so it joins the standard @MockitoBean boundary the four above already
+    // form (the slice convention). Unstubbed, trustFor answers null and the
+    // gate's null-safe comparison reads as NOT-REJECTED — the existing
+    // direct-chat rounds stay green; the REJECTED refusal itself is pinned
+    // on the REAL chain in DirectConversationModuleIntegrationTest
+    // (v78_rejectedVerification_opensNoNewDirectConversation — the full
+    // context wires the community module's real implementation).
+    @MockitoBean
+    com.marketplace.shared.api.NeighborhoodTrustLookupPort neighborhoodTrustLookupPort;
+
     @Autowired
     private MessagingService messagingService;
 

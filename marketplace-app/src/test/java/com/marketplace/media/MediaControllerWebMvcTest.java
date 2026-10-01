@@ -103,7 +103,7 @@ class MediaControllerWebMvcTest {
         UUID id = UUID.randomUUID();
         when(mediaService.confirmUpload(eq(id), any()))
                 .thenReturn(new MediaService.MediaAssetView(
-                        id, UUID.randomUUID(), "image/jpeg", 1024L, "UPLOADED", 1,
+                        id, UUID.randomUUID(), null, "image/jpeg", 1024L, "UPLOADED", 1,
                         "https://signed-get", null, null));
 
         mockMvc.perform(post("/api/v1/media/{id}/complete", id))
@@ -111,11 +111,53 @@ class MediaControllerWebMvcTest {
                 .andExpect(jsonPath("$.status").value("UPLOADED"));
     }
 
+    /**
+     * L48: the post target rides the SAME single upload channel — a
+     * member (CONSUMER role, no PROVIDER) reaches the post flow, and the
+     * author gate lives in the service.
+     */
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void requestUpload_postTarget_reachesThePostFlow() throws Exception {
+        UUID postId = UUID.randomUUID();
+        when(mediaService.requestPostUpload(eq(postId), eq("image/jpeg"), eq(1024L), any()))
+                .thenReturn(new MediaService.MediaUploadView(
+                        UUID.randomUUID(), "posts/" + postId + "/x.jpg",
+                        "https://signed", java.time.Duration.ofMinutes(15)));
+
+        mockMvc.perform(post("/api/v1/media/uploads")
+                        .contentType("application/json")
+                        .content("""
+                                {"postId": "%s", "contentType": "image/jpeg", "sizeBytes": 1024}
+                                """.formatted(postId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uploadUrl").value("https://signed"))
+                .andExpect(jsonPath("$.objectKey").value("posts/" + postId + "/x.jpg"));
+    }
+
+    /**
+     * L48: the exactly-one-target type gate answers the house 400 at the
+     * boundary — carrying BOTH targets never reaches the service.
+     */
+    @Test
+    @WithMockUser(roles = "PROVIDER")
+    void requestUpload_bothTargets_is400AtTheBoundary() throws Exception {
+        mockMvc.perform(post("/api/v1/media/uploads")
+                        .contentType("application/json")
+                        .content("""
+                                {"listingId": "%s", "postId": "%s", "contentType": "image/jpeg", "sizeBytes": 1024}
+                                """.formatted(UUID.randomUUID(), UUID.randomUUID())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VAL-001"));
+    }
+
     @Test
     @WithMockUser(roles = "CONSUMER")
     void listByListing_returnsOkArray() throws Exception {
         UUID listingId = UUID.randomUUID();
-        when(mediaService.listByListing(listingId)).thenReturn(List.of());
+        org.mockito.Mockito.when(mediaService.listByListing(
+                org.mockito.ArgumentMatchers.eq(listingId), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/media/listings/{listingId}", listingId))
                 .andExpect(status().isOk())

@@ -25,9 +25,8 @@ import java.util.UUID;
  *       location through {@code GeoLookupPort} (D-N2: the neighborhood IS
  *       a level-3 geo node of the ONE administrative hierarchy; there is
  *       no parallel geography).</li>
- *   <li>{@code verificationState} carries {@code SELF_DECLARED} only
- *       (D-N3 — {@link MembershipVerificationState} documents the G-N2
- *       reservation); the V60 CHECK backs the floor at the database.</li>
+ *   <li>{@code verificationState} is the single residency-trust lifecycle;
+ *       there is no parallel identity. Provider verification remains behind G-N2.</li>
  *   <li>{@code memberSince} is the domain's own timestamp — the moment
  *       the user (re)joined. It equals the row's creation instant by
  *       construction (a rejoin after leaving is a NEW row, so the
@@ -85,7 +84,7 @@ public class NeighborhoodMembership extends BaseEntity {
     public static NeighborhoodMembership join(UUID userId, UUID locationId, Clock clock) {
         NeighborhoodMembership membership =
                 new NeighborhoodMembership(UUID.randomUUID(), userId, locationId);
-        membership.verificationState = MembershipVerificationState.SELF_DECLARED;
+        membership.verificationState = MembershipVerificationState.UNVERIFIED;
         membership.memberSince = clock.instant();
         return membership;
     }
@@ -96,4 +95,66 @@ public class NeighborhoodMembership extends BaseEntity {
     public UUID getLocationId() { return locationId; }
     public MembershipVerificationState getVerificationState() { return verificationState; }
     public Instant getMemberSince() { return memberSince; }
+
+    /** UNVERIFIED/PENDING/VERIFIED retain baseline compatibility; rejected claims cannot write. */
+    public boolean mayUseCommunityWrites() {
+        return verificationState != MembershipVerificationState.REJECTED;
+    }
+
+    /**
+     * The member-controlled re-application: UNVERIFIED → PENDING only.
+     * A REJECTED claim cannot self-reverse (the #484 review round's
+     * measured hole: rejection followed by a member-controlled request
+     * used to move REJECTED → PENDING, and because the write gate admits
+     * every state except REJECTED, the rejected member regained publish/
+     * comment/react rights without any administrator ever looking at the
+     * claim again). Rejection now stays until an administrator acts —
+     * the plan's own "التدفق الأول يدوي إداري فقط" (the review flow is
+     * manual-administrative, in BOTH directions); a rejected member's ONE
+     * honest recovery path is an administrator's APPROVE (the re-admission
+     * lever) — leaving and rejoining carries the verdict forward now, so
+     * the fresh row is born REJECTED and never resurrects the write gate.
+     */
+    public void requestVerification() {
+        if (verificationState == MembershipVerificationState.UNVERIFIED) {
+            verificationState = MembershipVerificationState.PENDING;
+        }
+    }
+
+    public void approveVerification() {
+        if (verificationState != MembershipVerificationState.PENDING
+                && verificationState != MembershipVerificationState.REJECTED) {
+            throw new IllegalStateException("Only PENDING or REJECTED memberships can be approved");
+        }
+        verificationState = MembershipVerificationState.VERIFIED;
+    }
+
+    public void rejectVerification() {
+        if (verificationState != MembershipVerificationState.PENDING) {
+            throw new IllegalStateException("Only PENDING memberships can be rejected");
+        }
+        verificationState = MembershipVerificationState.REJECTED;
+    }
+
+    /**
+     * The verdict-carrying birth (#484 review round, second path): a
+     * rejoin or switch by a user whose LATEST membership row —
+     * INCLUDING the soft-deleted — carried the REJECTED verdict is born
+     * REJECTED, never UNVERIFIED. Without this, leaving and rejoining
+     * (or switching neighborhoods) minted a fresh UNVERIFIED row and
+     * resurrected the write gate the administrator had just closed —
+     * the rejection followed the row, not the user, so it was
+     * unenforceable against a determined member. The refusal verdict is
+     * the one admin decision that follows the USER (every other state
+     * births UNVERIFIED — the status quo: the fresh claim carries its
+     * own state); {@code memberSince} still restarts honestly — the
+     * clock is a time fact, the verdict is a trust fact.
+     *
+     * <p>Package-private by design: only the service's join command
+     * performs this birth, after reading the user's latest verdict
+     * through the repository's including-deleted native read.
+     */
+    void inheritRejectedVerdict() {
+        this.verificationState = MembershipVerificationState.REJECTED;
+    }
 }

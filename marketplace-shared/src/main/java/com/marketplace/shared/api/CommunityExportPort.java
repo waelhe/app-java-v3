@@ -45,4 +45,34 @@ public interface CommunityExportPort {
      * posts.
      */
     List<CommunityCommentExportEntry> exportCommentsForOwner(UUID userId);
+
+    /**
+     * Every reaction the subject ever left, across all posts — live and
+     * removed — in stable {@code (created_at, id)} order. The reaction is
+     * the subject's stored personal data (which post they thanked, and
+     * when), so it rides the b-2 export like every other first-party
+     * community fact (b-5: a removed reaction is still stored data until
+     * the retention window closes). The #484 review round added this leg
+     * — the L47 layer had ridden V73 with no export coverage at all.
+     */
+    List<CommunityReactionExportEntry> exportReactionsForOwner(UUID userId);
+
+    /**
+     * L49 (the events layer): every event the subject ever organized —
+     * upcoming, past and organizer-deleted — in stable
+     * {@code (created_at, id)} order. The event is authored personal
+     * data (title, description, the display labels), which is why it
+     * rides the b-2 export at all (the L47 reactions' deliberate
+     * exclusion reasoned from "no authored text" — the event carries
+     * four authored columns, so it rides).
+     */
+    List<CommunityEventExportEntry> exportEventsForOwner(UUID userId);
+
+    /**
+     * L49: every seat the subject ever took — held and freed — in
+     * stable {@code (created_at, id)} order. The seat is
+     * identifiers-and-timestamps personal data (the attendance
+     * declaration itself), the reaction row's own class of member data.
+     */
+    List<CommunityEventSeatExportEntry> exportEventSeatsForOwner(UUID userId);
 }

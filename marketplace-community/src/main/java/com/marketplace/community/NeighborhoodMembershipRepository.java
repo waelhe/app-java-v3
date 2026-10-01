@@ -1,5 +1,7 @@
 package com.marketplace.community;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.history.RevisionRepository;
 
@@ -32,4 +34,35 @@ public interface NeighborhoodMembershipRepository
      * G-N1's active slot admits — a left member is never alerted.
      */
     java.util.List<NeighborhoodMembership> findByLocationId(UUID locationId);
+
+    /**
+     * The verification queue's paged read (the lifecycle's own review
+     * surface): the ACTIVE memberships of one verification state. The
+     * soft-delete filter hides left rows exactly as every derived query
+     * does — a LEFT membership holds no reviewable claim (its slot was
+     * released; the rejoin's fresh row is the claim that carries state).
+     */
+    Page<NeighborhoodMembership> findByVerificationState(
+            MembershipVerificationState verificationState, Pageable pageable);
+
+    /**
+     * The user's LATEST membership verdict INCLUDING soft-deleted rows
+     * (#484 review round) — the one read that sees past Hibernate's
+     * {@code @SoftDelete} filter, exactly the way the export adapter's
+     * native SQL does (the same house channel for soft-deleted facts).
+     * The join command reads it before creating a fresh row so the
+     * REJECTED verdict follows the USER across a leave/rejoin or a
+     * neighborhood switch — without it, a fresh UNVERIFIED row
+     * resurrected the write gate the administrator had just closed.
+     *
+     * @return the stored name of the most recent membership's state
+     *         ({@code created_at DESC, id DESC}), or {@code null} for a
+     *         user who never held any membership row
+     */
+    @org.springframework.data.jpa.repository.Query(value =
+            "SELECT verification_state FROM neighborhood_memberships "
+                    + "WHERE user_id = :userId ORDER BY created_at DESC, id DESC LIMIT 1",
+            nativeQuery = true)
+    String findLatestVerificationStateIncludingDeleted(
+            @org.springframework.data.repository.query.Param("userId") UUID userId);
 }

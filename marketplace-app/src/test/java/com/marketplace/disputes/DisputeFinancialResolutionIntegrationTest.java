@@ -266,12 +266,19 @@ class DisputeFinancialResolutionIntegrationTest {
         assertThat(latest.getRefundPaymentId()).isNull();
     }
 
-    /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */
+    /**
+     * Plain poll loop (30s / 200ms) — no Awaitility dependency in this
+     * reactor. R9: the poll reads the SAR row (the seeded booking's
+     * currency) through the per-currency read.
+     */
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         Long last = null;
         while (System.nanoTime() < deadline) {
-            last = ledgerService.getBalance(providerId).availableCents();
+            last = ledgerService.getBalances(providerId).stream()
+                    .filter(b -> "SAR".equals(b.currency()))
+                    .mapToLong(com.marketplace.ledger.ProviderBalanceResponse::availableCents)
+                    .findFirst().orElse(Long.MIN_VALUE);
             if (last != null && last == expectedCents) {
                 return;
             }

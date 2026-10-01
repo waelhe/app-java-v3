@@ -36,8 +36,9 @@ class PaymentsServiceTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
     private final Authentication authentication = mock(Authentication.class);
+    private final WebhookEventRecorder webhookEventRecorder = new WebhookEventRecorder(webhookEventRepository);
     private final PaymentIntentSettlementService settlementService = new PaymentIntentSettlementService(
-            intentRepository, paymentRepository, eventPublisher);
+            intentRepository, paymentRepository, eventPublisher, webhookEventRecorder);
     private final PaymentsService service = new PaymentsService(
             intentRepository,
             paymentRepository,
@@ -46,7 +47,7 @@ class PaymentsServiceTest {
             currentUserProvider,
             bookingParticipantProvider,
             webhookSecurity,
-            new WebhookEventRecorder(webhookEventRepository),
+            webhookEventRecorder,
             settlementService,
             pspChannel
     );
@@ -142,6 +143,89 @@ class PaymentsServiceTest {
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
 
         assertThrows(IllegalStateException.class, () -> service.createIntent(bookingId, consumerId, null));
+    }
+
+    // ---- R4 (comprehensive-review-ar-fix plan §4/R4): one collectible attempt per booking ----
+
+    @Test
+    void createIntent_rejectsWhileACollectibleAttemptIsLive() {
+        // The defect's own shape: a second intent for the same booking —
+        // the optional idempotency key never prevented it. The guard
+        // answers the friendly Conflict; V74's partial unique index is the
+        // concurrency backstop behind it.
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent liveAttempt = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), create(UUID.class))
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
+                .create();
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.RETRYABLE)).thenReturn(Optional.of(liveAttempt));
+
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> service.createIntent(bookingId, consumerId, null));
+        verify(intentRepository, never()).save(any(PaymentIntent.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void createIntent_rejectsAfterTheBookingCollected() {
+        // The double-charge window: the booking is PAID (a collected row
+        // exists) — a fresh attempt would charge it again. The plan's model
+        // sentence: a new intent only after the previous FAILED or was
+        // CANCELLED, so SUCCEEDED (and PARTIALLY_REFUNDED / REFUNDED) block
+        // the creation too.
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        PaymentIntent paidIntent = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getId), create(UUID.class))
+                .set(field(PaymentIntent::getBookingId), bookingId)
+                .set(field(PaymentIntent::getStatus), PaymentIntentStatus.SUCCEEDED)
+                .create();
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "SAR")
+                .create();
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.RETRYABLE)).thenReturn(Optional.of(paidIntent));
+
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> service.createIntent(bookingId, consumerId, null));
+        verify(intentRepository, never()).save(any(PaymentIntent.class));
+    }
+
+    @Test
+    void createIntent_allowsANewAttemptAfterThePreviousFailed() {
+        // The model's own allowance: FAILED (and CANCELLED) are retryable —
+        // the blocking search finds nothing, the attempt is created.
+        UUID bookingId = create(UUID.class);
+        UUID consumerId = create(UUID.class);
+        BookingInfo bookingInfo = of(BookingInfo.class)
+                .set(field(BookingInfo::consumerId), consumerId)
+                .set(field(BookingInfo::status), "CONFIRMED")
+                .set(field(BookingInfo::priceCents), 5000L)
+                .set(field(BookingInfo::currency), "USD")
+                .create();
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        when(intentRepository.findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.RETRYABLE)).thenReturn(Optional.empty());
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent intent = service.createIntent(bookingId, consumerId, null);
+
+        assertEquals(PaymentIntentStatus.CREATED, intent.getStatus());
+        verify(intentRepository).save(any(PaymentIntent.class));
     }
 
     @Test
@@ -569,7 +653,8 @@ class PaymentsServiceTest {
                 .set(field(Payment::getAmountCents), 5000L)
                 .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -602,7 +687,8 @@ class PaymentsServiceTest {
                 .set(field(Payment::getAmountCents), 5000L)
                 .set(field(Payment::getRefundedAmountCents), 2000L)
                 .create();
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -625,7 +711,8 @@ class PaymentsServiceTest {
                 .set(field(PaymentIntent::getStatus), PaymentIntentStatus.CREATED)
                 .set(field(PaymentIntent::getAmountCents), 5000L)
                 .create();
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTIBLE)).thenReturn(Optional.of(intent));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.autoRefundByBooking(bookingId);
@@ -654,7 +741,8 @@ class PaymentsServiceTest {
                 .set(field(Payment::getAmountCents), 5000L)
                 .set(field(Payment::getRefundedAmountCents), 0L)
                 .create();
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+        when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                bookingId, PaymentIntentStatus.COLLECTIBLE)).thenReturn(Optional.of(intent));
         when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
         when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -679,7 +767,13 @@ class PaymentsServiceTest {
                     .set(field(PaymentIntent::getStatus), terminal)
                     .set(field(PaymentIntent::getAmountCents), 5000L)
                     .create();
-            when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.of(intent));
+            // R4: REFUNDED resolves through the COLLECTED search (the switch's
+            // no-op case); FAILED and CANCELLED resolve through NEITHER scoped
+            // search — both complete as no-ops with nothing stubbed.
+            if (terminal == PaymentIntentStatus.REFUNDED) {
+                when(intentRepository.findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(
+                        bookingId, PaymentIntentStatus.COLLECTED)).thenReturn(Optional.of(intent));
+            }
 
             // Pre-fix behavior: unconditional markRefunded() threw ConflictException on every
             // resubmission — the eternal Modulith retry loop (S12). The guard completes instead.
@@ -697,7 +791,7 @@ class PaymentsServiceTest {
     @Test
     void autoRefundByBooking_withoutIntent_completesQuietly() {
         UUID bookingId = create(UUID.class);
-        when(intentRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+        // R4: neither scoped search finds an attempt for the booking.
 
         assertDoesNotThrow(() -> service.autoRefundByBooking(bookingId));
 

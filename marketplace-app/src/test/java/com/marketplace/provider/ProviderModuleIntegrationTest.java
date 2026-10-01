@@ -156,13 +156,15 @@ class ProviderModuleIntegrationTest {
         // is the module's own.
         when(availabilityLookupPort.findProviderSlotStats(any(), any(), any()))
                 .thenReturn(new com.marketplace.shared.api.SlotWindowStats(10, 4));
-        when(ledgerStatsPort.findNetCentsForProviderBetween(any(), any(), any())).thenReturn(9000L);
+        when(ledgerStatsPort.findNetByCurrencyForProviderBetween(any(), any(), any()))
+                .thenReturn(java.util.List.of(new com.marketplace.shared.api.CurrencyAmount("SAR", 9000L)));
         when(bookingStatsPort.countCompletedForProviderBetween(any(), any(), any())).thenReturn(7L);
 
         var stats = providerStatsService.getStats(UUID.randomUUID(), StatsWindow.lastThirtyDays(Instant.now()));
 
         assertThat(stats.occupancyRate()).isCloseTo(0.4, org.assertj.core.data.Offset.offset(1e-9));
-        assertThat(stats.netRevenueCents()).isEqualTo(9000L);
+        assertThat(stats.netRevenue())
+                .containsExactly(new com.marketplace.shared.api.CurrencyAmount("SAR", 9000L));
         assertThat(stats.completedBookings()).isEqualTo(7L);
     }
 }

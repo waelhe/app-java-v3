@@ -1,8 +1,11 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PostCommentedEvent;
+import com.marketplace.shared.api.PostReactedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -20,12 +24,14 @@ import org.springframework.security.access.AccessDeniedException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,10 +66,16 @@ class NeighborhoodPostServiceTest {
     private PostCommentRepository commentRepository;
 
     @Mock
+    private PostReactionRepository reactionRepository;
+
+    @Mock
     private NeighborhoodMembershipRepository membershipRepository;
 
     @Mock
     private GeoLookupPort geoLookupPort;
+
+    @Mock
+    private MediaLookupPort mediaLookupPort;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -75,7 +87,8 @@ class NeighborhoodPostServiceTest {
     @BeforeEach
     void setUp() {
         service = new NeighborhoodPostService(repository, commentRepository,
-                membershipRepository, geoLookupPort, eventPublisher, clock);
+                reactionRepository, membershipRepository, geoLookupPort, mediaLookupPort,
+                eventPublisher, clock);
     }
 
     private UUID authorId = UUID.randomUUID();
@@ -366,5 +379,258 @@ class NeighborhoodPostServiceTest {
         // The house soft delete — never a physical remove anywhere.
         verify(repository).delete(post);
         verify(repository, never()).deleteById(any(UUID.class));
+    }
+
+    // ---------- L47: react / removeReaction / the feed's reaction facts ----------
+
+    @Test
+    void react_unknownPost_isTheHonest404() {
+        when(repository.findById(postId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.react(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reactionRepository, never()).save(any());
+    }
+
+    @Test
+    void react_hiddenPost_is404_reactionsAbsentAsThePostItself() {
+        NeighborhoodPost hidden = visiblePost(authorId, locationId);
+        hideByModerator(hidden);
+        when(repository.findById(postId)).thenReturn(Optional.of(hidden));
+
+        assertThatThrownBy(() -> service.react(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reactionRepository, never()).save(any());
+    }
+
+    @Test
+    void react_noMembership_is403BeforeAnyWrite() {
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.react(commenterId, postId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(reactionRepository, never()).save(any());
+    }
+
+    @Test
+    void react_membershipInADifferentNeighborhood_is403() {
+        UUID otherLocation = UUID.randomUUID();
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, otherLocation)));
+
+        assertThatThrownBy(() -> service.react(commenterId, postId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(reactionRepository, never()).save(any());
+    }
+
+    @Test
+    void react_oneVoicePerMember_is409BeforeAnyWrite() {
+        // The product's own «صوت واحد لكل عضو»: the explicit 409 first,
+        // the V70 partial unique index the backstop.
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, locationId)));
+        when(reactionRepository.findByPostIdAndMemberId(postId, commenterId))
+                .thenReturn(Optional.of(PostReaction.reaction(postId, commenterId)));
+
+        assertThatThrownBy(() -> service.react(commenterId, postId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("One thank per member");
+        verify(reactionRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void react_memberOfThePostsNeighborhood_savesAndPublishesTheEvent() {
+        NeighborhoodPost post = visiblePost(authorId, locationId);
+        when(repository.findById(postId)).thenReturn(Optional.of(post));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, locationId)));
+        when(reactionRepository.findByPostIdAndMemberId(postId, commenterId))
+                .thenReturn(Optional.empty());
+        when(reactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        PostReactionView view = service.react(commenterId, postId);
+
+        assertThat(view.postId()).isEqualTo(postId);
+        assertThat(view.memberId()).isEqualTo(commenterId);
+        // The event is the fact — published for EVERY reaction (the self-thank
+        // skip is the listener's policy), carrying both ids.
+        ArgumentCaptor<PostReactedEvent> event =
+                ArgumentCaptor.forClass(PostReactedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().postId()).isEqualTo(postId);
+        assertThat(event.getValue().reactorId()).isEqualTo(commenterId);
+        assertThat(event.getValue().postAuthorId()).isEqualTo(authorId);
+    }
+
+    @Test
+    void removeReaction_unknownPost_isTheHonest404() {
+        when(repository.findById(postId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.removeReaction(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reactionRepository, never()).delete(any(PostReaction.class));
+    }
+
+    @Test
+    void removeReaction_noLiveVoice_isTheHonest404() {
+        // The leave-neighborhood convention: there is nothing to remove.
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, locationId)));
+        when(reactionRepository.findByPostIdAndMemberId(postId, commenterId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.removeReaction(commenterId, postId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reactionRepository, never()).delete(any(PostReaction.class));
+    }
+
+    @Test
+    void removeReaction_membershipInADifferentNeighborhood_is403() {
+        UUID otherLocation = UUID.randomUUID();
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, otherLocation)));
+
+        assertThatThrownBy(() -> service.removeReaction(commenterId, postId))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(reactionRepository, never()).delete(any(PostReaction.class));
+    }
+
+    @Test
+    void removeReaction_theOwnersVoice_softDeletes_andFreesTheVoice() {
+        when(repository.findById(postId))
+                .thenReturn(Optional.of(visiblePost(authorId, locationId)));
+        when(membershipRepository.findByUserId(commenterId))
+                .thenReturn(Optional.of(membershipOf(commenterId, locationId)));
+        PostReaction reaction = PostReaction.reaction(postId, commenterId);
+        when(reactionRepository.findByPostIdAndMemberId(postId, commenterId))
+                .thenReturn(Optional.of(reaction));
+
+        service.removeReaction(commenterId, postId);
+
+        // The house soft delete (never a physical remove) — and the un-thank
+        // fires NO event: a removal carries no new fact for the author.
+        verify(reactionRepository).delete(reaction);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getFeed_carriesTheTwoReactionFacts() {
+        // The caller-scoped projection: the grouped live count per post and
+        // the caller's own live voice — one IN read each over the page's ids.
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        NeighborhoodPost post = visiblePost(authorId, locationId);
+        NeighborhoodPost strangerPost = visiblePost(UUID.randomUUID(), locationId);
+        Page<NeighborhoodPost> page = new PageImpl<>(List.of(post, strangerPost));
+        when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class))).thenReturn(page);
+        when(reactionRepository.countByPostIdIn(any())).thenReturn(List.of(
+                countOf(post.getId(), 3L), countOf(strangerPost.getId(), 0L)));
+        when(reactionRepository.findByMemberIdAndPostIdIn(eq(authorId), any()))
+                .thenReturn(List.of(PostReaction.reaction(post.getId(), authorId)));
+        when(mediaLookupPort.findUploadedByPostIds(any())).thenReturn(List.of(
+                new MediaLookupPort.PostMediaEntry(post.getId(), UUID.randomUUID(),
+                        "https://u", "https://t", "image/jpeg", 1)));
+
+        Page<NeighborhoodPostView> views =
+                service.getFeed(authorId, null, PageRequest.of(0, 20));
+
+        NeighborhoodPostView mine = views.getContent().get(0);
+        assertThat(mine.reactionsCount()).isEqualTo(3L);
+        assertThat(mine.reactedByMe()).isTrue();
+        NeighborhoodPostView strangers = views.getContent().get(1);
+        assertThat(strangers.reactionsCount()).isZero();
+        assertThat(strangers.reactedByMe()).isFalse();
+    }
+
+    /**
+     * L48: the feed read carries each post's media — the one grouped port
+     * read over the page's ids, mapped into the view's own read model; a
+     * post with no entries rides the empty list. No storage fact (key,
+     * status) crosses the boundary.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void getFeed_carriesThePostsMedia() {
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        NeighborhoodPost post = visiblePost(authorId, locationId);
+        NeighborhoodPost strangerPost = visiblePost(UUID.randomUUID(), locationId);
+        when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(post, strangerPost)));
+        when(reactionRepository.countByPostIdIn(any())).thenReturn(List.of());
+        when(reactionRepository.findByMemberIdAndPostIdIn(any(), any())).thenReturn(List.of());
+        UUID mediaId = UUID.randomUUID();
+        when(mediaLookupPort.findUploadedByPostIds(any())).thenReturn(List.of(
+                new MediaLookupPort.PostMediaEntry(post.getId(), mediaId,
+                        "https://orig", "https://thumb", "image/jpeg", 1),
+                new MediaLookupPort.PostMediaEntry(post.getId(), UUID.randomUUID(),
+                        "https://orig2", null, "image/png", 2)));
+
+        Page<NeighborhoodPostView> views =
+                service.getFeed(authorId, null, PageRequest.of(0, 20));
+
+        NeighborhoodPostView mine = views.getContent().get(0);
+        assertThat(mine.media()).hasSize(2);
+        assertThat(mine.media().get(0).mediaId()).isEqualTo(mediaId);
+        assertThat(mine.media().get(0).url()).isEqualTo("https://orig");
+        assertThat(mine.media().get(0).thumbUrl()).isEqualTo("https://thumb");
+        assertThat(mine.media().get(0).contentType()).isEqualTo("image/jpeg");
+        assertThat(mine.media().get(0).position()).isEqualTo(1);
+        assertThat(mine.media().get(1).thumbUrl()).isNull();
+        // the port's flat (postId, position) order survives the grouping
+        assertThat(mine.media().get(1).position()).isEqualTo(2);
+        // the post with no entries rides the empty list, honestly
+        assertThat(views.getContent().get(1).media()).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getFeed_emptyPage_costsNoReactionRead() {
+        // A closed feed costs neither aggregate nor voice read nor media
+        // read — the short-circuit is the projection's own discipline.
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class))).thenReturn(Page.empty());
+
+        service.getFeed(authorId, null, PageRequest.of(0, 20));
+
+        verify(reactionRepository, never()).countByPostIdIn(any());
+        verify(reactionRepository, never()).findByMemberIdAndPostIdIn(any(), any());
+        verify(mediaLookupPort, never()).findUploadedByPostIds(any());
+    }
+
+    /** The grouped count's projection stub (the repository interface's own shape). */
+    private PostReactionRepository.PostReactionCount countOf(UUID postId, long count) {
+        return new PostReactionRepository.PostReactionCount() {
+            @Override
+            public UUID getPostId() {
+                return postId;
+            }
+
+            @Override
+            public long getTotalCount() {
+                return count;
+            }
+        };
+    }
+
+    /** The moderation flip (package-private by design — the test rides it). */
+    private void hideByModerator(NeighborhoodPost post) {
+        post.hideByModerator();
     }
 }

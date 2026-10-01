@@ -46,7 +46,7 @@ class CommunityExportAdapterTest {
         Instant memberSince = Instant.parse("2026-09-17T09:30:00Z");
         when(rs.getString("id")).thenReturn(id.toString());
         when(rs.getString("location_id")).thenReturn(locationId.toString());
-        when(rs.getString("verification_state")).thenReturn("SELF_DECLARED");
+        when(rs.getString("verification_state")).thenReturn("UNVERIFIED");
         when(rs.getTimestamp("member_since")).thenReturn(Timestamp.from(memberSince));
         when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(memberSince));
         when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(memberSince));
@@ -66,7 +66,7 @@ class CommunityExportAdapterTest {
         CommunityMembershipExportEntry entry = entries.get(0);
         assertThat(entry.id()).isEqualTo(id);
         assertThat(entry.locationId()).isEqualTo(locationId);
-        assertThat(entry.verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(entry.verificationState()).isEqualTo("UNVERIFIED");
         assertThat(entry.memberSince()).isEqualTo(memberSince);
         assertThat(entry.deleted()).isTrue();
     }
@@ -179,5 +179,147 @@ class CommunityExportAdapterTest {
                                 && sql.contains("ORDER BY created_at, id")
                                 && !sql.contains("is_deleted = FALSE")),
                 any(RowMapper.class), eq(userId));
+    }
+
+    /**
+     * The #484 review round: the reaction layer rides the b-2 export —
+     * which posts the subject thanked and when, the removed ones included
+     * (b-5: a removed thank is still stored personal data until the
+     * retention window closes). The measured gap had V73 land with no
+     * export leg at all.
+     */
+    @Test
+    void exportReactionsForOwner_mapsTheStoredFactsIncludingRemovedReactions() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-09-30T09:30:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("post_id")).thenReturn(postId.toString());
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityReactionExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportReactionsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.postId()).isEqualTo(postId);
+        assertThat(entry.createdAt()).isEqualTo(createdAt);
+        assertThat(entry.deleted()).isTrue();
+    }
+
+    @Test
+    void exportReactionsForOwner_scopesToTheMemberWithTheHonestOrder() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenReturn(List.of());
+
+        new CommunityExportAdapter(jdbcTemplate).exportReactionsForOwner(userId);
+
+        org.mockito.Mockito.verify(jdbcTemplate).query(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("FROM post_reactions")
+                                && sql.contains("WHERE member_id = ?")
+                                && sql.contains("ORDER BY created_at, id")
+                                && !sql.contains("is_deleted = FALSE")),
+                any(RowMapper.class), eq(userId));
+    }
+
+// ---------- L49: the events + seats reads (gap #4) ----------
+
+    @Test
+    void exportEventsForOwner_mapsTheStoredFactsIncludingDeletedEvents() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID eventLocationId = UUID.randomUUID();
+        Instant startsAt = Instant.parse("2027-03-02T08:00:00Z");
+        Instant createdAt = Instant.parse("2026-10-01T09:30:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("location_id")).thenReturn(eventLocationId.toString());
+        when(rs.getString("category")).thenReturn("VOLUNTEER");
+        when(rs.getString("title")).thenReturn("Park cleanup morning");
+        when(rs.getString("description")).thenReturn("Tools provided.");
+        when(rs.getTimestamp("starts_at")).thenReturn(Timestamp.from(startsAt));
+        when(rs.getTimestamp("ends_at")).thenReturn(null);
+        when(rs.getString("location_label")).thenReturn("Community garden — main gate");
+        when(rs.getString("organizer_label")).thenReturn("Development committee");
+        when(rs.getObject("capacity", Integer.class)).thenReturn(null);
+        when(rs.getString("registration")).thenReturn("OPEN");
+        when(rs.getBoolean("featured")).thenReturn(false);
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityEventExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportEventsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.locationId()).isEqualTo(eventLocationId);
+        assertThat(entry.category()).isEqualTo("VOLUNTEER");
+        assertThat(entry.title()).isEqualTo("Park cleanup morning");
+        assertThat(entry.startsAt()).isEqualTo(startsAt);
+        assertThat(entry.endsAt()).isNull();
+        assertThat(entry.locationLabel()).isEqualTo("Community garden — main gate");
+        assertThat(entry.organizerLabel()).isEqualTo("Development committee");
+        assertThat(entry.capacity()).isNull();
+        assertThat(entry.registration()).isEqualTo("OPEN");
+        assertThat(entry.deleted()).isTrue();
+    }
+
+    @Test
+    void exportEventsForOwner_scopesToTheOrganizerWithTheHonestOrder() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenReturn(List.of());
+
+        new CommunityExportAdapter(jdbcTemplate).exportEventsForOwner(userId);
+
+        org.mockito.Mockito.verify(jdbcTemplate).query(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("FROM neighborhood_events")
+                                && sql.contains("WHERE author_id = ?")
+                                && sql.contains("ORDER BY created_at, id")
+                                && !sql.contains("is_deleted = FALSE")),
+                any(RowMapper.class), eq(userId));
+    }
+
+    @Test
+    void exportEventSeatsForOwner_mapsTheStoredFactsIncludingFreedSeats() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-01T09:30:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("event_id")).thenReturn(eventId.toString());
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityEventSeatExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportEventSeatsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.eventId()).isEqualTo(eventId);
+        assertThat(entry.deleted()).isTrue();
     }
 }

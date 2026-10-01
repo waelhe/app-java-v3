@@ -2,8 +2,11 @@ package com.marketplace.identity;
 
 import com.marketplace.shared.api.BookingExportEntry;
 import com.marketplace.shared.api.CommunityCommentExportEntry;
+import com.marketplace.shared.api.CommunityEventExportEntry;
+import com.marketplace.shared.api.CommunityEventSeatExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
+import com.marketplace.shared.api.CommunityReactionExportEntry;
 import com.marketplace.shared.api.ConversationExportEntry;
 import com.marketplace.shared.api.MediaExportEntry;
 import com.marketplace.shared.api.MessageExportEntry;
@@ -49,7 +52,10 @@ public record UserDataExportResponse(
         List<SavedSearchExportEntry> savedSearches,
         List<CommunityMembershipExportEntry> memberships,
         List<CommunityPostExportEntry> communityPosts,
-        List<CommunityCommentExportEntry> communityComments
+        List<CommunityCommentExportEntry> communityComments,
+        List<CommunityReactionExportEntry> communityReactions,
+        List<CommunityEventExportEntry> communityEvents,
+        List<CommunityEventSeatExportEntry> communityEventSeats
 ) {
 
     /**
@@ -88,8 +94,9 @@ public record UserDataExportResponse(
             reviews and messages you authored; descriptive metadata of your media (never file bytes); \
             your notifications; your saved searches (criteria as stored, alerts flag); \
             your neighborhood memberships (the self-declared home location — active and left, as stored); \
-            and your neighborhood posts and comments (the community texts you authored — as stored, \
-            including author-deleted ones, with the moderation status of each post).
+            your neighborhood posts and comments (the community texts you authored — as stored, \
+            including author-deleted ones, with the moderation status of each post); \
+            and your neighborhood reactions (the posts you thanked — as stored, including removed ones).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.

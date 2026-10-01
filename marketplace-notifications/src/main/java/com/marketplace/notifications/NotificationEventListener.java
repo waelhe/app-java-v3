@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
+import com.marketplace.shared.api.PostReactedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -141,6 +142,33 @@ public class NotificationEventListener {
                 event.recipientId(), event.targetType(), event.targetId());
         log.info("Notification sent for content moderation: recipient={}, targetType={}, target={}",
                 event.recipientId(), event.targetType(), event.targetId());
+    }
+
+    /**
+     * L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+     * layer): the post author's POST_REACTED alert. Same contract as the
+     * listeners above — after commit, its own transaction, the
+     * framework's retry: a failed delivery never loses the thank's
+     * notification (the registry entry stays incomplete until the
+     * listener succeeds).
+     *
+     * <p><b>The self-thank skip lives HERE</b> (the
+     * {@code PostCommentedEvent} criterion-4 precedent verbatim): the
+     * event is published for every reaction — the fact stays honest and
+     * auditable in the publication registry — and the listener compares
+     * the two ids it carries before notifying. The author thanking their
+     * own post is the one delivery this module deliberately drops.
+     */
+    @ApplicationModuleListener
+    public void onPostReacted(PostReactedEvent event) {
+        if (event.reactorId().equals(event.postAuthorId())) {
+            log.debug("Self-thank on post {} — no POST_REACTED notification by policy",
+                    event.postId());
+            return;
+        }
+        notificationService.onPostReacted(event.postId(), event.postAuthorId());
+        log.info("Notification sent for post reaction: postId={}, author={}",
+                event.postId(), event.postAuthorId());
     }
 
 }

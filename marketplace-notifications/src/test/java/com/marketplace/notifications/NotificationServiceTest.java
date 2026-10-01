@@ -514,4 +514,36 @@ class NotificationServiceTest {
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
     }
+
+    @Test
+    void onPostReactedAlertsThePostAuthorOnEveryDefaultChannel() {
+        // L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+        // layer): the recipient is the thanked post's author id — the
+        // users.id space, the same seam onPostCommented uses. The
+        // self-thank skip is the LISTENER's policy; this method delivers
+        // unconditionally, so the delivery contract stays one shape for
+        // every caller.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID postId = create(UUID.class);
+
+        service.onPostReacted(postId, PROVIDER_ID);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("POST_REACTED");
+        assertThat(saved.getValue().getMessage()).contains(postId.toString());
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+    }
 }

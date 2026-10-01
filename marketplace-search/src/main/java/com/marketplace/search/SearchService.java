@@ -231,8 +231,11 @@ public class SearchService {
         }
 
         if (textQuery) {
+            // R6 (Wave 5): the full criteria compose into the
+            // id-restricted text query — the catalog predicates ride
+            // along with the property-facet restriction.
             return SpringPagination.toPage(catalogSearchPort.searchFullTextRestrictedToListings(
-                    query.trim(), listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
+                    criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         return SpringPagination.toPage(catalogSearchPort.searchByCriteriaRestrictedToListings(
                 criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
@@ -351,8 +354,11 @@ public class SearchService {
         }
 
         if (textQuery) {
+            // R6 (Wave 5): the full criteria compose into the
+            // id-restricted text query — the catalog predicates ride
+            // along with the radius restriction.
             return SpringPagination.toPage(catalogSearchPort.searchFullTextRestrictedToListings(
-                    query.trim(), listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
+                    criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         // CodeRabbit PR #300 round 1 (thread 2 — normalize ONCE): the
         // controller is the single normalization point — the pageable
@@ -507,7 +513,10 @@ public class SearchService {
         }
         String query = criteria.query();
         if (query != null && !query.isBlank()) {
-            return SpringPagination.toPage(catalogSearchPort.searchFullTextRestricted(query.trim(), availableProviderIds, SpringPagination.toPagedRequest(pageable)), pageable);
+            // R6 (Wave 5): the full criteria compose into the restricted
+            // text query — the optional catalog predicates ride along with
+            // the window restriction.
+            return SpringPagination.toPage(catalogSearchPort.searchFullTextRestricted(criteria, availableProviderIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         // Covers the price / category / browse-all branches: they are the
         // optional predicates of one criteria query.
@@ -519,13 +528,20 @@ public class SearchService {
         String query = criteria.query();
         String category = criteria.category();
         if (query != null && !query.isBlank()) {
-            // Raw user input passed through: the official websearch_to_tsquery
-            // (ProviderListingRepository) parses it leniently and supports
-            // "quoted phrases", OR and -exclusion. The former hand-mangling
-            // (replaceAll("\\s+", " & ")) both corrupted the user's phrase
-            // intent and fed to_tsquery invalid syntax for quotes/parens/dashes
-            // (SQL exception -> HTTP 500).
-            return SpringPagination.toPage(catalogSearchPort.searchFullText(query.trim(), SpringPagination.toPagedRequest(pageable)), pageable);
+            // R6 (comprehensive-review-ar fix plan §4, Wave 5): the text
+            // branch passes the FULL criteria — the optional catalog
+            // predicates (category / price bounds / guests) compose with
+            // the text predicate inside the same native query and its
+            // count, instead of being silently dropped (the review's R6:
+            // a q + filters request answered the unfiltered text match
+            // set). Raw user input passed through: the official
+            // websearch_to_tsquery (ProviderListingRepository) parses it
+            // leniently and supports "quoted phrases", OR and -exclusion.
+            // The former hand-mangling (replaceAll("\\s+", " & ")) both
+            // corrupted the user's phrase intent and fed to_tsquery
+            // invalid syntax for quotes/parens/dashes (SQL exception ->
+            // HTTP 500).
+            return SpringPagination.toPage(catalogSearchPort.searchFullText(criteria, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         if (criteria.minPrice() != null || criteria.maxPrice() != null || criteria.guests() != null) {
             // I6: guests joins price as an optional predicate of the criteria

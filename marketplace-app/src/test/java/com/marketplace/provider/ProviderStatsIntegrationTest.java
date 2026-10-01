@@ -52,12 +52,20 @@ import static org.mockito.Mockito.when;
  * <p>Acceptance criterion 1 — known dataset, the three numbers match a
  * manual calculation documented right here:
  * <pre>
- *   slots starting in [2026-09-01, 2026-10-01): 6 (Sep 1, 2, 3 + exactly-at-
- *   from + Sep 10 + Sep 20), booked among them: 2 (Sep 10, Sep 20)
- *     -> occupancy = 2/6 = 0.3333...
- *   ledger entries created in the window (created_at 2026-09-15):
- *   PAYMENT_CREDIT 10_000, COMMISSION_DEBIT 1_000, REFUND_DEBIT 3_000
- *     -> net = 10_000 - 1_000 - 3_000 = 6_000 cents
+ *   slots starting in [2026-09-01, 2026-10-01): 5 (Sep 1 — which IS the
+ *   exactly-at-from case, the inclusive bound — Sep 2, Sep 3 free + Sep 10
+ *   and Sep 20 booked), booked among them: 2 (Sep 10, Sep 20)
+ *     -> occupancy = 2/5 = 0.4
+ *   (R2+R3 wave note — PR #471: the fixture now seeds DISTINCT windows only:
+ *   V73's uq_availability_slots_live_window makes one live row per provider
+ *   window a database invariant. The old fixture seeded Sep 1 twice — the
+ *   loop's day-1 slot AND a separate exactly-at-from slot are the same
+ *   window — which the new invariant correctly rejects. The exactly-at-from
+ *   boundary case stays covered by the loop's Sep 1 slot itself.)
+ *   ledger entries created in the window (created_at 2026-09-15), PER
+ *   CURRENCY (R9): SAR — PAYMENT_CREDIT 10_000, COMMISSION_DEBIT 1_000,
+ *   REFUND_DEBIT 3_000 -> net 6_000 SAR; USD — PAYMENT_CREDIT 4_000,
+ *   COMMISSION_DEBIT 400 -> net 3_600 USD (never summed across currencies)
  *   COMPLETED bookings starting in the window: 2 (Sep 5, Sep 15); the
  *   PENDING one, the foreign provider's, the one starting exactly at `to`
  *   and the one before `from` do not count
@@ -138,26 +146,32 @@ class ProviderStatsIntegrationTest {
                 """,
                 LISTING_ID, OWNER_USER_ID);
 
-        // --- slots: 6 start inside [FROM, TO) — Sep 1, 2, 3 (free) + one
-        // starting EXACTLY at FROM (free, the inclusive bound) + Sep 10 and
-        // Sep 20 (booked). Outside: one before FROM, one starting exactly
-        // at TO (the exclusive bound) — neither counts.
+        // --- slots: 5 start inside [FROM, TO) — Sep 1 (free, and itself the
+        // exactly-at-FROM case: the inclusive bound), Sep 2 and Sep 3 (free)
+        // + Sep 10 and Sep 20 (booked). Outside: one before FROM, one
+        // starting exactly at TO (the exclusive bound) — neither counts.
+        // (R2+R3 wave note: DISTINCT windows only — V73's partial unique
+        // index makes one live row per provider window; the old fixture's
+        // second Sep 1 row was the duplicate the invariant rejects.)
         for (int day : new int[]{1, 2, 3}) {
             slot(LocalDate.of(2026, 9, day).atStartOfDay(ZoneOffset.UTC).toInstant(), false);
         }
-        slot(FROM, false);
         slot(LocalDate.of(2026, 9, 10).atStartOfDay(ZoneOffset.UTC).toInstant(), true);
         slot(LocalDate.of(2026, 9, 20).atStartOfDay(ZoneOffset.UTC).toInstant(), true);
         slot(FROM.minusSeconds(3600), false);
         slot(TO, true);
 
-        // --- ledger: the three entries land at a FIXED in-window instant
+        // --- ledger: the owner's entries land at a FIXED in-window instant
         // (created_at is the window key — a fixed date keeps the test
-        // deterministic forever); plus another provider's credit.
-        ledgerEntry(OWNER_USER_ID, "PAYMENT_CREDIT", 10_000);
-        ledgerEntry(OWNER_USER_ID, "COMMISSION_DEBIT", 1_000);
-        ledgerEntry(OWNER_USER_ID, "REFUND_DEBIT", 3_000);
-        ledgerEntry(OTHER_PROVIDER_USER_ID, "PAYMENT_CREDIT", 99_999);
+        // deterministic forever) in TWO currencies — the R9 per-currency
+        // grouping is part of the measured contract; plus another
+        // provider's credit that never counts.
+        ledgerEntry(OWNER_USER_ID, "PAYMENT_CREDIT", 10_000, "SAR");
+        ledgerEntry(OWNER_USER_ID, "COMMISSION_DEBIT", 1_000, "SAR");
+        ledgerEntry(OWNER_USER_ID, "REFUND_DEBIT", 3_000, "SAR");
+        ledgerEntry(OWNER_USER_ID, "PAYMENT_CREDIT", 4_000, "USD");
+        ledgerEntry(OWNER_USER_ID, "COMMISSION_DEBIT", 400, "USD");
+        ledgerEntry(OTHER_PROVIDER_USER_ID, "PAYMENT_CREDIT", 99_999, "SAR");
 
         // --- bookings (all start inside the window unless stated):
         // counted: 2 COMPLETED (Sep 5, Sep 15).
@@ -193,9 +207,14 @@ class ProviderStatsIntegrationTest {
 
         ProviderStatsResponse stats = statsService.getStats(OWNER_USER_ID, new StatsWindow(FROM, TO));
 
-        // The documented manual calculation (acceptance criterion 1):
-        assertThat(stats.occupancyRate()).isCloseTo(2.0 / 6.0, offset(1e-9));
-        assertThat(stats.netRevenueCents()).isEqualTo(6_000L);
+        // The documented manual calculation (acceptance criterion 1), with
+        // the R2+R3 distinct-window occupancy (V73's one-live-row-per-window
+        // invariant — 5 windows, 2 booked) and R9's per-currency net (ordered
+        // by currency — the adapter's own deterministic shape):
+        assertThat(stats.occupancyRate()).isCloseTo(2.0 / 5.0, offset(1e-9));
+        assertThat(stats.netRevenue()).containsExactly(
+                new com.marketplace.shared.api.CurrencyAmount("SAR", 6_000L),
+                new com.marketplace.shared.api.CurrencyAmount("USD", 3_600L));
         assertThat(stats.completedBookings()).isEqualTo(2L);
         assertThat(stats.from()).isEqualTo(FROM);
         assertThat(stats.to()).isEqualTo(TO);
@@ -227,7 +246,7 @@ class ProviderStatsIntegrationTest {
                         LocalDate.of(2027, 7, 1).atStartOfDay(ZoneOffset.UTC).toInstant()));
 
         assertThat(stats.occupancyRate()).isZero();
-        assertThat(stats.netRevenueCents()).isZero();
+        assertThat(stats.netRevenue()).isEmpty();
         assertThat(stats.completedBookings()).isZero();
     }
 
@@ -237,13 +256,13 @@ class ProviderStatsIntegrationTest {
                 UUID.randomUUID(), OWNER_USER_ID, Timestamp.from(startsAt), Timestamp.from(startsAt.plusSeconds(3600)), booked);
     }
 
-    private void ledgerEntry(UUID providerUserId, String entryType, long amountCents) {
+    private void ledgerEntry(UUID providerUserId, String entryType, long amountCents, String currency) {
         jdbcTemplate.update(
                 """
-                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents, currency, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                UUID.randomUUID(), providerUserId, UUID.randomUUID(), entryType, amountCents,
+                UUID.randomUUID(), providerUserId, UUID.randomUUID(), entryType, amountCents, currency,
                 Timestamp.from(MID_WINDOW), Timestamp.from(MID_WINDOW));
     }
 

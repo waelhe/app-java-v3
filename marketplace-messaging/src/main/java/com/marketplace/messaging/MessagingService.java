@@ -6,7 +6,9 @@ import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.NeighborhoodTrustLookupPort;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,14 +37,17 @@ public class MessagingService {
     private final SimpMessagingTemplate messagingTemplate;
     private final MessageMapper messageMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final NeighborhoodTrustLookupPort neighborhoodTrustLookupPort;
 
+    @Autowired
     public MessagingService(ConversationRepository conversationRepository,
                             MessageRepository messageRepository,
                             BookingParticipantProvider bookingParticipantProvider,
                             UserLookupPort userLookupPort,
                             SimpMessagingTemplate messagingTemplate,
                             MessageMapper messageMapper,
-                            ApplicationEventPublisher eventPublisher) {
+                            ApplicationEventPublisher eventPublisher,
+                            NeighborhoodTrustLookupPort neighborhoodTrustLookupPort) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.bookingParticipantProvider = bookingParticipantProvider;
@@ -50,6 +55,20 @@ public class MessagingService {
         this.messagingTemplate = messagingTemplate;
         this.messageMapper = messageMapper;
         this.eventPublisher = eventPublisher;
+        this.neighborhoodTrustLookupPort = neighborhoodTrustLookupPort;
+    }
+
+    /** Compatibility constructor retained for focused unit tests of booking chat. */
+    public MessagingService(ConversationRepository conversationRepository,
+                            MessageRepository messageRepository,
+                            BookingParticipantProvider bookingParticipantProvider,
+                            UserLookupPort userLookupPort,
+                            SimpMessagingTemplate messagingTemplate,
+                            MessageMapper messageMapper,
+                            ApplicationEventPublisher eventPublisher) {
+        this(conversationRepository, messageRepository, bookingParticipantProvider, userLookupPort,
+                messagingTemplate, messageMapper, eventPublisher,
+                ignored -> NeighborhoodTrustLookupPort.TrustState.UNVERIFIED);
     }
 
     @Transactional(readOnly = true)
@@ -145,6 +164,10 @@ public class MessagingService {
      * check here.
      */
     public DirectConversationOutcome openDirectConversation(UUID requesterId, UUID recipientId) {
+        if (neighborhoodTrustLookupPort.trustFor(requesterId)
+                == NeighborhoodTrustLookupPort.TrustState.REJECTED) {
+            throw new AccessDeniedException("Rejected neighborhood verification cannot open direct conversations");
+        }
         if (requesterId.equals(recipientId)) {
             throw new BadRequestException("Cannot open a direct conversation with yourself");
         }
