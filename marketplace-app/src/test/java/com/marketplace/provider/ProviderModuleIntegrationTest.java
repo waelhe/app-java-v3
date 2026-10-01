@@ -87,6 +87,20 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.SystemSettingsPort systemSettingsPort;
 
+    // The CI-measured first-run lesson: a Mockito mock answers the port's
+    // default methods with null/0 — and ReviewMode.parse(null) fails loud
+    // ("carries no value") instead of falling back to the default the real
+    // adapter would return. The tests below assert the seed mode's behavior
+    // (VERIFIED_ONLY — V84's seeded value), so the stub states exactly the
+    // world they run under.
+    @org.junit.jupiter.api.BeforeEach
+    void stubTheReviewsMode() {
+        org.mockito.Mockito.when(systemSettingsPort.getStringOrDefault(
+                        org.mockito.ArgumentMatchers.eq(com.marketplace.shared.api.SystemSettingKeys.REVIEWS_MODE),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(com.marketplace.shared.api.ReviewMode.VERIFIED_ONLY.name());
+    }
+
     @Autowired
     private ProviderService providerService;
 

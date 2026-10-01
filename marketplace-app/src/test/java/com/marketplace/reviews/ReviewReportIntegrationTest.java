@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * W1 (§4.5 — إبلاغ المراجعة): the REVIEW report target through the REAL
- * modules over a REAL Flyway schema (the V73+V74 widening applied by the
+ * modules over a REAL Flyway schema (the V86+V87 widening applied by the
  * boot — 'REVIEW' must ride the DB guard's widened list).
  *
  * <p><b>The gate order for REVIEW:</b> VISIBLE-target resolve first (an
@@ -101,7 +101,7 @@ class ReviewReportIntegrationTest {
         jdbc.update("DELETE FROM users WHERE id IN (?, ?, ?)", reporterId, authorId, providerUserId);
     }
 
-    /** The V73/V74 pair applies cleanly: the widened target list holds the new value. */
+    /** The V86/V87 pair applies cleanly: the widened target list holds the new value. */
     @Test
     void widenedTargetCheck_holdsReview() {
         UUID reviewId = plantReview(5, "PUBLISHED");

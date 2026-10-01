@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
 /**
  * W1 (§4.1/§4.3/§4.5 — the unified creation gate): the base pin plus the
  * per-mode creation tests through the REAL modules over a REAL Flyway
- * schema (V72 applied by the boot — the booking seam stays the one mocked
+ * schema (V85 applied by the boot — the booking seam stays the one mocked
  * boundary). Modes flip through the REAL admin channel and are restored
  * to the seed after every test.
  */
@@ -122,6 +122,27 @@ class ReviewsOrganicGateIntegrationTest {
                 java.sql.Timestamp.from(Instant.now().minus(Duration.ofDays(days))), userId);
     }
 
+    /**
+     * The booking path's FK-honest seed (the CI-measured first-run lesson:
+     * this suite boots on REAL Flyway — `spring.flyway.enabled=true` — so
+     * `reviews_booking_id_fkey` from V6 is live and a random booking id
+     * without a bookings row dies on insert). One listing per provider per
+     * suite (the moderation suite's `ON CONFLICT DO NOTHING` shape), one
+     * COMPLETED booking per call site — exactly what the mocked
+     * BookingParticipantProvider claims to vouch for.
+     */
+    private void seedCompletedBooking(UUID bookingId) {
+        jdbc.update("INSERT INTO provider_listings (id, provider_id, title, description, category, "
+                        + "price_cents, currency, status) VALUES (?, ?, ?, ?, 'home', 100_00, 'SAR', 'ACTIVE') "
+                        + "ON CONFLICT (id) DO NOTHING",
+                UUID.randomUUID(), providerUserId, tag + " fixture", "fk seed");
+        jdbc.update("INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, "
+                        + "price_cents, currency, notes) VALUES (?, ?, ?, "
+                        + "(SELECT id FROM provider_listings WHERE provider_id = ? LIMIT 1), "
+                        + "'COMPLETED', 100_00, 'SAR', NULL) ON CONFLICT (id) DO NOTHING",
+                bookingId, reviewerId, providerUserId, providerUserId);
+    }
+
     private void setMode(String mode) {
         settingsService.update(SystemSettingKeys.REVIEWS_MODE,
                 JsonNodeFactory.instance.textNode(mode), null, "w1-test");
@@ -141,12 +162,18 @@ class ReviewsOrganicGateIntegrationTest {
         jdbc.update("DELETE FROM review_flags WHERE review_id IN "
                 + "(SELECT id FROM reviews WHERE reviewer_id IN (?, ?))", reviewerId, providerUserId);
         jdbc.update("DELETE FROM reviews WHERE reviewer_id IN (?, ?)", reviewerId, providerUserId);
+        // The FK-honest seeds leave bookings/listings behind (their FKs
+        // point at the users this cleanup is about to delete) — same
+        // deletion order the moderation suite applies.
+        jdbc.update("DELETE FROM bookings WHERE consumer_id IN (?, ?) OR provider_id IN (?, ?)",
+                reviewerId, providerUserId, reviewerId, providerUserId);
+        jdbc.update("DELETE FROM provider_listings WHERE provider_id = ?", providerUserId);
         jdbc.update("DELETE FROM provider_profiles WHERE user_id IN (?, ?)", reviewerId, providerUserId);
         jdbc.update("DELETE FROM users WHERE id IN (?, ?)", reviewerId, providerUserId);
     }
 
     /**
-     * The base pin: the seeded VERIFIED_ONLY survives from V71 onto the
+     * The base pin: the seeded VERIFIED_ONLY survives from V84 onto the
      * full stack and the booking path creates a BOOKING-origin published
      * review — the observable contract every legacy flow depends on.
      */
@@ -159,6 +186,7 @@ class ReviewsOrganicGateIntegrationTest {
                 .isEqualTo("\"VERIFIED_ONLY\"");
 
         UUID bookingId = UUID.randomUUID();
+        seedCompletedBooking(bookingId);
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(new BookingInfo(
                 providerUserId, reviewerId, "COMPLETED", 5000L, "SAR", Instant.now(), Instant.now()));
 
@@ -259,6 +287,7 @@ class ReviewsOrganicGateIntegrationTest {
         setMode("HYBRID");
         ageAccount(reviewerId, 9);
         UUID bookingId = UUID.randomUUID();
+        seedCompletedBooking(bookingId);
         when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(new BookingInfo(
                 providerUserId, reviewerId, "COMPLETED", 5000L, "SAR", Instant.now(), Instant.now()));
 
@@ -334,7 +363,7 @@ class ReviewsOrganicGateIntegrationTest {
     }
 
     /**
-     * The V72 cross-column check by negative INSERT: a BOOKING review
+     * The V85 cross-column check by negative INSERT: a BOOKING review
      * without a booking_id is rejected by the database itself (the badge
      * can never print on a booking-less row).
      */
@@ -353,7 +382,7 @@ class ReviewsOrganicGateIntegrationTest {
     }
 
     /**
-     * The V72 organic uniqueness by negative SQL: the explicit 409 has the
+     * The V85 organic uniqueness by negative SQL: the explicit 409 has the
      * index backstop behind it (the concurrent-insert proof).
      */
     @Test

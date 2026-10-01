@@ -191,6 +191,12 @@ class ReviewModerationIntegrationTest {
         // fires, the async listener recomputes the general aggregate.
         reviewsService.approve(queued.getId());
         awaitGeneralStats(providerUserId, 5.0, 1L);
+        // The CI-measured first-run race: the aggregate await above passes the
+        // instant approve() commits (the direct query sees the published row),
+        // while the async listener's STORED-pair write may still be in flight —
+        // awaiting the profile's stored pair is awaiting the listener itself
+        // (the only writer of those columns).
+        awaitStoredGeneralPair(profile.getId(), 5.0, 1L);
 
         assertThat(reviewsService.listByProvider(providerUserId, Pageable.ofSize(10))
                 .map(Review::getId))
@@ -265,6 +271,33 @@ class ReviewModerationIntegrationTest {
     }
 
     /** Plain poll loop (30s / 200ms) — the ReviewsTwoWayIntegrationTest house shape for async listeners. */
+    /**
+     * Awaits the listener's OWN artifact — the stored pair on the profile row
+     * (its only writer) — the race-free contract awaitGeneralStats alone
+     * cannot express (the aggregate becomes visible at approve-commit time,
+     * before the async listener runs).
+     */
+    private void awaitStoredGeneralPair(UUID profileId, double expectedAverage, long expectedCount) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            ProviderProfile stored = providerProfiles.findById(profileId).orElse(null);
+            if (stored != null
+                    && stored.getRatingGeneralAverage() != null
+                    && Math.abs(stored.getRatingGeneralAverage() - expectedAverage) < 1e-9
+                    && stored.getRatingGeneralCount() == expectedCount) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        org.junit.jupiter.api.Assertions.fail(
+                "the stored general pair never reached " + expectedAverage + "/" + expectedCount);
+    }
+
     private void awaitGeneralStats(UUID providerId, double expectedAverage, long expectedCount) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         while (System.nanoTime() < deadline) {

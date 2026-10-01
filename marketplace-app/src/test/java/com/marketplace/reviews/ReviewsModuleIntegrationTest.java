@@ -70,6 +70,20 @@ class ReviewsModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ListingPriceProvider listingPriceProvider;
 
+    /**
+     * The W1 Clock — the production bean lives in platform-infra's
+     * ClockConfig, which this slice does not scan (the payments module
+     * test's D-009 pattern, the catalog module test's exact precedent:
+     * one Clock per context, never two).
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @Autowired
     private ReviewsService reviewsService;
 
