@@ -87,6 +87,15 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.SystemSettingsPort systemSettingsPort;
 
+    // W1 (the frontend-consumer extension, D-W1-5): the public page now
+    // composes the reviews block through the PublishedReviewsPort — the
+    // adapter lives in the reviews module, outside this provider slice,
+    // so the same @MockitoBean convention applies (the L38 GeoLookupPort
+    // lesson verbatim: a port without a slice bean fails the whole
+    // context boot).
+    @MockitoBean
+    com.marketplace.shared.api.PublishedReviewsPort publishedReviewsPort;
+
     // The CI-measured first-run lesson: a Mockito mock answers the port's
     // default methods with null/0 — and ReviewMode.parse(null) fails loud
     // ("carries no value") instead of falling back to the default the real
@@ -99,6 +108,14 @@ class ProviderModuleIntegrationTest {
                         org.mockito.ArgumentMatchers.eq(com.marketplace.shared.api.SystemSettingKeys.REVIEWS_MODE),
                         org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(com.marketplace.shared.api.ReviewMode.VERIFIED_ONLY.name());
+        // The reviews block's port answers the honest empty page — the
+        // port's own contract (never null; the slice has no reviews data
+        // by construction).
+        org.mockito.Mockito.when(publishedReviewsPort.findPublishedByProviderUserId(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(com.marketplace.shared.api.PagedRequest.class)))
+                .thenAnswer(invocation -> com.marketplace.shared.api.PagedResponse
+                        .empty(invocation.getArgument(1, com.marketplace.shared.api.PagedRequest.class)));
     }
 
     @Autowired
