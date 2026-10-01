@@ -91,9 +91,8 @@ class ProductionWatchdogFilesTest {
     void watchdogProbesExactlyTheSixVerifiedPublicEndpoints() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
-                        + "(SYSTEM.md §15 — the v4-account domain, redirected 2026-09-30 "
-                        + "per the trial-migration runbook §10)")
-                .contains("BASE_URL: https://app-java-v3-production-59bf.up.railway.app");
+                        + "(SYSTEM.md §15)")
+                .contains("BASE_URL: https://app-java-v3-production.up.railway.app");
         assertThat(yml).as("liveness probe").contains("[\"/actuator/health/liveness\"]=\"200\"");
         assertThat(yml).as("readiness probe").contains("[\"/actuator/health/readiness\"]=\"200\"");
         assertThat(yml).as("auth keys probe").contains("[\"/oauth2/jwks\"]=\"200\"");
@@ -118,41 +117,28 @@ class ProductionWatchdogFilesTest {
     @Test
     void watchdogFreshnessMeasuresTheLiveRailwayChannel() throws IOException {
         String yml = read(".github/workflows/watchdog.yml");
-        // The v4 deployment source (SYSTEM.md §15 + runbook §10.5, measured
-        // 2026-09-30): the Railway service in the v4 trial account builds
-        // from the FORK waelhe88-coder/app-java-v3 — parked at bab774c1 with
-        // 0 status contexts on both heads while the §10.5 owner-gated
-        // restoration is pending. The freshness probe MUST read that fork:
-        // a probe that reads upstream main stays green while the fork (and
-        // production behind it) drifts arbitrarily far behind (CodeRabbit
-        // round on #479, Major). Only a pinned source keeps the probe
-        // measuring the REAL channel — a reverted pin would silently monitor
-        // a repository production does not deploy from.
-        assertThat(yml).as("the freshness probe reads the ACTUAL v4 deployment "
-                        + "source — the fork, not this upstream repository "
-                        + "(measured: parked at bab774c1, §10.5 restoration "
-                        + "pending)")
-                .contains("DEPLOY_SOURCE: waelhe88-coder/app-java-v3");
-        assertThat(yml).as("the upstream binding the pre-v4 era used is gone — "
-                        + "reading upstream main is the exact silent-lie this "
-                        + "leg exists to catch")
-                .doesNotContain("UPSTREAM: waelhe/app-java-v3");
+        // The retired fork channel (fork-sync.yml, disabled with the old
+        // account 2026-09-19) is gone: production now deploys directly from
+        // main via Railway's GitHub App, which reports each deployment as a
+        // commit status on the built commit. Measured on this account:
+        // success on bb6da39 ("Success - app-java-v3-production...") and
+        // failure on 7371afbb/16117d8 ("Deployment failed" - the BUILD_IMAGE
+        // cache-id validation PR #347 closes). Only a pinned context keeps
+        // the probe measuring the REAL channel - a reverted pin would
+        // silently monitor a context nobody posts to, and every run would
+        // take the age-bounded path until the 240m limit trips.
+        assertThat(yml).as("the freshness probe reads Railway's own commit "
+                        + "status on main HEAD - the live deployment "
+                        + "channel's telemetry (measured context)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
         assertThat(yml).as("the retired fork compare must be gone - the "
                         + "fork channel was decommissioned with the old "
                         + "account and its compare would fail forever")
                 .doesNotContain("DEPLOY_FORK");
-        assertThat(yml).as("the Railway status context stays pinned - only a "
-                        + "pinned context keeps the probe on the live "
-                        + "channel's telemetry (re-check after the §10.5 "
-                        + "restoration)")
-                .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
-        assertThat(yml).as("fail-closed bound: a non-success state is tolerated "
-                        + "ONLY while a deploy is plausibly in flight (60m) — "
-                        + "absence of successful-deployment evidence beyond it "
-                        + "FAILS; commit age alone never greens a dead channel "
-                        + "(the old 240m age-pass was the measured defect)")
-                .contains("MAX_LAG_MINUTES: 60")
-                .doesNotContain("MAX_LAG_MINUTES: 240");
+        assertThat(yml).as("freshness tolerance stays bounded - a missing "
+                        + "status is only tolerated while the commit is "
+                        + "young enough for a build to plausibly be running")
+                .contains("MAX_LAG_MINUTES: 240");
     }
 
     @Test

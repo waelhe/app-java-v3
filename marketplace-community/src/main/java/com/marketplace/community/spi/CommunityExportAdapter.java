@@ -1,6 +1,8 @@
 package com.marketplace.community.spi;
 
 import com.marketplace.shared.api.CommunityCommentExportEntry;
+import com.marketplace.shared.api.CommunityEventExportEntry;
+import com.marketplace.shared.api.CommunityEventSeatExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
@@ -120,6 +122,69 @@ public class CommunityExportAdapter implements CommunityExportPort {
                 (rs, rowNum) -> new CommunityReactionExportEntry(
                         UUID.fromString(rs.getString("id")),
                         UUID.fromString(rs.getString("post_id")),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
+    }
+
+    /**
+     * L49 (the events layer): the subject's organized events — the same
+     * native-JDBC faithful-copy read as the posts (the soft-deleted
+     * rows included, b-5's discrimination), the four authored columns
+     * verbatim, the enums as their stored names.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityEventExportEntry> exportEventsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, location_id, category, title, description,
+                       starts_at, ends_at, location_label, organizer_label,
+                       capacity, registration, featured,
+                       created_at, updated_at, is_deleted
+                FROM neighborhood_events
+                WHERE author_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new CommunityEventExportEntry(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("location_id")),
+                        rs.getString("category"),
+                        rs.getString("title"),
+                        rs.getString("description"),
+                        rs.getTimestamp("starts_at").toInstant(),
+                        rs.getTimestamp("ends_at") == null
+                                ? null : rs.getTimestamp("ends_at").toInstant(),
+                        rs.getString("location_label"),
+                        rs.getString("organizer_label"),
+                        rs.getObject("capacity", Integer.class),
+                        rs.getString("registration"),
+                        rs.getBoolean("featured"),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
+    }
+
+    /**
+     * L49: the subject's seats — held and freed — the identifiers-and-
+     * timestamps read (the reaction row's own class; no authored text
+     * exists to copy).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityEventSeatExportEntry> exportEventSeatsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, event_id, created_at, updated_at, is_deleted
+                FROM event_rsvps
+                WHERE member_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new CommunityEventSeatExportEntry(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("event_id")),
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getTimestamp("updated_at").toInstant(),
                         rs.getBoolean("is_deleted")),
