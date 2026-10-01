@@ -27,16 +27,16 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * End-to-end guard for the R2 + R3 wave (comprehensive-review-ar-fix plan
  * §4/R2 + §4/R3), on the <b>real Flyway schema</b> (the lesson recorded
  * three times: a test schema built by {@code ddl-auto: create-drop} hides
- * what production actually runs — V72's ownership column, V73's partial
+ * what production actually runs — V79's ownership column, V80's partial
  * unique index). Boots the full context on a real PostgreSQL with
  * {@code spring.flyway.enabled=true} + {@code ddl-auto=none} (the
  * {@code DeadQuartzStoreRemovalIntegrationTest} pattern).
  *
  * <p>Guards the wave's four invariants:
  * <ol>
- *   <li><b>Schema (V72):</b> {@code availability_slots.held_by_booking_id}
+ *   <li><b>Schema (V79):</b> {@code availability_slots.held_by_booking_id}
  *       exists on the table AND its Envers mirror {@code availability_slots_aud}.</li>
- *   <li><b>Schema (V73):</b> {@code uq_availability_slots_live_window} exists,
+ *   <li><b>Schema (V80):</b> {@code uq_availability_slots_live_window} exists,
  *       is UNIQUE and <b>VALID</b> — a failed concurrent build leaves an INVALID
  *       index (PostgreSQL "Building Indexes Concurrently"), so validity is the
  *       proof the build completed.</li>
@@ -70,7 +70,7 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     @Autowired
     private AvailabilityService availabilityService;
 
-    // ---------- schema guards (V72 / V73) ----------
+    // ---------- schema guards (V79 / V80) ----------
 
     @Test
     void v72_ownershipColumnExistsOnTableAndEnversMirror() {
@@ -84,8 +84,8 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
                         + " WHERE table_schema = 'public' AND table_name = 'availability_slots_aud'"
                         + " AND column_name = 'held_by_booking_id'",
                 Integer.class);
-        assertThat(onTable).as("V72 adds held_by_booking_id to availability_slots").isEqualTo(1);
-        assertThat(onMirror).as("V72 mirrors the column into the Envers audit table").isEqualTo(1);
+        assertThat(onTable).as("V79 adds held_by_booking_id to availability_slots").isEqualTo(1);
+        assertThat(onMirror).as("V79 mirrors the column into the Envers audit table").isEqualTo(1);
     }
 
     @Test
@@ -99,7 +99,7 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
                         + " JOIN pg_class c ON i.indexrelid = c.oid"
                         + " WHERE c.relname = 'uq_availability_slots_live_window'",
                 (rs, rowNum) -> new Boolean[] { rs.getBoolean(1), rs.getBoolean(2) });
-        assertThat(index).as("V73 builds uq_availability_slots_live_window (valid + unique)").isNotNull();
+        assertThat(index).as("V80 builds uq_availability_slots_live_window (valid + unique)").isNotNull();
         assertThat(index[0]).as("the concurrent build completed (not INVALID)").isTrue();
         assertThat(index[1]).as("the index enforces uniqueness").isTrue();
     }
@@ -135,7 +135,7 @@ class AvailabilitySlotOwnershipSchemaIntegrationTest {
     void r2_ownerCancelWithASurvivingActiveClaimantTransfersInsteadOfReopening() {
         // The review round on the wave's rebased head, verbatim: a legacy
         // window can carry older CONFIRMED/COMPLETED claimants alongside the
-        // reconciled owner (V73 assigns the newest active booking). The
+        // reconciled owner (V80 assigns the newest active booking). The
         // owner's cancellation must TRANSFER the hold to the surviving
         // claimant — not reopen the window for a new claim while the survivor
         // still expects it (the double-booking the round flagged).

@@ -25,19 +25,19 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Migration-time guard for V75's currency convergence (the R9 wave — the
+ * Migration-time guard for V82's currency convergence (the R9 wave — the
  * ledger's currency): the repair derives every existing entry's ISO 4217
  * currency from its payment intent (reconstructing the UUIDv3 source-id
  * mapping the runtime path itself uses) and recomputes the provider
  * balances per {@code (provider, currency)} — and the regular post-boot
  * integration tests can never see it (by the time the context is up, Flyway
- * has already applied V75 to a fresh database and the convergence had
+ * has already applied V82 to a fresh database and the convergence had
  * nothing to transform).
  *
- * <p>This test boots with {@code spring.flyway.target=74} — the schema
- * stops BEFORE the currency migration (V74's index exists; V75 has not
+ * <p>This test boots with {@code spring.flyway.target=81} — the schema
+ * stops BEFORE the currency migration (V81's index exists; V82 has not
  * run) — seeds the exact pre-fix states the convergence exists for, then
- * executes the actual V75 script (the real file from the classpath, through
+ * executes the actual V82 script (the real file from the classpath, through
  * Spring's official {@link ScriptUtils}) and asserts the converged outcomes:
  *
  * <ol>
@@ -74,8 +74,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         // stop BEFORE the wave's currency migration — the pre-state this
-        // test seeds is exactly the state V75 exists to converge
-        "spring.flyway.target=74",
+        // test seeds is exactly the state V82 exists to converge
+        "spring.flyway.target=81",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -157,7 +157,7 @@ class LedgerCurrencyMigrationIntegrationTest {
                         + " version, created_at, updated_at, is_deleted)"
                         + " VALUES (?, 990001, 0, 18_000, 0, now(), now(), false)", providerId);
 
-        // ---- execute the actual V75 script (the real file) ----
+        // ---- execute the actual V82 script (the real file) ----
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
@@ -205,7 +205,7 @@ class LedgerCurrencyMigrationIntegrationTest {
                     "INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents,"
                             + " created_at, updated_at) VALUES (?, ?, ?, 'PAYMENT_CREDIT', 5, now(), now())",
                     UUID.randomUUID(), providerId, UUID.randomUUID());
-            throw new AssertionError("ledger_entries.currency must be NOT NULL after V75");
+            throw new AssertionError("ledger_entries.currency must be NOT NULL after V82");
         } catch (DataIntegrityViolationException expected) {
             // the null rejection
         }
