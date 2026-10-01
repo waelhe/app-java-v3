@@ -257,11 +257,12 @@ class MediaServiceTest {
      * text feed survives an unconfigured storage (the honest degradation)
      * instead of the whole surface failing with the 503 that killed three
      * NeighborhoodPostModuleIntegrationTest criteria and two
-     * ContentReportModuleIntegrationTest criteria.
+     * ContentReportModuleIntegrationTest criteria. The unstubbed
+     * ObjectProvider mock answers null (the unconfigured channel) without
+     * a stubbing — the reordered read never even asks.
      */
     @Test
     void listByPostIds_noRowsAndNoStorage_answersTheHonestEmptyList() {
-        when(storageProvider.getIfAvailable()).thenReturn(null);
         when(repository.findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
                 java.util.List.of(postId), MediaAssetStatus.UPLOADED))
                 .thenReturn(java.util.List.of());
@@ -271,11 +272,11 @@ class MediaServiceTest {
 
     /**
      * The mirror for the listing gallery: a photo-less listing's read
-     * survives an unconfigured storage channel the same way.
+     * survives an unconfigured storage channel the same way (no stub —
+     * the reordered read never asks the provider).
      */
     @Test
     void listByListing_noRowsAndNoStorage_answersTheHonestEmptyList() {
-        when(storageProvider.getIfAvailable()).thenReturn(null);
         when(repository.findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED))
                 .thenReturn(java.util.List.of());
 
