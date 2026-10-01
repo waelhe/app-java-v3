@@ -25,4 +25,33 @@ class PagedResponseTest {
         assertThat(result.totalPages()).isEqualTo(3);
         assertThat(result.last()).isFalse();
     }
+
+    @Test
+    void empty_carriesTheRequestsMetadataWithZeroTotalAndLast() {
+        var result = PagedResponse.empty(PagedRequest.of(2, 10));
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.pageNumber()).isEqualTo(2);
+        assertThat(result.pageSize()).isEqualTo(10);
+        assertThat(result.totalElements()).isZero();
+        assertThat(result.totalPages()).isZero();
+        assertThat(result.last()).isTrue();
+        assertThat(result.isEmpty()).isTrue();
+    }
+
+    @Test
+    void map_mapsTheContentAndKeepsThePageMetadata() {
+        var page = PagedResponse.of(
+                new PageImpl<>(List.of("one", "two", "three"), PageRequest.of(0, 3), 8));
+
+        var mapped = page.map(s -> s.length());
+
+        assertThat(mapped.content()).containsExactly(3, 3, 5);
+        assertThat(mapped.pageNumber()).isZero();
+        assertThat(mapped.pageSize()).isEqualTo(3);
+        assertThat(mapped.totalElements()).isEqualTo(8);
+        assertThat(mapped.totalPages()).isEqualTo(3);
+        assertThat(mapped.last()).isFalse();
+        assertThat(mapped.isEmpty()).isFalse();
+    }
 }

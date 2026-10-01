@@ -16,7 +16,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -219,6 +218,33 @@ public class NotificationService {
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
     }
 
+    /**
+     * L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+     * layer): the thanked post's author's POST_REACTED alert — the same
+     * delivery shape as the event points above (in-app row always lands;
+     * WebSocket and email ride their L22 per-type/channel preferences).
+     * The recipient is the post's author id, which lives in the
+     * users.id space — the id IS the recipient, the same seam
+     * {@code onPostCommented} uses.
+     *
+     * <p>The self-thank skip is the LISTENER's own policy (the
+     * {@code PostCommentedEvent} criterion-4 precedent) — this method
+     * delivers unconditionally, so the delivery contract stays one shape
+     * for every caller.
+     */
+    public void onPostReacted(UUID postId, UUID postAuthorId) {
+        String message = "New thank on your post: " + postId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(postAuthorId,
+                NotificationType.POST_REACTED.name(), message));
+        if (preferences.isChannelEnabled(postAuthorId,
+                NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(postAuthorId, "New Thank",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
@@ -232,9 +258,10 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Notification> getMyNotifications(Authentication authentication, Pageable pageable) {
+    public Page<NotificationResponse> getMyNotifications(Authentication authentication, Pageable pageable) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
-        return repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable);
+        return repository.findByRecipientIdOrderByCreatedAtDesc(userId, pageable)
+                .map(NotificationResponse::from);
     }
 
     /**
@@ -248,7 +275,7 @@ public class NotificationService {
     }
 
     @Observed(name = "notification.mark.read")
-    public Notification markAsRead(UUID id, Authentication authentication) {
+    public NotificationResponse markAsRead(UUID id, Authentication authentication) {
         Notification notification = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + id));
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
@@ -256,6 +283,13 @@ public class NotificationService {
             throw new AccessDeniedException("Not allowed to access this notification");
         }
         notification.markRead();
-        return notification;
+        // Flush the managed update BEFORE mapping the response so the wire
+        // metadata (version, updatedAt) reflects the persisted row, not the
+        // pre-flush in-memory state (CodeRabbit review on #427; the same
+        // staleness existed when the controller serialized the entity — the
+        // DTO boundary makes it explicit and fixable). saveAndFlush runs in
+        // the repository's own transaction (SimpleJpaRepository pattern).
+        repository.saveAndFlush(notification);
+        return NotificationResponse.from(notification);
     }
 }

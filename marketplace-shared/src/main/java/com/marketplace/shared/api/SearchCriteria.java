@@ -96,6 +96,19 @@ public record SearchCriteria(
      * meaningless zero/negative is a 400, never a silently-empty page).
      */
     public SearchCriteria {
+        // R6 (comprehensive-review-ar fix plan §4, Wave 5 — CodeRabbit
+        // round 1, root-adopted): a BLANK category is the criterion-less
+        // form, never a zero-match filter. The HTTP surface binds an
+        // absent-but-present parameter (?category=) as the empty string —
+        // not null — and the composed text+filter queries evaluate
+        // (:category IS NULL OR category = :category): a blank string
+        // would compare equal to no stored category and silently exclude
+        // every listing (and never match the filter-free cache
+        // condition). The record IS the input gate — the normalization
+        // lives here so every caller, path and key sees one form.
+        if (category != null && category.isBlank()) {
+            category = null;
+        }
         if (checkIn == null && checkOut == null) {
             // no window — the legacy form, unchanged
         } else if (checkIn == null || checkOut == null) {

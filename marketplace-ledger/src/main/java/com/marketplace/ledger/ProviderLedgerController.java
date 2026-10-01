@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -63,11 +64,14 @@ public class ProviderLedgerController {
     }
 
     @GetMapping("/providers/me/ledger/balance")
-    @Operation(summary = "Get my ledger balance",
-            description = "The calling provider's current ledger balance in minor units — the "
-                    + "amount credited from completed payments.")
-    public ResponseEntity<ProviderBalance> getMyBalance(Authentication authentication) {
-        return ResponseEntity.ok(ledgerService.getBalanceForOwner(requireOwnProviderUserId(authentication)));
+    @Operation(summary = "Get my ledger balances",
+            description = "The calling provider's current ledger balances in minor units — "
+                    + "one row per currency held (R9: balances are keyed (provider, currency) "
+                    + "and never summed across currencies; the amount credited from completed "
+                    + "payments of each currency). A provider with no ledger history answers "
+                    + "an empty list.")
+    public ResponseEntity<List<ProviderBalanceResponse>> getMyBalance(Authentication authentication) {
+        return ResponseEntity.ok(ledgerService.getBalancesForOwner(requireOwnProviderUserId(authentication)));
     }
 
     @GetMapping("/providers/me/ledger/statement")

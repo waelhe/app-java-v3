@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpecificationExecutor<Booking>, RevisionRepository<Booking, UUID, Integer> {
@@ -34,6 +36,19 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
      */
     List<Booking> findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(
             UUID consumerId, UUID providerId);
+
+    /**
+     * R2 review round (the wave's rebased head): the surviving active
+     * claimant on an exact window — the most recent non-deleted
+     * CONFIRMED/COMPLETED booking other than the cancelled one, in the same
+     * total order V73's reconciliation uses (createdAt, id), newest first.
+     * Soft-deleted rows are excluded by the {@code @SoftDelete} filter
+     * automatically. Null/empty when the cancelled booking was the only
+     * active claimant — the release then reopens the window.
+     */
+    Optional<Booking> findFirstByProviderIdAndStartsAtAndEndsAtAndStatusInAndIdNotOrderByCreatedAtDescIdDesc(
+            UUID providerId, Instant startsAt, Instant endsAt,
+            Collection<BookingStatus> statuses, UUID excludedBookingId);
 
     /**
      * L25 (feature-expansion roadmap §5): the provider's COMPLETED-booking

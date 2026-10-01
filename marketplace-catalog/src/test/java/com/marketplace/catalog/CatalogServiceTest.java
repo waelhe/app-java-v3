@@ -1,6 +1,8 @@
 package com.marketplace.catalog;
 
+import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.ProviderListingSummary;
+
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
@@ -12,8 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -121,17 +123,16 @@ class CatalogServiceTest {
     @Test
     void listActiveByProvider_queriesActiveOnlyMapsSummariesThroughTheBoostFirstRead() {
         UUID providerUserId = UUID.randomUUID();
-        Pageable pageable = PageRequest.of(0, 20);
         ProviderListing active = listing(ListingStatus.ACTIVE);
         when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                 any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
                 .thenAnswer(inv -> new PageImpl<>(List.of(active),
                         inv.getArgument(2, Pageable.class), 1));
 
-        var page = catalogService.listActiveByProvider(providerUserId, pageable);
+        var page = catalogService.listActiveByProvider(providerUserId, PagedRequest.of(0, 20));
 
-        assertThat(page.getTotalElements()).isEqualTo(1);
-        assertThat(page.getContent()).singleElement()
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.content()).singleElement()
                 .satisfies(summary -> assertThat(summary.id()).isEqualTo(active.getId()));
         // The pageable the repository saw: same page/size, UNSORTED — the
         // total order is the boost specification's own contract now.
@@ -187,9 +188,9 @@ class CatalogServiceTest {
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(20));
 
-        var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
+        assertThat(result.content()).hasSize(1);
         // BigDecimal 10 -> 1000 cents: the same movePointRight(2) mapping as
         // the unrestricted path rides the restricted query. guests rides
         // through as null (criterion-less). The :now instant (L37) is the
@@ -209,7 +210,7 @@ class CatalogServiceTest {
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, null, null, null, null, 4);
 
-        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PageRequest.of(0, 10));
+        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
 
         verify(listingRepository).searchByCriteriaRestricted(
                 eq(null), eq(null), eq(null), eq(4), eq(PROVIDER_IDS), any(java.time.Instant.class),
@@ -220,18 +221,20 @@ class CatalogServiceTest {
     void searchFullTextRestricted_keepsTheTrigramFallbackOnAnEmptyPage() {
         // Zero TOTAL matches — the pg_trgm fallback runs, exactly like the
         // unrestricted searchFullText.
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(listingRepository.searchSimilarRestricted(anyString(), any(), any(), any()))
+        when(listingRepository.searchSimilarRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
-        var result = catalogService.searchFullTextRestricted("gardn", PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchFullTextRestricted(
+                new com.marketplace.shared.api.SearchCriteria("gardn", null, null, null),
+                PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
-        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(PROVIDER_IDS),
-                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
-        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(PROVIDER_IDS),
-                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq(null), eq(null), eq(null), eq(null),
+                eq(PROVIDER_IDS), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq(null), eq(null), eq(null), eq(null),
+                eq(PROVIDER_IDS), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
     }
 
     @Test
@@ -240,25 +243,148 @@ class CatalogServiceTest {
         // content is legitimately empty — the fallback must NOT replace it
         // with a different result set (PR #256 full-review round:
         // isEmpty() is true while totalElements > 0).
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
 
-        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(5, 10));
+        var result = catalogService.searchFullTextRestricted(
+                new com.marketplace.shared.api.SearchCriteria("garden", null, null, null),
+                PROVIDER_IDS, PagedRequest.of(5, 10));
 
-        assertThat(result).isEmpty();
-        assertThat(result.getTotalElements()).isEqualTo(1);
-        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
+        assertThat(result.isEmpty()).isTrue();
+        assertThat(result.totalElements()).isEqualTo(1);
+        verify(listingRepository, never()).searchSimilarRestricted(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void searchFullTextRestricted_noFallbackWhenFtsMatches() {
-        when(listingRepository.searchFullTextRestricted(anyString(), any(), any(), any()))
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
 
-        var result = catalogService.searchFullTextRestricted("garden", PROVIDER_IDS, PageRequest.of(0, 10));
+        var result = catalogService.searchFullTextRestricted(
+                new com.marketplace.shared.api.SearchCriteria("garden", null, null, null),
+                PROVIDER_IDS, PagedRequest.of(0, 10));
 
-        assertThat(result).hasSize(1);
-        verify(listingRepository, never()).searchSimilarRestricted(anyString(), any(), any(), any());
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository, never()).searchSimilarRestricted(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void searchFullTextRestricted_r6TheFiltersRideTheRestrictedTextQuery() {
+        // R6 (comprehensive-review-ar fix plan §4, Wave 5): the criteria's
+        // optional predicates (category / price bounds / guests) reach the
+        // restricted native query TOGETHER with the text — the adapter
+        // maps every component, and the trigram fallback carries them too.
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(listingRepository.searchSimilarRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                "gardn", "stay", java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(80), null, null, 4);
+
+        catalogService.searchFullTextRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
+
+        // BigDecimal major units -> minor units (toMinorUnits).
+        verify(listingRepository).searchFullTextRestricted(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), eq(PROVIDER_IDS),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilarRestricted(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), eq(PROVIDER_IDS),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullText_r6MapsTheFullCriteriaOntoTheNativeQueryAndItsFallback() {
+        // R6 (Wave 5): the UNRESTRICTED text form maps the same full
+        // criteria onto both the FTS query and the pg_trgm fallback —
+        // the empty first page (zero content) triggers the fallback,
+        // which must carry the same predicates.
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(listingRepository.searchSimilar(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                "gardn", "stay", java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(80), null, null, 4);
+
+        var result = catalogService.searchFullText(criteria, PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository).searchFullText(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilar(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullText_r6TrimsTheQueryOntoTheNativeQuery() {
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers pass the
+        // full criteria now — the adapter owns the trim the call sites
+        // used to perform (the SQL parameter parity with the pre-wave
+        // text path: "  gardn  " reaches websearch_to_tsquery as "gardn").
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        catalogService.searchFullText(
+                new com.marketplace.shared.api.SearchCriteria("  gardn  ", null, null, null),
+                PagedRequest.of(0, 10));
+
+        verify(listingRepository).searchFullText(eq("gardn"), eq(null), eq(null), eq(null), eq(null),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullText_r6NoFallbackWhenFtsMatches() {
+        // The fallback contract on the composed form: a page with content
+        // (FTS matched) never triggers the similarity query.
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var result = catalogService.searchFullText(
+                new com.marketplace.shared.api.SearchCriteria("garden", null, null, null),
+                PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository, never()).searchSimilar(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void searchFullTextRestrictedToListings_r6MapsTheFullCriteriaOntoTheNativeQueryAndItsFallback() {
+        // R6 (Wave 5): the LISTING-restricted text form (the property flow
+        // + the saved-search matcher's probe) maps the full criteria onto
+        // both the FTS query and the pg_trgm fallback.
+        when(listingRepository.searchFullTextRestrictedToListings(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(listingRepository.searchSimilarRestrictedToListings(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                "gardn", "stay", java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(80), null, null, 4);
+        var listingIds = java.util.Set.of(UUID.randomUUID());
+
+        var result = catalogService.searchFullTextRestrictedToListings(criteria, listingIds, PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository).searchFullTextRestrictedToListings(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), eq(listingIds),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository).searchSimilarRestrictedToListings(eq("gardn"), eq("stay"),
+                eq(1000L), eq(8000L), eq(4), eq(listingIds),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullTextRestrictedToListings_r6NoFallbackWhenFtsMatches() {
+        when(listingRepository.searchFullTextRestrictedToListings(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var result = catalogService.searchFullTextRestrictedToListings(
+                new com.marketplace.shared.api.SearchCriteria("garden", null, null, null),
+                java.util.Set.of(UUID.randomUUID()), PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository, never()).searchSimilarRestrictedToListings(
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     // ---- I6: the guest-capacity write path ------------------------------------

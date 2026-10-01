@@ -71,7 +71,8 @@ class UserControllerWebMvcTest {
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
                 java.util.List.of(), java.util.List.of(),
-                java.util.List.of(), java.util.List.of()); // L35: savedSearches; L41: memberships; L42: posts+comments
+                java.util.List.of(), java.util.List.of(),
+                java.util.List.of()); // L35: savedSearches; L41: memberships; L42: posts+comments
 
         when(userService.syncFromOidc(any())).thenReturn(user);
         when(userDataExportService.exportFor(user)).thenReturn(export);

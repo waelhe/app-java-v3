@@ -1,5 +1,9 @@
 package com.marketplace.config;
 
+import test.config.AuthorizationServerFixture;
+
+import test.config.IntegrationContainers;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -23,8 +27,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
@@ -39,11 +41,15 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static test.config.AuthorizationServerFixture.AUTHORIZE_PATH;
+import static test.config.AuthorizationServerFixture.CLIENT_ID;
+import static test.config.AuthorizationServerFixture.CLIENT_SECRET;
+import static test.config.AuthorizationServerFixture.REDIRECT_URI;
+import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 
 /**
  * Real end-to-end login gate for the framework-managed authorization server:
@@ -95,33 +101,22 @@ class AuthorizationServerLoginGateIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     private static final String ADMIN_USERNAME = "it-login-gate-admin";
     private static final String USER_USERNAME = "it-login-gate-user";
     private static final String PASSWORD = "it-login-gate-password";
-
-    private static final String CLIENT_ID = "it-login-gate-client";
-    private static final String CLIENT_SECRET = "it-login-gate-secret";
-    private static final String REDIRECT_URI = "https://login-gate.test.example/callback";
 
     private static final String APP_CLIENT_ID = "marketplace-web-client";
     private static final String APP_CLIENT_SECRET = "it-app-secret";
     private static final String APP_REDIRECT_URI = "http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client";
 
     private static final String LOGIN_PATH = "/login";
-    private static final String AUTHORIZE_PATH = "/oauth2/authorize";
-    private static final String TOKEN_PATH = "/oauth2/token";
     private static final String PROTECTED_ADMIN_PATH = "/api/v1/admin/system";
 
     private static final Pattern SESSION_COOKIE = Pattern.compile("(SESSION|JSESSIONID)=([^;]+)");
@@ -224,6 +219,17 @@ class AuthorizationServerLoginGateIntegrationTest {
         JsonNode tokens = objectMapper.readTree(refreshResponse.body());
         String rotatedAccessToken = tokens.path("access_token").asString();
         assertThat(rotatedAccessToken).isNotBlank().isNotEqualTo(gate.accessToken());
+
+        // reuseRefreshTokens=true — the stateless-BFF contract (2026-09-30):
+        // the refresh token's VALUE must survive the refresh so a context that
+        // drops the re-signed cookie write (RSC renders cannot land Set-Cookie)
+        // cannot strand the browser with a dead refresh token — the recurring
+        // "session expired" defect. RFC 6749 §6 lets the server either echo the
+        // same refresh token or omit the field entirely; rotation (a DIFFERENT
+        // value) is the only forbidden outcome.
+        assertThat(tokens.path("refresh_token").asString())
+                .as("the refresh grant must reuse (never rotate) the refresh token value")
+                .isIn("", gate.refreshToken());
 
         HttpResponse<String> apiResponse = getWithBearer(PROTECTED_ADMIN_PATH, rotatedAccessToken);
         assertThat(apiResponse.statusCode()).isNotEqualTo(401);
@@ -453,7 +459,8 @@ class AuthorizationServerLoginGateIntegrationTest {
 
     /**
      * The bootstrapped client's operational settings are preserved verbatim (no drift from
-     * the official TokenSettings values): reuse=false, access 900s, refresh 604800s,
+     * the official TokenSettings values): reuse=true (the stateless-BFF contract — the
+     * refresh token value survives refreshes), access 900s, refresh 604800s,
      * authorization-code 300s, plus requireProofKey/requireAuthorizationConsent=true.
      */
     @Test
@@ -462,7 +469,7 @@ class AuthorizationServerLoginGateIntegrationTest {
         assertThat(appClient).isNotNull();
 
         TokenSettings tokenSettings = appClient.getTokenSettings();
-        assertThat(tokenSettings.getSettings().get("settings.token.reuse-refresh-tokens")).isEqualTo(false);
+        assertThat(tokenSettings.getSettings().get("settings.token.reuse-refresh-tokens")).isEqualTo(true);
         assertThat(tokenSettings.getSettings().get("settings.token.access-token-time-to-live"))
                 .isEqualTo(Duration.ofSeconds(900));
         assertThat(tokenSettings.getSettings().get("settings.token.refresh-token-time-to-live"))
@@ -679,24 +686,8 @@ class AuthorizationServerLoginGateIntegrationTest {
     }
 
     private void registerLoginGateClient() {
-        if (registeredClientRepository.findByClientId(CLIENT_ID) != null) {
-            return;
-        }
-        RegisteredClient loginGateClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId(CLIENT_ID)
-                .clientSecret("{noop}" + CLIENT_SECRET)
-                .clientName("Login Gate Integration Test Client")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri(REDIRECT_URI)
-                .scope("openid")
-                .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
-                        .build())
-                .build();
-        registeredClientRepository.save(loginGateClient);
+        AuthorizationServerFixture.registerLoginGateClient(registeredClientRepository,
+                "Login Gate Integration Test Client");
     }
 
     private void registerUser(String username, String role) {

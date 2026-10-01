@@ -1,5 +1,7 @@
 package com.marketplace.geo;
 
+import test.config.IntegrationContainers;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -20,7 +22,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -81,17 +82,12 @@ class GeoTreeRedisCacheIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the house precedent (GeoModuleIntegrationTest).
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory (AdminModuleIntegrationTest pattern).
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @Autowired
     private org.springframework.test.web.servlet.MockMvc mockMvc;
@@ -163,9 +159,11 @@ class GeoTreeRedisCacheIntegrationTest {
         assertThat(roundTrip(root)).isEqualTo(root);
         assertThat(roundTrip(root).children().get(0).children()).hasSize(2);
 
+        // R9: the cached stats value carries the per-currency net list —
+        // the CurrencyAmount carrier is Serializable for exactly this seam.
         ProviderStatsResponse stats = new ProviderStatsResponse(
                 Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-30T23:59:59Z"),
-                0.75, 123_456L, 9L);
+                0.75, List.of(new com.marketplace.shared.api.CurrencyAmount("SAR", 123_456L)), 9L);
         assertThat(roundTrip(stats)).isEqualTo(stats);
     }
 

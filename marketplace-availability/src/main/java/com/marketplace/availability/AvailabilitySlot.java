@@ -7,6 +7,15 @@ import org.hibernate.envers.Audited;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * A provider's bookable time window. R2 (comprehensive-review-ar-fix plan
+ * §4/R2 — slot ownership): the slot carries {@code heldByBookingId} — the
+ * booking whose confirm()/autoConfirm() call claimed it. {@code booked}
+ * and the owner are set and cleared together ({@link #markBooked(UUID)}/
+ * {@link #markAvailable()}), so a live booked row always tells WHO holds
+ * the window and a release that does not carry that booking's id can
+ * never free it.
+ */
 @Entity
 @Table(name = "availability_slots")
 @Audited
@@ -26,6 +35,16 @@ public class AvailabilitySlot extends BaseEntity {
 
     @Column(name = "booked", nullable = false)
     private boolean booked;
+
+    /**
+     * R2: the booking that holds this slot — claimed atomically with
+     * {@code booked} by {@code bookSlot(providerId, startsAt, endsAt, bookingId)}
+     * and cleared with it on release. Nullable in the schema (V79) because
+     * ownership accrues from the first post-migration confirm onward;
+     * pre-migration holders were backfilled by V79's deterministic UPDATE.
+     */
+    @Column(name = "held_by_booking_id")
+    private UUID heldByBookingId;
 
     protected AvailabilitySlot() {}
 
@@ -47,7 +66,24 @@ public class AvailabilitySlot extends BaseEntity {
     public Instant getStartsAt() { return startsAt; }
     public Instant getEndsAt() { return endsAt; }
     public boolean isBooked() { return booked; }
+    public UUID getHeldByBookingId() { return heldByBookingId; }
 
-    public void markBooked() { this.booked = true; }
-    public void markAvailable() { this.booked = false; }
+    /**
+     * R2: books the slot IN THE NAME of the confirming booking — one
+     * claim, booked flag and owner together. Concurrent claims on the
+     * same row are settled by the entity's {@code @Version} optimistic
+     * lock (BaseEntity — the losing flush fails its transaction), with
+     * V80's {@code uq_availability_slots_live_window} as the one-live-row
+     * backstop underneath.
+     */
+    public void markBooked(UUID bookingId) {
+        this.booked = true;
+        this.heldByBookingId = bookingId;
+    }
+
+    /** R2: releases the hold — the flag and the owner clear together. */
+    public void markAvailable() {
+        this.booked = false;
+        this.heldByBookingId = null;
+    }
 }

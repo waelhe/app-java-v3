@@ -1,5 +1,6 @@
 package com.marketplace.payments;
 
+import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -14,11 +15,12 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -40,17 +42,12 @@ class PaymentsModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     /**
      * Single source for the throwaway webhook secret: the channel bean
@@ -105,6 +102,12 @@ class PaymentsModuleIntegrationTest {
 
     @Autowired
     private PaymentRepository paymentRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private PaymentWebhookEventRepository webhookEventRepository;
 
     @Test
     void contextLoads() {
@@ -221,6 +224,51 @@ class PaymentsModuleIntegrationTest {
                 .isEqualTo(350L);
         assertThat(paymentIntentRepository.findById(intent.getId()).orElseThrow().getRefundedAmountCents())
                 .isEqualTo(350L);
+    }
+
+    /**
+     * CodeRabbit #431 (adopted from the root 2026-09-28): the settlement must
+     * survive a rollback-only carrier. The carrier transaction a webhook
+     * dispatch runs in is EXACTLY the state a failed first confirm attempt
+     * leaves behind under REQUIRED propagation — marked rollback-only. With
+     * {@code confirm}'s REQUIRES_NEW the settlement commits independently of
+     * the carrier's fate: the intent/payment transition and the dedup row
+     * stay committed even though the carrier rolls back. Under the pre-fix
+     * REQUIRED propagation this test fails on both assertions (the
+     * settlement silently rolled back with the carrier).
+     */
+    @Test
+    void webhookConfirm_survivesRollbackOnlyCarrier_settlesIndependently() {
+        PaymentIntent intent = paymentIntentRepository.save(
+                PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null));
+        intent.markProcessing();
+        PaymentIntent seeded = paymentIntentRepository.save(intent);
+        Payment payment = paymentRepository.save(Payment.create(seeded.getId(), 5000L));
+        UUID intentId = seeded.getId();
+        String eventId = "evt_poison_" + UUID.randomUUID();
+        String signature = paymentWebhookSecurity.computeSignatureHeader("stripe", eventId,
+                "payment_intent.succeeded", intentId, "ch_poison",
+                Instant.now().getEpochSecond());
+
+        TransactionTemplate carrier = new TransactionTemplate(transactionManager);
+        carrier.executeWithoutResult(status -> {
+            // The poisoned carrier: the terminal state a failed first attempt
+            // would leave under the old REQUIRED propagation.
+            status.setRollbackOnly();
+            boolean created = paymentsService.processWebhookEvent("stripe", eventId,
+                    "payment_intent.succeeded", signature, intentId, "ch_poison");
+            assertThat(created).as("the dispatch itself must complete normally").isTrue();
+        });
+
+        assertThat(paymentIntentRepository.findById(intentId).orElseThrow().getStatus())
+                .as("the settlement committed in its own REQUIRES_NEW transaction")
+                .isEqualTo(PaymentIntentStatus.SUCCEEDED);
+        assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+                .as("the payment row completed with the settlement")
+                .isEqualTo(PaymentStatus.COMPLETED);
+        assertThat(webhookEventRepository.findByProviderAndEventId("stripe", eventId))
+                .as("the dedup row committed in its own REQUIRES_NEW transaction")
+                .isPresent();
     }
 
     /**

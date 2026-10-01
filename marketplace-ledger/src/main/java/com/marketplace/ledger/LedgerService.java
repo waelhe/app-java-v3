@@ -1,6 +1,7 @@
 package com.marketplace.ledger;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.Currencies;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -8,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -28,20 +30,33 @@ public class LedgerService {
      * payment intent (idempotent by source id). B2 amount guard: a negative
      * amount is rejected with VALIDATION (400); a zero amount is a no-op that
      * returns the current balance without writing a zero-impact entry.
+     *
+     * <p><b>R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
+     * currency):</b> the credit carries the payment's ISO 4217 currency and
+     * moves the {@code (provider, currency)} balance of THAT currency — the
+     * pre-fix single-key balance aggregated different currencies into one
+     * number (100 SAR + 100 USD read as 200 units; the booking side carried
+     * the currency all along and the listener ignored it). The entry stores
+     * the currency beside the amount; the returned balance is the touched
+     * currency's own row.</p>
      */
     @Observed(name = "ledger.credit.payment")
-    public ProviderBalance creditFromPayment(UUID providerId, UUID paymentIntentId, long amountCents) {
+    public ProviderBalanceResponse creditFromPayment(UUID providerId, UUID paymentIntentId,
+                                                     long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return ProviderBalanceResponse.from(
+                    balanceOf(providerId, normalized));
         }
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return ProviderBalanceResponse.from(
+                    balanceOf(providerId, normalized));
         }
-        entryRepository.save(LedgerEntry.paymentCredit(providerId, paymentIntentId, amountCents));
-        ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        entryRepository.save(LedgerEntry.paymentCredit(providerId, paymentIntentId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
         balance.credit(amountCents);
-        return balanceRepository.save(balance);
+        return ProviderBalanceResponse.from(balanceRepository.save(balance));
     }
 
     /**
@@ -51,19 +66,25 @@ public class LedgerService {
      * replayed listeners no-ops (the debit lands exactly once per intent).
      * B2 amount guard: negative amounts are rejected with VALIDATION (400);
      * zero amounts return the current balance without writing an entry.
+     *
+     * <p><b>R9:</b> the commission is debited in the payment's own currency
+     * — the same currency the credit wrote — so each payment's fee moves
+     * that payment's balance (the plan's own wording).</p>
      */
     @Observed(name = "ledger.debit.commission")
-    public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId, long amountCents) {
+    public ProviderBalance debitFromCommission(UUID providerId, UUID paymentIntentId,
+                                               long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return balanceOf(providerId, normalized);
         }
         UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
         if (entryRepository.findBySourceId(sourceId).isPresent()) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return balanceOf(providerId, normalized);
         }
-        entryRepository.save(LedgerEntry.commissionDebit(providerId, sourceId, amountCents));
-        ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        entryRepository.save(LedgerEntry.commissionDebit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
         balance.debit(amountCents);
         return balanceRepository.save(balance);
     }
@@ -78,6 +99,10 @@ public class LedgerService {
      * B2 amount guard: negative amounts are rejected with VALIDATION (400);
      * zero amounts return the current balance without writing an entry.
      *
+     * <p><b>R9:</b> the refund mirrors the ORIGINAL credit's currency — the
+     * debit lands on the same {@code (provider, currency)} balance the
+     * credit moved.</p>
+     *
      * <p><b>Concurrent-delivery contract (CodeRabbit #252, adopted):</b> the
      * pre-check above is an optimization, not the guarantee — the guarantee
      * is the {@code UNIQUE} backstop on {@code source_id}. Two deliveries
@@ -90,31 +115,37 @@ public class LedgerService {
      * persistence context must roll back (Spring Framework DAO Support:
      * technology exceptions are translated to the {@code DataAccessException}
      * hierarchy and non-recoverable persistence failures belong to the
-     * transaction boundary, not to in-transaction recovery).
+     * transaction boundary, not to in-transaction recovery).</p>
      */
     @Observed(name = "ledger.debit.refund")
-    public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId, long amountCents) {
+    public ProviderBalance debitFromRefund(UUID providerId, UUID paymentIntentId,
+                                           long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return balanceOf(providerId, normalized);
         }
         UUID sourceId = UUID.nameUUIDFromBytes(("refund-" + paymentIntentId.toString()).getBytes());
         if (entryRepository.findBySourceId(sourceId).isPresent()) {
-            return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+            return balanceOf(providerId, normalized);
         }
-        entryRepository.save(LedgerEntry.refundDebit(providerId, sourceId, amountCents));
-        ProviderBalance balance = balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+        entryRepository.save(LedgerEntry.refundDebit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
         balance.debit(amountCents);
         return balanceRepository.save(balance);
     }
 
     /**
-     * Returns the provider’s current balance, or an empty balance when no
-     * entry has been written yet (read-only projection).
+     * R9: the provider's balances — one row per currency he holds (ordered
+     * by currency), the honest multi-currency read. An empty list is the
+     * valid answer for a provider with no ledger history: the money paths
+     * materialize a row only when an entry moves a currency.
      */
     @Transactional(readOnly = true)
-    public ProviderBalance getBalance(UUID providerId) {
-        return balanceRepository.findById(providerId).orElseGet(() -> ProviderBalance.empty(providerId));
+    public List<ProviderBalanceResponse> getBalances(UUID providerId) {
+        return balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId).stream()
+                .map(ProviderBalanceResponse::from)
+                .toList();
     }
 
     /**
@@ -132,7 +163,19 @@ public class LedgerService {
     }
 
     /**
-     * Provider-facing balance read (L20): the same number the ADMIN endpoint
+     * R9: the {@code (provider, currency)} balance — the live row or the
+     * empty projection for a currency the provider does not hold yet (the
+     * read-only answer the money paths' zero/idempotent paths return; the
+     * writing paths save it after moving the amount).
+     */
+    private ProviderBalance balanceOf(UUID providerId, String currency) {
+        return balanceRepository
+                .findById(new ProviderBalance.ProviderBalanceId(providerId, currency))
+                .orElseGet(() -> ProviderBalance.empty(providerId, currency));
+    }
+
+    /**
+     * Provider-facing balance read (L20): the same rows the ADMIN endpoint
      * returns, guarded by the unit's ownership convention —
      * {@code @authHelper.ownsProvider} exactly like
      * {@code AvailabilityService#createSlot}. The ADMIN surface stays
@@ -141,14 +184,15 @@ public class LedgerService {
      */
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Transactional(readOnly = true)
-    public ProviderBalance getBalanceForOwner(UUID providerId) {
-        return getBalance(providerId);
+    public List<ProviderBalanceResponse> getBalancesForOwner(UUID providerId) {
+        return getBalances(providerId);
     }
 
     /**
      * Provider statement (L20): newest-first ledger movement page for the
      * owning provider only. Pagination is the caller's {@link Pageable}
-     * (house {@code PagedResponse} contract).
+     * (house {@code PagedResponse} contract). R9: each movement carries its
+     * currency.
      */
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Transactional(readOnly = true)

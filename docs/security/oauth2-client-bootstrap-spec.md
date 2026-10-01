@@ -74,9 +74,14 @@
 
 ### أ) توازن القيم (مصيدة الانزلاق)
 الباني وحده **يغيّر السلوك** (الآتي افتراضياً: reuse=true / 5m / 60m / consent=false)
-مقابل القيم الظرفية الحالية (reuse=false / 900s / 604800s / 300s / consent=true).
-يُثبَّت **صراحةً** في البناء:
-- `reuseRefreshTokens(false)`
+مقابل القيم الظرفية الحالية (reuse=true / 900s / 604800s / 300s / consent=true).
+يُثبَّت **صراحةً** في البناء (لا اعتماد على الافتراضي ولو طابقه — القيمة قياس من الإنتاج، اصطلاح BFF عديم الحالة #476/#484):
+- `reuseRefreshTokens(true)` — قياس 2026-10-01 من `OAuth2ClientSecretInitializer` (النطاق الحي):
+  مع التدوير (false) كل تحديث يسكب قيمة تحديث جديدة، وسقوط كتابة واحدة بين سياقات BFF عديمة الحالة
+  يوقع الجلسة المتكررة «انتهت الجلسة، سجل مجددًا»؛ مع إعادة الاستخدام (true) قيمة التحديث لا تتغير،
+  فسقوط الكتابة يفقد رمز الوصول الطازج فقط والمبرم التالية تعيد سكبه — الجلسة تصمد إلى انتهاء التحديث ذاته (7 أيام).
+  المقايضة مقبولة لأن الBFF هو حامل الرموز الوحيد: الرموز لا تصل للمتصفح أبدًا (كوكي httpOnly مشفر جانب الخادم)
+  ومنحة التحديث لعميل سري حصرًا (client_secret_basic).
 - `accessTokenTimeToLive(Duration.ofSeconds(900))`
 - `refreshTokenTimeToLive(Duration.ofSeconds(604800))`
 - `authorizationCodeTimeToLive(Duration.ofSeconds(300))`
@@ -127,7 +132,7 @@ ClientSettings.builder()
     .requireAuthorizationConsent(true)
     .build();
 TokenSettings.builder()
-    .reuseRefreshTokens(false)
+    .reuseRefreshTokens(true)   // قياس الإنتاج — اصطلاح BFF عديم الحالة (#476/#484)
     .accessTokenTimeToLive(Duration.ofSeconds(900))
     .refreshTokenTimeToLive(Duration.ofSeconds(604800))
     .authorizationCodeTimeToLive(Duration.ofSeconds(300))

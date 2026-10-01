@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.BookingStatsPort;
+import com.marketplace.shared.api.CurrencyAmount;
 import com.marketplace.shared.api.LedgerStatsPort;
 import com.marketplace.shared.api.SlotWindowStats;
 import org.springframework.cache.annotation.Cacheable;
@@ -9,7 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -52,15 +53,18 @@ public class ProviderStatsService {
     /**
      * The three aggregates for one window. Occupancy is
      * {@code bookedSlots / totalSlots} — 0.0 when the provider has no slot
-     * in the window (no NaN, no 400: a legit empty answer).
+     * in the window (no NaN, no 400: a legit empty answer). R9: the net
+     * revenue is PER CURRENCY — one {@code CurrencyAmount} per ISO 4217
+     * code the window touches (the ledger's own grouping), never a single
+     * number mixed across currencies.
      */
     @PreAuthorize("@authHelper.ownsProvider(#providerId, authentication)")
     @Cacheable(cacheNames = "provider-stats", key = "#providerId + '|' + #window.from + '|' + #window.to")
     public ProviderStatsResponse getStats(UUID providerId, StatsWindow window) {
         SlotWindowStats slotStats = availabilityLookupPort
                 .findProviderSlotStats(providerId, window.from(), window.to());
-        long netRevenueCents = ledgerStatsPort
-                .findNetCentsForProviderBetween(providerId, window.from(), window.to());
+        List<CurrencyAmount> netRevenue = ledgerStatsPort
+                .findNetByCurrencyForProviderBetween(providerId, window.from(), window.to());
         long completedBookings = bookingStatsPort
                 .countCompletedForProviderBetween(providerId, window.from(), window.to());
 
@@ -69,6 +73,6 @@ public class ProviderStatsService {
                 : (double) slotStats.bookedSlots() / slotStats.totalSlots();
 
         return new ProviderStatsResponse(
-                window.from(), window.to(), occupancyRate, netRevenueCents, completedBookings);
+                window.from(), window.to(), occupancyRate, netRevenue, completedBookings);
     }
 }

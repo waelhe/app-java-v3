@@ -92,6 +92,17 @@ spring:
     # Spring Boot maps the setting to spring.flyway.postgresql.*.
     postgresql:
       transactional-lock: false
+    # The Qudsayya trial-zone content (R__seed_content_qudsayya.sql) is
+    # production/dev data, NOT a test fixture: its whole body sits inside
+    # one placeholder-gated DO block. Default true here (prod + dev +
+    # the migrator all inherit it); ONLY the test profile binds false
+    # (application-test.yml) so the flyway-enabled integration tests keep
+    # their pristine-database contracts (absolute counts, page-0
+    # composition, full-table cleanups) exactly as before the seed.
+    # Where the placeholder is left unresolved (raw psql), the gate
+    # evaluates false and the seed stays a no-op — fail-safe.
+    placeholders:
+      seedContent: "true"
 
   modulith:
     events:
@@ -180,22 +191,23 @@ spring:
     # The four *-v2 names are the ListingSummary serialization-schema
     # namespaces (CodeRabbit #241) — bumped with every ListingSummary record
     # component change so stale pre-change entries are never read. See
-    # CatalogService.CATALOG_CACHE_NAMES. geo-tree (L30) is the 14th named
+    # CatalogService.CATALOG_CACHE_NAMES. geo-tree (L30) is the 15th named
     # cache — the administrative tree is rebuilt-on-read reference data,
-    # evicted through the same AFTER_COMMIT relay as the rest. system-settings
-    # (W0, yelp-level plan §4.6) is the control-plane read path added with the
-    # settings table — keyed by setting key, evicted by SystemSettingsService
-    # through the same relay (its absent case is cached too, so a create evicts
-    # as well).
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
-    redis:
+    # evicted through the same AFTER_COMMIT relay as the rest. The count is
+    # derived and guarded by DocumentationNumbersGuardTest, so this comment
+    # cannot drift silently. system-settings (W0, yelp-level plan §4.6) is
+    # the 16th named cache — the control-plane read path added with the
+    # settings table, keyed by setting key, evicted by SystemSettingsService
+    # through the same relay (its absent case is cached too, so a create
+    # evicts as well).
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings    redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache
       # 4.1.1 — "spring.cache.redis.time-to-live | Entry expiration. By
       # default the entries never expire." Binding path (bytecode-verified in
       # that jar): CacheProperties$Redis.timeToLive -> RedisCacheConfiguration
       # -> defaultCacheConfig().entryTtl(...) -> every RedisCacheManager
-      # entry. Without this key, all 13 named caches hold entries FOREVER:
+      # entry. Without this key, all 16 named caches hold entries FOREVER:
       # invalidation only happens via CacheInvalidationRelay (AFTER_COMMIT),
       # which fires solely when an entity CHANGES — dead rows never do.
       # Growth is unbounded by construction: catalog-search / search-results
@@ -207,7 +219,7 @@ spring:
       # TTL semantics: fixed expiry from write (SET .. EX — no sliding
       # renewal), so a hot entry is rebuilt at most once per hour (one
       # indexed DB read), and a dead row disappears within the hour. Value
-      # derivation, not taste: all 13 caches are rebuildable repository
+      # derivation, not taste: all 15 caches are rebuildable repository
       # reads (correctness is governed by the AFTER_COMMIT relay, TTL is
       # garbage collection only), and 1h = 2x the user interaction window
       # (spring.session.timeout: 30m) — covers a working session with at
@@ -452,6 +464,19 @@ resilience4j:
         limit-for-period: 10
         timeout-duration: 0
       postComment:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
+      # L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+      # layer): the community's lightest write — a thank is one id pair
+      # with no authored text at all, so it rides the postComment budget
+      # (30/min — conservative until real traffic; same L29 model: fail
+      # fast, 429 RL-001, env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_POSTREACT_LIMIT_FOR_PERIOD).
+      # One named instance for BOTH the thank and the un-thank: they are
+      # one toggle's two directions — a thank/un-thank burst is one
+      # member's one behavior, not two.
+      postReact:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0

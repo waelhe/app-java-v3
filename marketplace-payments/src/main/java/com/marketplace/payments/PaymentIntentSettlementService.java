@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
@@ -56,29 +57,88 @@ public class PaymentIntentSettlementService {
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final WebhookEventRecorder webhookEventRecorder;
 
     public PaymentIntentSettlementService(PaymentIntentRepository paymentIntentRepository,
                                           PaymentRepository paymentRepository,
-                                          ApplicationEventPublisher eventPublisher) {
+                                          ApplicationEventPublisher eventPublisher,
+                                          WebhookEventRecorder webhookEventRecorder) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.eventPublisher = eventPublisher;
+        this.webhookEventRecorder = webhookEventRecorder;
     }
 
     /**
      * Provider-confirmed success: the intent lands SUCCEEDED, its payment
      * row COMPLETED, and the domain events fire (ledger credit + booking
      * auto-confirm listen for COMPLETED; cache evicted after commit).
+     *
+     * <p><b>REQUIRES_NEW — the settlement owns its transaction (CodeRabbit
+     * #431, adopted from the root 2026-09-28):</b> this method runs under
+     * {@code @Retry(name = "paymentProcessing")}, and the carrier it is
+     * called from is itself transactional on BOTH paths (the class-level
+     * {@code @Transactional} on {@code PaymentsService}). Under the default
+     * REQUIRED propagation a first attempt that throws a retryable exception
+     * crosses this method's transaction boundary and marks the SHARED
+     * carrier transaction rollback-only (Spring Framework Reference,
+     * Declarative Transaction Management: a runtime exception thrown through
+     * a participating REQUIRED scope marks the whole transaction
+     * rollback-only — the successful retry then joins the same poisoned
+     * transaction and commits nothing, surfacing
+     * {@code UnexpectedRollbackException} at the carrier's commit). That
+     * failure mode is worst on the webhook path: the commit failure fires
+     * from the interceptor AFTER {@code handleVerifiedWebhook}'s body — the
+     * compensating dedup delete (the catch inside the body) never runs, the
+     * already-committed dedup row (its own REQUIRES_NEW in
+     * {@link WebhookEventRecorder}) survives, and the provider's retry is
+     * acknowledged as already-processed — the payment never settles.
+     * {@code REQUIRES_NEW} breaks the poisoning at the root: each confirm
+     * attempt is its own transaction, so a failed attempt rolls back only
+     * itself, the carrier is never marked, and the retry can actually
+     * commit. The admin carrier is safe to suspend: {@code confirmIntent}'s
+     * transaction contains nothing but this call (the command shell
+     * delegates directly), so the settlement's independence breaks no
+     * atomicity. The webhook carrier is equally safe: it holds only the
+     * dedup SELECT (no write locks for the classic REQUIRES_NEW
+     * self-deadlock to bite on). And if the settlement's OWN commit fails,
+     * the exception surfaces inside the dispatch body where the documented
+     * compensating delete (dedup row removed, provider retry re-processes)
+     * already runs.
      */
     @Observed(name = "payment.confirm")
     @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentIntent confirm(UUID id, String externalId) {
+        return confirm(id, externalId, null);
+    }
+
+    /**
+     * The webhook-dispatch half of the closed loop, carrying its inbox row
+     * (R10 — Wave 2): the settlement marks the row SETTLED INSIDE this
+     * transaction, so "the inbox row settled" and "the money moved" commit
+     * as one atomic fact. A crash between the recorder's REQUIRES_NEW commit
+     * and this method's commit leaves the row RECEIVED — the recovery sweep
+     * re-delivers it; a crash after the commit leaves both facts durable.
+     * The admin surface keeps the two-argument form (no inbox row exists for
+     * an admin command).
+     */
+    @Observed(name = "payment.confirm")
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentIntent confirm(UUID id, String externalId, WebhookEventRef inboxRow) {
         PaymentIntent intent = requireIntent(id);
         intent.markSucceeded();
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        if (inboxRow != null) {
+            // REQUIRED propagation joins THIS transaction — the atomicity
+            // contract; the idempotent filter inside leaves a row the retry
+            // attempt already marked untouched.
+            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
         return intent;
     }
 
@@ -92,12 +152,29 @@ public class PaymentIntentSettlementService {
      */
     @Observed(name = "payment.fail")
     public PaymentIntent fail(UUID id) {
+        return fail(id, null);
+    }
+
+    /**
+     * The webhook-dispatch half carrying its inbox row (R10 — Wave 2): the
+     * failure settlement marks the row SETTLED inside the transaction its
+     * effects commit in (the class-level {@code @Transactional} scope this
+     * method has always run under — REQUIRED, joining the dispatch carrier),
+     * so a crash between the recorder's commit and this method's commit
+     * leaves the row RECEIVED for the recovery sweep, and a completed
+     * dispatch leaves both facts durable together.
+     */
+    @Observed(name = "payment.fail")
+    public PaymentIntent fail(UUID id, WebhookEventRef inboxRow) {
         PaymentIntent intent = requireIntent(id);
         intent.markFailed();
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(Payment::markFailed);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        if (inboxRow != null) {
+            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
         log.info("Payment intent {} settled as FAILED by the provider", id);
         return intent;
     }

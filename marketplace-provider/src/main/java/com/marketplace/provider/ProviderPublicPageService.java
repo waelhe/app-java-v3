@@ -4,7 +4,7 @@ import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.ReviewMode;
-import com.marketplace.shared.api.ReviewStats;
+import com.marketplace.shared.api.SpringPagination;import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.api.SystemSettingKeys;
 import com.marketplace.shared.api.SystemSettingsPort;
@@ -77,7 +77,8 @@ public class ProviderPublicPageService {
     public ProviderPublicPageResponse getPublicPage(UUID providerId, Pageable pageable) {
         ProviderProfile profile = providerService.getById(providerId);
 
-        Page<ListingSummary> listings = listingsBlock(profile, pageable);
+        Page<ListingSummary> listingsPage = listingsBlock(profile, pageable);
+        PagedResponse<ListingSummary> listings = PagedResponse.of(listingsPage);
 
         Optional<ReviewStats> verified = profile.getUserId() == null
                 ? Optional.empty()
@@ -141,8 +142,7 @@ public class ProviderPublicPageService {
                 block.reviewCount(),
                 block.ratingGeneralAverage(),
                 block.ratingGeneralCount(),
-                PagedResponse.of(listings));
-    }
+                PagedResponse.of(listings));    }
 
     /**
      * The listings block: served only for VERIFIED profiles with a linked
@@ -153,6 +153,9 @@ public class ProviderPublicPageService {
         if (profile.getStatus() != ProviderStatus.VERIFIED || profile.getUserId() == null) {
             return Page.empty(pageable);
         }
-        return catalogSearchPort.listActiveByProvider(profile.getUserId(), pageable);
+        return SpringPagination.toPage(
+                catalogSearchPort.listActiveByProvider(profile.getUserId(),
+                        SpringPagination.toPagedRequest(pageable)),
+                pageable);
     }
 }

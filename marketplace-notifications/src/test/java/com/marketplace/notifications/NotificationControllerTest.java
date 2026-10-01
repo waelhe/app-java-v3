@@ -34,10 +34,11 @@ class NotificationControllerTest {
     void getMineReturnsPagedNotifications() {
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         var page = new org.springframework.data.domain.PageImpl<>(
-                List.of(mock(Notification.class)), pageable, 1);
+                List.of(NotificationResponse.from(
+                        Notification.create(UUID.randomUUID(), "BOOKING_CREATED", "msg"))), pageable, 1);
         when(service.getMyNotifications(authentication, pageable)).thenReturn(page);
 
-        ResponseEntity<com.marketplace.shared.api.PagedResponse<Notification>> result =
+        ResponseEntity<com.marketplace.shared.api.PagedResponse<NotificationResponse>> result =
                 controller.getMine(pageable, authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -59,10 +60,11 @@ class NotificationControllerTest {
     @Test
     void markReadReturnsUpdatedNotification() {
         UUID id = UUID.randomUUID();
-        var notification = mock(Notification.class);
+        var notification = NotificationResponse.from(
+                Notification.create(UUID.randomUUID(), "BOOKING_CREATED", "msg"));
         when(service.markAsRead(id, authentication)).thenReturn(notification);
 
-        ResponseEntity<Notification> result = controller.markRead(id, authentication);
+        ResponseEntity<NotificationResponse> result = controller.markRead(id, authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(notification);

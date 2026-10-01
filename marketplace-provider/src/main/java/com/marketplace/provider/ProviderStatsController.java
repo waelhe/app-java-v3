@@ -49,8 +49,10 @@ public class ProviderStatsController {
     @GetMapping("/providers/me/stats")
     @Operation(summary = "Get my host stats",
             description = "The provider's own occupancy, net revenue (after the documented "
-                    + "commission) and completed bookings for the window. Omitted window = last "
-                    + "30 days; max window = 1 year.")
+                    + "commission) and completed bookings for the window. R9: the net revenue "
+                    + "is per currency — one entry per ISO 4217 code the window touches, "
+                    + "never summed across currencies. Omitted window = last 30 days; max "
+                    + "window = 1 year.")
     public ResponseEntity<ProviderStatsResponse> getMyStats(
             @Parameter(description = "Window start (inclusive), ISO-8601 instant — both bounds "
                     + "must be present together", example = "2026-09-01T00:00:00Z")

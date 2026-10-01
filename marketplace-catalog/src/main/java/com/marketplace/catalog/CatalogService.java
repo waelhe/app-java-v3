@@ -9,6 +9,7 @@ import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ListingActivatedEvent;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.SearchCriteria;
@@ -17,6 +18,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderNameResolver;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -45,11 +49,18 @@ import java.util.stream.Collectors;
  * derive price and provider from a listing synchronously.
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
+ *
+ * <p><b>R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy):</b>
+ * also implements {@link ListingPublicStatePort} — the catalog owns the
+ * listing's publication state, so it answers the "is this listing on the
+ * public read surface?" question for the media module's visibility gate
+ * (the same ACTIVE filter {@link #getActiveById} applies; the media read
+ * keeps the public surface's appearance consistency).</p>
  */
 @Service
 @Transactional
 @NamedInterface("catalog-api")
-public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi, ListingPublicStatePort {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -80,8 +91,9 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-active-v2", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> listActive(Pageable pageable) {
+    @Cacheable(cacheNames = "catalog-active-v2", key = "#request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> listActive(PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         // L37: the derived query rides the official Specifications path now —
         // boost-first + the L32 total order (see findBoostFirst). The cache
         // key keeps the ARGUMENT pageable's shape (page/size/sort), so the
@@ -89,17 +101,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // (arbitrary pre-L37 order) age out within the 1h TTL.
         Page<ProviderListing> page = findBoostFirst(
                 ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> listByCategory(String category, Pageable pageable) {
+    @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(
                 ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)
                         .and(ProviderListingSpecifications.hasCategory(category)), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Transactional(readOnly = true)
@@ -134,11 +147,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable) {
-        return toSummaryPage(findBoostFirst(
+    public PagedResponse<ListingSummary> listActiveByProvider(UUID providerUserId, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
+        return PagedResponse.of(toSummaryPage(findBoostFirst(
                 ProviderListingSpecifications.hasProviderId(providerUserId)
                         .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),
-                pageable));
+                pageable)));
     }
 
     @Transactional(readOnly = true)
@@ -149,13 +163,35 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-search-v2", key = "#query + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> searchFullText(String query, Pageable pageable) {
+    // R6 (comprehensive-review-ar fix plan §4, Wave 5): the contract carries
+    // the FULL criteria now. The catalog-level page cache serves ONLY the
+    // filter-free pure-text form (the legacy key space, unchanged — the
+    // condition requires every optional predicate absent, so the query text
+    // is the only variable and the key stays injective over that subspace).
+    // The FILTERED text form deliberately bypasses this cache: its caching
+    // surface is the search module's criteria-keyed search-results-v4 — the
+    // documented surface for every other criteria branch — whose injective
+    // length-prefixed key already covers every criteria component. A
+    // concatenation key over the criteria here would reproduce the exact
+    // ambiguity the repository fixed with SearchCriteriaCacheKeyGenerator
+    // (PR #256 round 1) — the house discipline rejects it.
+    @Cacheable(cacheNames = "catalog-search-v2",
+            condition = "#criteria != null && #criteria.category == null && #criteria.minPrice == null && #criteria.maxPrice == null && #criteria.guests == null",
+            key = "#criteria.query + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    public PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         // L37: one read, one "now" — the FTS page and its typo-tolerance
         // fallback share the same instant, so the boost state cannot
         // straddle a window boundary between them.
         java.time.Instant now = clock.instant();
-        Page<ProviderListing> page = listingRepository.searchFullText(query, now, pageable);
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
+        Page<ProviderListing> page = listingRepository.searchFullText(query,
+                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                criteria.guests(), now, pageable);
         if (page.isEmpty()) {
             // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
             // stem match — retry with word-similarity so a one-edit typo
@@ -163,25 +199,31 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
             // An implementation detail of the catalog's search: the port
             // contract, the search module and every caller are unchanged.
             // Cached as the final result of this query either way.
-            page = listingRepository.searchSimilar(query, now, pageable);
+            // R6: the fallback carries the SAME optional predicates — a
+            // fallback that dropped the filters would answer the
+            // typo-tolerated match set unfiltered.
+            page = listingRepository.searchSimilar(query,
+                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                    criteria.guests(), now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteria(SearchCriteria criteria, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteria(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), clock.instant(), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /**
      * L27 (feature-expansion roadmap §5): the window-restricted criteria
      * search — the same branch coverage and price mapping as
-     * {@link #searchByCriteria(SearchCriteria, Pageable)} (category / price
+     * {@link #searchByCriteria(SearchCriteria, PagedRequest)} (category / price
      * / browse-all are optional predicates of the same query), plus the
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
@@ -191,17 +233,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
                 criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, clock.instant(), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /**
      * L27: the window-restricted full-text search — mirrors
-     * {@link #searchFullText(String, Pageable)} (official
+     * {@link #searchFullText(SearchCriteria, PagedRequest)} (official
      * {@code websearch_to_tsquery} ranking, plus the pg_trgm
      * typo-tolerance fallback), with the
      * {@code provider_id IN (:providerIds)} restriction applied to both
@@ -213,26 +256,47 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * matches is legitimately empty ({@code isEmpty()} is true while
      * {@code getTotalElements() > 0}) and must stay an honest empty page,
      * not be replaced by the similarity result set.
+     *
+     * <p><b>R6 (Wave 5):</b> the criteria's optional catalog predicates
+     * (category / price bounds / guests) compose with the text predicate
+     * and the provider restriction in BOTH queries and counts — the
+     * windowed text search no longer drops the filters that ride it.
+     * Deliberately NOT cached at this level (the same policy as
+     * {@link #searchByCriteriaRestricted}): the search module's
+     * criteria-keyed {@code search-results-v4} cache is the caching
+     * surface for the restricted window searches.
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
-        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query, providerIds, now, pageable);
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
+        Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query,
+                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                criteria.guests(), providerIds, now, pageable);
         if (page.getTotalElements() == 0) {
-            page = listingRepository.searchSimilarRestricted(query, providerIds, now, pageable);
+            page = listingRepository.searchSimilarRestricted(query,
+                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                    criteria.guests(), providerIds, now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listByCategorySummary(String category, Pageable pageable) {
-        return listByCategory(category, pageable);
+        return SpringPagination.toPage(
+                listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<ListingSummary> listActiveSummary(Pageable pageable) {
-        return listActive(pageable);
+        return SpringPagination.toPage(
+                listActive(SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     @Transactional(readOnly = true)
@@ -248,6 +312,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
                 .map(this::toProviderListingView)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
+    }
+
+    /**
+     * R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy): the
+     * public-visibility predicate — the SAME filter {@link #getActiveById}
+     * (the public detail endpoint's resolver) applies, as a boolean for the
+     * media module's request-time gate. ACTIVE = on the public surface;
+     * DRAFT/PAUSED/ARCHIVED, unknown ids and soft-deleted rows are not
+     * (the repository's {@code @SoftDelete} filter already hides dead rows).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isPubliclyVisible(UUID listingId) {
+        return listingRepository.findById(listingId)
+                .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .isPresent();
     }
 
     /**
@@ -313,20 +393,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
+    public PagedResponse<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
                                                                      Set<UUID> listingIds,
-                                                                     Pageable pageable) {
+                                                                     PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         var predicates = criteriaSpecification(criteria)
                 .and(ProviderListingSpecifications.hasListingIdIn(listingIds));
         Page<ProviderListing> page = findBoostFirst(predicates, pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria), pageable);
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     /** The shared optional-predicate specification of the faceted paths. */
@@ -344,16 +426,35 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * fallback, with the id restriction in both the content and count
      * queries. Text searches rank by relevance (documented: the facet sort
      * whitelist does not apply).
+     *
+     * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5):</b> the
+     * criteria's optional catalog predicates (category / price bounds /
+     * guests) compose with the text predicate and the id restriction in
+     * BOTH the content and count queries — the property flow's text branch
+     * and the saved-search matcher's membership probe no longer drop the
+     * filters that ride them. Deliberately NOT cached at this level: the
+     * search module's criteria-keyed {@code search-results-v4} cache is
+     * the caching surface for the id-restricted forms.
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable) {
+    public PagedResponse<ListingSummary> searchFullTextRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
-        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query, listingIds, now, pageable);
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+        String query = criteria.query() == null ? null : criteria.query().trim();
+        Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query,
+                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                criteria.guests(), listingIds, now, pageable);
         if (page.getTotalElements() == 0) {
-            page = listingRepository.searchSimilarRestrictedToListings(query, listingIds, now, pageable);
+            page = listingRepository.searchSimilarRestrictedToListings(query,
+                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                    criteria.guests(), listingIds, now, pageable);
         }
-        return toSummaryPage(page);
+        return PagedResponse.of(toSummaryPage(page));
     }
 
     @Override

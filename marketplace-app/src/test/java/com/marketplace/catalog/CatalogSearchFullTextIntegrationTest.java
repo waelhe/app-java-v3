@@ -1,5 +1,7 @@
 package com.marketplace.catalog;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.ListingSummary;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +17,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
 import java.util.UUID;
@@ -82,10 +83,7 @@ class CatalogSearchFullTextIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches MarketplaceApplicationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private CatalogService catalogService;
@@ -141,10 +139,10 @@ class CatalogSearchFullTextIntegrationTest {
 
     @Test
     void multiWordQueryKeepsAndSemantics() {
-        Page<ListingSummary> page = catalogService.searchFullText("garden view", Pageable.ofSize(10));
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("garden view", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
         // "garden view" AND-matches: Garden View (title) and Cozy House (description
         // has both words) — City View Loft lacks "garden", keyboard lacks both.
-        assertThat(page.map(ListingSummary::title)).containsExactlyInAnyOrder(
+        assertThat(page.map(ListingSummary::title).content()).containsExactlyInAnyOrder(
                 "Garden View", "Cozy House");
     }
 
@@ -154,38 +152,38 @@ class CatalogSearchFullTextIntegrationTest {
         // websearch_to_tsquery parses any input leniently (official example:
         // '""" )( dummy \ query <->' -> 'dummi' & 'queri').
         assertThatCode(() ->
-                catalogService.searchFullText("\"unbalanced (quote -minus", Pageable.ofSize(10)))
+                catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("\"unbalanced (quote -minus", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)))
                 .as("raw user input with quotes/parens/dashes must never raise a tsquery syntax error")
                 .doesNotThrowAnyException();
     }
 
     @Test
     void quotedPhraseMatchesAdjacentWordsOnly() {
-        Page<ListingSummary> page = catalogService.searchFullText("\"garden view\"", Pageable.ofSize(10));
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("\"garden view\"", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
         // 'garden' <-> 'view' adjacency: Garden View title matches; Cozy House
         // has "garden" and "view" separated by other words — not a phrase match.
-        assertThat(page.map(ListingSummary::id)).containsExactly(gardenViewId);
+        assertThat(page.map(ListingSummary::id).content()).containsExactly(gardenViewId);
     }
 
     @Test
     void exclusionOperatorFiltersOutTerm() {
-        Page<ListingSummary> page = catalogService.searchFullText("view -city", Pageable.ofSize(10));
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("view -city", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
         // 'view' AND NOT 'city': Garden View + Cozy House match, City View Loft excluded.
-        assertThat(page.map(ListingSummary::title)).containsExactlyInAnyOrder("Garden View", "Cozy House");
+        assertThat(page.map(ListingSummary::title).content()).containsExactlyInAnyOrder("Garden View", "Cozy House");
     }
 
     @Test
     void orOperatorMatchesEitherPhrase() {
-        Page<ListingSummary> page = catalogService.searchFullText("keyboard or loft", Pageable.ofSize(10));
-        assertThat(page.map(ListingSummary::title)).containsExactlyInAnyOrder(
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("keyboard or loft", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(page.map(ListingSummary::title).content()).containsExactlyInAnyOrder(
                 "Mechanical Keyboard", "City View Loft");
     }
 
     @Test
     void singleTermQueryMatchesAllOccurrences() {
         // 'garden' alone: plain single-term query — no operator involved.
-        Page<ListingSummary> page = catalogService.searchFullText("garden", Pageable.ofSize(10));
-        assertThat(page.map(ListingSummary::title)).containsExactlyInAnyOrder("Garden View", "Cozy House");
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("garden", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(page.map(ListingSummary::title).content()).containsExactlyInAnyOrder("Garden View", "Cozy House");
     }
 
     // ---- Typo-tolerance fallback (V34 / pg_trgm word similarity) ----
@@ -199,8 +197,8 @@ class CatalogSearchFullTextIntegrationTest {
     void oneEditTypoStillFindsListingsThroughService() {
         // "gardn" ~ "garden": FTS finds no stem, pg_trgm word similarity
         // surfaces both listings containing the word.
-        Page<ListingSummary> page = catalogService.searchFullText("gardn", Pageable.ofSize(10));
-        assertThat(page.map(ListingSummary::title))
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("gardn", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(page.map(ListingSummary::title).content())
                 .containsExactlyInAnyOrder("Garden View", "Cozy House");
     }
 
@@ -209,8 +207,8 @@ class CatalogSearchFullTextIntegrationTest {
         // "skylin" ~ "skyline" (City View Loft description): the searched
         // text is title + description — the same expression both indexes use.
         // Measured on real PostgreSQL: word_similarity = 0.857.
-        Page<ListingSummary> page = catalogService.searchFullText("skylin", Pageable.ofSize(10));
-        assertThat(page.map(ListingSummary::title)).containsExactly("City View Loft");
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("skylin", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
+        assertThat(page.map(ListingSummary::title).content()).containsExactly("City View Loft");
     }
 
     @Test
@@ -221,7 +219,8 @@ class CatalogSearchFullTextIntegrationTest {
         // Same-stem words tie (identical trigram overlap) so order is not
         // asserted; the SQL orders by similarity DESC which is the correct
         // semantics either way.
-        Page<ProviderListing> page = listingRepository.searchSimilar("gardn", java.time.Instant.now(), Pageable.ofSize(10));
+        Page<ProviderListing> page = listingRepository.searchSimilar("gardn", null, null, null, null,
+                java.time.Instant.now(), Pageable.ofSize(10));
         assertThat(page.map(ProviderListing::getTitle))
                 .containsExactlyInAnyOrder("Garden View", "Cozy House");
     }
@@ -235,8 +234,8 @@ class CatalogSearchFullTextIntegrationTest {
         // measurement-backed user decision, not a code default). The
         // fallback must respect the framework threshold and return empty
         // rather than noise.
-        assertThat(catalogService.searchFullText("gardin", Pageable.ofSize(10))).isEmpty();
-        assertThat(catalogService.searchFullText("keybaord", Pageable.ofSize(10))).isEmpty();
+        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("gardin", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
+        assertThat(catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("keybaord", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)).isEmpty()).isTrue();
     }
 
     @Test
@@ -246,7 +245,7 @@ class CatalogSearchFullTextIntegrationTest {
         // math, no parser involved, but the guarantee is asserted the same
         // way as the FTS path above.
         assertThatCode(() ->
-                catalogService.searchFullText("\"unbalanced (quote -minus", Pageable.ofSize(10)))
+                catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("\"unbalanced (quote -minus", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10)))
                 .as("raw user input must never raise in the fallback path either")
                 .doesNotThrowAnyException();
     }

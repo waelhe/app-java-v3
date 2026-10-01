@@ -45,6 +45,7 @@ public class MediaExportAdapter implements MediaExportPort {
         return new MediaExportEntry(
                 asset.getId(),
                 asset.getListingId(),
+                asset.getPostId(),
                 asset.getObjectKey(),
                 asset.getContentType(),
                 asset.getSizeBytes(),

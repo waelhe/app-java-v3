@@ -7,6 +7,7 @@ import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ProviderListingView;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -75,7 +76,7 @@ public class CatalogController {
     @Operation(summary = "Browse active listings", description = "Paginated ACTIVE listings — the "
             + "public browse surface (L29 mobile docs).")
     public ResponseEntity<PagedResponse<ListingSummary>> listActive(Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(catalogService.listActive(pageable)));
+        return ResponseEntity.ok(catalogService.listActive(SpringPagination.toPagedRequest(pageable)));
     }
 
     /**
@@ -102,7 +103,7 @@ public class CatalogController {
             description = "Paginated ACTIVE listings filtered to one category.")
     public ResponseEntity<PagedResponse<ListingSummary>> listByCategory(
             @PathVariable String category, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(catalogService.listByCategory(category, pageable)));
+        return ResponseEntity.ok(catalogService.listByCategory(category, SpringPagination.toPagedRequest(pageable)));
     }
 
     @GetMapping("/provider/{providerId}")

@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
@@ -89,6 +90,20 @@ jobs:
           MANAGEMENT_HEALTH_MAIL_ENABLED: false
           MANAGEMENT_TRACING_ENABLED: false
         run: ./.ci/check-openapi-compat.sh
+
+      # The gate boots two app instances (current + baseline tag) whose
+      # stdout goes to runner-local logs; on failure those logs were
+      # invisible. This upload found the 2026-09-29 baseline-boot root
+      # cause (stale target/ resources ghosting into the tag jar) in a
+      # single run — keep the visibility permanent.
+      - name: Upload OpenAPI gate boot logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi-gate-logs-java-${{ matrix.java }}
+          path: .ci/openapi-compat/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Run Maven verify (unit + integration tests)
         env:

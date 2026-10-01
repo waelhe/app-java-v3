@@ -107,7 +107,9 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain authorizationServerSecurityFilterChain(
+            HttpSecurity http,
+            SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
         http
                 .oauth2AuthorizationServer(authorizationServer -> {
                     http.securityMatcher(authorizationServer.getEndpointsMatcher());
@@ -120,6 +122,26 @@ public class SecurityConfig {
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                         )
                 )
+                // R8 (comprehensive-review-ar fix plan §4, Wave 1): the
+                // authorization endpoints are the minting surface of the
+                // surviving-session gap — a disabled account's live form-login
+                // session still authenticates here and can mint fresh
+                // authorization codes. Session expiry is enforced by
+                // ConcurrentSessionFilter, and SessionManagementConfigurer
+                // registers that filter per chain (the same DSL the default
+                // chain below already uses): bytecode-verified against
+                // spring-security-config 7.1.1 — configure() adds
+                // createConcurrencyFilter() to THIS builder only, and SAS's own
+                // OAuth2AuthorizationEndpointConfigurer keeps its private
+                // register-strategy (setSessionAuthenticationStrategy during
+                // init), so this block adds the enforcement filter without
+                // touching the endpoint's strategy. maximumSessions reuses the
+                // same bound property and the same SpringSessionBackedSessionRegistry
+                // bean: getAllSessions/principal indexing/expiry all live in the
+                // Spring Session store, one source of truth for both chains.
+                .sessionManagement(session -> session
+                        .maximumSessions(properties.security().session().maxSessions())
+                        .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
         return http.build();
@@ -659,7 +681,16 @@ public class SecurityConfig {
      *       keys on it), so the principal name is the claim's honest source.
      *       The same official customization guide as {@code roles}. Not
      *       added on {@code client_credentials} tokens — those principals
-     *       are clients, not users, and a client id is not an email.</li>
+     *       are clients, not users, and a client id is not an email. Nor on
+     *       the break-glass principal ({@link AdminUserInitializer#ADMIN_USERNAME}):
+     *       its login handle is deliberately not an email address, so the
+     *       claim would violate its own contract AND {@code syncFromOidc}
+     *       would persist {@code "admin"} into the break-glass account's
+     *       profile row on the next {@code /me} — the data-integrity hazard
+     *       CodeRabbit measured on the #416 review thread. With the claim
+     *       absent, {@code User.updateProfile}'s null-safety (null = "no
+     *       information — keep the stored value") leaves the stored profile
+     *       untouched — the same semantics a pre-BE-06 token already had.</li>
      * </ul>
      *
      * <p>The {@code aud} claim is set with a mutable {@code ArrayList} on purpose:
@@ -681,7 +712,13 @@ public class SecurityConfig {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
                 boolean userGrant = AuthorizationGrantType.AUTHORIZATION_CODE.equals(context.getAuthorizationGrantType())
                         || AuthorizationGrantType.REFRESH_TOKEN.equals(context.getAuthorizationGrantType());
-                if (userGrant) {
+                // The break-glass principal's login handle is "admin", not an email —
+                // emitting it as the email claim would violate the claim's own contract
+                // ("the login username IS the email") and let syncFromOidc persist
+                // "admin" into the identity profile row (CodeRabbit #416 thread).
+                boolean emailValuedPrincipal = !AdminUserInitializer.ADMIN_USERNAME
+                        .equals(context.getPrincipal().getName());
+                if (userGrant && emailValuedPrincipal) {
                     context.getClaims().claim("email", context.getPrincipal().getName());
                 }
                 context.getClaims()

@@ -1,6 +1,9 @@
 package com.marketplace.media;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
@@ -17,7 +20,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -51,23 +53,22 @@ class MediaUploadFlowIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
 
     @MockitoBean
     ListingPriceProvider listingPriceProvider;
+
+    /** R5: the publication-state gate's port — public by default (the read path the flow exercises). */
+    @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
 
     @MockitoBean
     ProviderLookupPort providerLookupPort;
@@ -82,6 +83,9 @@ class MediaUploadFlowIntegrationTest {
     @MockitoBean
     ReviewLookupPort reviewLookupPort;
 
+    /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
+    @MockitoBean
+    PostLookupPort postLookupPort;
     @MockitoBean
     S3MediaStorage storage;
 
@@ -112,6 +116,10 @@ class MediaUploadFlowIntegrationTest {
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
+        // R5: the seeded listing reads on the public surface — the upload
+        // flow's read path serves it without consulting identity.
+        org.mockito.Mockito.lenient()
+                .when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(true);
     }
 
     /**
@@ -169,7 +177,7 @@ class MediaUploadFlowIntegrationTest {
 
         // 3) read path: only UPLOADED assets, presigned per call — thumbUrl
         // still null until processing runs (L28)
-        var listing = mediaService.listByListing(listingId);
+        var listing = mediaService.listByListing(listingId, null);
         assertThat(listing).hasSize(1);
         assertThat(listing.get(0).id()).isEqualTo(view.mediaId());
         assertThat(listing.get(0).thumbUrl()).isNull();
@@ -178,7 +186,7 @@ class MediaUploadFlowIntegrationTest {
         // directly for determinism) — the small original keeps itself as
         // thumb, and the read then returns both links.
         mediaService.processThumbnail(view.mediaId());
-        var afterProcessing = mediaService.listByListing(listingId);
+        var afterProcessing = mediaService.listByListing(listingId, null);
         assertThat(afterProcessing.get(0).thumbUrl())
                 .isEqualTo("https://storage.example/signed-get");
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow()
@@ -187,7 +195,7 @@ class MediaUploadFlowIntegrationTest {
         // 4) delete: soft-deleted record, storage object removed best-effort
         mediaService.delete(view.mediaId(), null);
         assertThat(mediaAssetRepository.findById(view.mediaId())).isEmpty();
-        assertThat(mediaService.listByListing(listingId)).isEmpty();
+        assertThat(mediaService.listByListing(listingId, null)).isEmpty();
     }
 
     @Test

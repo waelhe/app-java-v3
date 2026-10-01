@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,4 +45,34 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
      */
     @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(:listingId, 0))", nativeQuery = true)
     void lockListingPositionAllocation(@Param("listingId") String listingId);
+
+    // ---------- L48: the post target (gap #2 — post images) ----------
+
+    /**
+     * L48: the feed's one grouped media read — every asset of the given
+     * posts in a given status, ordered (postId, position) so the consumer
+     * groups without a second assumption. Derived like the listing
+     * siblings, so the shared {@code @SoftDelete} excludes purged rows;
+     * {@code MediaLookupAdapter} calls it with {@code UPLOADED} (the
+     * port's storage-verified-only contract) and the V76 partial index
+     * {@code idx_media_assets_post_feed} serves exactly this scan.
+     */
+    List<MediaAsset> findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
+            Collection<UUID> postIds, MediaAssetStatus status);
+
+    /** L48: the post twin of {@link #countByListingId(UUID)}. */
+    long countByPostId(UUID postId);
+
+    /**
+     * L48: the post twin of {@link #lockListingPositionAllocation(String)} —
+     * the same advisory transaction lock discipline (CodeRabbit #241),
+     * serialized per POST id. The key space is shared with the listing lock
+     * (both {@code hashtextextended(uuid, 0)}): a cross-family hash
+     * collision can only OVER-serialize the two allocations for an instant,
+     * never under-serialize them — the lock is the serialization, so
+     * correctness is unaffected either way (the same stance as one shared
+     * advisory namespace across the whole table).
+     */
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(:postId, 0))", nativeQuery = true)
+    void lockPostPositionAllocation(@Param("postId") String postId);
 }

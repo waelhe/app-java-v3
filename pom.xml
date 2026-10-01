@@ -76,13 +76,13 @@
              recipe (org.wiremock:wiremock, test scope). -->
         <wiremock.version>3.13.2</wiremock.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
-        <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements -->
-        <jackson.version>3.2.2</jackson.version>
+        <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements; 3.2.2 → 3.2.3: CVE-2026-91776 + CVE-2026-91777 on tools.jackson.core:jackson-databind (HIGH, fixed in 3.2.3 — the same trivy gate measurement as the Jackson-2 bump) -->
+        <jackson.version>3.2.3</jackson.version>
         <prometheus-client.version>1.8.0</prometheus-client.version>
         <!-- Override: commons-logging — spring-session-core 4.1.1 (Boot 4.1.1) requires 1.4.0, Boot 4.1.1 BOM manages 1.3.6 (RequireUpperBoundDeps) -->
         <commons-logging.version>1.4.0</commons-logging.version>
-        <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps) -->
-        <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
+        <!-- Override: Jackson-2 BOM — swagger-core-jakarta 2.2.52 (springdoc 3.1.0) requires 2.22.0, Boot 4.1.1 manages 2.21.5 (RequireUpperBoundDeps); 2.22.2 → 2.22.3: CVE-2026-91776 (TypeDeserializerBase._findDeserializer()) + CVE-2026-91777 (forward-reference completion for @JsonIdentityInfo object IDs) — both HIGH with fixed versions (trivy scan on main 98e619cd, 2026-09-30T20:26Z; the DB entry landed between the PR-head scan [green, 19:50Z] and main's) -->
+        <jackson-2-bom.version>2.22.3</jackson-2-bom.version>
         <!-- Override: Tomcat — Boot 4.1.1 manages 11.0.24, which ships three CRITICAL
              authentication/authorization bypasses (trivy scan, 2026-09-06):
              CVE-2026-65182 (security-constraint bypass, longer-path-before-shorter),

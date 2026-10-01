@@ -52,7 +52,8 @@ class LedgerControllerWebMvcTest {
     void creditProvider_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
         UUID paymentIntentId = UUID.randomUUID();
-        when(ledgerService.creditFromPayment(any(), any(), anyLong())).thenReturn(org.mockito.Mockito.mock(ProviderBalance.class));
+        when(ledgerService.creditFromPayment(any(), any(), anyLong(), any())).thenReturn(
+                new ProviderBalanceResponse(providerId, "SAR", 5000L, null, null, null, null, null));
 
         mockMvc.perform(post("/api/v1/admin/ledger/providers/{providerId}/credit", providerId)
                         .param("paymentIntentId", paymentIntentId.toString())
@@ -61,9 +62,11 @@ class LedgerControllerWebMvcTest {
     }
 
     @Test
-    void getProviderBalance_returnsOk() throws Exception {
+    void getProviderBalances_returnsOk() throws Exception {
         UUID providerId = UUID.randomUUID();
-        when(ledgerService.getBalance(any())).thenReturn(org.mockito.Mockito.mock(ProviderBalance.class));
+        when(ledgerService.getBalances(any())).thenReturn(java.util.List.of(
+                new ProviderBalanceResponse(providerId, "SAR", 5000L, null, null, null, null, null),
+                new ProviderBalanceResponse(providerId, "USD", 1200L, null, null, null, null, null)));
 
         mockMvc.perform(get("/api/v1/admin/ledger/providers/{providerId}/balance", providerId))
                 .andExpect(status().isOk());

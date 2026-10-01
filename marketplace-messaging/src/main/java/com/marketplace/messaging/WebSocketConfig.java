@@ -1,5 +1,6 @@
 package com.marketplace.messaging;
 
+import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.config.MarketplaceProperties;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Configuration;
@@ -44,13 +45,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final MarketplaceProperties properties;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
     private final ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter;
+    private final ObjectProvider<UserLookupPort> userLookupPort;
 
     public WebSocketConfig(MarketplaceProperties properties,
                            ObjectProvider<JwtDecoder> jwtDecoder,
-                           ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter) {
+                           ObjectProvider<JwtAuthenticationConverter> jwtAuthenticationConverter,
+                           ObjectProvider<UserLookupPort> userLookupPort) {
         this.properties = properties;
         this.jwtDecoder = jwtDecoder;
         this.jwtAuthenticationConverter = jwtAuthenticationConverter;
+        this.userLookupPort = userLookupPort;
     }
 
     @Override
@@ -84,11 +88,29 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      * CONNECT time: in the full application they are always present (the
      * same beans the resource-server chain uses); in a module slice the
      * interceptor is inert — no real tokens exist there to lift.
+     *
+     * <p><b>R7 (comprehensive-review-ar fix plan §4, Wave 5):</b> the
+     * identity translator registers RIGHT AFTER the JWT lifter — the
+     * CONNECT's lifted (or handshake-authenticated) token principal gets
+     * its name translated from the token subject to the stable user id
+     * through the boundary's first-party {@link WebSocketUserIdentity}
+     * (the same authorities and Jwt principal, the UUID as the name — see
+     * that type's javadoc for the measured framework facts behind the
+     * choice), so the controller, both subscription guards and the
+     * message authorization manager all speak the UUID identity after
+     * this boundary (see
+     * {@link WebSocketIdentityChannelInterceptor}). The ordering inside
+     * the registration is load-bearing: the translator must see the user
+     * the lifter set on the same CONNECT message —
+     * {@code interceptors(a, b)} runs {@code a} before {@code b} — and
+     * both must precede the security configurers' interceptors (the
+     * class-level {@link Order}).
      */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(
-                new JwtChannelAuthenticationInterceptor(jwtDecoder, jwtAuthenticationConverter));
+                new JwtChannelAuthenticationInterceptor(jwtDecoder, jwtAuthenticationConverter),
+                new WebSocketIdentityChannelInterceptor(userLookupPort));
     }
 
     @Override

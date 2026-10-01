@@ -173,12 +173,10 @@ class MessagingControllerTest {
         UUID userId = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
         var request = new MessagingController.SendMessageRequest("Hello");
-        Message msg = Message.create(conversationId, userId, "Hello");
         MessageResponse response = new MessageResponse(UUID.randomUUID(), conversationId, userId, "Hello", false, null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(messagingService.sendMessage(conversationId, userId, "Hello")).thenReturn(msg);
-        when(messageMapper.toResponse(msg)).thenReturn(response);
+        when(messagingService.sendMessage(conversationId, userId, "Hello")).thenReturn(response);
 
         ResponseEntity<MessageResponse> result = controller.sendMessage(conversationId, request, auth);
 

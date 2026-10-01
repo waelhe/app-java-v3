@@ -1,6 +1,9 @@
 package com.marketplace.media;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.api.ServiceUnavailableException;
@@ -17,10 +20,10 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -39,23 +42,21 @@ class MediaModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
 
     @MockitoBean
     ListingPriceProvider listingPriceProvider;
+
+    @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
 
     @MockitoBean
     ProviderLookupPort providerLookupPort;
@@ -71,6 +72,9 @@ class MediaModuleIntegrationTest {
     @MockitoBean
     ReviewLookupPort reviewLookupPort;
 
+    /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
+    @MockitoBean
+    PostLookupPort postLookupPort;
     @Autowired
     private MediaService mediaService;
 
@@ -88,9 +92,20 @@ class MediaModuleIntegrationTest {
     }
 
     @Test
-    void listByListing_whenUnconfigured_answers503() {
-        assertThatThrownBy(() -> mediaService.listByListing(UUID.randomUUID()))
-                .isInstanceOf(ServiceUnavailableException.class);
+    void listByListing_whenUnconfigured_andNoRows_answersTheHonestEmptyList() {
+        // The union of both contracts on the merged chain: the R5 privacy
+        // gate rides the public path (the port's lenient stub — the gate is
+        // not this round's concern), THEN the 2026-10-01 measured contract:
+        // the query runs FIRST and requireStorage only when rows exist — a
+        // photo-less public listing's read never touches the channel, so an
+        // unconfigured storage degrades to the honest empty gallery instead
+        // of failing the whole surface. (The retired unconditional-503 pin
+        // was the pre-fix storage-first ordering; the rows-exist 503 is
+        // pinned by the security net's seeded-row proof.)
+        org.mockito.Mockito.lenient()
+                .when(listingPublicStatePort.isPubliclyVisible(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        assertThat(mediaService.listByListing(UUID.randomUUID(), null)).isEmpty();
     }
 
     @Test

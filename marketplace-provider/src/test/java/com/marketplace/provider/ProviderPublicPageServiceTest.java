@@ -2,6 +2,8 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewStats;
@@ -10,7 +12,6 @@ import com.marketplace.shared.api.SystemSettingKeys;
 import com.marketplace.shared.api.SystemSettingsPort;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -67,7 +68,7 @@ class ProviderPublicPageServiceTest {
         UUID userId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
-        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
+        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(PagedRequest.of(0, 20)))).thenReturn(pageOf(2));
         // The rating aggregates in the REVIEWS' id space (users.id — the V6
         // FK's space, the class javadoc's measured fact).
         when(reviewStatsPort.findStatsByProviderId(userId))
@@ -86,7 +87,7 @@ class ProviderPublicPageServiceTest {
                 .isNull();
         assertThat(result.ratingGeneralCount()).isZero();
         assertThat(result.listings().totalElements()).isEqualTo(2);
-        verify(catalogSearchPort).listActiveByProvider(userId, pageable);
+        verify(catalogSearchPort).listActiveByProvider(userId, PagedRequest.of(0, 20));
     }
 
     /**
@@ -188,7 +189,8 @@ class ProviderPublicPageServiceTest {
         UUID providerId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, UUID.randomUUID()));
-        when(catalogSearchPort.listActiveByProvider(any(), eq(pageable))).thenReturn(Page.empty(pageable));
+        when(catalogSearchPort.listActiveByProvider(any(), eq(PagedRequest.of(0, 20))))
+                .thenReturn(PagedResponse.empty(PagedRequest.of(0, 20)));
         when(reviewStatsPort.findStatsByProviderId(any())).thenReturn(Optional.empty());
 
         var result = service.getPublicPage(providerId, pageable);
@@ -224,11 +226,11 @@ class ProviderPublicPageServiceTest {
         verifyNoInteractions(catalogSearchPort, reviewStatsPort);
     }
 
-    private static Page<ListingSummary> pageOf(int count) {
+    private static PagedResponse<ListingSummary> pageOf(int count) {
         List<ListingSummary> content = java.util.stream.IntStream.range(0, count)
                 .mapToObj(i -> new ListingSummary(UUID.randomUUID(), "Listing " + i, "APARTMENT",
                         BigDecimal.valueOf(1000 + i), "SAR", "Qudsia Prime"))
                 .toList();
-        return new PageImpl<>(content, PageRequest.of(0, 20), count);
+        return PagedResponse.of(new PageImpl<>(content, PageRequest.of(0, 20), count));
     }
 }

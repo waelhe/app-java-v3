@@ -1,5 +1,6 @@
 package com.marketplace.ledger;
 
+import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
@@ -25,7 +26,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -45,17 +45,12 @@ class LedgerModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     PaymentIntentLookupPort paymentIntentLookupPort;
@@ -93,9 +88,10 @@ class LedgerModuleIntegrationTest {
      */
     @Test
     void creditFromPayment_createsBalance() {
-        var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L);
+        var balance = ledgerService.creditFromPayment(UUID.randomUUID(), UUID.randomUUID(), 1000L, "SAR");
         assertThat(balance).isNotNull();
-        assertThat(balance.getAvailableCents()).isEqualTo(1000L);
+        assertThat(balance.availableCents()).isEqualTo(1000L);
+        assertThat(balance.currency()).isEqualTo("SAR");
     }
 
     /**
@@ -143,8 +139,10 @@ class LedgerModuleIntegrationTest {
      */
         awaitBalance(providerId, priceCents - commissionCents);
 
-        ProviderBalance balance = ledgerService.getBalanceForOwner(providerId);
-        assertThat(balance.getAvailableCents()).isEqualTo(priceCents - commissionCents);
+        var balances = ledgerService.getBalancesForOwner(providerId);
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).availableCents()).isEqualTo(priceCents - commissionCents);
+        assertThat(balances.get(0).currency()).isEqualTo("SAR");
 
         Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
         assertThat(statement.getContent())
@@ -172,12 +170,19 @@ class LedgerModuleIntegrationTest {
                         pageOne.getContent().get(0).getId(), pageTwo.getContent().get(0).getId());
     }
 
-    /** Plain poll loop (30s / 200ms) — no Awaitility dependency in this reactor. */
+    /**
+     * Plain poll loop (30s / 200ms) — no Awaitility dependency in this
+     * reactor. R9: the poll reads the SAR row (the seeded booking's
+     * currency) through the composite key.
+     */
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
         while (System.nanoTime() < deadline) {
-            last = ledgerService.getBalance(providerId).getAvailableCents();
+            last = ledgerService.getBalances(providerId).stream()
+                    .filter(b -> "SAR".equals(b.currency()))
+                    .mapToLong(ProviderBalanceResponse::availableCents)
+                    .findFirst().orElse(Long.MIN_VALUE);
             if (last == expectedCents) {
                 return;
             }

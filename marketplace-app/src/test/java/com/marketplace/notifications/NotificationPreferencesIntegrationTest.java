@@ -1,5 +1,7 @@
 package com.marketplace.notifications;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
@@ -20,7 +22,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.List;
@@ -75,10 +76,7 @@ class NotificationPreferencesIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches AuditedWritesIntegrationTest (this testcontainers version ships a non-generic PostgreSQLContainer)
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -210,15 +208,16 @@ class NotificationPreferencesIntegrationTest {
         verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
 
         // The effective matrix reads all-enabled for a user with no overrides
-        // (twenty-one rows: 7 types x 3 channels — L35 added SAVED_SEARCH_MATCH
+        // (twenty-four rows: 8 types x 3 channels — L35 added SAVED_SEARCH_MATCH
         // backed by the V55 CHECK widening; L42 added POST_COMMENTED backed
         // by the V62 CHECK widening; L46 added NEW_LISTING_IN_NEIGHBORHOOD
         // backed by the V63 CHECK widening; L45 added CONTENT_MODERATED
-        // backed by the V65/V66 CHECK widening).
+        // backed by the V65/V66 CHECK widening; L47 added POST_REACTED
+        // backed by the V74/V75 CHECK widening).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(21);
+        assertThat(matrix).hasSize(24);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 

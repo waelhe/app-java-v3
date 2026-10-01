@@ -1,5 +1,7 @@
 package com.marketplace.community;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,11 +13,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -33,6 +35,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -85,10 +88,7 @@ class NeighborhoodMembershipModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -124,6 +124,29 @@ class NeighborhoodMembershipModuleIntegrationTest {
         return userId;
     }
 
+    /**
+     * The administrative post-processor — the REAL resource-server chain on
+     * the full integration context accepts JWT authentications only (the
+     * moderation queue's own green pattern, ContentReportModuleIntegrationTest):
+     * a method-level @WithMockUser mock token answers 401 on the web layer,
+     * and a bare direct service call past @PreAuthorize answers
+     * AuthenticationCredentialsNotFound — the admin JWT post-processor is
+     * the one shape both layers accept.
+     */
+    private static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j.subject("n5-verification-admin"))
+                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+    }
+
+    /** The REJECT review over the REAL admin channel (the setup the dn3 split probes needs). */
+    private void rejectOverHttp(UUID membershipId) throws Exception {
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification", membershipId)
+                        .queryParam("decision", "REJECT")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("REJECTED"));
+    }
+
     /** Joins the given node over the REAL chain; asserts the given status. */
     private void joinOverHttp(UUID userId, String locationId, int expectedStatus) throws Exception {
         mockMvc.perform(put("/api/v1/me/neighborhood")
@@ -146,6 +169,252 @@ class NeighborhoodMembershipModuleIntegrationTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
+    void verificationLifecycle_approvesRejectsAndAuditsEveryTransition() {
+        UUID approvedUser = UUID.randomUUID();
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID approvedMembership = membershipService.join(approvedUser, location).view().id();
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+
+        membershipService.requestVerification(approvedUser);
+        membershipService.reviewVerification(approvedMembership, true);
+        membershipService.requestVerification(rejectedUser);
+        membershipService.reviewVerification(rejectedMembership, false);
+
+        assertThat(jdbc.queryForObject("SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, approvedMembership)).isEqualTo("VERIFIED");
+        assertThat(jdbc.queryForObject("SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neighborhood_memberships_aud WHERE id = ?",
+                Integer.class, approvedMembership)).isGreaterThanOrEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neighborhood_memberships_aud WHERE id = ?",
+                Integer.class, rejectedMembership)).isGreaterThanOrEqualTo(3);
+    }
+
+    /**
+     * D-N3's own split, end to end on the REAL chain (the CodeRabbit #461
+     * round's fix): a REJECTED membership keeps the community's READ
+     * surfaces open — the feed (200) and any visible post's comments
+     * (200) — while every community WRITE answers the explicit 403:
+     * publishing, commenting, and the L47 reaction (a contribution like
+     * a comment). The REJECTED reader sees exactly what every other
+     * member sees; the write gate — never the shared existence gate —
+     * carries the refusal.
+     */
+    @Test
+    void dn3_rejectedMember_readsStayOpen_writesAnswer403() throws Exception {
+        UUID author = UUID.randomUUID();
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        membershipService.join(author, location);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        // the REJECT review rides the REAL admin channel: @PreAuthorize on the
+        // service answers AuthenticationCredentialsNotFound for a bare direct
+        // call (no security context), so the setup goes through HTTP with the
+        // admin JWT — exactly the channel the queue below audits
+        rejectOverHttp(rejectedMembership);
+
+        // a healthy author's real post — the content the rejected member reads
+        asCaller(author);
+        String created = mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"The rejected reader's probe\","
+                                + " \"body\": \"D-N3 read/write split probe\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String postId = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(created).get("id").asText();
+
+        // the REJECTED member READS: the feed and the post's comments stay open
+        asCaller(rejectedUser);
+        mockMvc.perform(get("/api/v1/neighborhood/posts").with(jwt()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/posts/" + postId + "/comments").with(jwt()))
+                .andExpect(status().isOk());
+
+        // the REJECTED member WRITES: publish, comment, and react all answer 403
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"Should not land\","
+                                + " \"body\": \"The write the gate refuses\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/posts/" + postId + "/comments")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\": \"Should not land either\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/posts/" + postId + "/reactions").with(jwt()))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The #484 review round's root closure, end to end on the REAL chain:
+     * the member-controlled re-request used to move REJECTED → PENDING —
+     * and because every state except REJECTED passes the community write
+     * gate, the rejected member regained publish/comment/react rights
+     * without any administrator ever reviewing the claim again. The
+     * re-request now answers its own explicit 409 and the stored verdict
+     * stays REJECTED (the row AND the audit trail both prove it).
+     */
+    @Test
+    void dn3_rejectedMember_cannotSelfReverseTheVerdict_overHttp() throws Exception {
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        rejectOverHttp(rejectedMembership);
+
+        asCaller(rejectedUser);
+        mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
+                .andExpect(status().isConflict());
+
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+        // the audit trail carries no resurrection: the last audited state
+        // after the refused re-request is still the REJECT verdict
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships_aud WHERE id = ? "
+                        + "ORDER BY rev DESC LIMIT 1",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+    }
+
+    /**
+     * The #484 review round's second path, closed end to end on the REAL
+     * chain: leave-and-rejoin (and the neighborhood switch) used to mint a
+     * fresh UNVERIFIED row that resurrected the write gate the
+     * administrator had just closed. The REJECTED verdict now follows the
+     * USER — the rejoin is born REJECTED (the native read sees the
+     * soft-deleted row), the writes stay 403, and the administrator's
+     * APPROVE is the one honest recovery lever (re-admission moves the
+     * carried verdict to VERIFIED and the writes reopen).
+     */
+    @Test
+    void dn3_rejectedMember_rejoinCarriesTheVerdict_adminApproveReAdmits() throws Exception {
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        rejectOverHttp(rejectedMembership);
+
+        // the member leaves — the soft-deleted row still carries the verdict
+        asCaller(rejectedUser);
+        mockMvc.perform(delete("/api/v1/me/neighborhood").with(jwt()))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+
+        // the rejoin over the REAL chain: born REJECTED, never UNVERIFIED
+        joinOverHttp(rejectedUser, QUDSAYYA_OLD_TOWN, 201);
+        String rebornState = jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships "
+                        + "WHERE user_id = ? AND is_deleted = FALSE",
+                String.class, rejectedUser);
+        assertThat(rebornState).as("the refusal verdict follows the USER across the rejoin")
+                .isEqualTo("REJECTED");
+
+        // the reborn REJECTED claim still cannot write
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"Should not land either\","
+                                + " \"body\": \"The carried verdict refuses\"}"))
+                .andExpect(status().isForbidden());
+
+        // the administrator's APPROVE re-admits: the carried verdict is a
+        // review decision, not a permanent ban
+        UUID rebornId = jdbc.queryForObject(
+                "SELECT id FROM neighborhood_memberships WHERE user_id = ? AND is_deleted = FALSE",
+                java.util.UUID.class, rejectedUser);
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification", rebornId)
+                        .queryParam("decision", "APPROVE")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("VERIFIED"));
+
+        // and the re-admitted member writes again — the lever is honest
+        asCaller(rejectedUser);
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"The re-admitted voice\","
+                                + " \"body\": \"The administrator let me back in\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    /**
+     * The administrative verification queue over the REAL chain: the
+     * request lands the membership in the PENDING page (the queue's own
+     * state axis), the review moves it out (the queue drains), and the
+     * decision trails read through their own states — the ModerationAdmin
+     * queue's own end-to-end shape applied to the lifecycle.
+     */
+    @Test
+    void verificationQueue_readsThePendingPage_andDrainsOnReview() throws Exception {
+        UUID requester = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID membershipId = membershipService.join(requester, location).view().id();
+
+        // before the request: the membership is not in the PENDING page
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isEmpty());
+
+        // the request moves it to PENDING — the queue's own page carries it
+        // (the .with(jwt()) post-processor carries the member's own
+        // authentication for THIS request alone; the administrative reads
+        // below carry the adminJwt() post-processor — the REAL chain's one
+        // accepted admin shape, the helper's own javadoc above)
+        asCaller(requester);
+        mockMvc.perform(post("/api/v1/me/neighborhood/verification-requests").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("PENDING"));
+
+        // the ADMIN queue read: the membership appears in the PENDING page
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isNotEmpty());
+
+        // the review drains the queue and lands the trust mark
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification",
+                        membershipId).queryParam("decision", "APPROVE")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("VERIFIED"));
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "PENDING").queryParam("size", "50")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isEmpty());
+        mockMvc.perform(get("/api/v1/admin/neighborhood-memberships")
+                        .queryParam("state", "VERIFIED").queryParam("size", "50")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == '" + membershipId + "')]")
+                        .isNotEmpty());
+    }
+
+    @Test
     void criterion1_joinLevel3_thenReadReturnsIt() throws Exception {
         UUID userId = asCaller(UUID.randomUUID());
 
@@ -159,7 +428,7 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.locationId").value(QUDSAYYA_OLD_TOWN))
-                .andExpect(jsonPath("$.verificationState").value("SELF_DECLARED"))
+                .andExpect(jsonPath("$.verificationState").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.memberSince").exists());
         assertThat(activeRows(userId)).isEqualTo(1);
     }
@@ -346,7 +615,7 @@ class NeighborhoodMembershipModuleIntegrationTest {
                 .containsExactly(UUID.fromString(QUDSAYYA_SUBURB));
         assertThat(entries.stream().filter(com.marketplace.shared.api.CommunityMembershipExportEntry::deleted))
                 .hasSize(1);
-        assertThat(entries.get(0).verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(entries.get(0).verificationState()).isEqualTo("UNVERIFIED");
 
         // b-3: the documented exception — the membership row is keys and
         // state (no authored texts), so the purge reports zero and the
@@ -417,11 +686,17 @@ class NeighborhoodMembershipModuleIntegrationTest {
         UUID rowId = view.view().id();
 
         // A raw SQL writer that bypasses the entity floor cannot invent a
-        // verification state (D-N3: VERIFIED is reserved behind G-N2) —
-        // PostgreSQL SQLSTATE 23514 with V60's constraint name.
+        // state OUTSIDE the measured vocabulary — V78's CHECK answers
+        // PostgreSQL SQLSTATE 23514 with the constraint's own name.
+        // (VERIFIED itself stays column-writable BY DESIGN: the trust mark's
+        // reservation is the state machine's own — the entity's transition
+        // methods plus the service's @PreAuthorize ADMIN gate over the real
+        // chain, exactly what the queue test above drives end to end; the
+        // DB floor guards the vocabulary, not the transitions.)
         Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(() ->
-                jdbc.update("UPDATE neighborhood_memberships SET verification_state = 'VERIFIED' "
+                jdbc.update("UPDATE neighborhood_memberships SET verification_state = 'TRUSTED-BY-NOBODY' "
                         + "WHERE id = ?", rowId));
+        assertThat(thrown).isNotNull();
         Throwable root = thrown;
         while (root.getCause() != null && root.getCause() != root) {
             root = root.getCause();

@@ -1,8 +1,5 @@
 package com.marketplace.shared.api;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -11,25 +8,48 @@ import java.util.UUID;
  * Port interface for catalog search operations.
  * Decouples search module from catalog internals — search depends on this
  * abstraction in shared-api, while catalog provides the implementation.
+ *
+ * <p><b>Neutral pagination (the boundary contract):</b> the paged forms
+ * speak {@link PagedRequest} and answer {@link PagedResponse} — no
+ * Spring Data type crosses this interface (the audit's finding that the
+ * shared ports leaked framework types is repaired here and pinned by
+ * the {@code sharedPortsAreFrameworkNeutral} architecture rule). The
+ * catalog adapter maps the neutral request onto Spring Data pagination
+ * internally; the sort vocabulary the search surface sends (mapped
+ * {@code priceCents}/{@code createdAt} with the {@code id} tiebreak)
+ * rides the request's ordering steps verbatim.
  */
 public interface CatalogSearchPort {
 
     /**
      * Full-text search over listing title and description.
      *
-     * @param query raw user input — parsed by the official PostgreSQL
-     *              {@code websearch_to_tsquery}, which accepts unformatted text
-     *              and the web-search operators {@code "quoted phrase"},
-     *              {@code OR} and {@code -exclusion}. Never pre-mangled by
-     *              callers; arbitrary special characters are not an error.
+     * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5 — the composed
+     * text+filter search):</b> the contract carries the FULL criteria —
+     * the text query AND the optional catalog predicates (category /
+     * price bounds / guests) compose into ONE query whose count and
+     * pagination apply the same restriction. The former text-only
+     * contract let a text query silently drop every riding filter (the
+     * review's R6: a {@code q + category + maxPrice + guests} request
+     * answered the unfiltered text match set).</p>
+     *
+     * @param criteria the full search criteria — {@code criteria.query()}
+     *                 is the raw user input parsed by the official
+     *                 PostgreSQL {@code websearch_to_tsquery}, which
+     *                 accepts unformatted text and the web-search
+     *                 operators {@code "quoted phrase"}, {@code OR} and
+     *                 {@code -exclusion}. Never pre-mangled by callers;
+     *                 arbitrary special characters are not an error. The
+     *                 optional predicates ride the same native query's
+     *                 predicate blocks.
      */
-    Page<ListingSummary> searchFullText(String query, Pageable pageable);
+    PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request);
 
-    Page<ListingSummary> listByCategory(String category, Pageable pageable);
+    PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request);
 
-    Page<ListingSummary> listActive(Pageable pageable);
+    PagedResponse<ListingSummary> listActive(PagedRequest request);
 
-    Page<ListingSummary> searchByCriteria(SearchCriteria criteria, Pageable pageable);
+    PagedResponse<ListingSummary> searchByCriteria(SearchCriteria criteria, PagedRequest request);
 
     // L27 (feature-expansion roadmap §5) — window-restricted variants. The
     // providerIds set is the server-derived availability whitelist (see
@@ -42,15 +62,20 @@ public interface CatalogSearchPort {
      * Full-text search restricted to the given providers — same ranking and
      * the same typo-tolerance fallback as {@link #searchFullText}, plus the
      * {@code provider_id} restriction.
+     *
+     * <p><b>R6 (Wave 5):</b> carries the FULL criteria like
+     * {@link #searchFullText} — the text query composes with the optional
+     * catalog predicates inside the same restricted query (and its
+     * count), instead of dropping them.</p>
      */
-    Page<ListingSummary> searchFullTextRestricted(String query, Set<UUID> providerIds, Pageable pageable);
+    PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request);
 
     /**
      * Criteria search restricted to the given providers — covers the
      * price / category / browse-all branches (the optional predicates of the
      * criteria query), plus the {@code provider_id} restriction.
      */
-    Page<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, Pageable pageable);
+    PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request);
 
     // L32 (realestate systems plan §5) — the property-restriction branches.
     // The restricted-to-LISTINGS forms carry the realestate module's
@@ -59,15 +84,15 @@ public interface CatalogSearchPort {
     // caller has already handled the empty-set case (honest empty page, no
     // query), and the pagination count applies the same restriction as the
     // content query ("no deceptive pages"). The Specification-backed
-    // implementation also honors the Pageable sort (the plan's price /
-    // newest sort whitelist) with the id tiebreak.
+    // implementation also honors the request's ordering steps (the plan's
+    // price / newest sort whitelist) with the id tiebreak.
 
     /**
      * Criteria search restricted to the given listing ids — the
      * property-facet flow. Sort-aware: the effective sort (price/newest,
      * default id ASC) is honored deterministically.
      */
-    Page<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, Pageable pageable);
+    PagedResponse<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request);
 
     /**
      * L32: the sort-aware criteria search WITHOUT a restriction — the
@@ -77,7 +102,7 @@ public interface CatalogSearchPort {
      * guests) as {@link #searchByCriteria}; the unsorted form is NOT
      * routed here (the legacy native path stays byte-identical).
      */
-    Page<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, Pageable pageable);
+    PagedResponse<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, PagedRequest request);
 
     /**
      * Full-text search restricted to the given listing ids — same official
@@ -85,8 +110,15 @@ public interface CatalogSearchPort {
      * typo-tolerance fallback as {@link #searchFullText}, plus the
      * {@code id} restriction. Text searches rank by relevance: the facet
      * sort whitelist does not apply (documented).
+     *
+     * <p><b>R6 (Wave 5):</b> carries the FULL criteria like
+     * {@link #searchFullText} — the text query composes with the optional
+     * catalog predicates inside the same id-restricted query (and its
+     * count), instead of dropping them. The property flow's text branch
+     * and the saved-search matcher's membership probe ride this
+     * composition.</p>
      */
-    Page<ListingSummary> searchFullTextRestrictedToListings(String query, Set<UUID> listingIds, Pageable pageable);
+    PagedResponse<ListingSummary> searchFullTextRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request);
 
     /**
      * The ids of every ACTIVE listing (soft-delete filtered) — the
@@ -135,5 +167,5 @@ public interface CatalogSearchPort {
      * (availability, ledger, booking). The caller resolves the profile row
      * and passes {@code profile.getUserId()}.
      */
-    Page<ListingSummary> listActiveByProvider(UUID providerUserId, Pageable pageable);
+    PagedResponse<ListingSummary> listActiveByProvider(UUID providerUserId, PagedRequest request);
 }

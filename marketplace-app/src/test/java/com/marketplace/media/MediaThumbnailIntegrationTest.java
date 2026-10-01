@@ -1,7 +1,10 @@
 package com.marketplace.media;
 
+import test.config.IntegrationContainers;
+
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.MediaUploadedEvent;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
@@ -21,7 +24,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -69,23 +71,21 @@ class MediaThumbnailIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
 
     @MockitoBean
     ListingPriceProvider listingPriceProvider;
+
+    @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
 
     @MockitoBean
     ProviderLookupPort providerLookupPort;
@@ -100,6 +100,9 @@ class MediaThumbnailIntegrationTest {
     @MockitoBean
     ReviewLookupPort reviewLookupPort;
 
+    /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
+    @MockitoBean
+    PostLookupPort postLookupPort;
     @MockitoBean
     S3MediaStorage storage;
 
@@ -145,6 +148,10 @@ class MediaThumbnailIntegrationTest {
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", userId)));
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
+        // R5: the flow's listing reads on the public surface — the gate
+        // stays open for the read path this test exercises.
+        org.mockito.Mockito.lenient()
+                .when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(true);
     }
 
     /** A real 2000×1000 JPEG — wider than the 640 default bound. */
@@ -193,7 +200,7 @@ class MediaThumbnailIntegrationTest {
         MediaAsset persisted = mediaAssetRepository.findById(asset.getId()).orElseThrow();
         assertThat(persisted.getThumbObjectKey()).isEqualTo(asset.getObjectKey() + "/thumb");
 
-        var views = mediaService.listByListing(asset.getListingId());
+        var views = mediaService.listByListing(asset.getListingId(), null);
         assertThat(views).hasSize(1);
         assertThat(views.get(0).downloadUrl()).isEqualTo("https://signed-get");
         assertThat(views.get(0).thumbUrl()).as("the read returns both links").isEqualTo("https://signed-get");

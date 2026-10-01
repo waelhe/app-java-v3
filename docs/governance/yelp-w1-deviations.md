@@ -157,3 +157,33 @@ code was written. Recorded because a false "missing coverage" claim is exactly t
 `SYSTEM.md` §14.1's evidence rule exists to prevent.
 
 
+
+---
+
+## D-W1-2 — Migration renumbering at the merge with main: V71..V74 → V84..V87
+
+**What changed:** this branch forked before main's reconciliation chain (#484) landed. Its four
+migrations were authored as `V71__system_settings.sql`, `V72__reviews_dual_mode.sql`,
+`V73__content_reports_review_target.sql`, `V74__review_votes_flags_and_media.sql`; main meanwhile
+allocated `V71` (`payment_webhook_events_inbox`), `V73` (`post_reactions`), `V74`
+(`notification_preferences_post_reacted_type`) and reached `V82`. Two files with different names and
+the same version number are not a Git conflict — they are a **Flyway duplicate-version failure at
+first boot** ("Found more than one migration with version 71"). The renumbering is the only
+correct resolution: **content byte-for-byte unchanged** (checksums stay identical, only the
+`migration-checksums.properties` keys follow the new file names), `V83` stays reserved for #485's
+events migration (safe in either merge order).
+
+**Official basis:** Flyway's versioned-migration naming contract — one version number, exactly one
+migration file; duplicate versions fail the migrate step (Flyway reference docs, "Versioned
+Migrations" / "Command migrate").
+
+**Precedent (this repository, measured):** SYSTEM.md's migration inventory records the identical
+renumbering of the parallel session waves "from V72..V75 to V79..V82 at the reconciliation merge —
+free renumbering because the content was never applied to production". This branch's migrations
+exist only on the unmerged branch; the production Flyway ledger (Neon, index V78, measured
+2026-10-01) has never seen them — the same free-renumber condition, now applied to W0/W1.
+
+**Closing point:** the register entry itself (this file), the plan's renumbered horizon
+(`yelp-level-plan.html` — V84..V87 for W0/W1, next-free numbers for W2+), and SYSTEM.md's
+guard-derived inventory (84 versioned, `V1..V87`) all carry the new numbers — nothing refers to
+the old ones except this declaration.

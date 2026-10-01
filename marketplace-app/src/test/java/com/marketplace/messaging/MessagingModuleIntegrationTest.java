@@ -1,5 +1,6 @@
 package com.marketplace.messaging;
 
+import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
@@ -23,7 +24,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.List;
@@ -70,17 +70,12 @@ class MessagingModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -105,6 +100,19 @@ class MessagingModuleIntegrationTest {
 
     @MockitoBean
     com.marketplace.shared.api.ListingPriceProvider listingPriceProvider;
+
+    // V78 (residency verification — REJECTED members open no NEW direct
+    // chats): the trust seam the direct-open gate consults. The community
+    // module owns the implementation; this standalone slice cannot see it,
+    // so it joins the standard @MockitoBean boundary the four above already
+    // form (the slice convention). Unstubbed, trustFor answers null and the
+    // gate's null-safe comparison reads as NOT-REJECTED — the existing
+    // direct-chat rounds stay green; the REJECTED refusal itself is pinned
+    // on the REAL chain in DirectConversationModuleIntegrationTest
+    // (v78_rejectedVerification_opensNoNewDirectConversation — the full
+    // context wires the community module's real implementation).
+    @MockitoBean
+    com.marketplace.shared.api.NeighborhoodTrustLookupPort neighborhoodTrustLookupPort;
 
     @Autowired
     private MessagingService messagingService;

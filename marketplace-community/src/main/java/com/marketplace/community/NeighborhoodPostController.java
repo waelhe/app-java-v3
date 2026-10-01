@@ -160,6 +160,45 @@ public class NeighborhoodPostController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/posts/{postId}/reactions")
+    @RateLimiter(name = "postReact")
+    @Operation(summary = "Thank a post (one voice per member)",
+            description = "L47 — the feed's lightest write, Nextdoor's own first signature. "
+                    + "The gate order is the comment's own verbatim: the post gate first "
+                    + "(an unknown, hidden or deleted post answers the honest 404 — a hidden "
+                    + "post's reactions are absent exactly as the post itself is), then the "
+                    + "active-membership gate in the post's OWN neighborhood (403 otherwise — "
+                    + "a reaction is a community contribution like a comment), and only then "
+                    + "the one-voice check: a member who already holds a LIVE thank on this "
+                    + "post answers 409 («صوت واحد لكل عضو» — the V64 report precedent; the "
+                    + "V73 partial unique index is the backstop). The post's author is "
+                    + "notified (POST_REACTED) after commit — unless the reactor IS the author. "
+                    + "The feed read carries the live count and the caller's own voice "
+                    + "(reactionsCount / reactedByMe).")
+    public ResponseEntity<PostReactionView> react(
+            @PathVariable UUID postId,
+            Authentication authentication) {
+        UUID memberId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.status(201).body(postService.react(memberId, postId));
+    }
+
+    @DeleteMapping("/posts/{postId}/reactions")
+    @RateLimiter(name = "postReact")
+    @Operation(summary = "Remove my thank from a post",
+            description = "L47 — the un-thank. The gate order matches the thank (the post gate's "
+                    + "honest 404, then the membership gate's 403); a member with no LIVE thank "
+                    + "on the post answers the honest 404 (there is nothing to remove — the "
+                    + "leave-neighborhood convention). The removal is the house soft delete: "
+                    + "the row stays (b-5's retention, the Envers trail keeps the revision) and "
+                    + "the voice is free for a fresh one. 204 on success.")
+    public ResponseEntity<Void> removeReaction(
+            @PathVariable UUID postId,
+            Authentication authentication) {
+        UUID memberId = currentUserProvider.getCurrentUserId(authentication);
+        postService.removeReaction(memberId, postId);
+        return ResponseEntity.noContent().build();
+    }
+
     /**
      * The category type gate (criterion 3): a String in, the enum out —
      * an invalid value answers the house 400 listing the valid

@@ -1,5 +1,6 @@
 package com.marketplace.notifications;
 
+import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
@@ -20,7 +21,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.UUID;
 
@@ -37,17 +37,12 @@ class NotificationsModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -99,7 +94,7 @@ class NotificationsModuleIntegrationTest {
 
         assertThat(page.getTotalElements()).isEqualTo(2);   // the other user's rows never leak
         assertThat(page.getNumberOfElements()).isEqualTo(1); // the page honors its size
-        assertThat(page.getContent()).allMatch(n -> n.getRecipientId().equals(me));
+        assertThat(page.getContent()).allMatch(n -> n.recipientId().equals(me));
     }
 
     @Test
@@ -122,5 +117,29 @@ class NotificationsModuleIntegrationTest {
         notificationRepository.flush();
 
         assertThat(notificationService.getUnreadCount(auth)).isEqualTo(1);
+    }
+
+    /**
+     * CodeRabbit review on #427 (adopted): the mark-read response carries the
+     * PERSISTED metadata — version and updatedAt are read after the explicit
+     * flush, and the row's read flag is durable before the client sees 200.
+     */
+    @Test
+    void markAsRead_returnsPersistedMetadataForUnread() {
+        UUID me = UUID.randomUUID();
+        Notification unread = notificationRepository.save(Notification.create(me,
+                NotificationType.PAYMENT_STATE.name(), "unread"));
+        notificationRepository.flush();
+
+        when(currentUserProvider.getCurrentUserId(org.mockito.ArgumentMatchers.any(Authentication.class)))
+                .thenReturn(me);
+        Authentication auth = new TestingAuthenticationToken("u", "p");
+
+        NotificationResponse response = notificationService.markAsRead(unread.getId(), auth);
+
+        assertThat(response.read()).isTrue();
+        assertThat(response.version()).isNotNull();
+        assertThat(response.updatedAt()).isNotNull();
+        assertThat(notificationRepository.findById(unread.getId()).orElseThrow().isRead()).isTrue();
     }
 }

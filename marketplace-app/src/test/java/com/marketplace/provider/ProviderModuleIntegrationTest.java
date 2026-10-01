@@ -1,5 +1,6 @@
 package com.marketplace.provider;
 
+import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -16,7 +17,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -38,17 +38,12 @@ class ProviderModuleIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"))
-            .withDatabaseName("marketplace");
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
-    static GenericContainer<?> redis = new GenericContainer<>(
-            DockerImageName.parse("redis:8-alpine"))
-            .withExposedPorts(6379);
+    static GenericContainer<?> redis = IntegrationContainers.redis();
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -121,10 +116,11 @@ class ProviderModuleIntegrationTest {
                 .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ReviewStats(
                         ownerUserId, 4.5, 12)));
         when(catalogSearchPort.listActiveByProvider(any(), any()))
-                .thenReturn(new org.springframework.data.domain.PageImpl<>(
-                        java.util.List.of(new com.marketplace.shared.api.ListingSummary(
-                                UUID.randomUUID(), "Flat", "APARTMENT",
-                                java.math.BigDecimal.TEN, "SAR", "Broker"))));
+                .thenReturn(com.marketplace.shared.api.PagedResponse.of(
+                        new org.springframework.data.domain.PageImpl<>(
+                                java.util.List.of(new com.marketplace.shared.api.ListingSummary(
+                                        UUID.randomUUID(), "Flat", "APARTMENT",
+                                        java.math.BigDecimal.TEN, "SAR", "Broker")))));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
                 org.springframework.data.domain.PageRequest.of(0, 20));
@@ -160,13 +156,15 @@ class ProviderModuleIntegrationTest {
         // is the module's own.
         when(availabilityLookupPort.findProviderSlotStats(any(), any(), any()))
                 .thenReturn(new com.marketplace.shared.api.SlotWindowStats(10, 4));
-        when(ledgerStatsPort.findNetCentsForProviderBetween(any(), any(), any())).thenReturn(9000L);
+        when(ledgerStatsPort.findNetByCurrencyForProviderBetween(any(), any(), any()))
+                .thenReturn(java.util.List.of(new com.marketplace.shared.api.CurrencyAmount("SAR", 9000L)));
         when(bookingStatsPort.countCompletedForProviderBetween(any(), any(), any())).thenReturn(7L);
 
         var stats = providerStatsService.getStats(UUID.randomUUID(), StatsWindow.lastThirtyDays(Instant.now()));
 
         assertThat(stats.occupancyRate()).isCloseTo(0.4, org.assertj.core.data.Offset.offset(1e-9));
-        assertThat(stats.netRevenueCents()).isEqualTo(9000L);
+        assertThat(stats.netRevenue())
+                .containsExactly(new com.marketplace.shared.api.CurrencyAmount("SAR", 9000L));
         assertThat(stats.completedBookings()).isEqualTo(7L);
     }
 }

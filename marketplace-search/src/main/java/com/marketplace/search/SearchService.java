@@ -4,6 +4,8 @@ import com.marketplace.shared.api.AvailabilityLookupPort;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.SpringPagination;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
 import com.marketplace.shared.api.SearchCriteria;
@@ -14,10 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -169,7 +168,7 @@ public class SearchService {
             String query = criteria.query();
             if (query == null || query.isBlank()) {
                 // already normalized at the controller — consumed as-is
-                return catalogSearchPort.searchByCriteriaFaceted(criteria, pageable);
+                return SpringPagination.toPage(catalogSearchPort.searchByCriteriaFaceted(criteria, SpringPagination.toPagedRequest(pageable)), pageable);
             }
             // text queries rank by relevance — the sort is ignored (documented)
         }
@@ -232,11 +231,14 @@ public class SearchService {
         }
 
         if (textQuery) {
-            return catalogSearchPort.searchFullTextRestrictedToListings(
-                    query.trim(), listingIds, pageable);
+            // R6 (Wave 5): the full criteria compose into the
+            // id-restricted text query — the catalog predicates ride
+            // along with the property-facet restriction.
+            return SpringPagination.toPage(catalogSearchPort.searchFullTextRestrictedToListings(
+                    criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
-        return catalogSearchPort.searchByCriteriaRestrictedToListings(
-                criteria, listingIds, pageable);
+        return SpringPagination.toPage(catalogSearchPort.searchByCriteriaRestrictedToListings(
+                criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     /**
@@ -261,22 +263,22 @@ public class SearchService {
         Set<UUID> eligibleIds = criteria.hasCatalogCriteria()
                 ? catalogSearchPort.findActiveListingIdsMatching(criteria)
                 : catalogSearchPort.findActiveListingIds();
-        Page<RealestatePropertyFilterPort.PropertyMatch> matches = providerIds != null
+        PagedResponse<RealestatePropertyFilterPort.PropertyMatch> matches = providerIds != null
                 ? realestatePropertyFilterPort.findMatchingPagedRestricted(
-                        propertyCriteria, eligibleIds, providerIds, pageable)
+                        propertyCriteria, eligibleIds, providerIds, SpringPagination.toPagedRequest(pageable))
                 : realestatePropertyFilterPort.findMatchingPaged(
-                        propertyCriteria, eligibleIds, pageable);
+                        propertyCriteria, eligibleIds, SpringPagination.toPagedRequest(pageable));
 
         if (matches.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, matches.getTotalElements());
+            return new PageImpl<>(List.of(), pageable, matches.totalElements());
         }
-        List<UUID> orderedIds = matches.getContent().stream()
+        List<UUID> orderedIds = matches.content().stream()
                 .map(RealestatePropertyFilterPort.PropertyMatch::listingId)
                 .toList();
         List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(orderedIds);
         // order already preserved by findSummariesByIds; total from the
         // property side (the restriction that defines the page)
-        return new PageImpl<>(summaries, pageable, matches.getTotalElements());
+        return new PageImpl<>(summaries, pageable, matches.totalElements());
     }
 
     /**
@@ -352,8 +354,11 @@ public class SearchService {
         }
 
         if (textQuery) {
-            return catalogSearchPort.searchFullTextRestrictedToListings(
-                    query.trim(), listingIds, pageable);
+            // R6 (Wave 5): the full criteria compose into the
+            // id-restricted text query — the catalog predicates ride
+            // along with the radius restriction.
+            return SpringPagination.toPage(catalogSearchPort.searchFullTextRestrictedToListings(
+                    criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         // CodeRabbit PR #300 round 1 (thread 2 — normalize ONCE): the
         // controller is the single normalization point — the pageable
@@ -363,8 +368,8 @@ public class SearchService {
         // ("unsupported sort property: priceCents") — a price/newest-sorted
         // radius request answered 400 instead of a sorted page. The area
         // and distance markers never reach this line (both routed above).
-        return catalogSearchPort.searchByCriteriaRestrictedToListings(
-                criteria, listingIds, pageable);
+        return SpringPagination.toPage(catalogSearchPort.searchByCriteriaRestrictedToListings(
+                criteria, listingIds, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     /**
@@ -415,21 +420,21 @@ public class SearchService {
             return Page.empty(pageable); // honest empty page, no query
         }
 
-        Page<UUID> matches = providerIds != null
+        PagedResponse<UUID> matches = providerIds != null
                 ? realestatePropertyFilterPort.findWithinRadiusPagedRestricted(
                         criteria.latitude(), criteria.longitude(), criteria.radiusMeters(),
-                        restrictTo, providerIds, pageable)
+                        restrictTo, providerIds, SpringPagination.toPagedRequest(pageable))
                 : realestatePropertyFilterPort.findWithinRadiusPaged(
                         criteria.latitude(), criteria.longitude(), criteria.radiusMeters(),
-                        restrictTo, pageable);
+                        restrictTo, SpringPagination.toPagedRequest(pageable));
 
         if (matches.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, matches.getTotalElements());
+            return new PageImpl<>(List.of(), pageable, matches.totalElements());
         }
-        List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(matches.getContent());
+        List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(matches.content());
         // order already preserved by findSummariesByIds; total from the
         // radius flow's side (the restriction that defines the page)
-        return new PageImpl<>(summaries, pageable, matches.getTotalElements());
+        return new PageImpl<>(summaries, pageable, matches.totalElements());
     }
 
     /**
@@ -477,21 +482,21 @@ public class SearchService {
                 ? geoLookupPort.findSelfAndDescendants(criteria.locationId())
                 : null;
         PropertyCriteria propertyCriteria = toPropertyCriteria(criteria, locationIds);
-        Page<RealestatePropertyFilterPort.PropertyMatch> matches = providerIds != null
+        PagedResponse<RealestatePropertyFilterPort.PropertyMatch> matches = providerIds != null
                 ? realestatePropertyFilterPort.findMatchingPagedRestricted(
-                        propertyCriteria, restrictTo, providerIds, pageable)
+                        propertyCriteria, restrictTo, providerIds, SpringPagination.toPagedRequest(pageable))
                 : realestatePropertyFilterPort.findMatchingPaged(
-                        propertyCriteria, restrictTo, pageable);
+                        propertyCriteria, restrictTo, SpringPagination.toPagedRequest(pageable));
         if (matches.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, matches.getTotalElements());
+            return new PageImpl<>(List.of(), pageable, matches.totalElements());
         }
-        List<UUID> orderedIds = matches.getContent().stream()
+        List<UUID> orderedIds = matches.content().stream()
                 .map(RealestatePropertyFilterPort.PropertyMatch::listingId)
                 .toList();
         List<ListingSummary> summaries = catalogSearchPort.findSummariesByIds(orderedIds);
         // order already preserved by findSummariesByIds; total from the
         // property side (the restriction that defines the page)
-        return new PageImpl<>(summaries, pageable, matches.getTotalElements());
+        return new PageImpl<>(summaries, pageable, matches.totalElements());
     }
 
     /**
@@ -508,11 +513,14 @@ public class SearchService {
         }
         String query = criteria.query();
         if (query != null && !query.isBlank()) {
-            return catalogSearchPort.searchFullTextRestricted(query.trim(), availableProviderIds, pageable);
+            // R6 (Wave 5): the full criteria compose into the restricted
+            // text query — the optional catalog predicates ride along with
+            // the window restriction.
+            return SpringPagination.toPage(catalogSearchPort.searchFullTextRestricted(criteria, availableProviderIds, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         // Covers the price / category / browse-all branches: they are the
         // optional predicates of one criteria query.
-        return catalogSearchPort.searchByCriteriaRestricted(criteria, availableProviderIds, pageable);
+        return SpringPagination.toPage(catalogSearchPort.searchByCriteriaRestricted(criteria, availableProviderIds, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     /** The pre-L27 dispatch — byte-identical for windowless criteria. */
@@ -520,32 +528,39 @@ public class SearchService {
         String query = criteria.query();
         String category = criteria.category();
         if (query != null && !query.isBlank()) {
-            // Raw user input passed through: the official websearch_to_tsquery
-            // (ProviderListingRepository) parses it leniently and supports
-            // "quoted phrases", OR and -exclusion. The former hand-mangling
-            // (replaceAll("\\s+", " & ")) both corrupted the user's phrase
-            // intent and fed to_tsquery invalid syntax for quotes/parens/dashes
-            // (SQL exception -> HTTP 500).
-            return catalogSearchPort.searchFullText(query.trim(), pageable);
+            // R6 (comprehensive-review-ar fix plan §4, Wave 5): the text
+            // branch passes the FULL criteria — the optional catalog
+            // predicates (category / price bounds / guests) compose with
+            // the text predicate inside the same native query and its
+            // count, instead of being silently dropped (the review's R6:
+            // a q + filters request answered the unfiltered text match
+            // set). Raw user input passed through: the official
+            // websearch_to_tsquery (ProviderListingRepository) parses it
+            // leniently and supports "quoted phrases", OR and -exclusion.
+            // The former hand-mangling (replaceAll("\\s+", " & ")) both
+            // corrupted the user's phrase intent and fed to_tsquery
+            // invalid syntax for quotes/parens/dashes (SQL exception ->
+            // HTTP 500).
+            return SpringPagination.toPage(catalogSearchPort.searchFullText(criteria, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         if (criteria.minPrice() != null || criteria.maxPrice() != null || criteria.guests() != null) {
             // I6: guests joins price as an optional predicate of the criteria
             // query — a guests-only criterion routes here too (NOT listActive,
             // which would silently bypass the capacity filter).
-            return catalogSearchPort.searchByCriteria(criteria, pageable);
+            return SpringPagination.toPage(catalogSearchPort.searchByCriteria(criteria, SpringPagination.toPagedRequest(pageable)), pageable);
         }
         if (category != null && !category.isBlank()) {
-            return catalogSearchPort.listByCategory(category, pageable);
+            return SpringPagination.toPage(catalogSearchPort.listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);
         }
-        return catalogSearchPort.listActive(pageable);
+        return SpringPagination.toPage(catalogSearchPort.listActive(SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     public Page<ListingSummary> searchByCategory(String category, Pageable pageable) {
-        return catalogSearchPort.listByCategory(category, pageable);
+        return SpringPagination.toPage(catalogSearchPort.listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     public Page<ListingSummary> searchAll(Pageable pageable) {
-        return catalogSearchPort.listActive(pageable);
+        return SpringPagination.toPage(catalogSearchPort.listActive(SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
     /** Builds the resolved property contract from the criteria (gated upstream). */

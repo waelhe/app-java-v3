@@ -39,6 +39,16 @@ class AvailabilityServiceSecurityTest {
     @MockitoBean
     private ProviderTimeOffRepository timeOffRepository;
 
+    /**
+     * CodeRabbit round 1 adoption on PR #471: the daily generation unit is a
+     * separate bean (REQUIRES_NEW through the proxy) — AvailabilityService's
+     * constructor now takes it. This slice tests the @PreAuthorize surface of
+     * createSlot/createRule/createTimeOff only, so the generator rides as a
+     * mock bean.
+     */
+    @MockitoBean
+    private AvailabilitySlotGenerator slotGenerator;
+
     @MockitoBean(name = "authHelper")
     private AuthHelper authHelper;
 
@@ -79,9 +89,9 @@ class AvailabilityServiceSecurityTest {
         when(authHelper.ownsProvider(any(), any())).thenReturn(true);
         when(repository.save(any(AvailabilitySlot.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AvailabilitySlot result = availabilityService.createSlot(providerId, Instant.now(), Instant.now());
+        AvailabilitySlotResponse result = availabilityService.createSlot(providerId, Instant.now(), Instant.now());
 
-        assertThat(result.getProviderId()).isEqualTo(providerId);
+        assertThat(result.providerId()).isEqualTo(providerId);
         verify(repository).save(any(AvailabilitySlot.class));
     }
 
@@ -93,10 +103,10 @@ class AvailabilityServiceSecurityTest {
         when(ruleRepository.save(any(ProviderAvailabilityRule.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProviderAvailabilityRule result = availabilityService.createRule(
+        ProviderAvailabilityRuleResponse result = availabilityService.createRule(
                 providerId, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
 
-        assertThat(result.getProviderId()).isEqualTo(providerId);
+        assertThat(result.providerId()).isEqualTo(providerId);
         verify(ruleRepository).save(any(ProviderAvailabilityRule.class));
     }
 
@@ -108,9 +118,9 @@ class AvailabilityServiceSecurityTest {
         when(timeOffRepository.save(any(ProviderTimeOff.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProviderTimeOff result = availabilityService.createTimeOff(providerId, Instant.now(), Instant.now());
+        ProviderTimeOffResponse result = availabilityService.createTimeOff(providerId, Instant.now(), Instant.now());
 
-        assertThat(result.getId()).isNotNull();
+        assertThat(result.id()).isNotNull();
         verify(timeOffRepository).save(any(ProviderTimeOff.class));
     }
 }

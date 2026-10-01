@@ -1,8 +1,10 @@
 package com.marketplace.realestate;
 
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyCriteria;
 import com.marketplace.shared.api.RealestatePropertyFilterPort;
-import org.springframework.data.domain.Page;
+import com.marketplace.shared.api.SpringPagination;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -52,20 +54,22 @@ public class PropertyFilterAdapter implements RealestatePropertyFilterPort {
     }
 
     @Override
-    public Page<PropertyMatch> findMatchingPaged(PropertyCriteria criteria,
-                                                 Set<UUID> activeListingIds, Pageable pageable) {
-        return repository
+    public PagedResponse<PropertyMatch> findMatchingPaged(PropertyCriteria criteria,
+                                                          Set<UUID> activeListingIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
+        return PagedResponse.of(repository
                 .findAll(toSpecification(criteria, null, activeListingIds, true), areaOrdered(pageable))
-                .map(details -> new PropertyMatch(details.getListingId(), details.getAreaM2()));
+                .map(details -> new PropertyMatch(details.getListingId(), details.getAreaM2())));
     }
 
     @Override
-    public Page<PropertyMatch> findMatchingPagedRestricted(PropertyCriteria criteria,
-                                                           Set<UUID> activeListingIds,
-                                                           Set<UUID> providerIds, Pageable pageable) {
-        return repository
+    public PagedResponse<PropertyMatch> findMatchingPagedRestricted(PropertyCriteria criteria,
+                                                                     Set<UUID> activeListingIds,
+                                                                     Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
+        return PagedResponse.of(repository
                 .findAll(toSpecification(criteria, providerIds, activeListingIds, true), areaOrdered(pageable))
-                .map(details -> new PropertyMatch(details.getListingId(), details.getAreaM2()));
+                .map(details -> new PropertyMatch(details.getListingId(), details.getAreaM2())));
     }
 
     // ------------------------------------------------------------------
@@ -92,30 +96,32 @@ public class PropertyFilterAdapter implements RealestatePropertyFilterPort {
     }
 
     @Override
-    public Page<UUID> findWithinRadiusPaged(BigDecimal latitude, BigDecimal longitude, long radiusMeters,
-                                            Set<UUID> activeListingIds, Pageable pageable) {
+    public PagedResponse<UUID> findWithinRadiusPaged(BigDecimal latitude, BigDecimal longitude, long radiusMeters,
+                                                    Set<UUID> activeListingIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         if (activeListingIds.isEmpty()) {
             // The Specification path's disjunction analog: an empty ACTIVE
             // set is an honest empty page — never a native IN () (invalid
             // SQL, not a semantics question).
-            return Page.empty(pageable);
+            return PagedResponse.empty(request);
         }
-        return repository
+        return PagedResponse.of(repository
                 .findWithinRadiusPaged(latitude, longitude, radiusMeters, activeListingIds, distancePaged(pageable))
-                .map(PropertyDetails::getListingId);
+                .map(PropertyDetails::getListingId));
     }
 
     @Override
-    public Page<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude, BigDecimal longitude,
-                                                      long radiusMeters, Set<UUID> activeListingIds,
-                                                      Set<UUID> providerIds, Pageable pageable) {
+    public PagedResponse<UUID> findWithinRadiusPagedRestricted(BigDecimal latitude, BigDecimal longitude,
+                                                              long radiusMeters, Set<UUID> activeListingIds,
+                                                              Set<UUID> providerIds, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
         if (activeListingIds.isEmpty()) {
-            return Page.empty(pageable);
+            return PagedResponse.empty(request);
         }
-        return repository
+        return PagedResponse.of(repository
                 .findWithinRadiusPagedRestricted(latitude, longitude, radiusMeters,
                         activeListingIds, providerIds, distancePaged(pageable))
-                .map(PropertyDetails::getListingId);
+                .map(PropertyDetails::getListingId));
     }
 
     /**
