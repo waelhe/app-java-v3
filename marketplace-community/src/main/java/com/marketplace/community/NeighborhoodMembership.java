@@ -110,10 +110,10 @@ public class NeighborhoodMembership extends BaseEntity {
      * comment/react rights without any administrator ever looking at the
      * claim again). Rejection now stays until an administrator acts —
      * the plan's own "التدفق الأول يدوي إداري فقط" (the review flow is
-     * manual-administrative, in BOTH directions); a rejected member's
-     * honest recovery paths are a fresh review by an administrator, or
-     * leaving and rejoining (a new row — the documented G-N1 trust reset,
-     * visible to the queue as a fresh UNVERIFIED claim).
+     * manual-administrative, in BOTH directions); a rejected member's ONE
+     * honest recovery path is an administrator's APPROVE (the re-admission
+     * lever) — leaving and rejoining carries the verdict forward now, so
+     * the fresh row is born REJECTED and never resurrects the write gate.
      */
     public void requestVerification() {
         if (verificationState == MembershipVerificationState.UNVERIFIED) {

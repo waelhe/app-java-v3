@@ -43,11 +43,12 @@ class CommunityContentPurgeAdapterTest {
 
         int purged = adapter.purgeAuthoredTexts(userId);
 
-        // Four statements (posts + posts_aud + comments + comments_aud),
-        // each counting its own purged rows.
-        assertThat(purged).isEqualTo(8);
+        // Six statements since L49 (posts + posts_aud + comments +
+        // comments_aud + events + events_aud), each counting its own
+        // purged rows.
+        assertThat(purged).isEqualTo(12);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate, times(4)).update(sql.capture(), any(Object[].class));
+        verify(jdbcTemplate, times(6)).update(sql.capture(), any(Object[].class));
         assertThat(sql.getAllValues())
                 .anySatisfy(s -> assertThat(s)
                         .startsWith("UPDATE neighborhood_posts SET title = ?, body = ?"))
@@ -68,5 +69,33 @@ class CommunityContentPurgeAdapterTest {
         // The tombstone is the port's own constant — a local marker string
         // would drift from every other module's purge.
         assertThat(AuthoredContentPurgePort.PURGED_MARKER).isEqualTo("[purged]");
+    }
+
+    // ---------- L49: the events' authored text joins the purge ----------
+
+    @Test
+    void purgeAuthoredTexts_updatesOrganizedEvents_baseAndMirror() {
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(2);
+
+        int purged = new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
+
+        // The grand total carries every statement's count (six statements
+        // at two rows each since L49 — the two event statements join the
+        // four post/comment ones).
+        assertThat(purged).isEqualTo(12);
+        // The four authored columns ride both statements — base and mirror.
+        org.mockito.Mockito.verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("UPDATE neighborhood_events SET")
+                                && sql.contains("title = ?")
+                                && sql.contains("description = ?")
+                                && sql.contains("location_label = ?")
+                                && sql.contains("organizer_label = ?")
+                                && sql.contains("WHERE author_id = ?")),
+                any(Object[].class));
+        org.mockito.Mockito.verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("UPDATE neighborhood_events_aud SET")),
+                any(Object[].class));
     }
 }

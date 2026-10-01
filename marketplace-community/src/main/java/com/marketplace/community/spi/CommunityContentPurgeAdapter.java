@@ -70,9 +70,33 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
                         + "WHERE author_id = ? AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER);
+        // L49 (the events layer): the subject's organized events carry
+        // FOUR authored columns (title, description, the two display
+        // labels — all NOT NULL) — the posts' own purge shape, base
+        // table and Envers mirror both. The seats are ids-only (the
+        // reaction row's own reasoning) — nothing to purge there.
+        int events = jdbcTemplate.update(
+                "UPDATE neighborhood_events SET title = ?, description = ?, "
+                        + "location_label = ?, organizer_label = ? "
+                        + "WHERE author_id = ? AND (title <> ? OR description <> ? "
+                        + "OR location_label <> ? OR organizer_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        int eventAuditRows = jdbcTemplate.update(
+                "UPDATE neighborhood_events_aud SET title = ?, description = ?, "
+                        + "location_label = ?, organizer_label = ? "
+                        + "WHERE author_id = ? AND (title <> ? OR description <> ? "
+                        + "OR location_label <> ? OR organizer_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         log.info("Community content purge: userId={}, posts={}, postAuditRows={}, "
-                        + "comments={}, commentAuditRows={}",
-                userId, posts, postAuditRows, comments, commentAuditRows);
-        return posts + postAuditRows + comments + commentAuditRows;
+                        + "comments={}, commentAuditRows={}, events={}, eventAuditRows={}",
+                userId, posts, postAuditRows, comments, commentAuditRows,
+                events, eventAuditRows);
+        return posts + postAuditRows + comments + commentAuditRows + events + eventAuditRows;
     }
 }
