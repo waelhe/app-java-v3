@@ -22,18 +22,18 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Migration-time guard for V74's data repair (the R4 wave — one collectible
+ * Migration-time guard for V81's data repair (the R4 wave — one collectible
  * attempt per booking): the repair converges production data at deploy time,
  * and the regular post-boot integration tests can never see it (by the time
- * the context is up, Flyway has already applied V74 to a fresh database and
+ * the context is up, Flyway has already applied V81 to a fresh database and
  * the one-time repair had nothing to transform).
  *
  * <p>This test boots with {@code spring.flyway.target=70} — the schema stops
  * BEFORE the repair migration, at the highest version that EXISTS on this
- * branch (V74 has not run; the wave-train's reserved numbers V71-V73
+ * branch (V81 has not run; the wave-train's reserved numbers V71-V80
  * belong to unmerged wave branches, and Flyway rejects a target that does
  * not resolve to an existing migration file) — seeds the exact pre-fix
- * states the repair exists for, then executes the actual V74 script (the
+ * states the repair exists for, then executes the actual V81 script (the
  * real file from the classpath, through Spring's official {@link ScriptUtils}
  * on an autocommit connection, matching the migration's own
  * non-transactional execution shape) and asserts the converged outcomes:
@@ -65,10 +65,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         // stop BEFORE the wave's repair migration, at the highest version
-        // that EXISTS on this branch (the wave-train's reserved V71-V73
+        // that EXISTS on this branch (the wave-train's reserved V71-V80
         // belong to unmerged wave branches; Flyway rejects a target that
         // resolves to no migration file) — the pre-state this test seeds is
-        // exactly the state V74 exists to converge
+        // exactly the state V81 exists to converge
         "spring.flyway.target=70",
 })
 @ActiveProfiles("test")
@@ -150,12 +150,12 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
         insertPayment(olderInFlightPayment, olderInFlight, "PENDING");
         insertIntent(latestAttempt5, booking5, consumerId, "CREATED", "2026-09-24 10:00:00");
 
-        // ---- execute the actual V74 script (the real file,
+        // ---- execute the actual V81 script (the real file,
         // non-transactional shape: autocommit connection) ----
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V74__payment_intents_one_active_attempt.sql"));
+                    new ClassPathResource("db/migration/V81__payment_intents_one_active_attempt.sql"));
         }
 
         // ---- Booking 1 outcomes: the latest attempt is THE attempt ----

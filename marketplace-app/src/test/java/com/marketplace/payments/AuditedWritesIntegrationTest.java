@@ -84,7 +84,7 @@ class AuditedWritesIntegrationTest {
     /**
      * R4 (comprehensive-review-ar-fix plan §4/R4): ONE collectible payment
      * intent per booking is now a database invariant
-     * (uq_payment_intents_one_active_attempt, V74) — each test method gets
+     * (uq_payment_intents_one_active_attempt, V81) — each test method gets
      * its OWN booking (a per-instance id; JUnit builds a fresh instance per
      * method) so the class's several audited-write tests never collide on
      * the invariant. The test's subject is the AUDIT COLUMNS surviving on

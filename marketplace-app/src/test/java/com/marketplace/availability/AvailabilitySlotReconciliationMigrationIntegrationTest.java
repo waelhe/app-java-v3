@@ -23,17 +23,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Migration-time guard for V73's data repair (CodeRabbit round 2 on PR #471,
+ * Migration-time guard for V80's data repair (CodeRabbit round 2 on PR #471,
  * adopted from the root): the reconciliation is the highest-stakes SQL of the
  * R2+R3 wave — it converges production data at deploy time, and the regular
  * post-boot integration tests can never see it (by the time the context is
- * up, Flyway has already applied V73 to a fresh database and the one-time
+ * up, Flyway has already applied V80 to a fresh database and the one-time
  * repair had nothing to transform).
  *
- * <p>This test boots with {@code spring.flyway.target=72} — the schema stops
- * BEFORE the repair migration (V72's ownership column exists; V73 has not
+ * <p>This test boots with {@code spring.flyway.target=79} — the schema stops
+ * BEFORE the repair migration (V79's ownership column exists; V80 has not
  * run) — seeds the exact pre-fix states the reconciliation exists for, then
- * executes the actual V73 script (the real file from the classpath, through
+ * executes the actual V80 script (the real file from the classpath, through
  * Spring's official {@link ScriptUtils} on an autocommit connection, matching
  * the migration's own non-transactional execution shape) and asserts the
  * converged outcomes:
@@ -59,8 +59,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         // stop BEFORE the wave's repair migration — the pre-state this test
-        // seeds is exactly the state V73 exists to converge
-        "spring.flyway.target=72",
+        // seeds is exactly the state V80 exists to converge
+        "spring.flyway.target=79",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -118,12 +118,12 @@ class AvailabilitySlotReconciliationMigrationIntegrationTest {
                 "CANCELLED", "2026-09-20 10:00:00");
         insertSlot(slotZ, providerId, w2Start, w2End, true, cancelledBooking, "2026-09-01 09:00:00");
 
-        // ---- execute the actual V73 script (the real file, non-transactional
+        // ---- execute the actual V80 script (the real file, non-transactional
         // shape: autocommit connection, statement by statement) ----
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V73__availability_slots_window_unique.sql"));
+                    new ClassPathResource("db/migration/V80__availability_slots_window_unique.sql"));
         }
 
         // ---- Window 1 outcomes ----

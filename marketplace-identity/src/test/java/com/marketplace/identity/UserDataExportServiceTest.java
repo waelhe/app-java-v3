@@ -6,6 +6,7 @@ import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
+import com.marketplace.shared.api.CommunityReactionExportEntry;
 import com.marketplace.shared.api.ConversationExportEntry;
 import com.marketplace.shared.api.MediaExportEntry;
 import com.marketplace.shared.api.MediaExportPort;
@@ -60,7 +61,7 @@ class UserDataExportServiceTest {
                 UUID.randomUUID(), null, Instant.now(), Instant.now()));
         var messages = List.of(new MessageExportEntry(UUID.randomUUID(),
                 UUID.randomUUID(), "hello", Instant.now(), Instant.now()));
-        var media = List.of(new MediaExportEntry(UUID.randomUUID(), UUID.randomUUID(),
+        var media = List.of(new MediaExportEntry(UUID.randomUUID(), UUID.randomUUID(), null,
                 "listings/x/y.jpg", "image/jpeg", 10L, "UPLOADED", 1,
                 Instant.now(), Instant.now()));
         var notifications = List.of(new NotificationExportEntry(UUID.randomUUID(),
@@ -86,6 +87,9 @@ class UserDataExportServiceTest {
         var communityComments = List.of(new CommunityCommentExportEntry(UUID.randomUUID(),
                 UUID.randomUUID(), "Comment", Instant.now(), Instant.now(), false));
         when(communityExportPort.exportCommentsForOwner(userId)).thenReturn(communityComments);
+        var communityReactions = List.of(new CommunityReactionExportEntry(UUID.randomUUID(),
+                UUID.randomUUID(), Instant.now(), Instant.now(), false));
+        when(communityExportPort.exportReactionsForOwner(userId)).thenReturn(communityReactions);
 
         UserDataExportResponse response = service.exportFor(user);
 
@@ -100,6 +104,7 @@ class UserDataExportServiceTest {
         assertSame(memberships, response.memberships()); // L41: the community module's share
         assertSame(communityPosts, response.communityPosts()); // L42: the posts share
         assertSame(communityComments, response.communityComments()); // L42: the comments share
+        assertSame(communityReactions, response.communityReactions()); // #484: the reactions share
 
         // The profile section: the account row's own fields.
         assertEquals(userId, response.profile().id());

@@ -1,6 +1,7 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PropertyDetailsPort;
@@ -89,6 +90,72 @@ class NeighborhoodMembershipServiceTest {
         return NeighborhoodMembership.join(userId, location, clock);
     }
 
+    // ------------------------------------------------------------------
+    // The #484 review round's verdict carry: the REJECTED verdict follows
+    // the USER across leave/rejoin and neighborhood switches
+    // ------------------------------------------------------------------
+
+    @Test
+    void join_afterARejectedLatestRow_isBornRejected() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("REJECTED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        assertThat(result.view().verificationState()).isEqualTo("REJECTED");
+        assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    void join_afterANonRejectedLatestRow_isBornUnverified() {
+        // every other state births UNVERIFIED — the status quo: only the
+        // admin's refusal verdict follows the user, the claim's own state
+        // resets with the fresh row
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("VERIFIED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        assertThat(result.view().verificationState()).isEqualTo("UNVERIFIED");
+    }
+
+    @Test
+    void join_switchFromARejectedRow_carriesTheVerdictToTheNewRow() {
+        UUID oldLocation = UUID.randomUUID();
+        NeighborhoodMembership rejected = storedMembership(oldLocation);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(rejected));
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("REJECTED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        verify(repository).delete(rejected);
+        verify(repository).flush();
+        assertThat(result.view().verificationState()).isEqualTo("REJECTED");
+        assertThat(result.view().memberSince()).isEqualTo(FIXED);
+    }
+
+    @Test
+    void reviewVerification_approveOnARejectedMembership_reAdmits() {
+        NeighborhoodMembership rejected = storedMembership(locationId);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        when(repository.findById(rejected.getId())).thenReturn(Optional.of(rejected));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.reviewVerification(rejected.getId(), true);
+
+        assertThat(view.verificationState()).isEqualTo("VERIFIED");
+        assertThat(rejected.mayUseCommunityWrites()).isTrue();
+    }
+
     @Test
     void join_unknownLocation_isThePortsOwn404() {
         when(geoLookupPort.getLocation(locationId))
@@ -125,7 +192,7 @@ class NeighborhoodMembershipServiceTest {
 
         assertThat(result.created()).isTrue();
         assertThat(result.view().locationId()).isEqualTo(locationId);
-        assertThat(result.view().verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(result.view().verificationState()).isEqualTo("UNVERIFIED");
         verify(repository, never()).delete(any());
     }
 
@@ -220,6 +287,68 @@ class NeighborhoodMembershipServiceTest {
                 .isInstanceOf(IllegalStateException.class);
         verify(repository).delete(old);
         verify(repository).flush();
+    }
+
+    // ------------------------------------------------------------------
+    // The verification request lifecycle (the #484 review round's root
+    // fix: a rejected claim cannot self-reverse)
+    // ------------------------------------------------------------------
+
+    @Test
+    void requestVerification_unverified_movesToPendingAndSaves() {
+        NeighborhoodMembership stored = storedMembership(locationId);
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(stored));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.requestVerification(userId);
+
+        assertThat(stored.getVerificationState()).isEqualTo(MembershipVerificationState.PENDING);
+        verify(repository).save(stored);
+    }
+
+    @Test
+    void requestVerification_rejected_answersItsOwnExplicit409_andNeverWrites() {
+        // The measured hole this closes: the member-controlled request used
+        // to move REJECTED → PENDING, and because every state except
+        // REJECTED passes the community write gate, the rejected member
+        // regained publish/comment/react rights without any review. The
+        // verdict is now administrator-owned in both directions.
+        NeighborhoodMembership rejected = storedMembership(locationId);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(rejected));
+
+        assertThatThrownBy(() -> service.requestVerification(userId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("rejected");
+        assertThat(rejected.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void requestVerification_pendingOrVerified_answersTheIdempotence409() {
+        NeighborhoodMembership pending = storedMembership(locationId);
+        pending.requestVerification();
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(pending));
+        assertThatThrownBy(() -> service.requestVerification(userId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("PENDING");
+
+        NeighborhoodMembership verified = storedMembership(locationId);
+        verified.requestVerification();
+        verified.approveVerification();
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(verified));
+        assertThatThrownBy(() -> service.requestVerification(userId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("VERIFIED");
+    }
+
+    @Test
+    void requestVerification_noMembership_is404() {
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requestVerification(userId))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     // ------------------------------------------------------------------

@@ -19,7 +19,7 @@ public enum PaymentIntentStatus {
      * R4 (comprehensive-review-ar-fix plan §4/R4 — one collectible attempt
      * per booking): the states an intent can still COLLECT money in. The
      * partial unique index {@code uq_payment_intents_one_active_attempt}
-     * (V74) admits at most ONE live row per booking in these states — the
+     * (V81) admits at most ONE live row per booking in these states — the
      * decided model's database invariant; the scoped repository searches
      * and {@code createIntent}'s state guard read the same scope.
      */

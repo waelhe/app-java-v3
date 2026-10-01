@@ -38,7 +38,7 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
      * collectible attempt AND a collected row (SUCCEEDED et al — the
      * booking is paid) reject the creation. The guard is the friendly
      * failure; the partial unique index {@code uq_payment_intents_one_active_attempt}
-     * (V74) is the concurrency backstop for the race past it.
+     * (V81) is the concurrency backstop for the race past it.
      */
     Optional<PaymentIntent> findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
             UUID bookingId, Collection<PaymentIntentStatus> statuses);

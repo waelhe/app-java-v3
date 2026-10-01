@@ -220,6 +220,17 @@ class AuthorizationServerLoginGateIntegrationTest {
         String rotatedAccessToken = tokens.path("access_token").asString();
         assertThat(rotatedAccessToken).isNotBlank().isNotEqualTo(gate.accessToken());
 
+        // reuseRefreshTokens=true — the stateless-BFF contract (2026-09-30):
+        // the refresh token's VALUE must survive the refresh so a context that
+        // drops the re-signed cookie write (RSC renders cannot land Set-Cookie)
+        // cannot strand the browser with a dead refresh token — the recurring
+        // "session expired" defect. RFC 6749 §6 lets the server either echo the
+        // same refresh token or omit the field entirely; rotation (a DIFFERENT
+        // value) is the only forbidden outcome.
+        assertThat(tokens.path("refresh_token").asString())
+                .as("the refresh grant must reuse (never rotate) the refresh token value")
+                .isIn("", gate.refreshToken());
+
         HttpResponse<String> apiResponse = getWithBearer(PROTECTED_ADMIN_PATH, rotatedAccessToken);
         assertThat(apiResponse.statusCode()).isNotEqualTo(401);
         assertThat(apiResponse.statusCode()).isNotEqualTo(403);
@@ -448,7 +459,8 @@ class AuthorizationServerLoginGateIntegrationTest {
 
     /**
      * The bootstrapped client's operational settings are preserved verbatim (no drift from
-     * the official TokenSettings values): reuse=false, access 900s, refresh 604800s,
+     * the official TokenSettings values): reuse=true (the stateless-BFF contract — the
+     * refresh token value survives refreshes), access 900s, refresh 604800s,
      * authorization-code 300s, plus requireProofKey/requireAuthorizationConsent=true.
      */
     @Test
@@ -457,7 +469,7 @@ class AuthorizationServerLoginGateIntegrationTest {
         assertThat(appClient).isNotNull();
 
         TokenSettings tokenSettings = appClient.getTokenSettings();
-        assertThat(tokenSettings.getSettings().get("settings.token.reuse-refresh-tokens")).isEqualTo(false);
+        assertThat(tokenSettings.getSettings().get("settings.token.reuse-refresh-tokens")).isEqualTo(true);
         assertThat(tokenSettings.getSettings().get("settings.token.access-token-time-to-live"))
                 .isEqualTo(Duration.ofSeconds(900));
         assertThat(tokenSettings.getSettings().get("settings.token.refresh-token-time-to-live"))

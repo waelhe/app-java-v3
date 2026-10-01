@@ -39,9 +39,9 @@ public class AvailabilitySlot extends BaseEntity {
     /**
      * R2: the booking that holds this slot — claimed atomically with
      * {@code booked} by {@code bookSlot(providerId, startsAt, endsAt, bookingId)}
-     * and cleared with it on release. Nullable in the schema (V72) because
+     * and cleared with it on release. Nullable in the schema (V79) because
      * ownership accrues from the first post-migration confirm onward;
-     * pre-migration holders were backfilled by V72's deterministic UPDATE.
+     * pre-migration holders were backfilled by V79's deterministic UPDATE.
      */
     @Column(name = "held_by_booking_id")
     private UUID heldByBookingId;
@@ -73,7 +73,7 @@ public class AvailabilitySlot extends BaseEntity {
      * claim, booked flag and owner together. Concurrent claims on the
      * same row are settled by the entity's {@code @Version} optimistic
      * lock (BaseEntity — the losing flush fails its transaction), with
-     * V73's {@code uq_availability_slots_live_window} as the one-live-row
+     * V80's {@code uq_availability_slots_live_window} as the one-live-row
      * backstop underneath.
      */
     public void markBooked(UUID bookingId) {

@@ -5,6 +5,7 @@ import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
+import com.marketplace.shared.api.PostReactedEvent;
 import com.marketplace.shared.api.SavedSearchMatchedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import org.junit.jupiter.api.Test;
@@ -282,6 +283,58 @@ class NotificationEventListenerTest {
     void onContentModerated_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onContentModerated", ContentModeratedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onPostReacted_callsNotificationServiceForThePostAuthor() {
+        UUID postId = UUID.randomUUID();
+        UUID reactorId = UUID.randomUUID();
+        UUID postAuthorId = UUID.randomUUID();
+        PostReactedEvent event = new PostReactedEvent(postId, reactorId, postAuthorId);
+
+        listener.onPostReacted(event);
+
+        verify(notificationService).onPostReacted(postId, postAuthorId);
+    }
+
+    @Test
+    void onPostReacted_selfThank_skipsTheNotificationByPolicy() {
+        // L47's own criterion-4 mirror (the PostCommentedEvent precedent
+        // verbatim): the author thanking their own post is the one delivery
+        // this module deliberately drops — the event still exists (the
+        // registry keeps the honest fact), the notification does not.
+        UUID postId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        PostReactedEvent event = new PostReactedEvent(postId, authorId, authorId);
+
+        listener.onPostReacted(event);
+
+        verify(notificationService, never()).onPostReacted(any(), any());
+    }
+
+    @Test
+    void onPostReacted_propagatesException() {
+        // The same root every listener above pins: a delivery failure must
+        // propagate so the publication stays incomplete in the registry and
+        // the framework's retry re-delivers it — a swallowed exception would
+        // silently lose the author's thank alert while the reaction itself
+        // already committed.
+        PostReactedEvent event = new PostReactedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onPostReacted(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onPostReacted(event));
+    }
+
+    @Test
+    void onPostReacted_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onPostReacted", PostReactedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }

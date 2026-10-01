@@ -44,7 +44,7 @@ class NeighborhoodMembershipControllerTest {
 
     private NeighborhoodMembershipView view(UUID location) {
         return new NeighborhoodMembershipView(
-                UUID.randomUUID(), userId, location, "SELF_DECLARED",
+                UUID.randomUUID(), userId, location, "UNVERIFIED",
                 Instant.parse("2026-09-17T09:30:00Z"),
                 Instant.parse("2026-09-17T09:30:00Z"),
                 Instant.parse("2026-09-17T09:30:00Z"));

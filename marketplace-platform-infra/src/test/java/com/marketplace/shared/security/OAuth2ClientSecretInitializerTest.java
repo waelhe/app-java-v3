@@ -155,7 +155,7 @@ class OAuth2ClientSecretInitializerTest {
         assertThat(saved.getTokenSettings().getSettings().get("settings.token.access-token-time-to-live"))
                 .isEqualTo(Duration.ofSeconds(900));
         assertThat(saved.getTokenSettings().getSettings().get("settings.token.reuse-refresh-tokens"))
-                .isEqualTo(false);
+                .isEqualTo(true);
         assertThat(saved.getClientAuthenticationMethods())
                 .containsExactly(org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
         assertThat(saved.getAuthorizationGrantTypes())
@@ -337,7 +337,7 @@ class OAuth2ClientSecretInitializerTest {
                         .requireAuthorizationConsent(true)
                         .build())
                 .tokenSettings(TokenSettings.builder()
-                        .reuseRefreshTokens(false)
+                        .reuseRefreshTokens(true)
                         .accessTokenTimeToLive(Duration.ofSeconds(900))
                         .refreshTokenTimeToLive(Duration.ofSeconds(604800))
                         .authorizationCodeTimeToLive(Duration.ofSeconds(300))

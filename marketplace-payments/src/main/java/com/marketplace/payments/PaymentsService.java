@@ -377,7 +377,7 @@ public class PaymentsService implements PaymentsSpi {
         // multiple intents per booking were reachable by construction and
         // processing each charged the booking again. The guard is the
         // friendly failure; the partial unique index
-        // uq_payment_intents_one_active_attempt (V74) is the concurrency
+        // uq_payment_intents_one_active_attempt (V81) is the concurrency
         // backstop for the race past it (the V67 house shape).
         paymentIntentRepository
                 .findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(
