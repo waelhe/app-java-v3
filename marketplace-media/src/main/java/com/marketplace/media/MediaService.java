@@ -610,8 +610,10 @@ public class MediaService {
      * server-generated UUIDs only, no client input ever reaches the key.
      */
     private String buildPostObjectKey(UUID postId, String contentType) {
-        String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
-        return "posts/" + postId + "/" + UUID.randomUUID() + "." + extension;
+        // The reconciliation merge: the branch moved key construction into
+        // MediaUploadRules.buildObjectKey (one discipline, one place); this
+        // main-era twin keeps the same posts/ namespace through the helper.
+        return MediaUploadRules.buildObjectKey("posts", postId, contentType);
     }
 
     /**

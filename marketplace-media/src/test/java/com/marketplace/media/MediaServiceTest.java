@@ -95,7 +95,7 @@ class MediaServiceTest {
     private MediaProperties mediaProperties() {
         return new MediaProperties(
                 new MediaProperties.Storage("", "auto", "", "", "", false),
-                new MediaProperties.Limits(10_485_760L,
+                new MediaProperties.Limits(10_485_760L, 10,
                         Set.of("image/jpeg", "image/png", "image/webp", "image/gif"),
                         Duration.ofMinutes(15), 640, 25_000_000L));
     }
@@ -141,7 +141,9 @@ class MediaServiceTest {
     void requestPostUpload_byAuthor_returnsPresignedViewUnderPostsNamespace() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         mockAuthor();
-        when(repository.countByPostId(postId)).thenReturn(0L);
+        // Greptile W1 r10 (adopted): allocation reads the max, not the count —
+        // the unstubbed findMaxPositionByPostId mock answers 0, so the first
+        // upload still takes position 1 without a stale count stub.
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(storage.presignUpload(any(), eq("image/jpeg"))).thenReturn("https://storage.example/signed-put");
 
@@ -418,7 +420,8 @@ class MediaServiceTest {
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L));
         mockOwner();
-        when(repository.countByListingId(listingId)).thenReturn(0L);
+        // Greptile W1 r10 (adopted): max-based allocation — same as the post
+        // twin above, no stale count stub.
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(storage.presignUpload(any(), eq("image/jpeg"))).thenReturn("https://storage.example/signed-put");
 

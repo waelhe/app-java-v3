@@ -63,9 +63,11 @@ public class UserLookupPortImpl implements UserLookupPort {
      */
     @Override
     public Optional<UserSummary> findBySubject(String subject) {
-        return userRepository.findBySubject(subject)
-                .map(u -> new UserSummary(u.getId(), u.getEmail(), u.getDisplayName(),
-                        u.getRole().name(), u.getCreatedAt(), u.getUpdatedAt()));
+        // toSummary carries the pseudonymization marker (I7) — the same
+        // 7-arg construction every other lookup on this port uses; the
+        // reconciliation merge kept main's 6-arg shape, which no longer
+        // compiles against the W1 record.
+        return userRepository.findBySubject(subject).map(UserLookupPortImpl::toSummary);
     }
 }
 

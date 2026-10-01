@@ -48,7 +48,7 @@ class ReviewMediaServiceTest {
 
     private static final MediaProperties PROPERTIES = new MediaProperties(
             new MediaProperties.Storage("https://example.test", "auto", "bucket", "k", "s", false),
-            new MediaProperties.Limits(10_485_760L,
+            new MediaProperties.Limits(10_485_760L, 10,
                     Set.of("image/jpeg", "image/png", "image/webp", "image/gif"),
                     Duration.ofMinutes(15), 640, 25_000_000L));
 

@@ -142,7 +142,8 @@ public class ProviderPublicPageService {
                 block.reviewCount(),
                 block.ratingGeneralAverage(),
                 block.ratingGeneralCount(),
-                PagedResponse.of(listings));    }
+                listings);
+    }
 
     /**
      * The listings block: served only for VERIFIED profiles with a linked

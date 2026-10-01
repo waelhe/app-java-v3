@@ -100,7 +100,7 @@ class ProviderPublicPageServiceTest {
         UUID userId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
-        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
+        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(PagedRequest.of(0, 20)))).thenReturn(pageOf(2));
         when(reviewStatsPort.findStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(userId, 4.8, 23)));
         when(reviewStatsPort.findGeneralStatsByProviderId(userId))
@@ -125,7 +125,7 @@ class ProviderPublicPageServiceTest {
         UUID userId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
-        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(pageable))).thenReturn(pageOf(2));
+        when(catalogSearchPort.listActiveByProvider(eq(userId), eq(PagedRequest.of(0, 20)))).thenReturn(pageOf(2));
         when(reviewStatsPort.findStatsByProviderId(userId))
                 .thenReturn(Optional.of(new ReviewStats(userId, 4.8, 23)));
         when(reviewStatsPort.findGeneralStatsByProviderId(userId))

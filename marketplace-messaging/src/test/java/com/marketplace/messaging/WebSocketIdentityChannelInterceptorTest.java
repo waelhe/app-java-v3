@@ -95,7 +95,7 @@ class WebSocketIdentityChannelInterceptorTest {
     void connectWithSubjectPrincipalIsTranslatedToTheStableUserId() {
         when(userLookupPort.findBySubject("user@example.com"))
                 .thenReturn(Optional.of(new UserSummary(USER_ID, "user@example.com",
-                        "Example User", "CONSUMER", Instant.now(), Instant.now())));
+                        "Example User", "CONSUMER", Instant.now(), Instant.now(), null)));
 
         StompHeaderAccessor accessor = connectAccessor();
         JwtAuthenticationToken lifted = token("user@example.com");
@@ -122,7 +122,7 @@ class WebSocketIdentityChannelInterceptorTest {
     @Test
     void theTranslationRidesTheSameSubjectSeamTheRestSurfaceRides() {
         when(userLookupPort.findBySubject("login-handle")).thenReturn(Optional.of(new UserSummary(
-                USER_ID, null, "Handle User", "PROVIDER", Instant.now(), Instant.now())));
+                USER_ID, null, "Handle User", "PROVIDER", Instant.now(), Instant.now(), null)));
 
         StompHeaderAccessor accessor = connectAccessor();
         accessor.setUser(token("login-handle"));
