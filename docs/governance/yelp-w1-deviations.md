@@ -187,3 +187,40 @@ exist only on the unmerged branch; the production Flyway ledger (Neon, index V78
 (`yelp-level-plan.html` — V84..V87 for W0/W1, next-free numbers for W2+), and SYSTEM.md's
 guard-derived inventory (84 versioned, `V1..V87`) all carry the new numbers — nothing refers to
 the old ones except this declaration.
+
+---
+
+## D-W1-3 — The per-review media limit is a declared policy value, not a plan figure
+
+**The plan (§4.4/§4.5)** mandates anti-abuse gates for the review surface but sets no explicit
+maximum photo count per review. CodeRabbit W1 r4 (verified: `requestUpload` signed unlimited
+PENDING rows, and abandoned uploads kept occupying positions) required a limit.
+
+**The registered choice:** `marketplace.media.limits.max-assets-per-review`, default **10**
+(PENDING uploads included, checked while the review's advisory allocation lock is held — the
+limit holds under concurrency). Environment-tunable via `MEDIA_LIMITS_MAX_ASSETS_PER_REVIEW`
+— the same "environment-tunable key" posture the feature-expansion roadmap applied to the
+thumbnail width. **Scope note:** the LISTING channel (pre-W1, main behavior) keeps its
+unlimited contract — changing a product policy for a surface this wave does not own is a
+separate decision, recorded here rather than silently taken.
+
+**Closing point:** `ReviewMediaServiceTest.requestUpload_rejectsAtThePerReviewLimit` pins the
+rejection; the property is bound through the module's existing `@ConfigurationProperties`
+record with `@DefaultValue`.
+
+---
+
+## Review-adoption round (post-reconciliation merge) — all ten threads closed from the root
+
+| # | finding (author) | verification | root adoption |
+|---|---|---|---|
+| r1 | JSON `null` passes the setting guards (CodeRabbit, Minor) | confirmed: Jackson delivers `NullNode`, both guards tested Java `null` only; stored `'null'::jsonb` later fails typed reads as 500 | `SystemSetting.create`/`replaceValue` reject `isNull()` — `UserSummary`-level javadoc updated |
+| r2 | Javadoc listed shortened observation names (CodeRabbit, Minor) | confirmed vs the `@Observed` declarations and the EXPECTED pin | `ObservationCoverageFilesTest` javadoc carries `media.review.*` |
+| r3 | Cleanup hard-deletes reviews that still carry `review_flags` (CodeRabbit, Major) | confirmed: V87 FK, no cascade; `NEW_ACCOUNT_ACTIVITY` flag on the 9-day fixtures | flags deleted first in all three cleanup paths + the `provider_listings` fixture row |
+| r4 | No per-review media limit (CodeRabbit, Minor) | confirmed: unlimited PENDING rows | D-W1-3 above — limit checked under the advisory lock |
+| r5 | Email as public reviewer name (CodeRabbit, Major) | confirmed: `publicDisplayName()` fell back to the login email on the anonymous review surface | the email tier removed; `UserSummaryTest` pins the contract |
+| r6 | Reviewer email becomes public (greptile, P1) | same defect as r5 — cross-confirmed by two reviewers | same root fix |
+| r7 | Module slice tests lack the new ports (greptile, P1) | confirmed: `@ApplicationModuleTest` boots one module; the expanded constructors need cross-module beans | four `@MockitoBean` ports in `ReviewsModuleIntegrationTest`, one in `ProviderModuleIntegrationTest` |
+| r8 | Public review photos answered 401 (greptile, P1) | confirmed: the security chain permitted listing-media GETs only | `/api/v1/media/reviews/by-review/*` GET permitted — the service's own moderation-visibility gate stays the authority |
+| r9 | Concurrent submissions exceed the caps (greptile, P1) | confirmed: daily-cap, 1x1 uniqueness, and first-N counts are all count-then-insert | `pg_advisory_xact_lock(hashtextextended(reviewerId, 7))` — the measured #241 shape, seed-namespaced away from the media locks |
+| r10 | Soft-deleted photos cause duplicate positions (greptile, P1) | confirmed: count-based allocation re-issues held positions | max-based allocation on ALL THREE channels (review/listing/post) — same defect class, same root fix |

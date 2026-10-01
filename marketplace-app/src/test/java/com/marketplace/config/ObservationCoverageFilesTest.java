@@ -72,9 +72,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
- *       http.server.requests); review.upload.request, review.upload.confirm,
- *       review.asset.delete (W1 — the review-photo channel on the same
- *       rules, one command surface per action); upload.request.post (L48 —
+ *       http.server.requests); media.review.upload.request,
+ *       media.review.upload.confirm, media.review.asset.delete (W1 — the
+ *       review-photo channel on the same rules, one command surface per
+ *       action; the real observation names as declared on the service, not
+ *       the shortened form — CodeRabbit W1 r2); upload.request.post (L48 —
  *       the SAME channel's post-targeted declare, its own command point:
  *       the member flow's author gate and per-post position lock are its
  *       own work, measured apart from the provider flow's)</li> *   <li>messaging — send</li>

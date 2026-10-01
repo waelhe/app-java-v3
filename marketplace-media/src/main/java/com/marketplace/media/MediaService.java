@@ -119,7 +119,10 @@ public class MediaService {
         String objectKey = buildObjectKey(listingId, normalizedType);
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.create(
                 listingId, listing.providerId(), objectKey, normalizedType,
-                sizeBytes, (int) (mediaAssetRepository.countByListingId(listingId) + 1)));
+                // The highest allocated live position plus one — a soft deletion
+                // never re-opens a slot a remaining row still holds (greptile W1
+                // r10, adopted from the root; same root fix as the review channel).
+                sizeBytes, mediaAssetRepository.findMaxPositionByListingId(listingId) + 1));
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
@@ -168,7 +171,9 @@ public class MediaService {
         String objectKey = buildPostObjectKey(postId, normalizedType);
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForPost(
                 postId, post.authorId(), objectKey, normalizedType,
-                sizeBytes, (int) (mediaAssetRepository.countByPostId(postId) + 1)));
+                // Greptile W1 r10 (adopted): max-based allocation — the post twin
+                // of the listing fix above.
+                sizeBytes, mediaAssetRepository.findMaxPositionByPostId(postId) + 1));
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());

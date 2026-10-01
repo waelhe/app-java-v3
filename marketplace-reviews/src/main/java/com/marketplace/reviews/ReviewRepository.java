@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.history.RevisionRepository;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -134,4 +135,19 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
             group by r.providerId
             """)
     Optional<ReviewStats> getGeneralStatsByProviderId(UUID providerId);
+
+    /**
+     * W1 §4.5 (greptile W1 r9, adopted from the root): serializes the
+     * per-reviewer admission decisions — the daily-cap count, the 1×1
+     * organic uniqueness check, and the first-N moderation count are all
+     * count-then-insert, so two concurrent submissions from the same
+     * reviewer would each read the same pre-insert state and both pass.
+     * The advisory-transaction-lock shape is the media repository's
+     * measured #241 pattern (held until the surrounding transaction
+     * commits, released on any exit). Seed 7 keeps this key space disjoint
+     * from the media locks' seed 0 — the two families never share a lock
+     * key even on a UUID-text hash collision.
+     */
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(:reviewerId, 7))", nativeQuery = true)
+    void lockReviewerDecisions(@Param("reviewerId") String reviewerId);
 }

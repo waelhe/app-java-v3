@@ -82,6 +82,11 @@ public class SystemSetting extends BaseEntity {
      * malformed key fails here, on the request thread, with a readable message
      * instead of as a constraint violation from inside the flush — and the value
      * must be real JSON: {@code null} is not a setting value, it is an absent one.
+     * That includes the JSON literal {@code null}: Jackson delivers it as a
+     * {@code NullNode}, not as Java {@code null} (CodeRabbit W1 r1 — the official
+     * {@link JsonNode#isNull()} predicate is the discriminator), because a stored
+     * {@code 'null'::jsonb} is not a SQL NULL and every later typed read would
+     * fail loud as a 500 instead of a readable 400 here.
      */
     static SystemSetting create(UUID id, String settingKey, JsonNode value, String description) {
         if (id == null) {
@@ -91,7 +96,7 @@ public class SystemSetting extends BaseEntity {
             throw new IllegalArgumentException(
                     "setting key must be a lowercase dotted identifier (e.g. reviews.mode), got: " + settingKey);
         }
-        if (value == null) {
+        if (value == null || value.isNull()) {
             throw new IllegalArgumentException("a system setting value cannot be null: " + settingKey);
         }
         SystemSetting setting = new SystemSetting();
@@ -107,10 +112,12 @@ public class SystemSetting extends BaseEntity {
      * Replaces the value. Returns {@code true} when it actually changed — the
      * writer uses that to decide whether to evict caches and publish a change
      * event, so a no-op {@code PATCH} neither clears a warm cache nor fills the
-     * audit trail with a revision that changed nothing.
+     * audit trail with a revision that changed nothing. The JSON literal
+     * {@code null} is rejected for the same reason the factory rejects it (the
+     * {@code NullNode} case, see {@link #create}).
      */
     boolean replaceValue(JsonNode next) {
-        if (next == null) {
+        if (next == null || next.isNull()) {
             throw new IllegalArgumentException("a system setting value cannot be null: " + settingKey);
         }
         String encoded = JSON.writeValueAsString(next);

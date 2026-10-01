@@ -236,6 +236,19 @@ public class SecurityConfig {
                         // contracts — this line is GET-scoped and
                         // listing-subresource-scoped.
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/listings/*").permitAll()
+                        // W1 (yelp-level plan §4.4 — greptile W1 r8, adopted from
+                        // the root): the published review's photos are PUBLIC —
+                        // the exact mirror of the listing-media line above (the
+                        // same S5 gap shape this channel would otherwise re-open:
+                        // a guest reads the review but gets 401 on its photos).
+                        // The service already decides domain visibility per the
+                        // review's own moderation contract (PUBLISHED is public;
+                        // every other state answers the honest 404 to strangers),
+                        // so this line is GET-scoped and review-subresource-scoped
+                        // exactly like its listing twin — the WRITE surfaces
+                        // (uploads/complete/delete) keep their authenticated
+                        // contracts.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/media/reviews/by-review/*").permitAll()
                         // L30 (realestate systems plan): the administrative
                         // hierarchy is public reference data — the anonymous
                         // browse pattern, one line, same chain.

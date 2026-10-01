@@ -32,9 +32,18 @@ public record UserSummary(
     /**
      * The display name every public surface may render: the neutral label
      * for a pseudonymized account (the marker rules, never the stored
-     * value), the profile name else, then the email, then the generic
-     * fallback — the same hierarchical fallback the house's
-     * {@code ProviderNameResolver} applies to provider names.
+     * value), the profile name else, then the generic fallback — the same
+     * hierarchical fallback the house's {@code ProviderNameResolver} applies
+     * to provider names.
+     *
+     * <p><b>The email tier is deliberately absent (CodeRabbit W1 r5 + greptile
+     * W1 r6, adopted from the root):</b> this method feeds surfaces anonymous
+     * clients read (the published review's {@code reviewerName}), and the
+     * login email is an address the account never chose to publish. A
+     * missing display name therefore renders the generic "User" label on
+     * public surfaces — never the email. Authenticated surfaces that
+     * legitimately need the email read it from their own facts (the user's
+     * own profile, admin views), not from the public-name contract.
      */
     public String publicDisplayName() {
         if (pseudonymizedAt != null) {
@@ -42,9 +51,6 @@ public record UserSummary(
         }
         if (displayName != null && !displayName.isBlank()) {
             return displayName;
-        }
-        if (email != null && !email.isBlank()) {
-            return email;
         }
         return "User";
     }

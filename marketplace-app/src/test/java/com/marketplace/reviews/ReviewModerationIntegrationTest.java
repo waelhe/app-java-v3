@@ -138,7 +138,17 @@ class ReviewModerationIntegrationTest {
     void restoreSeedAndCleanUp() {
         settings.update(SystemSettingKeys.REVIEWS_MODE,
                 JsonNodeFactory.instance.textNode("VERIFIED_ONLY"), null, "w1-test");
+        // CodeRabbit W1 r3 (adopted from the root): flags before reviews — V87
+        // has no ON DELETE CASCADE and createOrganic records the young
+        // account's NEW_ACCOUNT_ACTIVITY flag; the reverse order dies on the
+        // FK and leaks the fixtures into the shared database.
+        jdbc.update("DELETE FROM review_flags WHERE review_id IN "
+                + "(SELECT id FROM reviews WHERE reviewer_id = ?)", reviewerId);
         jdbc.update("DELETE FROM reviews WHERE reviewer_id = ?", reviewerId);
+        // hybrid_ownTwoBadgesSeparately inserts a provider_listings row for
+        // the organic listing target (same CodeRabbit r3 note): the users
+        // delete below would otherwise die on the listing's provider FK.
+        jdbc.update("DELETE FROM provider_listings WHERE provider_id = ?", providerUserId);
         jdbc.update("DELETE FROM provider_profiles WHERE id = ?", profile.getId());
         jdbc.update("DELETE FROM users WHERE id IN (?, ?)", reviewerId, providerUserId);
     }
@@ -236,6 +246,11 @@ class ReviewModerationIntegrationTest {
         assertThat(read.getRatingGeneralAverage()).isEqualTo(5.0);
         assertThat(read.getRatingGeneralCount()).isEqualTo(1L);
 
+        // CodeRabbit W1 r3 (adopted from the root): flags before reviews — the
+        // organic review of this nine-day-old account carries its
+        // NEW_ACCOUNT_ACTIVITY flag, and V87 has no ON DELETE CASCADE.
+        jdbc.update("DELETE FROM review_flags WHERE review_id IN (?, ?)",
+                verifiedReview.getId(), organicReview.getId());
         jdbc.update("DELETE FROM reviews WHERE id IN (?, ?)", verifiedReview.getId(), organicReview.getId());
         jdbc.update("DELETE FROM bookings WHERE id = ?", bookingId);
     }

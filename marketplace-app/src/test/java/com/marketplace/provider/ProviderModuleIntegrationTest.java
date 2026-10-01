@@ -79,6 +79,14 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ListingViewsStatsPort listingViewsStatsPort;
 
+    // W1 (greptile W1 r7, adopted from the root): ProviderPublicPageService
+    // resolves the reviews mode through the settings port — outside this
+    // module slice (the adapter lives in the app's admin surface), so the
+    // same @MockitoBean convention applies. Without it the expanded
+    // constructor fails the whole context boot.
+    @MockitoBean
+    com.marketplace.shared.api.SystemSettingsPort systemSettingsPort;
+
     @Autowired
     private ProviderService providerService;
 

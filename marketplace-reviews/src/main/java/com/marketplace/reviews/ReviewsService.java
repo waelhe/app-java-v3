@@ -366,6 +366,15 @@ public class ReviewsService {
 
         UUID reviewerId = currentUserProvider.getCurrentUserId(authentication);
 
+        // W1 §4.5 (greptile W1 r9, adopted from the root): serialize this
+        // reviewer's admission decisions — the daily-cap count, the 1x1
+        // uniqueness check, and the first-N moderation count below are all
+        // count-then-insert, so without the lock two concurrent submissions
+        // would each read the same pre-insert state and both pass. The
+        // advisory transaction lock (held until commit) is the media
+        // repository's measured #241 shape, namespaced with a distinct seed.
+        reviewRepository.lockReviewerDecisions(reviewerId.toString());
+
         ProviderSummary provider = providerLookupPort.findById(providerId)
                 .filter(summary -> summary.userId() != null)
                 .orElseThrow(() -> new ResourceNotFoundException("Provider not found: " + providerId));

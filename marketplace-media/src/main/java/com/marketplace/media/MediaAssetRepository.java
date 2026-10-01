@@ -64,6 +64,22 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     long countByPostId(UUID postId);
 
     /**
+     * The highest allocated display position for the listing — LIVE rows
+     * (the shared {@code @SoftDelete} filters purged ones out of every
+     * query), which no deletion lowers below a remaining row's own value
+     * (greptile W1 r10, adopted from the root — the same defect class the
+     * review channel's {@code ReviewMediaRepository.findMaxPositionByReviewId}
+     * fixes): {@code countByListingId()+1} can re-issue a position a
+     * remaining live row already holds, while {@code max(live)+1} cannot.
+     */
+    @Query("select coalesce(max(a.position), 0) from MediaAsset a where a.listingId = :listingId")
+    int findMaxPositionByListingId(@Param("listingId") UUID listingId);
+
+    /** The post twin of {@link #findMaxPositionByListingId(UUID)}. */
+    @Query("select coalesce(max(a.position), 0) from MediaAsset a where a.postId = :postId")
+    int findMaxPositionByPostId(@Param("postId") UUID postId);
+
+    /**
      * L48: the post twin of {@link #lockListingPositionAllocation(String)} —
      * the same advisory transaction lock discipline (CodeRabbit #241),
      * serialized per POST id. The key space is shared with the listing lock

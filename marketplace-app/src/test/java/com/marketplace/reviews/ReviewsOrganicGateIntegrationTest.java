@@ -131,6 +131,15 @@ class ReviewsOrganicGateIntegrationTest {
     void restoreSeedAndCleanUp() {
         settingsService.update(SystemSettingKeys.REVIEWS_MODE,
                 JsonNodeFactory.instance.textNode("VERIFIED_ONLY"), null, "w1-test");
+        // CodeRabbit W1 r3 (adopted from the root): V87 declares
+        // review_flags.review_id REFERENCES reviews(id) with no ON DELETE
+        // CASCADE — a flag is evidence, not luggage — so the cleanup deletes
+        // the flags BEFORE the reviews. createOrganic records a
+        // NEW_ACCOUNT_ACTIVITY flag for the nine-day-old fixtures, and the
+        // reverse order would die on the FK mid-cleanup, leaking every
+        // fixture row into the shared Testcontainers database.
+        jdbc.update("DELETE FROM review_flags WHERE review_id IN "
+                + "(SELECT id FROM reviews WHERE reviewer_id IN (?, ?))", reviewerId, providerUserId);
         jdbc.update("DELETE FROM reviews WHERE reviewer_id IN (?, ?)", reviewerId, providerUserId);
         jdbc.update("DELETE FROM provider_profiles WHERE user_id IN (?, ?)", reviewerId, providerUserId);
         jdbc.update("DELETE FROM users WHERE id IN (?, ?)", reviewerId, providerUserId);

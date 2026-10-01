@@ -293,4 +293,44 @@ class ReviewMediaServiceTest {
                 () -> service.delete(asset.getId(), authentication));
         verify(reviewMediaRepository, never()).delete(any(ReviewMedia.class));
     }
+    /**
+     * CodeRabbit W1 r4 (adopted from the root): the per-review upload limit —
+     * the count check runs while the advisory lock is held, so this is the
+     * anti-abuse contract of the channel, not a courtesy.
+     */
+    @Test
+    void requestUpload_rejectsAtThePerReviewLimit() {
+        UUID reviewId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
+        when(reviewLookupPort.findAuthorId(reviewId)).thenReturn(Optional.of(authorId));
+        when(reviewMediaRepository.countByReviewId(reviewId)).thenReturn(10L);
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> service.requestUpload(reviewId, "image/jpeg", 1024L, authentication));
+        assertTrue(ex.getMessage().contains("at most 10"));
+    }
+
+    /**
+     * Greptile W1 r10 (adopted from the root): the allocated position follows
+     * the highest allocated one, not the live count — a soft deletion never
+     * re-opens a slot a remaining row still holds.
+     */
+    @Test
+    void requestUpload_allocatesAfterTheHighestPositionNotTheCount() {
+        UUID reviewId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
+        when(reviewLookupPort.findAuthorId(reviewId)).thenReturn(Optional.of(authorId));
+        when(reviewMediaRepository.countByReviewId(reviewId)).thenReturn(2L);
+        when(reviewMediaRepository.findMaxPositionByReviewId(reviewId)).thenReturn(5);
+        when(reviewMediaRepository.save(any(ReviewMedia.class)))
+                .thenAnswer(call -> call.getArgument(0));
+
+        service.requestUpload(reviewId, "image/jpeg", 1024L, authentication);
+        org.mockito.ArgumentCaptor<ReviewMedia> captor =
+                org.mockito.ArgumentCaptor.forClass(ReviewMedia.class);
+        verify(reviewMediaRepository).save(captor.capture());
+        assertEquals(6, captor.getValue().getPosition());
+    }
 }

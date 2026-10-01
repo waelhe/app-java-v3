@@ -87,10 +87,26 @@ public class ReviewMediaService {
         // #241 shape — the same advisory transaction lock).
         reviewMediaRepository.lockPositionAllocation(reviewId.toString());
 
+        // W1 §4.5 posture (CodeRabbit W1 r4, adopted from the root): the
+        // anti-abuse gates do not stop at creation — the upload channel is
+        // part of the same surface. The count check runs while the advisory
+        // lock is held, so the limit holds under concurrent requests too.
+        // PENDING uploads count (they occupy positions until cleaned), so an
+        // abandoned upload still consumes one of the review's slots.
+        long attached = reviewMediaRepository.countByReviewId(reviewId);
+        if (attached >= properties.limits().maxAssetsPerReview()) {
+            throw new BadRequestException(
+                    "A review carries at most " + properties.limits().maxAssetsPerReview()
+                            + " photos (including pending uploads)");
+        }
+
         String objectKey = MediaUploadRules.buildObjectKey(OBJECT_KEY_PREFIX, reviewId, normalizedType);
         ReviewMedia asset = reviewMediaRepository.save(ReviewMedia.create(
                 reviewId, authorId, objectKey, normalizedType,
-                sizeBytes, (int) (reviewMediaRepository.countByReviewId(reviewId) + 1)));
+                // The highest allocated position — deleted rows included — plus
+                // one: never re-issue a position a remaining row already holds
+                // (greptile W1 r10).
+                sizeBytes, reviewMediaRepository.findMaxPositionByReviewId(reviewId) + 1));
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new ReviewMediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
