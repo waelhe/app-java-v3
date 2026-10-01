@@ -1,7 +1,5 @@
 # Marketplace Backend (app-java-v3)
 
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/waelhe/app-java-v3?utm_source=oss&utm_medium=github&utm_campaign=waelhe%2Fapp-java-v3&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
-
 Local-services marketplace backend: **REST + GraphQL** in a single Spring context,
 built as a **Spring Modulith** of 22 Maven modules (18 domain modules + the app
 assembly + shared contracts + platform infrastructure + the edge BFF).

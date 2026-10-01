@@ -97,6 +97,8 @@ public class UserDataExportService {
         var communityPosts = communityExportPort.exportPostsForOwner(user.getId());
         var communityComments = communityExportPort.exportCommentsForOwner(user.getId());
         var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());
+        var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
+        var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -119,18 +121,22 @@ public class UserDataExportService {
                 memberships,
                 communityPosts,
                 communityComments,
-                communityReactions);
+                communityReactions,
+                communityEvents,
+                communityEventSeats);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
         // pseudonymization audit line applies against CWE-532).
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
-                        + "communityPosts={}, communityComments={}, communityReactions={}",
+                        + "communityPosts={}, communityComments={}, communityReactions={}, "
+                        + "communityEvents={}, communityEventSeats={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
-                communityPosts.size(), communityComments.size(), communityReactions.size());
+                communityPosts.size(), communityComments.size(), communityReactions.size(),
+                communityEvents.size(), communityEventSeats.size());
         return response;
     }
 }
