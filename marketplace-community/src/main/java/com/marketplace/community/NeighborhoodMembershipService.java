@@ -167,9 +167,9 @@ public class NeighborhoodMembershipService {
      * the #484 review round closed the measured self-reversal hole (a
      * rejected member re-requesting moved REJECTED → PENDING and regained
      * the write gate without any review), so a REJECTED claim now answers
-     * its own explicit 409 — the member's honest recovery paths are an
-     * administrator's fresh review, or leave-and-rejoin (a new UNVERIFIED
-     * row the queue sees with fresh eyes).
+     * its own explicit 409 — the member's ONE honest recovery path is an
+     * administrator's APPROVE (the re-admission lever); leave-and-rejoin
+     * carries the verdict forward, so the fresh row is born REJECTED.
      */
     @Observed(name = "community.membership.verification.request")
     public NeighborhoodMembershipView requestVerification(UUID userId) {

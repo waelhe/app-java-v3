@@ -28,12 +28,14 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * the context is up, Flyway has already applied V81 to a fresh database and
  * the one-time repair had nothing to transform).
  *
- * <p>This test boots with {@code spring.flyway.target=70} — the schema stops
- * BEFORE the repair migration, at the highest version that EXISTS on this
- * branch (V81 has not run; the wave-train's reserved numbers V71-V80
- * belong to unmerged wave branches, and Flyway rejects a target that does
- * not resolve to an existing migration file) — seeds the exact pre-fix
- * states the repair exists for, then executes the actual V81 script (the
+ * <p>This test boots with {@code spring.flyway.target=80} — the schema stops
+ * BEFORE the repair migration, at the highest version the RECONCILED chain
+ * carries (the retro #485 review round corrected the stale baseline: on
+ * this chain V71 and V73-V80 all exist — the production chain carried
+ * V73-V78 live and the never-applied main waves renumbered to V79-V82; the
+ * V72 number is the chain's documented gap, main's availability-slot
+ * ownership rides V79 here) — seeds the exact pre-fix states the repair
+ * exists for, then executes the actual V81 script (the
  * real file from the classpath, through Spring's official {@link ScriptUtils}
  * on an autocommit connection, matching the migration's own
  * non-transactional execution shape) and asserts the converged outcomes:
@@ -65,11 +67,12 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         // stop BEFORE the wave's repair migration, at the highest version
-        // that EXISTS on this branch (the wave-train's reserved V71-V80
-        // belong to unmerged wave branches; Flyway rejects a target that
-        // resolves to no migration file) — the pre-state this test seeds is
-        // exactly the state V81 exists to converge
-        "spring.flyway.target=70",
+        // the RECONCILED chain carries: V71 and V73-V80 all exist here (the
+        // production chain carried V73-V78 live; the never-applied main waves
+        // renumbered to V79-V82; V72 is the chain's documented gap) — the
+        // pre-state this test seeds is exactly the true pre-V81 schema V81
+        // exists to converge
+        "spring.flyway.target=80",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)

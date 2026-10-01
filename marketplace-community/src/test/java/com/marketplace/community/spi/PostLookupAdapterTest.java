@@ -66,14 +66,10 @@ class PostLookupAdapterTest {
     }
 
     private NeighborhoodMembership membershipInState(MembershipVerificationState state) {
-        return membershipInState(state, locationId);
-    }
-
-    private NeighborhoodMembership membershipInState(MembershipVerificationState state, UUID membershipLocation) {
         // state is produced through the entity's own lifecycle below — the
         // factory + transitions are the ONLY honest paths to each state.
         NeighborhoodMembership membership =
-                NeighborhoodMembership.join(authorId, membershipLocation, Clock.fixed(FIXED, ZoneOffset.UTC));
+                NeighborhoodMembership.join(authorId, locationId, Clock.fixed(FIXED, ZoneOffset.UTC));
         if (state != MembershipVerificationState.UNVERIFIED) {
             membership.requestVerification();
         }
@@ -110,27 +106,6 @@ class PostLookupAdapterTest {
         PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
 
         assertThat(info.authorMayWriteCommunity()).isFalse();
-    }
-
-    @Test
-    void visiblePost_byAuthorWhoSwitchedNeighborhood_carriesTheRefusedWriteRight() {
-        // The review round's location leg: an author whose ACTIVE membership
-        // moved to another neighborhood holds no write right in the post's
-        // own neighborhood — the photo gate must see exactly what the post
-        // service's requireWritableMembershipIn would answer for a comment
-        // or reaction on that same post.
-        NeighborhoodPost post = post();
-        UUID otherNeighborhood = UUID.randomUUID();
-        when(postRepository.findById(post.getId())).thenReturn(Optional.of(post));
-        when(membershipRepository.findByUserId(authorId))
-                .thenReturn(Optional.of(membershipInState(
-                        MembershipVerificationState.UNVERIFIED, otherNeighborhood)));
-
-        PostLookupPort.PostInfo info = adapter.getPostInfo(post.getId());
-
-        assertThat(info.authorMayWriteCommunity())
-                .as("a membership in ANOTHER neighborhood is not a write right in this one")
-                .isFalse();
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.marketplace.identity;
 
 import com.marketplace.shared.api.BookingExportEntry;
 import com.marketplace.shared.api.CommunityCommentExportEntry;
+import com.marketplace.shared.api.CommunityEventExportEntry;
+import com.marketplace.shared.api.CommunityEventSeatExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.CommunityReactionExportEntry;
@@ -51,7 +53,9 @@ public record UserDataExportResponse(
         List<CommunityMembershipExportEntry> memberships,
         List<CommunityPostExportEntry> communityPosts,
         List<CommunityCommentExportEntry> communityComments,
-        List<CommunityReactionExportEntry> communityReactions
+        List<CommunityReactionExportEntry> communityReactions,
+        List<CommunityEventExportEntry> communityEvents,
+        List<CommunityEventSeatExportEntry> communityEventSeats
 ) {
 
     /**

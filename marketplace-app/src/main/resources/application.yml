@@ -481,6 +481,25 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # L49 (the Nextdoor-2026 completeness wave — gap #4, the events
+      # layer): the board's two writes. eventCreate sits at the
+      # postCreate/reviewCreate write budget — an event is the board's
+      # unit, a full authored record like a post; eventRsvp rides the
+      # postReact/postComment budget — a seat is one id pair with no
+      # authored text at all (the postReact model verbatim: one named
+      # instance for BOTH the RSVP and the un-RSVP — they are one
+      # toggle's two directions). Same L29 model: fail fast, 429 RL-001,
+      # conservative until real traffic; env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_EVENTCREATE_LIMIT_FOR_PERIOD
+      # / ..._EVENTRSVP_LIMIT_FOR_PERIOD.
+      eventCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      eventRsvp:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
       # L44 (neighborhood community plan §5 — direct neighbor messages):
       # the direct conversation open — a distinct named instance (the plan's
       # own "حدود معدل conversationCreate مسماة محافظة", pre-declared in the

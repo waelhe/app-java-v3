@@ -71,19 +71,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       credential-free. The blocked run must fail loudly WITH that
  *       explanation (a silent swallow or a red mystery both cost the
  *       same manual debugging this repo is being cleaned of).</li>
- *   <li><b>channel freshness alarm</b> (re-bound 2026-10-01 to the v4
- *       deployment source, adopting the CodeRabbit Major on #479; the
- *       v3-era 2026-09-19 redesign read upstream main): production builds
- *       from the FORK waelhe88-coder/app-java-v3 (v4 trial account,
- *       runbook §10.5), so the watchdog reads the fork's HEAD and its
- *       Railway commit statuses (context "<project> - <service>",
- *       re-checked after the §10.5 restoration). Failure = immediate
- *       incident (a failed build never self-heals); pending/missing is
- *       tolerated ONLY inside the 60-minute in-flight bound — beyond it,
- *       the absence of successful-deployment evidence FAILS the check:
- *       commit age alone never greens a dead channel, and reading
- *       upstream main instead of the source would stay green while
- *       production drifts arbitrarily far behind.</li>
+ *   <li><b>channel freshness alarm</b> (redesigned 2026-09-19 for the v3
+ *       account migration): production deploys directly from main via
+ *       Railway's GitHub App, which posts a commit status on the exact
+ *       commit it builds (context "&lt;project&gt; - &lt;service&gt;", measured:
+ *       success on bb6da39, failure on 7371afbb/16117d8 "Deployment
+ *       failed"). A dead trigger or a failed build leaves production
+ *       serving stale code with every HTTP probe green — so the watchdog
+ *       reads that status on main HEAD: failure = immediate incident (a
+ *       failed build never self-heals); pending/missing is bounded by the
+ *       commit's age with the measured threshold (240m continuity limit —
+ *       a push-triggered channel reports within minutes of the push).</li>
  * </ul>
  *
  * <p>File-location note: surefire runs with the module basedir
@@ -203,36 +201,29 @@ class DeploymentChannelFilesTest {
         assertThat(yml).as("the freshness probe step must exist between the HTTP "
                         + "probes and the incident steps")
                 .contains("- name: Probe deployment channel freshness");
-        // v4 trial-account cycle (2026-09-29/30, runbook §10.5 + SYSTEM.md
-        // §15): production builds from the FORK waelhe88-coder/app-java-v3
-        // (measured: parked at bab774c1, 0 status contexts on both heads
-        // while the owner-gated restoration is pending). The probe must read
-        // THE SOURCE production actually deploys from — reading upstream
-        // main stays green while the fork (and production behind it) drifts
-        // arbitrarily far behind (CodeRabbit round on #479, Major). The
-        // v3-era "deploys directly from main" design this test pinned
-        // (success on bb6da39, failure on 7371afbb/16117d8) is historical:
-        // the same context pattern carries over, re-checked after §10.5.
-        assertThat(yml).as("the probe reads the ACTUAL v4 deployment source "
-                        + "— the fork, never upstream main")
-                .contains("DEPLOY_SOURCE: waelhe88-coder/app-java-v3")
-                .doesNotContain("UPSTREAM: waelhe/app-java-v3");
-        assertThat(yml).as("the probe reads Railway's own commit status on the "
-                        + "deployment source HEAD - the live deployment "
-                        + "channel's telemetry (measured context; re-check "
-                        + "after the §10.5 restoration)")
+        assertThat(yml).as("the probe reads the governing repo's main")
+                .contains("UPSTREAM: waelhe/app-java-v3");
+        // 2026-09-19 channel redesign (PR #347): production deploys directly
+        // from main via Railway's GitHub App; the retired fork compare would
+        // measure a frozen repository forever (the fork-sync workflow is
+        // disabled and the fork frozen at its last fast-forward). The live
+        // channel's own telemetry is the commit status the App posts on the
+        // exact commit it builds — context "<project> - <service>",
+        // measured: success on bb6da39 ("Success - app-java-v3-production...")
+        // and failure on 7371afbb/16117d8 ("Deployment failed").
+        assertThat(yml).as("the probe reads Railway's own commit status on main "
+                        + "HEAD - the live deployment channel's telemetry "
+                        + "(measured context)")
                 .contains("RAILWAY_STATUS_CONTEXT: \"app-java-v3 - app-java-v3\"");
         assertThat(yml).as("the retired fork compare must be gone - the fork "
                         + "channel was decommissioned with the old account")
                 .doesNotContain("DEPLOY_FORK");
-        assertThat(yml).as("fail-closed bound (CodeRabbit round on #479): a "
-                        + "non-success state is tolerated ONLY while a deploy "
-                        + "is plausibly in flight (60m); beyond it, the "
-                        + "absence of successful-deployment evidence FAILS — "
-                        + "commit age alone never greens a dead channel (the "
-                        + "240m age-pass was the measured defect)")
-                .contains("MAX_LAG_MINUTES: 60")
-                .doesNotContain("MAX_LAG_MINUTES: 240");
+        assertThat(yml).as("the measured threshold stays bounded: a push-triggered "
+                        + "channel reports within minutes, so an old HEAD without "
+                        + "a success means the trigger is gone - a lower value "
+                        + "false-alarms during a legitimate build, a higher value "
+                        + "delays detection of a dead channel")
+                .contains("MAX_LAG_MINUTES: 240");
         assertThat(yml).as("a FAILED deployment is an immediate incident - a "
                         + "failed build never self-heals, so production would "
                         + "keep serving stale code with every HTTP probe green")
