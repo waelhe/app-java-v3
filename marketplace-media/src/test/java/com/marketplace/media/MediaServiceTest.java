@@ -462,8 +462,9 @@ class MediaServiceTest {
     void listByListing_nonPublicListing_answersThePublicSurface404ToTheAnonymousCaller() {
         // The measured defect: a PAUSED (or ARCHIVED / DRAFT) listing's
         // photos were fully readable by any anonymous caller. The gate now
-        // answers the public listing surface's own 404 shape.
-        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        // answers the public listing surface's own 404 shape. (No storage
+        // stub: the merged ordering runs the gate BEFORE requireStorage —
+        // the 404 fires without ever touching the channel.)
         when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L, "SAR"));
@@ -479,8 +480,9 @@ class MediaServiceTest {
     void listByListing_nonPublicListing_answers404ToTheForeignAuthenticatedCaller() {
         // Appearance consistency: the public listing surface confirms
         // nothing to non-owners — the foreign authenticated caller gets the
-        // same 404, not a 403 that reveals the listing's existence.
-        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        // same 404, not a 403 that reveals the listing's existence. (No
+        // storage stub — the gate fires before the channel in the merged
+        // ordering.)
         when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenReturn(new ListingPriceProvider.ListingInfo(providerId, 1000L, "SAR"));
@@ -522,8 +524,8 @@ class MediaServiceTest {
     void listByListing_unknownListing_answersThePublicSurface404() {
         // Unknown id: not publicly visible, and the listing resolution
         // itself answers the public path's own 404 (getListingInfo routes
-        // through getById).
-        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        // through getById). (No storage stub — the gate fires before the
+        // channel in the merged ordering.)
         when(listingPublicStatePort.isPubliclyVisible(listingId)).thenReturn(false);
         when(listingPriceProvider.getListingInfo(listingId))
                 .thenThrow(new ResourceNotFoundException("Listing", listingId));
