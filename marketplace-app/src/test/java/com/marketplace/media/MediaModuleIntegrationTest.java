@@ -22,6 +22,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -77,9 +78,15 @@ class MediaModuleIntegrationTest {
     }
 
     @Test
-    void listByListing_whenUnconfigured_answers503() {
-        assertThatThrownBy(() -> mediaService.listByListing(UUID.randomUUID()))
-                .isInstanceOf(ServiceUnavailableException.class);
+    void listByListing_whenUnconfigured_andNoRows_answersTheHonestEmptyList() {
+        // fb99b2d's measured contract (2026-10-01): the query runs FIRST and
+        // requireStorage only when rows exist — a photo-less listing's read
+        // never touches the channel, so an unconfigured storage degrades to
+        // the honest empty gallery instead of failing the whole surface.
+        // (The retired 503 pin was the pre-fix behavior the round measured
+        // as the design flaw itself — see the unit guards in the media
+        // module, the same contract on both reads.)
+        assertThat(mediaService.listByListing(UUID.randomUUID())).isEmpty();
     }
 
     @Test
