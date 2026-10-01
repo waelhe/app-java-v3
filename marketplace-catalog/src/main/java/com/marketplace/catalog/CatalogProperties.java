@@ -114,6 +114,39 @@ public record CatalogProperties(
             @DefaultValue List<String> robotsDisallowPaths
     ) {
 
+        /**
+         * Greptile r3 (adopted from the root): a NON-BLANK public-site base
+         * must be an absolute http(s) URI — validated here, at binding time,
+         * because every consumer of the origin (the root landing's redirect,
+         * the sitemap's URL synthesis) would otherwise either throw a raw
+         * {@link IllegalArgumentException} mid-request on the malformed
+         * shape or silently emit fabricated URLs. The house rule this
+         * enforces is the D6 fail-fast posture for configuration: a blank
+         * value is the documented capability-OFF state and stays legal; a
+         * malformed one is an operator error that must stop startup with a
+         * readable message, never reach traffic.
+         */
+        public Seo {
+            if (publicSiteBaseUrl != null && !publicSiteBaseUrl.isBlank()) {
+                java.net.URI bound;
+                try {
+                    bound = java.net.URI.create(publicSiteBaseUrl.trim());
+                } catch (IllegalArgumentException malformed) {
+                    throw new IllegalArgumentException(
+                            "marketplace.catalog.seo.public-site-base-url is not a valid URI: "
+                                    + publicSiteBaseUrl.trim());
+                }
+                if (bound.getScheme() == null
+                        || (!"http".equalsIgnoreCase(bound.getScheme())
+                            && !"https".equalsIgnoreCase(bound.getScheme()))
+                        || bound.getHost() == null) {
+                    throw new IllegalArgumentException(
+                            "marketplace.catalog.seo.public-site-base-url must be an absolute http(s) origin, got: "
+                                    + publicSiteBaseUrl.trim());
+                }
+            }
+        }
+
         /** The normalized origin — blank when the capability is off. */
         private String normalizedBase() {
             if (publicSiteBaseUrl == null || publicSiteBaseUrl.isBlank()) {
@@ -172,6 +205,19 @@ public record CatalogProperties(
                 return Optional.empty();
             }
             return Optional.of(normalizedBase() + "/sitemap.xml");
+        }
+
+        /**
+         * The public site's home URL — the service-root landing's redirect
+         * target. Empty when the capability is off: the root then answers
+         * the honest service document, never a fabricated URL (the same
+         * gate rule as every other accessor).
+         */
+        public Optional<String> publicSiteHomeUrl() {
+            if (capabilityOff()) {
+                return Optional.empty();
+            }
+            return Optional.of(normalizedBase() + "/");
         }
 
         /**
