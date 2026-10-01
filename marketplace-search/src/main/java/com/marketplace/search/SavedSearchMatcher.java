@@ -99,11 +99,18 @@ public class SavedSearchMatcher {
         }
         // The catalog-side predicates (text / category / price / guests),
         // restricted to the single listing through the same restricted
-        // forms the dispatch composes.
+        // forms the dispatch composes. R6 (comprehensive-review-ar fix
+        // plan §4, Wave 5): the text branch passes the FULL criteria —
+        // a saved search's text query composes with its filters exactly
+        // like the interactive dispatch now does (the faithfulness rule:
+        // no second, driftier matching semantics may exist). Before the
+        // composition, a text-bearing saved search alerted on the
+        // UNFILTERED text match set — the matcher's own copy of the R6
+        // defect.
         String query = criteria.query();
         boolean textQuery = query != null && !query.isBlank();
         PagedResponse<ListingSummary> page = textQuery
-                ? catalogSearchPort.searchFullTextRestrictedToListings(query.trim(), single, EXISTENCE_PROBE)
+                ? catalogSearchPort.searchFullTextRestrictedToListings(criteria, single, EXISTENCE_PROBE)
                 : catalogSearchPort.searchByCriteriaRestrictedToListings(criteria, single, EXISTENCE_PROBE);
         return !page.isEmpty();
     }

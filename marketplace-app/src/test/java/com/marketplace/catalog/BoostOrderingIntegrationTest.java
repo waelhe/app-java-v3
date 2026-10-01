@@ -305,7 +305,7 @@ class BoostOrderingIntegrationTest {
                 active(ID_02, "Cozy House with a garden", 100_00L, "home")));
         catalogService.setListingPromotion(ID_02, T0.plus(Duration.ofDays(7)));
 
-        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText("garden", com.marketplace.shared.api.PagedRequest.of(0, 10));
+        com.marketplace.shared.api.PagedResponse<ListingSummary> page = catalogService.searchFullText(new com.marketplace.shared.api.SearchCriteria("garden", null, null, null), com.marketplace.shared.api.PagedRequest.of(0, 10));
 
         assertThat(page.content()).hasSize(2);
         assertThat(page.content().getFirst().id()).isEqualTo(ID_02);

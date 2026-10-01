@@ -68,13 +68,14 @@ class SearchServiceTest {
     void windowWithQuery_restrictsTheFullTextSearchToAvailableProviders() {
         UUID available = UUID.randomUUID();
         when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of(available));
-        when(port.searchFullTextRestricted(anyString(), any(), any())).thenReturn(emptyPage());
+        when(port.searchFullTextRestricted(any(), any(), any())).thenReturn(emptyPage());
 
         service.search(new SearchCriteria("yoga retreat", null, null, null, CHECK_IN, CHECK_OUT), PageRequest.of(0, 10));
 
-        verify(port).searchFullTextRestricted(eq("yoga retreat"), eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
+        verify(port).searchFullTextRestricted(
+                argThat(c -> "yoga retreat".equals(c.query())), eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
         // The unrestricted FTS branch is never taken when a window is present.
-        verify(port, never()).searchFullText(anyString(), any());
+        verify(port, never()).searchFullText(any(), any());
     }
 
     @Test
@@ -86,7 +87,7 @@ class SearchServiceTest {
         assertThat(page).isEmpty();
         assertThat(page.getTotalElements()).isZero();
         verify(port, never()).searchByCriteriaRestricted(any(), any(), any());
-        verify(port, never()).searchFullTextRestricted(anyString(), any(), any());
+        verify(port, never()).searchFullTextRestricted(any(), any(), any());
         verify(port, never()).listActive(any());
     }
 
@@ -146,17 +147,18 @@ class SearchServiceTest {
 
     @Test
     void usesFullTextSearchWhenQueryProvided() {
-        when(port.searchFullText(anyString(), any())).thenReturn(emptyPage());
+        when(port.searchFullText(any(), any())).thenReturn(emptyPage());
 
         service.search(new SearchCriteria("hello world", null, null, null), PageRequest.of(0, 10));
 
         // Raw pass-through (trim only): websearch_to_tsquery owns the parsing.
-        verify(port).searchFullText("hello world", PagedRequest.of(0, 10));
+        verify(port).searchFullText(
+                argThat(c -> "hello world".equals(c.query())), eq(PagedRequest.of(0, 10)));
     }
 
     @Test
     void passesRawInputThroughUnmangled() {
-        when(port.searchFullText(anyString(), any())).thenReturn(emptyPage());
+        when(port.searchFullText(any(), any())).thenReturn(emptyPage());
 
         // Quotes/parens/dashes are valid websearch_to_tsquery syntax, not
         // pre-mangled "&" tsquery operators (the old munging fed to_tsquery
@@ -164,7 +166,8 @@ class SearchServiceTest {
         service.search(new SearchCriteria("\"garden view\" -crab ((", null, null, null),
                 PageRequest.of(0, 10));
 
-        verify(port).searchFullText("\"garden view\" -crab ((", PagedRequest.of(0, 10));
+        verify(port).searchFullText(
+                argThat(c -> "\"garden view\" -crab ((".equals(c.query())), eq(PagedRequest.of(0, 10)));
     }
 
     @Test
@@ -247,7 +250,7 @@ class SearchServiceTest {
         assertThat(page).isEmpty();
         assertThat(page.getTotalElements()).isZero();
         verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
-        verify(port, never()).searchFullTextRestrictedToListings(anyString(), any(), any());
+        verify(port, never()).searchFullTextRestrictedToListings(any(), any(), any());
     }
 
     @Test
@@ -298,14 +301,14 @@ class SearchServiceTest {
     void propertyCriteria_withTextQuery_usesTheRankedFtsBranch() {
         UUID matched = UUID.randomUUID();
         when(filterPort.findListingIdsMatching(any())).thenReturn(Set.of(matched));
-        when(port.searchFullTextRestrictedToListings(anyString(), any(), any())).thenReturn(emptyPage());
+        when(port.searchFullTextRestrictedToListings(any(), any(), any())).thenReturn(emptyPage());
 
         service.search(
                 new SearchCriteria("شقة قدسيا", null, null, null, null, null, null,
                         null, PropertyPurpose.SALE, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
-        verify(port).searchFullTextRestrictedToListings(eq("شقة قدسيا"), eq(Set.of(matched)), any());
+        verify(port).searchFullTextRestrictedToListings(argThat(c -> "شقة قدسيا".equals(c.query())), eq(Set.of(matched)), any());
         verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
     }
 
@@ -337,7 +340,7 @@ class SearchServiceTest {
 
     @Test
     void areaSort_withTextQuery_ranksByRelevanceInstead() {
-        when(port.searchFullText(anyString(), any())).thenReturn(emptyPage());
+        when(port.searchFullText(any(), any())).thenReturn(emptyPage());
 
         // CodeRabbit PR #299 round 1: the area marker selects the property
         // flow ONLY for blank queries — a text query rides the LEGACY text
@@ -348,11 +351,62 @@ class SearchServiceTest {
                         null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
 
-        verify(port).searchFullText(eq("loft"), any());
-        verify(port, never()).searchFullTextRestrictedToListings(anyString(), any(), any());
+        verify(port).searchFullText(argThat(c -> "loft".equals(c.query())), any());
+        verify(port, never()).searchFullTextRestrictedToListings(any(), any(), any());
         verify(port, never()).findActiveListingIds();
         verify(filterPort, never()).findListingIdsMatching(any());
         verify(filterPort, never()).findMatchingPaged(any(), any(), any());
+    }
+
+    // ---- R6 (comprehensive-review-ar fix plan §4, Wave 5): the composed text+filter search ----
+
+    @Test
+    void queryWithFilters_passesTheFullCriteriaToTheTextSearch_neverDropsTheFilters() {
+        when(port.searchFullText(any(), any())).thenReturn(emptyPage());
+
+        // The review's R6 matrix: q + category + maxPrice + guests TOGETHER.
+        // The text branch must hand the port the FULL criteria — the
+        // filters compose into the same native query and its count
+        // (before this wave, the text branch passed the text alone and
+        // every riding filter was silently dropped).
+        service.search(
+                new SearchCriteria("loft", "stay", null, BigDecimal.valueOf(800), null, null, 4),
+                PageRequest.of(0, 10));
+
+        verify(port).searchFullText(
+                argThat(c -> "loft".equals(c.query())
+                        && "stay".equals(c.category())
+                        && BigDecimal.valueOf(800).compareTo(c.maxPrice()) == 0
+                        && Integer.valueOf(4).equals(c.guests())),
+                eq(PagedRequest.of(0, 10)));
+        // The filter branches are never taken for a text-bearing criteria
+        // — the ONE composed query is the text query.
+        verify(port, never()).searchByCriteria(any(), any());
+        verify(port, never()).listByCategory(anyString(), any());
+        verify(port, never()).listActive(any());
+    }
+
+    @Test
+    void windowedQueryWithFilters_passesTheFullCriteriaToTheRestrictedTextSearch() {
+        UUID available = UUID.randomUUID();
+        when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of(available));
+        when(port.searchFullTextRestricted(any(), any(), any())).thenReturn(emptyPage());
+
+        // The windowed text branch composes the same way: the FULL criteria
+        // ride the restricted text query together with the availability
+        // whitelist (before this wave, the text dropped the filters).
+        service.search(
+                new SearchCriteria("loft", "stay", null, BigDecimal.valueOf(800), CHECK_IN, CHECK_OUT, 4),
+                PageRequest.of(0, 10));
+
+        verify(port).searchFullTextRestricted(
+                argThat(c -> "loft".equals(c.query())
+                        && "stay".equals(c.category())
+                        && BigDecimal.valueOf(800).compareTo(c.maxPrice()) == 0
+                        && Integer.valueOf(4).equals(c.guests())
+                        && c.hasWindow()),
+                eq(Set.of(available)), eq(PagedRequest.of(0, 10)));
+        verify(port, never()).searchByCriteriaRestricted(any(), any(), any());
     }
 
     @Test
@@ -451,7 +505,7 @@ class SearchServiceTest {
 
         assertThat(page.getTotalElements()).isZero();
         verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
-        verify(port, never()).searchFullTextRestrictedToListings(anyString(), any(), any());
+        verify(port, never()).searchFullTextRestrictedToListings(any(), any(), any());
     }
 
     @Test
@@ -524,7 +578,7 @@ class SearchServiceTest {
     void radiusWithTextQuery_ranksByRelevance_theDistanceSortIsIgnored() {
         UUID near = UUID.randomUUID();
         when(filterPort.findListingIdsWithinRadius(LAT, LNG, RADIUS_METERS)).thenReturn(Set.of(near));
-        when(port.searchFullTextRestrictedToListings(anyString(), any(), any())).thenReturn(emptyPage());
+        when(port.searchFullTextRestrictedToListings(any(), any(), any())).thenReturn(emptyPage());
 
         SearchCriteria text = new SearchCriteria("شقة", null, null, null, null, null, null,
                 null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
@@ -532,7 +586,7 @@ class SearchServiceTest {
 
         // documented scope boundary: text queries rank by relevance — the
         // set flow runs (never the distance-paged flow)
-        verify(port).searchFullTextRestrictedToListings(eq("شقة"), eq(Set.of(near)), any());
+        verify(port).searchFullTextRestrictedToListings(argThat(c -> "شقة".equals(c.query())), eq(Set.of(near)), any());
         verify(filterPort, never()).findWithinRadiusPaged(any(), any(), anyLong(), any(), any());
     }
 

@@ -43,6 +43,24 @@ class SearchCriteriaTest {
     }
 
     @Test
+    void blankCategory_isNormalizedToTheCriterionlessForm() {
+        // R6 (Wave 5 — CodeRabbit round 1, root-adopted): the HTTP surface
+        // binds an absent-but-present parameter (?category=) as the EMPTY
+        // STRING, not null. In the composed text+filter queries the blank
+        // string would compare equal to no stored category and silently
+        // exclude every listing (and never match the filter-free cache
+        // condition) — the record's own gate normalizes it to the
+        // criterion-less form, exactly like the window's null discipline.
+        SearchCriteria empty = new SearchCriteria("garden", "", null, null);
+        SearchCriteria whitespace = new SearchCriteria("garden", "   ", null, null);
+
+        assertThat(empty.category()).isNull();
+        assertThat(whitespace.category()).isNull();
+        assertThat(empty.hasCatalogCriteria()).isFalse();
+        assertThat(whitespace.hasCatalogCriteria()).isFalse();
+    }
+
+    @Test
     void bothNullDates_isAWindowlessCriteria() {
         SearchCriteria criteria = new SearchCriteria(null, null, null, null, null, null);
 
