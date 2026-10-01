@@ -28,7 +28,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_1")).thenReturn(Optional.of(create(PaymentWebhookEvent.class)));
 
         boolean created = service.processWebhookEvent("mock", "evt_1", "payment_intent.succeeded", "sig");
@@ -54,7 +54,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         // Pre-check: absent; post-DIVE re-check: the concurrent winner's row
         // now exists — that (and only that) is the already-processed case.
         when(webhookRepository.findByProviderAndEventId("mock", "evt_2"))
@@ -87,7 +87,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         // Absent before AND after the failed insert — no concurrent winner.
         when(webhookRepository.findByProviderAndEventId("mock", "evt_4")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
@@ -114,7 +114,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_3")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         // Dispatch fails: confirmIntent cannot find the local intent (an
@@ -143,7 +143,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         when(webhookRepository.findByProviderAndEventId("mock", "evt_5")).thenReturn(Optional.empty());
         when(webhookRepository.saveAndFlush(any(PaymentWebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new IllegalStateException("delete failed too"))
@@ -172,7 +172,7 @@ class PaymentWebhookEventServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PspChannel> pspChannel = mock(ObjectProvider.class);
 
-        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher), pspChannel);
+        PaymentsService service = new PaymentsService(intentRepository, paymentRepository, webhookRepository, publisher, currentUserProvider, bookingParticipantProvider, webhookSecurity, new WebhookEventRecorder(webhookRepository), new PaymentIntentSettlementService(intentRepository, paymentRepository, publisher, new WebhookEventRecorder(webhookRepository)), pspChannel);
         String sharedEventId = "evt_shared_1";
         when(webhookRepository.findByProviderAndEventId("stripe", sharedEventId)).thenReturn(Optional.empty());
         when(webhookRepository.findByProviderAndEventId("adyen", sharedEventId)).thenReturn(Optional.empty());
@@ -183,8 +183,11 @@ class PaymentWebhookEventServiceTest {
 
         assertThat(first).isTrue();
         assertThat(second).as("same event_id under a different provider is a new event (B5)").isTrue();
-        verify(webhookRepository).findByProviderAndEventId("stripe", sharedEventId);
-        verify(webhookRepository).findByProviderAndEventId("adyen", sharedEventId);
+        // The dedup lookups are provider-scoped either way; since R10 the
+        // post-dispatch idempotent backstop (markSettled) re-reads the row,
+        // so the exact count is no longer the contract — the scope is.
+        verify(webhookRepository, atLeastOnce()).findByProviderAndEventId("stripe", sharedEventId);
+        verify(webhookRepository, atLeastOnce()).findByProviderAndEventId("adyen", sharedEventId);
         verify(webhookRepository, times(2)).saveAndFlush(any(PaymentWebhookEvent.class));
     }
 }

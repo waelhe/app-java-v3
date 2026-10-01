@@ -57,13 +57,16 @@ public class PaymentIntentSettlementService {
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final WebhookEventRecorder webhookEventRecorder;
 
     public PaymentIntentSettlementService(PaymentIntentRepository paymentIntentRepository,
                                           PaymentRepository paymentRepository,
-                                          ApplicationEventPublisher eventPublisher) {
+                                          ApplicationEventPublisher eventPublisher,
+                                          WebhookEventRecorder webhookEventRecorder) {
         this.paymentIntentRepository = paymentIntentRepository;
         this.paymentRepository = paymentRepository;
         this.eventPublisher = eventPublisher;
+        this.webhookEventRecorder = webhookEventRecorder;
     }
 
     /**
@@ -107,12 +110,35 @@ public class PaymentIntentSettlementService {
     @Retry(name = "paymentProcessing")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentIntent confirm(UUID id, String externalId) {
+        return confirm(id, externalId, null);
+    }
+
+    /**
+     * The webhook-dispatch half of the closed loop, carrying its inbox row
+     * (R10 — Wave 2): the settlement marks the row SETTLED INSIDE this
+     * transaction, so "the inbox row settled" and "the money moved" commit
+     * as one atomic fact. A crash between the recorder's REQUIRES_NEW commit
+     * and this method's commit leaves the row RECEIVED — the recovery sweep
+     * re-delivers it; a crash after the commit leaves both facts durable.
+     * The admin surface keeps the two-argument form (no inbox row exists for
+     * an admin command).
+     */
+    @Observed(name = "payment.confirm")
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentIntent confirm(UUID id, String externalId, WebhookEventRef inboxRow) {
         PaymentIntent intent = requireIntent(id);
         intent.markSucceeded();
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(p -> p.markCompleted(externalId));
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "COMPLETED"));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        if (inboxRow != null) {
+            // REQUIRED propagation joins THIS transaction — the atomicity
+            // contract; the idempotent filter inside leaves a row the retry
+            // attempt already marked untouched.
+            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
         return intent;
     }
 
@@ -126,12 +152,29 @@ public class PaymentIntentSettlementService {
      */
     @Observed(name = "payment.fail")
     public PaymentIntent fail(UUID id) {
+        return fail(id, null);
+    }
+
+    /**
+     * The webhook-dispatch half carrying its inbox row (R10 — Wave 2): the
+     * failure settlement marks the row SETTLED inside the transaction its
+     * effects commit in (the class-level {@code @Transactional} scope this
+     * method has always run under — REQUIRED, joining the dispatch carrier),
+     * so a crash between the recorder's commit and this method's commit
+     * leaves the row RECEIVED for the recovery sweep, and a completed
+     * dispatch leaves both facts durable together.
+     */
+    @Observed(name = "payment.fail")
+    public PaymentIntent fail(UUID id, WebhookEventRef inboxRow) {
         PaymentIntent intent = requireIntent(id);
         intent.markFailed();
         paymentRepository.findByPaymentIntentId(id)
                 .ifPresent(Payment::markFailed);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), "FAILED"));
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
+        if (inboxRow != null) {
+            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());
+        }
         log.info("Payment intent {} settled as FAILED by the provider", id);
         return intent;
     }

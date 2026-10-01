@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.AccountStatusChanged;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -370,7 +371,7 @@ class UserServiceTest {
         verifyNoMoreInteractions(jdbcTemplate);
         // Both publications: the standing cache channel and the domain fact.
         verify(eventPublisher).publishEvent(any(CacheInvalidationRequested.class));
-        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "CONSUMER", "ADMIN"));
+        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "target-user", "CONSUMER", "ADMIN"));
     }
 
     @Test
@@ -394,7 +395,7 @@ class UserServiceTest {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")),
                 "the removed authority must be gone from the replacement");
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
-        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "ADMIN", "CONSUMER"));
+        verify(eventPublisher).publishEvent(new UserRoleChanged(id, "target-user", "ADMIN", "CONSUMER"));
     }
 
     @Test
@@ -608,6 +609,10 @@ class UserServiceTest {
         // Issued authorizations die with the disable — and nothing else is written.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
         verifyNoMoreInteractions(jdbcTemplate);
+        // R8 Wave 1: the disable also publishes the domain fact (inside this
+        // transaction — the publication row commits atomically with the flip);
+        // the AccountStatusSessionInvalidator consumes it AFTER_COMMIT.
+        verify(eventPublisher).publishEvent(new AccountStatusChanged(id, "target-user", false));
     }
 
     @Test
@@ -630,6 +635,10 @@ class UserServiceTest {
         // audit update ran. verifyNoInteractions asserts the enable path
         // touches JdbcTemplate zero times, by construction.
         verifyNoInteractions(jdbcTemplate);
+        // R8 Wave 1: enable publishes the complete domain fact too — the
+        // security consumer acts on the disable leg only (the negative test
+        // in AccountStatusSessionInvalidatorTest pins that asymmetry).
+        verify(eventPublisher).publishEvent(new AccountStatusChanged(id, "target-user", true));
     }
 
     @Test
