@@ -56,13 +56,18 @@ class MediaControllerTest {
     }
 
     @Test
-    void listByListing_returnsOk() {
+    void listByListing_returnsOk_andCarriesTheOptionalIdentity() {
+        // R5: the public read passes the caller's Authentication through —
+        // the L34 optional-identity seam (anonymous stays anonymous; a
+        // valid JWT resolves the owner-viewer path inside the service).
         UUID listingId = UUID.randomUUID();
-        when(mediaService.listByListing(listingId)).thenReturn(List.of());
+        Authentication auth = org.mockito.Mockito.mock(Authentication.class);
+        when(mediaService.listByListing(listingId, auth)).thenReturn(List.of());
 
-        ResponseEntity<List<MediaService.MediaAssetView>> result = controller.listByListing(listingId);
+        ResponseEntity<List<MediaService.MediaAssetView>> result = controller.listByListing(listingId, auth);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
+        verify(mediaService).listByListing(listingId, auth);
     }
 
     @Test

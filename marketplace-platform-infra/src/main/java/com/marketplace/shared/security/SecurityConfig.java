@@ -107,7 +107,9 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain authorizationServerSecurityFilterChain(
+            HttpSecurity http,
+            SpringSessionBackedSessionRegistry<? extends Session> sessionRegistry) throws Exception {
         http
                 .oauth2AuthorizationServer(authorizationServer -> {
                     http.securityMatcher(authorizationServer.getEndpointsMatcher());
@@ -120,6 +122,26 @@ public class SecurityConfig {
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                         )
                 )
+                // R8 (comprehensive-review-ar fix plan §4, Wave 1): the
+                // authorization endpoints are the minting surface of the
+                // surviving-session gap — a disabled account's live form-login
+                // session still authenticates here and can mint fresh
+                // authorization codes. Session expiry is enforced by
+                // ConcurrentSessionFilter, and SessionManagementConfigurer
+                // registers that filter per chain (the same DSL the default
+                // chain below already uses): bytecode-verified against
+                // spring-security-config 7.1.1 — configure() adds
+                // createConcurrencyFilter() to THIS builder only, and SAS's own
+                // OAuth2AuthorizationEndpointConfigurer keeps its private
+                // register-strategy (setSessionAuthenticationStrategy during
+                // init), so this block adds the enforcement filter without
+                // touching the endpoint's strategy. maximumSessions reuses the
+                // same bound property and the same SpringSessionBackedSessionRegistry
+                // bean: getAllSessions/principal indexing/expiry all live in the
+                // Spring Session store, one source of truth for both chains.
+                .sessionManagement(session -> session
+                        .maximumSessions(properties.security().session().maxSessions())
+                        .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
         return http.build();

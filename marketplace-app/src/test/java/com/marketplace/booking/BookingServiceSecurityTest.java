@@ -118,7 +118,9 @@ class BookingServiceSecurityTest {
         Booking result = bookingService.confirm(bookingId, authentication);
 
         assertThat(result.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
-        verify(availabilityPort).bookSlot(providerId, startsAt, endsAt);
+        // R2: the booking claims the slot in its own name — the id is the
+        // ownership argument (comprehensive-review-ar-fix plan §4/R2).
+        verify(availabilityPort).bookSlot(providerId, startsAt, endsAt, bookingId);
     }
 
     @Test
@@ -155,6 +157,7 @@ class BookingServiceSecurityTest {
         Booking result = bookingService.cancel(bookingId, authentication);
 
         assertThat(result.getStatus()).isEqualTo(BookingStatus.CANCELLED);
-        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt);
+        // R2: the release carries this booking's id — only its own hold frees.
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, bookingId, null);
     }
 }

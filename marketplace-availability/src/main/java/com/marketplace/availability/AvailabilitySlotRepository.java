@@ -21,6 +21,18 @@ public interface AvailabilitySlotRepository extends JpaRepository<AvailabilitySl
     Optional<AvailabilitySlot> findFirstByProviderIdAndStartsAtAndEndsAtAndBookedTrue(UUID providerId, Instant startsAt, Instant endsAt);
 
     /**
+     * R3 (comprehensive-review-ar-fix plan §4/R3 — duplicate slot
+     * prevention): window existence REGARDLESS of {@code booked} state. The
+     * old generator probed with a {@code booked = false} filter, so a booked
+     * slot was invisible to the check and the daily generation inserted a
+     * fresh open duplicate of the same window. A booked slot IS the window —
+     * this predicate is what {@code generateSlotsForDate} skips on, with
+     * V73's {@code uq_availability_slots_live_window} partial unique index
+     * as the one-live-row backstop underneath.
+     */
+    boolean existsByProviderIdAndStartsAtAndEndsAt(UUID providerId, Instant startsAt, Instant endsAt);
+
+    /**
      * L27 (feature-expansion roadmap §5): the bulk form of the
      * {@code existsBy...StartsAtLessThanAndEndsAtGreaterThan} predicate that
      * backs {@code AvailabilityService.isAvailable} — same strict overlap

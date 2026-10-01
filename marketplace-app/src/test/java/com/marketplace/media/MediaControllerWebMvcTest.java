@@ -115,7 +115,9 @@ class MediaControllerWebMvcTest {
     @WithMockUser(roles = "CONSUMER")
     void listByListing_returnsOkArray() throws Exception {
         UUID listingId = UUID.randomUUID();
-        when(mediaService.listByListing(listingId)).thenReturn(List.of());
+        org.mockito.Mockito.when(mediaService.listByListing(
+                org.mockito.ArgumentMatchers.eq(listingId), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/media/listings/{listingId}", listingId))
                 .andExpect(status().isOk())

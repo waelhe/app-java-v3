@@ -50,12 +50,12 @@ class LedgerServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER")
-    void getBalanceForOwner_whenNotOwner_thenAccessDenied() {
+    void getBalancesForOwner_whenNotOwner_thenAccessDenied() {
         UUID providerId = UUID.randomUUID();
         when(authHelper.ownsProvider(any(), any())).thenReturn(false);
 
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(
-                () -> ledgerService.getBalanceForOwner(providerId));
+                () -> ledgerService.getBalancesForOwner(providerId));
     }
 
     @Test
@@ -70,16 +70,19 @@ class LedgerServiceSecurityTest {
 
     @Test
     @WithMockUser(roles = "PROVIDER")
-    void getBalanceForOwner_whenOwner_thenInvokes() {
+    void getBalancesForOwner_whenOwner_thenInvokes() {
         UUID providerId = UUID.randomUUID();
         when(authHelper.ownsProvider(any(), any())).thenReturn(true);
-        ProviderBalance existing = ProviderBalance.empty(providerId);
+        ProviderBalance existing = ProviderBalance.empty(providerId, "SAR");
         existing.credit(4500L);
-        when(balanceRepository.findById(providerId)).thenReturn(Optional.of(existing));
+        when(balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId))
+                .thenReturn(List.of(existing));
 
-        ProviderBalanceResponse result = ledgerService.getBalanceForOwner(providerId);
+        List<ProviderBalanceResponse> result = ledgerService.getBalancesForOwner(providerId);
 
-        assertThat(result.availableCents()).isEqualTo(4500L);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).availableCents()).isEqualTo(4500L);
+        assertThat(result.get(0).currency()).isEqualTo("SAR");
     }
 
     @Test

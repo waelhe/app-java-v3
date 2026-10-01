@@ -9,6 +9,7 @@ import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ListingActivatedEvent;
 import com.marketplace.shared.api.ListingCreatedEvent;
 import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.ProviderListingSummary;
 import com.marketplace.shared.api.ProviderListingView;
 import com.marketplace.shared.api.SearchCriteria;
@@ -48,11 +49,18 @@ import java.util.stream.Collectors;
  * derive price and provider from a listing synchronously.
  * See {@code ListingPriceProvider} Javadoc for the design rationale
  * (synchronous interface vs. asynchronous event).
+ *
+ * <p><b>R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy):</b>
+ * also implements {@link ListingPublicStatePort} — the catalog owns the
+ * listing's publication state, so it answers the "is this listing on the
+ * public read surface?" question for the media module's visibility gate
+ * (the same ACTIVE filter {@link #getActiveById} applies; the media read
+ * keeps the public surface's appearance consistency).</p>
  */
 @Service
 @Transactional
 @NamedInterface("catalog-api")
-public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi {
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi, ListingPublicStatePort {
 
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -304,6 +312,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
                 .map(this::toProviderListingView)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
+    }
+
+    /**
+     * R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy): the
+     * public-visibility predicate — the SAME filter {@link #getActiveById}
+     * (the public detail endpoint's resolver) applies, as a boolean for the
+     * media module's request-time gate. ACTIVE = on the public surface;
+     * DRAFT/PAUSED/ARCHIVED, unknown ids and soft-deleted rows are not
+     * (the repository's {@code @SoftDelete} filter already hides dead rows).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isPubliclyVisible(UUID listingId) {
+        return listingRepository.findById(listingId)
+                .filter(listing -> listing.getStatus() == ListingStatus.ACTIVE)
+                .isPresent();
     }
 
     /**

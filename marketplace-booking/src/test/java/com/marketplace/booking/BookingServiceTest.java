@@ -476,4 +476,87 @@ class BookingServiceTest {
         assertThrows(com.marketplace.shared.api.BadRequestException.class,
                 () -> service.listByStatusSummary("INVALID", pageable));
     }
+
+    // ==================== R2: the ownership argument at every call site ====================
+
+    /**
+     * R2 (comprehensive-review-ar-fix plan §4/R2): every slot write carries
+     * the acting booking's own id — the ownership contract that makes a
+     * non-owner release a no-op at the availability module. One test per
+     * call site (confirm, cancel, autoConfirm, autoCancel); each constructs
+     * a booking with a REAL window so the port branch actually executes,
+     * then asserts the exact argument tuple.
+     */
+    private Booking pendingBookingWithWindow(UUID providerId, UUID consumerId, Instant startsAt, Instant endsAt) {
+        return Instancio.of(Booking.class)
+                .set(field(Booking::getConsumerId), consumerId)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), startsAt)
+                .set(field(Booking::getEndsAt), endsAt)
+                .create();
+    }
+
+    @Test
+    void confirm_booksSlotInTheBookingName_r2() {
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Instant startsAt = Instant.now();
+        Instant endsAt = startsAt.plusSeconds(3600);
+        Booking booking = pendingBookingWithWindow(providerId, Instancio.create(UUID.class), startsAt, endsAt);
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        service.confirm(id, authentication);
+
+        verify(availabilityPort).bookSlot(providerId, startsAt, endsAt, booking.getId());
+    }
+
+    @Test
+    void cancel_releasesSlotInTheBookingName_r2() {
+        UUID id = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Instant startsAt = Instant.now();
+        Instant endsAt = startsAt.plusSeconds(3600);
+        Booking booking = pendingBookingWithWindow(providerId, consumerId, startsAt, endsAt);
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        service.cancel(id, authentication);
+
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId(), null);
+    }
+
+    @Test
+    void autoConfirm_booksSlotInTheBookingName_r2() {
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Instant startsAt = Instant.now();
+        Instant endsAt = startsAt.plusSeconds(3600);
+        Booking booking = pendingBookingWithWindow(providerId, Instancio.create(UUID.class), startsAt, endsAt);
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+
+        service.autoConfirm(id);
+
+        verify(availabilityPort).bookSlot(providerId, startsAt, endsAt, booking.getId());
+    }
+
+    @Test
+    void autoCancel_releasesSlotInTheBookingName_r2() {
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Instant startsAt = Instant.now();
+        Instant endsAt = startsAt.plusSeconds(3600);
+        Booking booking = pendingBookingWithWindow(providerId, Instancio.create(UUID.class), startsAt, endsAt);
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+
+        service.autoCancel(id);
+
+        verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId(), null);
+    }
 }

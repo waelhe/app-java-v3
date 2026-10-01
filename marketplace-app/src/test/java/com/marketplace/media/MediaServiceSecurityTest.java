@@ -51,6 +51,9 @@ class MediaServiceSecurityTest {
     private ListingPriceProvider listingPriceProvider;
 
     @MockitoBean
+    private com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
+
+    @MockitoBean
     private ProviderLookupPort providerLookupPort;
 
     @MockitoBean
@@ -119,7 +122,8 @@ class MediaServiceSecurityTest {
     @WithMockUser(roles = "CONSUMER")
     void listByListing_isOpenToAuthenticatedRoles() {
         // read path carries no @PreAuthorize — any authenticated role reaches it
+        // (R5: the read is public; the publication-state gate is not a role gate)
         assertThatExceptionOfType(ServiceUnavailableException.class).isThrownBy(
-                () -> mediaService.listByListing(UUID.randomUUID()));
+                () -> mediaService.listByListing(UUID.randomUUID(), null));
     }
 }
