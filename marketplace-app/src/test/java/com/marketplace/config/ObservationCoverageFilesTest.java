@@ -113,6 +113,8 @@ class ObservationCoverageFilesTest {
                     "booking.confirm", "booking.create")),
             Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
             Map.entry("marketplace-community", List.of(
+                    "community.event.create", "community.event.delete",
+                    "community.event.rsvp", "community.event.unrsvp",
                     "community.membership.join", "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
