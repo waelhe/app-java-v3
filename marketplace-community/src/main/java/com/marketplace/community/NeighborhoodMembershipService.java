@@ -120,8 +120,18 @@ public class NeighborhoodMembershipService {
             // transaction: a later failure rolls this back with the insert.
             repository.flush();
         }
-        NeighborhoodMembership saved =
-                repository.save(NeighborhoodMembership.join(userId, locationId, clock));
+        // The #484 review round's verdict carry: the REJECTED verdict is
+        // the one admin decision that follows the USER — read the latest
+        // row INCLUDING soft-deleted ones BEFORE creating the fresh claim,
+        // so a leave/rejoin or a neighborhood switch cannot mint an
+        // UNVERIFIED row that resurrects the write gate the administrator
+        // closed. Every other state births UNVERIFIED (the status quo).
+        NeighborhoodMembership fresh = NeighborhoodMembership.join(userId, locationId, clock);
+        if (MembershipVerificationState.REJECTED.name()
+                .equals(repository.findLatestVerificationStateIncludingDeleted(userId))) {
+            fresh.inheritRejectedVerdict();
+        }
+        NeighborhoodMembership saved = repository.save(fresh);
         return new MembershipCommandResult(NeighborhoodMembershipView.of(saved), true);
     }
 
@@ -178,6 +188,16 @@ public class NeighborhoodMembershipService {
         return NeighborhoodMembershipView.of(repository.save(membership));
     }
 
+    /**
+     * The administrative review — the verdict's ONLY mover, in BOTH
+     * directions (the #484 review round's completion): APPROVE admits a
+     * PENDING claim and RE-ADMITS a REJECTED one (the recovery lever
+     * that makes the carried verdict honest — without it, a rejection
+     * inherited across a rejoin would be a permanent user-level ban with
+     * no recourse); REJECT refuses a PENDING claim. Nothing else in the
+     * system moves these states: the member-controlled request only
+     * UNVERIFIED → PENDING.
+     */
     @Observed(name = "community.membership.verification.review")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public NeighborhoodMembershipView reviewVerification(UUID membershipId, boolean approve) {

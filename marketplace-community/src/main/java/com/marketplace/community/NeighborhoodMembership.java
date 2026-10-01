@@ -122,8 +122,9 @@ public class NeighborhoodMembership extends BaseEntity {
     }
 
     public void approveVerification() {
-        if (verificationState != MembershipVerificationState.PENDING) {
-            throw new IllegalStateException("Only PENDING memberships can be approved");
+        if (verificationState != MembershipVerificationState.PENDING
+                && verificationState != MembershipVerificationState.REJECTED) {
+            throw new IllegalStateException("Only PENDING or REJECTED memberships can be approved");
         }
         verificationState = MembershipVerificationState.VERIFIED;
     }
@@ -133,5 +134,27 @@ public class NeighborhoodMembership extends BaseEntity {
             throw new IllegalStateException("Only PENDING memberships can be rejected");
         }
         verificationState = MembershipVerificationState.REJECTED;
+    }
+
+    /**
+     * The verdict-carrying birth (#484 review round, second path): a
+     * rejoin or switch by a user whose LATEST membership row —
+     * INCLUDING the soft-deleted — carried the REJECTED verdict is born
+     * REJECTED, never UNVERIFIED. Without this, leaving and rejoining
+     * (or switching neighborhoods) minted a fresh UNVERIFIED row and
+     * resurrected the write gate the administrator had just closed —
+     * the rejection followed the row, not the user, so it was
+     * unenforceable against a determined member. The refusal verdict is
+     * the one admin decision that follows the USER (every other state
+     * births UNVERIFIED — the status quo: the fresh claim carries its
+     * own state); {@code memberSince} still restarts honestly — the
+     * clock is a time fact, the verdict is a trust fact.
+     *
+     * <p>Package-private by design: only the service's join command
+     * performs this birth, after reading the user's latest verdict
+     * through the repository's including-deleted native read.
+     */
+    void inheritRejectedVerdict() {
+        this.verificationState = MembershipVerificationState.REJECTED;
     }
 }

@@ -54,7 +54,13 @@ class NeighborhoodMembershipTest {
         rejected.rejectVerification();
         assertThat(rejected.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
         assertThat(rejected.mayUseCommunityWrites()).isFalse();
-        assertThatThrownBy(rejected::approveVerification).isInstanceOf(IllegalStateException.class);
+        // The #484 review round completed the lever in BOTH directions: a
+        // REJECTED verdict IS re-admittable by the administrator (the recovery
+        // lever for a verdict carried across a rejoin) — the refusal that
+        // stands is the transition with no verdict to move (UNVERIFIED).
+        NeighborhoodMembership unverified = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        assertThatThrownBy(unverified::approveVerification).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(unverified::rejectVerification).isInstanceOf(IllegalStateException.class);
     }
 
     /**
@@ -76,5 +82,49 @@ class NeighborhoodMembershipTest {
 
         assertThat(rejected.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
         assertThat(rejected.mayUseCommunityWrites()).isFalse();
+    }
+
+    /**
+     * The #484 review round's admin lever: the verdict's only mover is
+     * the administrator, in BOTH directions — APPROVE re-admits a
+     * REJECTED claim (the recovery lever that makes the carried verdict
+     * honest), REJECT refuses a PENDING one. UNVERIFIED still answers
+     * the transition refusal (no verdict exists to move).
+     */
+    @Test
+    void theAdministratorMovesTheVerdictInBothDirections() {
+        NeighborhoodMembership reAdmitted = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        reAdmitted.requestVerification();
+        reAdmitted.rejectVerification();
+
+        reAdmitted.approveVerification();
+
+        assertThat(reAdmitted.getVerificationState()).isEqualTo(MembershipVerificationState.VERIFIED);
+        assertThat(reAdmitted.mayUseCommunityWrites()).isTrue();
+
+        NeighborhoodMembership unverified = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+        assertThatThrownBy(unverified::approveVerification).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(unverified::rejectVerification).isInstanceOf(IllegalStateException.class);
+    }
+
+    /**
+     * The #484 review round's verdict carry: a rejoin/switch by a user
+     * whose latest row was REJECTED is born REJECTED — the refusal
+     * follows the USER, not the row (leave-and-rejoin used to mint a
+     * fresh UNVERIFIED row that resurrected the write gate).
+     */
+    @Test
+    void theRejectedVerdict_isInheritedAtTheRejoinBirth() {
+        NeighborhoodMembership rejoined = NeighborhoodMembership.join(UUID.randomUUID(), UUID.randomUUID(), clock);
+
+        rejoined.inheritRejectedVerdict();
+
+        assertThat(rejoined.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
+        assertThat(rejoined.mayUseCommunityWrites()).isFalse();
+        // the birth-inherited verdict is as unmoving by the member as a reviewed
+        // one: the re-application is silently ignored here (the service above
+        // answers the explicit 409), the administrator's APPROVE is the only lever
+        rejoined.requestVerification();
+        assertThat(rejoined.getVerificationState()).isEqualTo(MembershipVerificationState.REJECTED);
     }
 }

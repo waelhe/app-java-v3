@@ -288,6 +288,74 @@ class NeighborhoodMembershipModuleIntegrationTest {
     }
 
     /**
+     * The #484 review round's second path, closed end to end on the REAL
+     * chain: leave-and-rejoin (and the neighborhood switch) used to mint a
+     * fresh UNVERIFIED row that resurrected the write gate the
+     * administrator had just closed. The REJECTED verdict now follows the
+     * USER — the rejoin is born REJECTED (the native read sees the
+     * soft-deleted row), the writes stay 403, and the administrator's
+     * APPROVE is the one honest recovery lever (re-admission moves the
+     * carried verdict to VERIFIED and the writes reopen).
+     */
+    @Test
+    void dn3_rejectedMember_rejoinCarriesTheVerdict_adminApproveReAdmits() throws Exception {
+        UUID rejectedUser = UUID.randomUUID();
+        UUID location = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID rejectedMembership = membershipService.join(rejectedUser, location).view().id();
+        membershipService.requestVerification(rejectedUser);
+        rejectOverHttp(rejectedMembership);
+
+        // the member leaves — the soft-deleted row still carries the verdict
+        asCaller(rejectedUser);
+        mockMvc.perform(delete("/api/v1/me/neighborhood").with(jwt()))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships WHERE id = ?",
+                String.class, rejectedMembership)).isEqualTo("REJECTED");
+
+        // the rejoin over the REAL chain: born REJECTED, never UNVERIFIED
+        joinOverHttp(rejectedUser, QUDSAYYA_OLD_TOWN, 201);
+        String rebornState = jdbc.queryForObject(
+                "SELECT verification_state FROM neighborhood_memberships "
+                        + "WHERE user_id = ? AND is_deleted = FALSE",
+                String.class, rejectedUser);
+        assertThat(rebornState).as("the refusal verdict follows the USER across the rejoin")
+                .isEqualTo("REJECTED");
+
+        // the reborn REJECTED claim still cannot write
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"Should not land either\","
+                                + " \"body\": \"The carried verdict refuses\"}"))
+                .andExpect(status().isForbidden());
+
+        // the administrator's APPROVE re-admits: the carried verdict is a
+        // review decision, not a permanent ban
+        UUID rebornId = jdbc.queryForObject(
+                "SELECT id FROM neighborhood_memberships WHERE user_id = ? AND is_deleted = FALSE",
+                java.util.UUID.class, rejectedUser);
+        mockMvc.perform(post("/api/v1/admin/neighborhood-memberships/{id}/verification", rebornId)
+                        .queryParam("decision", "APPROVE")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verificationState").value("VERIFIED"));
+
+        // and the re-admitted member writes again — the lever is honest
+        asCaller(rejectedUser);
+        mockMvc.perform(post("/api/v1/neighborhood/posts")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + QUDSAYYA_OLD_TOWN
+                                + "\", \"category\": \"GENERAL\","
+                                + " \"title\": \"The re-admitted voice\","
+                                + " \"body\": \"The administrator let me back in\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    /**
      * The administrative verification queue over the REAL chain: the
      * request lands the membership in the PENDING page (the queue's own
      * state axis), the review moves it out (the queue drains), and the

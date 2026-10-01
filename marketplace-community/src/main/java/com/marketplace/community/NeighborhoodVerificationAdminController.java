@@ -21,8 +21,10 @@ import java.util.UUID;
  * Administrative, manually-operated first verifier. It deliberately has no
  * provider dependency. Two surfaces: the reviewable queue (the lifecycle's
  * own read — the moderation queue's shape: the optional state axis, the
- * complete drain order, deterministic pagination) and the one transition
- * (APPROVE/REJECT — the only way out of PENDING).
+ * complete drain order, deterministic pagination) and the verdict's ONLY
+ * mover (APPROVE/REJECT — the #484 review round completed the lever in
+ * both directions: APPROVE admits a PENDING claim and RE-ADMITS a
+ * REJECTED one; REJECT refuses a PENDING claim).
  */
 @RestController
 @RequestMapping(value = ApiConstants.ADMIN, version = "1.0")
@@ -52,12 +54,14 @@ public class NeighborhoodVerificationAdminController {
     }
 
     @PostMapping("/neighborhood-memberships/{membershipId}/verification")
-    @Operation(summary = "Approve or reject a pending neighborhood verification",
-            description = "The ONE transition out of PENDING. APPROVE moves the membership to "
-                    + "VERIFIED («جار موثق» — the trust mark); REJECT moves it to REJECTED "
-                    + "(community writes and new direct chats are denied; reads stay open — "
-                    + "D-N3's own split). A non-PENDING membership answers 409 with the "
-                    + "entity's own transition words.")
+    @Operation(summary = "Approve or reject a neighborhood verification",
+            description = "The verdict's ONLY mover, in both directions. APPROVE moves a PENDING "
+                    + "membership to VERIFIED («جار موثق» — the trust mark) and RE-ADMITS a "
+                    + "REJECTED one (the recovery lever for a verdict carried across a "
+                    + "rejoin); REJECT moves a PENDING membership to REJECTED (community writes "
+                    + "and new direct chats are denied; reads stay open — D-N3's own split, and "
+                    + "the verdict follows the user across leave/rejoin). Any other source or "
+                    + "target state answers 409 with the entity's own transition words.")
     public ResponseEntity<NeighborhoodMembershipView> review(@PathVariable UUID membershipId,
                                                                @RequestParam String decision) {
         boolean approve = switch (decision.trim()) {

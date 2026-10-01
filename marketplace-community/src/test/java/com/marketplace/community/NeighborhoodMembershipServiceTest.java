@@ -90,6 +90,72 @@ class NeighborhoodMembershipServiceTest {
         return NeighborhoodMembership.join(userId, location, clock);
     }
 
+    // ------------------------------------------------------------------
+    // The #484 review round's verdict carry: the REJECTED verdict follows
+    // the USER across leave/rejoin and neighborhood switches
+    // ------------------------------------------------------------------
+
+    @Test
+    void join_afterARejectedLatestRow_isBornRejected() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("REJECTED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        assertThat(result.view().verificationState()).isEqualTo("REJECTED");
+        assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    void join_afterANonRejectedLatestRow_isBornUnverified() {
+        // every other state births UNVERIFIED — the status quo: only the
+        // admin's refusal verdict follows the user, the claim's own state
+        // resets with the fresh row
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("VERIFIED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        assertThat(result.view().verificationState()).isEqualTo("UNVERIFIED");
+    }
+
+    @Test
+    void join_switchFromARejectedRow_carriesTheVerdictToTheNewRow() {
+        UUID oldLocation = UUID.randomUUID();
+        NeighborhoodMembership rejected = storedMembership(oldLocation);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(repository.findByUserId(userId)).thenReturn(Optional.of(rejected));
+        when(repository.findLatestVerificationStateIncludingDeleted(userId)).thenReturn("REJECTED");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.join(userId, locationId);
+
+        verify(repository).delete(rejected);
+        verify(repository).flush();
+        assertThat(result.view().verificationState()).isEqualTo("REJECTED");
+        assertThat(result.view().memberSince()).isEqualTo(FIXED);
+    }
+
+    @Test
+    void reviewVerification_approveOnARejectedMembership_reAdmits() {
+        NeighborhoodMembership rejected = storedMembership(locationId);
+        rejected.requestVerification();
+        rejected.rejectVerification();
+        when(repository.findById(rejected.getId())).thenReturn(Optional.of(rejected));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.reviewVerification(rejected.getId(), true);
+
+        assertThat(view.verificationState()).isEqualTo("VERIFIED");
+        assertThat(rejected.mayUseCommunityWrites()).isTrue();
+    }
+
     @Test
     void join_unknownLocation_isThePortsOwn404() {
         when(geoLookupPort.getLocation(locationId))
