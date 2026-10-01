@@ -1,8 +1,5 @@
 package com.marketplace.shared.api;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import java.util.UUID;
 
 /**
@@ -10,11 +7,15 @@ import java.util.UUID;
  * §4.4/§4.5): the PUBLISHED forward page of one provider's reviews,
  * composed with the reviewer-identity and helpful-vote blocks.
  *
- * <p>The {@code ReviewStatsPort} precedent verbatim: the provider module
- * composes its public page and resolves review data through a shared-api
- * port implemented by the reviews module (the module law — cross-module
- * traffic rides SPI ports, never direct repository or service imports).
- * This port closes the declared ID-space seam: the public page is
+ * <p>The {@code CatalogSearchPort.listActiveByProvider} precedent
+ * verbatim (the same page the provider public page already asks the
+ * catalog for its listings block): the port speaks the NEUTRAL paging
+ * contracts — {@link PagedRequest} in, {@link PagedResponse} out, no
+ * framework types (the shared-contract module is the last place Spring
+ * types should leak; {@code SpringPagination} is the documented interop
+ * corner each side translates through).
+ *
+ * <p>This port closes the declared ID-space seam: the public page is
  * addressed by the provider PROFILE id while reviews are keyed by the
  * provider USER id — the owning service holds the mapping internally and
  * the composed block carries no user id at all.
@@ -35,7 +36,7 @@ public interface PublishedReviewsPort {
      * @param providerUserId the provider's USER id (the {@code reviews.provider_id}
      *                       space, A1) — resolved by the caller, never exposed
      *                       on any public response
-     * @param pageable       the page to serve
+     * @param request        the neutral page request
      */
-    Page<PublishedReviewView> findPublishedByProviderUserId(UUID providerUserId, Pageable pageable);
+    PagedResponse<PublishedReviewView> findPublishedByProviderUserId(UUID providerUserId, PagedRequest request);
 }

@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
 import com.marketplace.shared.api.PublishedReviewsPort;
@@ -136,13 +137,17 @@ public class ProviderPublicPageService {
         };
 
         // W1 (§4.4/§4.5): the reviews block — the PUBLISHED forward page of
-        // this provider, composed through the shared port. The block is
-        // NOT VERIFIED-gated (reviews are the reviewed party's public
-        // record, not inventory) and a profile without a linked user id can
-        // own no reviews (the same honest empty block as the rating pair).
-        Page<PublishedReviewView> reviewsPage = profile.getUserId() == null
-                ? Page.empty(reviewsPageable)
-                : publishedReviewsPort.findPublishedByProviderUserId(profile.getUserId(), reviewsPageable);
+        // this provider, composed through the shared port (the NEUTRAL
+        // contracts: the reviews pageable translates through the documented
+        // SpringPagination interop corner before it crosses the boundary).
+        // The block is NOT VERIFIED-gated (reviews are the reviewed party's
+        // public record, not inventory) and a profile without a linked user
+        // id can own no reviews (the same honest empty block as the rating
+        // pair).
+        PagedRequest reviewsRequest = SpringPagination.toPagedRequest(reviewsPageable);
+        PagedResponse<PublishedReviewView> reviews = profile.getUserId() == null
+                ? PagedResponse.empty(reviewsRequest)
+                : publishedReviewsPort.findPublishedByProviderUserId(profile.getUserId(), reviewsRequest);
 
         return new ProviderPublicPageResponse(
                 profile.getId(),
@@ -158,7 +163,7 @@ public class ProviderPublicPageService {
                 block.reviewCount(),
                 block.ratingGeneralAverage(),
                 block.ratingGeneralCount(),
-                PagedResponse.of(reviewsPage),
+                reviews,
                 listings);
     }
 

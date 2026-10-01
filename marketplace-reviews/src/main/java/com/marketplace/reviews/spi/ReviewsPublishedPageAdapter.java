@@ -1,9 +1,11 @@
 package com.marketplace.reviews.spi;
 
 import com.marketplace.reviews.ReviewsViewService;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
 import com.marketplace.shared.api.PublishedReviewsPort;
-import org.springframework.data.domain.Page;
+import com.marketplace.shared.api.SpringPagination;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +17,10 @@ import java.util.UUID;
  * the {@link PublishedReviewsPort} cross-module contract (the
  * {@code ReviewStatsAdapter} pattern verbatim). The composed page — the
  * visibility gate, the three batch-resolved identity blocks — is owned by
- * {@link ReviewsViewService}, the read-side assembly; this side only maps
- * the module's own response record onto the shared projection the provider
- * public page renders.
+ * {@link ReviewsViewService}, the read-side assembly; this side only
+ * translates the neutral page request through {@link SpringPagination}
+ * (the documented interop corner) and maps the module's own response
+ * record onto the shared projection the provider public page renders.
  */
 @Component
 @Transactional(readOnly = true)
@@ -30,8 +33,9 @@ public class ReviewsPublishedPageAdapter implements PublishedReviewsPort {
     }
 
     @Override
-    public Page<PublishedReviewView> findPublishedByProviderUserId(UUID providerUserId, Pageable pageable) {
-        return reviewsViewService.listByProvider(providerUserId, pageable)
+    public PagedResponse<PublishedReviewView> findPublishedByProviderUserId(UUID providerUserId, PagedRequest request) {
+        Pageable pageable = SpringPagination.toPageable(request);
+        return PagedResponse.of(reviewsViewService.listByProvider(providerUserId, pageable)
                 .map(review -> new PublishedReviewView(
                         review.id(),
                         review.rating(),
@@ -42,6 +46,6 @@ public class ReviewsPublishedPageAdapter implements PublishedReviewsPort {
                         review.origin(),
                         review.reviewerName(),
                         review.reviewerReviewCount(),
-                        review.helpfulCount()));
+                        review.helpfulCount())));
     }
 }

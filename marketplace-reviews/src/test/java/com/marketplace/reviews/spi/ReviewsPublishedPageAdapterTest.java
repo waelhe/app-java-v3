@@ -2,7 +2,10 @@ package com.marketplace.reviews.spi;
 
 import com.marketplace.reviews.ReviewResponse;
 import com.marketplace.reviews.ReviewsViewService;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
+import com.marketplace.shared.api.PublishedReviewsPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -34,20 +37,21 @@ class ReviewsPublishedPageAdapterTest {
     void delegatesWithTheUserIdAndThePage_andMapsFieldForField() {
         UUID providerUserId = UUID.randomUUID();
         UUID reviewId = UUID.randomUUID();
+        PagedRequest request = PagedRequest.of(0, 10);
         Pageable pageable = PageRequest.of(0, 10);
         Instant createdAt = Instant.parse("2026-09-20T00:00:00Z");
         Instant repliedAt = Instant.parse("2026-09-21T00:00:00Z");
         ReviewResponse composed = new ReviewResponse(reviewId, null, 5, "Sourdough sells out by noon",
                 "Thank you", "CONSUMER_TO_PROVIDER", repliedAt, createdAt, createdAt, "ORGANIC",
                 "PUBLISHED", null, "Nour", 7L, 3L);
-        when(reviewsViewService.listByProvider(providerUserId, pageable))
+        when(reviewsViewService.listByProvider(eq(providerUserId), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(composed), pageable, 1));
 
-        var page = adapter.findPublishedByProviderUserId(providerUserId, pageable);
+        var page = adapter.findPublishedByProviderUserId(providerUserId, request);
 
         verify(reviewsViewService).listByProvider(providerUserId, pageable);
-        assertThat(page.getTotalElements()).isEqualTo(1);
-        PublishedReviewView row = page.getContent().getFirst();
+        assertThat(page.totalElements()).isEqualTo(1L);
+        PublishedReviewView row = page.content().getFirst();
         assertThat(row.id()).isEqualTo(reviewId);
         assertThat(row.rating()).isEqualTo(5);
         assertThat(row.comment()).isEqualTo("Sourdough sells out by noon");
@@ -63,13 +67,14 @@ class ReviewsPublishedPageAdapterTest {
     @Test
     void emptyPage_passesThroughUntouched() {
         UUID providerUserId = UUID.randomUUID();
+        PagedRequest request = PagedRequest.of(0, 10);
         Pageable pageable = PageRequest.of(0, 10);
         when(reviewsViewService.listByProvider(eq(providerUserId), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.<ReviewResponse>of(), pageable, 0));
 
-        var page = adapter.findPublishedByProviderUserId(providerUserId, pageable);
+        var page = adapter.findPublishedByProviderUserId(providerUserId, request);
 
-        assertThat(page.getContent()).isEmpty();
-        assertThat(page.getTotalElements()).isZero();
+        assertThat(page.content()).isEmpty();
+        assertThat(page.totalElements()).isZero();
     }
 }

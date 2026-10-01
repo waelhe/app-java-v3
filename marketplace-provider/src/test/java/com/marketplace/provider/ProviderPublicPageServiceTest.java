@@ -14,7 +14,6 @@ import com.marketplace.shared.api.PublishedReviewsPort;
 import com.marketplace.shared.api.SystemSettingsPort;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -53,9 +52,9 @@ class ProviderPublicPageServiceTest {
         when(systemSettingsPort.getStringOrDefault(
                 eq(SystemSettingKeys.REVIEWS_MODE), anyString())).thenReturn(mode.name());
         // W1: the reviews block's port — the honest empty page unless a
-        // test stubs real rows (Page.empty mirrors the pageable asked).
-        when(publishedReviewsPort.findPublishedByProviderUserId(any(UUID.class), any(Pageable.class)))
-                .thenAnswer(invocation -> Page.empty(invocation.getArgument(1, Pageable.class)));
+        // test stubs real rows (the neutral request answered empty).
+        when(publishedReviewsPort.findPublishedByProviderUserId(any(UUID.class), any(PagedRequest.class)))
+                .thenAnswer(invocation -> PagedResponse.empty(invocation.getArgument(1, PagedRequest.class)));
         return new ProviderPublicPageService(providerService, catalogSearchPort,
                 reviewStatsPort, systemSettingsPort, publishedReviewsPort);
     }
@@ -241,8 +240,8 @@ class ProviderPublicPageServiceTest {
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
         PublishedReviewView row = new PublishedReviewView(UUID.randomUUID(), 5, "Sourdough sells out by noon",
                 "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", "Nour", 7L, 3L);
-        when(publishedReviewsPort.findPublishedByProviderUserId(userId, reviewsPageable))
-                .thenReturn(new PageImpl<>(List.of(row), reviewsPageable, 1));
+        when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(row), reviewsPageable, 1)));
 
         var result = service.getPublicPage(providerId, listingsPageable, reviewsPageable);
 
