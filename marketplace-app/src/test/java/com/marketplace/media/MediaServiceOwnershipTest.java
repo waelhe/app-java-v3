@@ -60,6 +60,16 @@ class MediaServiceOwnershipTest {
     @MockitoBean
     private ListingPriceProvider listingPriceProvider;
 
+    /**
+     * The R5 publication-state seam (main's wave 4) the merged MediaService
+     * constructor requires — this ownership slice never routes a listing
+     * GALLERY read, so the mock rides inert (the @MockitoBean boundary the
+     * other ports above already form; the full-context tests exercise the
+     * real catalog implementation).
+     */
+    @MockitoBean
+    private com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
+
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
 
