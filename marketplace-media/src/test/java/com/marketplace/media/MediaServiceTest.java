@@ -281,14 +281,15 @@ class MediaServiceTest {
     /**
      * The mirror for the listing gallery: a photo-less listing's read
      * survives an unconfigured storage channel the same way (no stub —
-     * the reordered read never asks the provider).
+     * the reordered read never asks the provider; the R5 gate rides the
+     * setUp's public-path default for the shared listingId).
      */
     @Test
     void listByListing_noRowsAndNoStorage_answersTheHonestEmptyList() {
         when(repository.findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED))
                 .thenReturn(java.util.List.of());
 
-        assertEquals(List.of(), service.listByListing(listingId));
+        assertEquals(List.of(), service.listByListing(listingId, authentication));
     }
 
     @Test
