@@ -3,6 +3,7 @@ package com.marketplace.media;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPublicStatePort;
+import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -20,12 +21,14 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -54,6 +57,8 @@ class MediaServiceTest {
     @Mock
     private ProviderLookupPort providerLookupPort;
     @Mock
+    private PostLookupPort postLookupPort;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
@@ -75,8 +80,8 @@ class MediaServiceTest {
     @BeforeEach
     void setUp() {
         service = new MediaService(repository, storageProvider, mediaProperties(),
-                listingPriceProvider, listingPublicStatePort, providerLookupPort, currentUserProvider,
-                eventPublisher, new MediaThumbnailMetrics(meterRegistry));
+                listingPriceProvider, listingPublicStatePort, providerLookupPort, postLookupPort,
+                currentUserProvider, eventPublisher, new MediaThumbnailMetrics(meterRegistry));
         // R5 default: the listing is on the public surface — every test that
         // does not stub the publication state explicitly reads the public
         // path (the pre-fix behavior's surface).
@@ -109,6 +114,181 @@ class MediaServiceTest {
     private MediaAsset pendingAsset() {
         return MediaAsset.create(listingId, providerId, "listings/" + listingId + "/" + UUID.randomUUID() + ".jpg",
                 "image/jpeg", 2048L, 1);
+    }
+
+    // ---------- L48: the post target (gap #2 — post images) ----------
+
+    private final UUID postId = UUID.randomUUID();
+
+    /** L48: the author stub — the post flow's ownership is a direct user-id compare. */
+    private void mockAuthor() {
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, userId));
+    }
+
+    private MediaAsset pendingPostAsset() {
+        return MediaAsset.createForPost(postId, userId,
+                "posts/" + postId + "/" + UUID.randomUUID() + ".jpg", "image/jpeg", 2048L, 1);
+    }
+
+    /**
+     * L48: the post flow issues a presigned PUT under the posts/ namespace,
+     * position-allocated per post — the listing flow's contract verbatim on
+     * the second target.
+     */
+    @Test
+    void requestPostUpload_byAuthor_returnsPresignedViewUnderPostsNamespace() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        mockAuthor();
+        when(repository.countByPostId(postId)).thenReturn(0L);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(storage.presignUpload(any(), eq("image/jpeg"))).thenReturn("https://storage.example/signed-put");
+
+        var view = service.requestPostUpload(postId, "image/jpeg", 2048L, authentication);
+
+        assertEquals("https://storage.example/signed-put", view.uploadUrl());
+        assertEquals(Duration.ofMinutes(15), view.urlLifetime());
+        assertTrue(view.objectKey().startsWith("posts/" + postId + "/"));
+        assertEquals("jpg", view.objectKey().split("/")[2].split("\\.")[1]);
+        verify(repository).lockPostPositionAllocation(postId.toString());
+        verify(storage).presignUpload(view.objectKey(), "image/jpeg");
+    }
+
+    /** L48: an unknown/hidden/deleted post answers the port's honest 404. */
+    @Test
+    void requestPostUpload_forUnknownPost_throwsNotFound() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(postLookupPort.getPostInfo(postId))
+                .thenThrow(new ResourceNotFoundException("Post", postId));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.requestPostUpload(postId, "image/jpeg", 1024L, authentication));
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * L48: the author gate — a member who is NOT the post's author is
+     * denied, even though the member domain needs no PROVIDER role (the
+     * direct user-id compare; no provider-profile resolution involved).
+     */
+    @Test
+    void requestPostUpload_byNonAuthor_isDenied() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        when(postLookupPort.getPostInfo(postId))
+                .thenReturn(new PostLookupPort.PostInfo(postId, UUID.randomUUID()));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.requestPostUpload(postId, "image/jpeg", 1024L, authentication));
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * L48: the confirm gate became target-aware — a POST asset's author
+     * (a plain member, no provider profile) confirms via the DIRECT
+     * user-id compare; the provider-profile resolution would 403 a
+     * member who owns nothing in the provider domain.
+     */
+    @Test
+    void confirmUpload_postAsset_byAuthor_directUserCompare() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = pendingPostAsset();
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
+
+        var view = service.confirmUpload(asset.getId(), authentication);
+
+        assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
+        assertEquals(postId, view.postId());
+        assertNull(view.listingId());
+        verify(providerLookupPort, never()).findByUserId(any());
+        verify(eventPublisher).publishEvent(any(com.marketplace.shared.api.MediaUploadedEvent.class));
+    }
+
+    /**
+     * L48: the admin pass survives on the POST target for the moderation
+     * surface (confirm/delete) — mirroring the listing flow's ownership
+     * rule one level down.
+     */
+    @Test
+    void confirmUpload_postAsset_byAdmin_passesForModeration() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = pendingPostAsset();
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+        when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
+
+        service.confirmUpload(asset.getId(), authentication);
+
+        assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
+    }
+
+    /**
+     * L48: the feed's grouped read — UPLOADED-only, presigned original +
+     * thumb, (postId, position) order preserved; the empty page costs
+     * nothing.
+     */
+    @Test
+    void listByPostIds_onlyUploadedPresigned_andEmptyShortCircuits() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+
+        assertEquals(List.of(), service.listByPostIds(List.of()));
+        assertEquals(List.of(), service.listByPostIds(null));
+
+        MediaAsset uploaded = pendingPostAsset();
+        uploaded.markUploaded();
+        when(repository.findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
+                java.util.List.of(postId), MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of(uploaded));
+        when(storage.presignDownload(uploaded.getObjectKey())).thenReturn("https://storage.example/get");
+
+        var entries = service.listByPostIds(java.util.List.of(postId));
+
+        assertEquals(1, entries.size());
+        assertEquals(postId, entries.get(0).postId());
+        assertEquals(uploaded.getId(), entries.get(0).mediaId());
+        assertEquals("https://storage.example/get", entries.get(0).url());
+        assertNull(entries.get(0).thumbUrl());
+        assertEquals("image/jpeg", entries.get(0).contentType());
+        assertEquals(1, entries.get(0).position());
+        // the PENDING row never rode the read
+        verify(repository).findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
+                java.util.List.of(postId), MediaAssetStatus.UPLOADED);
+    }
+
+    /**
+     * The 2026-10-01 CI round's measured fix, pinned: a feed page whose
+     * posts carry NO photos never requires the storage channel — the
+     * text feed survives an unconfigured storage (the honest degradation)
+     * instead of the whole surface failing with the 503 that killed three
+     * NeighborhoodPostModuleIntegrationTest criteria and two
+     * ContentReportModuleIntegrationTest criteria. The unstubbed
+     * ObjectProvider mock answers null (the unconfigured channel) without
+     * a stubbing — the reordered read never even asks.
+     */
+    @Test
+    void listByPostIds_noRowsAndNoStorage_answersTheHonestEmptyList() {
+        when(repository.findByPostIdInAndStatusOrderByPostIdAscPositionAsc(
+                java.util.List.of(postId), MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of());
+
+        assertEquals(List.of(), service.listByPostIds(java.util.List.of(postId)));
+    }
+
+    /**
+     * The mirror for the listing gallery: a photo-less listing's read
+     * survives an unconfigured storage channel the same way (no stub —
+     * the reordered read never asks the provider).
+     */
+    @Test
+    void listByListing_noRowsAndNoStorage_answersTheHonestEmptyList() {
+        when(repository.findByListingIdAndStatusOrderByPositionAsc(listingId, MediaAssetStatus.UPLOADED))
+                .thenReturn(java.util.List.of());
+
+        assertEquals(List.of(), service.listByListing(listingId));
     }
 
     @Test

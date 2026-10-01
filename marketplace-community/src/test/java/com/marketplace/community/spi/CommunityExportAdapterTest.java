@@ -46,7 +46,7 @@ class CommunityExportAdapterTest {
         Instant memberSince = Instant.parse("2026-09-17T09:30:00Z");
         when(rs.getString("id")).thenReturn(id.toString());
         when(rs.getString("location_id")).thenReturn(locationId.toString());
-        when(rs.getString("verification_state")).thenReturn("SELF_DECLARED");
+        when(rs.getString("verification_state")).thenReturn("UNVERIFIED");
         when(rs.getTimestamp("member_since")).thenReturn(Timestamp.from(memberSince));
         when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(memberSince));
         when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(memberSince));
@@ -66,7 +66,7 @@ class CommunityExportAdapterTest {
         CommunityMembershipExportEntry entry = entries.get(0);
         assertThat(entry.id()).isEqualTo(id);
         assertThat(entry.locationId()).isEqualTo(locationId);
-        assertThat(entry.verificationState()).isEqualTo("SELF_DECLARED");
+        assertThat(entry.verificationState()).isEqualTo("UNVERIFIED");
         assertThat(entry.memberSince()).isEqualTo(memberSince);
         assertThat(entry.deleted()).isTrue();
     }

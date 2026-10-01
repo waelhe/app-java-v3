@@ -67,10 +67,11 @@ class NotificationPreferenceServiceTest {
 
     @Test
     void getMyPreferencesReturnsTheFullEffectiveMatrix() {
-        // Twenty-one rows today (7 types x 3 channels — L34 added LEAD_RECEIVED,
+        // Twenty-four rows today (8 types x 3 channels — L34 added LEAD_RECEIVED,
         // L35 added SAVED_SEARCH_MATCH, L42 added POST_COMMENTED, L46 added
-        // NEW_LISTING_IN_NEIGHBORHOOD, L45 added CONTENT_MODERATED) in stable
-        // order, all enabled except the one stored override.
+        // NEW_LISTING_IN_NEIGHBORHOOD, L45 added CONTENT_MODERATED, L47 added
+        // POST_REACTED) in stable order, all enabled except the one stored
+        // override.
         NotificationPreference override = NotificationPreference.create(
                 USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.WS, false);
         NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
@@ -79,7 +80,7 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(21);
+        assertThat(matrix).hasSize(24);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
@@ -101,7 +102,10 @@ class NotificationPreferenceServiceTest {
                 new NotificationPreferenceView(NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.WS, true),
                 new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.WS, true));
+                new NotificationPreferenceView(NotificationType.CONTENT_MODERATED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.WS, true));
     }
 
     @Test
@@ -126,7 +130,8 @@ class NotificationPreferenceServiceTest {
         assertThat(saved.getValue().isEnabled()).isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3, default on
+                        true, true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3, default on
     }
 
     @Test
@@ -223,6 +228,7 @@ class NotificationPreferenceServiceTest {
                 .isFalse();
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3, default on
+                        true, true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3, default on
     }
 }

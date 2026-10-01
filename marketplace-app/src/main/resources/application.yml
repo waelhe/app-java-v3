@@ -464,6 +464,19 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+      # layer): the community's lightest write — a thank is one id pair
+      # with no authored text at all, so it rides the postComment budget
+      # (30/min — conservative until real traffic; same L29 model: fail
+      # fast, 429 RL-001, env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_POSTREACT_LIMIT_FOR_PERIOD).
+      # One named instance for BOTH the thank and the un-thank: they are
+      # one toggle's two directions — a thank/un-thank burst is one
+      # member's one behavior, not two.
+      postReact:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
       # L44 (neighborhood community plan §5 — direct neighbor messages):
       # the direct conversation open — a distinct named instance (the plan's
       # own "حدود معدل conversationCreate مسماة محافظة", pre-declared in the

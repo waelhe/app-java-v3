@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.UUID;
 
@@ -51,8 +52,8 @@ public class NeighborhoodMembershipController {
                     + "memberSince) is created atomically. Re-joining the current "
                     + "neighborhood is an idempotent no-op (200 with the stored row). "
                     + "An unknown locationId answers 404; a level 0-2 node answers 400 — "
-                    + "both before any write. The verification state is SELF_DECLARED "
-                    + "(the verification method is a pending product gate).")
+                    + "both before any write. The initial verification state is UNVERIFIED; "
+                    + "a manual review can be requested separately.")
     public ResponseEntity<NeighborhoodMembershipView> join(
             @Valid @RequestBody NeighborhoodJoinRequest request,
             Authentication authentication) {
@@ -78,6 +79,15 @@ public class NeighborhoodMembershipController {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         membershipService.leave(userId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/me/neighborhood/verification-requests")
+    @Operation(summary = "Request manual neighborhood verification",
+            description = "Moves UNVERIFIED (or a previously REJECTED) membership to PENDING. "
+                    + "No SMS, email, or postal provider is contacted; external delivery remains behind G-N2.")
+    public ResponseEntity<NeighborhoodMembershipView> requestVerification(Authentication authentication) {
+        return ResponseEntity.ok(membershipService.requestVerification(
+                currentUserProvider.getCurrentUserId(authentication)));
     }
 
     /**

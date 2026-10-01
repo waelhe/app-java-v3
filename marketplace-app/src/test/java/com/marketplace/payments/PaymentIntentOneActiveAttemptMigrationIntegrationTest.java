@@ -155,7 +155,7 @@ class PaymentIntentOneActiveAttemptMigrationIntegrationTest {
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V74__payment_intents_one_active_attempt.sql"));
+                    new ClassPathResource("db/migration/V81__payment_intents_one_active_attempt.sql"));
         }
 
         // ---- Booking 1 outcomes: the latest attempt is THE attempt ----

@@ -161,7 +161,7 @@ class LedgerCurrencyMigrationIntegrationTest {
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V75__ledger_currency.sql"));
+                    new ClassPathResource("db/migration/V82__ledger_currency.sql"));
         }
 
         // ---- entry currency derivation (the SQL UUIDv3 reconstruction

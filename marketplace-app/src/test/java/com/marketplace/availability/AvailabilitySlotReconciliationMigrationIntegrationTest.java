@@ -123,7 +123,7 @@ class AvailabilitySlotReconciliationMigrationIntegrationTest {
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             ScriptUtils.executeSqlScript(connection,
-                    new ClassPathResource("db/migration/V73__availability_slots_window_unique.sql"));
+                    new ClassPathResource("db/migration/V80__availability_slots_window_unique.sql"));
         }
 
         // ---- Window 1 outcomes ----

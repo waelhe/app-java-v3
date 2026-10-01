@@ -72,7 +72,7 @@ class NeighborhoodMembershipControllerWebMvcTest {
     private NeighborhoodMembershipView view(UUID userId, UUID locationId) {
         Instant now = Instant.parse("2026-09-17T09:30:00Z");
         return new NeighborhoodMembershipView(
-                UUID.randomUUID(), userId, locationId, "SELF_DECLARED", now, now, now);
+                UUID.randomUUID(), userId, locationId, "UNVERIFIED", now, now, now);
     }
 
     @Test
@@ -88,7 +88,7 @@ class NeighborhoodMembershipControllerWebMvcTest {
                         .content("{\"locationId\": \"" + locationId + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.locationId").value(locationId.toString()))
-                .andExpect(jsonPath("$.verificationState").value("SELF_DECLARED"))
+                .andExpect(jsonPath("$.verificationState").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.memberSince").exists());
     }
 

@@ -60,7 +60,7 @@ class UserDataExportServiceTest {
                 UUID.randomUUID(), null, Instant.now(), Instant.now()));
         var messages = List.of(new MessageExportEntry(UUID.randomUUID(),
                 UUID.randomUUID(), "hello", Instant.now(), Instant.now()));
-        var media = List.of(new MediaExportEntry(UUID.randomUUID(), UUID.randomUUID(),
+        var media = List.of(new MediaExportEntry(UUID.randomUUID(), UUID.randomUUID(), null,
                 "listings/x/y.jpg", "image/jpeg", 10L, "UPLOADED", 1,
                 Instant.now(), Instant.now()));
         var notifications = List.of(new NotificationExportEntry(UUID.randomUUID(),

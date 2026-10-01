@@ -40,6 +40,14 @@ package com.marketplace.notifications;
  * already-hidden or author-deleted target carries no new fact), and the
  * one-real-hide-one-alert policy lives in the community side's resolve
  * command, not in this enum.
+ *
+ * <p>L47 (the Nextdoor-2026 completeness wave — gap #1, the reactions
+ * layer): {@code POST_REACTED} joins as the eighth type — the same point
+ * addition (the V74 CHECK widens the DB-side membership guard to match,
+ * V75 validates it under SHARE UPDATE EXCLUSIVE alone). The recipient is
+ * the thanked post's author; the self-thank skip is the listener's own
+ * policy (the {@code PostCommentedEvent} criterion-4 precedent), not
+ * this enum's concern.
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -48,5 +56,6 @@ public enum NotificationType {
     SAVED_SEARCH_MATCH,
     POST_COMMENTED,
     NEW_LISTING_IN_NEIGHBORHOOD,
-    CONTENT_MODERATED
+    CONTENT_MODERATED,
+    POST_REACTED
 }
