@@ -171,6 +171,12 @@ class UserDataExportIntegrationTest {
         // requester/counterparty relationship — the exclusion guard for
         // unscoped queries (CWE-200 reachability analysis).
         seedThirdPartyIsland();
+        // The community legs (the 2026-10-02 live export 500's own lesson:
+        // the market leg had NEVER ridden the real schema — the mocked
+        // adapter pin passed while pgjdbc refused int4->Long on the live
+        // Flyway column. Both new legs now round-trip here, on the real
+        // schema, through the real driver).
+        seedCommunityLegs(requesterId);
 
         // -- The requester's export (the surface under test) ----------------
 
@@ -276,6 +282,40 @@ class UserDataExportIntegrationTest {
         assertThat(notifications.get(0).path("message").asString())
                 .isEqualTo("Your booking was created");
         assertThat(exportResponse.body()).doesNotContain(COUNTERPARTY_NOTIFICATION);
+
+        // Community market items (L50's b-2 leg, the live 500's regression
+        // pin): his authored items ride verbatim — the PRICED one carrying
+        // the stored int4 cents widened through Number over the REAL
+        // pgjdbc driver (the exact conversion that 500'd in production on
+        // 2026-10-02), and the FREE one carrying the honest null pair.
+        JsonNode marketItems = export.path("communityMarketItems");
+        assertThat(marketItems.isArray()).isTrue();
+        assertThat(marketItems.size()).isEqualTo(2);
+        JsonNode pricedItem = marketItems.get(0);
+        assertThat(pricedItem.path("category").asString()).isEqualTo("TOOLS");
+        assertThat(pricedItem.path("priceCents").asLong()).isEqualTo(26000L);
+        assertThat(pricedItem.path("priceCurrency").asString()).isEqualTo("SAR");
+        assertThat(pricedItem.path("status").asString()).isEqualTo("ACTIVE");
+        JsonNode freeItem = marketItems.get(1);
+        assertThat(freeItem.path("category").asString()).isEqualTo("FREE");
+        assertThat(freeItem.path("priceCents").isNull()).isTrue();
+        assertThat(freeItem.path("priceCurrency").isNull()).isTrue();
+
+        // Community group memberships (L51's b-2 leg): his live AND left
+        // memberships ride — the b-5 discrimination on the real schema.
+        JsonNode groupMemberships = export.path("communityGroupMemberships");
+        assertThat(groupMemberships.isArray()).isTrue();
+        assertThat(groupMemberships.size()).isEqualTo(2);
+        assertThat(groupMemberships.get(0).path("groupId").asString()).isNotBlank();
+        assertThat(groupMemberships.get(0).path("createdAt").asString()).isNotBlank();
+        assertThat(groupMemberships.get(0).path("deleted").asBoolean()).isFalse();
+        assertThat(groupMemberships.get(1).path("deleted").asBoolean()).isTrue();
+
+        // The scope notice declares the two newest legs (the review round's
+        // own fix: the notice names what the document carries).
+        assertThat(export.path("export").path("scopeNotice").asString())
+                .contains("market items")
+                .contains("group memberships");
 
         // The third-party island (CodeRabbit r1, adopted): no relationship to
         // either caller — none of its records may ride either export.
@@ -468,6 +508,7 @@ class UserDataExportIntegrationTest {
      * sections would leak these into either export; the assertions hold
      * both documents to zero leakage.
      */
+
     private void seedThirdPartyIsland() {
         UUID third = UUID.randomUUID();
         UUID fourth = UUID.randomUUID();
@@ -538,6 +579,61 @@ class UserDataExportIntegrationTest {
                 ON CONFLICT (id) DO NOTHING
                 """,
                 UUID.randomUUID(), third, THIRD_PARTY_NOTIFICATION);
+    }
+
+    /**
+     * Seeds the community legs on the real Flyway schema (the same direct-
+     * JDBC convention): the requester's neighborhood membership (the geo
+     * seed's own Old Town node — level 3), his two market items (a priced
+     * TOOLS one exercising the int4->Long widening that 500'd in production
+     * on 2026-10-02, and a FREE one with the honest null pair), and his two
+     * group memberships (one live, one soft-left — the b-5 discrimination).
+     */
+    private void seedCommunityLegs(UUID requesterId) {
+        String oldTown = "11111111-1111-4111-8111-111111111104";
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_memberships (id, user_id, location_id, verification_state, member_since, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, 'UNVERIFIED', NOW(), FALSE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), requesterId, oldTown);
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_market_items (id, location_id, author_id, category, title, item_condition, price_cents, price_currency, status, location_label, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, 'TOOLS', 'خيمة تكامل التصدير — المسعّرة', 'GOOD', 26000, 'SAR', 'ACTIVE', 'قرب المخبز', FALSE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), oldTown, requesterId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_market_items (id, location_id, author_id, category, title, item_condition, price_cents, price_currency, status, location_label, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, 'FREE', 'شتلات تكامل التصدير — الإهداء', 'LIKE_NEW', NULL, NULL, 'ACTIVE', 'مدخل الحديقة', FALSE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), oldTown, requesterId);
+        UUID groupId = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_groups (id, location_id, name, description, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, 'نادي تكامل التصدير', 'جولة يومية بعد المغرب', FALSE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                groupId, oldTown);
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_group_memberships (id, group_id, member_id, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, FALSE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), groupId, requesterId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO neighborhood_group_memberships (id, group_id, member_id, is_deleted, version, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, TRUE, 0, 'seed', NOW(), 'seed', NOW())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                UUID.randomUUID(), groupId, requesterId);
     }
 
     /** The plan's exclusion rule, enforced on the document itself (recursive). */

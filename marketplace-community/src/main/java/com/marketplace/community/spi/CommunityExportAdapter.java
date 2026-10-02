@@ -213,19 +213,29 @@ public class CommunityExportAdapter implements CommunityExportPort {
                 WHERE author_id = ?
                 ORDER BY created_at, id
                 """,
-                (rs, rowNum) -> new CommunityMarketItemExportEntry(
-                        UUID.fromString(rs.getString("id")),
-                        UUID.fromString(rs.getString("location_id")),
-                        rs.getString("category"),
-                        rs.getString("title"),
-                        rs.getString("item_condition"),
-                        rs.getObject("price_cents", Long.class),
-                        rs.getString("price_currency"),
-                        rs.getString("status"),
-                        rs.getString("location_label"),
-                        rs.getTimestamp("created_at").toInstant(),
-                        rs.getTimestamp("updated_at").toInstant(),
-                        rs.getBoolean("is_deleted")),
+                (rs, rowNum) -> {
+                    // The price is a NULLABLE INTEGER (int4) on the Flyway
+                    // schema — pgjdbc's getObject(col, Long.class) refuses
+                    // int4 outright ("conversion to class java.lang.Long
+                    // from int4 not supported", the live 2026-10-02 export
+                    // 500's measured root). The Number-widening idiom reads
+                    // the driver's own boxed type and widens once — correct
+                    // for int4/int8/numeric across every JDBC driver.
+                    Object priceCents = rs.getObject("price_cents");
+                    return new CommunityMarketItemExportEntry(
+                            UUID.fromString(rs.getString("id")),
+                            UUID.fromString(rs.getString("location_id")),
+                            rs.getString("category"),
+                            rs.getString("title"),
+                            rs.getString("item_condition"),
+                            priceCents == null ? null : ((Number) priceCents).longValue(),
+                            rs.getString("price_currency"),
+                            rs.getString("status"),
+                            rs.getString("location_label"),
+                            rs.getTimestamp("created_at").toInstant(),
+                            rs.getTimestamp("updated_at").toInstant(),
+                            rs.getBoolean("is_deleted"));
+                },
                 userId);
     }
 
