@@ -31,7 +31,7 @@ public interface ReviewMapper {
                 base.id(), base.bookingId(), base.rating(), base.comment(), base.reply(),
                 base.direction(), base.repliedAt(), base.createdAt(), base.updatedAt(),
                 base.origin(), base.moderationStatus(), base.listingId(),
-                reviewerName, reviewerReviewCount, helpfulCount);
+                base.reviewerId(), reviewerName, reviewerReviewCount, helpfulCount);
     }
 }
 

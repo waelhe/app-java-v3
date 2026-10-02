@@ -21,6 +21,7 @@ import com.marketplace.shared.api.SavedSearchExportEntry;
 import com.marketplace.shared.api.ReviewExportEntry;
 import com.marketplace.shared.api.ReviewExportPort;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,6 +30,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,11 +45,12 @@ class UserDataExportServiceTest {
     private final NotificationExportPort notificationExportPort = mock(NotificationExportPort.class);
     private final SavedSearchExportPort savedSearchExportPort = mock(SavedSearchExportPort.class);
     private final CommunityExportPort communityExportPort = mock(CommunityExportPort.class);
+    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
     private final UserDataExportService service = new UserDataExportService(
             bookingExportPort, reviewExportPort, messagingExportPort,
             mediaExportPort, notificationExportPort, savedSearchExportPort,
-            communityExportPort);
+            communityExportPort, jdbcTemplate);
 
     @Test
     void aggregatesEveryModuleShareWithTheBoundaryNoticeAndTheProfile() {
@@ -95,6 +100,11 @@ class UserDataExportServiceTest {
                 UUID.randomUUID(), UUID.randomUUID(), Instant.now(), Instant.now(), false));
         when(communityExportPort.exportGroupMembershipsForOwner(userId))
                 .thenReturn(communityGroupMemberships);
+        // W4 (G21): the identity-local follows share — native JDBC read, as stored.
+        var follows = List.of(new UserDataExportResponse.ProviderFollowExportEntry(
+                UUID.randomUUID(), UUID.randomUUID(), Instant.now(), Instant.now(), false));
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), eq(userId)))
+                .thenReturn(follows);
 
         UserDataExportResponse response = service.exportFor(user);
 
@@ -111,6 +121,7 @@ class UserDataExportServiceTest {
         assertSame(communityComments, response.communityComments()); // L42: the comments share
         assertSame(communityReactions, response.communityReactions()); // #484: the reactions share
         assertSame(communityGroupMemberships, response.communityGroupMemberships()); // L51: the groups share
+        assertSame(follows, response.providerFollows()); // W4: the identity-local follows share
 
         // The profile section: the account row's own fields.
         assertEquals(userId, response.profile().id());
@@ -139,6 +150,8 @@ class UserDataExportServiceTest {
         when(communityExportPort.exportCommentsForOwner(userId)).thenReturn(List.of());
         when(communityExportPort.exportGroupMembershipsForOwner(userId)).thenReturn(List.of());
         when(notificationExportPort.exportForRecipient(userId)).thenReturn(List.of());
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), eq(userId)))
+                .thenReturn(List.of());
 
         UserDataExportResponse response = service.exportFor(user);
 
@@ -151,6 +164,7 @@ class UserDataExportServiceTest {
         assertEquals(0, response.memberships().size());
         assertEquals(0, response.communityPosts().size());
         assertEquals(0, response.communityComments().size());
+        assertEquals(0, response.providerFollows().size());
         assertEquals("sub-empty", response.profile().subject());
     }
 }

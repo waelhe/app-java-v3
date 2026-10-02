@@ -554,6 +554,21 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # W4 (yelp-level plan §5 — G21, provider follows): the follow write —
+      # the lightest id-pair write the platform owns (the postReact/
+      # eventRsvp model verbatim: one named instance, no authored text at
+      # all, so it rides the 30/min light-write budget — conservative
+      # until real traffic; same L29 model: fail fast, 429 RL-001,
+      # env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_PROVIDERFOLLOWCREATE_LIMIT_FOR_PERIOD).
+      # The unfollow deliberately keeps the SavedSearch/delete shape
+      # (unlimited): a withdraw is a read-bounded owner DELETE, and the
+      # pair's uniqueness is V93's partial index backstop — this window
+      # bounds the growth of the fan-out the activation bridge walks.
+      providerFollowCreate:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
 
 app:
   commission:

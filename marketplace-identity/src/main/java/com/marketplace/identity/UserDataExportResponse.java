@@ -59,7 +59,8 @@ public record UserDataExportResponse(
         List<CommunityEventExportEntry> communityEvents,
         List<CommunityEventSeatExportEntry> communityEventSeats,
         List<CommunityMarketItemExportEntry> communityMarketItems,
-        List<CommunityGroupMembershipExportEntry> communityGroupMemberships
+        List<CommunityGroupMembershipExportEntry> communityGroupMemberships,
+        List<ProviderFollowExportEntry> providerFollows
 ) {
 
     /**
@@ -90,6 +91,23 @@ public record UserDataExportResponse(
     ) {
     }
 
+    /**
+     * W4 (yelp-level plan §5 — G21, the b-3 export duty): the providers the
+     * account chose to follow — as stored, withdrawn follows included (the
+     * b-5 discrimination: surface deletion is a visibility flag, not an
+     * erasure). Identity-local data, so the section composes directly in
+     * the aggregation service (the Profile precedent — no port crosses a
+     * boundary the owning module already owns).
+     */
+    public record ProviderFollowExportEntry(
+            UUID id,
+            UUID providerUserId,
+            Instant createdAt,
+            Instant updatedAt,
+            boolean deleted
+    ) {
+    }
+
     /** The fixed scope statement — the contract the sections implement. */
     static final String SCOPE_NOTICE = """
             Personal data held by this controller and provided by you (GDPR Art. 20(1)) \
@@ -104,11 +122,13 @@ public record UserDataExportResponse(
             your neighborhood events (the authored titles, descriptions and display labels — as stored, \
             including organizer-deleted ones) and your event seats (the attendance declarations — \
             held and freed, as stored); \
-            and your neighborhood market items (the listings you published — title, pickup-spot label, \
+            your neighborhood market items (the listings you published — title, pickup-spot label, \
             and the stored pricing declaration — as stored, including withdrawn and sold ones); \
-            and your neighborhood group memberships (the groups you joined — live and left, as stored).
+            your neighborhood group memberships (the groups you joined — live and left, as stored); \
+            and the providers you follow (as stored, including withdrawn follows).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
-            Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
+            Excluded: internal system columns, operational data (event archive, saved-search match ledger, \
+            the follow-alert delivery ledger), audit strings, \
             and any record where you are not a first party.
             The provider persona (provider profile) is outside this export contract \
             (account-pseudonymization-plan §5-ج provenance enumeration).""";

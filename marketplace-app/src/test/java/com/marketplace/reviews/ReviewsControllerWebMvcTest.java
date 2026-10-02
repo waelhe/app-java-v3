@@ -45,7 +45,7 @@ class ReviewsControllerWebMvcTest {
 
     private static ReviewResponse mockResponse(UUID id) {
         return new ReviewResponse(id, null, null, null, null, null, null, null, null,
-                null, null, null, null, 0L, 0L);
+                null, null, null, null, null, 0L, 0L);
     }
 
     @Test
