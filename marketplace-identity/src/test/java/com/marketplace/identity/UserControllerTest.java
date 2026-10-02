@@ -58,7 +58,8 @@ class UserControllerTest {
                 java.util.List.of(), java.util.List.of(), java.util.List.of(),
                 java.util.List.of(), java.util.List.of(),
                 java.util.List.of(), java.util.List.of(),
-                java.util.List.of()); // L35: savedSearches; L41: memberships; L42: posts+comments; #484: reactions; L49: events+seats; L50: market items
+                java.util.List.of(),
+                java.util.List.of()); // L35: savedSearches; L41: memberships; L42: posts+comments; #484: reactions; L49: events+seats; L50: market items; L51: group memberships
 
         // The /me bootstrap convention: the profile syncs from the token's
         // freshest claims before it is read (the same call /me makes).

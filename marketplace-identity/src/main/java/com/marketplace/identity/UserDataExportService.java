@@ -100,6 +100,7 @@ public class UserDataExportService {
         var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
         var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
         var communityMarketItems = communityExportPort.exportMarketItemsForOwner(user.getId());
+        var communityGroupMemberships = communityExportPort.exportGroupMembershipsForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -125,7 +126,8 @@ public class UserDataExportService {
                 communityReactions,
                 communityEvents,
                 communityEventSeats,
-                communityMarketItems);
+                communityMarketItems,
+                communityGroupMemberships);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
@@ -133,12 +135,13 @@ public class UserDataExportService {
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
                         + "communityPosts={}, communityComments={}, communityReactions={}, "
-                        + "communityEvents={}, communityEventSeats={}",
+                        + "communityEvents={}, communityEventSeats={}, communityGroupMemberships={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
                 communityPosts.size(), communityComments.size(), communityReactions.size(),
-                communityEvents.size(), communityEventSeats.size());
+                communityEvents.size(), communityEventSeats.size(),
+                communityGroupMemberships.size());
         return response;
     }
 }

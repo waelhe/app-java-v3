@@ -322,4 +322,31 @@ class CommunityExportAdapterTest {
         assertThat(entry.eventId()).isEqualTo(eventId);
         assertThat(entry.deleted()).isTrue();
     }
+
+    @Test
+    void exportGroupMembershipsForOwner_mapsTheStoredFactsIncludingLeftMemberships() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-02T08:15:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("group_id")).thenReturn(groupId.toString());
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityGroupMembershipExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportGroupMembershipsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.groupId()).isEqualTo(groupId);
+        assertThat(entry.deleted()).isTrue();
+    }
 }
