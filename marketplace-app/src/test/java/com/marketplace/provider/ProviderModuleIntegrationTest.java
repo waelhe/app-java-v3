@@ -170,6 +170,16 @@ class ProviderModuleIntegrationTest {
         when(reviewStatsPort.findStatsByProviderId(ownerUserId))
                 .thenReturn(java.util.Optional.of(new com.marketplace.shared.api.ReviewStats(
                         ownerUserId, 4.5, 12)));
+        // W2's histogram pair (the CI-measured stubbing gap of this round):
+        // the adapter's contract is "always an instance — empty buckets when
+        // unrated" (RatingDistribution.of over the SQL projection), so the
+        // slice stub answers the same honest shape.
+        when(reviewStatsPort.findRatingDistributionByProviderId(ownerUserId))
+                .thenReturn(com.marketplace.shared.api.RatingDistribution.of(ownerUserId,
+                        java.util.List.of()));
+        when(reviewStatsPort.findGeneralRatingDistributionByProviderId(ownerUserId))
+                .thenReturn(com.marketplace.shared.api.RatingDistribution.of(ownerUserId,
+                        java.util.List.of()));
         when(catalogSearchPort.listActiveByProvider(any(), any()))
                 .thenReturn(com.marketplace.shared.api.PagedResponse.of(
                         new org.springframework.data.domain.PageImpl<>(
@@ -191,6 +201,15 @@ class ProviderModuleIntegrationTest {
         var profile = providerService.create("Broker", "bio", UUID.randomUUID());
         providerService.verify(profile.getId());
         providerService.suspend(profile.getId());
+
+        // The same histogram pair stub (the unrated profile's honest empty
+        // buckets — the adapter's own contract, the CI-measured gap).
+        when(reviewStatsPort.findRatingDistributionByProviderId(any()))
+                .thenReturn(com.marketplace.shared.api.RatingDistribution.of(
+                        UUID.randomUUID(), java.util.List.of()));
+        when(reviewStatsPort.findGeneralRatingDistributionByProviderId(any()))
+                .thenReturn(com.marketplace.shared.api.RatingDistribution.of(
+                        UUID.randomUUID(), java.util.List.of()));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
                 org.springframework.data.domain.PageRequest.of(0, 20),

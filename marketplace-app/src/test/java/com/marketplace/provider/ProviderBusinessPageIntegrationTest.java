@@ -11,6 +11,7 @@ import com.marketplace.identity.UserRepository;
 import com.marketplace.identity.UserRole;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -195,7 +196,19 @@ class ProviderBusinessPageIntegrationTest {
 
     // ---- (3) the unique keys and the upsert contract -------------------------
 
+    /**
+     * The CI-measured root of this round's two failures: these tests call
+     * the SECURED service directly (outside the HTTP chain, exactly as the
+     * class's own seedProvider lesson documents) — the {@code serviceAuth}
+     * PARAMETER carries the owner for the ownership check, but plain
+     * {@code @PreAuthorize("hasRole('PROVIDER')")} still evaluates against
+     * the SecurityContext, which a direct call leaves empty
+     * (AuthenticationCredentialsNotFound). {@code @WithMockUser} seeds the
+     * context with the PROVIDER role — the ListingPriceCalendarIntegrationTest
+     * house pattern for exactly this direct-call shape.
+     */
     @Test
+    @WithMockUser(roles = "PROVIDER")
     void putHours_upsertsTheExistingDay_theUniqueKeyHolds() {
         UUID userId = UUID.randomUUID();
         ProviderProfile provider = seedProvider(userId);
@@ -218,6 +231,7 @@ class ProviderBusinessPageIntegrationTest {
     }
 
     @Test
+    @WithMockUser(roles = "PROVIDER")
     void duplicateArea_failsLoudly() {
         UUID userId = UUID.randomUUID();
         ProviderProfile provider = seedProvider(userId);
