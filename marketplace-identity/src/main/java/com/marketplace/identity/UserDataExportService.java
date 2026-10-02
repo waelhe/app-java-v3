@@ -135,12 +135,13 @@ public class UserDataExportService {
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
                         + "communityPosts={}, communityComments={}, communityReactions={}, "
-                        + "communityEvents={}, communityEventSeats={}, communityGroupMemberships={}",
+                        + "communityEvents={}, communityEventSeats={}, communityMarketItems={}, "
+                        + "communityGroupMemberships={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
                 communityPosts.size(), communityComments.size(), communityReactions.size(),
-                communityEvents.size(), communityEventSeats.size(),
+                communityEvents.size(), communityEventSeats.size(), communityMarketItems.size(),
                 communityGroupMemberships.size());
         return response;
     }

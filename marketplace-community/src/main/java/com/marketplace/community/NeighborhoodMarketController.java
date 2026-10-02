@@ -11,7 +11,6 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -217,9 +216,12 @@ public class NeighborhoodMarketController {
                     example = "48000")
             Integer priceCents,
 
-            @Pattern(regexp = "[A-Z]{3}")
             @Schema(description = "The ISO 4217 currency code — present exactly when "
-                    + "priceCents is (e.g. SAR).",
+                    + "priceCents is (e.g. SAR). The service is the single validation "
+                    + "authority (Currencies.normalize over the JDK's ISO 4217 table — "
+                    + "lowercase and surrounding whitespace are normalized, an unknown "
+                    + "code answers 400); no bean-side pattern rides ahead of it (the "
+                    + "L50 review round's own ISO-authority adoption).",
                     example = "SAR")
             String priceCurrency,
 

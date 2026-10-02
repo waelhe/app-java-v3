@@ -34,11 +34,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * L51 — the groups board's DATABASE-backed guards (the Neighborhood
  * MarketBoardIntegrationTest discipline verbatim: the service tests
  * mock the repository, so the board scoping, the historical sort key,
- * the live grouped count, the soft-delete filtering and V91's
+ * the live grouped count, the soft-delete filtering and V95's
  * one-membership unique index had no test that could see them). This
  * class runs every acceptance fact over the REAL chain: HTTP → the
  * resource-server chain → the membership gate → the REAL geo seed
- * tree → V91's real schema (the partial unique membership index, the
+ * tree → V95's real schema (the partial unique membership index, the
  * partial board index, the Envers mirrors) → the grouped count query
  * PostgreSQL actually compiles.
  *
@@ -167,7 +167,7 @@ class NeighborhoodGroupBoardIntegrationTest {
                 .andExpect(jsonPath("$.content[0].joinedByMe").value(true));
 
         // The one-membership rule: the second join answers 409 with the
-        // contract's own words (the V91 partial unique index is the
+        // contract's own words (the V95 partial unique index is the
         // backstop — the explicit 409 lands first).
         mockMvc.perform(post("/api/v1/neighborhood/groups/{groupId}/membership", club)
                         .with(jwt()))
@@ -194,11 +194,60 @@ class NeighborhoodGroupBoardIntegrationTest {
                 Integer.class, club, member);
         assertThat(leftRow).isEqualTo(1);
 
-        // The freed seat is open for a fresh join (the V91 partial unique
+        // The freed seat is open for a fresh join (the V95 partial unique
         // index admits exactly that).
         mockMvc.perform(post("/api/v1/neighborhood/groups/{groupId}/membership", club)
                         .with(jwt()))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void leave_formerNeighbor_whoSwitchedHoods_takesHisStaleMembershipWithHim() throws Exception {
+        // The review round's P1 regression, end to end: the member joins
+        // OLD_TOWN's club, then SWITCHES to the suburb (the real
+        // membership service's atomic soft-delete+insert — nothing
+        // cascades to the group row), then leaves the club. The old
+        // shape answered 403 here (the location gate rode the leave)
+        // and the stale membership was locked into the count forever;
+        // the owner-scoped leave (the /me owner-delete convention)
+        // answers 204 and the row is honestly gone from the reads.
+        // A RESIDENT reader measures the count (the membership IS the
+        // board's scope — the switched member himself now reads the
+        // suburb's board).
+        UUID reader = joinedMember(OLD_TOWN);
+        UUID member = joinedMember(OLD_TOWN);
+        UUID club = foundClub(OLD_TOWN, "نادي قراء النخيل", "2026-06-07 10:00:00");
+        asCaller(member);
+        mockMvc.perform(post("/api/v1/neighborhood/groups/{groupId}/membership", club)
+                        .with(jwt()))
+                .andExpect(status().isCreated());
+
+        // The switch — the REAL service, the REAL atomic pair.
+        membershipService.join(member, UUID.fromString(SUBURB));
+
+        // The stale membership is still counted before the leave.
+        asCaller(reader);
+        mockMvc.perform(get("/api/v1/neighborhood/groups").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].members").value(1));
+
+        // The leave the old shape refused: 204, and the count is honest.
+        asCaller(member);
+        mockMvc.perform(delete("/api/v1/neighborhood/groups/{groupId}/membership", club)
+                        .with(jwt()))
+                .andExpect(status().isNoContent());
+        asCaller(reader);
+        mockMvc.perform(get("/api/v1/neighborhood/groups").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].members").value(0));
+
+        // b-5's retention: the left row stays soft-deleted, the audit
+        // trail keeps the revision.
+        Integer leftRow = jdbc.queryForObject(
+                "SELECT count(*) FROM neighborhood_group_memberships "
+                        + "WHERE group_id = ? AND member_id = ? AND is_deleted = TRUE",
+                Integer.class, club, member);
+        assertThat(leftRow).isEqualTo(1);
     }
 
     @Test
@@ -251,7 +300,7 @@ class NeighborhoodGroupBoardIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
-    // ---- (5) V91's one-membership unique index on raw writers --------------------
+    // ---- (5) V95's one-membership unique index on raw writers --------------------
 
     @Test
     void oneMembershipUniqueIndex_firesOnRawWriters() {

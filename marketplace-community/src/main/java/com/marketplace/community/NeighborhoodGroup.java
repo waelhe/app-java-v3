@@ -35,7 +35,7 @@ import java.util.UUID;
  *       الباصات والأنشطة» — the display meta's own second half,
  *       measured from the owner's design dataset verbatim).</li>
  *   <li>NO enumerated column rides here — the registered contract has
- *       no category, and the V91 migration accordingly pins no CHECK
+ *       no category, and the V95 migration accordingly pins no CHECK
  *       (the V44 locking shape exists to guard vocabularies; a CHECK
  *       without a vocabulary is decoration, and decoration is debt).
  *       The display icon/tone derivations stay display-side (the
@@ -44,7 +44,7 @@ import java.util.UUID;
  * </ul>
  *
  * <p>Every BaseEntity column present from day one (V25/V32 lesson);
- * the Envers mirror rides V91 (the V24 convention). A group-creation
+ * the Envers mirror rides V95 (the V24 convention). A group-creation
  * write (and with it an author column and the L41 publish gate) is
  * the opened window's next PRODUCT decision — never a silent one.
  */

@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  * community commitment like a comment or a seat; a REJECTED
  * verification cannot write, and a member of a DIFFERENT neighborhood
  * is the same 403), then the one-membership check (409 — «عضوية واحدة
- * لكل جار», the V64/V73/V83 precedent; the V91 partial unique index is
+ * لكل جار», the V64/V73/V83 precedent; the V95 partial unique index is
  * the backstop — the reactions' own no-lock model, an id-pair write
  * with no capacity to count). There is no geo-port resolve here BY
  * DESIGN: the group's own {@code locationId} IS the resolved target
@@ -46,13 +46,20 @@ import java.util.stream.Collectors;
  * reads the stored fact instead of re-resolving it; the L41
  * level-discipline rides the authoring gate).
  *
- * <p><b>The leave gate (the un-RSVP's own shape verbatim):</b> the
- * same gates as the join (the honest group 404, then the membership
- * 403), and a member with no live membership on the group answers the
- * honest 404 (there is nothing to leave). The leave is the house soft
- * delete — the row stays (b-5's retention, the Envers trail keeps the
- * revision) and the seat is free for a fresh join (the V91 partial
- * unique index admits exactly that).
+ * <p><b>The leave gate (the review round's correction — the /me
+ * owner-delete convention):</b> the honest group 404, then the
+ * caller's OWN live membership — an owner-scoped removal, exactly the
+ * shape the favorites/follows/saved-searches deletes prove (find the
+ * caller's own row, the honest 404 when there is none, the house soft
+ * delete). The join's writable-membership-in-location gate does NOT
+ * ride the leave: a member who has since LEFT or SWITCHED the
+ * neighborhood would otherwise be locked out of his own stale
+ * membership forever (the review round's measured P1 — the switch is a
+ * soft-delete+insert of the membership row, nothing cascades to the
+ * group row, and the location gate would then reject the very leave
+ * that ends the stale count). A REJECTED verification cannot trap a
+ * member in a group either — leaving is not a community write, it is
+ * the removal of one's own row.
  *
  * <p><b>The board's two reader-scoped facts (the L47/L49/L50 grouped
  * shape verbatim):</b> the LIVE member count comes from ONE grouped
@@ -126,7 +133,7 @@ public class NeighborhoodGroupService {
      * group's OWN {@code locationId} (403 — a REJECTED verification
      * cannot join, and a member of a different neighborhood is the
      * same 403), then the one-membership check (409 — the product's
-     * own «عضوية واحدة لكل جار»; the V91 partial unique index is the
+     * own «عضوية واحدة لكل جار»; the V95 partial unique index is the
      * backstop — the reactions' no-lock model, an id-pair write with
      * no capacity to count). Only then the insert.
      */
@@ -148,20 +155,20 @@ public class NeighborhoodGroupService {
 
     /**
      * Leave a group — remove the caller's own LIVE membership. The
-     * gate order matches {@link #join(UUID, UUID)} (the group gate's
-     * honest 404, then the membership gate's 403), and a member with
-     * no live membership on the group answers the honest 404 (there is
-     * nothing to leave). The leave is the house soft delete — the row
-     * stays (b-5's retention, the Envers trail keeps the revision) and
-     * the seat is free for a fresh join.
+     * group's existence gate answers the honest 404 (a retired group's
+     * memberships are absent exactly as the group itself is), and the
+     * removal is owner-scoped (the /me owner-delete convention the
+     * review round measured): a member who has left or switched the
+     * neighborhood can still take his stale membership with him — the
+     * join's neighborhood gate never rides the leave. The leave is the
+     * house soft delete — the row stays (b-5's retention, the Envers
+     * trail keeps the revision) and the seat is free for a fresh join
+     * (the V95 partial unique index admits exactly that).
      */
     @Observed(name = "community.group.leave")
     public void leave(UUID memberId, UUID groupId) {
-        NeighborhoodGroup group = groupRepository.findById(groupId)
+        groupRepository.findById(groupId)
                 .orElseThrow(() -> new ResourceNotFoundException("Group", groupId));
-        requireWritableMembershipIn(memberId, group.getLocationId(),
-                "Join a neighborhood before joining its groups (PUT /api/v1/me/neighborhood)",
-                "Only members of the group's neighborhood can join it");
         NeighborhoodGroupMembership membership =
                 membershipRepository.findByGroupIdAndMemberId(groupId, memberId)
                         .orElseThrow(() -> new ResourceNotFoundException("Group membership", groupId));

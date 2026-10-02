@@ -35,8 +35,12 @@ import static org.mockito.Mockito.when;
  *       writable membership in exactly the group's own neighborhood
  *       (403 — absent, a different neighborhood, or a REJECTED
  *       verification) → the one-membership check (409) → insert;</li>
- *   <li>the leave gate order: the same two gates, then the honest 404
- *       for a member with no live membership → the house soft delete;</li>
+ *   <li>the leave gate (the review round's correction — the /me
+ *       owner-delete convention): the group's honest 404 → the honest
+ *       404 for a member with no live membership → the house soft
+ *       delete; the join's neighborhood gate NEVER rides the leave — a
+ *       former neighbor (absent membership, or switched to another
+ *       neighborhood) can still take his stale membership with him;</li>
  *   <li>the board read gate: no active membership ⇒ 403 (G-N3's
  *       default); the board carries the LIVE member count (one grouped
  *       aggregate over the page's group ids) + joinedByMe (the
@@ -168,7 +172,8 @@ class NeighborhoodGroupServiceTest {
         verify(membershipRepository).save(any());
     }
 
-    // ---------- leave: the same gates, then the honest 404 ----------
+    // ---------- leave: the owner-scoped removal (the review round's
+    // correction — the /me owner-delete convention) ----------
 
     @Test
     void leave_unknownGroup_isTheHonest404() {
@@ -180,36 +185,47 @@ class NeighborhoodGroupServiceTest {
     }
 
     @Test
-    void leave_noMembership_is403() {
+    void leave_noNeighborhoodMembershipAtAll_stillRemovesTheStaleRow() {
+        // The review round's P1 regression: a member who left the
+        // neighborhood entirely (no hood row at all) must still be able
+        // to take his stale group membership with him — the old shape
+        // answered 403 and the stale row was locked in forever.
+        // Deliberately NO hood-membership stub: the owner-scoped leave
+        // never consults the neighborhood — that is the regression's
+        // own point (the old shape answered 403 here).
         when(groupRepository.findById(groupId))
                 .thenReturn(Optional.of(groupOf(locationId)));
-        when(hoodMembershipRepository.findByUserId(callerId)).thenReturn(Optional.empty());
+        NeighborhoodGroupMembership stale = NeighborhoodGroupMembership.join(groupId, callerId);
+        when(membershipRepository.findByGroupIdAndMemberId(groupId, callerId))
+                .thenReturn(Optional.of(stale));
 
-        assertThatThrownBy(() -> service.leave(callerId, groupId))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("Join a neighborhood");
-        verify(membershipRepository, never()).delete(any());
+        service.leave(callerId, groupId);
+
+        verify(membershipRepository).delete(stale);
     }
 
     @Test
-    void leave_membershipInAnotherNeighborhood_is403() {
+    void leave_formerNeighbor_whoSwitchedHoods_removesTheStaleMembership() {
+        // The switch is a soft-delete+insert of the hood row (the
+        // membership service's own measured semantics) — nothing
+        // cascades to the group row, so the leave must not consult the
+        // hood at all (again deliberately unstubbed): the stale
+        // membership is the caller's OWN row.
         when(groupRepository.findById(groupId))
                 .thenReturn(Optional.of(groupOf(locationId)));
-        when(hoodMembershipRepository.findByUserId(callerId))
-                .thenReturn(Optional.of(membershipOf(callerId, UUID.randomUUID())));
+        NeighborhoodGroupMembership stale = NeighborhoodGroupMembership.join(groupId, callerId);
+        when(membershipRepository.findByGroupIdAndMemberId(groupId, callerId))
+                .thenReturn(Optional.of(stale));
 
-        assertThatThrownBy(() -> service.leave(callerId, groupId))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("group's neighborhood");
-        verify(membershipRepository, never()).delete(any());
+        service.leave(callerId, groupId);
+
+        verify(membershipRepository).delete(stale);
     }
 
     @Test
     void leave_noLiveMembership_isTheHonest404() {
         when(groupRepository.findById(groupId))
                 .thenReturn(Optional.of(groupOf(locationId)));
-        when(hoodMembershipRepository.findByUserId(callerId))
-                .thenReturn(Optional.of(membershipOf(callerId, locationId)));
         when(membershipRepository.findByGroupIdAndMemberId(groupId, callerId))
                 .thenReturn(Optional.empty());
 
@@ -223,8 +239,6 @@ class NeighborhoodGroupServiceTest {
     void leave_liveMembership_isTheHouseSoftDelete() {
         when(groupRepository.findById(groupId))
                 .thenReturn(Optional.of(groupOf(locationId)));
-        when(hoodMembershipRepository.findByUserId(callerId))
-                .thenReturn(Optional.of(membershipOf(callerId, locationId)));
         NeighborhoodGroupMembership live = NeighborhoodGroupMembership.join(groupId, callerId);
         when(membershipRepository.findByGroupIdAndMemberId(groupId, callerId))
                 .thenReturn(Optional.of(live));

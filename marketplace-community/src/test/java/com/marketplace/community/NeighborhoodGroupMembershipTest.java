@@ -35,7 +35,7 @@ class NeighborhoodGroupMembershipTest {
         NeighborhoodGroupMembership second = NeighborhoodGroupMembership.join(groupId, memberId);
 
         // The one-membership law lives in the SERVICE (the explicit 409)
-        // and the V91 partial unique index — never in the factory, which
+        // and the V95 partial unique index — never in the factory, which
         // stays the honest insert shape (the V73/V83 discipline verbatim:
         // a fresh seat is free for a fresh join after a leave).
         assertThat(first.getId()).isNotEqualTo(second.getId());

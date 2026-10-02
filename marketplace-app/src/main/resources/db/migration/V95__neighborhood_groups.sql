@@ -17,14 +17,20 @@
 -- membership with the frontend's display dataset, D-N7's two-sided
 -- discipline.
 --
--- NUMBERING (measured 2026-10-02): V88/V89 are allocated to the OPEN
--- W2 branch (PR #489) and V90 to the OPEN market branch (PR #490) —
--- this wave rides the market chain's head (feat/market-board @
--- 4f906ed, the chain production already runs), so V91 follows V90
--- in-tree and every open chain stays collision-free; the house
--- renumber-at-merge precedent (the yelp W0/W1 waves moved V71..V74 to
--- V84..V87 at the #484 merge — content never applied to production is
--- free to renumber) applies to whichever chain lands second.
+-- NUMBERING (measured 2026-10-02, corrected in the review round): the
+-- open branches hold the full reservation ladder — V88/V89 (W2, PR
+-- #489), V90 (the market board, PR #490 — this wave rides that chain's
+-- head feat/market-board @ 4f906ed), V91/V92 (W3 discovery, PR #492)
+-- and V93/V94 (W4 reviewer identity, PR #494). The wave first took
+-- V91 in-tree believing only the W2 reservations existed; the review
+-- round's full-queue measurement found the collision with W3's V91
+-- and moved this migration to V95 — the house renumber-at-merge
+-- precedent (the yelp W0/W1 waves moved V71..V74 to V84..V87 at the
+-- #484 merge — content never applied to production is free to
+-- renumber) applies to whichever chain lands second, and this wave
+-- lands after all four. The merge order V88..V95 stays strictly
+-- ascending at every deploy point (out-of-order is disabled by
+-- design).
 --
 -- Cross-module references stay plain UUID columns without FK constraints
 -- (the V32/V48/V52/V54/V60/V61/V73/V83/V90 discipline): location_id

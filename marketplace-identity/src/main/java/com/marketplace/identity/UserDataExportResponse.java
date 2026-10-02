@@ -105,7 +105,8 @@ public record UserDataExportResponse(
             including organizer-deleted ones) and your event seats (the attendance declarations — \
             held and freed, as stored); \
             and your neighborhood market items (the listings you published — title, pickup-spot label, \
-            and the stored pricing declaration — as stored, including withdrawn and sold ones).
+            and the stored pricing declaration — as stored, including withdrawn and sold ones); \
+            and your neighborhood group memberships (the groups you joined — live and left, as stored).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.
