@@ -92,7 +92,7 @@ class ProductionWatchdogFilesTest {
         String yml = read(".github/workflows/watchdog.yml");
         assertThat(yml).as("BASE_URL must pin the live production channel "
                         + "(SYSTEM.md §15)")
-                .contains("BASE_URL: https://app-java-v3-production.up.railway.app");
+                .contains("BASE_URL: https://app-java-v3-production-59bf.up.railway.app");
         assertThat(yml).as("liveness probe").contains("[\"/actuator/health/liveness\"]=\"200\"");
         assertThat(yml).as("readiness probe").contains("[\"/actuator/health/readiness\"]=\"200\"");
         assertThat(yml).as("auth keys probe").contains("[\"/oauth2/jwks\"]=\"200\"");
