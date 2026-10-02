@@ -87,6 +87,21 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.CommunityExportPort communityExportPort;
 
+    // W4 (G28): the public reviewer page's stats seam — the reviews module's
+    // ReviewerStatsPort (its adapter lives outside this slice); the same
+    // house pattern as the ports above. The CI-measured family round (W3's
+    // slice failures): without this mock the context boot fails on
+    // ReviewerPublicProfileService's constructor.
+    @MockitoBean
+    com.marketplace.shared.api.ReviewerStatsPort reviewerStatsPort;
+
+    // W4 (G21): the follow domain's write path resolves the client-facing
+    // provider profile through ProviderLookupPort (the provider module's
+    // adapter, outside this slice); the same house pattern. The batch form
+    // the my-follows page composes rides the same port.
+    @MockitoBean
+    com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
     // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
     // this module slice) consumes the cross-module purge port as a List —
     // the shared-api contract implemented by the six owning modules'
