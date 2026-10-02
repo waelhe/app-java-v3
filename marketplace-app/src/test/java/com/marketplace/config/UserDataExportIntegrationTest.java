@@ -590,7 +590,10 @@ class UserDataExportIntegrationTest {
      * group memberships (one live, one soft-left — the b-5 discrimination).
      */
     private void seedCommunityLegs(UUID requesterId) {
-        String oldTown = "11111111-1111-4111-8111-111111111104";
+        // A UUID object, never a String: pgjdbc binds Strings as varchar and
+        // PostgreSQL refuses the implicit varchar->uuid cast (the CI round's
+        // own measured lesson — H2-style leniency does not ride here).
+        UUID oldTown = UUID.fromString("11111111-1111-4111-8111-111111111104");
         jdbcTemplate.update(
                 """
                 INSERT INTO neighborhood_memberships (id, user_id, location_id, verification_state, member_since, is_deleted, version, created_by, created_at, updated_by, updated_at)
