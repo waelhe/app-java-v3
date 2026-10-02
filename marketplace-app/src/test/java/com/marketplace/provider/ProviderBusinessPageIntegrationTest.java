@@ -79,7 +79,7 @@ class ProviderBusinessPageIntegrationTest {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private ProviderService providerService;
+    private ProviderRepository providerRepository;
 
     @Autowired
     private ProviderBusinessPageService businessPageService;
@@ -89,9 +89,18 @@ class ProviderBusinessPageIntegrationTest {
 
     // ---- fixtures -----------------------------------------------------------
 
-    /** A live provider profile owned by the given (random) user id. */
+    /**
+     * A live provider profile owned by the given (random) user id — seeded
+     * through the REPOSITORY, the house convention every W1 integration
+     * test applies (ReviewsTwoWay/ReviewModeration/ReviewsOrganicGate):
+     * the service's {@code create} carries {@code @PreAuthorize}, so a
+     * direct call outside the HTTP chain has no Authentication in the
+     * SecurityContext and fails {@code AuthenticationCredentialsNotFound}
+     * (the CI-measured first-run lesson of this very test). The seed is
+     * data setup, not the surface under test.
+     */
     private ProviderProfile seedProvider(UUID userId) {
-        return providerService.create("شركة الاختبار", "وصف", userId);
+        return providerRepository.save(ProviderProfile.create("شركة الاختبار", "وصف", userId));
     }
 
     /** The house convention: stub the mocked provider with the caller's id. */

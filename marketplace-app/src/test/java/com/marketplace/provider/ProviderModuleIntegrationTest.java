@@ -96,6 +96,16 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.PublishedReviewsPort publishedReviewsPort;
 
+    // W2 (the business page's areas, G13): the public page resolves the
+    // declared areas' names through the geo module's cached tree — the
+    // adapter lives in the geo module, outside this provider slice, so
+    // the same @MockitoBean convention applies (the L38 lesson again:
+    // ProviderPublicPageService's expanded constructor fails the whole
+    // context boot without a slice bean — the CI-measured first run of
+    // this wave).
+    @MockitoBean
+    com.marketplace.shared.api.GeoLookupPort geoLookupPort;
+
     // The CI-measured first-run lesson: a Mockito mock answers the port's
     // default methods with null/0 — and ReviewMode.parse(null) fails loud
     // ("carries no value") instead of falling back to the default the real
@@ -116,6 +126,12 @@ class ProviderModuleIntegrationTest {
                         org.mockito.ArgumentMatchers.any(com.marketplace.shared.api.PagedRequest.class)))
                 .thenAnswer(invocation -> com.marketplace.shared.api.PagedResponse
                         .empty(invocation.getArgument(1, com.marketplace.shared.api.PagedRequest.class)));
+        // The geo tree's neutral stub — the same honest-empty posture: the
+        // slice declares no areas, so the composition never asks for a
+        // name; should it ever ask, the answer is an empty root (a null
+        // tree would NPE the flatten — the mock's default answer).
+        org.mockito.Mockito.when(geoLookupPort.getTree()).thenReturn(new com.marketplace.shared.api.GeoLookupPort.GeoNode(
+                java.util.UUID.randomUUID(), null, 0, "الجذر", "root", "root", java.util.List.of()));
     }
 
     @Autowired
