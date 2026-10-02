@@ -297,6 +297,65 @@ class SitemapServiceTest {
                 .isEqualTo(SitemapService.SITEMAP_PAGE_SIZE - 2);
     }
 
+    /**
+     * The category block's OWN capability gate (CodeRabbit/greptile W2
+     * round, adopted from the root): a site origin and a valid LISTING
+     * path with a category path that cannot vary per category — the
+     * sitemap serves the listing-only document (the pre-W2 behavior,
+     * byte-identical), never a 500 on categoryUrl's empty Optional. The
+     * registry is never even consulted.
+     */
+    @Test
+    void sitemap_categoryPathWithoutPlaceholder_servesTheListingsAlone_neverA500() throws Exception {
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
+                properties(BASE, "/listings/{id}", "/categories", List.of()));
+        UUID id = UUID.randomUUID();
+        stubCount(1);
+        stubPage(List.of(new SitemapEntry(id, NOW)), 1);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW)));
+
+        SitemapService.SeoDocument document = service.sitemap(null);
+
+        assertThat(document.body()).contains("<loc>" + BASE + "/listings/" + id + "</loc>");
+        assertThat(document.body()).doesNotContain("/categories/");
+        assertValidAgainstXsd(document.body(), "/seo/sitemap.xsd");
+        // The OFF capability never consults the registry — the gate stands
+        // before the load, not after it.
+        verify(categoryRepository, org.mockito.Mockito.never())
+                .findAll(any(org.springframework.data.domain.Sort.class));
+    }
+
+    /**
+     * The zero-limit first page (greptile W2 round, adopted): exactly
+     * 50,000 live categories fill the whole first page's capacity — the
+     * listing query is SKIPPED (a LIMIT 0 fetch answers nothing), and the
+     * page serves the categories alone.
+     */
+    @Test
+    void sitemap_firstPageFilledByCategoriesAlone_skipsTheZeroLimitListingQuery() throws Exception {
+        List<Category> full = java.util.stream.IntStream.rangeClosed(1, SitemapService.SITEMAP_PAGE_SIZE)
+                .mapToObj(i -> category("cat-" + i, NOW))
+                .toList();
+        stubCount(1);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(full);
+
+        // The root answers the index (50,001 total > one page); page 1 is
+        // the categories' own page.
+        assertThat(service.sitemap(null).body()).contains("<sitemapindex");
+        SitemapService.SeoDocument firstPage = service.sitemap(1);
+
+        assertThat(firstPage.body()).contains("<loc>" + BASE + "/categories/cat-1</loc>");
+        assertThat(firstPage.body()).doesNotContain("/listings/");
+        // No row was EVER fetched: the root answered the index before any
+        // fetch, and the categories-only first page skips the zero-limit
+        // listing query (the greptile-adopted skip — never a LIMIT 0 run).
+        verify(repository, org.mockito.Mockito.never()).findSitemapEntries(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     // ---- helpers ----
 
     private void stubPage(List<SitemapEntry> content, long total) {
@@ -315,6 +374,13 @@ class SitemapServiceTest {
     private static CatalogProperties properties(String base, String listingPath, List<String> disallow) {
         return new CatalogProperties(null,
                 new CatalogProperties.Seo(base, listingPath, "/categories/{code}", disallow),
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
+    }
+
+    private static CatalogProperties properties(String base, String listingPath,
+                                                 String categoryPath, List<String> disallow) {
+        return new CatalogProperties(null,
+                new CatalogProperties.Seo(base, listingPath, categoryPath, disallow),
                 new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
     }
 

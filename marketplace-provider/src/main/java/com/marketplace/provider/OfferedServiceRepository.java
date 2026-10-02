@@ -40,4 +40,23 @@ public interface OfferedServiceRepository extends JpaRepository<OfferedService, 
      * ({@code uq_provider_services_position}).
      */
     Optional<OfferedService> findByProviderIdAndPosition(UUID providerId, int position);
+
+    /**
+     * The business-page write family's advisory transaction lock — the W1
+     * r9 measured shape ({@code ReviewRepository.lockReviewerDecisions}),
+     * one family deeper: seed 11 names this family away from the media
+     * locks' 0 and the reviewer decisions' 7, and
+     * {@code hashtextextended(:providerId, 11)} maps the provider UUID text
+     * to one bigint lock key (stable across sessions, PostgreSQL's own
+     * hash function). Held until commit, it serializes every
+     * position/window allocation on the business-page surface for ONE
+     * provider: the max+1 allocation never double-issues a position, the
+     * week's upsert never races a same-day insert, and the parking
+     * position {@code max+1} stays free by construction between the read
+     * and the flush (greptile W2 round, adopted from the root).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            value = "SELECT pg_advisory_xact_lock(hashtextextended(:providerId, 11))",
+            nativeQuery = true)
+    void lockBusinessPageWrites(@org.springframework.data.repository.query.Param("providerId") String providerId);
 }

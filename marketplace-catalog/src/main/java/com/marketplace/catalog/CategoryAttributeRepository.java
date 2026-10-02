@@ -46,4 +46,29 @@ public interface CategoryAttributeRepository extends JpaRepository<CategoryAttri
             "select a from CategoryAttribute a join Category c on a.categoryId = c.id "
                     + "where c.code = :categoryCode order by a.position asc")
     List<CategoryAttribute> findByCategoryCodeOrderByPositionAsc(String categoryCode);
+
+    /**
+     * The position-collision seam for the amendment surface (greptile W2
+     * round, adopted from the root): does any OTHER live attribute of this
+     * category already hold the requested position? The unique identity key
+     * is (category, code) — position uniqueness over the live rows is the
+     * service's own law, and this check is its read form.
+     */
+    boolean existsByCategoryIdAndPositionAndIdNot(UUID categoryId, int position, UUID id);
+
+    /**
+     * The registry's advisory transaction lock — the W1 r9 measured shape
+     * ({@code pg_advisory_xct_lock(hashtextextended(:categoryId, 12))}),
+     * seed 12 naming this family away from the media locks' 0, the reviewer
+     * decisions' 7, and the business-page writes' 11. Held to commit, it
+     * serializes the registry's position writes for ONE category: two
+     * concurrent registrations never read the same maximum, and the
+     * amendment's collision check can never race a same-position amendment
+     * into a duplicate (the D-N5 total order's write-side guard).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            value = "SELECT pg_advisory_xct_lock(hashtextextended(:categoryId, 12))",
+            nativeQuery = true)
+    void lockRegistryWrites(
+            @org.springframework.data.repository.query.Param("categoryId") String categoryId);
 }

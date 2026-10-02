@@ -203,12 +203,35 @@ public class ProviderPublicPageService {
         // aggregate pair from the rating block above, the declared hours in
         // the canonical openingHours form, the resolved area names, and the
         // bounded leading sample of the page's own reviews block.
+        //
+        // The sample's population follows the aggregate it sits beside
+        // (greptile W2 round, adopted from the root): in VERIFIED_ONLY and
+        // HYBRID the AggregateRating IS the verified pair, so an ORGANIC
+        // row (a mode-switch leftover the visible page honestly still
+        // lists) must not enter the structured sample — the aggregate and
+        // its evidence stay one population. In OPEN the aggregate is the
+        // merged pair, so both origins qualify.
+        List<PublishedReviewView> jsonLdReviews = switch (mode) {
+            case VERIFIED_ONLY, HYBRID -> reviews.content().stream()
+                    .filter(row -> PublishedReviewView.ORIGIN_BOOKING.equals(row.origin()))
+                    .toList();
+            case OPEN -> reviews.content();
+        };
         ProviderBusinessJsonLd jsonLd = ProviderBusinessJsonLd.of(
                 profile,
                 hours,
-                areaViews.stream().map(ProviderPublicPageResponse.ServiceAreaView::nameAr).toList(),
+                // Unresolved areas never enter the structured data (greptile
+                // W2 round, adopted): a geo node soft-deleted after the
+                // declaration leaves the FK honest but the live tree no
+                // longer supplies a name — a Place without a usable name is
+                // invalid markup, so only resolved names ride; the visible
+                // page keeps the honest id row (the L39 rule).
+                areaViews.stream()
+                        .map(ProviderPublicPageResponse.ServiceAreaView::nameAr)
+                        .filter(java.util.Objects::nonNull)
+                        .toList(),
                 ProviderBusinessJsonLd.aggregateOf(block.ratingAverage(), block.reviewCount()),
-                reviews.content(),
+                jsonLdReviews,
                 providerProperties.seo().providerUrl(profile.getId()));
 
         return new ProviderPublicPageResponse(

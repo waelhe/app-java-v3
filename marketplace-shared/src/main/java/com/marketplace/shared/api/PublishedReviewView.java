@@ -54,4 +54,15 @@ public record PublishedReviewView(
         long reviewerReviewCount,
         long helpfulCount
 ) {
+
+    /**
+     * The origin value the reviews module stores for a booking-gated review
+     * (the V85 {@code origin} column's CHECK-held vocabulary, mirrored here
+     * because THIS record is the cross-module contract that carries it —
+     * consumers outside the reviews module must not hardcode the literal).
+     */
+    public static final String ORIGIN_BOOKING = "BOOKING";
+
+    /** The origin value the reviews module stores for an organic review ({@code ORGANIC}). */
+    public static final String ORIGIN_ORGANIC = "ORGANIC";
 }

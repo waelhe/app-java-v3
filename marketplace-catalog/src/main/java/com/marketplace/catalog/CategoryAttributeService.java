@@ -63,16 +63,19 @@ public class CategoryAttributeService {
      * The administrative registration: one attribute definition on one
      * category. The category must exist (the FK's own law, surfaced
      * loudly); the (category, code) identity must be free (the unique
-     * key's read form). Position auto-allocates as max+1.
+     * key's read form). Position auto-allocates as max+1 — under the
+     * registry's advisory lock, so concurrent registrations for one
+     * category never read the same maximum (the W1 r9 measured shape).
      */
     @Observed(name = "catalog.category-attributes.register")
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public CategoryAttribute register(UUID categoryId, String code, String labelEn,
                                        String labelAr, CategoryAttributeType valueType) {
-        categoryRepository.findById(categoryId)
+        Category category = categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Category not found: " + categoryId));
+        categoryAttributeRepository.lockRegistryWrites(category.getId().toString());
         if (categoryAttributeRepository.findByCategoryIdAndCode(categoryId, code).isPresent()) {
             throw new org.springframework.dao.DataIntegrityViolationException(
                     "Attribute code already registered for this category: " + code);
@@ -86,7 +89,12 @@ public class CategoryAttributeService {
     /**
      * The administrative amendment: labels, type and position replace
      * (PUT semantics); the identity pair (category, code) is immutable —
-     * a re-keyed attribute is a new registration.
+     * a re-keyed attribute is a new registration. The requested position
+     * must not collide with another live attribute of the same category
+     * (greptile W2 round, adopted from the root): the registry's reads
+     * sort by position alone, so a duplicate position would leave the
+     * display order undefined — the loud rejection teaches the caller
+     * instead (the addArea duplicate's own exception family).
      */
     @Observed(name = "catalog.category-attributes.update")
     @Transactional
@@ -94,6 +102,16 @@ public class CategoryAttributeService {
     public CategoryAttribute update(UUID attributeId, String labelEn, String labelAr,
                                      CategoryAttributeType valueType, int position) {
         CategoryAttribute attribute = owned(attributeId);
+        // The registry's advisory lock FIRST (see register): the collision
+        // check below is only race-free against concurrent same-category
+        // writes when both hold the lock.
+        categoryAttributeRepository.lockRegistryWrites(attribute.getCategoryId().toString());
+        if (position != attribute.getPosition()
+                && categoryAttributeRepository.existsByCategoryIdAndPositionAndIdNot(
+                        attribute.getCategoryId(), position, attribute.getId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException(
+                    "Position already held by another attribute of this category: " + position);
+        }
         attribute.update(labelEn, labelAr, valueType, position);
         return categoryAttributeRepository.save(attribute);
     }

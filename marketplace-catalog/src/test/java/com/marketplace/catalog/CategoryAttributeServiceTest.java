@@ -113,6 +113,68 @@ class CategoryAttributeServiceTest {
         verify(repository).delete(existing);
     }
 
+    /**
+     * greptile W2 round, adopted from the root: a position held by ANOTHER
+     * live attribute of the same category is rejected loudly — the
+     * registry's reads sort by position alone, so a duplicate position
+     * would leave the display order undefined (the D-N5 total order's
+     * write-side guard). Keeping one's OWN position is never a collision
+     * (the no-change amendment).
+     */
+    @Test
+    void update_positionHeldByAnotherAttribute_isRejectedLoudly() {
+        CategoryAttribute existing = saved(2);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.existsByCategoryIdAndPositionAndIdNot(categoryId, 5, existing.getId()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(existing.getId(), "Wireless", "لاسلكي",
+                CategoryAttributeType.TEXT, 5))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("Position already held");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void update_keepingItsOwnPosition_isNeverACollision() {
+        CategoryAttribute existing = saved(2);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CategoryAttribute amended = service.update(existing.getId(), "Wireless", "لاسلكي",
+                CategoryAttributeType.TEXT, 2);
+
+        assertThat(amended.getPosition()).isEqualTo(2);
+        // The self-position re-declare never asks the collision seam.
+        verify(repository, never()).existsByCategoryIdAndPositionAndIdNot(any(), org.mockito.ArgumentMatchers.anyInt(), any());
+    }
+
+    /**
+     * The registry's advisory lock (the W1 r9 measured shape, one family
+     * deeper): every position-bearing write — registration and amendment
+     * alike — takes the category's lock BEFORE it reads the maximum or
+     * checks the collision, so concurrent same-category writes serialize
+     * instead of racing a duplicate position into the registry.
+     */
+    @Test
+    void writeSurfaces_acquireTheRegistryAdvisoryLock() {
+        when(repository.findByCategoryIdAndCode(categoryId, "wifi")).thenReturn(Optional.empty());
+        when(repository.findMaxPositionByCategoryId(categoryId)).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        CategoryAttribute existing = saved(0);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        service.register(categoryId, "wifi", "Wi-Fi", "واي فاي",
+                CategoryAttributeType.BOOLEAN);
+        service.update(existing.getId(), "Wi-Fi", "واي فاي",
+                CategoryAttributeType.BOOLEAN, 0);
+
+        // Both writes lock (the registration resolves the category row —
+        // whose fixture id is the factory's own random one — so the lock
+        // keys are asserted by COUNT, not by literal).
+        verify(repository, org.mockito.Mockito.times(2)).lockRegistryWrites(org.mockito.ArgumentMatchers.anyString());
+    }
+
     @Test
     void reads_serveBothKeys_inPositionOrder() {
         List<CategoryAttribute> ordered = List.of(saved(0), saved(1));

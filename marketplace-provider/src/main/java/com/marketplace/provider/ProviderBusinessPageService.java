@@ -27,6 +27,18 @@ import java.util.UUID;
  * same structural answer the module applied to the stats and public-page
  * concerns.
  *
+ * <p><b>Concurrency (the W1 r9 measured answer, one family deeper):</b> every
+ * position/window allocation on this surface runs under the provider's
+ * business-page advisory transaction lock
+ * ({@code pg_advisory_xct_lock(hashtextextended(:providerId, 11))} — seed 11
+ * names this family away from the media locks' 0 and the reviewer
+ * decisions' 7), so two concurrent writes for one provider serialize in
+ * the database: the max+1 allocation never double-issues a position, and
+ * the week's upsert never races a same-day insert into the unique key.
+ * Hours and services share the family lock deliberately — the blocks are
+ * one declared surface with short transactions; serializing them costs
+ * nothing and keeps the reasoning one sentence long.
+ *
  * <p><b>Ownership (the module's own law — {@code ProviderService
  * .verifyOwnership}'s exact rule, admin bypass included):</b> every write
  * resolves the profile then checks the caller owns it; any mismatch is
@@ -72,12 +84,28 @@ public class ProviderBusinessPageService {
     public List<BusinessHour> replaceHours(UUID providerId, List<HoursEntry> entries,
                                            Authentication authentication) {
         ProviderProfile provider = owned(providerId, authentication);
+        // The allocation family's advisory lock (see the class javadoc):
+        // held to commit, so a concurrent replacement of the same week —
+        // or a same-day first-declare racing this upsert — serializes
+        // instead of colliding on the unique key (greptile W2 round,
+        // adopted from the root).
+        offeredServiceRepository.lockBusinessPageWrites(provider.getId().toString());
         List<HoursEntry> declared = entries == null ? List.of() : entries;
         if (declared.size() > 7) {
             throw new IllegalArgumentException("at most 7 entries — one per weekday");
         }
         Set<Integer> declaredDays = new HashSet<>();
         for (HoursEntry entry : declared) {
+            // The request shape carries no field constraints (CodeRabbit
+            // W2 round, adopted): a null day/time must teach the caller
+            // with a 400, never surface as an NPE-driven 500.
+            if (entry == null || entry.dayOfWeek() == null) {
+                throw new IllegalArgumentException("dayOfWeek is required");
+            }
+            if (entry.opensAt() == null || entry.closesAt() == null) {
+                throw new IllegalArgumentException(
+                        "opensAt and closesAt are required: " + entry.dayOfWeek());
+            }
             if (!declaredDays.add(entry.dayOfWeek().getValue())) {
                 throw new IllegalArgumentException(
                         "duplicate weekday: " + entry.dayOfWeek());
@@ -127,6 +155,11 @@ public class ProviderBusinessPageService {
         if (entry == null) {
             throw new IllegalArgumentException("service entry is required");
         }
+        // The allocation family's advisory lock (see the class javadoc):
+        // max+1 allocation is safe under it — two concurrent adds for one
+        // provider can never read the same maximum (greptile W2 round,
+        // adopted from the root).
+        offeredServiceRepository.lockBusinessPageWrites(provider.getId().toString());
         int nextPosition = offeredServiceRepository.findMaxPositionByProviderId(provider.getId())
                 .orElse(-1) + 1;
         return offeredServiceRepository.save(OfferedService.create(
@@ -155,10 +188,15 @@ public class ProviderBusinessPageService {
     }
 
     /**
-     * Moves one declared service within the menu — the swap form: the
-     * target position's occupant (if any) takes the mover's old position,
-     * the mover takes the target. Two writes, one transaction, the unique
-     * key never violated.
+     * Moves one declared service within the menu — the swap form, in the
+     * collision-free parking order (CodeRabbit/greptile W2 round, adopted
+     * from the root): the mover first parks on {@code max(live)+1} — a
+     * position free by construction under the family lock — and each step
+     * is FLUSHED before the next row takes a vacated position, so every
+     * intermediate state satisfies {@code uq_provider_services_position}
+     * (PostgreSQL checks the unique index on each row UPDATE, not at
+     * commit — an in-memory "swap in one flush" would abort the whole
+     * transaction on the first UPDATE).
      */
     @Observed(name = "provider.services.move")
     @Transactional
@@ -166,18 +204,34 @@ public class ProviderBusinessPageService {
     public List<OfferedService> moveService(UUID providerId, UUID serviceId, int newPosition,
                                             Authentication authentication) {
         ProviderProfile provider = owned(providerId, authentication);
+        // The allocation family's advisory lock (see the class javadoc):
+        // the parking position max+1 is free BY CONSTRUCTION only when no
+        // concurrent write can claim it between the read and the flush.
+        offeredServiceRepository.lockBusinessPageWrites(provider.getId().toString());
         OfferedService mover = ownedService(provider.getId(), serviceId);
         if (newPosition < 0) {
             throw new IllegalArgumentException("position must be non-negative");
         }
         if (newPosition != mover.getPosition()) {
-            offeredServiceRepository.findByProviderIdAndPosition(provider.getId(), newPosition)
-                    .ifPresent(occupant -> {
-                        occupant.moveTo(mover.getPosition());
-                        offeredServiceRepository.save(occupant);
-                    });
-            mover.moveTo(newPosition);
-            offeredServiceRepository.save(mover);
+            int oldPosition = mover.getPosition();
+            OfferedService occupant = offeredServiceRepository
+                    .findByProviderIdAndPosition(provider.getId(), newPosition).orElse(null);
+            if (occupant != null) {
+                // Occupied target: park, vacate, land — each flush unique-safe.
+                // (max+1 > every live position, and the target is occupied —
+                // so the park is always distinct from both endpoints.)
+                int parking = offeredServiceRepository
+                        .findMaxPositionByProviderId(provider.getId()).orElse(-1) + 1;
+                mover.moveTo(parking);
+                offeredServiceRepository.saveAndFlush(mover);
+                occupant.moveTo(oldPosition);
+                offeredServiceRepository.saveAndFlush(occupant);
+                mover.moveTo(newPosition);
+                offeredServiceRepository.save(mover);
+            } else {
+                mover.moveTo(newPosition);
+                offeredServiceRepository.save(mover);
+            }
         }
         return offeredServiceRepository.findByProviderIdOrderByPositionAsc(provider.getId());
     }

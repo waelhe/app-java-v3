@@ -154,8 +154,18 @@ public class SitemapService {
         // currently carry its name; the sitemap advertises PAGES, not
         // inventory). Soft-deleted rows are structurally filtered by
         // @SoftDelete. The count rides the root's own capacity math.
-        List<Category> categories = categoryRepository
-                .findAll(org.springframework.data.domain.Sort.by(
+        //
+        // The category block carries its OWN capability gate (CodeRabbit
+        // W2 round, adopted from the root): the sitemap's entry gate checks
+        // the LISTING path, so an operator binding a site origin but a
+        // category path without {code} would reach categoryUrl's empty
+        // Optional and a 500. The honest degradation: the category pages
+        // drop out of the sitemap (the listing-only document this layer
+        // served before W2, byte-identical) — the capability that is OFF
+        // is the category pages, not the sitemap.
+        List<Category> categories = seo.categoryPagesOff()
+                ? List.of()
+                : categoryRepository.findAll(org.springframework.data.domain.Sort.by(
                         org.springframework.data.domain.Sort.Direction.ASC, "code"));
         long categoryCount = categories.size();
         if (categoryCount > SITEMAP_PAGE_SIZE) {
@@ -205,9 +215,15 @@ public class SitemapService {
         // derived page number meaningless — the exact pair is the honest
         // shape; the id-ascending total order keeps offset pagination
         // duplicate-free and omission-free between crawl visits).
+        //
+        // A zero listing limit (greptile W2 round, adopted): exactly
+        // 50,000 live categories fill the whole first page's capacity — the
+        // listing query would run with LIMIT 0 and answer nothing. The
+        // categories ARE the page; the query is skipped, not run empty.
         Pageable pageable = new ShiftedPageable(offset, limit, Sort.by(Sort.Direction.ASC, "id"));
-        Page<SitemapEntry> entries = listingRepository.findSitemapEntries(
-                ListingStatus.ACTIVE, now, pageable);
+        Page<SitemapEntry> entries = limit > 0
+                ? listingRepository.findSitemapEntries(ListingStatus.ACTIVE, now, pageable)
+                : Page.empty(pageable);
         if (entries.getContent().isEmpty() && !firstPage) {
             // An out-of-range page has nothing to enumerate — 404. (The
             // first page answered already — the root's count said so.)

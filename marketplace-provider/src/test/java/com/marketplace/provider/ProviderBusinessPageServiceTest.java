@@ -228,18 +228,47 @@ class ProviderBusinessPageServiceTest {
     }
 
     @Test
-    void moveService_swapsWithTheOccupant() {
+    void moveService_swapsWithTheOccupant_throughTheParkingOrder() {
         OfferedService mover = OfferedService.create(PROVIDER_ID, "a", null, null, null, null, 0);
         OfferedService occupant = OfferedService.create(PROVIDER_ID, "b", null, null, null, null, 3);
         when(offeredServiceRepository.findById(mover.getId())).thenReturn(Optional.of(mover));
         when(offeredServiceRepository.findByProviderIdAndPosition(PROVIDER_ID, 3))
                 .thenReturn(Optional.of(occupant));
+        when(offeredServiceRepository.findMaxPositionByProviderId(PROVIDER_ID))
+                .thenReturn(Optional.of(3));
+        List<String> flushes = new java.util.ArrayList<>();
+        when(offeredServiceRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            OfferedService row = inv.getArgument(0);
+            flushes.add(row.getTitle() + "@" + row.getPosition());
+            return row;
+        });
         when(offeredServiceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.moveService(PROVIDER_ID, mover.getId(), 3, owner);
 
+        // The parking order (CodeRabbit/greptile W2 round, adopted): the
+        // mover parks at max+1 FIRST (a position free by construction),
+        // the occupant lands on the mover's vacated old position, then the
+        // mover lands on the target — every flushed state satisfies
+        // uq_provider_services_position (PostgreSQL checks the unique
+        // index per row UPDATE, not at commit).
+        assertThat(flushes).containsExactly("a@4", "b@0");
         assertThat(mover.getPosition()).isEqualTo(3);
-        assertThat(occupant.getPosition()).isZero(); // the swap form
+        assertThat(occupant.getPosition()).isZero(); // the swap's final state
+    }
+
+    @Test
+    void moveService_toAFreePosition_writesTheMoverAlone() {
+        OfferedService mover = OfferedService.create(PROVIDER_ID, "a", null, null, null, null, 0);
+        when(offeredServiceRepository.findById(mover.getId())).thenReturn(Optional.of(mover));
+        when(offeredServiceRepository.findByProviderIdAndPosition(PROVIDER_ID, 2))
+                .thenReturn(Optional.empty());
+        when(offeredServiceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.moveService(PROVIDER_ID, mover.getId(), 2, owner);
+
+        assertThat(mover.getPosition()).isEqualTo(2);
+        verify(offeredServiceRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -250,6 +279,53 @@ class ProviderBusinessPageServiceTest {
         service.moveService(PROVIDER_ID, mover.getId(), 2, owner);
 
         verify(offeredServiceRepository, never()).save(any());
+        verify(offeredServiceRepository, never()).saveAndFlush(any());
+    }
+
+    // -- the family advisory lock (greptile W2 round, adopted) ------------------
+
+    @Test
+    void writeSurfaces_acquireTheBusinessPageAdvisoryLock() {
+        when(businessHourRepository.findByProviderIdOrderByDayOfWeekAsc(PROVIDER_ID))
+                .thenReturn(List.of());
+        when(offeredServiceRepository.findMaxPositionByProviderId(PROVIDER_ID))
+                .thenReturn(Optional.empty());
+        when(offeredServiceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Every allocation-bearing write takes the provider's family lock
+        // BEFORE it reads the maximum or the declared week — held to commit,
+        // the W1 r9 measured shape one family deeper.
+        service.replaceHours(PROVIDER_ID, List.of(), owner);
+        service.addService(PROVIDER_ID,
+                new ProviderBusinessPageService.ServiceEntry("t", null, null, null, null), owner);
+        OfferedService mover = OfferedService.create(PROVIDER_ID, "a", null, null, null, null, 0);
+        when(offeredServiceRepository.findById(mover.getId())).thenReturn(Optional.of(mover));
+        when(offeredServiceRepository.findByProviderIdAndPosition(PROVIDER_ID, 1))
+                .thenReturn(Optional.empty());
+        service.moveService(PROVIDER_ID, mover.getId(), 1, owner);
+
+        verify(offeredServiceRepository, org.mockito.Mockito.times(3))
+                .lockBusinessPageWrites(PROVIDER_ID.toString());
+    }
+
+    // -- the request-shape null guards (CodeRabbit W2 round, adopted) -----------
+
+    @Test
+    void replaceHours_nullDayOfWeek_isRejectedAsABadRequest() {
+        assertThatThrownBy(() -> service.replaceHours(PROVIDER_ID, java.util.Arrays.asList(
+                new ProviderBusinessPageService.HoursEntry(null, LocalTime.parse("09:00"),
+                        LocalTime.parse("17:00"))), owner))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("dayOfWeek is required");
+    }
+
+    @Test
+    void replaceHours_nullWindow_isRejectedAsABadRequest() {
+        assertThatThrownBy(() -> service.replaceHours(PROVIDER_ID, java.util.Arrays.asList(
+                new ProviderBusinessPageService.HoursEntry(DayOfWeek.MONDAY, null,
+                        LocalTime.parse("17:00"))), owner))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("opensAt and closesAt are required");
     }
 
     @Test
