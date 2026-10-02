@@ -104,7 +104,13 @@ public class ListingFavoritesService {
         if (ids.isEmpty()) {
             return Map.of();
         }
-        return listingRepository.findAllById(ids).stream()
+        // W3 (the review round's root fix): the read INCLUDES soft-deleted
+        // listings — a saved listing its provider later withdrew stays saved
+        // (the relation is the member's own data), and the view's contract
+        // carries the listing's CURRENT truth. Hibernate's @SoftDelete
+        // filter hides those rows from findAllById; the native read is the
+        // channel that sees them (the export adapters' own reasoning).
+        return listingRepository.findAllByIdIncludingDeleted(ids).stream()
                 .collect(Collectors.toMap(ProviderListing::getId, Function.identity()));
     }
 

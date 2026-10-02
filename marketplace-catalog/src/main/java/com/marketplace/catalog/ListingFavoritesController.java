@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -49,8 +50,16 @@ public class ListingFavoritesController {
             @Parameter(description = "The page request; the sort is forced to newest-saved first")
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
+        // W3 (the review round's root fix): the contract is the COMPLETE
+        // (savedAt, id) key, so the sort is FORCED here — @PageableDefault is
+        // a default only (a caller may pass any sort parameter), and
+        // createdAt DESC alone leaves equal-timestamp rows unordered across
+        // page boundaries (the D-N5 total-order law). The requested page
+        // number and size ride through unchanged.
+        Pageable enforced = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
         return ResponseEntity.ok(
-                favoritesService.myFavorites(currentUserProvider.getCurrentUserId(authentication), pageable));
+                favoritesService.myFavorites(currentUserProvider.getCurrentUserId(authentication), enforced));
     }
 
     @PostMapping("/me/favorites/{listingId}")

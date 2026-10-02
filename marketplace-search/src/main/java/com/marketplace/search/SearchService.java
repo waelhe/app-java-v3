@@ -553,7 +553,16 @@ public class SearchService {
             // HTTP 500).
             return SpringPagination.toPage(catalogSearchPort.searchFullText(criteria, SpringPagination.toPagedRequest(pageable)), pageable);
         }
-        if (criteria.minPrice() != null || criteria.maxPrice() != null || criteria.guests() != null) {
+        if (criteria.minPrice() != null || criteria.maxPrice() != null || criteria.guests() != null
+                // W3 (G17, greptile round 1, adopted from the root): a
+                // floor-carrying BROWSE request (no price/guests/category —
+                // e.g. `GET /search?minRating=4`) must route onto the
+                // criteria query, where the catalog resolves the rating-floor
+                // set — the legacy listActive/listByCategory reads carry no
+                // criteria and would silently bypass the floor. The same
+                // routing applies to a category+floor request (category is
+                // an optional predicate of the same query).
+                || criteria.hasMinRating()) {
             // I6: guests joins price as an optional predicate of the criteria
             // query — a guests-only criterion routes here too (NOT listActive,
             // which would silently bypass the capacity filter).

@@ -55,6 +55,7 @@ public class UserDataExportService {
     private final NotificationExportPort notificationExportPort;
     private final SavedSearchExportPort savedSearchExportPort;
     private final CommunityExportPort communityExportPort;
+    private final com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
 
     public UserDataExportService(BookingExportPort bookingExportPort,
                                  ReviewExportPort reviewExportPort,
@@ -62,7 +63,8 @@ public class UserDataExportService {
                                  MediaExportPort mediaExportPort,
                                  NotificationExportPort notificationExportPort,
                                  SavedSearchExportPort savedSearchExportPort,
-                                 CommunityExportPort communityExportPort) {
+                                 CommunityExportPort communityExportPort,
+                                 com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort) {
         this.bookingExportPort = bookingExportPort;
         this.reviewExportPort = reviewExportPort;
         this.messagingExportPort = messagingExportPort;
@@ -70,6 +72,7 @@ public class UserDataExportService {
         this.notificationExportPort = notificationExportPort;
         this.savedSearchExportPort = savedSearchExportPort;
         this.communityExportPort = communityExportPort;
+        this.listingFavoritesExportPort = listingFavoritesExportPort;
     }
 
     /**
@@ -99,6 +102,9 @@ public class UserDataExportService {
         var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());
         var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
         var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
+        // W3 (G19, the review round's export leg): the member's saved
+        // listings — the relation is the subject's own declared data.
+        var listingFavorites = listingFavoritesExportPort.exportForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -123,7 +129,8 @@ public class UserDataExportService {
                 communityComments,
                 communityReactions,
                 communityEvents,
-                communityEventSeats);
+                communityEventSeats,
+                listingFavorites);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the

@@ -53,6 +53,18 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Set<UUID> findIdsByStatusAndProviderIdIn(ListingStatus status, Collection<UUID> providerIds);
 
     /**
+     * W3 (G19, the review round's root fix): the favorites view's read —
+     * the batch INCLUDING soft-deleted listings. Hibernate's @SoftDelete
+     * filter hides withdrawn rows from every generated query (findAllById
+     * included), but a saved listing that its provider later withdrew
+     * STAYS saved (the relation is the member's own data, b-5); the view
+     * must carry its title and current truth. Native SQL is the one
+     * channel that sees those rows (the export adapters' own reasoning).
+     */
+    @Query(value = "select * from provider_listings where id in (?1)", nativeQuery = true)
+    List<ProviderListing> findAllByIdIncludingDeleted(Collection<UUID> ids);
+
+    /**
      * W3 (yelp-level plan §5 — G18): the ranking job's KEYSET page — the
      * clean-ACTIVE set (status ACTIVE, not yet expired — the sitemap's own
      * clean-set law: never rank what is about to leave the public surface)

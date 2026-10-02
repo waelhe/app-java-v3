@@ -55,7 +55,8 @@ public record UserDataExportResponse(
         List<CommunityCommentExportEntry> communityComments,
         List<CommunityReactionExportEntry> communityReactions,
         List<CommunityEventExportEntry> communityEvents,
-        List<CommunityEventSeatExportEntry> communityEventSeats
+        List<CommunityEventSeatExportEntry> communityEventSeats,
+        List<com.marketplace.shared.api.ListingFavoriteExportEntry> listingFavorites
 ) {
 
     /**
@@ -96,7 +97,9 @@ public record UserDataExportResponse(
             your neighborhood memberships (the self-declared home location — active and left, as stored); \
             your neighborhood posts and comments (the community texts you authored — as stored, \
             including author-deleted ones, with the moderation status of each post); \
-            and your neighborhood reactions (the posts you thanked — as stored, including removed ones).
+            and your neighborhood reactions (the posts you thanked — as stored, including removed ones); \
+            and the listings you saved for later (your favorites — the save/withdraw relation itself, \
+            as stored, including withdrawn ones).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.

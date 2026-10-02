@@ -234,9 +234,13 @@ class SearchRankingIntegrationTest {
     void ratingSort_prefersTheCompleteReviewRichListing_atEqualStars_andNullsLast() {
         // The job's own seam: one full pass writes the composite column for
         // every clean-ACTIVE listing (the cron orchestrator is the wrapper;
-        // the executor is the transaction boundary under test).
+        // the executor is the transaction boundary under test). A NONEMPTY
+        // batch returns its last listing id — the keyset cursor — even when
+        // the whole roster fit one batch; only an EMPTY batch answers null
+        // (greptile round 1, adopted: the drained-run shape).
         UUID cursor = rankingBatchExecutor.rankOneBatch(null, 100);
-        assertThat(cursor).isNull(); // the whole roster fit one batch
+        assertThat(cursor).isNotNull();
+        assertThat(rankingBatchExecutor.rankOneBatch(cursor, 100)).isNull(); // drained
 
         // A listing born AFTER the pass keeps the honest NULL — the
         // not-yet-ranked state must order LAST, never first.
@@ -248,9 +252,15 @@ class SearchRankingIntegrationTest {
             }
         }));
 
+        // The CONTROLLER-mapped form: the public name "rating" is normalized
+        // to rankingScore + the id tiebreak BEFORE the service (the single
+        // normalization point) — the service consumes that one
+        // representation, so the test feeds it the same way (greptile
+        // round 1, adopted: bypassing the mapping would fall to the legacy
+        // dispatch and measure nothing).
         Page<ListingSummary> page = searchService.search(
                 new SearchCriteria(null, null, null, null),
-                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "rating")));
+                SearchSorts.normalize(PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "rating"))));
 
         assertThat(page.getContent()).extracting(ListingSummary::title)
                 .containsExactly(STRONG_TITLE, WEAK_TITLE, LOW_TITLE, NONE_TITLE, "Fresh Null");

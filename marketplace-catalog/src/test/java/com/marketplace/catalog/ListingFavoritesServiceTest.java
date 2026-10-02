@@ -126,7 +126,10 @@ class ListingFavoritesServiceTest {
         ProviderListing paused = listing();
         stampId(paused, listingId);
         paused.pause();
-        when(listingRepository.findAllById(List.of(listingId))).thenReturn(List.of(paused));
+        // W3 (the review round's root fix): the view's read INCLUDES
+        // soft-deleted listings — the native channel that sees what
+        // Hibernate's filter hides.
+        when(listingRepository.findAllByIdIncludingDeleted(List.of(listingId))).thenReturn(List.of(paused));
 
         var page = service.myFavorites(userId, PageRequest.of(0, 20,
                 Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"))));
