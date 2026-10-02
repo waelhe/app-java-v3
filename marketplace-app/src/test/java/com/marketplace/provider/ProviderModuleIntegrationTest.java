@@ -79,6 +79,45 @@ class ProviderModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ListingViewsStatsPort listingViewsStatsPort;
 
+    // W1 (greptile W1 r7, adopted from the root): ProviderPublicPageService
+    // resolves the reviews mode through the settings port — outside this
+    // module slice (the adapter lives in the app's admin surface), so the
+    // same @MockitoBean convention applies. Without it the expanded
+    // constructor fails the whole context boot.
+    @MockitoBean
+    com.marketplace.shared.api.SystemSettingsPort systemSettingsPort;
+
+    // W1 (the frontend-consumer extension, D-W1-5): the public page now
+    // composes the reviews block through the PublishedReviewsPort — the
+    // adapter lives in the reviews module, outside this provider slice,
+    // so the same @MockitoBean convention applies (the L38 GeoLookupPort
+    // lesson verbatim: a port without a slice bean fails the whole
+    // context boot).
+    @MockitoBean
+    com.marketplace.shared.api.PublishedReviewsPort publishedReviewsPort;
+
+    // The CI-measured first-run lesson: a Mockito mock answers the port's
+    // default methods with null/0 — and ReviewMode.parse(null) fails loud
+    // ("carries no value") instead of falling back to the default the real
+    // adapter would return. The tests below assert the seed mode's behavior
+    // (VERIFIED_ONLY — V84's seeded value), so the stub states exactly the
+    // world they run under.
+    @org.junit.jupiter.api.BeforeEach
+    void stubTheReviewsMode() {
+        org.mockito.Mockito.when(systemSettingsPort.getStringOrDefault(
+                        org.mockito.ArgumentMatchers.eq(com.marketplace.shared.api.SystemSettingKeys.REVIEWS_MODE),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(com.marketplace.shared.api.ReviewMode.VERIFIED_ONLY.name());
+        // The reviews block's port answers the honest empty page — the
+        // port's own contract (never null; the slice has no reviews data
+        // by construction).
+        org.mockito.Mockito.when(publishedReviewsPort.findPublishedByProviderUserId(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(com.marketplace.shared.api.PagedRequest.class)))
+                .thenAnswer(invocation -> com.marketplace.shared.api.PagedResponse
+                        .empty(invocation.getArgument(1, com.marketplace.shared.api.PagedRequest.class)));
+    }
+
     @Autowired
     private ProviderService providerService;
 
@@ -123,7 +162,8 @@ class ProviderModuleIntegrationTest {
                                         java.math.BigDecimal.TEN, "SAR", "Broker")))));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
-                org.springframework.data.domain.PageRequest.of(0, 20));
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.VERIFIED);
         assertThat(page.ratingAverage()).isEqualTo(4.5);
@@ -137,7 +177,8 @@ class ProviderModuleIntegrationTest {
         providerService.suspend(profile.getId());
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
-                org.springframework.data.domain.PageRequest.of(0, 20));
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(page.status()).isEqualTo(com.marketplace.provider.ProviderStatus.SUSPENDED);
         assertThat(page.listings().totalElements()).isZero();

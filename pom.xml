@@ -524,9 +524,11 @@
                         <exclude>**/shared/api/PaymentIntentDetails.*</exclude>
                         <exclude>**/shared/api/ListingPriceProvider$*</exclude>
                         <exclude>**/shared/api/ApiConstants.*</exclude>
+                        <exclude>**/shared/api/SystemSettingKeys.*</exclude>
                         <exclude>**/shared/api/BadRequestException.*</exclude>
                         <exclude>**/shared/api/ConflictException.*</exclude>
                         <exclude>**/shared/api/ResourceNotFoundException.*</exclude>
+                        <exclude>**/shared/api/SystemSettingTypeException.*</exclude>
                         <exclude>**/shared/api/ProviderNameResolver.*</exclude>
                         <exclude>**/shared/api/BookingParticipantProvider.*</exclude>
                         <!-- marketplace-platform-infra: data-only config, simple delegators, pure interfaces -->

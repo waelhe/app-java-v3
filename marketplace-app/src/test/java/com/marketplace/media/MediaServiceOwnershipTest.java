@@ -85,7 +85,7 @@ class MediaServiceOwnershipTest {
         MediaProperties mediaProperties() {
             return new MediaProperties(
                     new MediaProperties.Storage("", "auto", "", "", "", false),
-                    new MediaProperties.Limits(10_485_760L,
+                    new MediaProperties.Limits(10_485_760L, 10,
                             Set.of("image/jpeg", "image/png"), Duration.ofMinutes(15), 640, 25_000_000L));
         }
 

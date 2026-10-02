@@ -5,6 +5,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -63,17 +64,44 @@ public class ProviderController {
                         authentication)));
     }
 
+    /**
+     * W1 (§4.4/§4.5): the reviews block rides the same page response, paged
+     * by its own request parameters — one endpoint, two independently paged
+     * blocks (the listings ride the standard pageable, the reviews ride
+     * {@code reviewsPage}/{@code reviewsSize}). The manual floor (0/1) keeps
+     * a hostile parameter from reaching {@code PageRequest.of} with a
+     * negative value — the resolver's own clamp equivalent for the manual
+     * path — and the manual ceiling mirrors the resolver's configured cap
+     * ({@code spring.data.web.pageable.max-page-size: 100} in
+     * application.yml): a manual {@code PageRequest.of} bypasses that cap
+     * by construction (greptile W1 r2-frontend, adopted), and one anonymous
+     * request must never buy itself an unbounded page plus its three batch
+     * lookups. The ceiling is the resolver's own documented bound, kept as
+     * the single constant both paths answer to.
+     */
     @GetMapping("/providers/{id}/public")
     @Operation(summary = "Get a provider's public page",
             description = "L36: the agent/office public page — profile with the L36 persona "
-                    + "fields, the VERIFIED badge status, the rating block (fresh aggregate) "
-                    + "and the ACTIVE listings page. Non-VERIFIED profiles get an empty "
-                    + "listings block (a suspended broker's inventory is hidden on his "
-                    + "page); the response carries no private contact data.")
+                    + "fields, the VERIFIED badge status, the rating block (fresh aggregate, "
+                    + "W1 dual badges per the active reviews mode) and the ACTIVE listings "
+                    + "page, plus the W1 reviews block: the provider's PUBLISHED forward "
+                    + "reviews paged by reviewsPage/reviewsSize (default 0/10, capped at "
+                    + "100 like every resolved page). Non-VERIFIED "
+                    + "profiles get an empty listings block (a suspended broker's inventory "
+                    + "is hidden on his page); the response carries no private contact data "
+                    + "and no user id.")
     public ResponseEntity<ProviderPublicPageResponse> getPublicPage(@PathVariable UUID id,
-                                                                    Pageable pageable) {
-        return ResponseEntity.ok(providerPublicPageService.getPublicPage(id, pageable));
+                                                                    Pageable pageable,
+                                                                    @RequestParam(name = "reviewsPage", defaultValue = "0") int reviewsPage,
+                                                                    @RequestParam(name = "reviewsSize", defaultValue = "10") int reviewsSize) {
+        Pageable reviewsPageable = PageRequest.of(
+                Math.max(reviewsPage, 0),
+                Math.min(Math.max(reviewsSize, 1), MAX_REVIEWS_PAGE_SIZE));
+        return ResponseEntity.ok(providerPublicPageService.getPublicPage(id, pageable, reviewsPageable));
     }
+
+    /** The manual path's ceiling — the resolver's configured cap (application.yml: max-page-size: 100). */
+    static final int MAX_REVIEWS_PAGE_SIZE = 100;
 
     @PostMapping("/admin/providers/{id}/verify")
     @Operation(summary = "Verify a provider (administrative)",

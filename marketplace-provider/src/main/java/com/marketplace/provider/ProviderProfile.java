@@ -61,6 +61,24 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "rating_average")
     private Double ratingAverage;
 
+    /**
+     * W1 (yelp-level plan §4.4): the GENERAL (organic) companion of
+     * {@code rating_average} — the second stored pair refreshed by the
+     * same listener from the origin='ORGANIC' aggregate. Null until the
+     * first published organic review lands; cleared when the last one
+     * leaves the published surface (the recompute-is-truth rule).
+     */
+    @Column(name = "rating_general_average")
+    private Double ratingGeneralAverage;
+
+    /**
+     * W1 (§4.4): the count half of the general pair. Non-null by design —
+     * a provider with zero published organic reviews carries 0 (V72's
+     * NOT NULL DEFAULT), which is exact rather than "unknown".
+     */
+    @Column(name = "rating_general_count", nullable = false)
+    private Long ratingGeneralCount = 0L;
+
     protected ProviderProfile() {}
 
     private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status, UUID userId,
@@ -132,9 +150,32 @@ public class ProviderProfile extends BaseEntity {
         return ratingAverage;
     }
 
-    /** L21: stores the event-recomputed average (a plain assignment — the source of truth is the aggregate query). */
-    public void applyRatingAverage(double ratingAverage) {
+    public Double getRatingGeneralAverage() {
+        return ratingGeneralAverage;
+    }
+
+    public Long getRatingGeneralCount() {
+        return ratingGeneralCount;
+    }
+
+    /**
+     * L21 + W1: stores the event-recomputed average (a plain assignment —
+     * the source of truth is the aggregate query). A null clears the
+     * stored value: the recompute is truth, and "no published reviews"
+     * must not keep a stale number (the W1 moderation-hide path depends
+     * on this).
+     */
+    public void applyRatingAverage(Double ratingAverage) {
         this.ratingAverage = ratingAverage;
+    }
+
+    /**
+     * W1 (§4.4): stores the recomputed general pair in the same locked
+     * transaction as its verified sibling — the same clear-on-empty rule.
+     */
+    public void applyGeneralRating(Double average, long count) {
+        this.ratingGeneralAverage = average;
+        this.ratingGeneralCount = count;
     }
 
     /**

@@ -52,6 +52,19 @@ public record MediaProperties(
     public record Limits(
             /** Hard per-object upload cap in bytes. */
             @DefaultValue("10485760") long maxUploadBytes,
+            /**
+             * W1 (yelp-level plan §4.4/§4.5 — CodeRabbit W1 r4, adopted from the
+             * root): the maximum number of media assets one review may carry —
+             * PENDING uploads included (an abandoned upload occupies its slot
+             * until cleaned). Checked while the review's advisory allocation
+             * lock is held, so the limit holds under concurrent requests.
+             * The plan sets no explicit figure, so the default is an explicit,
+             * environment-tunable policy value (see the deviations register
+             * D-W1-3) — the same "mفتاح جديد قابل للبيئة" posture the roadmap
+             * applied to the thumbnail width. Override:
+             * {@code MEDIA_LIMITS_MAX_ASSETS_PER_REVIEW}.
+             */
+            @DefaultValue("10") int maxAssetsPerReview,
             /** Server-side allowlist — anything else is rejected before any URL is signed. */
             @DefaultValue({"image/jpeg", "image/png", "image/webp", "image/gif"}) Set<String> allowedContentTypes,
             /**

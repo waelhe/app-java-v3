@@ -3,6 +3,7 @@ package com.marketplace.community;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewLookupPort;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -65,17 +66,20 @@ public class ContentReportService {
     private final ContentReportRepository reportRepository;
     private final NeighborhoodPostRepository postRepository;
     private final PostCommentRepository commentRepository;
+    private final ReviewLookupPort reviewLookupPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public ContentReportService(ContentReportRepository reportRepository,
                                 NeighborhoodPostRepository postRepository,
                                 PostCommentRepository commentRepository,
+                                ReviewLookupPort reviewLookupPort,
                                 ApplicationEventPublisher eventPublisher,
                                 Clock clock) {
         this.reportRepository = reportRepository;
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
+        this.reviewLookupPort = reviewLookupPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -176,6 +180,14 @@ public class ContentReportService {
                                 comment.getAuthorId(), ReportTargetType.COMMENT.name(),
                                 comment.getId()));
                     });
+            // W1 §4.5: the review hide runs INSIDE this transaction through
+            // the reviews module's port (the one-unit-of-work rule) — the
+            // port answers the review's author on a real PUBLISHED->HIDDEN
+            // flip only (an already-hidden or pending review is the
+            // documented skip: no second flip, no duplicate alert).
+            case REVIEW -> reviewLookupPort.hideAsModerator(report.getTargetId())
+                    .ifPresent(authorId -> eventPublisher.publishEvent(new ContentModeratedEvent(
+                            authorId, ReportTargetType.REVIEW.name(), report.getTargetId())));
         }
     }
 
@@ -191,6 +203,12 @@ public class ContentReportService {
         return switch (targetType) {
             case POST -> visiblePost(targetId).getAuthorId();
             case COMMENT -> visibleCommentAuthor(targetId);
+            // W1 §4.5: a review resolves through the reviews module's port —
+            // PUBLISHED and live only; the reviewer is the report gate's
+            // own-content fact. An unknown, pending or hidden review is the
+            // honest 404.
+            case REVIEW -> reviewLookupPort.findVisibleAuthorId(targetId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Review", targetId));
         };
     }
 

@@ -52,13 +52,14 @@ class CacheTtlConfigTest {
 
     @Test
     void baseConfigDeclaresAllNamedCaches() throws Exception {
-        // The 15 named caches this TTL governs (L25 added provider-stats —
+        // The 16 named caches this TTL governs (L25 added provider-stats —
         // its own 5m override rides the RedisCacheManagerBuilderCustomizer,
         // pinned by CacheRedisTtlIntegrationTest; L30 added geo-tree; L32
         // bumped search-results -v2 → -v3 with the criteria schema
-        // extension). A missing name would silently create caches on demand
-        // (default RedisCacheManager behavior) — the list is the contract
-        // between yml and the @Cacheable annotations.
+        // extension; W0 added system-settings, the control-plane read path
+        // keyed by setting key). A missing name would silently create caches
+        // on demand (default RedisCacheManager behavior) — the list is the
+        // contract between yml and the @Cacheable annotations.
         String names = property("application.yml", "spring.cache.cache-names");
         assertThat(names).isNotNull();
         java.util.List<String> declared = java.util.Arrays.stream(names.split(","))
@@ -70,7 +71,7 @@ class CacheTtlConfigTest {
                         "pricing-calculations", "search-results-v4", "availability",
                         "bookings", "users", "userSubjects", "conversations",
                         "paymentIntents", "reviews", "providers", "provider-stats",
-                        "geo-tree");
+                        "geo-tree", "system-settings");
     }
 
     @Test

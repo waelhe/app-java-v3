@@ -95,10 +95,18 @@ class ReviewsTwoWayIntegrationTest {
         // with the review's reviewerId — same user here.
         UUID reviewerId = userRepository.save(
                 User.create("l21-reviewer-subject", "reviewer@b.com", "Reviewer", UserRole.CONSUMER)).getId();
+        // The reviewed provider is a real users row, and the booking carries
+        // that USER id: reviews.provider_id physically references users(id)
+        // (V6), which is the space the stats flow resolves in
+        // (refreshRatingAverage -> findByUserIdForUpdate). Planting the
+        // profile id here only worked while the flow looked profiles up by
+        // id — a shape the schema forbids and production never produces.
+        UUID providerUserId = userRepository.save(
+                User.create("l21-provider-subject", "provider@b.com", "Provider", UserRole.PROVIDER)).getId();
         ProviderProfile profile = providerRepository.save(
-                ProviderProfile.create("L21 Provider", "bio", UUID.randomUUID()));
+                ProviderProfile.create("L21 Provider", "bio", providerUserId));
         UUID providerId = profile.getId();
-        stubCompletedBooking(reviewerId, providerId);
+        stubCompletedBooking(reviewerId, providerUserId);
 
         // Two reviews land (3 and 4): AVG = 3.5 — the expected value is
         // computed here, then compared against the stored average.
@@ -182,14 +190,14 @@ class ReviewsTwoWayIntegrationTest {
     }
 
     /**
-     * The §9 surgical gate fix re-seeding: the reverse-path booking's
-     * {@code provider_id} carries the provider's USER id (A1 — V3:
+     * The §9 surgical gate fix re-seeding: the booking's
+     * {@code provider_id} carries the provider's USER id (A1 — V3/V6:
      * {@code references users(id)}); the gate compares it directly against
-     * the caller. The forward-path booking keeps the profile id the stats
-     * flow resolves by ({@code refreshRatingAverage} →
-     * {@code findByIdForUpdate} — the documented profiles.id-space stats
-     * deviation, measured in Phase 2 and deliberately untouched here:
-     * this PR's scope is the two write gates, §9's pin).
+     * the caller. The stats flow resolves in the same space
+     * ({@code refreshRatingAverage} → {@code findByUserIdForUpdate}), so
+     * every booking in this file plants the USER id — the profile-id shape
+     * the stats flow used to accept was the documented Phase-2 deviation
+     * W1 closed against V6's FK truth.
      */
     private void stubCompletedBookingFor(UUID bookingId, UUID consumerId, UUID providerId) {
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
@@ -219,12 +227,12 @@ class ReviewsTwoWayIntegrationTest {
         UUID providerId = profile.getId();
         UUID bookingReverse = UUID.randomUUID();
         UUID bookingForward = UUID.randomUUID();
-        // The §9 re-seed: the REVERSE booking carries the provider's USER
-        // id (A1 — the gate's ruling); the FORWARD booking keeps the
-        // profile id (the stats flow's own resolution key, the documented
-        // deviation — see stubCompletedBookingFor's Javadoc).
+        // Both bookings carry the provider's USER id (A1 — V6's FK truth,
+        // and the space the stats flow resolves in: findByUserIdForUpdate).
+        // The forward booking used to carry the profile id, which only
+        // resolved while the flow looked profiles up by id.
         stubCompletedBookingFor(bookingReverse, consumerId, ownerUserId);
-        stubCompletedBookingFor(bookingForward, consumerId, providerId);
+        stubCompletedBookingFor(bookingForward, consumerId, ownerUserId);
 
         // (1) The REVERSE review lands FIRST (rating 1) — through the REAL
         // service (the events fire). Its event's recompute resolves no
@@ -252,8 +260,10 @@ class ReviewsTwoWayIntegrationTest {
         reviewsService.create(bookingForward, consumerId, 5, "great stay");
         awaitAverage(providerId, 5.0);
 
-        // The read surfaces split by direction.
-        assertThat(reviewsService.listByProvider(providerId, org.springframework.data.domain.Pageable.ofSize(10))
+        // The read surfaces split by direction. listByProvider filters on
+        // reviews.provider_id, so it takes the provider's USER id — the
+        // space the forward review was just planted in.
+        assertThat(reviewsService.listByProvider(ownerUserId, org.springframework.data.domain.Pageable.ofSize(10))
                 .map(Review::getDirection))
                 .as("the provider's public surface shows only reviews ABOUT them")
                 .containsExactly(ReviewDirection.CONSUMER_TO_PROVIDER);

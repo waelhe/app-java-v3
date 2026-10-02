@@ -49,6 +49,41 @@ class ReviewsModuleIntegrationTest {
     // reply/createReverse gates read the ruling from the row itself
     // (users.id, A1) — no profile resolution anywhere in the service.
 
+    // W1 (greptile W1 r7, adopted from the root): the expanded
+    // ReviewsService constructor resolves four more cross-module seams —
+    // the settings port (the reviews.mode gate + the daily cap), the user
+    // lookup port (the account-age floor + the reviewer-identity batch),
+    // the provider lookup port (the organic target's profile-id → USER-id
+    // resolution), and the listing price port (the optional organic
+    // listing's provider ownership check). The real adapters live in their
+    // own modules and join in the full-context integration tests — at this
+    // slice boundary the house @MockitoBean convention applies to each.
+    @MockitoBean
+    com.marketplace.shared.api.SystemSettingsPort systemSettingsPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.UserLookupPort userLookupPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ListingPriceProvider listingPriceProvider;
+
+    /**
+     * The W1 Clock — the production bean lives in platform-infra's
+     * ClockConfig, which this slice does not scan (the payments module
+     * test's D-009 pattern, the catalog module test's exact precedent:
+     * one Clock per context, never two).
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @Autowired
     private ReviewsService reviewsService;
 

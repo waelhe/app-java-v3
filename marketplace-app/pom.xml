@@ -160,6 +160,14 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        <!-- Envers, declared where it is now used (declare-what-you-use): every
+             audited-entity module declares this (marketplace-reviews:49,
+             marketplace-search:53); W0 adds the first @Audited production entity
+             to the app module (SystemSetting) alongside RevisionService's reads. -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-envers</artifactId>
+        </dependency>
 
         <!-- Spring Modulith -->
         <dependency>

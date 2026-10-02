@@ -195,8 +195,12 @@ spring:
     # cache — the administrative tree is rebuilt-on-read reference data,
     # evicted through the same AFTER_COMMIT relay as the rest. The count is
     # derived and guarded by DocumentationNumbersGuardTest, so this comment
-    # cannot drift silently.
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree
+    # cannot drift silently. system-settings (W0, yelp-level plan §4.6) is
+    # the 16th named cache — the control-plane read path added with the
+    # settings table, keyed by setting key, evicted by SystemSettingsService
+    # through the same relay (its absent case is cached too, so a create
+    # evicts as well).
+    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache
@@ -204,7 +208,7 @@ spring:
       # default the entries never expire." Binding path (bytecode-verified in
       # that jar): CacheProperties$Redis.timeToLive -> RedisCacheConfiguration
       # -> defaultCacheConfig().entryTtl(...) -> every RedisCacheManager
-      # entry. Without this key, all 15 named caches hold entries FOREVER:
+      # entry. Without this key, all 16 named caches hold entries FOREVER:
       # invalidation only happens via CacheInvalidationRelay (AFTER_COMMIT),
       # which fires solely when an entity CHANGES — dead rows never do.
       # Growth is unbounded by construction: catalog-search / search-results
@@ -216,7 +220,7 @@ spring:
       # TTL semantics: fixed expiry from write (SET .. EX — no sliding
       # renewal), so a hot entry is rebuilt at most once per hour (one
       # indexed DB read), and a dead row disappears within the hour. Value
-      # derivation, not taste: all 15 caches are rebuildable repository
+      # derivation, not taste: all 16 caches are rebuildable repository
       # reads (correctness is governed by the AFTER_COMMIT relay, TTL is
       # garbage collection only), and 1h = 2x the user interaction window
       # (spring.session.timeout: 30m) — covers a working session with at

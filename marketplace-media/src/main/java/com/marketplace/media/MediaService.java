@@ -26,8 +26,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -54,13 +52,10 @@ public class MediaService {
 
     private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
-    /** Server-controlled extension mapping — the client never touches the key. */
-    private static final Map<String, String> EXTENSION_BY_TYPE = Map.of(
-            "image/jpeg", "jpg",
-            "image/png", "png",
-            "image/webp", "webp",
-            "image/gif", "gif"
-    );
+    // The upload rules (storage gate, content-type allowlist, size bound,
+    // server-generated key shape) live in MediaUploadRules — now shared
+    // with the review-media service (W1): one implementation, so the two
+    // surfaces cannot drift apart silently.
 
     private final MediaAssetRepository mediaAssetRepository;
     private final ObjectProvider<S3MediaStorage> storage;
@@ -124,7 +119,10 @@ public class MediaService {
         String objectKey = buildObjectKey(listingId, normalizedType);
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.create(
                 listingId, listing.providerId(), objectKey, normalizedType,
-                sizeBytes, (int) (mediaAssetRepository.countByListingId(listingId) + 1)));
+                // The highest allocated live position plus one — a soft deletion
+                // never re-opens a slot a remaining row still holds (greptile W1
+                // r10, adopted from the root; same root fix as the review channel).
+                sizeBytes, mediaAssetRepository.findMaxPositionByListingId(listingId) + 1));
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
@@ -173,7 +171,9 @@ public class MediaService {
         String objectKey = buildPostObjectKey(postId, normalizedType);
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForPost(
                 postId, post.authorId(), objectKey, normalizedType,
-                sizeBytes, (int) (mediaAssetRepository.countByPostId(postId) + 1)));
+                // Greptile W1 r10 (adopted): max-based allocation — the post twin
+                // of the listing fix above.
+                sizeBytes, mediaAssetRepository.findMaxPositionByPostId(postId) + 1));
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
@@ -508,36 +508,19 @@ public class MediaService {
     }
 
     private S3MediaStorage requireStorage() {
-        S3MediaStorage s3 = storage.getIfAvailable();
-        if (s3 == null) {
-            throw new ServiceUnavailableException(
-                    "Media storage is not configured. Set MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, "
-                            + "MEDIA_S3_ACCESS_KEY and MEDIA_S3_SECRET_KEY to enable listing media.");
-        }
-        return s3;
+        return MediaUploadRules.requireStorage(storage);
     }
 
     private String normalizeContentType(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            throw new BadRequestException("Content type is required");
-        }
-        return contentType.trim().toLowerCase(Locale.ROOT);
+        return MediaUploadRules.normalizeContentType(contentType);
     }
 
     private void validateContentType(String normalizedType) {
-        if (!properties.limits().allowedContentTypes().contains(normalizedType)) {
-            throw new BadRequestException(
-                    "Unsupported media content type: " + normalizedType
-                            + " (allowed: " + properties.limits().allowedContentTypes() + ")");
-        }
+        MediaUploadRules.validateContentType(properties, normalizedType);
     }
 
     private void validateSize(long sizeBytes) {
-        if (sizeBytes <= 0 || sizeBytes > properties.limits().maxUploadBytes()) {
-            throw new BadRequestException(
-                    "Media size " + sizeBytes + " bytes is outside the allowed range (max "
-                            + properties.limits().maxUploadBytes() + ")");
-        }
+        MediaUploadRules.validateSize(properties, sizeBytes);
     }
 
     /**
@@ -618,8 +601,7 @@ public class MediaService {
     }
 
     private String buildObjectKey(UUID listingId, String contentType) {
-        String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
-        return "listings/" + listingId + "/" + UUID.randomUUID() + "." + extension;
+        return MediaUploadRules.buildObjectKey("listings", listingId, contentType);
     }
 
     /**
@@ -628,8 +610,10 @@ public class MediaService {
      * server-generated UUIDs only, no client input ever reaches the key.
      */
     private String buildPostObjectKey(UUID postId, String contentType) {
-        String extension = EXTENSION_BY_TYPE.getOrDefault(contentType, "bin");
-        return "posts/" + postId + "/" + UUID.randomUUID() + "." + extension;
+        // The reconciliation merge: the branch moved key construction into
+        // MediaUploadRules.buildObjectKey (one discipline, one place); this
+        // main-era twin keeps the same posts/ namespace through the helper.
+        return MediaUploadRules.buildObjectKey("posts", postId, contentType);
     }
 
     /**

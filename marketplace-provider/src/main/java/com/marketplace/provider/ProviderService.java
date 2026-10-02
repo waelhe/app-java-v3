@@ -2,6 +2,7 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
@@ -13,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -108,32 +110,51 @@ public class ProviderService {
     }
 
     /**
-     * L21 (roadmap §5): lands the event-driven rating average on the provider
+     * L21 + W1 (§4.4): lands the event-driven rating PAIR on the provider
      * profile. Called by {@code ProviderReviewStatsListener} from the async
      * AFTER_COMMIT dispatch of the review events — no {@code @PreAuthorize}
      * because there is no principal on that thread (same shape as
      * {@code PaymentsService#failIntent}, the webhook-driven write).
      *
-     * <p><b>Concurrency (CI round-1 evidence):</b> two review events dispatched
-     * close together run their listeners CONCURRENTLY on the same profile row —
-     * the optimistic version rejects one and its aggregate is lost until the
-     * event-publication resubmission retries it (minutes). The flow therefore
-     * resolves the reviewed provider, takes a PESSIMISTIC_WRITE row lock, and
-     * recomputes the aggregate INSIDE the locked transaction: the listeners
-     * serialize, and the last one to apply always carries the freshest
-     * {@code AVG} — no lost update, no stale regression. A missing profile
-     * (deleted provider) is a silent skip, not an exception — an exception
-     * would keep the publication incomplete and retry forever.
+     * <p><b>The id-space correction (the plan's named measured defect):</b>
+     * {@code reviews.provider_id} physically carries a {@code users.id}
+     * (V6's FK), so the flow resolves the profile BY USER ID
+     * ({@code findByUserIdForUpdate}) and recomputes the aggregates BY THE
+     * SAME users.id ({@code profile.getUserId()} — the
+     * {@code ProviderPublicPageService} pattern). The old flow looked the
+     * users.id up in the {@code provider_profiles.id} space and then
+     * queried the stats by {@code profile.getId()} AGAIN — a double
+     * mismatch that made the path silently skip on every
+     * production-shaped pair of id spaces.
+     *
+     * <p><b>Concurrency (CI round-1 evidence):</b> two review events
+     * dispatched close together run their listeners CONCURRENTLY on the
+     * same profile row — the optimistic version rejects one and its
+     * aggregate is lost until the event-publication resubmission retries
+     * it (minutes). The flow therefore takes a PESSIMISTIC_WRITE row lock
+     * and recomputes both aggregates INSIDE the locked transaction: the
+     * listeners serialize, and the last one to apply always carries the
+     * freshest {@code AVG} — no lost update, no stale regression. A
+     * missing profile (deleted provider) is a silent skip, not an
+     * exception — an exception would keep the publication incomplete and
+     * retry forever. An EMPTY aggregate (the last published review left
+     * the surface — a moderation hide, for one) CLEARS the stored value:
+     * the recompute is truth, and a stale number must not survive it.
      */
     @Observed(name = "provider.rating.stats")
     public void refreshRatingAverage(UUID reviewId) {
-        reviewStatsPort.findStatsByReviewId(reviewId).ifPresent(initial ->
-                providerRepository.findByIdForUpdate(initial.providerId()).ifPresent(profile ->
-                        reviewStatsPort.findStatsByProviderId(profile.getId()).ifPresent(fresh -> {
-                            profile.applyRatingAverage(fresh.averageRating());
-                            eventPublisher.publishEvent(
-                                    new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, profile.getId()));
-                        })));
+        reviewStatsPort.findProviderUserIdByReviewId(reviewId).ifPresent(providerUserId ->
+                providerRepository.findByUserIdForUpdate(providerUserId).ifPresent(profile -> {
+                    Optional<ReviewStats> verified =
+                            reviewStatsPort.findStatsByProviderId(profile.getUserId());
+                    Optional<ReviewStats> general =
+                            reviewStatsPort.findGeneralStatsByProviderId(profile.getUserId());
+                    profile.applyRatingAverage(verified.map(ReviewStats::averageRating).orElse(null));
+                    profile.applyGeneralRating(general.map(ReviewStats::averageRating).orElse(null),
+                            general.map(ReviewStats::reviewCount).orElse(0L));
+                    eventPublisher.publishEvent(
+                            new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, profile.getId()));
+                }));
     }
 
     private void verifyOwnership(ProviderProfile provider, Authentication authentication) {

@@ -748,7 +748,8 @@ public class UserService implements IdentitySpi {
                 pseudonymized ? UserService.FORMER_MEMBER_LABEL : user.getDisplayName(),
                 user.getRole().name(),
                 user.getCreatedAt(),
-                user.getUpdatedAt()
+                user.getUpdatedAt(),
+                user.getPseudonymizedAt()
         );
     }
 }

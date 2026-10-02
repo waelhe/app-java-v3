@@ -16,12 +16,20 @@ public interface ProviderRepository extends JpaRepository<ProviderProfile, UUID>
     Optional<ProviderProfile> findByUserId(UUID userId);
 
     /**
-     * L21: pessimistic row lock for the event-driven rating-average write —
-     * concurrent async listeners serialize on the profile row instead of
-     * racing the optimistic version (the loser's aggregate would be lost
-     * until the event-publication resubmission retries it).
+     * L21 + W1 (§4.4): pessimistic row lock for the event-driven
+     * rating-pair write — concurrent async listeners serialize on the
+     * profile row instead of racing the optimistic version (the loser's
+     * aggregate would be lost until the event-publication resubmission
+     * retries it). <b>Resolved by USER id (W1's measured correction):</b>
+     * the review events carry a review id; the review's {@code provider_id}
+     * physically references {@code users(id)} (V6 — the A1 convention), so
+     * the lock must be taken on the profile OWNED BY that user. The old
+     * {@code findByIdForUpdate} lookup compared the users.id against
+     * {@code provider_profiles.id} and silently skipped on every
+     * production-shaped pair of id spaces — the double mismatch the plan
+     * §4.4 names.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from ProviderProfile p where p.id = :id")
-    Optional<ProviderProfile> findByIdForUpdate(UUID id);
+    @Query("select p from ProviderProfile p where p.userId = :userId")
+    Optional<ProviderProfile> findByUserIdForUpdate(UUID userId);
 }

@@ -1,5 +1,6 @@
 package com.marketplace.reviews.spi;
 
+import com.marketplace.reviews.Review;
 import com.marketplace.reviews.ReviewRepository;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
@@ -34,5 +35,34 @@ public class ReviewStatsAdapter implements ReviewStatsPort {
     @Override
     public Optional<ReviewStats> findStatsByProviderId(UUID providerId) {
         return reviewRepository.getStatsByProviderId(providerId);
+    }
+
+    /**
+     * W1 (§4.4): the GENERAL (organic) aggregate — same recompute discipline,
+     * origin filter flipped (PUBLISHED organic forward reviews only).
+     */
+    @Override
+    public Optional<ReviewStats> findGeneralStatsByProviderId(UUID providerId) {
+        return reviewRepository.getGeneralStatsByProviderId(providerId);
+    }
+
+    /** W1 (§4.4): the general-aggregate resolve-by-review form (the listener's second channel). */
+    @Override
+    public Optional<ReviewStats> findGeneralStatsByReviewId(UUID reviewId) {
+        return reviewRepository.findById(reviewId)
+                .flatMap(review -> reviewRepository.getGeneralStatsByProviderId(review.getProviderId()));
+    }
+
+    /**
+     * W1 (§4.4): the stored-average listener's resolve seam — the review's
+     * provider USER id ({@code reviews.provider_id}, the A1 space), present
+     * for every live row regardless of its moderation status (a hidden or
+     * pending review still resolves its provider — the recompute then
+     * simply excludes it, possibly clearing the stored value).
+     */
+    @Override
+    public Optional<UUID> findProviderUserIdByReviewId(UUID reviewId) {
+        return reviewRepository.findById(reviewId)
+                .map(Review::getProviderId);
     }
 }

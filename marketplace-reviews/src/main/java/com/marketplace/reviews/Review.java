@@ -34,7 +34,7 @@ public class Review extends BaseEntity {
     @Id
     private UUID id;
 
-    @Column(name = "booking_id", nullable = false)
+    @Column(name = "booking_id")
     private UUID bookingId;
 
     @Column(name = "reviewer_id", nullable = false)
@@ -79,6 +79,36 @@ public class Review extends BaseEntity {
     @Column(name = "reviewee_id")
     private UUID revieweeId;
 
+    /** The two stored origin values — held by the V72 DB check, not a Java enum (the plan's §4.2 explicit decision). */
+    public static final String ORIGIN_BOOKING = "BOOKING";
+    public static final String ORIGIN_ORGANIC = "ORGANIC";
+
+    /**
+     * W1 (yelp-level plan §4.2 — G2): the review's origin. 'BOOKING' for
+     * every pre-W1 row (V72's DEFAULT backfills losslessly) and for every
+     * verified review; 'ORGANIC' for the no-booking general review. Plain
+     * String by the plan's own design decision: the two values live in the
+     * database CHECK (chk_reviews_origin_kind), not in a Java enum
+     * reference — a future third value widens by migration, not by
+     * rebuilding this type.
+     */
+    @Column(name = "origin", nullable = false, length = 20)
+    private String origin = ORIGIN_BOOKING;
+
+    /** §4.2: the organic review's optional listing target (V72's FK; null on every verified review). */
+    @Column(name = "listing_id")
+    private UUID listingId;
+
+    /**
+     * W1 (§4.5): the moderation status — the soft state column. PUBLISHED
+     * is the public surface (every pre-W1 row's V72 DEFAULT — zero visible
+     * change); PENDING_REVIEW is the first-reviews queue; HIDDEN_BY_MODERATOR
+     * is the moderated-away terminal state.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, length = 20)
+    private ReviewModerationStatus moderationStatus = ReviewModerationStatus.PUBLISHED;
+
     protected Review() {
     }
 
@@ -100,6 +130,27 @@ public class Review extends BaseEntity {
             throw new IllegalArgumentException("Rating must be between 1 and 5");
         }
         return new Review(UUID.randomUUID(), bookingId, reviewerId, providerId, rating, comment);
+    }
+
+    /**
+     * W1 (yelp-level plan §4.1/§4.2 — the organic path): a general review
+     * with NO booking — {@code origin = 'ORGANIC'}, {@code booking_id} null
+     * (the V72 cross-column check pins the pairing), an optional listing
+     * target. The reviewer identity is the caller; the provider id is the
+     * reviewed provider's USER id (A1 — the same space every verified row
+     * carries). The caller (ReviewsService.createOrganic) has already
+     * applied the §4.5 anti-abuse gates; this factory owns only the shape
+     * and the rating floor.
+     */
+    public static Review createOrganic(UUID reviewerId, UUID providerId, UUID listingId,
+                                       Integer rating, String comment) {
+        if (rating < 1 || rating > 5) {
+            throw new IllegalArgumentException("Rating must be between 1 and 5");
+        }
+        Review review = new Review(UUID.randomUUID(), null, reviewerId, providerId, rating, comment);
+        review.origin = ORIGIN_ORGANIC;
+        review.listingId = listingId;
+        return review;
     }
 
     /**
@@ -134,6 +185,9 @@ public class Review extends BaseEntity {
     public Instant getRepliedAt() { return repliedAt; }
     public ReviewDirection getDirection() { return direction; }
     public UUID getRevieweeId() { return revieweeId; }
+    public String getOrigin() { return origin; }
+    public UUID getListingId() { return listingId; }
+    public ReviewModerationStatus getModerationStatus() { return moderationStatus; }
 
     public void update(Integer rating, String comment) {
         if (rating < 1 || rating > 5) {
@@ -154,5 +208,52 @@ public class Review extends BaseEntity {
         }
         this.reply = reply;
         this.repliedAt = Instant.now();
+    }
+
+    /**
+     * W1 (§4.5): the creation-time queueing of an organic review — the
+     * account's first reviews await an explicit moderation approval. Only
+     * legal while the row is still PUBLISHED (the newborn default): a
+     * stored-state re-entry is a caller bug, never a silent flip.
+     */
+    public void queueForReview() {
+        if (this.moderationStatus != ReviewModerationStatus.PUBLISHED) {
+            throw new IllegalStateException(
+                    "A review can only be queued for review at creation — current status: " + moderationStatus);
+        }
+        this.moderationStatus = ReviewModerationStatus.PENDING_REVIEW;
+    }
+
+    /**
+     * W1 (§4.5): the moderation queue's approve — PENDING_REVIEW →
+     * PUBLISHED, nothing else is legal (a second approval or an approval
+     * of a hidden/published row answers the honest 409).
+     */
+    public void approveByModerator() {
+        if (this.moderationStatus != ReviewModerationStatus.PENDING_REVIEW) {
+            throw new ConflictException(
+                    "Only a PENDING_REVIEW review can be approved — current status: " + moderationStatus);
+        }
+        this.moderationStatus = ReviewModerationStatus.PUBLISHED;
+    }
+
+    /**
+     * W1 (§4.5): the moderation hide — the report-resolve outcome and the
+     * queue's reject both land here. Terminal by construction (every read
+     * gate is PUBLISHED-only); returns whether a real flip happened (the
+     * documented skip for an already-hidden row: callers gate first, this
+     * answer keeps them honest).
+     */
+    public boolean hideByModerator() {
+        if (this.moderationStatus == ReviewModerationStatus.HIDDEN_BY_MODERATOR) {
+            return false;
+        }
+        this.moderationStatus = ReviewModerationStatus.HIDDEN_BY_MODERATOR;
+        return true;
+    }
+
+    /** The public-surface predicate every read gate composes. */
+    public boolean isPublished() {
+        return this.moderationStatus == ReviewModerationStatus.PUBLISHED;
     }
 }

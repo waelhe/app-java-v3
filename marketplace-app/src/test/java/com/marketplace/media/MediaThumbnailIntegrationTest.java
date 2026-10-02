@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.MediaUploadedEvent;
 import com.marketplace.shared.api.PostLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -89,10 +90,19 @@ class MediaThumbnailIntegrationTest {
     @MockitoBean
     ProviderLookupPort providerLookupPort;
 
+    /**
+     * W1 (§4.4): {@code ReviewMediaService} resolves the review's author
+     * through {@code ReviewLookupPort}. {@code @ApplicationModuleTest} boots
+     * the media module alone, so the reviews module's adapter is not in this
+     * context — every cross-module port this test needs is a @MockitoBean
+     * above, and this is the one W1 added.
+     */
+    @MockitoBean
+    ReviewLookupPort reviewLookupPort;
+
     /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
     @MockitoBean
     PostLookupPort postLookupPort;
-
     @MockitoBean
     S3MediaStorage storage;
 
