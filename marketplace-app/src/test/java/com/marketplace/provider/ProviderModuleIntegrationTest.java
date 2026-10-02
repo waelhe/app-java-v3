@@ -159,7 +159,7 @@ class ProviderModuleIntegrationTest {
                         new org.springframework.data.domain.PageImpl<>(
                                 java.util.List.of(new com.marketplace.shared.api.ListingSummary(
                                         UUID.randomUUID(), "Flat", "APARTMENT",
-                                        java.math.BigDecimal.TEN, "SAR", "Broker")))));
+                                        java.math.BigDecimal.TEN, "SAR", "Broker", null, 0L)))));
 
         var page = providerPublicPageService.getPublicPage(profile.getId(),
                 org.springframework.data.domain.PageRequest.of(0, 20),

@@ -49,8 +49,11 @@ public class SearchController {
                     + "(listings with an undeclared area are excluded from the area view); "
                     + "text searches always rank by relevance — the sort whitelist is ignored "
                     + "for them. sort=distance (nearest-first, requires the radius triple) "
-                    + "orders by the server-side ST_Distance. Unsupported sort properties "
-                    + "answer 400.")
+                    + "orders by the server-side ST_Distance. W3: sort=rating (highest first — "
+                    + "the daily-computed composite rating × log(count) × completeness × "
+                    + "recency; ascending is not supported) rides the filter flow; minRating "
+                    + "(within [1, 5]) filters to providers at or above the stars floor. "
+                    + "Unsupported sort properties answer 400.")
     public ResponseEntity<PagedResponse<ListingSummary>> searchWithCriteria(
             @Parameter(description = "Free-text query (websearch syntax: quoted phrases, OR, -exclusions)",
                     example = "\"sea view\" jeddah")
@@ -110,10 +113,17 @@ public class SearchController {
             @Parameter(description = "Search radius in kilometers, (0, 50], whole-meter precision — "
                     + "must be paired with lat and lng", example = "10")
             @org.springframework.web.bind.annotation.RequestParam(required = false) java.math.BigDecimal radiusKm,
+            // W3 (yelp-level plan §5 — G17): the min-stars floor
+            // («فلتر حد أدنى من النجوم») — type-gated by the SearchCriteria
+            // record ([1, 5], a 400 before any query) and composed as the
+            // set-restriction pattern inside the catalog flows.
+            @Parameter(description = "Minimum provider rating (verified stars), within [1, 5] — "
+                    + "listings of providers below the floor never match", example = "4")
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.math.BigDecimal minRating,
             Pageable pageable) {
         SearchCriteria criteria = new SearchCriteria(q, category, minPrice, maxPrice,
                 checkIn, checkOut, guests, locationId, purpose, propertyType,
-                minRooms, minBathrooms, minAreaM2, lat, lng, radiusKm);
+                minRooms, minBathrooms, minAreaM2, lat, lng, radiusKm, minRating);
         // L32: the sort whitelist is normalized HERE (before the cache key —
         // the effective sort rides the key) — unsupported properties are 400.
         Pageable effective = SearchSorts.normalize(pageable);

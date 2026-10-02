@@ -160,7 +160,8 @@ class ResilienceAnnotationTest {
             // — same rule: the guard tracks the live controller surface.
             // L32: the real-estate facets (locationId/purpose/propertyType/
             // minRooms/minBathrooms/minAreaM2). P1 (postgis): the radius
-            // triple (lat/lng/radiusKm) — same rule again.
+            // triple (lat/lng/radiusKm) — same rule again. W3 (yelp): the
+            // min-stars floor (minRating) — same rule once more.
             Method method = SearchController.class.getMethod("searchWithCriteria",
                     String.class, String.class, java.math.BigDecimal.class, java.math.BigDecimal.class,
                     java.time.Instant.class, java.time.Instant.class,
@@ -170,6 +171,7 @@ class ResilienceAnnotationTest {
                     com.marketplace.shared.api.PropertyType.class,
                     Integer.class, Integer.class, Integer.class,
                     java.math.BigDecimal.class, java.math.BigDecimal.class, java.math.BigDecimal.class,
+                    java.math.BigDecimal.class,
                     org.springframework.data.domain.Pageable.class);
 
             RateLimiter rl = method.getAnnotation(RateLimiter.class);

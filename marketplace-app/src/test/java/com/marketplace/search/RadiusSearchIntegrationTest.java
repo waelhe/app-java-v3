@@ -171,7 +171,7 @@ class RadiusSearchIntegrationTest {
     private static SearchCriteria radius(String radiusKm) {
         return new SearchCriteria(null, null, null, null, null, null, null,
                 null, null, null, null, null, null, CENTER_LAT, CENTER_LNG,
-                new BigDecimal(radiusKm));
+                new BigDecimal(radiusKm), null);
     }
 
     // ---- the plan's acceptance criteria -----------------------------------
@@ -206,11 +206,11 @@ class RadiusSearchIntegrationTest {
     void partialRadiusPresence_is400BeforeAnyQuery() {
         // the type gate at construction — the stay window's group lesson
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, CENTER_LAT, null, null))
+                null, null, null, null, null, null, CENTER_LAT, null, null, null))
                 .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
                 .hasMessageContaining("provided together");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, new BigDecimal("10")))
+                null, null, null, null, null, null, null, null, new BigDecimal("10"), null))
                 .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
                 .hasMessageContaining("provided together");
     }
@@ -254,7 +254,7 @@ class RadiusSearchIntegrationTest {
         // rows were returned)
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
                 null, null, 4, null, null, null, null, null, null,
-                CENTER_LAT, CENTER_LNG, new BigDecimal("10"));
+                CENTER_LAT, CENTER_LNG, new BigDecimal("10"), null);
         // CodeRabbit round 2: page size 1 makes the boundary OBSERVABLE —
         // correct filtering before pagination returns farther (the only
         // eligible row); the reversed order would page nearest first and

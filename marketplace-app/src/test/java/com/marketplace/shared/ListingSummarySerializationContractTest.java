@@ -42,7 +42,7 @@ class ListingSummarySerializationContractTest {
     void roundTripPreservesEveryComponent() throws Exception {
         var original = new com.marketplace.shared.api.ListingSummary(
                 UUID.randomUUID(), "Beachfront Villa", "VILLA",
-                new BigDecimal("320.00"), "SAR", "provider-display-name");
+                new BigDecimal("320.00"), "SAR", "provider-display-name", 4.7, 23L);
 
         var bytes = serialize(original);
         com.marketplace.shared.api.ListingSummary restored = deserialize(bytes);
@@ -63,7 +63,7 @@ class ListingSummarySerializationContractTest {
         // namespace were still read.
         var staleShaped = new com.marketplace.shared.api.ListingSummary(
                 UUID.randomUUID(), "Beachfront Villa", "VILLA",
-                new BigDecimal("320.00"), null, "provider-display-name");
+                new BigDecimal("320.00"), null, "provider-display-name", null, 0L);
 
         com.marketplace.shared.api.ListingSummary restored = deserialize(serialize(staleShaped));
 

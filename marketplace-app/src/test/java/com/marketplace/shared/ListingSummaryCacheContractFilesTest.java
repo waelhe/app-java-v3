@@ -56,11 +56,11 @@ class ListingSummaryCacheContractFilesTest {
         String source = read("marketplace-catalog/src/main/java/com/marketplace/catalog/CatalogService.java");
         assertThat(cacheableNames(source))
                 .as("CatalogService's three ListingSummary caches are versioned namespaces")
-                .containsExactlyInAnyOrder("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2");
+                .containsExactlyInAnyOrder("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3");
 
         assertThat(source)
                 .as("the invalidation set must clear exactly the four versioned namespaces")
-                .contains("Set.of(\"catalog-active-v2\", \"catalog-by-category-v2\", \"catalog-search-v2\", \"search-results-v4\")");
+                .contains("Set.of(\"catalog-active-v3\", \"catalog-by-category-v3\", \"catalog-search-v3\", \"search-results-v5\")");
     }
 
     @Test
@@ -68,7 +68,7 @@ class ListingSummaryCacheContractFilesTest {
         String source = read("marketplace-search/src/main/java/com/marketplace/search/SearchService.java");
         assertThat(cacheableNames(source))
                 .as("SearchService's ListingSummary cache is part of the same versioned namespace")
-                .containsExactly("search-results-v4");
+                .containsExactly("search-results-v5");
     }
 
     @Test
@@ -80,13 +80,13 @@ class ListingSummaryCacheContractFilesTest {
         assertThat(namesLine)
                 .as("the yml cache-names list must declare the versioned namespaces "
                         + "in sync with the annotations")
-                .contains("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v4")
+                .contains("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3", "search-results-v5")
                 .doesNotContain("catalog-active,", "search-results,", "catalog-search,");
     }
 
     /**
      * L27 (feature-expansion roadmap §5): the stay window rides the
-     * search-results-v4 cache key, and the freshness contract extends with
+     * search-results-v5 cache key, and the freshness contract extends with
      * it — availability writes must evict the search cache, exactly like
      * listing writes already do. Pinned at the source level (the house
      * files-guard pattern): the criteria path uses the dedicated injective
@@ -94,7 +94,7 @@ class ListingSummaryCacheContractFilesTest {
      * values unescaped and could collide across different criteria), and
      * the generator appends the window components as first-class segments.
      * A future refactor that drops the generator (or the window segments,
-     * or "search-results-v4" from the availability invalidation set) would
+     * or "search-results-v5" from the availability invalidation set) would
      * silently let different criteria share one cached entry — or let
      * window-filtered pages go stale after bookings — with no failing test
      * at the unit level.
@@ -120,9 +120,9 @@ class ListingSummaryCacheContractFilesTest {
 
         assertThat(availabilityService)
                 .as("L27 freshness contract: availability writes evict the window-filtered "
-                        + "search-results-v4 pages through the AFTER_COMMIT relay, the same way "
+                        + "search-results-v5 pages through the AFTER_COMMIT relay, the same way "
                         + "listing writes evict CATALOG_CACHE_NAMES")
-                .contains("Set.of(\"availability\", \"search-results-v4\")");
+                .contains("Set.of(\"availability\", \"search-results-v5\")");
     }
 
     private java.util.Set<String> cacheableNames(String source) {

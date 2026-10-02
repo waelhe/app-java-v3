@@ -50,11 +50,18 @@ import java.lang.reflect.Method;
  * spelling). The PREFIX bumps {@code l32v1 → l34v1} and the cache NAME
  * bumps {@code search-results-v3 → v4} — the schema extension's disjoint
  * spaces, the same one-time cold cycle bounded by the 1h TTL.
+ *
+ * <p>W3 (yelp-level plan §5 — G17): the min-stars floor rides as a
+ * first-class segment — a floor-carrying and a floor-less search never
+ * share an entry. The PREFIX bumps {@code l34v1 → l35v1} and the cache
+ * NAME bumps {@code search-results-v4 → v5} (with the ListingSummary
+ * star components' own name bumps in the catalog) — the schema
+ * extension's disjoint spaces, the same documented D-R6 discipline.
  */
 @Component("searchCriteriaKeyGenerator")
 public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
 
-    private static final String PREFIX = "l34v1";
+    private static final String PREFIX = "l35v1";
 
     @Override
     public Object generate(Object target, Method method, Object... params) {
@@ -88,6 +95,9 @@ public class SearchCriteriaCacheKeyGenerator implements KeyGenerator {
         append(key, criteria.radiusKm() == null
                 ? null
                 : criteria.radiusKm().movePointRight(3).longValueExact());
+        // W3 (G17): the min-stars floor — first-class segment (the
+        // plain toString form, like every other numeric criterion)
+        append(key, criteria.minRating());
         append(key, pageable.getPageNumber());
         append(key, pageable.getPageSize());
         append(key, pageable.getSort());

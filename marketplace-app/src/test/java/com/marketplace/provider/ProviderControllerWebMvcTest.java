@@ -86,7 +86,7 @@ class ProviderControllerWebMvcTest {
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(
                                 UUID.randomUUID(), "Sunny flat", "APARTMENT",
-                                java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime")),
+                                java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime", null, 0L)),
                         0, 20, 1, 1, true));
 
         when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class), any(Pageable.class)))

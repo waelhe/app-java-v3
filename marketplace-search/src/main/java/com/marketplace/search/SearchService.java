@@ -90,7 +90,11 @@ public class SearchService {
     // the schema extension; the key generator's prefix bump l32v1 → l34v1
     // keeps the key spaces disjoint too — the "bump together with the
     // other three names" house discipline, #241).
-    @Cacheable(cacheNames = "search-results-v4", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
+    // W3 (yelp-level plan §5 — G17/G20): the min-stars criterion and the
+    // ListingSummary star components bump it once more — search-results-v4
+    // → v5 (the key generator's prefix bump l34v1 → l35v1; the catalog's
+    // three names bump in the same batch — the same #241 discipline).
+    @Cacheable(cacheNames = "search-results-v5", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
     public Page<ListingSummary> search(String query, String category, Pageable pageable) {
         // CodeRabbit PR #299 round 1 (normalize ONCE): this legacy entry has
         // no production caller, but its contract is the same as the
@@ -125,7 +129,7 @@ public class SearchService {
      * registration the L32 facets use — a coordinate change is a property
      * change).
      */
-    @Cacheable(cacheNames = "search-results-v4", keyGenerator = "searchCriteriaKeyGenerator")
+    @Cacheable(cacheNames = "search-results-v5", keyGenerator = "searchCriteriaKeyGenerator")
     public Page<ListingSummary> search(SearchCriteria criteria, Pageable pageable) {
         // P1 (postgis plan): the radius branch — hasRadius() pushes to the
         // dedicated dispatch exactly like hasPropertyCriteria() does for
@@ -184,7 +188,13 @@ public class SearchService {
     private static boolean hasMappedSort(Pageable pageable) {
         return pageable.getSort().stream()
                 .anyMatch(order -> "priceCents".equals(order.getProperty())
-                        || "createdAt".equals(order.getProperty()));
+                        || "createdAt".equals(order.getProperty())
+                        // W3 (G16): the rating sort's mapped name — the
+                        // composite column rides the same Specification
+                        // path (the legacy native criteria query's baked
+                        // ORDER BY cannot honor it; the faceted path's
+                        // boostFirst composes the ranked-first tier).
+                        || "rankingScore".equals(order.getProperty()));
     }
 
     /** The pre-L32 dispatch — verbatim. */

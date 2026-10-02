@@ -130,7 +130,7 @@ class SearchPropertyFilterIntegrationTest {
     private static SearchCriteria facets(UUID locationId, PropertyPurpose purpose,
                                          Integer minRooms, Integer minAreaM2) {
         return new SearchCriteria(null, null, null, null, null, null, null,
-                locationId, purpose, null, minRooms, null, minAreaM2, null, null, null);
+                locationId, purpose, null, minRooms, null, minAreaM2, null, null, null, null);
     }
 
     @Test
@@ -236,7 +236,7 @@ class SearchPropertyFilterIntegrationTest {
                         150, 2, 1, QUDSAYYA)));
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
-                null, null, 4, null, null, null, null, null, null, null, null, null);
+                null, null, 4, null, null, null, null, null, null, null, null, null, null);
         Page<ListingSummary> page = searchService.search(withGuests,
                 PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "area")));
 
@@ -259,7 +259,7 @@ class SearchPropertyFilterIntegrationTest {
     void textQuery_withPropertyCriteria_ranksAndFilters() {
         Page<ListingSummary> page = searchService.search(
                 new SearchCriteria("فيلا", null, null, null, null, null, null,
-                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null, null, null, null),
+                        QUDSAYYA, PropertyPurpose.SALE, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         assertThat(page.getContent()).extracting(ListingSummary::id)

@@ -167,15 +167,15 @@ class SearchCriteriaTest {
     @Test
     void facetNumericCriteria_zeroOrNegative_isRejectedBeforeAnyQuery() {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
-                null, null, null, null, null, null, 0, null, null, null, null, null))
+                null, null, null, null, null, null, 0, null, null, null, null, null, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("minRooms");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
-                null, null, null, null, null, null, null, -1, null, null, null, null))
+                null, null, null, null, null, null, null, -1, null, null, null, null, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("minBathrooms");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
-                null, null, null, null, null, null, null, null, -50, null, null, null))
+                null, null, null, null, null, null, null, null, -50, null, null, null, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("minAreaM2");
     }
@@ -185,7 +185,7 @@ class SearchCriteriaTest {
         SearchCriteria criteria = new SearchCriteria(null, null, null, null,
                 null, null, null, java.util.UUID.randomUUID(),
                 com.marketplace.shared.api.PropertyPurpose.RENT,
-                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80, null, null, null);
+                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80, null, null, null, null);
 
         assertThat(criteria.minRooms()).isEqualTo(2);
         assertThat(criteria.minBathrooms()).isEqualTo(1);
@@ -201,9 +201,9 @@ class SearchCriteriaTest {
         // the canonical 16-arg form with all facets and no radius is the
         // legacy form too
         assertThat(new SearchCriteria("q", "cat", null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null).hasPropertyCriteria()).isFalse();
+                null, null, null, null, null, null, null, null, null, null).hasPropertyCriteria()).isFalse();
         assertThat(new SearchCriteria("q", "cat", null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null).hasRadius()).isFalse();
+                null, null, null, null, null, null, null, null, null, null).hasRadius()).isFalse();
     }
 
     // ---- P1 (postgis plan §D-P6): the radius triple gates ----------------
@@ -215,7 +215,7 @@ class SearchCriteriaTest {
     void validRadiusTriple_isAcceptedAndHasRadius() {
         SearchCriteria criteria = new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
 
         assertThat(criteria.hasRadius()).isTrue();
         assertThat(criteria.radiusMeters()).isEqualTo(10_000L);
@@ -228,7 +228,7 @@ class SearchCriteriaTest {
         // 0.25 km = 250 m — whole meters, the documented granularity.
         SearchCriteria criteria = new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("0.25"));
+                LAT, LNG, new BigDecimal("0.25"), null);
 
         assertThat(criteria.radiusMeters()).isEqualTo(250L);
     }
@@ -238,19 +238,19 @@ class SearchCriteriaTest {
         // one coordinate without the other...
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, null, null))
+                LAT, null, null, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("provided together");
         // ...the radius without a center...
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                null, null, BigDecimal.TEN))
+                null, null, BigDecimal.TEN, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("provided together");
         // ...and two of the three.
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, null))
+                LAT, LNG, null, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("provided together");
     }
@@ -276,9 +276,9 @@ class SearchCriteriaTest {
                 .hasCatalogCriteria()).isFalse();
         assertThat(new SearchCriteria(null, null, null, null, null, null, null,
                 java.util.UUID.randomUUID(), PropertyPurpose.RENT, null, null, null, null,
-                null, null, null).hasCatalogCriteria()).isFalse();
+                null, null, null, null).hasCatalogCriteria()).isFalse();
         assertThat(new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"))
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null)
                 .hasCatalogCriteria()).isFalse();
     }
 
@@ -286,12 +286,12 @@ class SearchCriteriaTest {
     void latitudeOutsideTheV48Range_isRejected() {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                new BigDecimal("90.000001"), LNG, BigDecimal.TEN))
+                new BigDecimal("90.000001"), LNG, BigDecimal.TEN, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("latitude");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                new BigDecimal("-91"), LNG, BigDecimal.TEN))
+                new BigDecimal("-91"), LNG, BigDecimal.TEN, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("latitude");
     }
@@ -300,12 +300,12 @@ class SearchCriteriaTest {
     void longitudeOutsideTheV48Range_isRejected() {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, new BigDecimal("180.000001"), BigDecimal.TEN))
+                LAT, new BigDecimal("180.000001"), BigDecimal.TEN, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("longitude");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, new BigDecimal("-181"), BigDecimal.TEN))
+                LAT, new BigDecimal("-181"), BigDecimal.TEN, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("longitude");
     }
@@ -314,18 +314,18 @@ class SearchCriteriaTest {
     void zeroAndAboveCeilingRadius_areRejected() {
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, BigDecimal.ZERO))
+                LAT, LNG, BigDecimal.ZERO, null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("radiusKm");
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("50.000001")))
+                LAT, LNG, new BigDecimal("50.000001"), null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("radiusKm");
         // the ceiling itself (50) is IN — the (0, 50] interval
         SearchCriteria atCeiling = new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("50"));
+                LAT, LNG, new BigDecimal("50"), null);
         assertThat(atCeiling.radiusMeters()).isEqualTo(50_000L);
     }
 
@@ -336,7 +336,7 @@ class SearchCriteriaTest {
         // ST_DWithin argument see the exact same value).
         assertThatThrownBy(() -> new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10.0004")))
+                LAT, LNG, new BigDecimal("10.0004"), null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("meter");
     }
@@ -349,13 +349,13 @@ class SearchCriteriaTest {
         SearchCriteria criteria = new SearchCriteria(null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
                 new BigDecimal("33.5588894"), new BigDecimal("36.05694449"),
-                new BigDecimal("10"));
+                new BigDecimal("10"), null);
 
         assertThat(criteria.latitude()).isEqualTo(new BigDecimal("33.558889"));
         assertThat(criteria.longitude()).isEqualTo(new BigDecimal("36.056944"));
         // and an already-scale-6 center passes through unchanged
         assertThat(new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, BigDecimal.TEN)
+                null, null, null, null, null, null, LAT, LNG, BigDecimal.TEN, null)
                 .latitude().compareTo(LAT)).isZero();
     }
 
@@ -376,7 +376,7 @@ class SearchCriteriaTest {
                 CHECK_IN, CHECK_OUT, 2, java.util.UUID.randomUUID(),
                 com.marketplace.shared.api.PropertyPurpose.RENT,
                 com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80,
-                LAT, LNG, new BigDecimal("7.5"));
+                LAT, LNG, new BigDecimal("7.5"), null);
 
         assertThat(criteria.hasRadius()).isTrue();
         assertThat(criteria.hasWindow()).isTrue();

@@ -92,6 +92,21 @@ public class ProviderListing extends BaseEntity {
     @Column(name = "promoted_until")
     private Instant promotedUntil;
 
+    /**
+     * W3 (yelp-level plan §5 — G18): the composite ranking score —
+     * rating × log(count) × completeness × recency — STORED and refreshed
+     * by the daily {@code ListingRankingJob} (the ListingExpiryJob/
+     * EventPublicationCleanup standing-job pattern), never composed in
+     * the read path. NULL is the honest «not yet ranked» state a listing
+     * carries until the job's first pass over it; the job writes a
+     * non-null score for every clean-ACTIVE listing (0.0 when the provider
+     * has no verified reviews — the rating factor's own floor). The
+     * non-negative floor is V92's CHECK; the formula's authority is the
+     * job's service, ONE place.
+     */
+    @Column(name = "ranking_score")
+    private Double rankingScore;
+
     protected ProviderListing() {
     }
 
@@ -178,6 +193,20 @@ public class ProviderListing extends BaseEntity {
      */
     public void promoteUntil(Instant until) {
         this.promotedUntil = until;
+    }
+
+    /** W3 (G18): the stored composite score — read as-is (NULL = not yet ranked). */
+    public Double getRankingScore() { return rankingScore; }
+
+    /**
+     * W3 (G18): the daily job's write seam. Deliberately no status gate:
+     * the job is the score's single writer and only touches clean-ACTIVE
+     * rows; a non-negative value is V92's CHECK-enforced contract. The
+     * @Audited revision this UPDATE produces is the score's own history
+     * (rank forensics) — the mirror column V92 added for exactly this.
+     */
+    public void applyRankingScore(double score) {
+        this.rankingScore = score;
     }
 
     public void update(String title, String description, String category, Long priceCents) {

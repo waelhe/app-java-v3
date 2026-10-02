@@ -85,7 +85,8 @@ public record SearchCriteria(
         Integer minAreaM2,
         BigDecimal latitude,
         BigDecimal longitude,
-        BigDecimal radiusKm
+        BigDecimal radiusKm,
+        BigDecimal minRating
 ) {
 
     /**
@@ -164,6 +165,24 @@ public record SearchCriteria(
             latitude = latitude.setScale(6, java.math.RoundingMode.HALF_UP);
             longitude = longitude.setScale(6, java.math.RoundingMode.HALF_UP);
         }
+        // W3 (G17): the min-stars floor — the V6 rating CHECK's own bounds
+        // ([1, 5]) gate it at construction: a zero or a six cannot exist as
+        // a criterion, a 400 before any query (the same type-gate law as
+        // every numeric criterion above).
+        if (minRating != null
+                && (minRating.compareTo(BigDecimal.ONE) < 0
+                || minRating.compareTo(BigDecimal.valueOf(5)) > 0)) {
+            throw new BadRequestException("minRating must be within [1, 5]");
+        }
+    }
+
+    /**
+     * W3 (G17 — «فلتر حد أدنى من النجوم»): the floor is present — the
+     * catalog flows resolve the rating-floor provider set and restrict
+     * the query (the set-restriction pattern).
+     */
+    public boolean hasMinRating() {
+        return minRating != null;
     }
 
     /**
@@ -173,7 +192,7 @@ public record SearchCriteria(
      */
     public SearchCriteria(String query, String category, BigDecimal minPrice, BigDecimal maxPrice) {
         this(query, category, minPrice, maxPrice, null, null, null,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -185,7 +204,7 @@ public record SearchCriteria(
     public SearchCriteria(String query, String category, BigDecimal minPrice, BigDecimal maxPrice,
                           Instant checkIn, Instant checkOut) {
         this(query, category, minPrice, maxPrice, checkIn, checkOut, null,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -197,7 +216,7 @@ public record SearchCriteria(
     public SearchCriteria(String query, String category, BigDecimal minPrice, BigDecimal maxPrice,
                           Instant checkIn, Instant checkOut, Integer guests) {
         this(query, category, minPrice, maxPrice, checkIn, checkOut, guests,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     /** A stay window is present — the search must restrict to available providers. */

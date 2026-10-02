@@ -230,7 +230,7 @@ class SearchServiceTest {
 
         assertThatThrownBy(() -> service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        unknown, null, null, null, null, null, null, null, null),
+                        unknown, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10)))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         verify(port, never()).searchByCriteriaRestrictedToListings(any(), any(), any());
@@ -244,7 +244,7 @@ class SearchServiceTest {
 
         Page<ListingSummary> page = service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        location, null, null, null, null, null, null, null, null),
+                        location, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         assertThat(page).isEmpty();
@@ -263,7 +263,7 @@ class SearchServiceTest {
 
         service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        location, PropertyPurpose.RENT, null, null, null, null, null, null, null),
+                        location, PropertyPurpose.RENT, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         verify(filterPort).findListingIdsMatching(argThat((PropertyCriteria criteria) ->
@@ -285,7 +285,7 @@ class SearchServiceTest {
 
         service.search(
                 new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, null,
-                        location, null, PropertyType.APARTMENT, 2, null, null, null, null, null),
+                        location, null, PropertyType.APARTMENT, 2, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         // the provider whitelist rides the RESTRICTED filter form (the
@@ -305,7 +305,7 @@ class SearchServiceTest {
 
         service.search(
                 new SearchCriteria("شقة قدسيا", null, null, null, null, null, null,
-                        null, PropertyPurpose.SALE, null, null, null, null, null, null, null),
+                        null, PropertyPurpose.SALE, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10));
 
         verify(port).searchFullTextRestrictedToListings(argThat(c -> "شقة قدسيا".equals(c.query())), eq(Set.of(matched)), any());
@@ -326,7 +326,7 @@ class SearchServiceTest {
 
         Page<ListingSummary> page = service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        null, null, null, null, null, null, null, null, null),
+                        null, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 2, Sort.by(Sort.Direction.ASC, "area")));
 
         // the property side owns the ordering + the total; the summaries
@@ -348,7 +348,7 @@ class SearchServiceTest {
         // eligible; the documented "text searches ignore the sort").
         service.search(
                 new SearchCriteria("loft", null, null, null, null, null, null,
-                        null, null, null, null, null, null, null, null, null),
+                        null, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
 
         verify(port).searchFullText(argThat(c -> "loft".equals(c.query())), any());
@@ -418,7 +418,7 @@ class SearchServiceTest {
         // (priceCents) is what arrives.
         service.search(
                 new SearchCriteria(null, "realestate", null, null, null, null, null,
-                        null, null, null, null, null, null, null, null, null),
+                        null, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
                         .and(Sort.by(Sort.Direction.ASC, "id"))));
 
@@ -440,7 +440,7 @@ class SearchServiceTest {
 
         service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        null, PropertyPurpose.RENT, null, null, null, null, null, null, null),
+                        null, PropertyPurpose.RENT, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
                         .and(Sort.by(Sort.Direction.ASC, "id"))));
 
@@ -469,7 +469,7 @@ class SearchServiceTest {
 
     private static ListingSummary summaryOf(UUID id) {
         return new ListingSummary(id, "listing " + id, "realestate",
-                BigDecimal.valueOf(1000, 2), "SAR", "Provider");
+                BigDecimal.valueOf(1000, 2), "SAR", "Provider", null, 0L);
     }
 
     // ---- P1 (postgis plan): the radius flow --------------------------------
@@ -480,7 +480,7 @@ class SearchServiceTest {
 
     private static SearchCriteria radiusCriteria() {
         return new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
     }
 
     @Test
@@ -519,7 +519,7 @@ class SearchServiceTest {
 
         SearchCriteria windowed = new SearchCriteria(null, null, null, null,
                 CHECK_IN, CHECK_OUT, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         service.search(windowed, PageRequest.of(0, 10));
 
         verify(filterPort).findListingIdsWithinRadiusRestricted(LAT, LNG, RADIUS_METERS, Set.of(available));
@@ -532,7 +532,7 @@ class SearchServiceTest {
 
         SearchCriteria windowed = new SearchCriteria(null, null, null, null,
                 CHECK_IN, CHECK_OUT, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         Page<ListingSummary> page = service.search(windowed, PageRequest.of(0, 10));
 
         assertThat(page.getTotalElements()).isZero();
@@ -552,7 +552,7 @@ class SearchServiceTest {
 
         SearchCriteria withFacet = new SearchCriteria(null, null, null, null, null, null, null,
                 UUID.randomUUID(), PropertyPurpose.RENT, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         service.search(withFacet, PageRequest.of(0, 10));
 
         verify(port).searchByCriteriaRestrictedToListings(any(), eq(Set.of(nearWithFacet)), any());
@@ -567,7 +567,7 @@ class SearchServiceTest {
 
         SearchCriteria withFacet = new SearchCriteria(null, null, null, null, null, null, null,
                 UUID.randomUUID(), PropertyPurpose.RENT, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         Page<ListingSummary> page = service.search(withFacet, PageRequest.of(0, 10));
 
         assertThat(page.getTotalElements()).isZero();
@@ -581,7 +581,7 @@ class SearchServiceTest {
         when(port.searchFullTextRestrictedToListings(any(), any(), any())).thenReturn(emptyPage());
 
         SearchCriteria text = new SearchCriteria("شقة", null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         service.search(text, PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
 
         // documented scope boundary: text queries rank by relevance — the
@@ -608,7 +608,7 @@ class SearchServiceTest {
 
         SearchCriteria withFacet = new SearchCriteria(null, null, null, null, null, null, null,
                 UUID.randomUUID(), PropertyPurpose.RENT, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         Page<ListingSummary> page = service.search(withFacet,
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
 
@@ -628,7 +628,7 @@ class SearchServiceTest {
     void distanceSort_withoutRadiusCriteria_is400BeforeAnyQuery() {
         assertThatThrownBy(() -> service.search(
                 new SearchCriteria(null, null, null, null, null, null, null,
-                        null, null, null, null, null, null, null, null, null),
+                        null, null, null, null, null, null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance"))))
                 .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
                 .hasMessageContaining("requires the radius criteria");
@@ -661,7 +661,7 @@ class SearchServiceTest {
 
         SearchCriteria windowed = new SearchCriteria(null, null, null, null,
                 CHECK_IN, CHECK_OUT, null, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         Page<ListingSummary> page = service.search(windowed,
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
 
@@ -740,7 +740,7 @@ class SearchServiceTest {
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
                 null, null, 4, null, null, null, null, null, null,
-                LAT, LNG, new BigDecimal("10"));
+                LAT, LNG, new BigDecimal("10"), null);
         Page<ListingSummary> page = service.search(withGuests,
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
 
@@ -767,7 +767,7 @@ class SearchServiceTest {
         when(port.findSummariesByIds(anyList())).thenReturn(List.of(summaryOf(eligible)));
 
         SearchCriteria withGuests = new SearchCriteria(null, null, null, null,
-                null, null, 4, null, null, null, null, null, null, null, null, null);
+                null, null, 4, null, null, null, null, null, null, null, null, null, null);
         Page<ListingSummary> page = service.search(withGuests,
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "area")));
 

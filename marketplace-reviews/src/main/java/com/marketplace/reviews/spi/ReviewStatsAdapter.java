@@ -65,4 +65,28 @@ public class ReviewStatsAdapter implements ReviewStatsPort {
         return reviewRepository.findById(reviewId)
                 .map(Review::getProviderId);
     }
+
+    /**
+     * W3 (§5 — G20): the batch form — one grouped query for a whole
+     * results page's distinct providers. An empty input answers an empty
+     * map without a query (the batch-resolution discipline: a page with no
+     * providers costs nothing).
+     */
+    @Override
+    public java.util.Map<UUID, ReviewStats> findStatsByProviderUserIds(java.util.Set<UUID> providerUserIds) {
+        if (providerUserIds == null || providerUserIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        return reviewRepository.getStatsByProviderIds(providerUserIds).stream()
+                .collect(java.util.stream.Collectors.toMap(ReviewStats::providerId, stats -> stats));
+    }
+
+    /**
+     * W3 (§5 — G17): the rating-floor set. The HAVING clause is the
+     * filter's whole truth — no verified reviews, no group, no match.
+     */
+    @Override
+    public java.util.Set<UUID> findProviderUserIdsWithRatingAtLeast(double minRating) {
+        return new java.util.HashSet<>(reviewRepository.findProviderIdsWithVerifiedRatingAtLeast(minRating));
+    }
 }

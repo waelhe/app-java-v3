@@ -9,6 +9,7 @@ import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -41,6 +42,33 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      */
     @Query("select l.id from ProviderListing l where l.status = ?1")
     Set<UUID> findIdsByStatus(ListingStatus status);
+
+    /**
+     * W3 (yelp-level plan §5 — G17): the rating-floor flow's eligible id
+     * set — the ACTIVE listings owned by the floor-answering providers
+     * (soft-deleted rows excluded through the entity's @SoftDelete). The
+     * property text flow intersects this with its facet-matching id set.
+     */
+    @Query("select l.id from ProviderListing l where l.status = ?1 and l.providerId in ?2")
+    Set<UUID> findIdsByStatusAndProviderIdIn(ListingStatus status, Collection<UUID> providerIds);
+
+    /**
+     * W3 (yelp-level plan §5 — G18): the ranking job's KEYSET page — the
+     * clean-ACTIVE set (status ACTIVE, not yet expired — the sitemap's own
+     * clean-set law: never rank what is about to leave the public surface)
+     * in deterministic id order, advancing by {@code id > :afterId} (the
+     * saved-search scan's own fix: an offset would shift under concurrent
+     * inserts and skip rows; a keyset cannot). Soft-deleted rows are
+     * excluded automatically through the entity's @SoftDelete.
+     */
+    @Query("""
+            select l from ProviderListing l
+            where (:afterId is null or l.id > :afterId)
+              and l.status = com.marketplace.catalog.ListingStatus.ACTIVE
+              and (l.expiresAt is null or l.expiresAt > :now)
+            order by l.id asc
+            """)
+    List<ProviderListing> findRankableAfter(UUID afterId, java.time.Instant now, Pageable pageable);
 
     /**
      * L39 (realestate systems plan §5 — SEO): the sitemap page — the

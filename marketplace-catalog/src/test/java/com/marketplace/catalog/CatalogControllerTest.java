@@ -83,7 +83,7 @@ class CatalogControllerTest {
     @Test
     void listActive_servesTheServicePage() {
         PagedResponse<ListingSummary> page = PagedResponse.of(new PageImpl<>(List.of(
-                new ListingSummary(LISTING_ID, "شالية مطلة", "stay", BigDecimal.TEN, "SAR", "مزوّن قدسيا"))));
+                new ListingSummary(LISTING_ID, "شالية مطلة", "stay", BigDecimal.TEN, "SAR", "مزوّن قدسيا", null, 0L))));
         when(catalogService.listActive(SpringPagination.toPagedRequest(Pageable.unpaged())))
                 .thenReturn(page);
 

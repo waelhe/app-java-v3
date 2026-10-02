@@ -70,6 +70,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     private final java.time.Clock clock;
     private final CatalogProperties catalogProperties;
     private final CategoryRepository categoryRepository;
+    private final com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
 
     public CatalogService(ProviderListingRepository listingRepository,
                           CurrentUserProvider currentUserProvider,
@@ -78,7 +79,8 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                           ProviderLookupPort providerLookupPort,
                           java.time.Clock clock,
                           CatalogProperties catalogProperties,
-                          CategoryRepository categoryRepository) {
+                          CategoryRepository categoryRepository,
+                          com.marketplace.shared.api.ReviewStatsPort reviewStatsPort) {
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerNameResolver = providerNameResolver;
@@ -87,11 +89,12 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         this.clock = clock;
         this.catalogProperties = catalogProperties;
         this.categoryRepository = categoryRepository;
+        this.reviewStatsPort = reviewStatsPort;
     }
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-active-v2", key = "#request.page + '-' + #request.size + '-' + #request.sort")
+    @Cacheable(cacheNames = "catalog-active-v3", key = "#request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> listActive(PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         // L37: the derived query rides the official Specifications path now —
@@ -106,7 +109,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "catalog-by-category-v2", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
+    @Cacheable(cacheNames = "catalog-by-category-v3", key = "#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request) {
         Pageable pageable = SpringPagination.toPageable(request);
         Page<ProviderListing> page = findBoostFirst(
@@ -175,10 +178,24 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // concatenation key over the criteria here would reproduce the exact
     // ambiguity the repository fixed with SearchCriteriaCacheKeyGenerator
     // (PR #256 round 1) — the house discipline rejects it.
-    @Cacheable(cacheNames = "catalog-search-v2",
-            condition = "#criteria != null && #criteria.category == null && #criteria.minPrice == null && #criteria.maxPrice == null && #criteria.guests == null",
+    @Cacheable(cacheNames = "catalog-search-v3",
+            condition = "#criteria != null && #criteria.category == null && #criteria.minPrice == null && #criteria.maxPrice == null && #criteria.guests == null && #criteria.minRating == null",
             key = "#criteria.query + '-' + #request.page + '-' + #request.size + '-' + #request.sort")
     public PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the rating floor routes the unfiltered text form onto
+        // its restricted twin BEFORE any query — the floor is a provider
+        // set exactly like the availability whitelist, and the cached
+        // condition above excludes floor-carrying criteria (the floor is
+        // not in this cache's key; its caching surface is the search
+        // module's criteria-keyed cache, whose generator carries the
+        // floor as a first-class segment).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
+            return PagedResponse.empty(request); // no provider answers the floor
+        }
+        if (floor != null) {
+            return searchFullTextRestricted(criteria, floor, request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         // L37: one read, one "now" — the FTS page and its typo-tolerance
         // fallback share the same instant, so the boost state cannot
@@ -212,6 +229,17 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchByCriteria(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the rating floor routes the plain criteria form onto
+        // its restricted twin — the same one-wiring-point law as the text
+        // form above (an empty floor answers the honest empty page, no
+        // query).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
+        if (floor != null) {
+            return searchByCriteriaRestricted(criteria, floor, request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
@@ -228,17 +256,25 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * {@code provider_id IN (:providerIds)} restriction in BOTH the content
      * and the count query. Deliberately NOT cached at this level: the
      * whitelist varies per request, and the search module's
-     * {@code search-results-v4} cache (criteria-keyed, window included) is
+     * {@code search-results-v5} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
      */
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
+        // W3 (G17): the floor INTERSECTS the caller's whitelist — a
+        // windowed floor-carrying search restricts to providers that are
+        // BOTH available and above the stars floor. An empty intersection
+        // is the honest empty page (no query).
+        Set<UUID> effective = intersectRestrictions(providerIds, minRatingFloor(criteria));
+        if (effective != null && effective.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         Long minPrice = toMinorUnits(criteria.minPrice());
         Long maxPrice = toMinorUnits(criteria.maxPrice());
         Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
-                criteria.category(), minPrice, maxPrice, criteria.guests(), providerIds, clock.instant(), pageable);
+                criteria.category(), minPrice, maxPrice, criteria.guests(), effective, clock.instant(), pageable);
         return PagedResponse.of(toSummaryPage(page));
     }
 
@@ -263,12 +299,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * windowed text search no longer drops the filters that ride it.
      * Deliberately NOT cached at this level (the same policy as
      * {@link #searchByCriteriaRestricted}): the search module's
-     * criteria-keyed {@code search-results-v4} cache is the caching
+     * criteria-keyed {@code search-results-v5} cache is the caching
      * surface for the restricted window searches.
      */
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
+        // W3 (G17): the floor INTERSECTS the caller's whitelist (the
+        // criteria-restricted twin's own law, one branch over).
+        Set<UUID> effective = intersectRestrictions(providerIds, minRatingFloor(criteria));
+        if (effective != null && effective.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
         // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
@@ -278,11 +320,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         String query = criteria.query() == null ? null : criteria.query().trim();
         Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                criteria.guests(), providerIds, now, pageable);
+                criteria.guests(), effective, now, pageable);
         if (page.getTotalElements() == 0) {
             page = listingRepository.searchSimilarRestricted(query,
                     criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                    criteria.guests(), providerIds, now, pageable);
+                    criteria.guests(), effective, now, pageable);
         }
         return PagedResponse.of(toSummaryPage(page));
     }
@@ -396,9 +438,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     public PagedResponse<ListingSummary> searchByCriteriaRestrictedToListings(SearchCriteria criteria,
                                                                      Set<UUID> listingIds,
                                                                      PagedRequest request) {
+        // W3 (G17): the floor composes as the provider-set predicate — the
+        // property flow's listing-id restriction and the stars floor AND
+        // together (the saved-search matcher inherits this entry's floor
+        // for free — the matcher's own composition never resolves stats).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         var predicates = criteriaSpecification(criteria)
-                .and(ProviderListingSpecifications.hasListingIdIn(listingIds));
+                .and(ProviderListingSpecifications.hasListingIdIn(listingIds))
+                .and(ProviderListingSpecifications.hasProviderIdIn(floor));
         Page<ProviderListing> page = findBoostFirst(predicates, pageable);
         return PagedResponse.of(toSummaryPage(page));
     }
@@ -406,8 +457,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchByCriteriaFaceted(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the faceted path composes the floor as the provider-set
+        // predicate — the Specification flow's own composition form (the
+        // plain-criteria and text twins route onto their Restricted forms
+        // instead; this one ANDs the predicate directly).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
         Pageable pageable = SpringPagination.toPageable(request);
-        Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria), pageable);
+        Page<ProviderListing> page = findBoostFirst(
+                criteriaSpecification(criteria).and(ProviderListingSpecifications.hasProviderIdIn(floor)),
+                pageable);
         return PagedResponse.of(toSummaryPage(page));
     }
 
@@ -433,12 +494,30 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * BOTH the content and count queries — the property flow's text branch
      * and the saved-search matcher's membership probe no longer drop the
      * filters that ride them. Deliberately NOT cached at this level: the
-     * search module's criteria-keyed {@code search-results-v4} cache is
+     * search module's criteria-keyed {@code search-results-v5} cache is
      * the caching surface for the id-restricted forms.
      */
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchFullTextRestrictedToListings(SearchCriteria criteria, Set<UUID> listingIds, PagedRequest request) {
+        // W3 (G17): the floor intersects the LISTING-id restriction itself —
+        // the property text flow's own composition point (the relevance
+        // ranking and the repo query shapes stay untouched; the floor's
+        // eligible listing set is small by construction: the floor
+        // providers' ACTIVE listings).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null) {
+            Set<UUID> eligibleIds = floor.isEmpty()
+                    ? java.util.Set.of()
+                    : listingRepository.findIdsByStatusAndProviderIdIn(ListingStatus.ACTIVE, floor);
+            Set<UUID> effective = listingIds.stream()
+                    .filter(eligibleIds::contains)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (effective.isEmpty()) {
+                return PagedResponse.empty(request); // no floor provider owns a facet-matching listing
+            }
+            listingIds = effective;
+        }
         Pageable pageable = SpringPagination.toPageable(request);
         java.time.Instant now = clock.instant();
         // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
@@ -494,17 +573,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // batch-resolve provider names (the toSummaryPage discipline)
         Map<UUID, String> providerNames = providerNameResolver.resolveNames(
                 byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));
+        // W3 (G20): the stars ride the same batch discipline (the shared
+        // row composition keeps the paged and by-ids paths one shape).
+        Map<UUID, com.marketplace.shared.api.ReviewStats> ratings = reviewStatsPort.findStatsByProviderUserIds(
+                byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));
         // restore the caller's order (the area-sorted page assembly)
         return idsInOrder.stream()
                 .map(byId::get)
                 .filter(Objects::nonNull)
-                .map(listing -> new ListingSummary(
-                        listing.getId(),
-                        listing.getTitle(),
-                        listing.getCategory(),
-                        BigDecimal.valueOf(listing.getPriceCents(), 2),
-                        listing.getCurrency(),
-                        providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")))
+                .map(listing -> toSummary(listing, providerNames, ratings))
                 .toList();
     }
 
@@ -578,7 +655,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     // the key generator's prefix bump keeps the key spaces disjoint AND the
     // name bump evicts at deploy time through the deploy itself).
     static final Set<String> CATALOG_CACHE_NAMES =
-            Set.of("catalog-active-v2", "catalog-by-category-v2", "catalog-search-v2", "search-results-v4");
+            Set.of("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3", "search-results-v5");
 
     /**
      * Creates a listing for the caller-owned provider profile. The
@@ -904,14 +981,60 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
                 .map(ProviderListing::getProviderId)
                 .collect(Collectors.toSet());
         Map<UUID, String> providerNames = providerNameResolver.resolveNames(providerIds);
-        return page.map(listing -> new ListingSummary(
+        // W3 (G20): the stars ride the same batch-resolution discipline —
+        // one grouped stats query for the page's distinct providers, never
+        // per-row (a page costs the names query + the stats query, bounded
+        // by the page size no matter the total).
+        Map<UUID, com.marketplace.shared.api.ReviewStats> ratings =
+                reviewStatsPort.findStatsByProviderUserIds(providerIds);
+        return page.map(listing -> toSummary(listing, providerNames, ratings));
+    }
+
+    /** The single row composition — shared by the paged and the by-ids paths. */
+    private static ListingSummary toSummary(ProviderListing listing,
+                                            Map<UUID, String> providerNames,
+                                            Map<UUID, com.marketplace.shared.api.ReviewStats> ratings) {
+        com.marketplace.shared.api.ReviewStats stats = ratings.get(listing.getProviderId());
+        return new ListingSummary(
                 listing.getId(),
                 listing.getTitle(),
                 listing.getCategory(),
                 BigDecimal.valueOf(listing.getPriceCents(), 2),
                 listing.getCurrency(),
-                providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider")
-        ));
+                providerNames.getOrDefault(listing.getProviderId(), "Unknown Provider"),
+                // The honest not-yet-rated row: null rating, zero count —
+                // never a fabricated zero (a provider with no verified
+                // reviews is absent from the batch answer by construction).
+                stats == null ? null : stats.averageRating(),
+                stats == null ? 0L : stats.reviewCount()
+        );
+    }
+
+    /**
+     * W3 (G17): the rating-floor set — null when the criterion is absent
+     * (the unrestricted form); empty when NO provider answers the floor
+     * (the honest-empty-page short-circuit every caller applies).
+     */
+    private Set<UUID> minRatingFloor(SearchCriteria criteria) {
+        if (criteria == null || !criteria.hasMinRating()) {
+            return null;
+        }
+        return reviewStatsPort.findProviderUserIdsWithRatingAtLeast(criteria.minRating().doubleValue());
+    }
+
+    /**
+     * W3 (G17): two optional provider-set restrictions compose by
+     * INTERSECTION (window whitelist ∩ stars floor) — null means absent on
+     * either side; a non-null empty result is the honest empty page.
+     */
+    private static Set<UUID> intersectRestrictions(Set<UUID> whitelist, Set<UUID> floor) {
+        if (whitelist == null) {
+            return floor;
+        }
+        if (floor == null) {
+            return whitelist;
+        }
+        return whitelist.stream().filter(floor::contains).collect(Collectors.toSet());
     }
 
     private ProviderListingView toProviderListingView(ProviderListing listing) {

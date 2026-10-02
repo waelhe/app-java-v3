@@ -89,6 +89,21 @@ public final class ProviderListingSpecifications {
     }
 
     /**
+     * W3 (yelp-level plan §5 — G17): the rating-floor set restriction —
+     * the providers the exposed stats port reports as answering the
+     * min-stars floor, composed as the availability whitelist's own
+     * shape (null = absent; an empty set never arrives — the caller
+     * short-circuits to the honest empty page first). The provider ids
+     * live in the users.id space (A1) exactly as {@link #hasProviderId}.
+     */
+    public static Specification<ProviderListing> hasProviderIdIn(Collection<UUID> providerIds) {
+        return (root, query, cb) -> {
+            if (providerIds == null) return cb.conjunction();
+            return root.get("providerId").in(providerIds);
+        };
+    }
+
+    /**
      * L37 (realestate systems plan §5 — the featured boost): the
      * boost-first ORDERING specification — "المعزّز أولًا داخل نفس الفرز
      * الأساسي"، one shape for every ordered public read:
@@ -159,6 +174,18 @@ public final class ProviderListingSpecifications {
             orders.add(cb.desc(cb.<Integer>selectCase()
                     .when(cb.greaterThan(root.<Instant>get("promotedUntil"), now), 1)
                     .otherwise(0)));
+            // W3 (G18): the ranked-first tier for sort=rating — PostgreSQL
+            // ranks NULLS FIRST on DESC, so a bare ranking_score DESC would
+            // crown every not-yet-ranked row. The CASE flag is the boost
+            // tier's own measured answer to the same NULL-ordering trap:
+            // ranked rows tier 1, not-yet-ranked tier 0, and the requested
+            // DESC + id tiebreak do the rest. The tier is conditional — a
+            // price/newest sort keeps its exact pre-W3 ordering.
+            if (sort.stream().anyMatch(order -> "rankingScore".equals(order.getProperty()))) {
+                orders.add(cb.desc(cb.<Integer>selectCase()
+                        .when(cb.isNotNull(root.get("rankingScore")), 1)
+                        .otherwise(0)));
+            }
             // The effective whitelisted sort — the framework's own
             // translation (what a sorted Pageable would have applied).
             orders.addAll(QueryUtils.toOrders(sort, root, cb));

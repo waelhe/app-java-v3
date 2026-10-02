@@ -135,10 +135,10 @@ class SearchCriteriaCacheKeyGeneratorTest {
         assertThat(key(noGuests, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(oneGuest, PageRequest.of(0, 10)));
 
-        // The prefix bump (l27v2 → l32v1 → l34v1 with the P1 radius schema)
-        // means no pre-P1 entry can be read: the new schema carries the
-        // radius segments, old keys do not.
-        assertThat(key(noGuests, PageRequest.of(0, 10)).toString()).startsWith("l34v1|");
+        // The prefix bump (l27v2 → l32v1 → l34v1 → l35v1 with the W3 min-rating
+        // schema) means no pre-W3 entry can be read: the new schema carries the
+        // floor segment, old keys do not.
+        assertThat(key(noGuests, PageRequest.of(0, 10)).toString()).startsWith("l35v1|");
     }
 
     // ---- L32: the six real-estate facets ride as first-class segments ----
@@ -148,15 +148,15 @@ class SearchCriteriaCacheKeyGeneratorTest {
         SearchCriteria faceted = new SearchCriteria(null, null, null, null, null, null, null,
                 java.util.UUID.randomUUID(),
                 com.marketplace.shared.api.PropertyPurpose.RENT,
-                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80, null, null, null);
+                com.marketplace.shared.api.PropertyType.APARTMENT, 2, 1, 80, null, null, null, null);
         SearchCriteria facetless = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
 
         assertThat(key(faceted, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(facetless, PageRequest.of(0, 10)));
         // differing in a single facet only — still disjoint
         SearchCriteria otherRooms = new SearchCriteria(null, null, null, null, null, null, null,
-                faceted.locationId(), faceted.purpose(), faceted.propertyType(), 3, 1, 80, null, null, null);
+                faceted.locationId(), faceted.purpose(), faceted.propertyType(), 3, 1, 80, null, null, null, null);
         assertThat(key(faceted, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(otherRooms, PageRequest.of(0, 10)));
     }
@@ -169,9 +169,9 @@ class SearchCriteriaCacheKeyGeneratorTest {
     @Test
     void radiusAndFacetlessCriteria_neverShareEntries() {
         SearchCriteria withRadius = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         SearchCriteria radiusless = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
 
         assertThat(key(withRadius, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(radiusless, PageRequest.of(0, 10)));
@@ -180,9 +180,9 @@ class SearchCriteriaCacheKeyGeneratorTest {
     @Test
     void differentRadii_neverShareAKey() {
         SearchCriteria ten = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         SearchCriteria twenty = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("20"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("20"), null);
 
         assertThat(key(ten, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(twenty, PageRequest.of(0, 10)));
@@ -191,10 +191,10 @@ class SearchCriteriaCacheKeyGeneratorTest {
     @Test
     void differentCenters_neverShareAKey() {
         SearchCriteria here = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         SearchCriteria elsewhere = new SearchCriteria(null, null, null, null, null, null, null,
                 null, null, null, null, null, null,
-                new BigDecimal("33.500000"), LNG, new BigDecimal("10"));
+                new BigDecimal("33.500000"), LNG, new BigDecimal("10"), null);
 
         assertThat(key(here, PageRequest.of(0, 10)))
                 .isNotEqualTo(key(elsewhere, PageRequest.of(0, 10)));
@@ -207,10 +207,10 @@ class SearchCriteriaCacheKeyGeneratorTest {
         // — one cache entry, not a split cache (the plan's D-P12 canonical
         // segments).
         SearchCriteria plain = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         SearchCriteria padded = new SearchCriteria(null, null, null, null, null, null, null,
                 null, null, null, null, null, null,
-                new BigDecimal("33.5588890"), new BigDecimal("36.0569440"), new BigDecimal("10"));
+                new BigDecimal("33.5588890"), new BigDecimal("36.0569440"), new BigDecimal("10"), null);
 
         assertThat(key(plain, PageRequest.of(0, 10)))
                 .isEqualTo(key(padded, PageRequest.of(0, 10)));
@@ -222,20 +222,20 @@ class SearchCriteriaCacheKeyGeneratorTest {
         // the key as WHOLE METERS, so equivalent spellings share one entry
         // (the plan's D-P12: "radius in whole meters").
         SearchCriteria whole = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10"), null);
         SearchCriteria padded = new SearchCriteria(null, null, null, null, null, null, null,
-                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10.000"));
+                null, null, null, null, null, null, LAT, LNG, new BigDecimal("10.000"), null);
 
         assertThat(key(whole, PageRequest.of(0, 10)))
                 .isEqualTo(key(padded, PageRequest.of(0, 10)));
     }
 
     @Test
-    void thePrefixBumpedToL34v1_theSchemaSpacesAreDisjoint() {
-        // The P1 prefix bump (l32v1 → l34v1): no pre-P1 entry can be read as
-        // a post-P1 hit — the radius segments exist only in the new space.
+    void thePrefixBumpedToL35v1_theSchemaSpacesAreDisjoint() {
+        // The W3 prefix bump (l34v1 → l35v1): no pre-W3 entry can be read as
+        // a post-W3 hit — the floor segment exists only in the new space.
         SearchCriteria any = new SearchCriteria("loft", null, null, null);
 
-        assertThat(key(any, PageRequest.of(0, 10)).toString()).startsWith("l34v1|");
+        assertThat(key(any, PageRequest.of(0, 10)).toString()).startsWith("l35v1|");
     }
 }

@@ -119,7 +119,10 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-booking", List.of(
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),
-            Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
+            Map.entry("marketplace-catalog", List.of("catalog.create.listing",
+                    // W3 (G19): the favorites surface's two commands — the
+                    // same commands-not-reads policy as every house entry.
+                    "catalog.favorites.save", "catalog.favorites.unsave")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
