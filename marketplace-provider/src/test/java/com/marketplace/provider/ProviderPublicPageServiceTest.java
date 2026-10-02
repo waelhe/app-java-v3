@@ -258,7 +258,8 @@ class ProviderPublicPageServiceTest {
         Pageable reviewsPageable = PageRequest.of(0, 10);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
         PublishedReviewView row = new PublishedReviewView(UUID.randomUUID(), 5, "Sourdough sells out by noon",
-                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", "Nour", 7L, 3L);
+                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", null,
+                "Nour", 7L, 3L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(row), reviewsPageable, 1)));
 
@@ -304,10 +305,10 @@ class ProviderPublicPageServiceTest {
                 .thenReturn(Optional.of(new ReviewStats(userId, 4.5, 1)));
         PublishedReviewView organic = new PublishedReviewView(UUID.randomUUID(), 1, "سيء",
                 null, null, java.time.Instant.parse("2026-09-01T00:00:00Z"),
-                PublishedReviewView.ORIGIN_ORGANIC, "زائر", 2L, 0L);
+                PublishedReviewView.ORIGIN_ORGANIC, UUID.randomUUID(), "زائر", 2L, 0L);
         PublishedReviewView booking = new PublishedReviewView(UUID.randomUUID(), 5, "ممتاز",
                 null, null, java.time.Instant.parse("2026-09-02T00:00:00Z"),
-                PublishedReviewView.ORIGIN_BOOKING, "نور", 7L, 3L);
+                PublishedReviewView.ORIGIN_BOOKING, UUID.randomUUID(), "نور", 7L, 3L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(organic, booking), PageRequest.of(0, 10), 2)));
         // The population read the structured sample composes — the booking
@@ -351,7 +352,7 @@ class ProviderPublicPageServiceTest {
         ProviderPublicPageService openService = publicPageService(ReviewMode.OPEN);
         PublishedReviewView organic = new PublishedReviewView(UUID.randomUUID(), 4, "جيد",
                 null, null, java.time.Instant.parse("2026-09-01T00:00:00Z"),
-                PublishedReviewView.ORIGIN_ORGANIC, "زائر", 2L, 0L);
+                PublishedReviewView.ORIGIN_ORGANIC, UUID.randomUUID(), "زائر", 2L, 0L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(organic), PageRequest.of(0, 10), 1)));
 

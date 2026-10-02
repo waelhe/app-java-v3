@@ -20,7 +20,7 @@ public interface CategoryAttributeRepository extends JpaRepository<CategoryAttri
 
     /**
      * The registry's own read: one category's attributes in position
-     * order — the deterministic total order (D-N5; the position key V89
+     * order — the deterministic total order (D-N5; the position key V97
      * keeps unique per category over the live rows).
      */
     List<CategoryAttribute> findByCategoryIdOrderByPositionAsc(UUID categoryId);

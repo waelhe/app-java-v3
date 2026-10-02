@@ -14,7 +14,7 @@ import java.util.UUID;
 /**
  * W2 (yelp-level plan §5 — the business page): one row of the dynamic
  * per-category attribute registry — the {@code category_attributes} table
- * (V89). The plan's wording: «سمات فئة ديناميكية (جدول سمات لكل فئة —
+ * (V97). The plan's wording: «سمات فئة ديناميكية (جدول سمات لكل فئة —
  * G15، مبدأ "السمات بيانات" نفسه)».
  *
  * <p><b>The categories table's open side:</b> {@code categories} (V70) is
@@ -27,7 +27,7 @@ import java.util.UUID;
  * غائبة | category varchar(100) بلا جدول سمات».
  *
  * <p><b>Identity:</b> {@code code} is the stable API-facing key, unique
- * per category over the live rows (V89's
+ * per category over the live rows (V97's
  * {@code uq_category_attributes_category_code} — the V70
  * {@code uq_categories_code} shape, scoped one level deeper). The DB
  * CHECK pins the same lowercase slug shape V70 pins.
@@ -49,7 +49,7 @@ public class CategoryAttribute extends BaseEntity {
     @Column(name = "category_id", nullable = false)
     private UUID categoryId;
 
-    /** The stable API-facing key (lowercase latin/digits/dashes — the V70/V89 CHECK shape). */
+    /** The stable API-facing key (lowercase latin/digits/dashes — the V70/V97 CHECK shape). */
     @Column(name = "code", nullable = false, length = 50)
     private String code;
 
@@ -63,7 +63,7 @@ public class CategoryAttribute extends BaseEntity {
 
     /**
      * The declared shape of this attribute's VALUE — the closed
-     * three-type vocabulary (TEXT, NUMBER, BOOLEAN; V89's CHECK). A
+     * three-type vocabulary (TEXT, NUMBER, BOOLEAN; V97's CHECK). A
      * fourth type is a migration-widened decision, never a silent
      * insertion (the V44 discipline).
      */
@@ -91,7 +91,7 @@ public class CategoryAttribute extends BaseEntity {
 
     /**
      * Factory for the administrative surface: validates the code's slug
-     * shape (the V89 CHECK's own definition) and the position's sign —
+     * shape (the V97 CHECK's own definition) and the position's sign —
      * the entity never holds a shape the database would reject.
      */
     public static CategoryAttribute create(UUID categoryId, String code, String labelEn,

@@ -67,7 +67,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       directions; the feed's count/voice reads stay unobserved per
  *       the same policy)</li>
  *   <li>disputes — open, resolve</li>
- *   <li>identity — sync.oidc, role.update</li>
+ *   <li>identity — sync.oidc, role.update; follow.create, follow.delete
+ *       (W4 — the provider-follow pair's two commands, the one toggle's
+ *       two directions; the /me list read and the activation bridge's
+ *       fan-out stay unobserved per policy — the bridge runs inside the
+ *       registry listener's own unit, not a proxied business entry)</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
@@ -127,6 +131,8 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
+                    "community.group.join", "community.group.leave",
+                    "community.market.create", "community.market.delete",
                     "community.membership.join", "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
@@ -136,6 +142,7 @@ class ObservationCoverageFilesTest {
                     "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
+                    "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(

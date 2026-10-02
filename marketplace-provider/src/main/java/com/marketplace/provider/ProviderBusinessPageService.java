@@ -75,7 +75,7 @@ public class ProviderBusinessPageService {
      * documented PUT contract: the request's list IS the week). Each
      * entry upserts by its day: a day already declared moves its window,
      * a new day inserts, a day absent from the request is soft-deleted.
-     * The unique key (provider×day, V88) holds throughout — at most one
+     * The unique key (provider×day, V96) holds throughout — at most one
      * live write per day, all inside one transaction.
      */
     @Observed(name = "provider.business-hours.replace")

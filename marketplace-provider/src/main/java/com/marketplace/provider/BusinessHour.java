@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * W2 (yelp-level plan §5 — the business page): one declared working-hours
- * window — the {@code business_hours} row (V88). The Yelp business page's
+ * window — the {@code business_hours} row (V96). The Yelp business page's
  * most basic block: «ساعات عمل (business_hours بمفتاح فريد مزود×يوم...)».
  *
  * <p><b>Declared schedule, never a booking surface (G11's own evidence):</b>
@@ -24,7 +24,7 @@ import java.util.UUID;
  *
  * <p><b>Day numbering is ISO (1=Monday..7=Sunday):</b> {@link DayOfWeek#getValue()}
  * — the standard library's own numbering, mapped with zero translation
- * (the V88 CHECK pins the same range at the database level).
+ * (the V96 CHECK pins the same range at the database level).
  *
  * <p><b>One window per provider per day (the plan's unique key):</b> the
  * partial unique index {@code uq_business_hours_provider_day} enforces
@@ -47,7 +47,7 @@ public class BusinessHour extends BaseEntity {
 
     /**
      * The ISO weekday (1=Monday..7=Sunday) — {@code DayOfWeek.getValue()}
-     * mapped verbatim (the V88 CHECK pins BETWEEN 1 AND 7).
+     * mapped verbatim (the V96 CHECK pins BETWEEN 1 AND 7).
      */
     @Column(name = "day_of_week", nullable = false)
     private int dayOfWeek;
@@ -56,7 +56,7 @@ public class BusinessHour extends BaseEntity {
     @Column(name = "opens_at", nullable = false)
     private LocalTime opensAt;
 
-    /** The window's closing time of day (strictly after the opening — V88 CHECK). */
+    /** The window's closing time of day (strictly after the opening — V96 CHECK). */
     @Column(name = "closes_at", nullable = false)
     private LocalTime closesAt;
 
@@ -74,7 +74,7 @@ public class BusinessHour extends BaseEntity {
     /**
      * Factory for the write surface: validates the ISO day range and the
      * window's own order once, at construction — the entity never holds a
-     * shape the V88 CHECKs would reject (fail-loud at the boundary, the
+     * shape the V96 CHECKs would reject (fail-loud at the boundary, the
      * house rule).
      */
     public static BusinessHour create(UUID providerId, DayOfWeek dayOfWeek,

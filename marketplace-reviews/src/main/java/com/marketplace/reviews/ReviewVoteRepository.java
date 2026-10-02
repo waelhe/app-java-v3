@@ -27,4 +27,21 @@ public interface ReviewVoteRepository extends JpaRepository<ReviewVote, UUID> {
             group by v.reviewId
             """)
     List<ReviewVoteCount> countByReviewIds(Collection<UUID> reviewIds);
+
+    /**
+     * W4 (yelp-level plan §5 — G29, "أصوات مفيد تراكمية"): the reviewer's
+     * cumulative helpful-vote total — every live vote (an unvoted vote is
+     * a soft-deleted row, gone from the count) received on any of his live
+     * reviews, whatever their moderation state: the badge measures the
+     * community's endorsement the reviewer accumulated, not a row's
+     * current visibility (a review hidden after its votes keeps the votes
+     * it genuinely received). The {@code @SoftDelete} filter applies to
+     * both the root and the subquery — dead votes and dead reviews never
+     * count.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            select count(v) from ReviewVote v
+            where v.reviewId in (select r.id from Review r where r.reviewerId = :reviewerId)
+            """)
+    long countByReviewerId(UUID reviewerId);
 }

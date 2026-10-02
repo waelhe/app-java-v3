@@ -43,7 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * W2 (yelp-level plan §5 — the business page): the acceptance criteria
  * over the REAL chain — HTTP → the resource-server chain → the
- * ownership gate → V88/V89's real schema (the CHECKs, the unique keys,
+ * ownership gate → V96/V97's real schema (the CHECKs, the unique keys,
  * the Envers mirrors) → the public page's composed blocks.
  *
  * <p>The house convention for the caller identity (the community

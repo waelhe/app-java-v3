@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * W2 (yelp-level plan §5 — the business page): the business-page blocks'
- * entity guards — the validation laws the V88/V89 CHECKs enforce at the
+ * entity guards — the validation laws the V96/V97 CHECKs enforce at the
  * database level hold at the entity boundary too (fail-loud at
  * construction, the house rule), and the verification lifecycle's
  * transition law matches the V78 four-state shape.

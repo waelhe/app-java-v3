@@ -116,6 +116,25 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     List<ReviewerReviewCount> countPublishedByReviewerIds(Collection<UUID> reviewerIds);
 
     /**
+     * W4 (yelp-level plan §5 — G28/G29): the public reviewer page's split
+     * counters — one reviewer's PUBLISHED reviews grouped by the origin
+     * column (V85's provenance). The same population
+     * {@link #countPublishedByReviewerIds} counts un-split, so the two rows
+     * this returns sum to the per-review {@code reviewerReviewCount} block
+     * the provider page's rows already carry (one measurement discipline,
+     * two projections). An origin with no rows is simply absent from the
+     * list — the caller reads it as zero.
+     */
+    @Query("""
+            select new com.marketplace.reviews.ReviewerOriginCount(r.origin, count(r))
+            from Review r
+            where r.reviewerId = :reviewerId
+              and r.moderationStatus = com.marketplace.reviews.ReviewModerationStatus.PUBLISHED
+            group by r.origin
+            """)
+    List<ReviewerOriginCount> countPublishedByOriginForReviewer(UUID reviewerId);
+
+    /**
      * L21: the recomputed rating statistics for one provider — always an
      * aggregate over the live (non-soft-deleted) reviews so the stored
      * average cannot drift from the source of truth.

@@ -137,7 +137,7 @@ public class ProviderController {
             description = "W2 (G11): PUT replacement semantics — the request's list IS the "
                     + "declared week: a day already declared moves its window, a new day "
                     + "inserts, a day absent from the request is withdrawn. At most one "
-                    + "window per weekday (the V88 unique key).")
+                    + "window per weekday (the V96 unique key).")
     public ResponseEntity<java.util.List<ProviderPublicPageResponse.BusinessHourView>> replaceHours(
             @PathVariable UUID id, @Valid @RequestBody BusinessHoursRequest request,
             Authentication authentication) {

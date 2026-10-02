@@ -546,4 +546,66 @@ class NotificationServiceTest {
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
     }
+
+    @Test
+    void onFollowedProviderNewListingAlertsTheFollowerOnEveryDefaultChannel() {
+        // W4 (yelp-level plan §5 — G21): the recipient is the follower's
+        // user id — the users.id space, the same seam
+        // onNewListingInNeighborhood uses. The exactly-once scoping is the
+        // IDENTITY side's bridge + alert ledger; this method delivers
+        // unconditionally, so the delivery contract stays one shape for
+        // every caller.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID listingId = create(UUID.class);
+
+        service.onFollowedProviderNewListing(CONSUMER_ID, listingId);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("FOLLOWED_PROVIDER_NEW_LISTING");
+        assertThat(saved.getValue().getMessage()).contains(listingId.toString());
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void onFollowedProviderNewListingHonorsTheFollowerPreferenceOptOut() {
+        // The plan's W4 acceptance: "المتابعة تطلق تنبيهًا واحدًا محترمًا
+        // للتفضيل" — the L22 matrix gates the push channels per
+        // (follower, FOLLOWED_PROVIDER_NEW_LISTING, channel); the in-app
+        // row always lands (the roadmap's "inside the app always").
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
+        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
+                eq(NotificationChannel.EMAIL))).thenReturn(false);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
+                eq(NotificationChannel.WS))).thenReturn(false);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        service.onFollowedProviderNewListing(CONSUMER_ID, create(UUID.class));
+
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+    }
 }

@@ -38,7 +38,7 @@ class ProviderBusinessJsonLdTest {
 
     private static PublishedReviewView review(String comment, Instant createdAt) {
         return new PublishedReviewView(UUID.randomUUID(), 5, comment, null, null,
-                createdAt, "ORGANIC", "محمد أ.", 12L, 3L);
+                createdAt, "ORGANIC", UUID.randomUUID(), "محمد أ.", 12L, 3L);
     }
 
     @Test
@@ -139,7 +139,7 @@ class ProviderBusinessJsonLdTest {
     @Test
     void nullComment_isOmittedFromTheReviewBody() {
         PublishedReviewView silent = new PublishedReviewView(UUID.randomUUID(), 4, null,
-                null, null, Instant.parse("2026-09-02T10:00:00Z"), "BOOKING", "سارة", 3L, 0L);
+                null, null, Instant.parse("2026-09-02T10:00:00Z"), "BOOKING", UUID.randomUUID(), "سارة", 3L, 0L);
         ProviderBusinessJsonLd block = ProviderBusinessJsonLd.of(
                 profile(), List.of(), List.of(),
                 ProviderBusinessJsonLd.aggregateOf(4.2, 3L), List.of(silent), Optional.empty());

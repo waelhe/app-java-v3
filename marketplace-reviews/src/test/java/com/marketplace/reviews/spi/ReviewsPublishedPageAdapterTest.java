@@ -43,7 +43,7 @@ class ReviewsPublishedPageAdapterTest {
         Instant repliedAt = Instant.parse("2026-09-21T00:00:00Z");
         ReviewResponse composed = new ReviewResponse(reviewId, null, 5, "Sourdough sells out by noon",
                 "Thank you", "CONSUMER_TO_PROVIDER", repliedAt, createdAt, createdAt, "ORGANIC",
-                "PUBLISHED", null, "Nour", 7L, 3L);
+                "PUBLISHED", null, null, "Nour", 7L, 3L);
         when(reviewsViewService.listByProvider(eq(providerUserId), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(composed), pageable, 1));
 
@@ -59,6 +59,7 @@ class ReviewsPublishedPageAdapterTest {
         assertThat(row.repliedAt()).isEqualTo(repliedAt);
         assertThat(row.createdAt()).isEqualTo(createdAt);
         assertThat(row.origin()).isEqualTo("ORGANIC");
+        assertThat(row.reviewerId()).isEqualTo(composed.reviewerId());
         assertThat(row.reviewerName()).isEqualTo("Nour");
         assertThat(row.reviewerReviewCount()).isEqualTo(7L);
         assertThat(row.helpfulCount()).isEqualTo(3L);

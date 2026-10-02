@@ -8,7 +8,7 @@ package com.marketplace.provider;
  *
  * <ul>
  *   <li>{@link #UNVERIFIED} — the honest default every existing profile
- *       keeps (V89's backfill; zero visible behavior change — the W0
+ *       keeps (V97's backfill; zero visible behavior change — the W0
  *       seed-mode rule applied to this wave's own column);</li>
  *   <li>{@link #PENDING} — the owner submitted a verification claim
  *       (the license text the profile may already carry is the claim's
@@ -27,7 +27,7 @@ package com.marketplace.provider;
  * and page inventory. The badge answers one question the page's visitors
  * ask («هل هذا المالك مؤكد؟»), nothing else.
  *
- * <p>The allowed transitions (validated in the entity, CHECKed in V89):
+ * <p>The allowed transitions (validated in the entity, CHECKed in V97):
  * {@code UNVERIFIED → PENDING}, {@code PENDING → VERIFIED},
  * {@code PENDING → REJECTED}, {@code REJECTED → PENDING} (resubmission),
  * {@code VERIFIED → PENDING} (re-verification, e.g. after ownership

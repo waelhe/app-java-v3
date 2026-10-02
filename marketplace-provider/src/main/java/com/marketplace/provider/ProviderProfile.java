@@ -83,7 +83,7 @@ public class ProviderProfile extends BaseEntity {
      * W2 (yelp-level plan §5 — the business page): the ownership
      * verification state — the Yelp «مالك موثّق» badge's lifecycle
      * (G14). Non-null by design: every pre-W2 profile IS unverified
-     * (V89's DEFAULT backfill is the honest classification, not an
+     * (V97's DEFAULT backfill is the honest classification, not an
      * assumption — the V56 actor_type precedent). Display-only trust
      * signal: no privilege attaches to VERIFIED (the profile status
      * lifecycle above stays the gate for listings and inventory).

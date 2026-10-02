@@ -97,7 +97,7 @@ class ProviderControllerWebMvcTest {
                         List.of(new com.marketplace.shared.api.PublishedReviewView(
                                 UUID.randomUUID(), 5, "Great local bakery", "Thank you",
                                 null, java.time.Instant.parse("2026-09-20T00:00:00Z"),
-                                "ORGANIC", "Nour", 7L, 3L)),
+                                "ORGANIC", null, "Nour", 7L, 3L)),
                         0, 10, 1, 1, true),
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(

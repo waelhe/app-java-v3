@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * W2 (yelp-level plan §5 — the business page): one row of the declared
- * services list — the {@code provider_services} table (V88). The Yelp
+ * services list — the {@code provider_services} table (V96). The Yelp
  * «قائمة الطعام» analog the plan names: service, duration, price —
  * «قائمة خدمات معلنة provider_services».
  *
@@ -19,7 +19,7 @@ import java.util.UUID;
  * listings and the availability module's slots; this row is the business's
  * own display statement of what it offers — the public page renders it as
  * the services block, in {@code position} order (the D-N5 deterministic
- * order key, unique per provider over the live rows by V88's
+ * order key, unique per provider over the live rows by V96's
  * {@code uq_provider_services_position}).
  *
  * <p><b>Money in the V2 house shape:</b> integer cents ({@code price_cents})
@@ -45,7 +45,7 @@ public class OfferedService extends BaseEntity {
     @Column(name = "provider_id", nullable = false)
     private UUID providerId;
 
-    /** The service's display title (non-blank, 200 — the V88 CHECK). */
+    /** The service's display title (non-blank, 200 — the V96 CHECK). */
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
@@ -55,7 +55,7 @@ public class OfferedService extends BaseEntity {
 
     /**
      * The optional declared duration in whole minutes — positive when
-     * present (the V88 CHECK); null means "not declared".
+     * present (the V96 CHECK); null means "not declared".
      */
     @Column(name = "duration_minutes")
     private Integer durationMinutes;
@@ -90,7 +90,7 @@ public class OfferedService extends BaseEntity {
     /**
      * Factory for the write surface: validates the money pair's
      * completeness (an amount without a currency, or a currency without
-     * an amount, is the V88 CHECK's own defect definition) and the
+     * an amount, is the V96 CHECK's own defect definition) and the
      * declared duration's positivity — the entity never holds a shape
      * the database would reject.
      */

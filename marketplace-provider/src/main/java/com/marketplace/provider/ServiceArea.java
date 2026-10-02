@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * W2 (yelp-level plan §5 — the business page): one declared geographic
- * service area — the {@code service_areas} table (V88). The Yelp
+ * service area — the {@code service_areas} table (V96). The Yelp
  * «أخدم هذه المناطق» block: «نطاق خدمة جغرافي معلن (service_areas — G13)».
  *
  * <p><b>A real place, never free text:</b> the row points INTO the
@@ -24,7 +24,7 @@ import java.util.UUID;
  * category field is not a provider's service area.
  *
  * <p><b>One declared area per (provider, location)</b> over the live rows
- * (V88's {@code uq_service_areas_provider_location} — the V64
+ * (V96's {@code uq_service_areas_provider_location} — the V64
  * one-per-target shape): declaring the same district twice is a data
  * defect, not a stronger claim.
  */

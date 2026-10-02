@@ -19,7 +19,7 @@ public interface OfferedServiceRepository extends JpaRepository<OfferedService, 
 
     /**
      * The page's own read: one provider's declared menu in position order
-     * — the deterministic total order (D-N5, the {@code position} key V88
+     * — the deterministic total order (D-N5, the {@code position} key V96
      * keeps unique per provider over the live rows).
      */
     List<OfferedService> findByProviderIdOrderByPositionAsc(UUID providerId);

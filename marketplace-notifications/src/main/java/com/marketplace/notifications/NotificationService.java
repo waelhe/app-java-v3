@@ -245,6 +245,35 @@ public class NotificationService {
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
     }
 
+    /**
+     * W4 (yelp-level plan §5 — the reviewer identity &amp; engagement wave,
+     * G21): the follower's FOLLOWED_PROVIDER_NEW_LISTING alert — the same
+     * delivery shape as the event points above (in-app row always lands;
+     * WebSocket and email ride their L22 per-type/channel preferences).
+     * The recipient is the follower's user id, which lives in the
+     * users.id space — the id IS the recipient, the same seam
+     * {@code onNewListingInNeighborhood} uses.
+     *
+     * <p>The event arrives pre-scoped per follower (the identity side's
+     * follow bridge + its alert ledger — the structural exactly-one per
+     * (follower, listing) pair), so one event is one notification; the
+     * bridge's deduplication is upstream, never here (the
+     * {@code onSavedSearchMatch} aggregation contract's own division of
+     * labor).
+     */
+    public void onFollowedProviderNewListing(UUID recipientId, UUID listingId) {
+        String message = "New listing from a provider you follow: " + listingId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(recipientId,
+                NotificationType.FOLLOWED_PROVIDER_NEW_LISTING.name(), message));
+        if (preferences.isChannelEnabled(recipientId,
+                NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(recipientId, "New Listing From a Provider You Follow",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
