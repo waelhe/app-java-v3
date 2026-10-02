@@ -202,20 +202,25 @@ public class ProviderPublicPageService {
         // disagrees with its own page is invalid markup): the mode-driven
         // aggregate pair from the rating block above, the declared hours in
         // the canonical openingHours form, the resolved area names, and the
-        // bounded leading sample of the page's own reviews block.
+        // bounded leading sample of the population that aggregate describes.
         //
         // The sample's population follows the aggregate it sits beside
-        // (greptile W2 round, adopted from the root): in VERIFIED_ONLY and
-        // HYBRID the AggregateRating IS the verified pair, so an ORGANIC
-        // row (a mode-switch leftover the visible page honestly still
-        // lists) must not enter the structured sample — the aggregate and
-        // its evidence stay one population. In OPEN the aggregate is the
-        // merged pair, so both origins qualify.
-        List<PublishedReviewView> jsonLdReviews = switch (mode) {
-            case VERIFIED_ONLY, HYBRID -> reviews.content().stream()
-                    .filter(row -> PublishedReviewView.ORIGIN_BOOKING.equals(row.origin()))
-                    .toList();
-            case OPEN -> reviews.content();
+        // (greptile W2 round 2, adopted from the root): in VERIFIED_ONLY and
+        // HYBRID the AggregateRating IS the verified pair, so the sample
+        // draws from the booking-origin population DIRECTLY — the leading
+        // rows, never a filter of the caller's requested page (a page of
+        // mode-switch leftover ORGANIC rows would otherwise leave the
+        // structured sample empty while the aggregate reports verified
+        // reviews). In OPEN the aggregate is the merged pair, so the sample
+        // is the leading rows of the same merged population the paged read
+        // serves — page 0 by construction, independent of whichever reviews
+        // page the caller asked the visible block for.
+        List<PublishedReviewView> jsonLdReviews = profile.getUserId() == null ? List.of() : switch (mode) {
+            case VERIFIED_ONLY, HYBRID -> publishedReviewsPort.findPublishedSampleByProviderUserIdAndOrigin(
+                    profile.getUserId(), PublishedReviewView.ORIGIN_BOOKING, ProviderBusinessJsonLd.MAX_REVIEWS_IN_LD);
+            case OPEN -> publishedReviewsPort.findPublishedByProviderUserId(
+                    profile.getUserId(),
+                    com.marketplace.shared.api.PagedRequest.of(0, ProviderBusinessJsonLd.MAX_REVIEWS_IN_LD)).content();
         };
         ProviderBusinessJsonLd jsonLd = ProviderBusinessJsonLd.of(
                 profile,

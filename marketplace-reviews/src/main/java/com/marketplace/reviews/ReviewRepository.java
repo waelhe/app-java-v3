@@ -30,6 +30,21 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     Page<Review> findByProviderIdAndDirectionAndModerationStatusOrderByCreatedAtDescIdDesc(
             UUID providerId, ReviewDirection direction, ReviewModerationStatus moderationStatus, Pageable pageable);
 
+    /**
+     * W2 (greptile round 2, adopted from the root): the provider's
+     * PUBLISHED surface scoped to ONE origin — the leading-rows read the
+     * public page's JSON-LD sample composes. The mode-driven aggregate
+     * describes the booking-origin population in VERIFIED_ONLY/HYBRID, so
+     * the sample must draw from that population directly — a filter of the
+     * caller's requested page can produce an empty sample (an
+     * organic-only page after a mode switch) while the aggregate beside it
+     * reports verified reviews: markup that disagrees with its own page.
+     * Same gates and same complete ordering key as the unscoped read.
+     */
+    Page<Review> findByProviderIdAndDirectionAndModerationStatusAndOriginOrderByCreatedAtDescIdDesc(
+            UUID providerId, ReviewDirection direction, ReviewModerationStatus moderationStatus,
+            String origin, Pageable pageable);
+
     /** The reviewer's own surface (all moderation states — the owner view). */
     Page<Review> findByReviewerId(UUID reviewerId, Pageable pageable);
 

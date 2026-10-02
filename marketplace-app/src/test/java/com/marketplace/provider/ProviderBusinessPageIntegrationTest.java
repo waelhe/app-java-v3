@@ -1,9 +1,14 @@
 package com.marketplace.provider;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
+
+import com.marketplace.identity.User;
+import com.marketplace.identity.UserRepository;
+import com.marketplace.identity.UserRole;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,6 +88,9 @@ class ProviderBusinessPageIntegrationTest {
 
     @Autowired
     private ProviderBusinessPageService businessPageService;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -263,5 +271,86 @@ class ProviderBusinessPageIntegrationTest {
         // The plan's literal rule: the aggregate rides only when published
         // reviews exist — never zeroed (a fresh provider has none).
         assertThat(body).doesNotContain("aggregateRating");
+    }
+
+    // ---- (6) the JSON-LD sample follows the aggregate's population -------------
+
+    /**
+     * W2 (greptile round 2, adopted from the root): the structured sample
+     * rides the population the aggregate beside it describes — never a
+     * filter of the caller's requested page. The discriminating fixture:
+     * eleven NEWER organic reviews push the ONE older booking review off
+     * the default reviews page (size 10), so the visible page 0 carries no
+     * booking row at all — while the VERIFIED_ONLY aggregate reports
+     * exactly that booking review. The old page-filter shape left the
+     * sample EMPTY here (markup disagreeing with its own aggregate); the
+     * population read keeps the booking review's evidence in the
+     * structured data.
+     */
+    @Test
+    void jsonLdSample_followsTheAggregatesPopulation_notTheRequestedPage() throws Exception {
+        String tag = "w2-jsonld-sample-" + UUID.randomUUID();
+        UUID providerUserId = userRepository.save(User.create(
+                tag + "-provider-subject", tag + "-provider@t.com", "Sample Provider", UserRole.PROVIDER)).getId();
+        ProviderProfile provider = seedProvider(providerUserId);
+
+        // The FK-honest booking seed (the organic-gate suite's own shape —
+        // this suite boots on REAL Flyway, so V6's reviews_booking_id_fkey
+        // is live): one ACTIVE listing, one COMPLETED booking.
+        jdbc.update("INSERT INTO provider_listings (id, provider_id, title, description, category, "
+                        + "price_cents, currency, status) VALUES (?, ?, ?, ?, 'home', 100_00, 'SAR', 'ACTIVE')",
+                UUID.randomUUID(), providerUserId, tag + " fixture", "fk seed");
+        UUID bookingId = UUID.randomUUID();
+        UUID bookingReviewer = userRepository.save(User.create(
+                tag + "-booking-reviewer", tag + "-booking@t.com", "Booking Reviewer", UserRole.CONSUMER)).getId();
+        jdbc.update("INSERT INTO bookings (id, consumer_id, provider_id, listing_id, status, "
+                        + "price_cents, currency, notes) VALUES (?, ?, ?, "
+                        + "(SELECT id FROM provider_listings WHERE provider_id = ? LIMIT 1), "
+                        + "'COMPLETED', 100_00, 'SAR', NULL)",
+                bookingId, bookingReviewer, providerUserId, providerUserId);
+
+        // The aggregate's whole population: ONE booking review, the OLDEST
+        // row on the provider (rating 5 — the value the structured
+        // aggregate must carry).
+        jdbc.update("INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, comment, "
+                        + "origin, moderation_status, created_at) "
+                        + "VALUES (?, ?, ?, ?, 5, ?, 'BOOKING', 'PUBLISHED', ?)",
+                UUID.randomUUID(), bookingId, bookingReviewer, providerUserId,
+                "التقييم الموثق للتجربة",
+                java.sql.Timestamp.from(Instant.now().minus(java.time.Duration.ofMinutes(90))));
+
+        // Eleven NEWER organic reviews from eleven distinct reviewers (the
+        // V85 1x1 uniqueness) — enough to fill the default reviews page
+        // (size 10) and push the booking review off it entirely.
+        for (int i = 0; i < 11; i++) {
+            UUID reviewer = userRepository.save(User.create(
+                    tag + "-organic-" + i, tag + "-organic-" + i + "@t.com",
+                    "Organic " + i, UserRole.CONSUMER)).getId();
+            jdbc.update("INSERT INTO reviews (id, booking_id, reviewer_id, provider_id, rating, "
+                            + "origin, moderation_status, created_at) "
+                            + "VALUES (?, NULL, ?, ?, 2, 'ORGANIC', 'PUBLISHED', ?)",
+                    UUID.randomUUID(), reviewer, providerUserId,
+                    java.sql.Timestamp.from(Instant.now().minus(java.time.Duration.ofMinutes(i + 1))));
+        }
+
+        // The default page request (reviewsPage 0 / reviewsSize 10).
+        mockMvc.perform(get("/api/v1/providers/{id}/public", provider.getId()))
+                .andExpect(status().isOk())
+                // The bug's precondition, measured: the visible page 0 is
+                // organic-only — the booking row sits beyond it.
+                .andExpect(jsonPath("$.reviews.totalElements").value(12))
+                .andExpect(jsonPath("$.reviews.pageNumber").value(0))
+                .andExpect(jsonPath("$.reviews.content.length()").value(10))
+                .andExpect(jsonPath("$.reviews.content[0].origin").value("ORGANIC"))
+                // The aggregate describes the booking population (the
+                // VERIFIED_ONLY law): one review, rating five.
+                .andExpect(jsonPath("$.jsonLd.aggregateRating.reviewCount").value(1))
+                .andExpect(jsonPath("$.jsonLd.aggregateRating.ratingValue").value(5.0))
+                // The root fix's own claim: the sample carries the booking
+                // review's evidence even though the requested page holds
+                // none of its rows.
+                .andExpect(jsonPath("$.jsonLd.review.length()").value(1))
+                .andExpect(jsonPath("$.jsonLd.review[0].reviewBody").value("التقييم الموثق للتجربة"))
+                .andExpect(jsonPath("$.jsonLd.review[0].reviewRating.ratingValue").value(5));
     }
 }

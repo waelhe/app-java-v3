@@ -284,11 +284,13 @@ class ProviderPublicPageServiceTest {
     }
 
     /**
-     * W2 (greptile round, adopted from the root): the JSON-LD review sample
-     * follows the population of the aggregate it sits beside. In
-     * VERIFIED_ONLY the AggregateRating IS the verified pair — an ORGANIC
-     * row (a mode-switch leftover the visible page honestly still lists)
-     * must not enter the structured sample. The visible block keeps it.
+     * W2 (greptile round 2, adopted from the root): the JSON-LD review
+     * sample rides the POPULATION the aggregate describes — drawn directly
+     * through the port's sample read, never a filter of the caller's
+     * requested page. In VERIFIED_ONLY the AggregateRating IS the verified
+     * pair — an ORGANIC row (a mode-switch leftover the visible page
+     * honestly still lists) must not enter the structured sample. The
+     * visible block keeps it.
      */
     @Test
     void verifiedOnlyMode_jsonLdSampleCarriesOnlyBookingRows() {
@@ -308,6 +310,11 @@ class ProviderPublicPageServiceTest {
                 PublishedReviewView.ORIGIN_BOOKING, "نور", 7L, 3L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(organic, booking), PageRequest.of(0, 10), 2)));
+        // The population read the structured sample composes — the booking
+        // population's leading rows, straight from the port.
+        when(publishedReviewsPort.findPublishedSampleByProviderUserIdAndOrigin(
+                eq(userId), eq(PublishedReviewView.ORIGIN_BOOKING), anyInt()))
+                .thenReturn(List.of(booking));
 
         var result = service.getPublicPage(providerId, pageable, pageable);
 

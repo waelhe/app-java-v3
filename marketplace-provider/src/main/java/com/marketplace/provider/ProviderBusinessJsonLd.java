@@ -47,8 +47,11 @@ import java.util.Optional;
  *       (schema.org's own guidance: the aggregate describes actual
  *       ratings; an empty one is invalid markup, not an honest zero).</li>
  *   <li>{@code review} — a bounded sample of the provider's PUBLISHED
- *       reviews ({@value #MAX_REVIEWS_IN_LD} leading rows of the page's
- *       own reviews block, same population, same order): each a
+ *       reviews ({@value #MAX_REVIEWS_IN_LD} leading rows of the
+ *       population the mode-driven {@code aggregateRating} beside it
+ *       describes — the booking-origin population in VERIFIED_ONLY/HYBRID,
+ *       the merged population in OPEN; newest first, the complete
+ *       ordering key): each a
  *       {@code Review} carrying {@code reviewRating},
  *       {@code datePublished} (the row's own createdAt), {@code author}
  *       (the pseudonym-honouring display name the projection already
