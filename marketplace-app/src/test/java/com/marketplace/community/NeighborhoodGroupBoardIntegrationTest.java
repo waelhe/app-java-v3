@@ -34,11 +34,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * L51 — the groups board's DATABASE-backed guards (the Neighborhood
  * MarketBoardIntegrationTest discipline verbatim: the service tests
  * mock the repository, so the board scoping, the historical sort key,
- * the live grouped count, the soft-delete filtering and V95's
+ * the live grouped count, the soft-delete filtering and V91's
  * one-membership unique index had no test that could see them). This
  * class runs every acceptance fact over the REAL chain: HTTP → the
  * resource-server chain → the membership gate → the REAL geo seed
- * tree → V95's real schema (the partial unique membership index, the
+ * tree → V91's real schema (the partial unique membership index, the
  * partial board index, the Envers mirrors) → the grouped count query
  * PostgreSQL actually compiles.
  *
@@ -167,7 +167,7 @@ class NeighborhoodGroupBoardIntegrationTest {
                 .andExpect(jsonPath("$.content[0].joinedByMe").value(true));
 
         // The one-membership rule: the second join answers 409 with the
-        // contract's own words (the V95 partial unique index is the
+        // contract's own words (the V91 partial unique index is the
         // backstop — the explicit 409 lands first).
         mockMvc.perform(post("/api/v1/neighborhood/groups/{groupId}/membership", club)
                         .with(jwt()))
@@ -194,7 +194,7 @@ class NeighborhoodGroupBoardIntegrationTest {
                 Integer.class, club, member);
         assertThat(leftRow).isEqualTo(1);
 
-        // The freed seat is open for a fresh join (the V95 partial unique
+        // The freed seat is open for a fresh join (the V91 partial unique
         // index admits exactly that).
         mockMvc.perform(post("/api/v1/neighborhood/groups/{groupId}/membership", club)
                         .with(jwt()))
@@ -300,7 +300,7 @@ class NeighborhoodGroupBoardIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
-    // ---- (5) V95's one-membership unique index on raw writers --------------------
+    // ---- (5) V91's one-membership unique index on raw writers --------------------
 
     @Test
     void oneMembershipUniqueIndex_firesOnRawWriters() {

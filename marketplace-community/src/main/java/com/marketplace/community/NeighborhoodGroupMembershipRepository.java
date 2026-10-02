@@ -24,7 +24,7 @@ import java.util.UUID;
  *       board's joinedByMe);</li>
  *   <li>the board's grouped count {@link #countByGroupIdIn(Collection)}
  *       — one aggregate over the page's group ids (the members count
- *       the board read carries), served by the V95 unique index's
+ *       the board read carries), served by the V91 unique index's
  *       group_id-leading prefix scan.</li>
  * </ul>
  *

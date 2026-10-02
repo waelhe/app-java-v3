@@ -21,7 +21,7 @@ import java.util.UUID;
  *       V7 {@code messages.conversation_id} / V61 {@code post_comments} /
  *       V73 {@code post_reactions} / V83 {@code event_rsvps} precedent):
  *       a plain UUID column in Java — no JPA relation to traverse — with
- *       a real FK inside the module's own boundary in V95. The
+ *       a real FK inside the module's own boundary in V91. The
  *       memberships follow their group in the reads (an unknown or
  *       soft-deleted group's memberships are absent exactly as the
  *       group itself is — the same is_deleted semantics the seats
@@ -31,7 +31,7 @@ import java.util.UUID;
  *       in the users.id space and arrives through the identity seams.</li>
  *   <li>One live membership per member per group is the product's own
  *       «عضوية واحدة لكل جار»: the service's explicit 409 comes first,
- *       the V95 partial unique index is the backstop (the V64/V73/V83
+ *       the V91 partial unique index is the backstop (the V64/V73/V83
  *       precedent verbatim), and a leave frees the seat for a fresh
  *       join.</li>
  *   <li>No enumerated column rides here — the membership IS the fact,

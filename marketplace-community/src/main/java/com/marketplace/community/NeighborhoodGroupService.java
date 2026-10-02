@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  * community commitment like a comment or a seat; a REJECTED
  * verification cannot write, and a member of a DIFFERENT neighborhood
  * is the same 403), then the one-membership check (409 — «عضوية واحدة
- * لكل جار», the V64/V73/V83 precedent; the V95 partial unique index is
+ * لكل جار», the V64/V73/V83 precedent; the V91 partial unique index is
  * the backstop — the reactions' own no-lock model, an id-pair write
  * with no capacity to count). There is no geo-port resolve here BY
  * DESIGN: the group's own {@code locationId} IS the resolved target
@@ -133,7 +133,7 @@ public class NeighborhoodGroupService {
      * group's OWN {@code locationId} (403 — a REJECTED verification
      * cannot join, and a member of a different neighborhood is the
      * same 403), then the one-membership check (409 — the product's
-     * own «عضوية واحدة لكل جار»; the V95 partial unique index is the
+     * own «عضوية واحدة لكل جار»; the V91 partial unique index is the
      * backstop — the reactions' no-lock model, an id-pair write with
      * no capacity to count). Only then the insert.
      */
@@ -163,7 +163,7 @@ public class NeighborhoodGroupService {
      * join's neighborhood gate never rides the leave. The leave is the
      * house soft delete — the row stays (b-5's retention, the Envers
      * trail keeps the revision) and the seat is free for a fresh join
-     * (the V95 partial unique index admits exactly that).
+     * (the V91 partial unique index admits exactly that).
      */
     @Observed(name = "community.group.leave")
     public void leave(UUID memberId, UUID groupId) {

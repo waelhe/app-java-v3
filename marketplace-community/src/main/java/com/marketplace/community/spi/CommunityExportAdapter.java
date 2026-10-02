@@ -234,7 +234,7 @@ public class CommunityExportAdapter implements CommunityExportPort {
      * live and left — the identifiers-and-timestamps read (the seat
      * row's own class; no authored text exists to copy). Born with the
      * wave (the L50 market review's own lesson: the b-2 seam rides the
-     * layer's own PR, never a later one); V95's member index is
+     * layer's own PR, never a later one); V91's member index is
      * NON-partial for exactly this scan.
      */
     @Override
