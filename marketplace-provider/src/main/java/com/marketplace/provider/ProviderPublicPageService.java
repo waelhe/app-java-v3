@@ -215,7 +215,15 @@ public class ProviderPublicPageService {
         // is the leading rows of the same merged population the paged read
         // serves — page 0 by construction, independent of whichever reviews
         // page the caller asked the visible block for.
-        List<PublishedReviewView> jsonLdReviews = profile.getUserId() == null ? List.of() : switch (mode) {
+        //
+        // greptile round 3 (adopted): a mode-selected count of ZERO pays no
+        // sample read at all — ProviderBusinessJsonLd.of omits both the
+        // aggregate and its sample when no reviews exist, so an unrated
+        // provider's public page skips the population read whose result
+        // cannot be used (every anonymous browse of an unrated provider
+        // saves the query).
+        List<PublishedReviewView> jsonLdReviews = profile.getUserId() == null || block.reviewCount() == 0
+                ? List.of() : switch (mode) {
             case VERIFIED_ONLY, HYBRID -> publishedReviewsPort.findPublishedSampleByProviderUserIdAndOrigin(
                     profile.getUserId(), PublishedReviewView.ORIGIN_BOOKING, ProviderBusinessJsonLd.MAX_REVIEWS_IN_LD);
             case OPEN -> publishedReviewsPort.findPublishedByProviderUserId(
