@@ -70,7 +70,7 @@ class SeoControllerWebMvcTest {
     @Test
     void robots_configuredPaths_emitOneDisallowLineEach_plusTheSitemapLine() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", List.of("/api/", "/admin")));
+                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", "/categories/{code}", List.of("/api/", "/admin")));
 
         mockMvc.perform(get("/robots.txt"))
                 .andExpect(status().isOk())
@@ -91,7 +91,7 @@ class SeoControllerWebMvcTest {
     @Test
     void robots_nonConformingPaths_areSkippedNotEmitted() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example", "/listings/{id}",
+                new CatalogProperties.Seo("https://public.example", "/listings/{id}", "/categories/{code}",
                         List.of("api", "/ok")));
 
         mockMvc.perform(get("/robots.txt"))
