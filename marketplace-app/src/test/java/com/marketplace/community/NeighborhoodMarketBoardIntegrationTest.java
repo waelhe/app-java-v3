@@ -125,6 +125,14 @@ class NeighborhoodMarketBoardIntegrationTest {
 
     private UUID publish(UUID authorId, String locationId, String category, String title,
                          Integer priceCents, String currency, String label) {
+        // The author must BE an active member of the target neighborhood —
+        // the publish gate's own law. This helper bypasses HTTP (the
+        // direct-service idiom), so the membership rides HERE: join() is
+        // the idempotent re-join for an already-active member of the same
+        // hood. The CI round's measured root cause: the three failing
+        // tests passed RANDOM un-joined authors and the gate refused them
+        // exactly as designed («Join a neighborhood before publishing»).
+        membershipService.join(authorId, UUID.fromString(locationId));
         return marketService.createItem(authorId, UUID.fromString(locationId),
                 MarketCategory.valueOf(category), title, MarketCondition.GOOD,
                 priceCents, currency, label).id();
