@@ -743,6 +743,25 @@ INSERT INTO listing_views_daily (id, listing_id, view_date, view_count, is_delet
     ('3d3d3d3d-3d3d-43d3-93d3-3d3d3d3d0294', '36363636-3636-4363-8363-363636360024', (CURRENT_DATE - 13), 1, FALSE, 0, 'seed', now(), 'seed', now())
 ON CONFLICT (id) DO NOTHING;
 
+-- 8 neighborhood market items across the three hoods (L50 — the market
+-- board «سوق الحي والحراج», gap #5): the display dataset's own mix
+-- (three FREE gifts for ركن الإهداء, two FURNITURE, one ELECTRONICS,
+-- one TOOLS, one OTHER) with Qudsayya-origin titles and pickup spots;
+-- every author publishes in their OWN membership neighborhood, the
+-- priced ones carry the V2 integer-cents shape in SAR (35000 = 350
+-- SAR), and the gifts carry no price at all (the ONE pricing rule's
+-- own seed-honest shape). Event-shaped rows: ON CONFLICT DO NOTHING.
+INSERT INTO neighborhood_market_items (id, author_id, location_id, category, title, item_condition, price_cents, price_currency, status, location_label, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
+    ('45454545-4545-4454-8454-454545450001', '33333333-3333-4333-8333-333333330001', '11111111-1111-4111-8111-111111111104', 'FREE', 'مكتب دراسي خشبي بحالة ممتازة — إهداء لأسرة طلاب', 'LIKE_NEW', NULL, NULL, 'ACTIVE', 'شارع المسجد الرئيسي - مربع 2', FALSE, 0, 'seed', '2026-10-01 20:15:00+00', 'seed', '2026-10-01 20:15:00+00'),
+    ('45454545-4545-4454-8454-454545450002', '33333333-3333-4333-8333-333333330004', '11111111-1111-4111-8111-111111111104', 'ELECTRONICS', 'مكيف هوائي شباكي 1.5 طن يعمل بكفاءة — صيانته حديثة', 'GOOD', 35000, 'SAR', 'ACTIVE', 'الشارع العام - قرب صيدلية الحي', FALSE, 0, 'seed', '2026-10-01 22:40:00+00', 'seed', '2026-10-01 22:40:00+00'),
+    ('45454545-4545-4454-8454-454545450003', '33333333-3333-4333-8333-333333330002', '11111111-1111-4111-8111-111111111105', 'FREE', 'موسوعة علمية للأطفال (12 مجلداً) — إهداء', 'LIKE_NEW', NULL, NULL, 'ACTIVE', 'حي الزهور - أمام البوابة الشمالية', FALSE, 0, 'seed', '2026-10-02 00:05:00+00', 'seed', '2026-10-02 00:05:00+00'),
+    ('45454545-4545-4454-8454-454545450004', '35353535-3535-4535-8353-353535350001', '11111111-1111-4111-8111-111111111104', 'FURNITURE', 'أريكة جلسة عائلية 7 مقاعد — قماش قابل للغسل', 'GOOD', 48000, 'SAR', 'ACTIVE', 'شارع الأمير - قرب مخبز الحي', FALSE, 0, 'seed', '2026-10-01 18:30:00+00', 'seed', '2026-10-01 18:30:00+00'),
+    ('45454545-4545-4454-8454-454545450005', '33333333-3333-4333-8333-333333330005', '11111111-1111-4111-8111-111111111105', 'TOOLS', 'منشار كهربائي محمول + طقم ملحقاته الكامل', 'GOOD', 26000, 'SAR', 'ACTIVE', 'الضاحية - ساحة الجمعية', FALSE, 0, 'seed', '2026-10-01 15:20:00+00', 'seed', '2026-10-01 15:20:00+00'),
+    ('45454545-4545-4454-8454-454545450006', '33333333-3333-4333-8333-333333330003', '11111111-1111-4111-8111-111111111106', 'OTHER', 'دراجة أطفال 16 بوصة — تحتاج تبطين إطارات فقط', 'GOOD', 12000, 'SAR', 'ACTIVE', 'الهامة - قرب مدرسة البلدة', FALSE, 0, 'seed', '2026-10-01 09:45:00+00', 'seed', '2026-10-01 09:45:00+00'),
+    ('45454545-4545-4454-8454-454545450007', '33333333-3333-4333-8333-333333330006', '11111111-1111-4111-8111-111111111105', 'FREE', 'شتلات نعناع وريحان وزعتر — إهداء لبستنة الجيران', 'LIKE_NEW', NULL, NULL, 'ACTIVE', 'الضاحية - مدخل الحديقة الصغيرة', FALSE, 0, 'seed', '2026-10-01 12:10:00+00', 'seed', '2026-10-01 12:10:00+00'),
+    ('45454545-4545-4454-8454-454545450008', '33333333-3333-4333-8333-333333330004', '11111111-1111-4111-8111-111111111104', 'FURNITURE', 'طقم طاولة تلفزيون زجاجي مع رفّين خشبيين', 'GOOD', 15000, 'SAR', 'ACTIVE', 'شارع المسجد الرئيسي - مربع 4', FALSE, 0, 'seed', '2026-10-01 06:25:00+00', 'seed', '2026-10-01 06:25:00+00')
+ON CONFLICT (id) DO NOTHING;
+
     END IF;
 END
 $seed$;

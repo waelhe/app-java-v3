@@ -123,6 +123,7 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
+                    "community.market.create", "community.market.delete",
                     "community.membership.join", "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",

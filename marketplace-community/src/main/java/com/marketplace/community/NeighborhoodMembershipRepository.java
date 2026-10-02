@@ -27,6 +27,17 @@ public interface NeighborhoodMembershipRepository
     Optional<NeighborhoodMembership> findByUserId(UUID userId);
 
     /**
+     * The ACTIVE memberships of a set of users (L50 — the market
+     * board's grouped seller-badge read). Hibernate's
+     * {@code @SoftDelete} filter hides left memberships from this
+     * derived query exactly as it does from {@link #findByUserId}, so
+     * an author who left the neighborhood renders the honest
+     * unverified floor — their items stay readable, their earned
+     * badge does not follow them out.
+     */
+    java.util.List<NeighborhoodMembership> findByUserIdIn(java.util.Collection<UUID> userIds);
+
+    /**
      * The ACTIVE memberships of one neighborhood (L46 — the bridge's own
      * query). Hibernate's {@code @SoftDelete} filter hides left
      * memberships from this derived query exactly as it does from
