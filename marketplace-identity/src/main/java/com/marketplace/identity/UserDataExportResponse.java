@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingExportEntry;
 import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityEventExportEntry;
 import com.marketplace.shared.api.CommunityEventSeatExportEntry;
+import com.marketplace.shared.api.CommunityMarketItemExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.CommunityReactionExportEntry;
@@ -55,7 +56,8 @@ public record UserDataExportResponse(
         List<CommunityCommentExportEntry> communityComments,
         List<CommunityReactionExportEntry> communityReactions,
         List<CommunityEventExportEntry> communityEvents,
-        List<CommunityEventSeatExportEntry> communityEventSeats
+        List<CommunityEventSeatExportEntry> communityEventSeats,
+        List<CommunityMarketItemExportEntry> communityMarketItems
 ) {
 
     /**
@@ -96,7 +98,12 @@ public record UserDataExportResponse(
             your neighborhood memberships (the self-declared home location — active and left, as stored); \
             your neighborhood posts and comments (the community texts you authored — as stored, \
             including author-deleted ones, with the moderation status of each post); \
-            and your neighborhood reactions (the posts you thanked — as stored, including removed ones).
+            your neighborhood reactions (the posts you thanked — as stored, including removed ones); \
+            your neighborhood events (the authored titles, descriptions and display labels — as stored, \
+            including organizer-deleted ones) and your event seats (the attendance declarations — \
+            held and freed, as stored); \
+            and your neighborhood market items (the listings you published — title, pickup-spot label, \
+            and the stored pricing declaration — as stored, including withdrawn and sold ones).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
             and any record where you are not a first party.

@@ -99,6 +99,7 @@ public class UserDataExportService {
         var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());
         var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
         var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
+        var communityMarketItems = communityExportPort.exportMarketItemsForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -123,7 +124,8 @@ public class UserDataExportService {
                 communityComments,
                 communityReactions,
                 communityEvents,
-                communityEventSeats);
+                communityEventSeats,
+                communityMarketItems);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
