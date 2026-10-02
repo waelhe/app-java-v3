@@ -2,8 +2,10 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewStats;
@@ -40,6 +42,10 @@ class ProviderPublicPageServiceTest {
     private final ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
     private final SystemSettingsPort systemSettingsPort = mock(SystemSettingsPort.class);
     private final PublishedReviewsPort publishedReviewsPort = mock(PublishedReviewsPort.class);
+    private final ProviderBusinessPageService businessPageService = mock(ProviderBusinessPageService.class);
+    private final GeoLookupPort geoLookupPort = mock(GeoLookupPort.class);
+    private final ProviderProperties providerProperties = new ProviderProperties(
+            new ProviderProperties.Seo("", "/providers/{id}"));
 
     private final ProviderPublicPageService service = publicPageService(ReviewMode.VERIFIED_ONLY);
 
@@ -55,8 +61,21 @@ class ProviderPublicPageServiceTest {
         // test stubs real rows (the neutral request answered empty).
         when(publishedReviewsPort.findPublishedByProviderUserId(any(UUID.class), any(PagedRequest.class)))
                 .thenAnswer(invocation -> PagedResponse.empty(invocation.getArgument(1, PagedRequest.class)));
+        // W2: the business-page blocks' neutral stubs — an honest empty
+        // week/menu/areas and the all-zero verified histogram (the complete
+        // five-bucket contract the port itself guarantees).
+        when(businessPageService.getHours(any(UUID.class))).thenReturn(List.of());
+        when(businessPageService.getServices(any(UUID.class))).thenReturn(List.of());
+        when(businessPageService.getAreas(any(UUID.class))).thenReturn(List.of());
+        when(geoLookupPort.getTree()).thenReturn(new GeoLookupPort.GeoNode(
+                UUID.randomUUID(), null, 0, "الجذر", "root", "root", List.of()));
+        when(reviewStatsPort.findRatingDistributionByProviderId(any(UUID.class)))
+                .thenReturn(RatingDistribution.of(UUID.randomUUID(), List.of()));
+        when(reviewStatsPort.findGeneralRatingDistributionByProviderId(any(UUID.class)))
+                .thenReturn(RatingDistribution.of(UUID.randomUUID(), List.of()));
         return new ProviderPublicPageService(providerService, catalogSearchPort,
-                reviewStatsPort, systemSettingsPort, publishedReviewsPort);
+                reviewStatsPort, systemSettingsPort, publishedReviewsPort,
+                businessPageService, geoLookupPort, providerProperties);
     }
 
     private static ProviderProfile profile(ProviderStatus status, UUID userId) {

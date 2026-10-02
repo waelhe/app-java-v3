@@ -52,7 +52,7 @@ class SeoControllerWebMvcTest {
     @BeforeEach
     void stubSeoSection() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("https://public.example", "/listings/{id}", "/categories/{code}", List.of()));
     }
 
     @Test
@@ -81,7 +81,7 @@ class SeoControllerWebMvcTest {
     @Test
     void robots_capabilityOff_omitsTheSitemapLine_neverGuessesAnOrigin() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of()));
 
         mockMvc.perform(get("/robots.txt"))
                 .andExpect(status().isOk())

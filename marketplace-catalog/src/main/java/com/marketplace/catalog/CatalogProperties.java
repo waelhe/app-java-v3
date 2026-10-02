@@ -111,6 +111,7 @@ public record CatalogProperties(
     public record Seo(
             @DefaultValue("") String publicSiteBaseUrl,
             @DefaultValue("/listings/{id}") String listingPath,
+            @DefaultValue("/categories/{code}") String categoryPath,
             @DefaultValue List<String> robotsDisallowPaths
     ) {
 
@@ -163,6 +164,33 @@ public record CatalogProperties(
          */
         public boolean capabilityOff() {
             return normalizedBase().isEmpty() || listingPath == null || !listingPath.contains("{id}");
+        }
+
+        /**
+         * W2 (G23 — the public category pages): true when the category
+         * pages' URL synthesis cannot honestly serve — no origin, or a
+         * category path that cannot vary per category code.
+         */
+        public boolean categoryPagesOff() {
+            return normalizedBase().isEmpty() || categoryPath == null
+                    || !categoryPath.contains("{code}");
+        }
+
+        /**
+         * W2 (G23): the absolute PUBLIC CATEGORY page URL — the
+         * «فئة/سباكة-الرياض» landing page the sitemap now advertises.
+         * Empty when the capability is off (the same honesty rule as
+         * {@link #listingUrl(UUID)}).
+         */
+        public Optional<String> categoryUrl(String categoryCode) {
+            if (categoryPagesOff()) {
+                return Optional.empty();
+            }
+            String path = categoryPath.replace("{code}", categoryCode);
+            if (!path.startsWith("/")) {
+                path = "/" + path;
+            }
+            return Optional.of(normalizedBase() + path);
         }
 
         /**

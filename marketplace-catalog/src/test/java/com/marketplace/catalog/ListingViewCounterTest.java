@@ -49,7 +49,7 @@ class ListingViewCounterTest {
     private final ListingViewsDailyService viewsService = mock(ListingViewsDailyService.class);
     private final CatalogProperties properties = new CatalogProperties(
             new CatalogProperties.Expiry(90, 1),
-            new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
+            new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
             new CatalogProperties.Views("test-key", WINDOW));
 
     private ListingViewCounter counter() {
@@ -106,7 +106,7 @@ class ListingViewCounterTest {
         // degrades to analytics OFF, the read unaffected (one warning).
         CatalogProperties noKey = new CatalogProperties(
                 new CatalogProperties.Expiry(90, 1),
-                new CatalogProperties.Seo("", "/listings/{id}", java.util.List.of()),
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
                 new CatalogProperties.Views("", WINDOW));
         ListingViewCounter counter = new ListingViewCounter(redisTemplate, viewsService, noKey);
 

@@ -119,8 +119,9 @@ class ProviderControllerTest {
         Pageable pageable = PageRequest.of(0, 20);
         Pageable reviewsPageable = PageRequest.of(0, 10);
         var page = new ProviderPublicPageResponse(id, "John", "Bio", ProviderStatus.VERIFIED,
+                ProviderVerificationState.UNVERIFIED,
                 ProviderActorType.INDEPENDENT_BROKER, "Qudsia Prime", "BR-1", null,
-                "VERIFIED_ONLY", 4.5, 12L, null, 0L, null, null);
+                "VERIFIED_ONLY", 4.5, 12L, null, 0L, null, null, null, null, null, null, null, null);
 
         when(providerPublicPageService.getPublicPage(id, pageable, reviewsPageable)).thenReturn(page);
 
