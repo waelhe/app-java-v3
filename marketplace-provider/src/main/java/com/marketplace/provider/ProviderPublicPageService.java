@@ -1,11 +1,14 @@
 package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.GeoLookupPort.GeoNode;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
 import com.marketplace.shared.api.PublishedReviewsPort;
+import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.SpringPagination;import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
@@ -16,8 +19,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * L36 (realestate systems plan §5 — agent/office pages): the public
@@ -67,17 +75,26 @@ public class ProviderPublicPageService {
     private final ReviewStatsPort reviewStatsPort;
     private final SystemSettingsPort systemSettingsPort;
     private final PublishedReviewsPort publishedReviewsPort;
+    private final ProviderBusinessPageService businessPageService;
+    private final GeoLookupPort geoLookupPort;
+    private final ProviderProperties providerProperties;
 
     public ProviderPublicPageService(ProviderService providerService,
                                      CatalogSearchPort catalogSearchPort,
                                      ReviewStatsPort reviewStatsPort,
                                      SystemSettingsPort systemSettingsPort,
-                                     PublishedReviewsPort publishedReviewsPort) {
+                                     PublishedReviewsPort publishedReviewsPort,
+                                     ProviderBusinessPageService businessPageService,
+                                     GeoLookupPort geoLookupPort,
+                                     ProviderProperties providerProperties) {
         this.providerService = providerService;
         this.catalogSearchPort = catalogSearchPort;
         this.reviewStatsPort = reviewStatsPort;
         this.systemSettingsPort = systemSettingsPort;
         this.publishedReviewsPort = publishedReviewsPort;
+        this.businessPageService = businessPageService;
+        this.geoLookupPort = geoLookupPort;
+        this.providerProperties = providerProperties;
     }
 
     public ProviderPublicPageResponse getPublicPage(UUID providerId, Pageable listingsPageable,
@@ -149,11 +166,57 @@ public class ProviderPublicPageService {
                 ? PagedResponse.empty(reviewsRequest)
                 : publishedReviewsPort.findPublishedByProviderUserId(profile.getUserId(), reviewsRequest);
 
+        // W2 (§5 — the business page): the «توزيع نجوم» histograms — the
+        // same mode law as the badge pair above (VERIFIED_ONLY the verified
+        // bars; OPEN the merged bars; HYBRID both), resolved by the user id
+        // the stats pair already resolved through. A profile with no linked
+        // user id can own no reviews: both histograms stay null (the honest
+        // "not yet rated" the aggregate pair itself carries).
+        List<RatingDistribution.RatingBucket> distribution = null;
+        List<RatingDistribution.RatingBucket> generalDistribution = null;
+        if (profile.getUserId() != null) {
+            RatingDistribution verifiedBars =
+                    reviewStatsPort.findRatingDistributionByProviderId(profile.getUserId());
+            RatingDistribution generalBars =
+                    reviewStatsPort.findGeneralRatingDistributionByProviderId(profile.getUserId());
+            switch (mode) {
+                case VERIFIED_ONLY -> distribution = verifiedBars.buckets();
+                case OPEN -> distribution = RatingDistribution.merge(verifiedBars, generalBars).buckets();
+                case HYBRID -> {
+                    distribution = verifiedBars.buckets();
+                    generalDistribution = generalBars.buckets();
+                }
+            }
+        }
+
+        // W2 (§5 — the business page): the three declared blocks (G11/G12/G13)
+        // — live reads through the module's own business-page service; a
+        // provider who declared nothing gets the honest empty lists.
+        List<BusinessHour> hours = businessPageService.getHours(providerId);
+        List<OfferedService> services = businessPageService.getServices(providerId);
+        List<ServiceArea> areas = businessPageService.getAreas(providerId);
+        List<ProviderPublicPageResponse.ServiceAreaView> areaViews = resolveAreaNames(areas);
+
+        // W2 (G22): the LocalBusiness structured-data block — composed from
+        // the SAME numbers the visible blocks render (a rich result that
+        // disagrees with its own page is invalid markup): the mode-driven
+        // aggregate pair from the rating block above, the declared hours in
+        // the canonical openingHours form, the resolved area names, and the
+        // bounded leading sample of the page's own reviews block.
+        ProviderBusinessJsonLd jsonLd = ProviderBusinessJsonLd.of(
+                profile,
+                hours,
+                areaViews.stream().map(ProviderPublicPageResponse.ServiceAreaView::nameAr).toList(),
+                ProviderBusinessJsonLd.aggregateOf(block.ratingAverage(), block.reviewCount()),
+                reviews.content(),
+                providerProperties.seo().providerUrl(profile.getId()));
+
         return new ProviderPublicPageResponse(
                 profile.getId(),
                 profile.getDisplayName(),
                 profile.getBio(),
                 profile.getStatus(),
+                profile.getVerificationState(),
                 profile.getActorType(),
                 profile.getAgencyName(),
                 profile.getLicenseNumber(),
@@ -163,8 +226,47 @@ public class ProviderPublicPageService {
                 block.reviewCount(),
                 block.ratingGeneralAverage(),
                 block.ratingGeneralCount(),
+                distribution,
+                generalDistribution,
                 reviews,
-                listings);
+                listings,
+                hours.stream().map(ProviderPublicPageResponse.BusinessHourView::of).toList(),
+                services.stream().map(ProviderPublicPageResponse.OfferedServiceView::of).toList(),
+                areaViews,
+                jsonLd);
+    }
+
+    /**
+     * W2 (G13): the declared areas' display names, resolved through the
+     * geo module's CACHED tree — the ListingSeoService pattern verbatim
+     * (one {@code getTree()} call, flattened once, per-node lookup; the
+     * tree is "small by design — hundreds of rows at city scale"). An
+     * area whose node is absent from the tree renders by its id alone
+     * (the name fields null — no invented place names, the L39 rule).
+     */
+    private List<ProviderPublicPageResponse.ServiceAreaView> resolveAreaNames(List<ServiceArea> areas) {
+        if (areas.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, GeoNode> byId = new HashMap<>(64);
+        flatten(geoLookupPort.getTree(), byId);
+        List<ProviderPublicPageResponse.ServiceAreaView> views = new ArrayList<>(areas.size());
+        for (ServiceArea area : areas) {
+            GeoNode node = byId.get(area.getLocationId());
+            views.add(new ProviderPublicPageResponse.ServiceAreaView(
+                    area.getLocationId(),
+                    node == null ? null : node.nameAr(),
+                    node == null ? null : node.nameEn(),
+                    node == null ? null : node.slug()));
+        }
+        return List.copyOf(views);
+    }
+
+    private static void flatten(GeoNode node, Map<UUID, GeoNode> byId) {
+        byId.put(node.id(), node);
+        for (GeoNode child : node.children()) {
+            flatten(child, byId);
+        }
     }
 
     /**

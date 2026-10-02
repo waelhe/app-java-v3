@@ -20,14 +20,17 @@ public class ProviderController {
     private final ProviderMapper providerMapper;
     private final CurrentUserProvider currentUserProvider;
     private final ProviderPublicPageService providerPublicPageService;
+    private final ProviderBusinessPageService businessPageService;
 
     public ProviderController(ProviderService providerService, ProviderMapper providerMapper,
                               CurrentUserProvider currentUserProvider,
-                              ProviderPublicPageService providerPublicPageService) {
+                              ProviderPublicPageService providerPublicPageService,
+                              ProviderBusinessPageService businessPageService) {
         this.providerService = providerService;
         this.providerMapper = providerMapper;
         this.currentUserProvider = currentUserProvider;
         this.providerPublicPageService = providerPublicPageService;
+        this.businessPageService = businessPageService;
     }
 
     @PostMapping("/providers")
@@ -118,5 +121,137 @@ public class ProviderController {
                     + "the profile itself stays visible with its status.")
     public ResponseEntity<ProviderResponse> suspend(@PathVariable UUID id) {
         return ResponseEntity.ok(providerMapper.toResponse(providerService.suspend(id)));
+    }
+
+    // -- W2 (yelp-level plan §5 — the business page) ------------------------
+
+    /**
+     * The declared week's request shape: each entry is the ISO weekday and
+     * the day's window — the service's own PUT-replacement contract.
+     */
+    public record BusinessHoursRequest(java.util.List<ProviderBusinessPageService.HoursEntry> hours) {
+    }
+
+    @PutMapping("/providers/{id}/business-hours")
+    @Operation(summary = "Declare my working hours",
+            description = "W2 (G11): PUT replacement semantics — the request's list IS the "
+                    + "declared week: a day already declared moves its window, a new day "
+                    + "inserts, a day absent from the request is withdrawn. At most one "
+                    + "window per weekday (the V88 unique key).")
+    public ResponseEntity<java.util.List<ProviderPublicPageResponse.BusinessHourView>> replaceHours(
+            @PathVariable UUID id, @Valid @RequestBody BusinessHoursRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(businessPageService
+                .replaceHours(id, request.hours(), authentication)
+                .stream().map(ProviderPublicPageResponse.BusinessHourView::of).toList());
+    }
+
+    @PostMapping("/providers/{id}/services")
+    @Operation(summary = "Add a declared service",
+            description = "W2 (G12): appends one row to the declared services list — the "
+                    + "Yelp menu analog. The position is auto-allocated (max+1, the W1 "
+                    + "max-allocation lesson); the money pair is integer cents + ISO 4217 "
+                    + "currency, declared together or not at all.")
+    public ResponseEntity<ProviderPublicPageResponse.OfferedServiceView> addService(
+            @PathVariable UUID id, @Valid @RequestBody ProviderBusinessPageService.ServiceEntry entry,
+            Authentication authentication) {
+        return ResponseEntity.ok(ProviderPublicPageResponse.OfferedServiceView.of(
+                businessPageService.addService(id, entry, authentication)));
+    }
+
+    @PutMapping("/providers/{id}/services/{serviceId}")
+    @Operation(summary = "Update a declared service",
+            description = "W2 (G12): PUT replacement of the row's display fields (title, "
+                    + "description, duration, price) — the entity's own documented contract; "
+                    + "the position key moves only through the move endpoint.")
+    public ResponseEntity<ProviderPublicPageResponse.OfferedServiceView> updateService(
+            @PathVariable UUID id, @PathVariable UUID serviceId,
+            @Valid @RequestBody ProviderBusinessPageService.ServiceEntry entry,
+            Authentication authentication) {
+        return ResponseEntity.ok(ProviderPublicPageResponse.OfferedServiceView.of(
+                businessPageService.updateService(id, serviceId, entry, authentication)));
+    }
+
+    /** The move request shape: the target position within the menu. */
+    public record MoveServiceRequest(int position) {
+    }
+
+    @PutMapping("/providers/{id}/services/{serviceId}/position")
+    @Operation(summary = "Reorder a declared service",
+            description = "W2 (G12): moves the row to the target position — swap semantics "
+                    + "(the target's occupant takes the mover's old position), one "
+                    + "transaction, the per-provider position key never violated. Returns "
+                    + "the whole menu in its new order.")
+    public ResponseEntity<java.util.List<ProviderPublicPageResponse.OfferedServiceView>> moveService(
+            @PathVariable UUID id, @PathVariable UUID serviceId,
+            @Valid @RequestBody MoveServiceRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(businessPageService
+                .moveService(id, serviceId, request.position(), authentication)
+                .stream().map(ProviderPublicPageResponse.OfferedServiceView::of).toList());
+    }
+
+    @DeleteMapping("/providers/{id}/services/{serviceId}")
+    @Operation(summary = "Withdraw a declared service",
+            description = "W2 (G12): soft-deletes the row (the BaseEntity convention — the "
+                    + "Envers trail keeps the history).")
+    public ResponseEntity<Void> removeService(@PathVariable UUID id, @PathVariable UUID serviceId,
+                                              Authentication authentication) {
+        businessPageService.removeService(id, serviceId, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** The area declaration's request shape: the geo-tree node id. */
+    public record ServiceAreaRequest(UUID locationId) {
+    }
+
+    @PostMapping("/providers/{id}/service-areas")
+    @Operation(summary = "Declare a served area",
+            description = "W2 (G13): adds one geo-tree node to the declared service areas — "
+                    + "«أخدم هذه المناطق». The node must be real (the FK's own law) and "
+                    + "not already declared (the unique key).")
+    public ResponseEntity<Void> addArea(@PathVariable UUID id,
+                                        @Valid @RequestBody ServiceAreaRequest request,
+                                        Authentication authentication) {
+        businessPageService.addArea(id, request.locationId(), authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/providers/{id}/service-areas/{areaId}")
+    @Operation(summary = "Withdraw a served area",
+            description = "W2 (G13): soft-deletes the declared area — the set IS the claim.")
+    public ResponseEntity<Void> removeArea(@PathVariable UUID id, @PathVariable UUID areaId,
+                                           Authentication authentication) {
+        businessPageService.removeArea(id, areaId, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/providers/{id}/verification")
+    @Operation(summary = "Submit my ownership-verification claim",
+            description = "W2 (G14): queues the claim for administrative resolution "
+                    + "(UNVERIFIED/REJECTED/VERIFIED → PENDING). Display-only trust "
+                    + "signal — no privilege attaches to the badge.")
+    public ResponseEntity<ProviderResponse> submitVerification(@PathVariable UUID id,
+                                                               Authentication authentication) {
+        return ResponseEntity.ok(providerMapper.toResponse(
+                providerService.submitVerification(id, authentication)));
+    }
+
+    @PostMapping("/admin/providers/{id}/verification/confirm")
+    @Operation(summary = "Confirm ownership verification (administrative)",
+            description = "W2 (G14): resolves a PENDING claim to VERIFIED — the «مالك "
+                    + "موثّق» badge lights on the public page.")
+    public ResponseEntity<ProviderResponse> confirmVerification(@PathVariable UUID id) {
+        return ResponseEntity.ok(providerMapper.toResponse(
+                providerService.confirmVerification(id)));
+    }
+
+    @PostMapping("/admin/providers/{id}/verification/reject")
+    @Operation(summary = "Decline ownership verification (administrative)",
+            description = "W2 (G14): resolves a PENDING claim to REJECTED — the owner may "
+                    + "submit again; the Envers trail is the record.")
+    public ResponseEntity<ProviderResponse> rejectVerification(@PathVariable UUID id) {
+        return ResponseEntity.ok(providerMapper.toResponse(
+                providerService.rejectVerification(id)));
     }
 }

@@ -3,8 +3,12 @@ package com.marketplace.provider;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PublishedReviewView;
+import com.marketplace.shared.api.RatingDistribution.RatingBucket;
 
+import java.time.DayOfWeek;
+import java.time.LocalTime;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -49,6 +53,34 @@ import java.util.UUID;
  * the organic write's context were contract-served with no surface
  * before).
  *
+ * <p><b>W2 (yelp-level plan §5 — the business page):</b> the wave's own
+ * completion — the page Yelp-shape the plan's acceptance names («صفحة
+ * مزود كاملة: ساعات + خدمات + توزيع نجوم + إشارتا التقييم؛ وأداة فحص
+ * البيانات المنظمة ترى النجوم»):
+ * <ul>
+ *   <li>{@code verificationState} — the ownership-verification badge
+ *       (G14): the {@code UNVERIFIED/PENDING/VERIFIED/REJECTED}
+ *       lifecycle the administrative surface drives;</li>
+ *   <li>{@code ratingDistribution} / {@code ratingGeneralDistribution} —
+ *       the «توزيع نجوم» histograms, one per displayed badge (the same
+ *       mode law as the badge pair: VERIFIED_ONLY the verified bars
+ *       alone; OPEN the merged bars; HYBRID both, the general bars
+ *       null);</li>
+ *   <li>{@code businessHours} — the declared week (G11), the view
+ *       carrying exactly the declared fields;</li>
+ *   <li>{@code services} — the declared services list (G12) in position
+ *       order;</li>
+ *   <li>{@code serviceAreas} — the declared areas (G13) with their
+ *       resolved geo-tree names (the set is small; a page that cannot
+ *       name the place it serves would defeat the block's purpose);</li>
+ *   <li>{@code jsonLd} — the schema.org {@code LocalBusiness}
+ *       structured-data block (G22): the stars the checker sees, the
+ *       canonical openingHours string, the areas, and the bounded review
+ *       sample — composed from the same numbers the visible blocks
+ *       render (a rich result that disagrees with its own page is
+ *       invalid markup).</li>
+ * </ul>
+ *
  * @param listings the provider's ACTIVE listings page — empty (total 0)
  *                 whenever the profile is not VERIFIED: the public page
  *                 hides a suspended broker's inventory (the layer's own
@@ -64,6 +96,7 @@ public record ProviderPublicPageResponse(
         String displayName,
         String bio,
         ProviderStatus status,
+        ProviderVerificationState verificationState,
         ProviderActorType actorType,
         String agencyName,
         String licenseNumber,
@@ -73,7 +106,58 @@ public record ProviderPublicPageResponse(
         long reviewCount,
         Double ratingGeneralAverage,
         long ratingGeneralCount,
+        List<RatingBucket> ratingDistribution,
+        List<RatingBucket> ratingGeneralDistribution,
         PagedResponse<PublishedReviewView> reviews,
-        PagedResponse<ListingSummary> listings
+        PagedResponse<ListingSummary> listings,
+        List<BusinessHourView> businessHours,
+        List<OfferedServiceView> services,
+        List<ServiceAreaView> serviceAreas,
+        ProviderBusinessJsonLd jsonLd
 ) {
+
+    /** One declared working-hours window (G11): the ISO weekday and the day's times. */
+    public record BusinessHourView(
+            DayOfWeek dayOfWeek,
+            LocalTime opensAt,
+            LocalTime closesAt
+    ) {
+        static BusinessHourView of(BusinessHour hour) {
+            return new BusinessHourView(hour.getDayOfWeek(), hour.getOpensAt(), hour.getClosesAt());
+        }
+    }
+
+    /**
+     * One declared service (G12): the menu row in position order — the
+     * money pair rides as integer cents + ISO 4217 (the V2 house shape;
+     * both null together when no price is declared).
+     */
+    public record OfferedServiceView(
+            UUID id,
+            String title,
+            String description,
+            Integer durationMinutes,
+            Long priceCents,
+            String currency,
+            int position
+    ) {
+        static OfferedServiceView of(OfferedService service) {
+            return new OfferedServiceView(service.getId(), service.getTitle(),
+                    service.getDescription(), service.getDurationMinutes(),
+                    service.getPriceCents(), service.getCurrency(), service.getPosition());
+        }
+    }
+
+    /**
+     * One declared service area (G13): the geo node's id with its
+     * resolved display names — Arabic (the primary market's label, the
+     * JSON-LD convention) and English, plus the stable slug.
+     */
+    public record ServiceAreaView(
+            UUID locationId,
+            String nameAr,
+            String nameEn,
+            String slug
+    ) {
+    }
 }
