@@ -43,19 +43,25 @@ class CommunityContentPurgeAdapterTest {
 
         int purged = adapter.purgeAuthoredTexts(userId);
 
-        // Six statements since L49 (posts + posts_aud + comments +
-        // comments_aud + events + events_aud), each counting its own
-        // purged rows.
-        assertThat(purged).isEqualTo(12);
+        // Eight statements since L50 (posts + posts_aud + comments +
+        // comments_aud + events + events_aud + market items + market
+        // items_aud), each counting its own purged rows.
+        assertThat(purged).isEqualTo(16);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate, times(6)).update(sql.capture(), any(Object[].class));
+        verify(jdbcTemplate, times(8)).update(sql.capture(), any(Object[].class));
         assertThat(sql.getAllValues())
                 .anySatisfy(s -> assertThat(s)
                         .startsWith("UPDATE neighborhood_posts SET title = ?, body = ?"))
                 .anySatisfy(s -> assertThat(s)
                         .startsWith("UPDATE neighborhood_posts_aud SET title = ?, body = ?"))
                 .anySatisfy(s -> assertThat(s).startsWith("UPDATE post_comments SET body = ?"))
-                .anySatisfy(s -> assertThat(s).startsWith("UPDATE post_comments_aud SET body = ?"));
+                .anySatisfy(s -> assertThat(s).startsWith("UPDATE post_comments_aud SET body = ?"))
+                // L50 (the review round's adoption): the market items'
+                // two authored columns join the purge — base and mirror.
+                .anySatisfy(s -> assertThat(s)
+                        .startsWith("UPDATE neighborhood_market_items SET title = ?"))
+                .anySatisfy(s -> assertThat(s)
+                        .startsWith("UPDATE neighborhood_market_items_aud SET title = ?"));
         // The provenance scope: every statement carries the author filter,
         // and the membership table appears in NONE of them.
         assertThat(sql.getAllValues())
@@ -79,10 +85,11 @@ class CommunityContentPurgeAdapterTest {
 
         int purged = new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
 
-        // The grand total carries every statement's count (six statements
-        // at two rows each since L49 — the two event statements join the
-        // four post/comment ones).
-        assertThat(purged).isEqualTo(12);
+        // The grand total carries every statement's count (eight statements
+        // at two rows each since L50 — the two event statements join the
+        // four post/comment ones, and the two market-item statements join
+        // those).
+        assertThat(purged).isEqualTo(16);
         // The four authored columns ride both statements — base and mirror.
         org.mockito.Mockito.verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->

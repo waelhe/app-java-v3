@@ -4,6 +4,8 @@ import com.marketplace.shared.api.BookingExportEntry;
 import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityEventExportEntry;
 import com.marketplace.shared.api.CommunityEventSeatExportEntry;
+import com.marketplace.shared.api.CommunityGroupMembershipExportEntry;
+import com.marketplace.shared.api.CommunityMarketItemExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.CommunityReactionExportEntry;
@@ -56,6 +58,8 @@ public record UserDataExportResponse(
         List<CommunityReactionExportEntry> communityReactions,
         List<CommunityEventExportEntry> communityEvents,
         List<CommunityEventSeatExportEntry> communityEventSeats,
+        List<CommunityMarketItemExportEntry> communityMarketItems,
+        List<CommunityGroupMembershipExportEntry> communityGroupMemberships,
         List<ProviderFollowExportEntry> providerFollows
 ) {
 
@@ -115,6 +119,12 @@ public record UserDataExportResponse(
             your neighborhood posts and comments (the community texts you authored — as stored, \
             including author-deleted ones, with the moderation status of each post); \
             your neighborhood reactions (the posts you thanked — as stored, including removed ones); \
+            your neighborhood events (the authored titles, descriptions and display labels — as stored, \
+            including organizer-deleted ones) and your event seats (the attendance declarations — \
+            held and freed, as stored); \
+            your neighborhood market items (the listings you published — title, pickup-spot label, \
+            and the stored pricing declaration — as stored, including withdrawn and sold ones); \
+            your neighborhood group memberships (the groups you joined — live and left, as stored); \
             and the providers you follow (as stored, including withdrawn follows).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
             Excluded: internal system columns, operational data (event archive, saved-search match ledger, \

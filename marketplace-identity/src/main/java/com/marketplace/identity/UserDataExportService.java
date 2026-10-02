@@ -104,6 +104,8 @@ public class UserDataExportService {
         var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());
         var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
         var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
+        var communityMarketItems = communityExportPort.exportMarketItemsForOwner(user.getId());
+        var communityGroupMemberships = communityExportPort.exportGroupMembershipsForOwner(user.getId());
         var providerFollows = exportFollows(user.getId());
 
         var response = new UserDataExportResponse(
@@ -130,6 +132,8 @@ public class UserDataExportService {
                 communityReactions,
                 communityEvents,
                 communityEventSeats,
+                communityMarketItems,
+                communityGroupMemberships,
                 providerFollows);
 
         // The execution record — section sizes only; exported content never
@@ -138,12 +142,14 @@ public class UserDataExportService {
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
                         + "communityPosts={}, communityComments={}, communityReactions={}, "
-                        + "communityEvents={}, communityEventSeats={}, providerFollows={}",
+                        + "communityEvents={}, communityEventSeats={}, communityMarketItems={}, "
+                        + "communityGroupMemberships={}, providerFollows={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
                 communityPosts.size(), communityComments.size(), communityReactions.size(),
-                communityEvents.size(), communityEventSeats.size(), providerFollows.size());
+                communityEvents.size(), communityEventSeats.size(), communityMarketItems.size(),
+                communityGroupMemberships.size(), providerFollows.size());
         return response;
     }
 
