@@ -44,6 +44,7 @@ public class ReviewsPublishedPageAdapter implements PublishedReviewsPort {
                         review.repliedAt(),
                         review.createdAt(),
                         review.origin(),
+                        review.reviewerId(),
                         review.reviewerName(),
                         review.reviewerReviewCount(),
                         review.helpfulCount())));

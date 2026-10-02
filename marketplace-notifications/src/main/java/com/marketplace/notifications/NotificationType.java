@@ -48,6 +48,17 @@ package com.marketplace.notifications;
  * the thanked post's author; the self-thank skip is the listener's own
  * policy (the {@code PostCommentedEvent} criterion-4 precedent), not
  * this enum's concern.
+ *
+ * <p>W4 (yelp-level plan §5 — the reviewer identity &amp; engagement wave,
+ * G21): {@code FOLLOWED_PROVIDER_NEW_LISTING} joins as the ninth type —
+ * the same point addition (the V93 CHECK widens the DB-side membership
+ * guard to match, V94 validates it under SHARE UPDATE EXCLUSIVE alone).
+ * The recipient is a follower of the listing's provider — the identity
+ * module's follow bridge pre-scopes one {@code FollowedProviderNewListingEvent}
+ * per follower per listing announcement (the alert ledger's structural
+ * "exactly once"), so one event is one notification; the delivery rides
+ * the standing L22 per-type/channel preference matrix from day one, no
+ * new mechanism.
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -57,5 +68,6 @@ public enum NotificationType {
     POST_COMMENTED,
     NEW_LISTING_IN_NEIGHBORHOOD,
     CONTENT_MODERATED,
-    POST_REACTED
+    POST_REACTED,
+    FOLLOWED_PROVIDER_NEW_LISTING
 }

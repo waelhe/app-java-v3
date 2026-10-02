@@ -55,7 +55,8 @@ public record UserDataExportResponse(
         List<CommunityCommentExportEntry> communityComments,
         List<CommunityReactionExportEntry> communityReactions,
         List<CommunityEventExportEntry> communityEvents,
-        List<CommunityEventSeatExportEntry> communityEventSeats
+        List<CommunityEventSeatExportEntry> communityEventSeats,
+        List<ProviderFollowExportEntry> providerFollows
 ) {
 
     /**
@@ -86,6 +87,23 @@ public record UserDataExportResponse(
     ) {
     }
 
+    /**
+     * W4 (yelp-level plan §5 — G21, the b-3 export duty): the providers the
+     * account chose to follow — as stored, withdrawn follows included (the
+     * b-5 discrimination: surface deletion is a visibility flag, not an
+     * erasure). Identity-local data, so the section composes directly in
+     * the aggregation service (the Profile precedent — no port crosses a
+     * boundary the owning module already owns).
+     */
+    public record ProviderFollowExportEntry(
+            UUID id,
+            UUID providerUserId,
+            Instant createdAt,
+            Instant updatedAt,
+            boolean deleted
+    ) {
+    }
+
     /** The fixed scope statement — the contract the sections implement. */
     static final String SCOPE_NOTICE = """
             Personal data held by this controller and provided by you (GDPR Art. 20(1)) \
@@ -96,9 +114,11 @@ public record UserDataExportResponse(
             your neighborhood memberships (the self-declared home location — active and left, as stored); \
             your neighborhood posts and comments (the community texts you authored — as stored, \
             including author-deleted ones, with the moderation status of each post); \
-            and your neighborhood reactions (the posts you thanked — as stored, including removed ones).
+            your neighborhood reactions (the posts you thanked — as stored, including removed ones); \
+            and the providers you follow (as stored, including withdrawn follows).
             Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
-            Excluded: internal system columns, operational data (event archive, saved-search match ledger), audit strings, \
+            Excluded: internal system columns, operational data (event archive, saved-search match ledger, \
+            the follow-alert delivery ledger), audit strings, \
             and any record where you are not a first party.
             The provider persona (provider profile) is outside this export contract \
             (account-pseudonymization-plan §5-ج provenance enumeration).""";

@@ -75,6 +75,7 @@ class ReviewsViewServiceTest {
 
         ReviewResponse response = viewService.toResponse(review);
 
+        assertEquals(reviewerId, response.reviewerId());
         assertEquals("Sara", response.reviewerName());
         assertEquals(12L, response.reviewerReviewCount());
         assertEquals(3L, response.helpfulCount());

@@ -36,10 +36,10 @@ class ReviewsControllerTest {
     @InjectMocks
     private ReviewsController controller;
 
-    /** The 15-field W1 response in its neutral shape (tests compare instances). */
+    /** The 16-field W1+W4 response in its neutral shape (tests compare instances). */
     private static ReviewResponse response(UUID id) {
         return new ReviewResponse(id, null, null, null, null, null, null, null, null,
-                null, null, null, null, 0L, 0L);
+                null, null, null, null, null, 0L, 0L);
     }
 
     @Test

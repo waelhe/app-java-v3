@@ -10,10 +10,12 @@ import com.marketplace.shared.api.SavedSearchExportPort;
 import com.marketplace.shared.api.ReviewExportPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * I7 Phase 2 (account-pseudonymization-plan §5-ج — the Art. 20 export
@@ -55,6 +57,7 @@ public class UserDataExportService {
     private final NotificationExportPort notificationExportPort;
     private final SavedSearchExportPort savedSearchExportPort;
     private final CommunityExportPort communityExportPort;
+    private final JdbcTemplate jdbcTemplate;
 
     public UserDataExportService(BookingExportPort bookingExportPort,
                                  ReviewExportPort reviewExportPort,
@@ -62,7 +65,8 @@ public class UserDataExportService {
                                  MediaExportPort mediaExportPort,
                                  NotificationExportPort notificationExportPort,
                                  SavedSearchExportPort savedSearchExportPort,
-                                 CommunityExportPort communityExportPort) {
+                                 CommunityExportPort communityExportPort,
+                                 JdbcTemplate jdbcTemplate) {
         this.bookingExportPort = bookingExportPort;
         this.reviewExportPort = reviewExportPort;
         this.messagingExportPort = messagingExportPort;
@@ -70,6 +74,7 @@ public class UserDataExportService {
         this.notificationExportPort = notificationExportPort;
         this.savedSearchExportPort = savedSearchExportPort;
         this.communityExportPort = communityExportPort;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -99,6 +104,7 @@ public class UserDataExportService {
         var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());
         var communityEvents = communityExportPort.exportEventsForOwner(user.getId());
         var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());
+        var providerFollows = exportFollows(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -123,7 +129,8 @@ public class UserDataExportService {
                 communityComments,
                 communityReactions,
                 communityEvents,
-                communityEventSeats);
+                communityEventSeats,
+                providerFollows);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
@@ -131,12 +138,37 @@ public class UserDataExportService {
         log.info("Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, "
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
                         + "communityPosts={}, communityComments={}, communityReactions={}, "
-                        + "communityEvents={}, communityEventSeats={}",
+                        + "communityEvents={}, communityEventSeats={}, providerFollows={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
                 communityPosts.size(), communityComments.size(), communityReactions.size(),
-                communityEvents.size(), communityEventSeats.size());
+                communityEvents.size(), communityEventSeats.size(), providerFollows.size());
         return response;
+    }
+
+    /**
+     * W4 (G21, the b-3 duty): the account's follows — read through native
+     * JDBC (the {@code SavedSearchExportAdapter}'s own reasoning: the
+     * export is a faithful copy of the stored rows, not an entity
+     * projection — soft-deleted follows included, because surface
+     * deletion is a visibility flag, not an erasure). Identity-local data,
+     * so no port: the section composes here like the Profile section.
+     */
+    private List<UserDataExportResponse.ProviderFollowExportEntry> exportFollows(java.util.UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, provider_user_id, created_at, updated_at, is_deleted
+                FROM provider_follows
+                WHERE user_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new UserDataExportResponse.ProviderFollowExportEntry(
+                        java.util.UUID.fromString(rs.getString("id")),
+                        java.util.UUID.fromString(rs.getString("provider_user_id")),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
     }
 }

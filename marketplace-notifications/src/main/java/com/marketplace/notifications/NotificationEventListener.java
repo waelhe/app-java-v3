@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -169,6 +170,24 @@ public class NotificationEventListener {
         notificationService.onPostReacted(event.postId(), event.postAuthorId());
         log.info("Notification sent for post reaction: postId={}, author={}",
                 event.postId(), event.postAuthorId());
+    }
+
+    /**
+     * W4 (yelp-level plan §5 — the reviewer identity &amp; engagement wave,
+     * G21): the follower's FOLLOWED_PROVIDER_NEW_LISTING alert. The event
+     * arrives pre-scoped per follower (the identity side's follow bridge
+     * + its alert ledger — the structural one-event-per-recipient fan-out
+     * the {@code NewListingInNeighborhoodEvent} precedent documents), so
+     * one event is one notification. Same contract as the listeners above
+     * — after commit, its own transaction, the framework's retry: a failed
+     * delivery never loses the announcement alert for that follower (the
+     * registry entry stays incomplete until the listener succeeds).
+     */
+    @ApplicationModuleListener
+    public void onFollowedProviderNewListing(FollowedProviderNewListingEvent event) {
+        notificationService.onFollowedProviderNewListing(event.recipientId(), event.listingId());
+        log.info("Notification sent for followed-provider listing: recipient={}, listing={}",
+                event.recipientId(), event.listingId());
     }
 
 }

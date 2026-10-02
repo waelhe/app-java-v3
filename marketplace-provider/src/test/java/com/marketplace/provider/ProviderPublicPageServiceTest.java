@@ -239,7 +239,8 @@ class ProviderPublicPageServiceTest {
         Pageable reviewsPageable = PageRequest.of(0, 10);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
         PublishedReviewView row = new PublishedReviewView(UUID.randomUUID(), 5, "Sourdough sells out by noon",
-                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", "Nour", 7L, 3L);
+                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", null,
+                "Nour", 7L, 3L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(row), reviewsPageable, 1)));
 

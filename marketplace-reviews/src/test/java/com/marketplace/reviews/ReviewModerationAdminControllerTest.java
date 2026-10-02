@@ -50,7 +50,7 @@ class ReviewModerationAdminControllerTest {
 
     private static ReviewResponse composed(UUID reviewId, String status) {
         return new ReviewResponse(reviewId, null, 5, "text", null, null, null, null, null,
-                "ORGANIC", status, null, "Sara", 1L, 0L);
+                "ORGANIC", status, null, null, "Sara", 1L, 0L);
     }
 
     @Test
