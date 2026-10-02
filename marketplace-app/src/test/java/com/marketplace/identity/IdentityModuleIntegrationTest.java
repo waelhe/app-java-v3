@@ -87,6 +87,14 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.CommunityExportPort communityExportPort;
 
+    // W3 (G19, the review round's export leg): the favorites section — the
+    // catalog module's ListingFavoritesExportPort (its adapter lives
+    // outside this slice); the same house pattern as the seven ports
+    // above. The CI-measured round: without this mock the context boot
+    // fails on UserDataExportService's constructor.
+    @MockitoBean
+    com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
+
     // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
     // this module slice) consumes the cross-module purge port as a List —
     // the shared-api contract implemented by the six owning modules'
