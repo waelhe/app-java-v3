@@ -322,4 +322,127 @@ class CommunityExportAdapterTest {
         assertThat(entry.eventId()).isEqualTo(eventId);
         assertThat(entry.deleted()).isTrue();
     }
+
+    @Test
+    void exportGroupMembershipsForOwner_mapsTheStoredFactsIncludingLeftMemberships() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-02T08:15:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("group_id")).thenReturn(groupId.toString());
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityGroupMembershipExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportGroupMembershipsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.groupId()).isEqualTo(groupId);
+        assertThat(entry.deleted()).isTrue();
+    }
+
+    /**
+     * L50's market leg mapping pin — the live 2026-10-02 export 500's own
+     * lesson: the price column is a NULLABLE int4 on the Flyway schema, and
+     * the driver's boxed read must widen through Number (pgjdbc refuses
+     * getObject(col, Long.class) on int4 outright). The mapper is pinned
+     * here against the DRIVER's own returned type (an Integer boxed by the
+     * mock exactly as pgjdbc boxes int4); the against-the-real-schema
+     * round-trip rides the integration net.
+     */
+    @Test
+    void exportMarketItemsForOwner_mapsTheStoredFactsIncludingWithdrawnItems() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID marketLocationId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-10-02T09:30:00Z");
+        when(rs.getString("id")).thenReturn(id.toString());
+        when(rs.getString("location_id")).thenReturn(marketLocationId.toString());
+        when(rs.getString("category")).thenReturn("TOOLS");
+        when(rs.getString("title")).thenReturn("خيمة تخييم عائلية");
+        when(rs.getString("item_condition")).thenReturn("GOOD");
+        when(rs.getObject("price_cents")).thenReturn(26000);
+        when(rs.getString("price_currency")).thenReturn("SAR");
+        when(rs.getString("status")).thenReturn("ACTIVE");
+        when(rs.getString("location_label")).thenReturn("الشارع العام — قرب المخبز");
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(createdAt));
+        when(rs.getBoolean("is_deleted")).thenReturn(false);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityMarketItemExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportMarketItemsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        var entry = entries.get(0);
+        assertThat(entry.id()).isEqualTo(id);
+        assertThat(entry.locationId()).isEqualTo(marketLocationId);
+        assertThat(entry.category()).isEqualTo("TOOLS");
+        assertThat(entry.title()).isEqualTo("خيمة تخييم عائلية");
+        assertThat(entry.priceCents()).isEqualTo(26000L);
+        assertThat(entry.priceCurrency()).isEqualTo("SAR");
+        assertThat(entry.status()).isEqualTo("ACTIVE");
+        assertThat(entry.locationLabel()).isEqualTo("الشارع العام — قرب المخبز");
+        assertThat(entry.deleted()).isFalse();
+    }
+
+    /** The FREE item's NULL price widens to a null Long — never a 0 or a throw. */
+    @Test
+    void exportMarketItemsForOwner_mapsTheFreeItemsNullPrice() throws Exception {
+        when(rs.getString("id")).thenReturn(UUID.randomUUID().toString());
+        when(rs.getString("location_id")).thenReturn(UUID.randomUUID().toString());
+        when(rs.getString("category")).thenReturn("FREE");
+        when(rs.getString("title")).thenReturn("شتلات نعناع — إهداء");
+        when(rs.getString("item_condition")).thenReturn("LIKE_NEW");
+        when(rs.getObject("price_cents")).thenReturn(null);
+        when(rs.getString("price_currency")).thenReturn(null);
+        when(rs.getString("status")).thenReturn("ACTIVE");
+        when(rs.getString("location_label")).thenReturn("مدخل الحديقة");
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(Instant.parse("2026-10-02T10:00:00Z")));
+        when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(Instant.parse("2026-10-02T10:00:00Z")));
+        when(rs.getBoolean("is_deleted")).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    RowMapper<com.marketplace.shared.api.CommunityMarketItemExportEntry> mapper =
+                            invocation.getArgument(1);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+
+        var entries = new CommunityExportAdapter(jdbcTemplate).exportMarketItemsForOwner(userId);
+
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).priceCents()).isNull();
+        assertThat(entries.get(0).priceCurrency()).isNull();
+        assertThat(entries.get(0).deleted()).isTrue();
+    }
+
+    @Test
+    void exportMarketItemsForOwner_scopesToTheAuthorWithTheHonestOrder() {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(userId)))
+                .thenReturn(List.of());
+
+        new CommunityExportAdapter(jdbcTemplate).exportMarketItemsForOwner(userId);
+
+        org.mockito.Mockito.verify(jdbcTemplate).query(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("FROM neighborhood_market_items")
+                                && sql.contains("WHERE author_id = ?")
+                                && sql.contains("ORDER BY created_at, id")
+                                && !sql.contains("is_deleted = FALSE")),
+                any(RowMapper.class), eq(userId));
+    }
 }

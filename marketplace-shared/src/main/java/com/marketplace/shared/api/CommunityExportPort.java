@@ -88,4 +88,15 @@ public interface CommunityExportPort {
      * exactly this seam.
      */
     List<CommunityMarketItemExportEntry> exportMarketItemsForOwner(UUID userId);
+
+    /**
+     * L51 (the neighbors groups): every group membership the subject
+     * ever took — live and left — in stable {@code (created_at, id)}
+     * order. The membership is identifiers-and-timestamps personal data
+     * (the belonging declaration itself), the reaction row's and the
+     * seat's own class of member data — born with the wave this time,
+     * not adopted after a review round: the L50 market review taught
+     * that the b-2 seam rides the layer's own PR, never a later one.
+     */
+    List<CommunityGroupMembershipExportEntry> exportGroupMembershipsForOwner(UUID userId);
 }

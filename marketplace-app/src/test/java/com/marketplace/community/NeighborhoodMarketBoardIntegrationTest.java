@@ -244,13 +244,30 @@ class NeighborhoodMarketBoardIntegrationTest {
     }
 
     @Test
-    void currencyIsNormalizedToTheCanonicalUppercaseForm() {
-        UUID author = joinedMember(OLD_TOWN);
-        UUID itemId = publish(author, OLD_TOWN, "FURNITURE", "أريكة", 48000, " sar ", "شارع عام");
+    void currencyIsNormalizedToTheCanonicalUppercaseForm_overHttp() throws Exception {
+        // The review round's measured gap: the old bean-side
+        // @Pattern("[A-Z]{3}") rejected " sar " at the HTTP boundary
+        // before the service could normalize it, while this test's
+        // service-direct shape stayed green — a classic HTTP-vs-service
+        // blind spot. The fix removed the pattern (the service's
+        // Currencies.normalize over the JDK's ISO 4217 table is the
+        // single authority), and the test now rides the REAL path:
+        // publish through HTTP with lowercase-plus-whitespace currency,
+        // expect 201, and read the stored canonical form back.
+        UUID author = asCaller(joinedMember(OLD_TOWN));
+
+        mockMvc.perform(post("/api/v1/neighborhood/market")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"locationId\": \"" + OLD_TOWN + "\", \"category\": \"FURNITURE\", "
+                                + "\"title\": \"أريكة\", \"condition\": \"GOOD\", "
+                                + "\"priceCents\": 48000, \"priceCurrency\": \" sar \", "
+                                + "\"locationLabel\": \"شارع عام\"}"))
+                .andExpect(status().isCreated());
 
         String stored = jdbc.queryForObject(
-                "SELECT price_currency FROM neighborhood_market_items WHERE id = ?",
-                String.class, itemId);
+                "SELECT price_currency FROM neighborhood_market_items WHERE author_id = ?",
+                String.class, author);
         assertThat(stored).isEqualTo("SAR");
     }
 
