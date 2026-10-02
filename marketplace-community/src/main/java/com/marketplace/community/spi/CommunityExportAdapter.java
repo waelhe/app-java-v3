@@ -4,6 +4,7 @@ import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityEventExportEntry;
 import com.marketplace.shared.api.CommunityEventSeatExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
+import com.marketplace.shared.api.CommunityMarketItemExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.CommunityReactionExportEntry;
@@ -185,6 +186,42 @@ public class CommunityExportAdapter implements CommunityExportPort {
                 (rs, rowNum) -> new CommunityEventSeatExportEntry(
                         UUID.fromString(rs.getString("id")),
                         UUID.fromString(rs.getString("event_id")),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
+    }
+
+    /**
+     * L50 (the market board, the review round's root fix): the subject's
+     * published items — the same native-JDBC faithful-copy read as the
+     * posts (the withdrawn rows included, b-5's discrimination — V90's
+     * author index is NON-partial for exactly this scan), the two
+     * authored columns plus the stored pricing declaration verbatim,
+     * the enums as their stored names.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityMarketItemExportEntry> exportMarketItemsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, location_id, category, title, item_condition,
+                       price_cents, price_currency, status, location_label,
+                       created_at, updated_at, is_deleted
+                FROM neighborhood_market_items
+                WHERE author_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new CommunityMarketItemExportEntry(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("location_id")),
+                        rs.getString("category"),
+                        rs.getString("title"),
+                        rs.getString("item_condition"),
+                        rs.getObject("price_cents", Long.class),
+                        rs.getString("price_currency"),
+                        rs.getString("status"),
+                        rs.getString("location_label"),
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getTimestamp("updated_at").toInstant(),
                         rs.getBoolean("is_deleted")),

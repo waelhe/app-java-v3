@@ -234,6 +234,48 @@ class NeighborhoodMarketItemServiceTest {
         verify(itemRepository, never()).save(any());
     }
 
+    /**
+     * The review round's own case (greptile + CodeRabbit agree): a
+     * three-uppercase-letter NON-ISO code passes the regex shape but has
+     * no ISO 4217 meaning — the JDK's currency table is the authority the
+     * house helper already carries (Currencies.normalize), and the 400
+     * teaches the caller before the V90 backstop ever sees the row.
+     */
+    @Test
+    void createItem_unknownThreeLetterCurrency_is400() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+
+        assertThatThrownBy(() -> service.createItem(authorId, locationId,
+                MarketCategory.FURNITURE, "Title", MarketCondition.GOOD, 48000, "ZZZ", "Spot"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("ISO 4217")
+                .hasMessageContaining("ZZZ");
+        verify(itemRepository, never()).save(any());
+    }
+
+    /**
+     * The stored form is the canonical uppercase code — the house helper
+     * normalizes on the way in (trim/upper), so the DB CHECK's uppercase
+     * pin and the ISO authority agree on one representation.
+     */
+    @Test
+    void createItem_normalizesTheStoredCurrencyForm() {
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        when(itemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createItem(authorId, locationId, MarketCategory.FURNITURE, "Title",
+                MarketCondition.GOOD, 48000, " sar ", "Spot");
+
+        org.mockito.ArgumentCaptor<NeighborhoodMarketItem> saved =
+                org.mockito.ArgumentCaptor.forClass(NeighborhoodMarketItem.class);
+        verify(itemRepository).save(saved.capture());
+        assertThat(saved.getValue().getPriceCurrency()).isEqualTo("SAR");
+    }
+
     // ---------- createItem: the honest echo ----------
 
     @Test
@@ -344,6 +386,36 @@ class NeighborhoodMarketItemServiceTest {
         // The batch read returns NOTHING for the author — they left.
         when(membershipRepository.findByUserIdIn(anyCollection()))
                 .thenReturn(List.of());
+
+        Page<NeighborhoodMarketItemView> board = service.getBoard(authorId, null, null, false,
+                PageRequest.of(0, 20));
+
+        assertThat(board.getContent().get(0).sellerVerified()).isFalse();
+    }
+
+    /**
+     * The review round's root case (greptile P1 + CodeRabbit Major agree):
+     * an author who left THIS neighborhood for another one — even earning
+     * VERIFIED there — keeps their old items readable on this board, but
+     * the badge does not follow them out: the batch read returns the
+     * author's CURRENT membership (another location, VERIFIED), and the
+     * board's location-scoped filter still renders the honest floor.
+     */
+    @Test
+    void getBoard_authorVerifiedElsewhere_isTheUnverifiedFloorHere() {
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        NeighborhoodMarketItem moversItem = itemBy(otherMemberId, locationId,
+                MarketCategory.ELECTRONICS, 15000);
+        when(itemRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(moversItem)));
+        // The mover's CURRENT row: a VERIFIED membership in ANOTHER
+        // neighborhood — exactly the badge-follows-the-seller defect the
+        // round named.
+        UUID elsewhere = UUID.randomUUID();
+        when(membershipRepository.findByUserIdIn(anyCollection()))
+                .thenReturn(List.of(membershipVerified(otherMemberId, elsewhere)));
 
         Page<NeighborhoodMarketItemView> board = service.getBoard(authorId, null, null, false,
                 PageRequest.of(0, 20));

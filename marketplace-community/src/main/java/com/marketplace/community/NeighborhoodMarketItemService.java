@@ -1,6 +1,7 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.Currencies;
 import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
@@ -50,9 +51,13 @@ import java.util.stream.Collectors;
  * <p><b>The badge batch (the L47/L49 grouped-read shape verbatim):</b>
  * the board's seller badges («جار موثق») come from ONE
  * {@code findByUserIdIn} read over the page's author ids — earned
- * verification states, never claimed ones; an author who left the
- * neighborhood (or holds no membership row) renders the honest
- * unverified floor. The empty page short-circuits and costs no read.
+ * verification states, never claimed ones, and SCOPED TO THIS BOARD'S
+ * neighborhood (the review round's root fix: an author who left for
+ * another neighborhood — even a VERIFIED one — keeps their items
+ * readable here, but the badge does not follow them out; the javadoc's
+ * own law, now enforced by the filter). An author who left with no
+ * membership row at all renders the honest unverified floor. The empty
+ * page short-circuits and costs no read.
  *
  * <p><b>Deterministic pagination (D-N5):</b> the board read forces the
  * complete sort key — {@code created_at DESC, id DESC} — so two items
@@ -112,10 +117,10 @@ public class NeighborhoodMarketItemService {
         NeighborhoodMembership membership = requireWritableMembershipIn(authorId, locationId,
                 "Join a neighborhood before publishing market items (PUT /api/v1/me/neighborhood)",
                 "Market items go to your own neighborhood — this location is not it");
-        requireCoherentPricing(category, priceCents, priceCurrency);
+        String normalizedCurrency = requireCoherentPricing(category, priceCents, priceCurrency);
         NeighborhoodMarketItem saved = itemRepository.save(NeighborhoodMarketItem.marketItem(
                 authorId, locationId, category, title, condition,
-                priceCents, priceCurrency, locationLabel));
+                priceCents, normalizedCurrency, locationLabel));
         // The honest echo: the badge rides the membership the gate
         // itself already read — never a guessed state.
         return NeighborhoodMarketItemView.of(saved, isVerified(membership));
@@ -153,7 +158,7 @@ public class NeighborhoodMarketItemService {
         // one grouped read over the page's ids; the empty page
         // short-circuits below and costs nothing).
         List<NeighborhoodMarketItem> items = page.getContent();
-        Map<UUID, Boolean> badges = sellerBadges(items);
+        Map<UUID, Boolean> badges = sellerBadges(items, locationId);
         return page.map(item -> NeighborhoodMarketItemView.of(
                 item,
                 badges.getOrDefault(item.getAuthorId(), false),
@@ -184,23 +189,38 @@ public class NeighborhoodMarketItemService {
      * 3-letter ISO 4217 code (the V2 money shape). The friendly 400
      * here is the V90 CHECK's own twin — the constraint is the
      * backstop.
+     *
+     * <p>The currency's validity authority is the house helper
+     * {@link Currencies#normalize(String)} — the JDK's own ISO 4217
+     * table (the review round's root fix: the regex accepted any three
+     * uppercase letters, so {@code ZZZ} passed both this gate and the
+     * V90 backstop while violating the advertised contract). The same
+     * call normalizes the stored form (trim/upper) — the stored code is
+     * always the canonical uppercase the DB CHECK pins.
      */
-    private void requireCoherentPricing(MarketCategory category, Integer priceCents,
-                                        String priceCurrency) {
+    private String requireCoherentPricing(MarketCategory category, Integer priceCents,
+                                           String priceCurrency) {
         if (category == MarketCategory.FREE) {
             if (priceCents != null || priceCurrency != null) {
                 throw new BadRequestException(
                         "A FREE item is a gift — leave the price absent (مجاني ⇔ بلا سعر)");
             }
-            return;
+            return null;
         }
         if (priceCents == null || priceCents <= 0) {
             throw new BadRequestException(
                     "A " + category + " item requires a strictly positive price in integer cents");
         }
-        if (priceCurrency == null || !priceCurrency.matches("[A-Z]{3}")) {
+        if (priceCurrency == null || priceCurrency.isBlank()) {
             throw new BadRequestException(
                     "priceCurrency must be a 3-letter ISO 4217 code (e.g. SAR)");
+        }
+        try {
+            return Currencies.normalize(priceCurrency);
+        } catch (IllegalArgumentException unknownCode) {
+            throw new BadRequestException(
+                    "priceCurrency must be a 3-letter ISO 4217 code (e.g. SAR) — "
+                            + priceCurrency + " is not one");
         }
     }
 
@@ -209,10 +229,14 @@ public class NeighborhoodMarketItemService {
      * ONE membership read for the whole page (the L47/L49 grouped
      * shape verbatim); the empty page short-circuits to the empty map
      * (a closed board costs no read). An author with no ACTIVE
-     * membership row renders the honest unverified floor (a left
-     * member's items stay readable — their earned badge does not).
+     * membership row renders the honest unverified floor — and so does
+     * an author whose membership points at ANOTHER neighborhood now
+     * (the review round's root fix): the badge is THIS board's earned
+     * trust, so only a membership in the board's own location counts;
+     * a left member's items stay readable, their badge does not follow
+     * them out (the javadoc's own law, enforced).
      */
-    private Map<UUID, Boolean> sellerBadges(List<NeighborhoodMarketItem> items) {
+    private Map<UUID, Boolean> sellerBadges(List<NeighborhoodMarketItem> items, UUID locationId) {
         if (items.isEmpty()) {
             return Map.of();
         }
@@ -220,6 +244,7 @@ public class NeighborhoodMarketItemService {
                 .map(NeighborhoodMarketItem::getAuthorId)
                 .collect(Collectors.toSet());
         return membershipRepository.findByUserIdIn(authorIds).stream()
+                .filter(membership -> membership.getLocationId().equals(locationId))
                 .collect(Collectors.toMap(
                         NeighborhoodMembership::getUserId,
                         this::isVerified));

@@ -50,6 +50,15 @@ public final class NeighborhoodMarketItemSpecifications {
      * title and the pickup-spot label. Blank/absent is NO predicate
      * ({@code cb.conjunction()}, never null — the absent-predicate
      * law this class's own javadoc pins).
+     *
+     * <p>The text is matched LITERALLY (the review round's root fix):
+     * {@code %} and {@code _} in the caller's query are characters to
+     * find, not wildcards to interpret — the pattern escapes the LIKE
+     * metacharacters (backslash first, the escaping character's own
+     * rule) and hands JPA the escape character, so {@code q="_"}
+     * matches rows containing an underscore instead of every row
+     * (Hibernate 6's CriteriaBuilder contract: the third
+     * {@code like} argument IS the escape character).
      */
     public static Specification<NeighborhoodMarketItem> textMatches(String query) {
         return (root, query_, cb) -> {
@@ -57,11 +66,25 @@ public final class NeighborhoodMarketItemSpecifications {
             if (q.isEmpty()) {
                 return cb.conjunction();
             }
-            String like = "%" + q.toLowerCase() + "%";
+            String like = "%" + escapeLike(q.toLowerCase()) + "%";
             return cb.or(
-                    cb.like(cb.lower(root.get("title")), like),
-                    cb.like(cb.lower(root.get("locationLabel")), like));
+                    cb.like(cb.lower(root.get("title")), like, LIKE_ESCAPE),
+                    cb.like(cb.lower(root.get("locationLabel")), like, LIKE_ESCAPE));
         };
+    }
+
+    /** The LIKE pattern's escape character — a backslash. */
+    private static final char LIKE_ESCAPE = '\\';
+
+    /**
+     * Escapes the LIKE metacharacters in the caller's literal text:
+     * the escape character itself first (otherwise its own escapes
+     * would be re-interpreted), then {@code %} and {@code _}.
+     */
+    private static String escapeLike(String literal) {
+        return literal.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     /**
