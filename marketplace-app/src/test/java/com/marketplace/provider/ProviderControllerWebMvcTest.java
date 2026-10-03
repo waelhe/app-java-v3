@@ -42,6 +42,9 @@ class ProviderControllerWebMvcTest {
     private com.marketplace.provider.ProviderPublicPageService providerPublicPageService;
 
     @MockitoBean
+    private com.marketplace.provider.ProviderBusinessPageService businessPageService;
+
+    @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     @TestConfiguration
@@ -73,21 +76,38 @@ class ProviderControllerWebMvcTest {
         UUID id = UUID.randomUUID();
         var page = new com.marketplace.provider.ProviderPublicPageResponse(
                 id, "Qudsia Prime", "Bio", com.marketplace.provider.ProviderStatus.VERIFIED,
+                com.marketplace.provider.ProviderVerificationState.VERIFIED,
                 com.marketplace.provider.ProviderActorType.AGENCY, "Qudsia Prime Estates",
                 "BR-2026-1149", java.time.Instant.parse("2026-09-15T00:00:00Z"),
                 "HYBRID", 4.5, 12L,
                 4.2, 156L,
+                java.util.List.of(
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(5, 10),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(4, 2),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(3, 0),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(2, 0),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(1, 0)),
+                java.util.List.of(
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(5, 150),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(4, 6),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(3, 0),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(2, 0),
+                        new com.marketplace.shared.api.RatingDistribution.RatingBucket(1, 0)),
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.PublishedReviewView(
                                 UUID.randomUUID(), 5, "Great local bakery", "Thank you",
                                 null, java.time.Instant.parse("2026-09-20T00:00:00Z"),
-                                "ORGANIC", "Nour", 7L, 3L)),
+                                "ORGANIC", null, "Nour", 7L, 3L)),
                         0, 10, 1, 1, true),
                 new com.marketplace.shared.api.PagedResponse<>(
                         List.of(new com.marketplace.shared.api.ListingSummary(
                                 UUID.randomUUID(), "Sunny flat", "APARTMENT",
                                 java.math.BigDecimal.valueOf(150000), "SAR", "Qudsia Prime", null, 0L)),
-                        0, 20, 1, 1, true));
+                        0, 20, 1, 1, true),
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of(),
+                null);
 
         when(providerPublicPageService.getPublicPage(any(UUID.class), any(Pageable.class), any(Pageable.class)))
                 .thenReturn(page);

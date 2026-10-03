@@ -172,7 +172,7 @@ class ListingSeoServiceTest {
 
     private static CatalogProperties properties(String base) {
         return new CatalogProperties(null,
-                new CatalogProperties.Seo(base, "/listings/{id}", List.of()),
+                new CatalogProperties.Seo(base, "/listings/{id}", "/categories/{code}", List.of()),
                 new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
     }
 

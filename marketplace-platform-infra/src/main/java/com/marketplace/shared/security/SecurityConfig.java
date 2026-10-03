@@ -260,6 +260,17 @@ public class SecurityConfig {
                         // owner surfaces keep their existing authenticated
                         // contracts; only the composite public page opens.
                         .requestMatchers(HttpMethod.GET, "/api/v1/providers/*/public").permitAll()
+                        // W4 (yelp-level plan §5 — G28): the PUBLIC reviewer
+                        // page — the plan's "صفحة مراجع عامة", the
+                        // click-target every review row's reviewerId block
+                        // links to. The L36 line's exact mirror on the
+                        // identity module's path family: the precise
+                        // /users/{id}/public composite page opens; the plain
+                        // /users/me owner surfaces (profile, export,
+                        // follows) keep their authenticated contracts —
+                        // only the anonymous read the click-from-a-review
+                        // needs is public.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/*/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()

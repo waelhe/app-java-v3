@@ -67,7 +67,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       directions; the feed's count/voice reads stay unobserved per
  *       the same policy)</li>
  *   <li>disputes — open, resolve</li>
- *   <li>identity — sync.oidc, role.update</li>
+ *   <li>identity — sync.oidc, role.update; follow.create, follow.delete
+ *       (W4 — the provider-follow pair's two commands, the one toggle's
+ *       two directions; the /me list read and the activation bridge's
+ *       fan-out stay unobserved per policy — the bridge runs inside the
+ *       registry listener's own unit, not a proxied business entry)</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
  *       movement; the refund debit mirrors the credit — L24)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
@@ -119,13 +123,19 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-booking", List.of(
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),
-            Map.entry("marketplace-catalog", List.of("catalog.create.listing",
+            Map.entry("marketplace-catalog", List.of(
+                    "catalog.category-attributes.register",
+                    "catalog.category-attributes.remove",
+                    "catalog.category-attributes.update",
+                    "catalog.create.listing",
                     // W3 (G19): the favorites surface's two commands — the
                     // same commands-not-reads policy as every house entry.
                     "catalog.favorites.save", "catalog.favorites.unsave")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
+                    "community.group.join", "community.group.leave",
+                    "community.market.create", "community.market.delete",
                     "community.membership.join", "community.membership.leave",
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
@@ -135,6 +145,7 @@ class ObservationCoverageFilesTest {
                     "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
+                    "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
@@ -161,8 +172,14 @@ class ObservationCoverageFilesTest {
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.create", "provider.rating.stats", "provider.suspend",
-                    "provider.update", "provider.verify")),
+                    "provider.business-hours.replace", "provider.create",
+                    "provider.rating.stats", "provider.service-areas.add",
+                    "provider.service-areas.remove", "provider.services.add",
+                    "provider.services.move", "provider.services.remove",
+                    "provider.services.update", "provider.suspend",
+                    "provider.update", "provider.verification.confirm",
+                    "provider.verification.reject", "provider.verification.submit",
+                    "provider.verify")),
             Map.entry("marketplace-realestate", List.of("realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
                     "review.create", "review.create.organic", "review.create.reverse",

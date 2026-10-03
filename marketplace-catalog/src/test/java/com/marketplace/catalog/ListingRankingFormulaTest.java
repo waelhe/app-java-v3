@@ -78,7 +78,7 @@ class ListingRankingFormulaTest {
     @Test
     void theProductNeverViolatesTheSchemaFloor() {
         // Every factor is non-negative; a maximal-age listing still carries
-        // a positive recency and the score cannot go below V92's CHECK floor.
+        // a positive recency and the score cannot go below V99's CHECK floor.
         double oldest = ListingRankingFormula.score(stats(1.0, 1), 0,
                 NOW.minus(java.time.Duration.ofDays(3650)), NOW);
         assertThat(oldest).isGreaterThanOrEqualTo(0.0);

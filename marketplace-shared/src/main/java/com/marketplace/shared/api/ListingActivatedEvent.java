@@ -9,7 +9,10 @@ import java.util.UUID;
  * matcher (and, when its window opens, by the community layer's L46
  * neighborhood bridge — <b>one publisher, many consumers</b>, the
  * Modulith fan-out the community plan's D-N6/L46 section documents as
- * "ناشر واحد مستهلكان").
+ * "ناشر واحد مستهلكان"). W4 (yelp-level plan §5 — G21) adds the third
+ * declared consumer chain: the identity module's provider-follow bridge,
+ * which alerts every follower of the listing's provider through the
+ * notifications module's {@code FOLLOWED_PROVIDER_NEW_LISTING} delivery.
  *
  * <p>The Modulith house pattern ({@code BookingCreatedEvent} /
  * {@code MediaUploadedEvent} / {@code ListingLeadCreatedEvent} precedent):

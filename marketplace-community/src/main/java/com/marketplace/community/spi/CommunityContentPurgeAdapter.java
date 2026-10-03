@@ -93,10 +93,29 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        // L50 (the market board, review round adopted from the root): the
+        // subject's market items carry TWO authored columns (title and the
+        // pickup-spot's location_label — both NOT NULL, V90) — the events'
+        // own purge shape, base table and Envers mirror both. The price,
+        // category and status are identifiers-and-state (the reaction row's
+        // own class) — nothing to purge there. V90's author index was born
+        // NON-partial for exactly this seam (b-3's own reasoning).
+        int marketItems = jdbcTemplate.update(
+                "UPDATE neighborhood_market_items SET title = ?, location_label = ? "
+                        + "WHERE author_id = ? AND (title <> ? OR location_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
+        int marketItemAuditRows = jdbcTemplate.update(
+                "UPDATE neighborhood_market_items_aud SET title = ?, location_label = ? "
+                        + "WHERE author_id = ? AND (title <> ? OR location_label <> ?)",
+                AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
+                userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         log.info("Community content purge: userId={}, posts={}, postAuditRows={}, "
-                        + "comments={}, commentAuditRows={}, events={}, eventAuditRows={}",
+                        + "comments={}, commentAuditRows={}, events={}, eventAuditRows={}, "
+                        + "marketItems={}, marketItemAuditRows={}",
                 userId, posts, postAuditRows, comments, commentAuditRows,
-                events, eventAuditRows);
-        return posts + postAuditRows + comments + commentAuditRows + events + eventAuditRows;
+                events, eventAuditRows, marketItems, marketItemAuditRows);
+        return posts + postAuditRows + comments + commentAuditRows + events + eventAuditRows
+                + marketItems + marketItemAuditRows;
     }
 }

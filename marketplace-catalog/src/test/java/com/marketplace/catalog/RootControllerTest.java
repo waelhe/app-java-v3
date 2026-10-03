@@ -46,7 +46,7 @@ class RootControllerTest {
     @Test
     void root_capabilityBound_answers302_toThePublicSiteHome() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("https://public.example", "/listings/{id}", "/categories/{code}", List.of()));
 
         ResponseEntity<Map<String, String>> response = controller.root();
 
@@ -58,7 +58,7 @@ class RootControllerTest {
     @Test
     void root_trailingSlashInBase_normalizesBeforeTheHomePath() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", "/categories/{code}", List.of()));
 
         ResponseEntity<Map<String, String>> response = controller.root();
 
@@ -70,7 +70,7 @@ class RootControllerTest {
     @Test
     void root_capabilityOff_answers200_withTheHonestServiceDocument() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of()));
 
         ResponseEntity<Map<String, String>> response = controller.root();
 
@@ -89,7 +89,7 @@ class RootControllerTest {
     @Test
     void root_capabilityOff_neverRedirects_neverGuessesAnOrigin() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of()));
 
         ResponseEntity<Map<String, String>> response = controller.root();
 
@@ -108,15 +108,15 @@ class RootControllerTest {
     void seoRecord_malformedOrigin_failsConstructionWithAReadableMessage() {
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
-                () -> new CatalogProperties.Seo("htp:/oops", "/listings/{id}", List.of()),
+                () -> new CatalogProperties.Seo("htp:/oops", "/listings/{id}", "/categories/{code}", List.of()),
                 "a malformed bound origin must stop startup, never reach traffic");
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
-                () -> new CatalogProperties.Seo("not a url", "/listings/{id}", List.of()),
+                () -> new CatalogProperties.Seo("not a url", "/listings/{id}", "/categories/{code}", List.of()),
                 "a relative or unparseable origin must stop startup too");
         // the legal states: blank (capability OFF) and a well-formed origin
-        new CatalogProperties.Seo("", "/listings/{id}", List.of());
-        new CatalogProperties.Seo("https://public.example/", "/listings/{id}", List.of());
+        new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of());
+        new CatalogProperties.Seo("https://public.example/", "/listings/{id}", "/categories/{code}", List.of());
     }
 
 }

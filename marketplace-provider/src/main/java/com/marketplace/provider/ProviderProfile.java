@@ -79,6 +79,19 @@ public class ProviderProfile extends BaseEntity {
     @Column(name = "rating_general_count", nullable = false)
     private Long ratingGeneralCount = 0L;
 
+    /**
+     * W2 (yelp-level plan §5 — the business page): the ownership
+     * verification state — the Yelp «مالك موثّق» badge's lifecycle
+     * (G14). Non-null by design: every pre-W2 profile IS unverified
+     * (V97's DEFAULT backfill is the honest classification, not an
+     * assumption — the V56 actor_type precedent). Display-only trust
+     * signal: no privilege attaches to VERIFIED (the profile status
+     * lifecycle above stays the gate for listings and inventory).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "verification_state", nullable = false, length = 30)
+    private ProviderVerificationState verificationState = ProviderVerificationState.UNVERIFIED;
+
     protected ProviderProfile() {}
 
     private ProviderProfile(UUID id, String displayName, String bio, ProviderStatus status, UUID userId,
@@ -158,6 +171,11 @@ public class ProviderProfile extends BaseEntity {
         return ratingGeneralCount;
     }
 
+    /** W2 (§5 — the business page): the ownership-verification badge state. */
+    public ProviderVerificationState getVerificationState() {
+        return verificationState;
+    }
+
     /**
      * L21 + W1: stores the event-recomputed average (a plain assignment —
      * the source of truth is the aggregate query). A null clears the
@@ -214,6 +232,36 @@ public class ProviderProfile extends BaseEntity {
     public void verify() {
         this.status.validateTransitionTo(ProviderStatus.VERIFIED);
         this.status = ProviderStatus.VERIFIED;
+    }
+
+    /**
+     * W2 (yelp-level plan §5 — the business page): the owner submits the
+     * verification claim — {@code UNVERIFIED/REJECTED/VERIFIED → PENDING}
+     * (the {@link ProviderVerificationState} transition law; the admin
+     * surface resolves PENDING from here).
+     */
+    public void submitForVerification() {
+        this.verificationState.validateTransitionTo(ProviderVerificationState.PENDING);
+        this.verificationState = ProviderVerificationState.PENDING;
+    }
+
+    /**
+     * W2: an administrator confirms ownership — {@code PENDING → VERIFIED}
+     * (the badge lights; the transition is audited by Envers like every
+     * state this entity carries).
+     */
+    public void confirmVerification() {
+        this.verificationState.validateTransitionTo(ProviderVerificationState.VERIFIED);
+        this.verificationState = ProviderVerificationState.VERIFIED;
+    }
+
+    /**
+     * W2: an administrator declines the claim — {@code PENDING → REJECTED}
+     * (the owner may submit again; the Envers trail is the record).
+     */
+    public void rejectVerification() {
+        this.verificationState.validateTransitionTo(ProviderVerificationState.REJECTED);
+        this.verificationState = ProviderVerificationState.REJECTED;
     }
 
     public void suspend() {

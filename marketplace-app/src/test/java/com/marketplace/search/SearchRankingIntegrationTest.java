@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Boot pattern follows {@code SearchGuestsFilterIntegrationTest} (the
  * I6 guard): full application context on an isolated PostGIS container
  * via {@code @ServiceConnection}, Flyway enabled, {@code ddl-auto=none}
- * — V91/V92's schema and the reviews CHECKs run against exactly the
+ * — V98/V99's schema and the reviews CHECKs run against exactly the
  * schema migrations produce.
  *
  * <p>Acceptance criteria (the wave's own row, decomposed):

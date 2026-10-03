@@ -32,7 +32,7 @@ import com.marketplace.shared.api.ReviewStats;
  * </ul>
  *
  * <p>The product is non-negative by construction (every factor is), which
- * is exactly what V92's CHECK floor declares — the formula cannot produce
+ * is exactly what V99's CHECK floor declares — the formula cannot produce
  * a value the schema rejects.
  */
 final class ListingRankingFormula {

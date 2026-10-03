@@ -2,6 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
@@ -335,6 +336,44 @@ class NotificationEventListenerTest {
     void onPostReacted_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onPostReacted", PostReactedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    @Test
+    void onFollowedProviderNewListing_callsNotificationServiceForTheFollower() {
+        UUID recipientId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        FollowedProviderNewListingEvent event =
+                new FollowedProviderNewListingEvent(recipientId, listingId);
+
+        listener.onFollowedProviderNewListing(event);
+
+        verify(notificationService).onFollowedProviderNewListing(recipientId, listingId);
+    }
+
+    @Test
+    void onFollowedProviderNewListing_propagatesException() {
+        // W4's unit-level failure injection (the same root every listener
+        // above pins): a delivery failure must propagate so the follower's
+        // publication stays incomplete in the registry and the framework's
+        // retry re-delivers it — a swallowed exception would silently lose
+        // the announcement alert while the activation itself already
+        // committed.
+        FollowedProviderNewListingEvent event = new FollowedProviderNewListingEvent(
+                UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onFollowedProviderNewListing(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onFollowedProviderNewListing(event));
+    }
+
+    @Test
+    void onFollowedProviderNewListing_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onFollowedProviderNewListing", FollowedProviderNewListingEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }

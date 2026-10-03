@@ -39,4 +39,27 @@ public interface PublishedReviewsPort {
      * @param request        the neutral page request
      */
     PagedResponse<PublishedReviewView> findPublishedByProviderUserId(UUID providerUserId, PagedRequest request);
+
+    /**
+     * W2 (greptile round 2, adopted from the root): the bounded LEADING
+     * sample of one origin's PUBLISHED population — newest first, the same
+     * complete ordering key and identity blocks as the paged read, bounded
+     * by the caller's declared sample width. This is the read a
+     * structured-data block composes: its sample must ride the population
+     * the aggregate beside it describes, never a filter of the caller's
+     * requested page (which a mode-switch leftover can leave empty of that
+     * origin while the aggregate still reports its reviews).
+     *
+     * @param providerUserId the provider's USER id (the {@code reviews.provider_id}
+     *                       space, A1)
+     * @param origin         the origin vocabulary value the population is
+     *                       scoped to — {@link PublishedReviewView#ORIGIN_BOOKING}
+     *                       or {@link PublishedReviewView#ORIGIN_ORGANIC}
+     *                       (the V85 CHECK-held vocabulary, spoken as the
+     *                       shared contract's own string form)
+     * @param limit          the sample width (the rich-results convention —
+     *                       a handful, never a whole page)
+     */
+    java.util.List<PublishedReviewView> findPublishedSampleByProviderUserIdAndOrigin(
+            UUID providerUserId, String origin, int limit);
 }

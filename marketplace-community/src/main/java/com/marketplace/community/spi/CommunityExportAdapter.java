@@ -4,6 +4,8 @@ import com.marketplace.shared.api.CommunityCommentExportEntry;
 import com.marketplace.shared.api.CommunityEventExportEntry;
 import com.marketplace.shared.api.CommunityEventSeatExportEntry;
 import com.marketplace.shared.api.CommunityExportPort;
+import com.marketplace.shared.api.CommunityGroupMembershipExportEntry;
+import com.marketplace.shared.api.CommunityMarketItemExportEntry;
 import com.marketplace.shared.api.CommunityMembershipExportEntry;
 import com.marketplace.shared.api.CommunityPostExportEntry;
 import com.marketplace.shared.api.CommunityReactionExportEntry;
@@ -185,6 +187,79 @@ public class CommunityExportAdapter implements CommunityExportPort {
                 (rs, rowNum) -> new CommunityEventSeatExportEntry(
                         UUID.fromString(rs.getString("id")),
                         UUID.fromString(rs.getString("event_id")),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        rs.getBoolean("is_deleted")),
+                userId);
+    }
+
+    /**
+     * L50 (the market board, the review round's root fix): the subject's
+     * published items — the same native-JDBC faithful-copy read as the
+     * posts (the withdrawn rows included, b-5's discrimination — V90's
+     * author index is NON-partial for exactly this scan), the two
+     * authored columns plus the stored pricing declaration verbatim,
+     * the enums as their stored names.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityMarketItemExportEntry> exportMarketItemsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, location_id, category, title, item_condition,
+                       price_cents, price_currency, status, location_label,
+                       created_at, updated_at, is_deleted
+                FROM neighborhood_market_items
+                WHERE author_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> {
+                    // The price is a NULLABLE INTEGER (int4) on the Flyway
+                    // schema — pgjdbc's getObject(col, Long.class) refuses
+                    // int4 outright ("conversion to class java.lang.Long
+                    // from int4 not supported", the live 2026-10-02 export
+                    // 500's measured root). The Number-widening idiom reads
+                    // the driver's own boxed type and widens once — correct
+                    // for int4/int8/numeric across every JDBC driver.
+                    Object priceCents = rs.getObject("price_cents");
+                    return new CommunityMarketItemExportEntry(
+                            UUID.fromString(rs.getString("id")),
+                            UUID.fromString(rs.getString("location_id")),
+                            rs.getString("category"),
+                            rs.getString("title"),
+                            rs.getString("item_condition"),
+                            priceCents == null ? null : ((Number) priceCents).longValue(),
+                            rs.getString("price_currency"),
+                            rs.getString("status"),
+                            rs.getString("location_label"),
+                            rs.getTimestamp("created_at").toInstant(),
+                            rs.getTimestamp("updated_at").toInstant(),
+                            rs.getBoolean("is_deleted"));
+                },
+                userId);
+    }
+
+    /**
+     * L51 (the neighbors groups): the subject's group memberships —
+     * live and left — the identifiers-and-timestamps read (the seat
+     * row's own class; no authored text exists to copy). Born with the
+     * wave (the L50 market review's own lesson: the b-2 seam rides the
+     * layer's own PR, never a later one); V91's member index is
+     * NON-partial for exactly this scan.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityGroupMembershipExportEntry> exportGroupMembershipsForOwner(UUID userId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, group_id, created_at, updated_at, is_deleted
+                FROM neighborhood_group_memberships
+                WHERE member_id = ?
+                ORDER BY created_at, id
+                """,
+                (rs, rowNum) -> new CommunityGroupMembershipExportEntry(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("group_id")),
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getTimestamp("updated_at").toInstant(),
                         rs.getBoolean("is_deleted")),

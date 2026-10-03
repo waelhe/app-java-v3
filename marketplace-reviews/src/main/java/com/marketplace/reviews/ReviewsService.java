@@ -152,6 +152,22 @@ public class ReviewsService {
     }
 
     /**
+     * W2 (greptile round 2, adopted from the root): the origin-scoped twin
+     * of {@link #listByProvider} — the same forward direction and PUBLISHED
+     * gate, narrowed to one origin population. The JSON-LD sample the public
+     * page composes must ride the population its aggregate describes, never
+     * a filter of the caller's requested page (an organic-only page after a
+     * mode switch would otherwise leave the structured sample empty while
+     * the aggregate reports verified reviews).
+     */
+    @Transactional(readOnly = true)
+    public Page<Review> listByProviderAndOrigin(UUID providerId, String origin, Pageable pageable) {
+        return reviewRepository.findByProviderIdAndDirectionAndModerationStatusAndOriginOrderByCreatedAtDescIdDesc(
+                providerId, ReviewDirection.CONSUMER_TO_PROVIDER,
+                ReviewModerationStatus.PUBLISHED, origin, pageable);
+    }
+
+    /**
      * W1 §4.5 — the reviewer surface with its owner branch: the author (or
      * an admin) sees every state of the authored reviews (the "my reviews"
      * view owes the account its pending badge); everyone else sees the

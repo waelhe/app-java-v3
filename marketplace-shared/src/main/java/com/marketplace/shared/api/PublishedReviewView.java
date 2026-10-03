@@ -28,7 +28,10 @@ import java.util.UUID;
  * §4.4 "هوية المراجع في الاستجابة" shapes it: a display name honouring
  * {@code pseudonymized_at} (resolved by the owning module), his published
  * count, and the helpful-vote count — the three batch-resolved blocks,
- * never per-review queries.
+ * never per-review queries. W4 (§5 — G28) adds the row's click target:
+ * {@code reviewerId} is the public reviewer page's own key
+ * ({@code GET /api/v1/users/{id}/public}), so the "نقرة من مراجعة إلى
+ * صفحة المراجع" link travels with the row itself.
  *
  * @param id                  the review's own id (the vote/flag/report target)
  * @param rating              1..5 (the V6 CHECK bounds)
@@ -38,6 +41,9 @@ import java.util.UUID;
  * @param createdAt           when the review was written
  * @param origin              {@code BOOKING} («موثّقة») or {@code ORGANIC}
  *                            («عامة») — the V85 provenance column
+ * @param reviewerId          the reviewer's user id — the public reviewer
+ *                            page's key (W4/G28; already the public key of
+ *                            {@code GET /api/v1/reviews/reviewer/{id}})
  * @param reviewerName        the pseudonym-honouring display name
  * @param reviewerReviewCount the reviewer's published-review count
  * @param helpfulCount        how many neighbours marked the review helpful
@@ -50,8 +56,20 @@ public record PublishedReviewView(
         Instant repliedAt,
         Instant createdAt,
         String origin,
+        UUID reviewerId,
         String reviewerName,
         long reviewerReviewCount,
         long helpfulCount
 ) {
+
+    /**
+     * The origin value the reviews module stores for a booking-gated review
+     * (the V85 {@code origin} column's CHECK-held vocabulary, mirrored here
+     * because THIS record is the cross-module contract that carries it —
+     * consumers outside the reviews module must not hardcode the literal).
+     */
+    public static final String ORIGIN_BOOKING = "BOOKING";
+
+    /** The origin value the reviews module stores for an organic review ({@code ORGANIC}). */
+    public static final String ORIGIN_ORGANIC = "ORGANIC";
 }

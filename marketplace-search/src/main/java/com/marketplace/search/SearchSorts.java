@@ -32,7 +32,7 @@ import java.util.List;
  *
  * <p>W3 (yelp-level plan §5 — G16) adds {@code rating} — HIGHEST-FIRST
  * only (the Yelp "highest rated" product shape; the plan's own row:
- * «ترتيب حسب التقييم»): it maps onto the V92 {@code rankingScore} column —
+ * «ترتيب حسب التقييم»): it maps onto the V99 {@code rankingScore} column —
  * the daily-computed composite rating × log(count) × completeness ×
  * recency — so an equal-stars tie is broken by review VOLUME, then
  * completeness, then recency (the wave's own acceptance). Ascending is a

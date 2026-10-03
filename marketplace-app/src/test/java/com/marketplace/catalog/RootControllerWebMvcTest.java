@@ -51,7 +51,7 @@ class RootControllerWebMvcTest {
     @BeforeEach
     void stubSeoSection() {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("https://public.example", "/listings/{id}", "/categories/{code}", List.of()));
     }
 
     @Test
@@ -64,7 +64,7 @@ class RootControllerWebMvcTest {
     @Test
     void root_trailingSlashInBase_isNormalizedAway_thenHomePathApplied() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("https://public.example/", "/listings/{id}", "/categories/{code}", List.of()));
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isFound())
@@ -76,7 +76,7 @@ class RootControllerWebMvcTest {
     @Test
     void root_capabilityOff_answersTheHonestServiceDocument_neverAFabricatedUrl() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of()));
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -98,7 +98,7 @@ class RootControllerWebMvcTest {
     @Test
     void root_capabilityOff_htmlOnlyAccept_isNotRejected() throws Exception {
         when(catalogProperties.seo()).thenReturn(
-                new CatalogProperties.Seo("", "/listings/{id}", List.of()));
+                new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", List.of()));
 
         mockMvc.perform(get("/").accept(MediaType.TEXT_HTML))
                 .andExpect(status().isOk())

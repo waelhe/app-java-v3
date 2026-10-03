@@ -14,7 +14,7 @@ import java.util.UUID;
  * W3 (yelp-level-plan §5 — G19): one member's saved listing — the
  * «حفظ لاحقًا» relation. A favorite is a CLAIMED relation between one
  * member and one listing: one live row per pair (the partial unique
- * index V91 keeps), withdrawn by the house soft delete (the row stays
+ * index V98 keeps), withdrawn by the house soft delete (the row stays
  * for the audit trail — the Envers mirror records every save/withdraw —
  * and a withdrawn favorite can be re-saved as a fresh row).
  *
@@ -37,7 +37,7 @@ public class ListingFavorite extends BaseEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    /** The saved listing — the FK's own existence guarantee (V91). */
+    /** The saved listing — the FK's own existence guarantee (V98). */
     @Column(name = "listing_id", nullable = false)
     private UUID listingId;
 

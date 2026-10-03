@@ -2,8 +2,10 @@ package com.marketplace.provider;
 
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewMode;
 import com.marketplace.shared.api.ReviewStats;
@@ -40,6 +42,10 @@ class ProviderPublicPageServiceTest {
     private final ReviewStatsPort reviewStatsPort = mock(ReviewStatsPort.class);
     private final SystemSettingsPort systemSettingsPort = mock(SystemSettingsPort.class);
     private final PublishedReviewsPort publishedReviewsPort = mock(PublishedReviewsPort.class);
+    private final ProviderBusinessPageService businessPageService = mock(ProviderBusinessPageService.class);
+    private final GeoLookupPort geoLookupPort = mock(GeoLookupPort.class);
+    private final ProviderProperties providerProperties = new ProviderProperties(
+            new ProviderProperties.Seo("", "/providers/{id}"));
 
     private final ProviderPublicPageService service = publicPageService(ReviewMode.VERIFIED_ONLY);
 
@@ -55,8 +61,21 @@ class ProviderPublicPageServiceTest {
         // test stubs real rows (the neutral request answered empty).
         when(publishedReviewsPort.findPublishedByProviderUserId(any(UUID.class), any(PagedRequest.class)))
                 .thenAnswer(invocation -> PagedResponse.empty(invocation.getArgument(1, PagedRequest.class)));
+        // W2: the business-page blocks' neutral stubs — an honest empty
+        // week/menu/areas and the all-zero verified histogram (the complete
+        // five-bucket contract the port itself guarantees).
+        when(businessPageService.getHours(any(UUID.class))).thenReturn(List.of());
+        when(businessPageService.getServices(any(UUID.class))).thenReturn(List.of());
+        when(businessPageService.getAreas(any(UUID.class))).thenReturn(List.of());
+        when(geoLookupPort.getTree()).thenReturn(new GeoLookupPort.GeoNode(
+                UUID.randomUUID(), null, 0, "الجذر", "root", "root", List.of()));
+        when(reviewStatsPort.findRatingDistributionByProviderId(any(UUID.class)))
+                .thenReturn(RatingDistribution.of(UUID.randomUUID(), List.of()));
+        when(reviewStatsPort.findGeneralRatingDistributionByProviderId(any(UUID.class)))
+                .thenReturn(RatingDistribution.of(UUID.randomUUID(), List.of()));
         return new ProviderPublicPageService(providerService, catalogSearchPort,
-                reviewStatsPort, systemSettingsPort, publishedReviewsPort);
+                reviewStatsPort, systemSettingsPort, publishedReviewsPort,
+                businessPageService, geoLookupPort, providerProperties);
     }
 
     private static ProviderProfile profile(ProviderStatus status, UUID userId) {
@@ -239,7 +258,8 @@ class ProviderPublicPageServiceTest {
         Pageable reviewsPageable = PageRequest.of(0, 10);
         when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.SUSPENDED, userId));
         PublishedReviewView row = new PublishedReviewView(UUID.randomUUID(), 5, "Sourdough sells out by noon",
-                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", "Nour", 7L, 3L);
+                "Thank you", null, java.time.Instant.parse("2026-09-20T00:00:00Z"), "ORGANIC", null,
+                "Nour", 7L, 3L);
         when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
                 .thenReturn(PagedResponse.of(new PageImpl<>(List.of(row), reviewsPageable, 1)));
 
@@ -262,6 +282,122 @@ class ProviderPublicPageServiceTest {
         assertThatThrownBy(() -> service.getPublicPage(providerId, PageRequest.of(0, 20), PageRequest.of(0, 20)))
                 .isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(catalogSearchPort, reviewStatsPort);
+    }
+
+    /**
+     * W2 (greptile round 2, adopted from the root): the JSON-LD review
+     * sample rides the POPULATION the aggregate describes — drawn directly
+     * through the port's sample read, never a filter of the caller's
+     * requested page. In VERIFIED_ONLY the AggregateRating IS the verified
+     * pair — an ORGANIC row (a mode-switch leftover the visible page
+     * honestly still lists) must not enter the structured sample. The
+     * visible block keeps it.
+     */
+    @Test
+    void verifiedOnlyMode_jsonLdSampleCarriesOnlyBookingRows() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
+        when(catalogSearchPort.listActiveByProvider(any(), eq(PagedRequest.of(0, 20))))
+                .thenReturn(PagedResponse.empty(PagedRequest.of(0, 20)));
+        when(reviewStatsPort.findStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.5, 1)));
+        PublishedReviewView organic = new PublishedReviewView(UUID.randomUUID(), 1, "سيء",
+                null, null, java.time.Instant.parse("2026-09-01T00:00:00Z"),
+                PublishedReviewView.ORIGIN_ORGANIC, UUID.randomUUID(), "زائر", 2L, 0L);
+        PublishedReviewView booking = new PublishedReviewView(UUID.randomUUID(), 5, "ممتاز",
+                null, null, java.time.Instant.parse("2026-09-02T00:00:00Z"),
+                PublishedReviewView.ORIGIN_BOOKING, UUID.randomUUID(), "نور", 7L, 3L);
+        when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(organic, booking), PageRequest.of(0, 10), 2)));
+        // The population read the structured sample composes — the booking
+        // population's leading rows, straight from the port.
+        when(publishedReviewsPort.findPublishedSampleByProviderUserIdAndOrigin(
+                eq(userId), eq(PublishedReviewView.ORIGIN_BOOKING), anyInt()))
+                .thenReturn(List.of(booking));
+
+        var result = service.getPublicPage(providerId, pageable, pageable);
+
+        // The visible block carries both rows (the plan's law: the mode
+        // governs creation, existing reviews stay listed)...
+        assertThat(result.reviews().totalElements()).isEqualTo(2);
+        // ...but the structured sample carries only the population the
+        // aggregate counts (aggregateRating = the verified pair here).
+        assertThat(result.jsonLd().aggregateRating().reviewCount()).isEqualTo(1);
+        assertThat(result.jsonLd().review()).hasSize(1);
+        assertThat(result.jsonLd().review().getFirst().author().name()).isEqualTo("نور");
+    }
+
+    /**
+     * W2 (greptile round, adopted from the root): OPEN's aggregate is the
+     * merged pair, so both origins enter the structured sample.
+     */
+    @Test
+    void openMode_jsonLdSampleCarriesBothOrigins() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
+        when(catalogSearchPort.listActiveByProvider(any(), eq(PagedRequest.of(0, 20))))
+                .thenReturn(PagedResponse.empty(PagedRequest.of(0, 20)));
+        when(reviewStatsPort.findStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.5, 1)));
+        when(reviewStatsPort.findGeneralStatsByProviderId(userId))
+                .thenReturn(Optional.of(new ReviewStats(userId, 4.0, 1)));
+
+        // Construct the mode-specific service FIRST (its neutral stubs must
+        // not overwrite the row the test then declares — Mockito's
+        // last-registered stub wins).
+        ProviderPublicPageService openService = publicPageService(ReviewMode.OPEN);
+        PublishedReviewView organic = new PublishedReviewView(UUID.randomUUID(), 4, "جيد",
+                null, null, java.time.Instant.parse("2026-09-01T00:00:00Z"),
+                PublishedReviewView.ORIGIN_ORGANIC, UUID.randomUUID(), "زائر", 2L, 0L);
+        when(publishedReviewsPort.findPublishedByProviderUserId(eq(userId), any(PagedRequest.class)))
+                .thenReturn(PagedResponse.of(new PageImpl<>(List.of(organic), PageRequest.of(0, 10), 1)));
+
+        var result = openService.getPublicPage(providerId, pageable, pageable);
+
+        assertThat(result.jsonLd().aggregateRating().reviewCount()).isEqualTo(2);
+        assertThat(result.jsonLd().review()).hasSize(1);
+    }
+
+    /**
+     * W2 (greptile round, adopted from the root): an area whose geo node is
+     * soft-deleted after the declaration (the FK honest, the live tree
+     * nameless) never enters the structured data — a Place without a usable
+     * name is invalid markup. The visible page keeps the honest id row.
+     */
+    @Test
+    void unresolvedArea_isOmittedFromTheJsonLdButKeptOnTheVisiblePage() {
+        UUID providerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(providerService.getById(providerId)).thenReturn(profile(ProviderStatus.VERIFIED, userId));
+        when(catalogSearchPort.listActiveByProvider(any(), eq(PagedRequest.of(0, 20))))
+                .thenReturn(PagedResponse.empty(PagedRequest.of(0, 20)));
+        when(reviewStatsPort.findStatsByProviderId(userId)).thenReturn(Optional.empty());
+
+        UUID resolvedLocation = UUID.randomUUID();
+        UUID staleLocation = UUID.randomUUID();
+        ServiceArea resolvedArea = ServiceArea.create(providerId, resolvedLocation);
+        ServiceArea staleArea = ServiceArea.create(providerId, staleLocation);
+        when(businessPageService.getAreas(providerId)).thenReturn(List.of(resolvedArea, staleArea));
+        // The live tree carries the resolved node alone (the stale node was
+        // soft-deleted after the declaration).
+        when(geoLookupPort.getTree()).thenReturn(new GeoLookupPort.GeoNode(
+                UUID.randomUUID(), null, 0, "الجذر", "root", "root",
+                List.of(new GeoLookupPort.GeoNode(resolvedLocation, null, 1,
+                        "قدسيا", "qudsya", "qudsya", List.of()))));
+
+        var result = service.getPublicPage(providerId, pageable, pageable);
+
+        // The visible page keeps BOTH rows (the honest id row, the L39 rule)...
+        assertThat(result.serviceAreas()).hasSize(2);
+        assertThat(result.serviceAreas().get(1).nameAr()).isNull();
+        // ...but the structured data carries only the resolvable Place.
+        assertThat(result.jsonLd().areaServed()).hasSize(1);
+        assertThat(result.jsonLd().areaServed().getFirst().name()).isEqualTo("قدسيا");
     }
 
     private static PagedResponse<ListingSummary> pageOf(int count) {

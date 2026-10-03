@@ -132,6 +132,12 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
 
+    // W4 (G28): the closure also pulls identity's ReviewerPublicProfileService,
+    // whose stats seam needs the reviews module's port — reviews is not in
+    // admin's dependency closure, so the same house mock pattern applies.
+    @MockitoBean
+    com.marketplace.shared.api.ReviewerStatsPort reviewerStatsPort;
+
     @Autowired
     private RevisionService revisionService;
 

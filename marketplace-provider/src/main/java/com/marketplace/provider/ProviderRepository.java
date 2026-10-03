@@ -7,6 +7,8 @@ import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +16,15 @@ public interface ProviderRepository extends JpaRepository<ProviderProfile, UUID>
 
     /** Resolves the provider profile owned by a user ("me" seam, L20). */
     Optional<ProviderProfile> findByUserId(UUID userId);
+
+    /**
+     * W4 (yelp-level plan §5 — G21): the batch form — one query for a
+     * whole "my follows" page's followed providers (the
+     * {@code UserLookupPort.findAllByIds} W1 precedent: "batch resolution
+     * via findAllById to avoid N+1 queries"). User ids with no provider
+     * row are simply absent (the caller's own fallback applies).
+     */
+    List<ProviderProfile> findByUserIdIn(Collection<UUID> userIds);
 
     /**
      * L21 + W1 (§4.4): pessimistic row lock for the event-driven

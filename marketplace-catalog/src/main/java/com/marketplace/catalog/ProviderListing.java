@@ -101,7 +101,7 @@ public class ProviderListing extends BaseEntity {
      * carries until the job's first pass over it; the job writes a
      * non-null score for every clean-ACTIVE listing (0.0 when the provider
      * has no verified reviews — the rating factor's own floor). The
-     * non-negative floor is V92's CHECK; the formula's authority is the
+     * non-negative floor is V99's CHECK; the formula's authority is the
      * job's service, ONE place.
      */
     @Column(name = "ranking_score")
@@ -201,9 +201,9 @@ public class ProviderListing extends BaseEntity {
     /**
      * W3 (G18): the daily job's write seam. Deliberately no status gate:
      * the job is the score's single writer and only touches clean-ACTIVE
-     * rows; a non-negative value is V92's CHECK-enforced contract. The
+     * rows; a non-negative value is V99's CHECK-enforced contract. The
      * @Audited revision this UPDATE produces is the score's own history
-     * (rank forensics) — the mirror column V92 added for exactly this.
+     * (rank forensics) — the mirror column V99 added for exactly this.
      */
     public void applyRankingScore(double score) {
         this.rankingScore = score;
