@@ -202,6 +202,27 @@ class AdCampaignServiceTest {
     }
 
     @Test
+    void resume_rejectsWhenASecondLiveCampaignOwnsTheListing() {
+        // CodeRabbit W5 r3, adopted: create rejects only an ACTIVE campaign,
+        // so a paused campaign's listing may carry a NEWER live one — the
+        // single-promotion law guards the lift with the same friendly 409
+        // (the V103 partial unique index stays the concurrency backstop).
+        UUID listingId = UUID.randomUUID();
+        AdCampaign paused = AdCampaign.start(ownerId, listingId, 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), null);
+        paused.pause();
+        AdCampaign live = AdCampaign.start(ownerId, listingId, 50000L, 10L, 1L, "SAR", NOW, null);
+        when(campaignRepository.findByIdAndProviderId(paused.getId(), ownerId))
+                .thenReturn(Optional.of(paused));
+        when(campaignRepository.findFirstByListingIdAndStatusOrderByIdAsc(listingId, AdCampaignStatus.ACTIVE))
+                .thenReturn(Optional.of(live));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+
+        assertThrows(ConflictException.class, () -> service.resume(paused.getId(), authentication));
+        assertEquals(AdCampaignStatus.PAUSED, paused.getStatus());
+    }
+
+    @Test
     void everyStateTransition_evictsTheCatalogOrderedPages() {
         // CodeRabbit W5 r1, adopted: the boost's truth changed at every
         // transition — the cached ordered pages must not serve yesterday's

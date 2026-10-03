@@ -138,6 +138,14 @@ public class AdCampaignService {
      * cannot lift back (CodeRabbit W5 r1, adopted): the billing run skips
      * PAUSED campaigns, so an expired-but-paused campaign would otherwise
      * return to the boost with a dead duration until the next daily run.
+     *
+     * <p><b>The single-promotion law guards the lift too</b> (CodeRabbit
+     * W5 r3, adopted): {@code create} rejects only an ACTIVE campaign, so a
+     * PAUSED campaign's listing may carry a NEWER live campaign. Resuming
+     * the paused one then would put two ACTIVE campaigns on one listing —
+     * the V103 partial unique index would still catch the pair at commit
+     * (the concurrency backstop), but the owner deserves the same friendly
+     * 409 {@code create} states, not a raw constraint error.</p>
      */
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
@@ -147,6 +155,14 @@ public class AdCampaignService {
             throw new ConflictException("Campaign " + campaignId
                     + " ended at " + campaign.getEndsAt() + " — its duration is over; start a new campaign");
         }
+        campaignRepository
+                .findFirstByListingIdAndStatusOrderByIdAsc(campaign.getListingId(), AdCampaignStatus.ACTIVE)
+                .filter(live -> !live.getId().equals(campaignId))
+                .ifPresent(live -> {
+                    throw new ConflictException("Listing " + campaign.getListingId()
+                            + " already has a live campaign (" + live.getId()
+                            + ") — the single-promotion law: resume is a no-go until it ends");
+                });
         try {
             campaign.resume(AdBillingBatchExecutor.todayUtc(clock));
         } catch (IllegalStateException e) {

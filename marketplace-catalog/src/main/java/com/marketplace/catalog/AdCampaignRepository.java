@@ -59,11 +59,15 @@ public interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID>, J
      *
      * <p><b>Native SQL by measurement:</b> the bound compares the DATE
      * marker against the ends date derived from the TIMESTAMPTZ column —
-     * {@code (ends_at)::date} — a cast JPQL cannot express portably, and
-     * the theta form cannot either. Native queries bypass the
-     * {@code @SoftDelete} automatic restriction, so the predicate states
-     * {@code is_deleted = false} itself (the ListingViewsDailyRepository
-     * javadoc's own law).
+     * {@code (ends_at AT TIME ZONE 'UTC')::date} (CodeRabbit W5 r3,
+     * adopted: the bare cast resolves through the PostgreSQL session
+     * TimeZone, so a non-UTC session could shift the tail window by a day;
+     * the AT TIME ZONE pin keeps the comparison on the same UTC daily
+     * grain {@link AdBillingBatchExecutor} settles) — a cast JPQL cannot
+     * express portably, and the theta form cannot either. Native queries
+     * bypass the {@code @SoftDelete} automatic restriction, so the
+     * predicate states {@code is_deleted = false} itself (the
+     * ListingViewsDailyRepository javadoc's own law).
      */
     @Query(value = """
             select c.id from ad_campaigns c
@@ -71,7 +75,7 @@ public interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID>, J
               and (
                     (c.status = 'ACTIVE' and c.billed_through < :horizonExclusive)
                  or (c.status = 'ENDED' and c.consumed_cents < c.budget_cents
-                        and c.billed_through <= (c.ends_at)::date)
+                        and c.billed_through <= (c.ends_at AT TIME ZONE 'UTC')::date)
               )
             order by c.billed_through asc, c.id asc
             """, nativeQuery = true)
