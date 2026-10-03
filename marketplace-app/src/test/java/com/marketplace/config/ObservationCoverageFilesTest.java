@@ -123,7 +123,11 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-booking", List.of(
                     "booking.auto.cancel", "booking.cancel", "booking.complete",
                     "booking.confirm", "booking.create")),
-            Map.entry("marketplace-catalog", List.of("catalog.create.listing")),
+            Map.entry("marketplace-catalog", List.of(
+                    "catalog.category-attributes.register",
+                    "catalog.category-attributes.remove",
+                    "catalog.category-attributes.update",
+                    "catalog.create.listing")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
@@ -165,8 +169,14 @@ class ObservationCoverageFilesTest {
                     "pricing.rule.create", "pricing.rule.deactivate",
                     "pricing.rule.delete")),
             Map.entry("marketplace-provider", List.of(
-                    "provider.create", "provider.rating.stats", "provider.suspend",
-                    "provider.update", "provider.verify")),
+                    "provider.business-hours.replace", "provider.create",
+                    "provider.rating.stats", "provider.service-areas.add",
+                    "provider.service-areas.remove", "provider.services.add",
+                    "provider.services.move", "provider.services.remove",
+                    "provider.services.update", "provider.suspend",
+                    "provider.update", "provider.verification.confirm",
+                    "provider.verification.reject", "provider.verification.submit",
+                    "provider.verify")),
             Map.entry("marketplace-realestate", List.of("realestate.property.upsert")),
             Map.entry("marketplace-reviews", List.of(
                     "review.create", "review.create.organic", "review.create.reverse",

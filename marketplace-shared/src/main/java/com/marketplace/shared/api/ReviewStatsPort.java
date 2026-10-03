@@ -65,5 +65,22 @@ public interface ReviewStatsPort {
      * {@link #findStatsByReviewId(UUID)}).
      */
     Optional<ReviewStats> findGeneralStatsByReviewId(UUID reviewId);
+
+    /**
+     * W2 (yelp-level plan §5 — the business page): the VERIFIED rating
+     * histogram — the «توزيع نجوم» block over the same population as
+     * {@link #findStatsByProviderId(UUID)} (forward, BOOKING, PUBLISHED,
+     * live). All five buckets present, zeros included; never stored —
+     * recomputed like every aggregate this port owns.
+     */
+    RatingDistribution findRatingDistributionByProviderId(UUID providerId);
+
+    /**
+     * W2 (§5): the GENERAL (organic) histogram — the same population as
+     * {@link #findGeneralStatsByProviderId(UUID)} (forward, ORGANIC,
+     * PUBLISHED, live). The HYBRID page renders the two histograms beside
+     * the two badges (§4.4's two-signal display, one level deeper).
+     */
+    RatingDistribution findGeneralRatingDistributionByProviderId(UUID providerId);
 }
 

@@ -2,6 +2,7 @@ package com.marketplace.reviews.spi;
 
 import com.marketplace.reviews.Review;
 import com.marketplace.reviews.ReviewRepository;
+import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ReviewStats;
 import com.marketplace.shared.api.ReviewStatsPort;
 import org.springframework.stereotype.Component;
@@ -64,5 +65,26 @@ public class ReviewStatsAdapter implements ReviewStatsPort {
     public Optional<UUID> findProviderUserIdByReviewId(UUID reviewId) {
         return reviewRepository.findById(reviewId)
                 .map(Review::getProviderId);
+    }
+
+    /**
+     * W2 (yelp-level plan §5 — the business page): the VERIFIED histogram —
+     * the repository's sparse group-by filled into the complete five-bucket
+     * shape ({@link RatingDistribution#of}: zeros are explicit, never
+     * "unknown").
+     */
+    @Override
+    public RatingDistribution findRatingDistributionByProviderId(UUID providerId) {
+        return RatingDistribution.of(providerId,
+                reviewRepository.getRatingDistributionByProviderId(providerId));
+    }
+
+    /**
+     * W2 (§5): the GENERAL (organic) histogram — same fill, origin flipped.
+     */
+    @Override
+    public RatingDistribution findGeneralRatingDistributionByProviderId(UUID providerId) {
+        return RatingDistribution.of(providerId,
+                reviewRepository.getGeneralRatingDistributionByProviderId(providerId));
     }
 }

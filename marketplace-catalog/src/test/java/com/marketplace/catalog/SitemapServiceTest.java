@@ -45,12 +45,16 @@ class SitemapServiceTest {
     private static final String BASE = "https://public.example";
 
     private ProviderListingRepository repository;
+    private CategoryRepository categoryRepository;
     private SitemapService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ProviderListingRepository.class);
-        service = new SitemapService(repository, Clock.fixed(NOW, ZoneOffset.UTC),
+        categoryRepository = mock(CategoryRepository.class);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of());
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
                 properties(BASE, "/listings/{id}", List.of()));
     }
 
@@ -58,7 +62,7 @@ class SitemapServiceTest {
 
     @Test
     void sitemap_blankPublicSiteBaseUrl_answers503NotAFabricatedDocument() {
-        service = new SitemapService(repository, Clock.fixed(NOW, ZoneOffset.UTC),
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
                 properties("", "/listings/{id}", List.of()));
         assertThatThrownBy(() -> service.sitemap(null))
                 .isInstanceOf(ServiceUnavailableException.class)
@@ -67,7 +71,7 @@ class SitemapServiceTest {
 
     @Test
     void sitemap_listingPathWithoutPlaceholder_answers503NotAnInvariableDocument() {
-        service = new SitemapService(repository, Clock.fixed(NOW, ZoneOffset.UTC),
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
                 properties(BASE, "/listings", List.of()));
         assertThatThrownBy(() -> service.sitemap(null))
                 .isInstanceOf(ServiceUnavailableException.class)
@@ -161,7 +165,7 @@ class SitemapServiceTest {
 
     @Test
     void sitemap_baseUrlTrailingSlash_isNormalizedAway() {
-        service = new SitemapService(repository, Clock.fixed(NOW, ZoneOffset.UTC),
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
                 properties(BASE + "/", "/listings/{id}", List.of()));
         UUID id = UUID.randomUUID();
         stubCount(1);
@@ -199,6 +203,159 @@ class SitemapServiceTest {
         assertThat(captor.getValue().getPageNumber()).isEqualTo(1);
     }
 
+
+    // ---- W2 (G23): the public category pages enter the sitemap ----
+
+    /**
+     * One live registry row as the sitemap enumerates it (the Category
+     * entity's own shape). The audit timestamps are the framework's own
+     * fields (set at persist by the auditing listener) — the fixture
+     * stamps them through reflection, the only access an unpersisted
+     * entity offers.
+     */
+    private Category category(String code, Instant updated) {
+        Category seeded = Category.create(code, "label-" + code, "تسمية-" + code, 1);
+        try {
+            java.lang.reflect.Field field =
+                    com.marketplace.shared.jpa.BaseEntity.class.getDeclaredField("updatedAt");
+            field.setAccessible(true);
+            field.set(seeded, updated);
+        } catch (ReflectiveOperationException impossible) {
+            throw new IllegalStateException("fixture stamp failed", impossible);
+        }
+        return seeded;
+    }
+
+    @Test
+    void sitemap_singlePage_prependsTheCategoryPagesBeforeTheListings() throws Exception {
+        UUID id = UUID.randomUUID();
+        stubCount(1);
+        stubPage(List.of(new SitemapEntry(id, NOW)), 1);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW)));
+
+        SitemapService.SeoDocument document = service.sitemap(null);
+
+        // The category URL rides FIRST (the registry's stable order), the
+        // listing follows — both under the standard's urlset shape.
+        int categoryAt = document.body().indexOf("<loc>" + BASE + "/categories/stay</loc>");
+        int listingAt = document.body().indexOf("<loc>" + BASE + "/listings/" + id + "</loc>");
+        assertThat(categoryAt).isGreaterThan(0);
+        assertThat(listingAt).isGreaterThan(categoryAt);
+        assertValidAgainstXsd(document.body(), "/seo/sitemap.xsd");
+    }
+
+    @Test
+    void sitemap_categoryPagesAlone_answerTheDocument_notA404() throws Exception {
+        // An empty catalog with a live registry still has public pages to
+        // advertise — the XSDs forbid an EMPTY urlset, not a
+        // listings-less one.
+        stubCount(0);
+        stubPage(List.of(), 0);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW)));
+
+        SitemapService.SeoDocument document = service.sitemap(null);
+
+        assertThat(document.body()).contains("<loc>" + BASE + "/categories/stay</loc>");
+        assertValidAgainstXsd(document.body(), "/seo/sitemap.xsd");
+    }
+
+    @Test
+    void sitemap_categoryPagesRideTheFirstPageAndShiftTheListingWindow() {
+        // The W2 shift math: the first served page's listing capacity
+        // shrinks by the category count; page 2 begins where page 1's
+        // reduced window ended — the pagination never duplicates or
+        // omits a listing.
+        stubCount(100_001);
+        stubPage(List.of(new SitemapEntry(UUID.randomUUID(), NOW)), 100_001);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW), category("maid", NOW)));
+
+        service.sitemap(2);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findSitemapEntries(eq(ListingStatus.ACTIVE), eq(NOW), captor.capture());
+        assertThat(captor.getValue().getOffset())
+                .isEqualTo(SitemapService.SITEMAP_PAGE_SIZE - 2L);
+        assertThat(captor.getValue().getPageSize()).isEqualTo(SitemapService.SITEMAP_PAGE_SIZE);
+    }
+
+    @Test
+    void sitemap_firstPageWithCategories_firesTheReducedListingLimit() {
+        stubCount(2);
+        stubPage(List.of(new SitemapEntry(UUID.randomUUID(), NOW)), 2);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW), category("maid", NOW)));
+
+        service.sitemap(1);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findSitemapEntries(eq(ListingStatus.ACTIVE), eq(NOW), captor.capture());
+        assertThat(captor.getValue().getOffset()).isZero();
+        assertThat(captor.getValue().getPageSize())
+                .isEqualTo(SitemapService.SITEMAP_PAGE_SIZE - 2);
+    }
+
+    /**
+     * The category block's OWN capability gate (CodeRabbit/greptile W2
+     * round, adopted from the root): a site origin and a valid LISTING
+     * path with a category path that cannot vary per category — the
+     * sitemap serves the listing-only document (the pre-W2 behavior,
+     * byte-identical), never a 500 on categoryUrl's empty Optional. The
+     * registry is never even consulted.
+     */
+    @Test
+    void sitemap_categoryPathWithoutPlaceholder_servesTheListingsAlone_neverA500() throws Exception {
+        service = new SitemapService(repository, categoryRepository, Clock.fixed(NOW, ZoneOffset.UTC),
+                properties(BASE, "/listings/{id}", "/categories", List.of()));
+        UUID id = UUID.randomUUID();
+        stubCount(1);
+        stubPage(List.of(new SitemapEntry(id, NOW)), 1);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(category("stay", NOW)));
+
+        SitemapService.SeoDocument document = service.sitemap(null);
+
+        assertThat(document.body()).contains("<loc>" + BASE + "/listings/" + id + "</loc>");
+        assertThat(document.body()).doesNotContain("/categories/");
+        assertValidAgainstXsd(document.body(), "/seo/sitemap.xsd");
+        // The OFF capability never consults the registry — the gate stands
+        // before the load, not after it.
+        verify(categoryRepository, org.mockito.Mockito.never())
+                .findAll(any(org.springframework.data.domain.Sort.class));
+    }
+
+    /**
+     * The zero-limit first page (greptile W2 round, adopted): exactly
+     * 50,000 live categories fill the whole first page's capacity — the
+     * listing query is SKIPPED (a LIMIT 0 fetch answers nothing), and the
+     * page serves the categories alone.
+     */
+    @Test
+    void sitemap_firstPageFilledByCategoriesAlone_skipsTheZeroLimitListingQuery() throws Exception {
+        List<Category> full = java.util.stream.IntStream.rangeClosed(1, SitemapService.SITEMAP_PAGE_SIZE)
+                .mapToObj(i -> category("cat-" + i, NOW))
+                .toList();
+        stubCount(1);
+        when(categoryRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(full);
+
+        // The root answers the index (50,001 total > one page); page 1 is
+        // the categories' own page.
+        assertThat(service.sitemap(null).body()).contains("<sitemapindex");
+        SitemapService.SeoDocument firstPage = service.sitemap(1);
+
+        assertThat(firstPage.body()).contains("<loc>" + BASE + "/categories/cat-1</loc>");
+        assertThat(firstPage.body()).doesNotContain("/listings/");
+        // No row was EVER fetched: the root answered the index before any
+        // fetch, and the categories-only first page skips the zero-limit
+        // listing query (the greptile-adopted skip — never a LIMIT 0 run).
+        verify(repository, org.mockito.Mockito.never()).findSitemapEntries(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     // ---- helpers ----
 
     private void stubPage(List<SitemapEntry> content, long total) {
@@ -216,7 +373,14 @@ class SitemapServiceTest {
 
     private static CatalogProperties properties(String base, String listingPath, List<String> disallow) {
         return new CatalogProperties(null,
-                new CatalogProperties.Seo(base, listingPath, disallow),
+                new CatalogProperties.Seo(base, listingPath, "/categories/{code}", disallow),
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
+    }
+
+    private static CatalogProperties properties(String base, String listingPath,
+                                                 String categoryPath, List<String> disallow) {
+        return new CatalogProperties(null,
+                new CatalogProperties.Seo(base, listingPath, categoryPath, disallow),
                 new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
     }
 

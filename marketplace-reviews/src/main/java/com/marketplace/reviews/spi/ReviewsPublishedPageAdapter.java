@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -48,5 +49,24 @@ public class ReviewsPublishedPageAdapter implements PublishedReviewsPort {
                         review.reviewerName(),
                         review.reviewerReviewCount(),
                         review.helpfulCount())));
+    }
+
+    @Override
+    public List<PublishedReviewView> findPublishedSampleByProviderUserIdAndOrigin(
+            UUID providerUserId, String origin, int limit) {
+        return reviewsViewService.sampleByProviderAndOrigin(providerUserId, origin, limit).stream()
+                .map(review -> new PublishedReviewView(
+                        review.id(),
+                        review.rating(),
+                        review.comment(),
+                        review.reply(),
+                        review.repliedAt(),
+                        review.createdAt(),
+                        review.origin(),
+                        review.reviewerId(),
+                        review.reviewerName(),
+                        review.reviewerReviewCount(),
+                        review.helpfulCount()))
+                .toList();
     }
 }

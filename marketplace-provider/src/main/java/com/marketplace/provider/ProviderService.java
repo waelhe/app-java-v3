@@ -110,6 +110,49 @@ public class ProviderService {
     }
 
     /**
+     * W2 (yelp-level plan §5 — the business page): the owner submits the
+     * ownership-verification claim — {@code UNVERIFIED/REJECTED/VERIFIED
+     * → PENDING} (the entity's transition law). The claim is queued for
+     * the administrative resolution below, never believed on arrival.
+     */
+    @Observed(name = "provider.verification.submit")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ProviderProfile submitVerification(UUID id, Authentication authentication) {
+        ProviderProfile provider = getById(id);
+        verifyOwnership(provider, authentication);
+        provider.submitForVerification();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        return provider;
+    }
+
+    /**
+     * W2: an administrator confirms ownership — {@code PENDING → VERIFIED}
+     * (the «مالك موثّق» badge lights; display-only — no privilege attaches,
+     * the profile status lifecycle above stays the platform gate).
+     */
+    @Observed(name = "provider.verification.confirm")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ProviderProfile confirmVerification(UUID id) {
+        ProviderProfile provider = getById(id);
+        provider.confirmVerification();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        return provider;
+    }
+
+    /**
+     * W2: an administrator declines the claim — {@code PENDING → REJECTED}
+     * (the owner may submit again; the Envers trail is the record).
+     */
+    @Observed(name = "provider.verification.reject")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ProviderProfile rejectVerification(UUID id) {
+        ProviderProfile provider = getById(id);
+        provider.rejectVerification();
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PROVIDER_CACHE_NAMES, id));
+        return provider;
+    }
+
+    /**
      * L21 + W1 (§4.4): lands the event-driven rating PAIR on the provider
      * profile. Called by {@code ProviderReviewStatsListener} from the async
      * AFTER_COMMIT dispatch of the review events — no {@code @PreAuthorize}

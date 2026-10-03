@@ -84,6 +84,20 @@ public class ReviewsViewService {
         return assemblePage(reviewsService.listByProvider(providerId, pageable));
     }
 
+    /**
+     * W2 (greptile round 2, adopted from the root): the bounded leading
+     * sample of ONE origin population — the read the provider public page's
+     * JSON-LD block composes. Mode law: in VERIFIED_ONLY/HYBRID the
+     * aggregate describes the booking population, so the sample draws from
+     * it directly (never a filter of the caller's requested page, which a
+     * mode-switch leftover can leave organic-only while the aggregate still
+     * reports verified reviews).
+     */
+    public List<ReviewResponse> sampleByProviderAndOrigin(UUID providerId, String origin, int limit) {
+        return assemble(reviewsService.listByProviderAndOrigin(
+                providerId, origin, org.springframework.data.domain.PageRequest.of(0, limit)).getContent());
+    }
+
     public Page<ReviewResponse> listByReviewer(UUID reviewerId, Pageable pageable, Authentication authentication) {
         return assemblePage(reviewsService.listByReviewer(reviewerId, pageable, authentication));
     }

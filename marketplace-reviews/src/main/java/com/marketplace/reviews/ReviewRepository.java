@@ -1,5 +1,6 @@
 package com.marketplace.reviews;
 
+import com.marketplace.shared.api.RatingDistribution;
 import com.marketplace.shared.api.ReviewStats;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +29,21 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
      */
     Page<Review> findByProviderIdAndDirectionAndModerationStatusOrderByCreatedAtDescIdDesc(
             UUID providerId, ReviewDirection direction, ReviewModerationStatus moderationStatus, Pageable pageable);
+
+    /**
+     * W2 (greptile round 2, adopted from the root): the provider's
+     * PUBLISHED surface scoped to ONE origin — the leading-rows read the
+     * public page's JSON-LD sample composes. The mode-driven aggregate
+     * describes the booking-origin population in VERIFIED_ONLY/HYBRID, so
+     * the sample must draw from that population directly — a filter of the
+     * caller's requested page can produce an empty sample (an
+     * organic-only page after a mode switch) while the aggregate beside it
+     * reports verified reviews: markup that disagrees with its own page.
+     * Same gates and same complete ordering key as the unscoped read.
+     */
+    Page<Review> findByProviderIdAndDirectionAndModerationStatusAndOriginOrderByCreatedAtDescIdDesc(
+            UUID providerId, ReviewDirection direction, ReviewModerationStatus moderationStatus,
+            String origin, Pageable pageable);
 
     /** The reviewer's own surface (all moderation states — the owner view). */
     Page<Review> findByReviewerId(UUID reviewerId, Pageable pageable);
@@ -158,6 +174,45 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
             group by r.providerId
             """)
     Optional<ReviewStats> getGeneralStatsByProviderId(UUID providerId);
+
+    /**
+     * W2 (yelp-level plan §5 — the business page): the VERIFIED rating
+     * histogram — the same population as {@link #getStatsByProviderId}
+     * (forward, BOOKING, PUBLISHED, live), grouped by star value. Sparse
+     * by construction (group-by yields only present ratings); the port
+     * adapter fills the zero buckets through
+     * {@link RatingDistribution#of(UUID, List)}.
+     */
+    @Query("""
+            select new com.marketplace.shared.api.RatingDistribution$RatingBucket(
+                r.rating, count(r))
+            from Review r
+            where r.providerId = :providerId
+              and r.direction = com.marketplace.reviews.ReviewDirection.CONSUMER_TO_PROVIDER
+              and r.origin = 'BOOKING'
+              and r.moderationStatus = com.marketplace.reviews.ReviewModerationStatus.PUBLISHED
+            group by r.rating
+            order by r.rating asc
+            """)
+    List<RatingDistribution.RatingBucket> getRatingDistributionByProviderId(UUID providerId);
+
+    /**
+     * W2 (§5): the GENERAL (organic) histogram — the same population as
+     * {@link #getGeneralStatsByProviderId}, grouped by star value; the
+     * adapter fills the zero buckets.
+     */
+    @Query("""
+            select new com.marketplace.shared.api.RatingDistribution$RatingBucket(
+                r.rating, count(r))
+            from Review r
+            where r.providerId = :providerId
+              and r.direction = com.marketplace.reviews.ReviewDirection.CONSUMER_TO_PROVIDER
+              and r.origin = 'ORGANIC'
+              and r.moderationStatus = com.marketplace.reviews.ReviewModerationStatus.PUBLISHED
+            group by r.rating
+            order by r.rating asc
+            """)
+    List<RatingDistribution.RatingBucket> getGeneralRatingDistributionByProviderId(UUID providerId);
 
     /**
      * W1 §4.5 (greptile W1 r9, adopted from the root): serializes the
