@@ -35,6 +35,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * deterministic tiebreak. Three pending reviews with different signal
  * counts prove the ordering; the flags ride the REAL entity factories and
  * the REAL Flyway schema (V87).
+ *
+ * <p><b>Every pending review carries its OWN reviewer</b> — the W1 law
+ * (V85's {@code uq_review_organic_once}: one ORGANIC review per
+ * reviewer x provider, forever) makes a same-pair queue structurally
+ * impossible, and a real moderation queue holds reviews from DIFFERENT
+ * reviewers on the SAME provider. The CI round on {@code 1204c9e} caught
+ * the shared-reviewer seed violating the constraint on the second insert
+ * (the Docker-less local runs had skipped this class —
+ * {@code disabledWithoutDocker = true}); this is the domain-honest shape,
+ * not a workaround.</p>
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -78,14 +88,13 @@ class ModerationQueueSignalOrderIntegrationTest {
     private JdbcTemplate jdbc;
 
     private final String tag = "w5-queue-" + UUID.randomUUID();
-    private UUID reviewerId;
+    /** One reviewer per pending review — the W1 uq_review_organic_once law. */
+    private final List<UUID> reviewerIds = new java.util.ArrayList<>();
     private UUID providerId;
     private UUID profileId;
 
     @BeforeEach
     void seedWorld() {
-        reviewerId = userRepository.save(User.create(
-                tag + "-reviewer-subject", tag + "-reviewer@t.com", "W5 Reviewer", UserRole.CONSUMER)).getId();
         providerId = userRepository.save(User.create(
                 tag + "-provider-subject", tag + "-provider@t.com", "W5 Provider", UserRole.PROVIDER)).getId();
         profileId = providerProfiles.save(ProviderProfile.create("W5 Business", "bio", providerId)).getId();
@@ -93,12 +102,16 @@ class ModerationQueueSignalOrderIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        // Flags before reviews (V87 has no ON DELETE CASCADE — the W1 r3 lesson).
-        jdbc.update("DELETE FROM review_flags WHERE review_id IN "
-                + "(SELECT id FROM reviews WHERE reviewer_id = ?)", reviewerId);
-        jdbc.update("DELETE FROM reviews WHERE reviewer_id = ?", reviewerId);
+        // Flags before reviews (V87 has no ON DELETE CASCADE — the W1 r3 lesson),
+        // then each reviewer's own rows — one reviewer per pending review.
+        for (UUID reviewerId : reviewerIds) {
+            jdbc.update("DELETE FROM review_flags WHERE review_id IN "
+                    + "(SELECT id FROM reviews WHERE reviewer_id = ?)", reviewerId);
+            jdbc.update("DELETE FROM reviews WHERE reviewer_id = ?", reviewerId);
+            jdbc.update("DELETE FROM users WHERE id = ?", reviewerId);
+        }
         jdbc.update("DELETE FROM provider_profiles WHERE id = ?", profileId);
-        jdbc.update("DELETE FROM users WHERE id IN (?, ?)", reviewerId, providerId);
+        jdbc.update("DELETE FROM users WHERE id = ?", providerId);
     }
 
     /**
@@ -184,8 +197,16 @@ class ModerationQueueSignalOrderIntegrationTest {
                         page2.getContent().stream().map(ReviewsService.ModerationQueueItem::id).toList());
     }
 
-    /** One PENDING_REVIEW organic review — the queue's own raw material. */
+    /**
+     * One PENDING_REVIEW organic review from its OWN reviewer — the W1
+     * law's own shape (a real queue: different reviewers, one provider).
+     */
     private Review pendingReview(String comment, int rating) {
+        UUID reviewerId = userRepository.save(User.create(
+                tag + "-reviewer-" + reviewerIds.size() + "-subject",
+                tag + "-reviewer-" + reviewerIds.size() + "@t.com",
+                "W5 Reviewer", UserRole.CONSUMER)).getId();
+        reviewerIds.add(reviewerId);
         Review review = Review.createOrganic(reviewerId, providerId, null, rating, comment);
         review.queueForReview();
         return reviewRepository.save(review);
