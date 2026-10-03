@@ -134,7 +134,12 @@ class NeighborhoodPollBoardIntegrationTest {
 
     @Test
     void boardScoping_anotherNeighborhoodsPollsNeverAppear() throws Exception {
-        asCaller(joinedMember(OLD_TOWN));
+        // The old-town member is the READER; the suburb member only
+        // authors the other hood's poll (the first CI round's measured
+        // lesson: the caller stub must return to the READER before the
+        // board read — the last asCaller() wins, and reading as the
+        // suburb member measured HIS board carrying his own poll).
+        UUID oldTownReader = asCaller(joinedMember(OLD_TOWN));
         asCaller(joinedMember(SUBURB));
 
         // A suburb member's poll must never reach the old-town board.
@@ -143,6 +148,7 @@ class NeighborhoodPollBoardIntegrationTest {
                         .content(createBody(SUBURB, "سؤال الضاحية")))
                 .andExpect(status().isCreated());
 
+        asCaller(oldTownReader);
         mockMvc.perform(get("/api/v1/neighborhood/polls").with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
