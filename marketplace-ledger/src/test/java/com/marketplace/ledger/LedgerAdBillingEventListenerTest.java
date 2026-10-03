@@ -19,10 +19,10 @@ import static org.mockito.Mockito.verify;
  * the DETERMINISTIC source key from the event's own window identity — the
  * key the V19 {@code source_id UNIQUE} index rejects on any replay.
  */
-class AdBillingEventListenerTest {
+class LedgerAdBillingEventListenerTest {
 
     private final LedgerService ledgerService = mock(LedgerService.class);
-    private final AdBillingEventListener listener = new AdBillingEventListener(ledgerService);
+    private final LedgerAdBillingEventListener listener = new LedgerAdBillingEventListener(ledgerService);
 
     @Test
     void debitsTheLedgerUnderTheDeterministicWindowKey() {

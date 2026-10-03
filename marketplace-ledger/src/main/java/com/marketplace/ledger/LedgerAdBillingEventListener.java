@@ -22,13 +22,13 @@ import org.springframework.stereotype.Component;
  * قيدًا واحدًا ومفتاح مصدر واحد»).</p>
  */
 @Component
-public class AdBillingEventListener {
+public class LedgerAdBillingEventListener {
 
-    private static final Logger log = LoggerFactory.getLogger(AdBillingEventListener.class);
+    private static final Logger log = LoggerFactory.getLogger(LedgerAdBillingEventListener.class);
 
     private final LedgerService ledgerService;
 
-    public AdBillingEventListener(LedgerService ledgerService) {
+    public LedgerAdBillingEventListener(LedgerService ledgerService) {
         this.ledgerService = ledgerService;
     }
 

@@ -73,7 +73,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       fan-out stay unobserved per policy — the bridge runs inside the
  *       registry listener's own unit, not a proxied business entry)</li>
  *   <li>ledger — credit.payment, debit.commission, debit.refund (money
- *       movement; the refund debit mirrors the credit — L24)</li>
+ *       movement; the refund debit mirrors the credit — L24); debit.ads
+ *       (W5 — the ad bill's debit: the frozen window charge that consumes
+ *       the campaign's budget, a money movement like its siblings)</li>
  *   <li>media — upload.request, upload.confirm, asset.delete (layer 8 — the
  *       presigned media channel; commands per policy, reads via
  *       http.server.requests); media.review.upload.request,
@@ -149,7 +151,7 @@ class ObservationCoverageFilesTest {
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
-                    "ledger.credit.payment", "ledger.debit.commission", "ledger.debit.refund")),
+                    "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
                     "media.asset.delete", "media.review.asset.delete",
                     "media.review.upload.confirm", "media.review.upload.request",
