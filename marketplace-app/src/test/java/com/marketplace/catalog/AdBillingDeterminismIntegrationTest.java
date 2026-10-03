@@ -188,6 +188,31 @@ class AdBillingDeterminismIntegrationTest {
                 + expected + " cents (last seen: " + last.get() + ")");
     }
 
+    /**
+     * The payments twin of {@link #awaitAdDebitCount} — the ledger and the
+     * payments listeners are INDEPENDENT AFTER_COMMIT transactions, so
+     * awaiting the ledger's row never implies the intent's insert committed.
+     * The CI round on {@code 98aac89} measured the race: the direct read
+     * ran against a listener still committing (under Redis reconnect
+     * stress) and lost — this poll awaits the payments side on its own.
+     */
+    private com.marketplace.payments.PaymentIntent awaitIntent(String idempotencyKey) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            var found = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
+            if (found.isPresent()) {
+                return found.get();
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("Payment intent " + idempotencyKey + " never appeared");
+    }
+
     @Test
     void theWholeBillingChainLandsExactlyOncePerWindow_andTheOverlapLosesEverything() {
         // Budget 30000; traffic computes 2000×5 + 100×100 = 20000 → the charge
@@ -215,15 +240,15 @@ class AdBillingDeterminismIntegrationTest {
         assertThat(awaitAdDebitCount(sourceKey, 20000L)).isEqualTo(20000L);
 
         // The payment intent — the plan's «تُصدر نية دفع», under its own
-        // deterministic key, origin AD, payer the provider.
-        var intent = paymentIntentRepository.findByIdempotencyKey(
-                "ad-debit-" + campaign.getId() + "-" + charge.getWindowStart());
-        assertThat(intent).isPresent();
-        assertThat(intent.get().getOrigin()).isEqualTo("AD");
-        assertThat(intent.get().getAdCampaignId()).isEqualTo(campaign.getId());
-        assertThat(intent.get().getBookingId()).isNull();
-        assertThat(intent.get().getConsumerId()).isEqualTo(campaign.getProviderId());
-        assertThat(intent.get().getAmountCents()).isEqualTo(20000L);
+        // deterministic key, origin AD, payer the provider. The payments
+        // listener is an independent AFTER_COMMIT transaction — awaited on
+        // its own (the ledger twin above proves nothing about this side).
+        var intent = awaitIntent("ad-debit-" + campaign.getId() + "-" + charge.getWindowStart());
+        assertThat(intent.getOrigin()).isEqualTo("AD");
+        assertThat(intent.getAdCampaignId()).isEqualTo(campaign.getId());
+        assertThat(intent.getBookingId()).isNull();
+        assertThat(intent.getConsumerId()).isEqualTo(campaign.getProviderId());
+        assertThat(intent.getAmountCents()).isEqualTo(20000L);
 
         // The campaign ended by exhaustion, consumed == the charges' sum.
         campaignRepository.findById(campaign.getId()).ifPresent(c -> {
@@ -255,8 +280,7 @@ class AdBillingDeterminismIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThat(chargeRepository.findByCampaignIdOrderByWindowStartDescIdDesc(campaign.getId())).hasSize(1);
         awaitAdDebitCount(sourceKey, 20000L);
-        assertThat(paymentIntentRepository.findByIdempotencyKey(
-                "ad-debit-" + campaign.getId() + "-" + charge.getWindowStart())).isPresent();
+        awaitIntent("ad-debit-" + campaign.getId() + "-" + charge.getWindowStart());
         // The loser rolled back in FULL: the campaign state is untouched by
         // the overlap attempt (the rewind is the test's own artifact, and the
         // marker the winner advanced is what the database still holds).
