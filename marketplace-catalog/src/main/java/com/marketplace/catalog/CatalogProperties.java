@@ -43,7 +43,8 @@ import java.util.UUID;
 public record CatalogProperties(
         @DefaultValue Expiry expiry,
         @DefaultValue Seo seo,
-        @DefaultValue Views views
+        @DefaultValue Views views,
+        @DefaultValue Ads ads
 ) {
 
     /**
@@ -69,6 +70,27 @@ public record CatalogProperties(
     public record Views(
             @DefaultValue("") String ipHashKey,
             @DefaultValue("24h") Duration dedupWindow
+    ) {
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — the ads & billing wave): the paid click's
+     * counting policy. The visitor fingerprint is the VIEWS section's own
+     * key ({@code ipHashKey} — one keyed HMAC per module for the same
+     * CWE-759 purpose, so the sections rotate independently as units but
+     * the module owns ONE fingerprint secret); this section owns only the
+     * click marker's window.
+     *
+     * <p>{@code clickDedupWindow}: how long one (visitor, campaign) pair
+     * counts as ONE billable click — the same SET NX EX fixed-expiry
+     * marker the views use (no sliding renewal). A click bills the
+     * advertiser's budget, so the window is the anti-inflation defense's
+     * first wall (click fraud drains budgets; one visitor counts once per
+     * rolling window). Default 24h; tests override to milliseconds to
+     * prove the marker disappears.
+     */
+    public record Ads(
+            @DefaultValue("24h") Duration clickDedupWindow
     ) {
     }
 

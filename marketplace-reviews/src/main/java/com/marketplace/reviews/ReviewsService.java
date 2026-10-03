@@ -22,9 +22,7 @@ import io.micrometer.observation.annotation.Observed;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -58,9 +56,6 @@ public class ReviewsService {
     private static final long BURST_THRESHOLD = 5;
     /** §4.5 signal: the young-account window (below the 7-day floor is blocked, not flagged). */
     private static final Duration NEW_ACCOUNT_SIGNAL_WINDOW = Duration.ofDays(30);
-    /** §4.5 (D-N5): the moderation queue's complete FIFO drain order. */
-    private static final Sort QUEUE_SORT =
-            Sort.by(Sort.Direction.ASC, "createdAt").and(Sort.by(Sort.Direction.ASC, "id"));
 
     private final ReviewRepository reviewRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -512,15 +507,15 @@ public class ReviewsService {
 
     /**
      * W1 §4.5 — the moderation queue read: status-filtered, on the
-     * complete FIFO drain order (createdAt ASC, id ASC — D-N5: the
-     * operator drains oldest-first). Each item carries its internal fraud
-     * flags (the §4.5 signals), batch-resolved for the whole page.
+     * SIGNAL-ordered drain (W5, G25 — the §7 law «الإشارة ترتّب الطابور»:
+     * aggregate fraud-signal count DESC, then the W1 FIFO tiebreak).
+     * Each item carries its internal fraud flags (the §4.5 signals),
+     * batch-resolved for the whole page.
      */
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     public Page<ModerationQueueItem> moderationQueue(ReviewModerationStatus status, Pageable pageable) {
-        Pageable queuePageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), QUEUE_SORT);
-        Page<Review> page = reviewRepository.findByModerationStatus(status, queuePageable);
+        Page<Review> page = reviewRepository.findModerationQueueBySignal(status, pageable);
         Set<UUID> ids = page.getContent().stream().map(Review::getId).collect(Collectors.toSet());
         Map<UUID, List<String>> flagsByReview = ids.isEmpty()
                 ? Map.of()

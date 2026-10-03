@@ -294,6 +294,15 @@ public class SecurityConfig {
                         // resource-server filter, a valid one attributes the
                         // lead (the optional-identity seam).
                         .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/leads").permitAll()
+                        // W5 (yelp-level plan §5 — the ads & billing wave,
+                        // G24): the public click recording — the plan's
+                        // «نقرة مسجلة» — the exact leads/webhooks public-POST
+                        // precedent: the visitor's click on a promoted result
+                        // precedes any account (the dedup is the counter's
+                        // own keyed-fingerprint business, never the
+                        // caller's); a click on an unpromoted listing is
+                        // the controller's honest 404 no-op.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ads/listings/*/clicks").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

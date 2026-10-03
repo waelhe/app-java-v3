@@ -17,11 +17,35 @@ import java.util.UUID;
 @Audited
 public class PaymentIntent extends BaseEntity {
 
+    /** The verified path's origin — the whole pre-W5 table (see {@link #origin}). */
+    static final String ORIGIN_BOOKING = "BOOKING";
+
+    /** W5's ad-bill origin — the payer is the provider, no booking. */
+    static final String ORIGIN_AD = "AD";
+
     @Id
     private UUID id;
 
-    @Column(name = "booking_id", nullable = false)
+    @Column(name = "booking_id")
     private UUID bookingId;
+
+    /**
+     * W5 (yelp-level plan §5 — the ads & billing wave): the intent's
+     * origin — the plan's §4.2 explicit shape held by the DB CHECK
+     * ({@code chk_payment_intents_origin}), not a Java enum (the W1
+     * review-origin decision, verbatim). 'BOOKING' is the whole pre-W5
+     * table; 'AD' is the ad-bill path whose payer is the provider.
+     */
+    @Column(name = "origin", nullable = false, length = 12)
+    private String origin = ORIGIN_BOOKING;
+
+    /**
+     * W5: the ad campaign this intent bills — null iff origin is BOOKING
+     * (the cross-column CHECK {@code ck_payment_intents_origin_pairing}
+     * pins the pairing at the database level).
+     */
+    @Column(name = "ad_campaign_id")
+    private UUID adCampaignId;
 
     @Column(name = "consumer_id", nullable = false)
     private UUID consumerId;
@@ -84,10 +108,31 @@ public class PaymentIntent extends BaseEntity {
         return new PaymentIntent(UUID.randomUUID(), bookingId, consumerId, amountCents, currency, idempotencyKey);
     }
 
+    /**
+     * W5 (yelp-level plan §5 — «وظيفة خصم دورية تُصدر نية دفع»): the ad
+     * bill's intent. The payer is the PROVIDER (consumer_id carries the
+     * provider's user id — the column's "payer" semantics are exactly
+     * what the ad bill needs), the booking coupling is lifted the way
+     * W1 lifted the review's (origin + cross-column CHECK), and the
+     * idempotency key is the DETERMINISTIC window key
+     * {@code ad-debit-{campaignId}-{windowStart}} — the listener derives
+     * it, the column's UNIQUE index rejects the replay.
+     */
+    public static PaymentIntent createForAds(UUID providerId, UUID campaignId,
+                                              Long amountCents, String currency, String idempotencyKey) {
+        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, providerId,
+                amountCents, currency, idempotencyKey);
+        intent.origin = ORIGIN_AD;
+        intent.adCampaignId = campaignId;
+        return intent;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getBookingId() { return bookingId; }
     public UUID getConsumerId() { return consumerId; }
+    public String getOrigin() { return origin; }
+    public UUID getAdCampaignId() { return adCampaignId; }
     public Long getAmountCents() { return amountCents; }
     public String getCurrency() { return currency; }
     public PaymentIntentStatus getStatus() { return status; }

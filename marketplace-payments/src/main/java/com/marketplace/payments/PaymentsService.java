@@ -33,6 +33,7 @@ import jakarta.validation.constraints.Min;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 
@@ -392,6 +393,46 @@ public class PaymentsService implements PaymentsSpi {
 
         PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(),
                 bookingInfo.currency(), idempotencyKey);
+        PaymentIntent saved = paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
+        return saved;
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — the ads & billing wave, G24): the ad bill's
+     * intent — the plan's «وظيفة خصم دورية تُصدر نية دفع». The payer is the
+     * PROVIDER (the campaign's advertiser), the booking coupling is lifted
+     * the W1 way (origin + cross-column CHECK, V100), and idempotency is
+     * the DETERMINISTIC window key {@code ad-debit-{campaignId}-{windowStart}}
+     * — the column's own UNIQUE index rejects the replay of a settled
+     * window, the plan's structural answer to «إعادة المحاولة أو تداخل
+     * الجدولة يستحيلان معًا».
+     *
+     * <p>Replay of an existing key returns the existing intent (the
+     * BOOKING path's own contract); a mismatched payer rejects with
+     * ACCESS_DENIED (the same ownership law). Settlement rides the
+     * existing surfaces — the admin {@code confirmIntent} today, the PSP
+     * webhook when E1 (Stripe) lands — the provider-facing pay flow is
+     * that wave's concern, not this one's.</p>
+     */
+    public PaymentIntent createAdIntent(UUID providerId, UUID campaignId, LocalDate windowStart,
+                                        long amountCents, String currency, String idempotencyKey) {
+        if (idempotencyKey != null) {
+            var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                if (!existing.get().getConsumerId().equals(providerId)) {
+                    throw new AccessDeniedException("Idempotency key belongs to another payer");
+                }
+                return existing.get();
+            }
+        }
+        if (amountCents <= 0) {
+            // The billing run never emits zero-window events (no charge row,
+            // no event); the guard keeps the surface honest on its own terms.
+            throw new ConflictException("An ad bill intent requires a positive amount: " + amountCents + " cents");
+        }
+        PaymentIntent intent = PaymentIntent.createForAds(providerId, campaignId,
+                amountCents, currency, idempotencyKey);
         PaymentIntent saved = paymentIntentRepository.save(intent);
         eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
         return saved;

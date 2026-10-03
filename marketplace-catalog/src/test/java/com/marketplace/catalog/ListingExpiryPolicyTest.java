@@ -65,7 +65,7 @@ class ListingExpiryPolicyTest {
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(90, 1),
                     new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
-                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))),
+                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)), new CatalogProperties.Ads(java.time.Duration.ofDays(1))),
                 categoryRepository, reviewStatsPort);
     }
 
@@ -142,7 +142,7 @@ class ListingExpiryPolicyTest {
                 providerNameResolver, eventPublisher, providerLookupPort,
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(null, 1),
                 new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
-                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1))),
+                new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)), new CatalogProperties.Ads(java.time.Duration.ofDays(1))),
                 categoryRepository, reviewStatsPort);
         ProviderListing draft = draftListing();
 

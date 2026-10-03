@@ -57,10 +57,11 @@ public class ReviewModerationAdminController {
 
     @GetMapping("/reviews/moderation")
     @Operation(summary = "Read the review moderation queue (admin)",
-            description = "The review moderation queue on its complete FIFO drain order (oldest "
-                    + "first), each item carrying its internal fraud flags. The optional status "
-                    + "axis filters PENDING_REVIEW (the default), PUBLISHED or "
-                    + "HIDDEN_BY_MODERATOR.")
+            description = "The review moderation queue ordered by the aggregate fraud-signal count "
+                    + "first (W5: the signal ranks what the moderator sees first — the human still "
+                    + "decides everything), then the oldest-first FIFO drain; each item carrying its "
+                    + "internal fraud flags. The optional status axis filters PENDING_REVIEW (the "
+                    + "default), PUBLISHED or HIDDEN_BY_MODERATOR.")
     public ResponseEntity<PagedResponse<ReviewsService.ModerationQueueItem>> queue(
             @Parameter(description = "Optional status filter — PENDING_REVIEW (default), PUBLISHED "
                     + "or HIDDEN_BY_MODERATOR")

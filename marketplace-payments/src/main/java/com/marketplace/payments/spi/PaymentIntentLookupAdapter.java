@@ -22,6 +22,7 @@ public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
     @Override
     public Optional<PaymentIntentDetails> findById(UUID paymentIntentId) {
         return paymentIntentRepository.findById(paymentIntentId)
-                .map(i -> new PaymentIntentDetails(i.getId(), i.getBookingId(), i.getConsumerId(), i.getStatus().name()));
+                .map(i -> new PaymentIntentDetails(i.getId(), i.getBookingId(), i.getConsumerId(), i.getAdCampaignId(),
+                        i.getStatus().name(), i.getOrigin(), i.getAmountCents(), i.getCurrency()));
     }
 }

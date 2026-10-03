@@ -1,9 +1,12 @@
 package com.marketplace.payments;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
+import java.time.LocalDate;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -797,5 +800,66 @@ class PaymentsServiceTest {
 
         verifyNoInteractions(paymentRepository);
         verify(eventPublisher, never()).publishEvent(any());
+    }
+    // ---- W5 (yelp-level plan §5 — G24): the ad bill's intent ----
+
+    @Test
+    void createAdIntent_savesAnAdOriginIntentAndPublishesInitiated() {
+        UUID providerId = create(UUID.class);
+        UUID campaignId = create(UUID.class);
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(intentRepository.save(any(PaymentIntent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentIntent result = service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key);
+
+        assertEquals(PaymentIntentDetails.ORIGIN_AD, result.getOrigin());
+        assertEquals(campaignId, result.getAdCampaignId());
+        assertNull(result.getBookingId());
+        assertEquals(providerId, result.getConsumerId());
+        assertEquals(7500L, result.getAmountCents());
+        assertEquals("SAR", result.getCurrency());
+        assertEquals(PaymentIntentStatus.CREATED, result.getStatus());
+        verify(eventPublisher).publishEvent(new PaymentStateChangedEvent(result.getId(), "INITIATED"));
+    }
+
+    @Test
+    void createAdIntent_idempotentReplayReturnsTheExistingIntent() {
+        UUID providerId = create(UUID.class);
+        UUID campaignId = create(UUID.class);
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        PaymentIntent existing = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), providerId)
+                .set(field(PaymentIntent::getIdempotencyKey), key)
+                .create();
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existing));
+
+        PaymentIntent result = service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key);
+
+        assertEquals(existing.getId(), result.getId());
+        verify(intentRepository, never()).save(any());
+    }
+
+    @Test
+    void createAdIntent_rejectsAnotherPayersKey() {
+        UUID providerId = create(UUID.class);
+        UUID campaignId = create(UUID.class);
+        String key = "ad-debit-" + campaignId + "-2026-10-01";
+        PaymentIntent existing = of(PaymentIntent.class)
+                .set(field(PaymentIntent::getConsumerId), UUID.randomUUID())
+                .set(field(PaymentIntent::getIdempotencyKey), key)
+                .create();
+        when(intentRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existing));
+
+        assertThrows(AccessDeniedException.class, () -> service.createAdIntent(providerId, campaignId,
+                LocalDate.parse("2026-10-01"), 7500L, "SAR", key));
+    }
+
+    @Test
+    void createAdIntent_rejectsANonPositiveAmount() {
+        assertThrows(ConflictException.class, () -> service.createAdIntent(
+                UUID.randomUUID(), UUID.randomUUID(), LocalDate.parse("2026-10-01"), 0L, "SAR", "k"));
     }
 }

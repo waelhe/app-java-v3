@@ -7,6 +7,8 @@ import com.marketplace.shared.api.UserSummary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -55,6 +57,17 @@ public class ReviewerPublicProfileService {
 
         ReviewerStats stats = reviewerStatsPort.findReviewerStats(reviewerId);
 
+        // W5 (G26): the graded trust signal — derived here, never stored, from
+        // the same measured facts the counters render plus the account's age
+        // (the page's own join timestamp — identity's own fact). The age reads
+        // the wall clock directly (the ListingViewCounter's own seam choice —
+        // the container clock is UTC); an unpersisted row's null timestamp
+        // contributes no history (derive's null rule), never a crash.
+        ReviewerTrustScore trustScore = ReviewerTrustScore.derive(
+                stats, user.getCreatedAt() == null
+                        ? null
+                        : Duration.between(user.getCreatedAt(), Instant.now()));
+
         return new ReviewerPublicProfile(
                 user.getId(),
                 publicName(user),
@@ -62,7 +75,8 @@ public class ReviewerPublicProfileService {
                 stats.verifiedReviewCount(),
                 stats.organicReviewCount(),
                 stats.helpfulVoteCount(),
-                ReviewerBadge.derive(stats));
+                ReviewerBadge.derive(stats),
+                trustScore);
     }
 
     /**

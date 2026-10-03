@@ -52,6 +52,23 @@ public class LedgerPaymentEventListener {
     }
 
     private void processLedgerEntry(PaymentIntentDetails intent) {
+        // W5 (yelp-level plan §5 — G24): the ad bill's settlement — the
+        // raw amount credit, no commission, no booking lookup. The payer
+        // of an AD-origin intent IS the provider (consumer_id carries the
+        // provider's user id), and the money pair rides the widened
+        // PaymentIntentDetails so the ledger never needs a second lookup.
+        // The credit's source id is the intent id itself — the same
+        // BOOKING-path derivation, so a settled ad bill restores exactly
+        // the balance the AD_DEBIT consumed (the campaign's currency on
+        // both sides).
+        if (intent.isAdOrigin()) {
+            ledgerService.creditFromPayment(intent.consumerId(), intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: credited {} {} to provider {} — the ad bill's "
+                            + "settlement (intent {}, no commission)",
+                    intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
@@ -72,6 +89,15 @@ public class LedgerPaymentEventListener {
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
+        // W5: an ad bill has no booking to mirror — the refund path is the
+        // booking product's own bookkeeping. An ad-intent refund (an
+        // operator reversing a bill) is not a runtime flow this wave
+        // owns; skipping honestly beats crashing inside the listener.
+        if (intent.isAdOrigin()) {
+            log.info("Ledger skipped the refund debit for ad-origin intent {} — the ad "
+                            + "bill reversal is an operator decision outside this wave", intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9: the refund mirrors the ORIGINAL credit — same amount, same

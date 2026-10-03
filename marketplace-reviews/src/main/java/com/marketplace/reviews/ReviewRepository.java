@@ -101,6 +101,28 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     Page<Review> findByModerationStatus(ReviewModerationStatus moderationStatus, Pageable pageable);
 
     /**
+     * W5 (yelp-level plan §5 — G25, the §7 risk section's own law
+     * «الإشراف البشري يقرر، والإشارة ترتّب الطابور»): the signal-ordered
+     * moderation queue — the aggregate fraud-signal count (the §4.5
+     * review_flags the W1 wave records) DESC first, the W1 FIFO drain
+     * (createdAt ASC, id ASC) as the deterministic tiebreak. The human
+     * moderator still decides everything; the signal only ranks what he
+     * sees first. LEFT JOIN over the live flags (soft-deleted flags drop
+     * out through the entity's own restriction), grouped by review; the
+     * order lives IN the query (a Sort on the pageable would fight the
+     * GROUP BY's own count expression — the caller passes an unsorted
+     * pageable and takes this order verbatim).
+     */
+    @Query("""
+            select r from Review r
+              left join ReviewFlag f on f.reviewId = r.id
+            where r.moderationStatus = :status
+            group by r
+            order by count(f.id) desc, r.createdAt asc, r.id asc
+            """)
+    Page<Review> findModerationQueueBySignal(@Param("status") ReviewModerationStatus status, Pageable pageable);
+
+    /**
      * W1 §4.4: the reviewer-identity block's batch counter — PUBLISHED
      * reviews authored per reviewer, one grouped query for a whole page
      * (the batch-resolution rule; the public activity count a profile

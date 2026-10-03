@@ -144,6 +144,7 @@ class NotificationServiceTest {
                         .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
                         .set(field(PaymentIntentDetails::bookingId), bookingId)
                         .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .set(field(PaymentIntentDetails::origin), PaymentIntentDetails.ORIGIN_BOOKING)
                         .create()));
         when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
 
@@ -227,6 +228,7 @@ class NotificationServiceTest {
                         .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
                         .set(field(PaymentIntentDetails::bookingId), bookingId)
                         .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .set(field(PaymentIntentDetails::origin), PaymentIntentDetails.ORIGIN_BOOKING)
                         .create()));
         when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
 
@@ -385,6 +387,7 @@ class NotificationServiceTest {
                         .set(field(PaymentIntentDetails::paymentIntentId), paymentIntentId)
                         .set(field(PaymentIntentDetails::bookingId), bookingId)
                         .set(field(PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .set(field(PaymentIntentDetails::origin), PaymentIntentDetails.ORIGIN_BOOKING)
                         .create()));
         when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
 

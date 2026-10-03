@@ -125,7 +125,7 @@ class NotificationPreferencesIntegrationTest {
 
     private void firePaymentState(UUID consumerId, UUID providerId, UUID intentId, UUID bookingId) {
         when(paymentIntentLookupPort.findById(intentId)).thenReturn(Optional.of(
-                new PaymentIntentDetails(intentId, bookingId, consumerId, "COMPLETED")));
+                new PaymentIntentDetails(intentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR")));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", PRICE_CENTS, "SAR", Instant.now(), Instant.now()));
         notificationService.onPaymentStateChanged(intentId, "COMPLETED");
