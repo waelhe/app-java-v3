@@ -68,6 +68,20 @@ public class LedgerEntry extends BaseEntity {
                 amountCents, currency);
     }
 
+    /**
+     * W5 (yelp-level plan §5 — G24): the ad bill's debit — the frozen
+     * window charge, in the campaign's own currency. The source id is
+     * the DETERMINISTIC window key the service derives
+     * ({@code UUID.nameUUIDFromBytes("AD_DEBIT:{campaignId}:{windowStart}")})
+     * — the same JDK v3 derivation V82 documented for the commission and
+     * refund prefixes — so the V19 {@code source_id UNIQUE} index rejects
+     * any replay of the same window structurally.
+     */
+    public static LedgerEntry adDebit(UUID providerId, UUID sourceId, long amountCents, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.AD_DEBIT,
+                amountCents, currency);
+    }
+
     @Override public UUID getId(){return id;}
     public UUID getSourceId(){return sourceId;}
     public LedgerEntryType getEntryType(){return entryType;}

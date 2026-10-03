@@ -32,6 +32,10 @@ import java.util.UUID;
  * @param organicReviewCount  published general reviews
  * @param helpfulVoteCount    cumulative helpful votes his reviews received
  * @param badges              the derived badge labels (G29 — never stored)
+ * @param trustScore          the derived graded trust signal (W5, G26 — the
+ *                            plan's «درجة ثقة المراجع»: transactions, history
+ *                            and helpful votes composed into one 0–100 score
+ *                            with its tier reading; derived, never stored)
  */
 public record ReviewerPublicProfile(
         UUID reviewerId,
@@ -40,6 +44,7 @@ public record ReviewerPublicProfile(
         long verifiedReviewCount,
         long organicReviewCount,
         long helpfulVoteCount,
-        List<ReviewerBadge> badges
+        List<ReviewerBadge> badges,
+        ReviewerTrustScore trustScore
 ) {
 }

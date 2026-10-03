@@ -9,6 +9,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -146,6 +148,58 @@ public class LedgerService {
         return balanceRepository.findByIdProviderIdOrderByIdCurrencyAsc(providerId).stream()
                 .map(ProviderBalanceResponse::from)
                 .toList();
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — G24): the ad bill's debit — the frozen
+     * window charge consuming the campaign's budget, in the campaign's own
+     * currency. The source id is the DETERMINISTIC window key the caller
+     * derives once ({@code UUID.nameUUIDFromBytes(
+     * "AD_DEBIT:{campaignId}:{windowStart}".getBytes())}) — the plan's own
+     * key («قيد source_id UNIQUE القائم في V19 يرفض التكرار عند المفتاح
+     * الحتمي؛ إعادة المحاولة أو تداخل الجدولة يستحيلان معًا»). The shape
+     * is {@link #debitFromCommission}'s verbatim: the pre-check is an
+     * optimization, the V19 {@code source_id UNIQUE} backstop is the
+     * guarantee — a redelivery or two overlapping billing runs collide on
+     * the backstop and the loser's transaction rolls back in full (entry
+     * and balance move together; the #210 resubmission loop replays into
+     * the pre-check no-op).
+     *
+     * <p>Zero amounts write nothing: a window whose consumption rounds to
+     * the plan's «مجاني» (zero prices or zero traffic) advances the
+     * campaign's {@code billed_through} without ever touching the ledger
+     * — the {@code ad_billing_charges} row only exists when there is a
+     * billed amount to freeze, so the ledger and the charge history stay
+     * penny-for-penny twins («القيد يوازن الميزانية المخصومة فلسًا
+     * بفلس»).</p>
+     */
+    @Observed(name = "ledger.debit.ads")
+    public ProviderBalance debitFromAds(UUID providerId, UUID sourceId,
+                                        long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.adDebit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
+     * W5: the ad window's deterministic source key — the plan's literal
+     * {@code AD_DEBIT:{campaignId}:{windowStart}}, derived through the JDK
+     * v3 UUID the V82 migration documented for the commission and refund
+     * prefixes. One derivation point, shared by the listener and every
+     * test that needs to predict the key.
+     */
+    public static UUID adDebitSourceKey(UUID campaignId, LocalDate windowStart) {
+        String key = "AD_DEBIT:" + campaignId + ":" + windowStart;
+        return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

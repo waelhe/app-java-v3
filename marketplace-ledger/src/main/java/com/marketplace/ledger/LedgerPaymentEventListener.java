@@ -52,6 +52,23 @@ public class LedgerPaymentEventListener {
     }
 
     private void processLedgerEntry(PaymentIntentDetails intent) {
+        // W5 (yelp-level plan §5 — G24): the ad bill's settlement — the
+        // raw amount credit, no commission, no booking lookup. The payer
+        // of an AD-origin intent IS the provider (consumer_id carries the
+        // provider's user id), and the money pair rides the widened
+        // PaymentIntentDetails so the ledger never needs a second lookup.
+        // The credit's source id is the intent id itself — the same
+        // BOOKING-path derivation, so a settled ad bill restores exactly
+        // the balance the AD_DEBIT consumed (the campaign's currency on
+        // both sides).
+        if (intent.isAdOrigin()) {
+            ledgerService.creditFromPayment(intent.consumerId(), intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: credited {} {} to provider {} — the ad bill's "
+                            + "settlement (intent {}, no commission)",
+                    intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
@@ -72,6 +89,22 @@ public class LedgerPaymentEventListener {
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
+        // W5 (CodeRabbit round 1, adopted): an ad bill's refund MIRRORS its
+        // settlement credit exactly the way a booking's refund mirrors its
+        // own — the refund surface (admin refundPayment / a future PSP
+        // webhook) reaches AD-origin intents as surely as BOOKING ones
+        // (processIntent and confirmIntent are origin-blind), so skipping
+        // the debit would leave the provider's balance holding a settled
+        // credit the refund reversed. The debitFromRefund source key
+        // {@code refund-<intentId>} mirrors once, structurally.
+        if (intent.isAdOrigin()) {
+            ledgerService.debitFromRefund(intent.consumerId(), intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: debited {} {} from provider {} — the ad bill's "
+                            + "refund mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9: the refund mirrors the ORIGINAL credit — same amount, same

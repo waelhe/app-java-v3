@@ -69,6 +69,25 @@ public class NotificationService {
 
     public void onPaymentStateChanged(UUID paymentIntentId, String state) {
         paymentIntentLookupPort.findById(paymentIntentId).ifPresent(intent -> {
+            // W5 (yelp-level plan §5 — G24): the ad bill's own shape — the
+            // payer is the provider ALONE (no booking, no second party): one
+            // notification, the campaign names the bill (the booking path's
+            // message would name a booking that does not exist). The same
+            // PAYMENT_STATE type rides both origins — it IS a payment state
+            // change either way (no new enum value, no preferences-CHECK
+            // widening pair).
+            if (intent.isAdOrigin()) {
+                String adMessage = "Payment " + state + " for ad campaign " + intent.adCampaignId();
+                repository.save(Notification.create(intent.consumerId(),
+                        NotificationType.PAYMENT_STATE.name(), adMessage));
+                if (preferences.isChannelEnabled(intent.consumerId(),
+                        NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
+                    emailNotificationService.sendEmail(intent.consumerId(), "Payment " + state,
+                            "email/notification", Map.of("message", adMessage));
+                }
+                sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, adMessage);
+                return;
+            }
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
             // L22: the in-app channel is always on (see onBookingCreated).
             repository.save(Notification.create(intent.consumerId(), NotificationType.PAYMENT_STATE.name(), "Payment " + state + " for booking " + intent.bookingId()));

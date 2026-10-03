@@ -170,9 +170,33 @@ public final class ProviderListingSpecifications {
             List<jakarta.persistence.criteria.Order> orders = new ArrayList<>();
             // The total boost flag: promoted_until > now (NULL compares
             // UNKNOWN in SQL, which falls to the ELSE 0 branch — the NULL
-            // rows are unboosted by definition, no isNotNull needed).
+            // rows are unboosted by definition, no isNotNull needed) OR a
+            // live paid campaign with remaining budget (W5, G24 — the
+            // plan's «المُروَّج بلا ميزانية لا يتصدر»: an exhausted or dark
+            // campaign contributes nothing, and the listing with no
+            // campaign keeps its exact pre-W5 order). The campaign state is
+            // DERIVED at query time — never stored on the listing (the
+            // W4 «مشتق أبدًا لا مخزن» rule) — through an EXISTS the partial
+            // index idx_ad_campaigns_listing_live answers per row.
+            jakarta.persistence.criteria.Subquery<Integer> liveCampaign =
+                    query.subquery(Integer.class);
+            jakarta.persistence.criteria.Root<AdCampaign> campaign = liveCampaign.from(AdCampaign.class);
+            // CodeRabbit W5 r1, adopted: the duration's own end counts at
+            // QUERY time too — the status flips to ENDED only at the next
+            // daily run (04:45 UTC), and between ends_at and that run the
+            // listing must not keep the paid tier («المُروَّج بلا ميزانية لا
+            // يتصدر» covers the expired duration exactly as it covers the
+            // exhausted budget).
+            liveCampaign.select(cb.literal(1))
+                    .where(cb.equal(campaign.get("listingId"), root.get("id")),
+                            cb.equal(campaign.get("status"), AdCampaignStatus.ACTIVE),
+                            cb.lt(campaign.get("consumedCents"), campaign.get("budgetCents")),
+                            cb.or(cb.isNull(campaign.get("endsAt")),
+                                    cb.greaterThan(campaign.<Instant>get("endsAt"), now)));
             orders.add(cb.desc(cb.<Integer>selectCase()
-                    .when(cb.greaterThan(root.<Instant>get("promotedUntil"), now), 1)
+                    .when(cb.or(
+                            cb.greaterThan(root.<Instant>get("promotedUntil"), now),
+                            cb.exists(liveCampaign)), 1)
                     .otherwise(0)));
             // W3 (G18): the ranked-first tier for sort=rating — PostgreSQL
             // ranks NULLS FIRST on DESC, so a bare ranking_score DESC would

@@ -73,4 +73,20 @@ public interface ListingViewsDailyRepository extends JpaRepository<ListingViewsD
     List<ListingViewStats> sumViewTotalsForProviderSince(
             @Param("providerUserId") UUID providerUserId,
             @Param("sinceInclusive") LocalDate sinceInclusive);
+
+    /**
+     * W5 (yelp-level plan §5 — the ads & billing wave, G24): the billing
+     * window's frozen impression count — the deduplicated views of ONE
+     * listing over {@code [windowStart, windowEnd)} in UTC days. This is
+     * the plan's «ظهور من listing_views_daily القائم»: the ad campaign
+     * bills the impressions the platform already counts, no second
+     * counting path exists. The absent listing-day contributes nothing
+     * (COALESCE 0 at the caller — the honest empty answer).
+     */
+    @Query("select coalesce(sum(v.viewCount), 0) from ListingViewsDaily v"
+            + " where v.listingId = :listingId"
+            + " and v.viewDate >= :windowStart and v.viewDate < :windowEnd")
+    long sumViewsForListingBetween(@Param("listingId") UUID listingId,
+                                   @Param("windowStart") LocalDate windowStart,
+                                   @Param("windowEnd") LocalDate windowEnd);
 }

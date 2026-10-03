@@ -157,6 +157,9 @@ class BoostOrderingIntegrationTest {
     private ProviderListingRepository listingRepository;
 
     @Autowired
+    private AdCampaignRepository adCampaignRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -180,6 +183,14 @@ class BoostOrderingIntegrationTest {
         // mirror — the criterion-4 test then counts revisions from zero.
         // Raw SQL is the house pattern for schema-level test setup.
         jdbcTemplate.update("DELETE FROM provider_listings_aud");
+        // W5: the campaign tables ride the same hard reset (the @SoftDelete
+        // shadowing rule applies to them exactly as it does to the listings).
+        jdbcTemplate.update("DELETE FROM ad_billing_charges_aud");
+        jdbcTemplate.update("DELETE FROM ad_billing_charges");
+        jdbcTemplate.update("DELETE FROM ad_clicks_daily_aud");
+        jdbcTemplate.update("DELETE FROM ad_clicks_daily");
+        jdbcTemplate.update("DELETE FROM ad_campaigns_aud");
+        jdbcTemplate.update("DELETE FROM ad_campaigns");
         jdbcTemplate.update("DELETE FROM provider_listings");
         jdbcTemplate.update(
                 """
@@ -441,4 +452,64 @@ class BoostOrderingIntegrationTest {
                 .containsExactly(ID_03, ID_01, ID_02);
         assertThat(page.totalElements()).isEqualTo(3L);
     }
+
+    // ---- W5 (yelp-level plan §5 — G24): the PAID boost tier ------------
+    // ---- «المُروَّج بلا ميزانية لا يتصدر» ---------------------------------
+
+    @Test
+    void campaignBackedListingRanksFirst_whileTheCampaignIsLiveWithRemainingBudget() {
+        seedThreeHomeListings();
+        // ID_02 pays: a live campaign with remaining budget — no
+        // promoted_until involved at all (the paid engine's own tier).
+        adCampaignRepository.save(AdCampaign.start(PROVIDER_USER_ID, ID_02,
+                100_00L, 10L, 1L, "SAR", T0, null));
+        clearCaches();
+
+        // The natural order is 01, 02, 03; the paid tier lifts 02 first.
+        assertThat(activeIds()).containsExactly(ID_02, ID_01, ID_03);
+    }
+
+    @Test
+    void exhaustedCampaignLosesTheTier_theListingFallsBackToItsNaturalOrder() {
+        seedThreeHomeListings();
+        AdCampaign campaign = adCampaignRepository.save(AdCampaign.start(PROVIDER_USER_ID, ID_02,
+                100_00L, 10L, 1L, "SAR", T0, null));
+        // The budget ran out (the settle's own capped consume): the campaign
+        // is ENDED — «المُروَّج بلا ميزانية لا يتصدر».
+        campaign.consume(100_00L);
+        adCampaignRepository.save(campaign);
+        clearCaches();
+
+        assertThat(activeIds()).containsExactly(ID_01, ID_02, ID_03);
+    }
+
+    @Test
+    void pausedCampaignLosesTheTierToo_theDarkGapIsNotPromoted() {
+        seedThreeHomeListings();
+        AdCampaign campaign = adCampaignRepository.save(AdCampaign.start(PROVIDER_USER_ID, ID_03,
+                100_00L, 10L, 1L, "SAR", T0, null));
+        campaign.pause();
+        adCampaignRepository.save(campaign);
+        clearCaches();
+
+        assertThat(activeIds()).containsExactly(ID_01, ID_02, ID_03);
+    }
+
+    @Test
+    void thePaidTierComposesWithTheLegacyShading_bothLiftOneListingEach() {
+        // The two boost sources compose honestly: the admin shading (V59's
+        // promoted_until) and the paid campaign (W5) — each lifts its own
+        // listing; neither widens the filter, both reorder only.
+        seedThreeHomeListings();
+        // ID_01 takes the legacy admin window; ID_03 pays.
+        catalogService.setListingPromotion(ID_01, T0.plus(Duration.ofDays(1)));
+        adCampaignRepository.save(AdCampaign.start(PROVIDER_USER_ID, ID_03,
+                100_00L, 10L, 1L, "SAR", T0, null));
+        clearCaches();
+
+        // Both boosted listings tier above the unboosted one; within the
+        // tier the id tiebreak keeps the order deterministic.
+        assertThat(activeIds()).containsExactly(ID_01, ID_03, ID_02);
+    }
+
 }

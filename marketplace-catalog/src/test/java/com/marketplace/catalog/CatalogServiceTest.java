@@ -59,7 +59,7 @@ class CatalogServiceTest {
         CatalogProperties catalogProperties() {
             return new CatalogProperties(new CatalogProperties.Expiry(90, 1),
                     new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
-                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)));
+                    new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)), new CatalogProperties.Ads(java.time.Duration.ofDays(1)));
         }
     }
 

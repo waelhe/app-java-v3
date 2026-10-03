@@ -51,7 +51,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "REFUNDED", "BOOKING", 25000L, "SAR");
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -72,7 +72,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR");
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -97,7 +97,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR");
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenThrow(new RuntimeException("lookup failed"));
@@ -114,7 +114,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR");
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -127,5 +127,49 @@ class LedgerPaymentEventListenerTest {
 
         verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong(), eq("USD"));
+    }
+
+    // ---- W5 (yelp-level plan §5 — G24): the ad-origin branches ----
+
+    @Test
+    void creditsTheRawAmountForAnAdOriginCompletionWithNoCommission() {
+        // W5: an ad bill's settlement — the payer IS the provider, the amount
+        // rides the widened details, and NO commission and NO booking lookup
+        // happen (the booking path's own machinery stays untouched).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, providerId, UUID.randomUUID(), "COMPLETED",
+                "AD", 7500L, "SAR");
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, 7500L, "SAR");
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
+        verifyNoInteractions(bookingParticipantProvider);
+    }
+
+    @Test
+    void mirrorsTheRefundDebitForAnAdOriginIntent() {
+        // W5 (CodeRabbit r1, adopted): an ad bill's refund MIRRORS its
+        // settlement credit exactly the way a booking's mirrors its own —
+        // the refund surface reaches AD-origin intents as surely as
+        // BOOKING ones, so skipping would leave the provider's balance
+        // holding a reversed credit. The refund-<intentId> source key
+        // mirrors once, structurally.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, providerId, UUID.randomUUID(), "REFUNDED",
+                "AD", 7500L, "SAR");
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).debitFromRefund(providerId, paymentIntentId, 7500L, "SAR");
+        verifyNoInteractions(bookingParticipantProvider);
     }
 }

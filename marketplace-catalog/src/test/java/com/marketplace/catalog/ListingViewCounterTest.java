@@ -50,7 +50,7 @@ class ListingViewCounterTest {
     private final CatalogProperties properties = new CatalogProperties(
             new CatalogProperties.Expiry(90, 1),
             new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
-            new CatalogProperties.Views("test-key", WINDOW));
+            new CatalogProperties.Views("test-key", WINDOW), new CatalogProperties.Ads(java.time.Duration.ofDays(1)));
 
     private ListingViewCounter counter() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
@@ -107,7 +107,7 @@ class ListingViewCounterTest {
         CatalogProperties noKey = new CatalogProperties(
                 new CatalogProperties.Expiry(90, 1),
                 new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
-                new CatalogProperties.Views("", WINDOW));
+                new CatalogProperties.Views("", WINDOW), new CatalogProperties.Ads(java.time.Duration.ofDays(1)));
         ListingViewCounter counter = new ListingViewCounter(redisTemplate, viewsService, noKey);
 
         counter.recordView(LISTING_ID, IP);
