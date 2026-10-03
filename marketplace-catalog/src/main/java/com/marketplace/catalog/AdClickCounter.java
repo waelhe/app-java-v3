@@ -65,21 +65,30 @@ public class AdClickCounter {
 
     /**
      * Records one promoted-result click, total (never throws): resolve the
-     * listing's live campaign, dedup the visitor, then the +1 with the
-     * insert-race retry. Any data-access failure or an unavailable
-     * approximation layer degrades the count, never the caller's response.
+     * listing's live campaign OUTSIDE the failure boundary — attribution is
+     * a read, and the class's own contract says a counting failure must
+     * never change the caller's response (CodeRabbit W5 r1, adopted: the
+     * earlier shape returned empty on a Redis/DB hiccup and the controller
+     * 404'd a promoted listing). Then dedup the visitor, then the +1 with
+     * the insert-race retry; any data-access failure in THAT step degrades
+     * the count alone — the campaign is still attributed.
+     *
+     * <p>A campaign whose duration already ended is not clickable even
+     * before the daily run flips it ENDED (the sub-day gap the run's own
+     * cadence leaves — the same endsAt check the boost's EXISTS carries).
      *
      * @return the campaign the click was attributed to — empty when the
      *         listing has no live campaign (the controller's honest 404)
      */
     public Optional<UUID> recordClick(UUID listingId, String clientIp) {
+        Optional<AdCampaign> campaign =
+                campaignRepository.findFirstByListingIdAndStatusOrderByIdAsc(listingId, AdCampaignStatus.ACTIVE);
+        if (campaign.isEmpty() || !campaign.get().hasRemainingBudget()
+                || durationEnded(campaign.get())) {
+            return Optional.empty();
+        }
+        UUID campaignId = campaign.get().getId();
         try {
-            Optional<AdCampaign> campaign =
-                    campaignRepository.findFirstByListingIdAndStatusOrderByIdAsc(listingId, AdCampaignStatus.ACTIVE);
-            if (campaign.isEmpty() || !campaign.get().hasRemainingBudget()) {
-                return Optional.empty();
-            }
-            UUID campaignId = campaign.get().getId();
             String key = properties.views().ipHashKey();
             if (key == null || key.isBlank()) {
                 warnCountingOffOnce("no fingerprint key is configured "
@@ -97,8 +106,13 @@ public class AdClickCounter {
         } catch (DataAccessException countingFailure) {
             log.warn("Ad click counting degraded — the caller's response is unaffected "
                             + "(listingId={}): {}", listingId, countingFailure.getMessage());
-            return Optional.empty();
+            return Optional.of(campaignId); // attributed, uncounted — the contract's own rule
         }
+    }
+
+    /** The duration's own end, at click time — the sub-day gap the daily run cannot close. */
+    private static boolean durationEnded(AdCampaign campaign) {
+        return campaign.getEndsAt() != null && !campaign.getEndsAt().isAfter(java.time.Instant.now());
     }
 
     private void warnCountingOffOnce(String cause) {

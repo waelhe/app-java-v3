@@ -181,10 +181,18 @@ public final class ProviderListingSpecifications {
             jakarta.persistence.criteria.Subquery<Integer> liveCampaign =
                     query.subquery(Integer.class);
             jakarta.persistence.criteria.Root<AdCampaign> campaign = liveCampaign.from(AdCampaign.class);
+            // CodeRabbit W5 r1, adopted: the duration's own end counts at
+            // QUERY time too — the status flips to ENDED only at the next
+            // daily run (04:45 UTC), and between ends_at and that run the
+            // listing must not keep the paid tier («المُروَّج بلا ميزانية لا
+            // يتصدر» covers the expired duration exactly as it covers the
+            // exhausted budget).
             liveCampaign.select(cb.literal(1))
                     .where(cb.equal(campaign.get("listingId"), root.get("id")),
                             cb.equal(campaign.get("status"), AdCampaignStatus.ACTIVE),
-                            cb.lt(campaign.get("consumedCents"), campaign.get("budgetCents")));
+                            cb.lt(campaign.get("consumedCents"), campaign.get("budgetCents")),
+                            cb.or(cb.isNull(campaign.get("endsAt")),
+                                    cb.greaterThan(campaign.<Instant>get("endsAt"), now)));
             orders.add(cb.desc(cb.<Integer>selectCase()
                     .when(cb.or(
                             cb.greaterThan(root.<Instant>get("promotedUntil"), now),

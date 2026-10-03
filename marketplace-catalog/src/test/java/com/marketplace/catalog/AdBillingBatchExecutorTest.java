@@ -79,7 +79,9 @@ class AdBillingBatchExecutorTest {
         assertEquals(10000L, charge.getValue().getAmountCents());
         assertEquals(1200L, charge.getValue().getImpressions());
         assertEquals(40L, charge.getValue().getClicks());
-        assertEquals(LocalDate.parse("2026-09-30"), charge.getValue().getWindowStart());
+        // The birth day is FREE (the daily-grain rule): the window starts at
+        // the start date's NEXT day — 2026-09-30 + 1 = 2026-10-01.
+        assertEquals(LocalDate.parse("2026-10-01"), charge.getValue().getWindowStart());
         assertEquals(TODAY, charge.getValue().getWindowEnd());
         assertEquals(10000L, campaign.getConsumedCents());
         assertEquals(TODAY, campaign.getBilledThrough());
@@ -120,8 +122,9 @@ class AdBillingBatchExecutorTest {
     @Test
     void settle_advancesTheMarkerAloneOnAZeroWindow() {
         // Zero traffic: no charge row, no billing event — the marker advanced
-        // alone (the honest «مجاني» day).
-        AdCampaign campaign = campaignStartingDaysAgo(10000L, 100L, 5L, 1);
+        // alone (the honest «مجاني» day). Two days back so the birth-day-free
+        // rule leaves one complete billable day ([TODAY-1, TODAY)).
+        AdCampaign campaign = campaignStartingDaysAgo(10000L, 100L, 5L, 2);
         when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
         windowTraffic(0L, 0L);
 
@@ -144,8 +147,9 @@ class AdBillingBatchExecutorTest {
 
         verify(chargeRepository, never()).saveAndFlush(any());
         verify(eventPublisher, never()).publishEvent(any(AdWindowBilledEvent.class));
-        // The dark gap never bills: the marker did not move.
-        assertEquals(LocalDate.parse("2026-09-30"), campaign.getBilledThrough());
+        // The dark gap never bills: the marker did not move (the birth day's
+        // next day — the birth day itself is free by the daily-grain rule).
+        assertEquals(LocalDate.parse("2026-10-01"), campaign.getBilledThrough());
     }
 
     @Test

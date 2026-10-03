@@ -121,16 +121,21 @@ public class AdCampaign extends BaseEntity {
     }
 
     /**
-     * The campaign's birth — ACTIVE from the first instant, its first
-     * billable date is the start's own UTC day (the marker starts there,
-     * so nothing before the campaign exists can ever bill).
+     * The campaign's birth — ACTIVE from the first instant. The billing
+     * marker starts at the start date's NEXT UTC day: the birth day itself
+     * is unbilled (CodeRabbit W5 r1, adopted — the daily-grain honesty:
+     * listing_views_daily counts whole days, so a mid-day birth cannot be
+     * separated from the pre-birth views of the same day — charging them
+     * would bill impressions the campaign never bought. The birth day is
+     * therefore FREE, the provider-favorable direction, the same
+     * daily-grain forfeit the pause day already carries in this design).
      */
     static AdCampaign start(UUID providerId, UUID listingId, long budgetCents,
                             long clickPriceCents, long impressionPriceCents, String currency,
                             Instant now, Instant endsAt) {
         return new AdCampaign(UUID.randomUUID(), providerId, listingId, budgetCents,
                 clickPriceCents, impressionPriceCents, currency, now, endsAt,
-                LocalDate.ofInstant(now, java.time.ZoneOffset.UTC));
+                LocalDate.ofInstant(now, java.time.ZoneOffset.UTC).plusDays(1));
     }
 
     /** The owner's hold — no boost, no accrual; the paused gap never bills. */

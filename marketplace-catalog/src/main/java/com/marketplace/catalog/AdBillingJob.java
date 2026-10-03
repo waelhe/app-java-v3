@@ -60,14 +60,44 @@ public class AdBillingJob {
             try {
                 batchExecutor.settleOneCampaign(campaignId, today);
                 settled++;
-            } catch (DataIntegrityViolationException overlapLost) {
+            } catch (DataIntegrityViolationException violation) {
+                // CodeRabbit W5 r1, adopted: ONLY the window-uniqueness
+                // violation is the expected deterministic outcome (one
+                // window, one charge — the loser's rollback). Any other
+                // integrity failure is a billing bug this run must surface
+                // loudly, never swallow as a fake overlap.
+                if (!isWindowUniquenessViolation(violation)) {
+                    throw violation;
+                }
                 overlaps++;
                 log.info("Ad billing overlap: campaign {}'s window was settled by a concurrent run "
-                                + "(the deterministic backstop rejected this one) — one window, one charge: {}",
-                        campaignId, overlapLost.getMostSpecificCause().getMessage());
+                                + "(the deterministic backstop rejected this one) — one window, one charge",
+                        campaignId);
             }
         }
         log.info("Ad billing run over {} candidates: {} settled, {} overlaps, horizon {}",
                 candidates.size(), settled, overlaps, today);
     }
+
+    /**
+     * The window-uniqueness backstop's own signature: the constraint name
+     * in the violation's most specific cause — the same
+     * {@code isWeekendRuleInsertRace} discrimination the pricing insert-race
+     * retry uses (a DIVE carries more than uniqueness; blind catching
+     * would hide real billing bugs).
+     */
+    private static boolean isWindowUniquenessViolation(DataIntegrityViolationException violation) {
+        Throwable cause = violation;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(WINDOW_UNIQUENESS_CONSTRAINT)) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    /** The charge table's window-identity constraint — the overlap backstop's own name. */
+    static final String WINDOW_UNIQUENESS_CONSTRAINT = "uk_ad_billing_charges_campaign_window";
 }

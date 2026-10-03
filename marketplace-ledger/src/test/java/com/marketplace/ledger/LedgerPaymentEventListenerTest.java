@@ -152,20 +152,24 @@ class LedgerPaymentEventListenerTest {
     }
 
     @Test
-    void skipsTheRefundDebitForAnAdOriginIntent() {
-        // W5: an ad bill has no booking to mirror — the refund path is the
-        // booking product's own bookkeeping; skipping honestly beats crashing
-        // inside the listener.
+    void mirrorsTheRefundDebitForAnAdOriginIntent() {
+        // W5 (CodeRabbit r1, adopted): an ad bill's refund MIRRORS its
+        // settlement credit exactly the way a booking's mirrors its own —
+        // the refund surface reaches AD-origin intents as surely as
+        // BOOKING ones, so skipping would leave the provider's balance
+        // holding a reversed credit. The refund-<intentId> source key
+        // mirrors once, structurally.
         UUID paymentIntentId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
-        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), UUID.randomUUID(), "REFUNDED",
+        var intent = new PaymentIntentDetails(paymentIntentId, null, providerId, UUID.randomUUID(), "REFUNDED",
                 "AD", 7500L, "SAR");
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService).debitFromRefund(providerId, paymentIntentId, 7500L, "SAR");
         verifyNoInteractions(bookingParticipantProvider);
     }
 }

@@ -40,6 +40,8 @@ class AdCampaignServiceTest {
     private final ProviderListingRepository listingRepository = mock(ProviderListingRepository.class);
     private final CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
     private final ProviderLookupPort providerLookupPort = mock(ProviderLookupPort.class);
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher =
+            mock(org.springframework.context.ApplicationEventPublisher.class);
     private final Authentication authentication = mock(Authentication.class);
 
     private static final Instant NOW = Instant.parse("2026-10-03T10:15:00Z");
@@ -51,7 +53,7 @@ class AdCampaignServiceTest {
     @BeforeEach
     void setUp() {
         service = new AdCampaignService(campaignRepository, chargeRepository,
-                listingRepository, currentUserProvider, providerLookupPort, CLOCK);
+                listingRepository, currentUserProvider, providerLookupPort, eventPublisher, CLOCK);
     }
 
     private ProviderListing activeListing() {
@@ -89,9 +91,12 @@ class AdCampaignServiceTest {
         assertEquals(0L, view.consumedCents());
         assertEquals(50000L, view.remainingCents());
         assertEquals("SAR", view.currency());
-        // The window identity: the marker starts at the start's own UTC day —
-        // nothing before the campaign exists can ever bill.
-        assertEquals(LocalDate.parse("2026-10-03"), view.billedThrough());
+        // The window identity: the marker starts at the start date's NEXT
+        // UTC day — the birth day itself is FREE (the daily-grain rule:
+        // a mid-day birth cannot be separated from the same day's
+        // pre-birth views, so charging them would bill what the campaign
+        // never bought).
+        assertEquals(LocalDate.parse("2026-10-04"), view.billedThrough());
         assertEquals(NOW, view.startsAt());
     }
 
@@ -177,5 +182,41 @@ class AdCampaignServiceTest {
                 () -> service.pause(campaignId, authentication));
         assertThrows(ResourceNotFoundException.class,
                 () -> service.charges(campaignId, authentication));
+    }
+
+    @Test
+    void resume_rejectsACampaignWhoseDurationAlreadyEnded() {
+        // CodeRabbit W5 r1, adopted: the billing run skips PAUSED campaigns,
+        // so an expired-but-paused campaign would otherwise return to the
+        // boost with a dead duration until the next daily run — the resume
+        // gate refuses it outright.
+        AdCampaign expired = AdCampaign.start(ownerId, UUID.randomUUID(), 100000L, 10L, 1L, "SAR",
+                NOW.minus(Duration.ofDays(5)), NOW.minus(Duration.ofDays(1)));
+        expired.pause();
+        when(campaignRepository.findByIdAndProviderId(expired.getId(), ownerId))
+                .thenReturn(Optional.of(expired));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(ownerId);
+
+        assertThrows(ConflictException.class, () -> service.resume(expired.getId(), authentication));
+        assertEquals(AdCampaignStatus.PAUSED, expired.getStatus());
+    }
+
+    @Test
+    void everyStateTransition_evictsTheCatalogOrderedPages() {
+        // CodeRabbit W5 r1, adopted: the boost's truth changed at every
+        // transition — the cached ordered pages must not serve yesterday's
+        // order (the same AFTER_COMMIT eviction law the listing writes and
+        // the ranking job apply).
+        ProviderListing listing = activeListing();
+        when(listingRepository.findById(listing.getId())).thenReturn(Optional.of(listing));
+        when(campaignRepository.findFirstByListingIdAndStatusOrderByIdAsc(listing.getId(), AdCampaignStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        ownedByCaller(listing);
+        saveReturnsCampaign();
+
+        service.create(new AdCampaignService.CreateAdCampaignRequest(
+                listing.getId(), 50000L, 100L, 5L, null, null), authentication);
+        org.mockito.Mockito.verify(eventPublisher)
+                .publishEvent(any(com.marketplace.shared.api.CacheInvalidationRequested.class));
     }
 }

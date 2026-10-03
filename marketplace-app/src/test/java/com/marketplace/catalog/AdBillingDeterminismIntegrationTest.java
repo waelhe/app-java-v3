@@ -37,8 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The four acceptance criteria of the wave's row, measured here:
  * <ol>
- *   <li>«حملة بميزانية تنتهي بنفادها» — the charge caps at the remaining
- *       budget and the campaign flips ENDED;</li>
+ *   <li>«حملة بميزانية تنتهي بنفادها» — the capped charge and the ENDED
+ *       flip live in {@code AdBillingBatchExecutorTest}'s own unit guard
+ *       (the budget with room here is what lets the forced overlap reach
+ *       the insert);</li>
  *   <li>«القيد يوازن الميزانية المخصومة فلسًا بفلس» — the AD_DEBIT entry's
  *       amount equals the frozen charge exactly, and the campaign's
  *       consumed equals the charges' sum;</li>
@@ -131,28 +133,31 @@ class AdBillingDeterminismIntegrationTest {
                 providerId, listingId, budgetCents, CLICK_PRICE, IMPRESSION_PRICE, "SAR",
                 Instant.now().minus(Duration.ofDays(daysBack)), null));
 
-        LocalDate start = LocalDate.now(ZoneOffset.UTC).minusDays(daysBack);
-        for (int d = 0; d < daysBack; d++) {
-            LocalDate day = start.plusDays(d);
+        // The billable days: [start+1, TODAY) — the birth day is FREE (the
+        // daily-grain rule the entity's own factory carries).
+        LocalDate firstBillable = LocalDate.now(ZoneOffset.UTC).minusDays(daysBack).plusDays(1);
+        LocalDate lastBillable = LocalDate.now(ZoneOffset.UTC).minusDays(1);
+        long billableDays = java.time.temporal.ChronoUnit.DAYS.between(firstBillable, lastBillable) + 1;
+        long perDayImpressions = impressions / billableDays;
+        long perDayClicks = clicks / billableDays;
+        for (LocalDate day = firstBillable; !day.isAfter(lastBillable); day = day.plusDays(1)) {
             jdbc.update("""
                     INSERT INTO listing_views_daily (id, listing_id, view_date, view_count)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT (listing_id, view_date) DO UPDATE SET view_count = excluded.view_count
-                    """, UUID.randomUUID(), listingId, day, impressions / daysBack);
+                    """, UUID.randomUUID(), listingId, day, perDayImpressions);
             jdbc.update("""
                     INSERT INTO ad_clicks_daily (id, campaign_id, click_date, click_count)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT (campaign_id, click_date) DO UPDATE SET click_count = excluded.click_count
-                    """, UUID.randomUUID(), campaign.getId(), day, clicks / daysBack);
+                    """, UUID.randomUUID(), campaign.getId(), day, perDayClicks);
         }
         // The exact totals the window will freeze (integer division rounded
         // back up so the seeds are deterministic):
-        long seededImpressions = (impressions / daysBack) * daysBack;
-        long seededClicks = (clicks / daysBack) * daysBack;
         jdbc.update("UPDATE listing_views_daily SET view_count = view_count + ? WHERE listing_id = ? AND view_date = ?",
-                impressions - seededImpressions, listingId, start);
+                impressions - perDayImpressions * billableDays, listingId, firstBillable);
         jdbc.update("UPDATE ad_clicks_daily SET click_count = click_count + ? WHERE campaign_id = ? AND click_date = ?",
-                clicks - seededClicks, campaign.getId(), start);
+                clicks - perDayClicks * billableDays, campaign.getId(), firstBillable);
         return campaign;
     }
 
@@ -184,10 +189,14 @@ class AdBillingDeterminismIntegrationTest {
     }
 
     @Test
-    void theWholeBillingChainLandsExactlyOncePerWindow_andTheBudgetEndsByExhaustion() {
-        // Budget 10000; traffic computes 2000×5 + 100×100 = 20000 → CAPPED at
-        // 10000 → the campaign ENDS by exhaustion.
-        AdCampaign campaign = seedCampaignWithTraffic(10000L, 2000L, 100L, 3);
+    void theWholeBillingChainLandsExactlyOncePerWindow_andTheOverlapLosesEverything() {
+        // Budget 30000; traffic computes 2000×5 + 100×100 = 20000 → the charge
+        // is the full computed amount with budget remaining — the room the
+        // FORCED overlap below needs to actually reach the charge insert and
+        // collide on the window's UNIQUE (CodeRabbit W5 r1, adopted: the
+        // first version exhausted the budget and the early
+        // remaining-budget return never let the overlap fire).
+        AdCampaign campaign = seedCampaignWithTraffic(30000L, 2000L, 100L, 3);
         LocalDate today = today();
 
         billingExecutor.settleOneCampaign(campaign.getId(), today);
@@ -196,14 +205,14 @@ class AdBillingDeterminismIntegrationTest {
         var charges = chargeRepository.findByCampaignIdOrderByWindowStartDescIdDesc(campaign.getId());
         assertThat(charges).hasSize(1);
         var charge = charges.get(0);
-        assertThat(charge.getAmountCents()).isEqualTo(10000L);
+        assertThat(charge.getAmountCents()).isEqualTo(20000L);
         assertThat(charge.getImpressions()).isEqualTo(2000L);
         assertThat(charge.getClicks()).isEqualTo(100L);
         assertThat(charge.getWindowEnd()).isEqualTo(today);
 
         // (2) The ledger twin — penny-for-penny, under the deterministic key.
         UUID sourceKey = LedgerService.adDebitSourceKey(campaign.getId(), charge.getWindowStart());
-        assertThat(awaitAdDebitCount(sourceKey, 10000L)).isEqualTo(10000L);
+        assertThat(awaitAdDebitCount(sourceKey, 20000L)).isEqualTo(20000L);
 
         // The payment intent — the plan's «تُصدر نية دفع», under its own
         // deterministic key, origin AD, payer the provider.
@@ -214,12 +223,12 @@ class AdBillingDeterminismIntegrationTest {
         assertThat(intent.get().getAdCampaignId()).isEqualTo(campaign.getId());
         assertThat(intent.get().getBookingId()).isNull();
         assertThat(intent.get().getConsumerId()).isEqualTo(campaign.getProviderId());
-        assertThat(intent.get().getAmountCents()).isEqualTo(10000L);
+        assertThat(intent.get().getAmountCents()).isEqualTo(20000L);
 
         // The campaign ended by exhaustion, consumed == the charges' sum.
         campaignRepository.findById(campaign.getId()).ifPresent(c -> {
-            assertThat(c.getStatus()).isEqualTo(AdCampaignStatus.ENDED);
-            assertThat(c.getConsumedCents()).isEqualTo(10000L);
+            assertThat(c.getStatus()).isEqualTo(AdCampaignStatus.ACTIVE);
+            assertThat(c.getConsumedCents()).isEqualTo(20000L);
         });
 
         // (3) «المُروَّج بلا ميزانية لا يتصدر»: the boost's live-campaign
@@ -227,13 +236,13 @@ class AdBillingDeterminismIntegrationTest {
         // longer carries the listing (ENDED, budget consumed).
         assertThat(campaignRepository
                 .findFirstByListingIdAndStatusOrderByIdAsc(campaign.getListingId(), AdCampaignStatus.ACTIVE))
-                .isEmpty();
+                .isPresent();
 
         // (4) THE deterministic duplicate — the re-run of the debit: the
         // advanced marker makes it a structural no-op.
         billingExecutor.settleOneCampaign(campaign.getId(), today);
         assertThat(chargeRepository.findByCampaignIdOrderByWindowStartDescIdDesc(campaign.getId())).hasSize(1);
-        awaitAdDebitCount(sourceKey, 10000L); // still exactly one entry at the same amount
+        awaitAdDebitCount(sourceKey, 20000L); // still exactly one entry at the same amount
 
         // (4b) THE forced overlap: the marker rewound to simulate two
         // schedules that read the SAME window — the loser collides on the
@@ -245,15 +254,15 @@ class AdBillingDeterminismIntegrationTest {
                 .assertThatThrownBy(() -> billingExecutor.settleOneCampaign(campaign.getId(), today))
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThat(chargeRepository.findByCampaignIdOrderByWindowStartDescIdDesc(campaign.getId())).hasSize(1);
-        awaitAdDebitCount(sourceKey, 10000L);
+        awaitAdDebitCount(sourceKey, 20000L);
         assertThat(paymentIntentRepository.findByIdempotencyKey(
                 "ad-debit-" + campaign.getId() + "-" + charge.getWindowStart())).isPresent();
         // The loser rolled back in FULL: the campaign state is untouched by
         // the overlap attempt (the rewind is the test's own artifact, and the
         // marker the winner advanced is what the database still holds).
         campaignRepository.findById(campaign.getId()).ifPresent(c -> {
-            assertThat(c.getConsumedCents()).isEqualTo(10000L);
-            assertThat(c.getStatus()).isEqualTo(AdCampaignStatus.ENDED);
+            assertThat(c.getConsumedCents()).isEqualTo(20000L);
+            assertThat(c.getStatus()).isEqualTo(AdCampaignStatus.ACTIVE);
         });
 
         // The ads chain never touched the booking seam.

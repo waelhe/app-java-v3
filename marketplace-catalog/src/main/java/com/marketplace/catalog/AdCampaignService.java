@@ -1,6 +1,7 @@
 package com.marketplace.catalog;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -9,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -45,6 +47,7 @@ public class AdCampaignService {
     private final ProviderListingRepository listingRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ProviderLookupPort providerLookupPort;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final java.time.Clock clock;
 
     public AdCampaignService(AdCampaignRepository campaignRepository,
@@ -52,12 +55,14 @@ public class AdCampaignService {
                              ProviderListingRepository listingRepository,
                              CurrentUserProvider currentUserProvider,
                              ProviderLookupPort providerLookupPort,
+                             ApplicationEventPublisher eventPublisher,
                              java.time.Clock clock) {
         this.campaignRepository = campaignRepository;
         this.chargeRepository = chargeRepository;
         this.listingRepository = listingRepository;
         this.currentUserProvider = currentUserProvider;
         this.providerLookupPort = providerLookupPort;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -93,7 +98,13 @@ public class AdCampaignService {
         AdCampaign campaign = AdCampaign.start(listing.getProviderId(), listing.getId(),
                 request.budgetCents(), request.clickPriceCents(), request.impressionPriceCents(),
                 request.currency(), now, request.endsAt());
-        return toView(campaignRepository.save(campaign));
+        AdCampaignView view = toView(campaignRepository.save(campaign));
+        // CodeRabbit W5 r1, adopted: the boost's truth changed — a live paid
+        // campaign now carries the listing — and the ordered pages must not
+        // serve yesterday's order (the same AFTER_COMMIT eviction law every
+        // listing write and the ranking job apply).
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));
+        return view;
     }
 
     /** The caller's own campaigns — the honest consumption state on every row. */
@@ -115,19 +126,34 @@ public class AdCampaignService {
         } catch (IllegalStateException e) {
             throw new ConflictException(e.getMessage());
         }
+        // The boost's truth changed — the dark campaign's listing loses the
+        // paid tier NOW, not at the next cache TTL (the eviction law above).
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));
         return toView(campaign);
     }
 
-    /** The hold lifts — the billing marker jumps past the dark days (see {@link AdCampaign#resume}). */
+    /**
+     * The hold lifts — the billing marker jumps past the dark days (see
+     * {@link AdCampaign#resume}). A campaign whose duration already ended
+     * cannot lift back (CodeRabbit W5 r1, adopted): the billing run skips
+     * PAUSED campaigns, so an expired-but-paused campaign would otherwise
+     * return to the boost with a dead duration until the next daily run.
+     */
     @PreAuthorize("hasRole('PROVIDER')")
     @Transactional
     public AdCampaignView resume(UUID campaignId, Authentication authentication) {
         AdCampaign campaign = ownedCampaign(campaignId, authentication);
+        if (campaign.getEndsAt() != null && !campaign.getEndsAt().isAfter(clock.instant())) {
+            throw new ConflictException("Campaign " + campaignId
+                    + " ended at " + campaign.getEndsAt() + " — its duration is over; start a new campaign");
+        }
         try {
             campaign.resume(AdBillingBatchExecutor.todayUtc(clock));
         } catch (IllegalStateException e) {
             throw new ConflictException(e.getMessage());
         }
+        // The boost's truth changed — the listing regains the paid tier NOW.
+        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));
         return toView(campaign);
     }
 

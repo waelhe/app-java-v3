@@ -40,22 +40,40 @@ public interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID>, J
     Optional<AdCampaign> findByIdAndProviderId(UUID id, UUID providerId);
 
     /**
-     * The billing run's candidate scan: the ids of campaigns with an
-     * unsettled window ending strictly before {@code horizonExclusive}
-     * (the run bills COMPLETE UTC days only — yesterday and older).
-     * {@code ENDED} campaigns ride along for their final settle: the
-     * exhaustion case drops out through {@code consumed_cents = budget}
-     * (the run's own remaining-budget filter), the duration case settles
-     * its tail once and then the advanced marker excludes it forever
-     * after. Ids only — each settle re-reads the full fresh state inside
-     * its own transaction (the candidate list is advisory).
+     * The billing run's candidate scan: the ids of campaigns with billable
+     * work — ACTIVE with an unsettled window ending strictly before
+     * {@code horizonExclusive} (the run bills COMPLETE UTC days only), or
+     * ENDED-by-duration with an unsettled TAIL (the marker still at or
+     * before the ends date — CodeRabbit W5 r1, adopted: without the
+     * duration bound, every historical ENDED campaign stays in the scan
+     * forever as a daily no-op read, and the job's work grows with the
+     * campaign history).
+     *
+     * <p>ENDED-by-exhaustion never qualifies: {@code consume()} ends the
+     * campaign exactly when the budget is fully consumed, so its invariant
+     * is {@code consumed = budget} — the {@code consumed < budget} filter
+     * excludes it. ENDED-by-duration after its tail settles never
+     * qualifies either: the marker sits at {@code ends_date + 1}, past the
+     * ends date bound. Ids only — each settle re-reads the full fresh
+     * state inside its own transaction (the candidate list is advisory).
+     *
+     * <p><b>Native SQL by measurement:</b> the bound compares the DATE
+     * marker against the ends date derived from the TIMESTAMPTZ column —
+     * {@code (ends_at)::date} — a cast JPQL cannot express portably, and
+     * the theta form cannot either. Native queries bypass the
+     * {@code @SoftDelete} automatic restriction, so the predicate states
+     * {@code is_deleted = false} itself (the ListingViewsDailyRepository
+     * javadoc's own law).
      */
-    @Query("""
-            select c.id from AdCampaign c
-            where c.status in (com.marketplace.catalog.AdCampaignStatus.ACTIVE,
-                               com.marketplace.catalog.AdCampaignStatus.ENDED)
-              and c.billedThrough < :horizonExclusive
-            order by c.billedThrough asc, c.id asc
-            """)
+    @Query(value = """
+            select c.id from ad_campaigns c
+            where c.is_deleted = false
+              and (
+                    (c.status = 'ACTIVE' and c.billed_through < :horizonExclusive)
+                 or (c.status = 'ENDED' and c.consumed_cents < c.budget_cents
+                        and c.billed_through <= (c.ends_at)::date)
+              )
+            order by c.billed_through asc, c.id asc
+            """, nativeQuery = true)
     List<UUID> findBillableBefore(@Param("horizonExclusive") LocalDate horizonExclusive);
 }

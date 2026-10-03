@@ -112,13 +112,24 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
      * order lives IN the query (a Sort on the pageable would fight the
      * GROUP BY's own count expression — the caller passes an unsorted
      * pageable and takes this order verbatim).
+     *
+     * <p><b>The explicit countQuery (CodeRabbit W5 r1, adopted):</b> Spring
+     * Data's derived count for a GROUP BY query counts what the derivation
+     * preserves — the groups, not the reviews — so a page's totals and
+     * slice math would answer flag-groups instead of reviews. The count
+     * query states what a queue total IS: the number of reviews in the
+     * status, one row each, no grouping.
      */
-    @Query("""
+    @Query(value = """
             select r from Review r
               left join ReviewFlag f on f.reviewId = r.id
             where r.moderationStatus = :status
             group by r
             order by count(f.id) desc, r.createdAt asc, r.id asc
+            """,
+            countQuery = """
+            select count(r) from Review r
+            where r.moderationStatus = :status
             """)
     Page<Review> findModerationQueueBySignal(@Param("status") ReviewModerationStatus status, Pageable pageable);
 

@@ -89,13 +89,20 @@ public class LedgerPaymentEventListener {
     }
 
     private void processRefundDebit(PaymentIntentDetails intent) {
-        // W5: an ad bill has no booking to mirror — the refund path is the
-        // booking product's own bookkeeping. An ad-intent refund (an
-        // operator reversing a bill) is not a runtime flow this wave
-        // owns; skipping honestly beats crashing inside the listener.
+        // W5 (CodeRabbit round 1, adopted): an ad bill's refund MIRRORS its
+        // settlement credit exactly the way a booking's refund mirrors its
+        // own — the refund surface (admin refundPayment / a future PSP
+        // webhook) reaches AD-origin intents as surely as BOOKING ones
+        // (processIntent and confirmIntent are origin-blind), so skipping
+        // the debit would leave the provider's balance holding a settled
+        // credit the refund reversed. The debitFromRefund source key
+        // {@code refund-<intentId>} mirrors once, structurally.
         if (intent.isAdOrigin()) {
-            log.info("Ledger skipped the refund debit for ad-origin intent {} — the ad "
-                            + "bill reversal is an operator decision outside this wave", intent.paymentIntentId());
+            ledgerService.debitFromRefund(intent.consumerId(), intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: debited {} {} from provider {} — the ad bill's "
+                            + "refund mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
             return;
         }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());

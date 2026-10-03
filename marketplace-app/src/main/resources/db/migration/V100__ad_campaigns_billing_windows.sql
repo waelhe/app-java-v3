@@ -249,11 +249,11 @@ ALTER TABLE payment_intents
         CHECK ((origin = 'BOOKING' AND booking_id IS NOT NULL AND ad_campaign_id IS NULL)
             OR (origin = 'AD' AND booking_id IS NULL AND ad_campaign_id IS NOT NULL)) NOT VALID;
 
--- The ad intent's own lookup index (the billing listener resolves by
--- idempotency key; the campaign statement joins by ad_campaign_id).
-CREATE INDEX idx_payment_intents_ad_campaign
-    ON payment_intents (ad_campaign_id)
-    WHERE ad_campaign_id IS NOT NULL AND is_deleted = FALSE;
+-- The ad intent's own lookup index moved to V102: payment_intents is a
+-- LIVE table and the house law (V51/V67/V80/V81) builds live-table indexes
+-- with CREATE INDEX CONCURRENTLY in a non-transactional migration of its
+-- own — a plain CREATE INDEX would hold the write lock against every
+-- payment creation and settlement for the build's whole duration.
 
 ALTER TABLE payment_intents_aud ADD COLUMN IF NOT EXISTS origin VARCHAR(12);
 ALTER TABLE payment_intents_aud ADD COLUMN IF NOT EXISTS ad_campaign_id UUID;
