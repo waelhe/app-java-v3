@@ -36,12 +36,15 @@ import org.springframework.util.StringUtils;
  *   <li>{@code requireProofKey(true)} — public clients MUST use PKCE (RFC 9700 §2.1.1;
  *       the SAS how-to: "The requireProofKey setting is important to prevent the PKCE
  *       Downgrade Attack");</li>
- *   <li>{@code authorization_code} grant only — "Spring Authorization Server will not
- *       issue refresh tokens for a public client" (SAS how-to how-to-pkce, gh-297), so
- *       neither the refresh grant nor refresh {@link TokenSettings} are set: the access
- *       token is the only bearer credential, and re-authentication goes through the
- *       authorization-server session (short access TTL, honest trade-off documented in
- *       the plan §4);</li>
+ *   <li>{@code authorization_code} + {@code refresh_token} grants — refresh on a
+ *       public client follows the RFC 9700 §2.2.2 rotation branch (each use consumes
+ *       and reissues; a stolen refresh is single-use; legitimate use invalidates the
+ *       stolen one), which is also the Keycloak/Auth0/AppAuth practice. The SAS how-to
+ *       BFF recommendation (gh-297) is recorded here as the consciously declined
+ *       alternative with its reason: a native app cannot hold a BFF cookie across the
+ *       Custom-Tab/OkHttp boundary, and the framework sources (Security 7.1.x code and
+ *       refresh providers) enforce no {@code NONE}-client block — issuance is gated
+ *       only on grant registration;</li>
  *   <li>redirect URIs are <em>environment-driven</em> ({@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS},
  *       comma-separated; custom scheme per RFC 8252 or an https app link) — unlike the
  *       web client's constant, because the redirect belongs to the client application's
@@ -155,7 +158,8 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
                 .clientId(clientId)
                 .clientName(CLIENT_NAME)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN);
         redirectUris.forEach(builder::redirectUri);
         return builder
                 .scope("openid")
@@ -178,14 +182,17 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
     }
 
     /**
-     * No refresh-token settings on purpose: the refresh grant is absent and SAS "will not
-     * issue refresh tokens for a public client" (gh-297) — the access token (900s) plus
-     * the authorization-server session is the official pattern for this client class.
+     * Refresh TTL 90 days with rotation ({@code reuseRefreshTokens(false)}): any use
+     * within 90 days extends another 90, so an active install never logs out; rotation
+     * is the mitigation that makes device-held refresh acceptable (stolen token dies on
+     * first legitimate use). Access stays 900s so a leaked access token is short-lived.
      */
     private static TokenSettings buildTokenSettings() {
         return TokenSettings.builder()
                 .accessTokenTimeToLive(Duration.ofSeconds(900))
                 .authorizationCodeTimeToLive(Duration.ofSeconds(300))
+                .refreshTokenTimeToLive(Duration.ofDays(90))
+                .reuseRefreshTokens(false)
                 .build();
     }
 
