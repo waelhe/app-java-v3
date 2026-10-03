@@ -526,6 +526,29 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # L52 (the Nextdoor-2026 completeness wave — gap #7, the polls):
+      # the board's write pair. pollCreate sits at the postCreate/
+      # eventCreate/marketCreate write budget — a poll is the board's
+      # unit, a full authored record like a post (its 2–5 options ride
+      # the same transaction); pollVote rides the postReact/eventRsvp/
+      # groupMembership budget — a vote is the lightest id-pair write
+      # the platform owns (no authored text at all, the postReact model
+      # verbatim). The withdraw (DELETE) rides no limiter of its own
+      # (the postDelete/eventDelete/marketDelete stance verbatim: a
+      # member managing their own rows is not an abuse surface worth a
+      # budget) — this instance bounds the vote burst only. Same L29
+      # model: fail fast, 429 RL-001, conservative until real traffic;
+      # env-tunable via
+      # RESILIENCE4J_RATELIMITER_INSTANCES_POLLCREATE_LIMIT_FOR_PERIOD
+      # / ..._POLLVOTE_LIMIT_FOR_PERIOD.
+      pollCreate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      pollVote:
+        base-config: default
+        limit-for-period: 30
+        timeout-duration: 0
       # L44 (neighborhood community plan §5 — direct neighbor messages):
       # the direct conversation open — a distinct named instance (the plan's
       # own "حدود معدل conversationCreate مسماة محافظة", pre-declared in the

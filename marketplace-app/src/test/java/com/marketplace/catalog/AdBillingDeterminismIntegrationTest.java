@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * W5 (yelp-level plan §5 — the ads & billing wave, G24): THE acceptance
  * test — the plan's own words: «إعادة تشغيل الخصم أو تداخل جدولتين
  * لنافذة واحدة تنتج قيدًا واحدًا ومفتاح مصدر واحد (اختبار التكرار
- * الحتمي)» — over the REAL schema (Flyway V100/V101, ddl-auto=none), the
+ * الحتمي)» — over the REAL schema (Flyway V103/V104, ddl-auto=none), the
  * REAL event chain (the settle's AFTER_COMMIT event → the payments
  * listener's intent AND the ledger listener's AD_DEBIT entry), and the
  * REAL structural backstops (the charge's UNIQUE window, the ledger's

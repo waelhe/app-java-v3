@@ -19,7 +19,7 @@ import java.util.UUID;
  * promotion — the plan's «حملات (ad_campaigns: ميزانية، تسعير نقرة/ظهور،
  * مدة)». One campaign promotes ONE listing with ONE budget: the
  * {@code uq_ad_campaigns_one_active_per_listing} partial unique index
- * (V100) holds the single-live-campaign law the service's friendly 409
+ * (V103) holds the single-live-campaign law the service's friendly 409
  * states first.
  *
  * <p><b>The money model (the plan's own words):</b> {@code budgetCents}

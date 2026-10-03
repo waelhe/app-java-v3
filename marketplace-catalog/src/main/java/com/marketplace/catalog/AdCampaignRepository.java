@@ -17,7 +17,7 @@ import java.util.UUID;
  * <ol>
  *   <li>the boost read — «does this listing have a live paid promotion?»
  *       (the one ACTIVE campaign, at most one by the partial unique
- *       index V100);</li>
+ *       index V103);</li>
  *   <li>the provider's own campaign list ({@code /providers/me});</li>
  *   <li>the billing run's candidate scan — unsettled windows only.</li>
  * </ol>
@@ -30,7 +30,7 @@ import java.util.UUID;
  */
 public interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID>, JpaSpecificationExecutor<AdCampaign> {
 
-    /** The live paid promotion of a listing — at most one by the partial unique index (V100). */
+    /** The live paid promotion of a listing — at most one by the partial unique index (V103). */
     Optional<AdCampaign> findFirstByListingIdAndStatusOrderByIdAsc(UUID listingId, AdCampaignStatus status);
 
     /** The provider's own campaigns, newest first with the deterministic id tiebreak (L32). */

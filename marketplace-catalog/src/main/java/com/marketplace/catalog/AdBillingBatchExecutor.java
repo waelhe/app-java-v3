@@ -35,7 +35,7 @@ import java.util.UUID;
  * transaction (the atomicity the plan's window identity demands).</p>
  *
  * <p><b>The deterministic identity:</b> the charge's
- * {@code (campaign_id, window_start)} UNIQUE index (V100) makes a
+ * {@code (campaign_id, window_start)} UNIQUE index (V103) makes a
  * re-run or two overlapping schedules for one window produce at most
  * ONE row — the loser's {@link org.springframework.dao.DataIntegrityViolationException}
  * rolls its whole transaction back (the advance rides with it), and the

@@ -811,6 +811,61 @@ INSERT INTO neighborhood_group_memberships (id, group_id, member_id, is_deleted,
     ('47474747-4747-4747-8747-474747470016', '46464646-4646-4646-8646-464646460009', '35353535-3535-4535-8353-353535350003', FALSE, 0, 'seed', '2026-09-06 19:00:00+00', 'seed', '2026-09-06 19:00:00+00')
 ON CONFLICT (id) DO NOTHING;
 
+-- 3 neighborhood polls with their option sets (L52 — the polls
+-- «استطلاعات الرأي», gap #7): ONE poll per hood so every featured
+-- zone carries a live ballot. The first poll is the OWNER'S OWN
+-- measured verbatim (the S8 featured zone's interactive poll — the
+-- mamsha-hours question with its three options); the other two are
+-- natural chapters of the design's own recurring committee-ballot
+-- concepts (the seed's authored-content mandate, the market items'
+-- own spirit). The display layer's seeded vote counts (9/11/5) retire
+-- with the served contract — the counts below are the REAL vote rows
+-- («بعددها الحقيقي»), and أحمد (the demo member) stays UNVOTED on his
+-- hood's poll so the vote button is live for the browser round.
+-- Reference-shaped rows: ON CONFLICT DO UPDATE converges the seed's
+-- own edits.
+INSERT INTO neighborhood_polls (id, location_id, question, author_label, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
+    ('48484848-4848-4484-8484-484848480001', '11111111-1111-4111-8111-111111111104', 'ما المواعيد الأنسب لفتح الممشى المظلل خلال الصيف؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
+    ('48484848-4848-4484-8484-484848480002', '11111111-1111-4111-8111-111111111105', 'ما الخدمة التي تستحق التطوير أولًا في الضاحية؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('48484848-4848-4484-8484-484848480003', '11111111-1111-4111-8111-111111111106', 'أي يوم يناسب سوق الأحد الأسبوعي في الهامة؟', 'لجنة تطوير الحي', FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
+ON CONFLICT (id) DO UPDATE SET location_id = EXCLUDED.location_id, question = EXCLUDED.question,
+    author_label = EXCLUDED.author_label, is_deleted = FALSE;
+
+-- 9 poll options (L52): each set in the author's own display order
+-- (position 0..n — the design's own rows measured verbatim for the
+-- mamsha poll, natural committee vocabulary for the other two).
+INSERT INTO neighborhood_poll_options (id, poll_id, label, position, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
+    ('49494949-4949-4494-9494-494949490001', '48484848-4848-4484-8484-484848480001', 'الفجر — ٥:٣٠ إلى ٨:٠٠', 0, FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
+    ('49494949-4949-4494-9494-494949490002', '48484848-4848-4484-8484-484848480001', 'المساء — ٥:٠٠ إلى ٨:٣٠', 1, FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
+    ('49494949-4949-4494-9494-494949490003', '48484848-4848-4484-8484-484848480001', 'كلا الفترتين', 2, FALSE, 0, 'seed', '2026-09-27 18:00:00+00', 'seed', '2026-09-27 18:00:00+00'),
+    ('49494949-4949-4494-9494-494949490004', '48484848-4848-4484-8484-484848480002', 'إنارة الشوارع الجانبية', 0, FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('49494949-4949-4494-9494-494949490005', '48484848-4848-4484-8484-484848480002', 'مساحة لعب آمنة للأطفال', 1, FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('49494949-4949-4494-9494-494949490006', '48484848-4848-4484-8484-484848480002', 'مواقف سيارات منظمة', 2, FALSE, 0, 'seed', '2026-09-28 16:30:00+00', 'seed', '2026-09-28 16:30:00+00'),
+    ('49494949-4949-4494-9494-494949490007', '48484848-4848-4484-8484-484848480003', 'صباح الجمعة', 0, FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00'),
+    ('49494949-4949-4494-9494-494949490008', '48484848-4848-4484-8484-484848480003', 'صباح السبت', 1, FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00'),
+    ('49494949-4949-4494-9494-494949490009', '48484848-4848-4484-8484-484848480003', 'كلا اليومين', 2, FALSE, 0, 'seed', '2026-09-26 10:00:00+00', 'seed', '2026-09-26 10:00:00+00')
+ON CONFLICT (id) DO UPDATE SET poll_id = EXCLUDED.poll_id, label = EXCLUDED.label,
+    position = EXCLUDED.position, is_deleted = FALSE;
+
+-- 8 poll votes (L52): every voter is a member of the poll's OWN
+-- neighborhood (the vote gate's own law), one live vote per member per
+-- poll (the partial unique index's own law), and أحمد (the demo
+-- member) stays unvoted on his hood's poll so the vote button is live.
+-- The real counts: mamsha الفجر 1 / المساء 2 / كلا الفترتين 0 — the
+-- display layer's 9/11/5 retire with the served contract. Event-shaped
+-- rows: ON CONFLICT DO NOTHING (a withdrawn vote stays withdrawn on
+-- re-runs — the service's own row, never re-forced).
+INSERT INTO neighborhood_poll_votes (id, poll_id, option_id, member_id, is_deleted, version, created_by, created_at, updated_by, updated_at) VALUES
+    ('50505050-5050-4505-8505-505050500001', '48484848-4848-4484-8484-484848480001', '49494949-4949-4494-9494-494949490001', '35353535-3535-4535-8353-353535350001', FALSE, 0, 'seed', '2026-09-27 20:00:00+00', 'seed', '2026-09-27 20:00:00+00'),
+    ('50505050-5050-4505-8505-505050500002', '48484848-4848-4484-8484-484848480001', '49494949-4949-4494-9494-494949490002', '33333333-3333-4333-8333-333333330004', FALSE, 0, 'seed', '2026-09-27 21:30:00+00', 'seed', '2026-09-27 21:30:00+00'),
+    ('50505050-5050-4505-8505-505050500003', '48484848-4848-4484-8484-484848480001', '49494949-4949-4494-9494-494949490002', '35353535-3535-4535-8353-353535350004', FALSE, 0, 'seed', '2026-09-28 07:45:00+00', 'seed', '2026-09-28 07:45:00+00'),
+    ('50505050-5050-4505-8505-505050500004', '48484848-4848-4484-8484-484848480002', '49494949-4949-4494-9494-494949490004', '33333333-3333-4333-8333-333333330002', FALSE, 0, 'seed', '2026-09-28 18:00:00+00', 'seed', '2026-09-28 18:00:00+00'),
+    ('50505050-5050-4505-8505-505050500005', '48484848-4848-4484-8484-484848480002', '49494949-4949-4494-9494-494949490005', '33333333-3333-4333-8333-333333330005', FALSE, 0, 'seed', '2026-09-28 19:10:00+00', 'seed', '2026-09-28 19:10:00+00'),
+    ('50505050-5050-4505-8505-505050500006', '48484848-4848-4484-8484-484848480002', '49494949-4949-4494-9494-494949490005', '35353535-3535-4535-8353-353535350002', FALSE, 0, 'seed', '2026-09-29 08:20:00+00', 'seed', '2026-09-29 08:20:00+00'),
+    ('50505050-5050-4505-8505-505050500007', '48484848-4848-4484-8484-484848480003', '49494949-4949-4494-9494-494949490007', '33333333-3333-4333-8333-333333330003', FALSE, 0, 'seed', '2026-09-26 12:00:00+00', 'seed', '2026-09-26 12:00:00+00'),
+    ('50505050-5050-4505-8505-505050500008', '48484848-4848-4484-8484-484848480003', '49494949-4949-4494-9494-494949490008', '35353535-3535-4535-8353-353535350003', FALSE, 0, 'seed', '2026-09-26 13:40:00+00', 'seed', '2026-09-26 13:40:00+00')
+ON CONFLICT (id) DO NOTHING;
+
     END IF;
 END
 $seed$;

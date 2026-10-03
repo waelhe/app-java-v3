@@ -10,7 +10,7 @@ public enum LedgerEntryType {
      * bill's debit — the frozen window charge that consumes the
      * campaign's budget. A closed-set member like its siblings: the
      * database now pins the whole vocabulary through
-     * {@code chk_ledger_entries_entry_type} (V100/V101 — the §7 hard
+     * {@code chk_ledger_entries_entry_type} (V103/V104 — the §7 hard
      * rule: «نوع القيد تعداد Java مُغلق، لا صفًا في جدول إعدادات»).
      */
     AD_DEBIT

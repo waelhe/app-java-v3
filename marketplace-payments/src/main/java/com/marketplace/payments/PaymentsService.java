@@ -402,7 +402,7 @@ public class PaymentsService implements PaymentsSpi {
      * W5 (yelp-level plan §5 — the ads & billing wave, G24): the ad bill's
      * intent — the plan's «وظيفة خصم دورية تُصدر نية دفع». The payer is the
      * PROVIDER (the campaign's advertiser), the booking coupling is lifted
-     * the W1 way (origin + cross-column CHECK, V100), and idempotency is
+     * the W1 way (origin + cross-column CHECK, V103), and idempotency is
      * the DETERMINISTIC window key {@code ad-debit-{campaignId}-{windowStart}}
      * — the column's own UNIQUE index rejects the replay of a settled
      * window, the plan's structural answer to «إعادة المحاولة أو تداخل

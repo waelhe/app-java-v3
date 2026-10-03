@@ -27,7 +27,7 @@ import java.util.UUID;
  * («يجمد الاستهلاك المفوتر»).</p>
  *
  * <p><b>The deterministic identity:</b> {@code (campaignId, windowStart)}
- * is UNIQUE (V100) — a re-run of the debit or two overlapping schedules
+ * is UNIQUE (V103) — a re-run of the debit or two overlapping schedules
  * for one window can produce at most ONE row («إعادة تشغيل الخصم أو
  * تداخل جدولتين لنافذة واحدة تنتج قيدًا واحدًا ومفتاح مصدر واحد»);
  * the losing transaction rolls back entirely, and the ledger's

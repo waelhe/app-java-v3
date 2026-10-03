@@ -32,7 +32,7 @@ import java.util.UUID;
  * and belongs to the caller (the {@code verifyOwnership} law — the
  * providerId is a user id, resolved through the user-owned profile);
  * no live campaign exists for the listing (the single-promotion Yelp
- * semantics — the service's friendly 409, the V100 partial unique index
+ * semantics — the service's friendly 409, the V103 partial unique index
  * the concurrency backstop); the budget is positive and the prices
  * non-negative (the request's bean validation); the duration's end is
  * strictly in the future. The campaign starts NOW ({@code AdCampaign.start})

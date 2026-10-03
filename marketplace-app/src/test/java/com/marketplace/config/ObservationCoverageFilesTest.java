@@ -142,6 +142,7 @@ class ObservationCoverageFilesTest {
                     "community.membership.verification.queue",
                     "community.membership.verification.request",
                     "community.membership.verification.review",
+                    "community.poll.create", "community.poll.vote", "community.poll.withdraw",
                     "community.post.comment", "community.post.create", "community.post.delete",
                     "community.post.react", "community.post.unreact",
                     "community.report.create", "community.report.resolve")),
