@@ -80,8 +80,9 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getClientAuthenticationMethods())
                 .containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(saved.getAuthorizationGrantTypes())
-                .as("public clients get no refresh grant (SAS how-to, gh-297)")
-                .containsExactly(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .as("grant set is code+refresh (RegisteredClient stores them in a set, so order is not guaranteed)")
+                .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
+                        AuthorizationGrantType.REFRESH_TOKEN);
         assertThat(saved.getScopes()).containsExactlyInAnyOrder("openid", "profile");
         assertThat(saved.getRedirectUris())
                 .as("comma-separated env value is split, trimmed and blanks dropped"
@@ -93,6 +94,8 @@ class OAuth2PublicClientInitializerTest {
                 .isEqualTo(Duration.ofSeconds(900));
         assertThat(saved.getTokenSettings().getSettings().get("settings.token.authorization-code-time-to-live"))
                 .isEqualTo(Duration.ofSeconds(300));
+        assertThat(saved.getTokenSettings().getSettings().get("settings.token.refresh-token-time-to-live"))
+                .isEqualTo(Duration.ofDays(90));
         assertThat(saved.getTokenSettings().getIdTokenSignatureAlgorithm()).isNotNull();
         assertThat(saved.getTokenSettings().getAccessTokenFormat()).isNotNull();
     }
@@ -144,8 +147,28 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getClientSecret()).isNull();
         assertThat(saved.getClientAuthenticationMethods()).containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(saved.getAuthorizationGrantTypes())
-                .containsExactly(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .as("converged set is code+refresh (order not guaranteed)")
+                .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
+                        AuthorizationGrantType.REFRESH_TOKEN);
         assertThat(saved.getClientSettings().isRequireProofKey()).isTrue();
+    }
+
+    @Test
+    void refreshIsLongLivedRotatingNinetyDaySlidingWindow() {
+        when(repository.findByClientId("mobile")).thenReturn(null);
+
+        new OAuth2PublicClientInitializer(properties("mobile", REDIRECT), repository, environment(false)).run(null);
+
+        RegisteredClient saved = savedClientArgument();
+        assertThat(saved.getAuthorizationGrantTypes())
+                .as("mobile stays logged in: refresh grant present")
+                .contains(AuthorizationGrantType.REFRESH_TOKEN);
+        assertThat(saved.getTokenSettings().getRefreshTokenTimeToLive())
+                .as("90-day sliding window: any use within 90 days extends another 90")
+                .isEqualTo(Duration.ofDays(90));
+        assertThat(saved.getTokenSettings().isReuseRefreshTokens())
+                .as("rotation on: a stolen refresh is single-use; legitimate use kills it")
+                .isFalse();
     }
 
     private static Environment environment(boolean prodProfileActive) {
@@ -167,6 +190,7 @@ class OAuth2PublicClientInitializerTest {
                 .clientName("Marketplace Public Client")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri(redirectUri)
                 .scope("openid")
                 .scope("profile")
@@ -177,6 +201,8 @@ class OAuth2PublicClientInitializerTest {
         return builder.tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofSeconds(900))
                         .authorizationCodeTimeToLive(Duration.ofSeconds(300))
+                        .refreshTokenTimeToLive(Duration.ofDays(90))
+                        .reuseRefreshTokens(false)
                         .build())
                 .build();
     }
