@@ -69,6 +69,15 @@ class CatalogModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.GeoLookupPort geoLookupPort;
 
+    // W3 (G17/G20): CatalogService composes the stars floor and the
+    // results' star pair through ReviewStatsPort — the reviews module is
+    // outside this slice exactly like the ports above (the same house
+    // pattern; the full-context SearchRankingIntegrationTest covers the
+    // real adapter). The CI-measured round: without this mock the context
+    // boot fails on CatalogService's constructor.
+    @MockitoBean
+    com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
+
     /**
      * L33: the catalog lifecycle's Clock — the production bean lives in
      * platform-infra's ClockConfig, which this slice does not scan (the

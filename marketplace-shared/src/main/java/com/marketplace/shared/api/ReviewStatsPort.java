@@ -67,6 +67,29 @@ public interface ReviewStatsPort {
     Optional<ReviewStats> findGeneralStatsByReviewId(UUID reviewId);
 
     /**
+     * W3 (yelp-level plan §5 — the discovery & ranking wave, G20): the
+     * BATCH form of the verified aggregate — one grouped query for a
+     * whole results page's distinct providers, never per-row lookups
+     * (the toSummaryPage batch-resolution discipline). Same population
+     * law as {@link #findStatsByProviderId(UUID)}: forward
+     * {@code origin = 'BOOKING'}, {@code PUBLISHED}, live reviews only.
+     * Providers absent from the answer simply have no verified reviews —
+     * the honest not-yet-rated row, never a zeroed guess.
+     */
+    java.util.Map<UUID, ReviewStats> findStatsByProviderUserIds(java.util.Set<UUID> providerUserIds);
+
+    /**
+     * W3 (G17 — «فلتر حد أدنى من النجوم»): the rating-floor set — every
+     * provider whose RECOMPUTED verified average answers
+     * {@code averageRating >= minRating}. The search flow composes this
+     * as the set-restriction pattern (the availability whitelist's own
+     * shape): an empty answer is the caller's honest empty page, never a
+     * silently-dropped filter. Providers with no verified reviews never
+     * match any floor — «4 نجوم فأعلى» means the stars exist.
+     */
+    java.util.Set<UUID> findProviderUserIdsWithRatingAtLeast(double minRating);
+
+    /**
      * W2 (yelp-level plan §5 — the business page): the VERIFIED rating
      * histogram — the «توزيع نجوم» block over the same population as
      * {@link #findStatsByProviderId(UUID)} (forward, BOOKING, PUBLISHED,

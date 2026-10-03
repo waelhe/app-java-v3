@@ -57,6 +57,7 @@ public class UserDataExportService {
     private final NotificationExportPort notificationExportPort;
     private final SavedSearchExportPort savedSearchExportPort;
     private final CommunityExportPort communityExportPort;
+    private final com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
     private final JdbcTemplate jdbcTemplate;
 
     public UserDataExportService(BookingExportPort bookingExportPort,
@@ -66,6 +67,7 @@ public class UserDataExportService {
                                  NotificationExportPort notificationExportPort,
                                  SavedSearchExportPort savedSearchExportPort,
                                  CommunityExportPort communityExportPort,
+                                 com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort,
                                  JdbcTemplate jdbcTemplate) {
         this.bookingExportPort = bookingExportPort;
         this.reviewExportPort = reviewExportPort;
@@ -74,6 +76,7 @@ public class UserDataExportService {
         this.notificationExportPort = notificationExportPort;
         this.savedSearchExportPort = savedSearchExportPort;
         this.communityExportPort = communityExportPort;
+        this.listingFavoritesExportPort = listingFavoritesExportPort;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -107,6 +110,9 @@ public class UserDataExportService {
         var communityMarketItems = communityExportPort.exportMarketItemsForOwner(user.getId());
         var communityGroupMemberships = communityExportPort.exportGroupMembershipsForOwner(user.getId());
         var providerFollows = exportFollows(user.getId());
+        // W3 (G19, the review round's export leg): the member's saved
+        // listings — the relation is the subject's own declared data.
+        var listingFavorites = listingFavoritesExportPort.exportForOwner(user.getId());
 
         var response = new UserDataExportResponse(
                 new UserDataExportResponse.ExportMetadata(
@@ -134,7 +140,8 @@ public class UserDataExportService {
                 communityEventSeats,
                 communityMarketItems,
                 communityGroupMemberships,
-                providerFollows);
+                providerFollows,
+                listingFavorites);
 
         // The execution record — section sizes only; exported content never
         // enters the log store (the same content-out discipline the
@@ -143,13 +150,13 @@ public class UserDataExportService {
                         + "messages={}, media={}, notifications={}, savedSearches={}, memberships={}, "
                         + "communityPosts={}, communityComments={}, communityReactions={}, "
                         + "communityEvents={}, communityEventSeats={}, communityMarketItems={}, "
-                        + "communityGroupMemberships={}, providerFollows={}",
+                        + "communityGroupMemberships={}, providerFollows={}, listingFavorites={}",
                 user.getId(), bookings.size(), reviews.size(),
                 messaging.conversations().size(), messaging.messages().size(),
                 media.size(), notifications.size(), savedSearches.size(), memberships.size(),
                 communityPosts.size(), communityComments.size(), communityReactions.size(),
                 communityEvents.size(), communityEventSeats.size(), communityMarketItems.size(),
-                communityGroupMemberships.size(), providerFollows.size());
+                communityGroupMemberships.size(), providerFollows.size(), listingFavorites.size());
         return response;
     }
 

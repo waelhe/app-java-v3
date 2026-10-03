@@ -77,13 +77,13 @@ class SavedSearchMatcherTest {
 
     private static SearchCriteria property(int minRooms) {
         return new SearchCriteria(null, null, null, null, null, null, null,
-                LOCATION, PropertyPurpose.RENT, null, minRooms, null, null, null, null, null);
+                LOCATION, PropertyPurpose.RENT, null, minRooms, null, null, null, null, null, null);
     }
 
     private static SearchCriteria radius() {
         return new SearchCriteria(null, null, null, null, null, null, null,
                 null, null, null, null, null, null,
-                new BigDecimal("33.558889"), new BigDecimal("36.056944"), new BigDecimal("10"));
+                new BigDecimal("33.558889"), new BigDecimal("36.056944"), new BigDecimal("10"), null);
     }
 
     private static SearchCriteria window() {
@@ -199,6 +199,6 @@ class SavedSearchMatcherTest {
 
     private static ListingSummary summary() {
         return new ListingSummary(LISTING, "title", "stay", new java.math.BigDecimal("10.00"),
-                null, null);
+                null, null, null, 0L);
     }
 }

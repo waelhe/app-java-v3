@@ -200,7 +200,7 @@ spring:
     # settings table, keyed by setting key, evicted by SystemSettingsService
     # through the same relay (its absent case is cached too, so a create
     # evicts as well).
-    cache-names: catalog-active-v2,catalog-by-category-v2,catalog-search-v2,pricing-calculations,search-results-v4,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
+    cache-names: catalog-active-v3,catalog-by-category-v3,catalog-search-v3,pricing-calculations,search-results-v5,availability,bookings,users,userSubjects,conversations,paymentIntents,reviews,providers,provider-stats,geo-tree,system-settings
     redis:
       # Entry TTL — the framework's own expiration channel for cache entries.
       # Evidence: spring-configuration-metadata.json of spring-boot-cache

@@ -29,6 +29,17 @@ import java.util.List;
  * boundary: never a silent direction flip (an asc-baked query serving a
  * desc request) and never a second query pair for a use case the plan
  * does not carry.
+ *
+ * <p>W3 (yelp-level plan §5 — G16) adds {@code rating} — HIGHEST-FIRST
+ * only (the Yelp "highest rated" product shape; the plan's own row:
+ * «ترتيب حسب التقييم»): it maps onto the V99 {@code rankingScore} column —
+ * the daily-computed composite rating × log(count) × completeness ×
+ * recency — so an equal-stars tie is broken by review VOLUME, then
+ * completeness, then recency (the wave's own acceptance). Ascending is a
+ * 400 at the whitelist, the {@code distance} marker's own loud-boundary
+ * law (a lowest-rated-first surface is not a product the plan carries).
+ * The not-yet-ranked NULL rows order LAST — the specification's
+ * ranked-first CASE tier owns that (a bare DESC would crown them).
  */
 final class SearchSorts {
 
@@ -77,12 +88,26 @@ final class SearchSorts {
         return switch (order.getProperty()) {
             case "price" -> Sort.Order.by("priceCents").with(order.getDirection());
             case "newest" -> Sort.Order.by("createdAt").with(order.getDirection());
+            case "rating" -> ratingOrder(order);
             case AREA -> order; // marker — the service routes it to the property flow
             case DISTANCE -> distanceOrder(order);
             default -> throw new BadRequestException(
                     "unsupported sort property: " + order.getProperty()
-                            + " (supported: price, newest, area, distance)");
+                            + " (supported: price, newest, rating, area, distance)");
         };
+    }
+
+    /**
+     * W3 (G16): highest-first only — the composite score's own direction.
+     * Ascending is rejected loudly at the boundary, the {@code distance}
+     * marker's own law: never a silent flip of the product's meaning.
+     */
+    private static Sort.Order ratingOrder(Sort.Order order) {
+        if (order.getDirection() == Sort.Direction.ASC) {
+            throw new BadRequestException(
+                    "sort=rating orders highest-first (ascending is not supported)");
+        }
+        return Sort.Order.by("rankingScore").with(Sort.Direction.DESC);
     }
 
     /**

@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +80,9 @@ class CatalogServiceTest {
 
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
+
+    @MockitoBean
+    private com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
 
     private ProviderListing listing(ListingStatus status) {
         return Instancio.of(ProviderListing.class)
@@ -663,4 +667,110 @@ class CatalogServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+
+    // ---- W3 (yelp-level plan §5): the rating floor and the stars -----------
+
+    /** A floor-carrying criteria search routes onto the restricted twin. */
+    @Test
+    void searchByCriteria_withMinRating_routesToTheRestrictedQuery() {
+        java.util.UUID floorProvider = java.util.UUID.randomUUID();
+        when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(4.0))
+                .thenReturn(java.util.Set.of(floorProvider));
+        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, java.math.BigDecimal.valueOf(4));
+
+        var result = catalogService.searchByCriteria(criteria, PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        verify(listingRepository).searchByCriteriaRestricted(
+                eq(null), eq(null), eq(null), eq(null), eq(java.util.Set.of(floorProvider)),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        verify(listingRepository, org.mockito.Mockito.never()).searchByCriteria(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    /** No provider answers the floor: the honest empty page, no query. */
+    @Test
+    void searchByCriteria_emptyFloor_answersTheHonestEmptyPage() {
+        when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(5.0))
+                .thenReturn(java.util.Set.of());
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, java.math.BigDecimal.valueOf(5));
+
+        var result = catalogService.searchByCriteria(criteria, PagedRequest.of(0, 10));
+
+        assertThat(result.totalElements()).isZero();
+        assertThat(result.content()).isEmpty();
+        verifyNoInteractions(listingRepository);
+    }
+
+    /** The floor INTERSECTS the caller's whitelist (window + stars compose). */
+    @Test
+    void searchByCriteriaRestricted_floorIntersectsTheWhitelist() {
+        java.util.UUID both = java.util.UUID.randomUUID();
+        java.util.UUID whitelistOnly = java.util.UUID.randomUUID();
+        java.util.UUID floorOnly = java.util.UUID.randomUUID();
+        when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(4.0))
+                .thenReturn(java.util.Set.of(both, floorOnly));
+        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        var criteria = new com.marketplace.shared.api.SearchCriteria(
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, java.math.BigDecimal.valueOf(4));
+
+        catalogService.searchByCriteriaRestricted(
+                criteria, java.util.Set.of(both, whitelistOnly), PagedRequest.of(0, 10));
+
+        // The intersection alone rides the query — a provider outside the
+        // window whitelist never matches however high its stars, and a
+        // below-floor provider never matches however available it is.
+        verify(listingRepository).searchByCriteriaRestricted(
+                eq(null), eq(null), eq(null), eq(null), eq(java.util.Set.of(both)),
+                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    /** The stars ride the summary rows (G20) — the batched stats composition. */
+    @Test
+    void searchByCriteria_composesTheProviderStarsOntoTheRows() {
+        ProviderListing active = listing(ListingStatus.ACTIVE);
+        when(listingRepository.searchByCriteria(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(active)));
+        when(providerNameResolver.resolveNames(any()))
+                .thenReturn(java.util.Map.of(active.getProviderId(), "المزوّد"));
+        when(reviewStatsPort.findStatsByProviderUserIds(any()))
+                .thenReturn(java.util.Map.of(active.getProviderId(),
+                        new com.marketplace.shared.api.ReviewStats(active.getProviderId(), 4.5, 23L)));
+
+        var result = catalogService.searchByCriteria(
+                new com.marketplace.shared.api.SearchCriteria(null, null, null, null),
+                PagedRequest.of(0, 10));
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).providerRating()).isEqualTo(4.5);
+        assertThat(result.content().get(0).providerReviewCount()).isEqualTo(23L);
+    }
+
+    /** The not-yet-rated provider's row: null rating, zero count — never a fabricated zero. */
+    @Test
+    void searchByCriteria_unratedProviderRidesAnHonestNull() {
+        ProviderListing active = listing(ListingStatus.ACTIVE);
+        when(listingRepository.searchByCriteria(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(active)));
+        when(providerNameResolver.resolveNames(any())).thenReturn(java.util.Map.of());
+        when(reviewStatsPort.findStatsByProviderUserIds(any())).thenReturn(java.util.Map.of());
+
+        var result = catalogService.searchByCriteria(
+                new com.marketplace.shared.api.SearchCriteria(null, null, null, null),
+                PagedRequest.of(0, 10));
+
+        assertThat(result.content().get(0).providerRating()).isNull();
+        assertThat(result.content().get(0).providerReviewCount()).isZero();
+    }
 }

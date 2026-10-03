@@ -70,6 +70,9 @@ class CatalogServiceSecurityTest {
     @MockitoBean
     private ProviderLookupPort providerLookupPort;
 
+    @MockitoBean
+    private com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
+
     @Test
     @WithMockUser(roles = "USER")
     void create_whenNotProvider_thenAccessDenied() {

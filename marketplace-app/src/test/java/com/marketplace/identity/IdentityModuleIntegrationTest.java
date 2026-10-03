@@ -87,6 +87,14 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.CommunityExportPort communityExportPort;
 
+    // W3 (G19, the review round's export leg): the favorites section — the
+    // catalog module's ListingFavoritesExportPort (its adapter lives
+    // outside this slice); the same house pattern as the seven ports
+    // above. The CI-measured round: without this mock the context boot
+    // fails on UserDataExportService's constructor.
+    @MockitoBean
+    com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
+
     // W4 (G28): the public reviewer page's stats seam — the reviews module's
     // ReviewerStatsPort (its adapter lives outside this slice); the same
     // house pattern as the ports above. The CI-measured family round (W3's

@@ -19,6 +19,19 @@ import java.util.UUID;
  * Specification declares serialVersionUID as 0L unless explicitly declared
  * and waives the match requirement — the canonical-constructor form is
  * the serialization contract.
+ *
+ * <p>W3 (yelp-level plan §5 — the discovery & ranking wave, G20): the row
+ * gains the provider's stars — {@code providerRating} +
+ * {@code providerReviewCount}, the RECOMPUTED verified pair resolved in
+ * ONE batch per page through the exposed stats port (the names' own
+ * toSummaryPage discipline; a page costs a bounded number of queries,
+ * never per-row). {@code providerRating} is {@code null} for a provider
+ * with no verified reviews — the honest not-yet-rated row (never a
+ * fabricated zero); the count is {@code 0} in that case. The cached form
+ * rides the existing bounded-staleness discipline (the provider-name
+ * twin: review writes do not evict search pages; the 1h TTL bounds the
+ * drift) — the cache-name suffix bumps with this component change (the
+ * D-R6 rule pinned by {@code ListingSummaryCacheContractFilesTest}).
  */
 public record ListingSummary(
         UUID id,
@@ -26,6 +39,8 @@ public record ListingSummary(
         String category,
         BigDecimal price,
         String currency,
-        String providerName
+        String providerName,
+        Double providerRating,
+        long providerReviewCount
 ) implements Serializable {
 }

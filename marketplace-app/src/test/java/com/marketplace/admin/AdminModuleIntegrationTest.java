@@ -117,6 +117,21 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.GeoLookupPort geoLookupPort;
 
+    // W3 (G17/G20): the ALL_DEPENDENCIES closure pulls CatalogService, whose
+    // stars floor and results' star pair need the reviews module's port —
+    // reviews is NOT in admin's dependency closure, so the same house mock
+    // pattern applies (the CI-measured round: without it the context boot
+    // fails on CatalogService's constructor).
+    @MockitoBean
+    com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
+
+    // W3 (G19, the export leg): the closure also pulls identity's
+    // UserDataExportService, whose favorites section needs the catalog
+    // module's port — the same house mock pattern (present-or-replaced,
+    // either way the closure boots; the CI-measured round).
+    @MockitoBean
+    com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
+
     // W4 (G28): the closure also pulls identity's ReviewerPublicProfileService,
     // whose stats seam needs the reviews module's port — reviews is not in
     // admin's dependency closure, so the same house mock pattern applies.

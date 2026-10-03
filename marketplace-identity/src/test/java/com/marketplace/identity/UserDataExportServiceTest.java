@@ -45,12 +45,14 @@ class UserDataExportServiceTest {
     private final NotificationExportPort notificationExportPort = mock(NotificationExportPort.class);
     private final SavedSearchExportPort savedSearchExportPort = mock(SavedSearchExportPort.class);
     private final CommunityExportPort communityExportPort = mock(CommunityExportPort.class);
+    private final com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort =
+            mock(com.marketplace.shared.api.ListingFavoritesExportPort.class);
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
     private final UserDataExportService service = new UserDataExportService(
             bookingExportPort, reviewExportPort, messagingExportPort,
             mediaExportPort, notificationExportPort, savedSearchExportPort,
-            communityExportPort, jdbcTemplate);
+            communityExportPort, listingFavoritesExportPort, jdbcTemplate);
 
     @Test
     void aggregatesEveryModuleShareWithTheBoundaryNoticeAndTheProfile() {

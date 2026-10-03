@@ -158,6 +158,43 @@ public interface ReviewRepository extends JpaRepository<Review, UUID>, RevisionR
     Optional<ReviewStats> getStatsByProviderId(UUID providerId);
 
     /**
+     * W3 (yelp-level plan §5 — G20): the BATCH form of the verified
+     * aggregate — one grouped query for a whole results page's distinct
+     * providers. Same population law as {@link #getStatsByProviderId}:
+     * forward, BOOKING-origin, PUBLISHED, live reviews only. Providers
+     * with no matching reviews are simply absent from the answer.
+     */
+    @Query("""
+            select new com.marketplace.shared.api.ReviewStats(
+                r.providerId, avg(r.rating), count(r))
+            from Review r
+            where r.providerId in :providerIds
+              and r.direction = com.marketplace.reviews.ReviewDirection.CONSUMER_TO_PROVIDER
+              and r.origin = 'BOOKING'
+              and r.moderationStatus = com.marketplace.reviews.ReviewModerationStatus.PUBLISHED
+            group by r.providerId
+            """)
+    List<ReviewStats> getStatsByProviderIds(Collection<UUID> providerIds);
+
+    /**
+     * W3 (G17 — «فلتر حد أدنى من النجوم»): the rating-floor set — the
+     * providers whose recomputed verified average answers
+     * {@code avg(rating) >= :minRating}. The HAVING clause is the filter's
+     * whole truth: a provider with no verified reviews has no group at
+     * all and can never match any floor.
+     */
+    @Query("""
+            select r.providerId
+            from Review r
+            where r.direction = com.marketplace.reviews.ReviewDirection.CONSUMER_TO_PROVIDER
+              and r.origin = 'BOOKING'
+              and r.moderationStatus = com.marketplace.reviews.ReviewModerationStatus.PUBLISHED
+            group by r.providerId
+            having avg(r.rating) >= :minRating
+            """)
+    List<UUID> findProviderIdsWithVerifiedRatingAtLeast(double minRating);
+
+    /**
      * W1 (§4.4): the GENERAL (organic) aggregate — same shape, origin
      * filter flipped. Feeds the second stored pair
      * ({@code rating_general_average}/{@code rating_general_count}) and the

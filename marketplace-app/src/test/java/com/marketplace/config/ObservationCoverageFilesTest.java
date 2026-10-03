@@ -127,7 +127,10 @@ class ObservationCoverageFilesTest {
                     "catalog.category-attributes.register",
                     "catalog.category-attributes.remove",
                     "catalog.category-attributes.update",
-                    "catalog.create.listing")),
+                    "catalog.create.listing",
+                    // W3 (G19): the favorites surface's two commands — the
+                    // same commands-not-reads policy as every house entry.
+                    "catalog.favorites.save", "catalog.favorites.unsave")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
