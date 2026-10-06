@@ -12,7 +12,6 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authorization.AuthorizationResult;
-import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -21,6 +20,19 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+/**
+ * The WebSocket message-authorization rules (§7-а of the Spring Security
+ * 7.1.1 compliance wave) — every rule of
+ * {@code WebSocketAuthorizationConfig#messageAuthorizationManager()} driven
+ * through the real {@link AuthorizationManager} against constructed STOMP
+ * messages: the tokenless-CONNECT guard (null destination requires
+ * authentication), the /app send guard, the own-notifications SpEL rule,
+ * the conversation-participant guard, the deny-all close, and the
+ * participant/non-participant/unknown-conversation matrix. The wiring those
+ * rules run inside (the documented manual no-annotation configuration) is
+ * pinned by {@code WebSocketSecurityWiringTest}; the end-to-end CONNECT
+ * flow by the marketplace-app websocket integration tests.
+ */
 @ExtendWith(MockitoExtension.class)
 class WebSocketSecurityConfigTest {
 
@@ -32,8 +44,8 @@ class WebSocketSecurityConfigTest {
     @BeforeEach
     void setUp() {
         var conversationManager = new ConversationSubscriptionAuthorizationManager(conversationRepository);
-        authorizationManager = new WebSocketSecurityConfig(conversationManager)
-                .messageAuthorizationManager(MessageMatcherDelegatingAuthorizationManager.builder());
+        authorizationManager = new WebSocketAuthorizationConfig(conversationManager)
+                .messageAuthorizationManager();
     }
 
     @Test
