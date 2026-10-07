@@ -305,6 +305,29 @@ public class NotificationService {
         );
     }
 
+    /**
+     * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
+     * notification for the conversation's OTHER participant — the same
+     * delivery shape as the event points above (in-app row always lands;
+     * WebSocket and email ride their L22 per-type/channel preferences).
+     * The recipient arrives resolved at the source (the messaging
+     * publisher holds the conversation) — this method delivers
+     * unconditionally, so the delivery contract stays one shape for every
+     * caller (the onPostCommented criterion-4 precedent).
+     */
+    public void onMessageReceived(UUID conversationId, UUID recipientId) {
+        String message = "New message in your conversation: " + conversationId;
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(recipientId,
+                NotificationType.MESSAGE_RECEIVED.name(), message));
+        if (preferences.isChannelEnabled(recipientId,
+                NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(recipientId, "New Message",
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
+    }
+
     @Transactional(readOnly = true)
     public Page<NotificationResponse> getMyNotifications(Authentication authentication, Pageable pageable) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);

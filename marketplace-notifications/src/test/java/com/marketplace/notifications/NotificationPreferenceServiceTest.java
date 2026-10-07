@@ -67,11 +67,12 @@ class NotificationPreferenceServiceTest {
 
     @Test
     void getMyPreferencesReturnsTheFullEffectiveMatrix() {
-        // Twenty-seven rows today (9 types x 3 channels — L34 added LEAD_RECEIVED,
+        // Thirty rows today (10 types x 3 channels — L34 added LEAD_RECEIVED,
         // L35 added SAVED_SEARCH_MATCH, L42 added POST_COMMENTED, L46 added
         // NEW_LISTING_IN_NEIGHBORHOOD, L45 added CONTENT_MODERATED, L47 added
-        // POST_REACTED, W4 added FOLLOWED_PROVIDER_NEW_LISTING) in stable
-        // order, all enabled except the one stored override.
+        // POST_REACTED, W4 added FOLLOWED_PROVIDER_NEW_LISTING, B-08 added
+        // MESSAGE_RECEIVED) in stable order, all enabled except the one
+        // stored override.
         NotificationPreference override = NotificationPreference.create(
                 USER_ID, NotificationType.PAYMENT_STATE, NotificationChannel.WS, false);
         NotificationPreferenceRepository repository = mock(NotificationPreferenceRepository.class);
@@ -80,7 +81,7 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(27);
+        assertThat(matrix).hasSize(30);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
@@ -108,7 +109,10 @@ class NotificationPreferenceServiceTest {
                 new NotificationPreferenceView(NotificationType.POST_REACTED, NotificationChannel.WS, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.WS, true));
+                new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.WS, true));
     }
 
     @Test
@@ -134,7 +138,7 @@ class NotificationPreferenceServiceTest {
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3, default on
+                        true, true, true, true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + B-08: MESSAGE_RECEIVED x3, default on
     }
 
     @Test
@@ -232,6 +236,6 @@ class NotificationPreferenceServiceTest {
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3, default on
+                        true, true, true, true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + B-08: MESSAGE_RECEIVED x3, default on
     }
 }

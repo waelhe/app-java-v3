@@ -358,6 +358,45 @@ class MessagingServiceTest {
         assertEquals(original.getId(), outcome.message().id());
         verify(messageRepository, never()).save(any());
         verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        // B-08: the replay never re-publishes the arrival fact either —
+        // the original send already notified the recipient.
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * B-08 (compliance plan 0.10 — the unit's publication gate): every
+     * real send publishes the arrival fact with the recipient resolved at
+     * the source — the OTHER participant, never the sender. The replay
+     * (above) never re-publishes.
+     */
+    @Test
+    void sendMessage_publishesMessageReceivedEventForTheOtherParticipant() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        service.sendMessage(conv.getId(), participantA, "Hello!");
+
+        org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertTrue(captor.getValue() instanceof MessageReceivedEvent);
+        MessageReceivedEvent event = (MessageReceivedEvent) captor.getValue();
+        assertEquals(conv.getId(), event.conversationId());
+        assertEquals(participantA, event.senderId());
+        assertEquals(participantB, event.recipientId());
+        assertNotNull(event.messageId());
     }
 
     /**

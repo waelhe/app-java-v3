@@ -59,6 +59,16 @@ package com.marketplace.notifications;
  * "exactly once"), so one event is one notification; the delivery rides
  * the standing L22 per-type/channel preference matrix from day one, no
  * new mechanism.
+ *
+ * <p>B-08 (compliance plan 0.10 — the measured defect §3.4-8): {@code
+ * MESSAGE_RECEIVED} joins as the tenth type — the same point addition
+ * (the V151 CHECK widens the DB-side membership guard to match, V152
+ * validates it under SHARE UPDATE EXCLUSIVE alone). The recipient is the
+ * conversation's OTHER participant, resolved at the source by the
+ * messaging publisher ({@code MessageReceivedEvent} carries the arrival
+ * fact complete) — this listener never re-derives party facts; one event
+ * is one notification, and the delivery rides the standing L22
+ * per-type/channel preference matrix from day one, no new mechanism.
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -69,5 +79,6 @@ public enum NotificationType {
     NEW_LISTING_IN_NEIGHBORHOOD,
     CONTENT_MODERATED,
     POST_REACTED,
-    FOLLOWED_PROVIDER_NEW_LISTING
+    FOLLOWED_PROVIDER_NEW_LISTING,
+    MESSAGE_RECEIVED
 }

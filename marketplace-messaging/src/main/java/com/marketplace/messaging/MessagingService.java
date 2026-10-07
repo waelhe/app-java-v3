@@ -222,7 +222,7 @@ public class MessagingService {
      */
     @Observed(name = "messaging.send")
     public SendMessageOutcome sendMessage(UUID conversationId, UUID senderId, String content, String idempotencyKey) {
-        getConversation(conversationId, senderId);
+        Conversation conversation = getConversation(conversationId, senderId);
         if (idempotencyKey != null) {
             Optional<Message> existing = messageRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
@@ -231,13 +231,23 @@ public class MessagingService {
                 }
                 // Replay: the original WebSocket push already reached the
                 // topic — a second broadcast would duplicate it for every
-                // other subscriber.
+                // other subscriber, and the arrival notification was
+                // already delivered by the original send.
                 return new SendMessageOutcome(messageMapper.toResponse(existing.get()), false);
             }
         }
         Message saved = messageRepository.save(Message.create(conversationId, senderId, content, idempotencyKey));
         MessageResponse response = messageMapper.toResponse(saved);
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, response);
+        // B-08 (compliance plan 0.10): the arrival fact for the OTHER
+        // participant — the recipient resolved at the source (the
+        // conversation is already loaded here), so the notifications
+        // listener never re-derives party facts. A replay never
+        // re-publishes (the original send already notified).
+        UUID recipientId = conversation.getParticipantA().equals(senderId)
+                ? conversation.getParticipantB()
+                : conversation.getParticipantA();
+        eventPublisher.publishEvent(new MessageReceivedEvent(saved.getId(), conversationId, senderId, recipientId));
         return new SendMessageOutcome(response, true);
     }
 
