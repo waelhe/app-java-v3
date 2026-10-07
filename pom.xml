@@ -75,6 +75,20 @@
              official wiremock.org "Download and Installation" test-dependency
              recipe (org.wiremock:wiremock, test scope). -->
         <wiremock.version>3.13.2</wiremock.version>
+        <!-- Test-only: GreenMail (exception #16) — in-JVM SMTP server, the
+             de-facto mail-testing standard of the Spring ecosystem (pure
+             Java, zero containers). Adopted by the owner's word 2026-10-07
+             (community candidates wave, §5.3 declaration), coordinates per
+             the official GreenMail JUnit 5 recipe (com.icegreen:
+             greenmail-junit5). Not managed by the Boot 4.1.1 BOM (verified:
+             no greenmail entry in spring-boot-dependencies-4.1.1.pom). -->
+        <greenmail.version>2.1.14</greenmail.version>
+        <!-- Test-only: jqwik (exception #17) — property-based testing engine
+             (jqwik user guide: net.jqwik:jqwik), complementing Instancio
+             fixture generation with generated-input invariant checking for
+             money arithmetic (ledger credit/debit/balance). Not managed by
+             the Boot 4.1.1 BOM (verified absent). Stable line only. -->
+        <jqwik.version>1.10.1</jqwik.version>
         <git-commit-id.version>10.0.1</git-commit-id.version>
         <!-- Boot 4.1.1 managed versions lag behind transitive dep requirements; 3.2.2 → 3.2.3: CVE-2026-91776 + CVE-2026-91777 on tools.jackson.core:jackson-databind (HIGH, fixed in 3.2.3 — the same trivy gate measurement as the Jackson-2 bump) -->
         <jackson.version>3.2.3</jackson.version>
@@ -190,6 +204,23 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <!-- Exception #16: GreenMail — test-only in-JVM mail server
+                 (property comment above). Consumed by marketplace-platform-infra
+                 for the EmailService real-SMTP test; the upcoming A-04
+                 password-reset journey IT follows the same seam. -->
+            <dependency>
+                <groupId>com.icegreen</groupId>
+                <artifactId>greenmail-junit5</artifactId>
+                <version>${greenmail.version}</version>
+            </dependency>
+            <!-- Exception #17: jqwik — test-only property-based engine
+                 (property comment above). Consumed by marketplace-ledger for
+                 money-arithmetic invariants over generated inputs. -->
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
             </dependency>
             <!-- Exception: commons-lang3 — springdoc pulls 3.20.0, Boot BOM pins 3.19.0 -->
             <dependency>
