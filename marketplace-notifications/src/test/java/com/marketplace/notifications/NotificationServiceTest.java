@@ -49,8 +49,14 @@ class NotificationServiceTest {
                                               Optional<com.marketplace.shared.email.EmailService> emailService,
                                               NotificationPreferenceService preferences) {
         EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
+        // B-11: the REAL text source — the production bundles resolve on
+        // this module's own classpath, so the delivery tests pin the
+        // platform-locale (Arabic) composition exactly as production
+        // composes it (the locale pair itself is proven in
+        // NotificationTextSourceTest).
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                currentUserProvider, emailNotificationService, messagingTemplate, preferences);
+                currentUserProvider, emailNotificationService, messagingTemplate, preferences,
+                new NotificationTextSource());
     }
 
     /**
@@ -94,6 +100,43 @@ class NotificationServiceTest {
         service.onBookingCreated(bookingId);
 
         verify(repository, times(2)).save(any(Notification.class));
+    }
+
+    /**
+     * B-11 (compliance plan B.6): the delivery journey composes at the
+     * platform locale — the in-app row, the email subject/body, and the WS
+     * payload all carry the ARABIC rendering of the same fact, with the
+     * booking id riding the MessageFormat argument (the machine facts
+     * unchanged: type enum, template name, topic destination).
+     */
+    @Test
+    void onBookingCreatedComposesAtThePlatformLocale() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingCreated(bookingId);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getMessage())
+                .isEqualTo("تم إنشاء الحجز: " + bookingId);
+        assertThat(saved.getAllValues().get(1).getMessage())
+                .isEqualTo("طلب حجز جديد: " + bookingId);
+        verify(emailService).send(eq(CONSUMER_EMAIL), eq("تم إنشاء الحجز"),
+                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")));
+        verify(emailService).send(eq(PROVIDER_EMAIL), eq("طلب حجز جديد"),
+                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")));
     }
 
     @Test
@@ -512,7 +555,11 @@ class NotificationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
         verify(repository, times(1)).save(saved.capture());
         assertThat(saved.getValue().getType()).isEqualTo("CONTENT_MODERATED");
-        assertThat(saved.getValue().getMessage()).contains("post").contains(targetId.toString());
+        // B-11: the community vocabulary word renders in Arabic at the
+        // platform locale — the pre-B-11 English literal is the default
+        // bundle's own entry (proven in NotificationTextSourceTest).
+        assertThat(saved.getValue().getMessage())
+                .isEqualTo("تمت مراجعة منشور الخاص بك: " + targetId);
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
