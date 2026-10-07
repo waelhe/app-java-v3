@@ -15,7 +15,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none"
+})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class AiModuleIntegrationTest {
