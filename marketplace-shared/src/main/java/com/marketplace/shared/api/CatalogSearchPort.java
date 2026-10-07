@@ -45,6 +45,17 @@ public interface CatalogSearchPort {
      */
     PagedResponse<ListingSummary> searchFullText(SearchCriteria criteria, PagedRequest request);
 
+    // W6 (search-unit compliance pass): every text form of this port
+    // (searchFullText, searchFullTextRestricted,
+    // searchFullTextRestrictedToListings) ranks by RELEVANCE — the
+    // implementation strips any sort the request carries to the page/size
+    // its native queries consume (their ORDER BY is their own complete
+    // contract: the unified boost flag, ts_rank/word_similarity, the id
+    // tiebreak). A sorted request through a text form is served the
+    // documented relevance ranking, never a broken query — the same law
+    // the realestate radius flow's distancePaged() applies to its baked
+    // distance ordering.
+
     PagedResponse<ListingSummary> listByCategory(String category, PagedRequest request);
 
     PagedResponse<ListingSummary> listActive(PagedRequest request);
@@ -74,6 +85,11 @@ public interface CatalogSearchPort {
      * Criteria search restricted to the given providers — covers the
      * price / category / browse-all branches (the optional predicates of the
      * criteria query), plus the {@code provider_id} restriction.
+     *
+     * <p><b>W6 (search-unit compliance pass):</b> sort-aware — the mapped
+     * sort vocabulary the request carries (priceCents/createdAt with the id
+     * tiebreak) is honored on the Specification-backed implementation; the
+     * unsorted form keeps the deterministic boost-first + id order.</p>
      */
     PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request);
 

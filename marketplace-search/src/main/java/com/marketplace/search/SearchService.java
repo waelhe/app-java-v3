@@ -157,10 +157,14 @@ public class SearchService {
         }
         if (hasMappedSort(pageable) && !criteria.hasWindow()) {
             // L32: a price/newest sort on a plain (unwindowed) filter search
-            // rides the Specification path — the native criteria query's
-            // baked ORDER BY cannot honor a sort (it used to be a SQL
-            // error). Windowed searches keep the deterministic id order of
-            // the L27 restricted path (documented scope boundary).
+            // rides the Specification path — sort-aware by construction.
+            // W6 (search-unit compliance pass): the WINDOWED filter search
+            // honors the sort the same way now — the restricted criteria
+            // query is Specification-backed (the retired native twin's
+            // baked ORDER BY was the reason the sort used to be a scope
+            // boundary; the boundary is closed). Text queries rank by
+            // relevance — the sort is ignored (documented; the catalog
+            // adapter strips it structurally).
             String query = criteria.query();
             if (query == null || query.isBlank()) {
                 // already normalized at the controller — consumed as-is
@@ -566,13 +570,18 @@ public class SearchService {
         return SpringPagination.toPage(catalogSearchPort.listActive(SpringPagination.toPagedRequest(pageable)), pageable);
     }
 
-    public Page<ListingSummary> searchByCategory(String category, Pageable pageable) {
-        return SpringPagination.toPage(catalogSearchPort.listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);
-    }
-
-    public Page<ListingSummary> searchAll(Pageable pageable) {
-        return SpringPagination.toPage(catalogSearchPort.listActive(SpringPagination.toPagedRequest(pageable)), pageable);
-    }
+    // W6 (search-unit compliance pass): the two legacy delegation overloads
+    // searchByCategory(category, pageable) and searchAll(pageable) were
+    // REMOVED — they had no production caller (the /category endpoint now
+    // delegates to the ONE criteria search) and they bypassed the single
+    // dispatch: a sorted request through them reached the catalog WITHOUT
+    // the controller's normalize() gate (an unmapped sort property then
+    // failed deep inside the Specification path as an attribute-lookup
+    // error — an HTTP 500 the search surface answers 400 for). The criteria
+    // form is the ONE entry into the search-results-v5 cache, keyed
+    // exclusively through the generator; every browse form (category-only,
+    // empty) routes through it byte-identically (searchUnwindowed's legacy
+    // branch calls the same listByCategory/listActive reads).
 
     /** Builds the resolved property contract from the criteria (gated upstream). */
     private static PropertyCriteria toPropertyCriteria(SearchCriteria criteria, Set<UUID> locationIds) {

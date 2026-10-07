@@ -206,9 +206,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // adapter owns the trim the call sites used to perform (the exact
         // SQL parameter parity with the pre-wave text path).
         String query = criteria.query() == null ? null : criteria.query().trim();
+        // W6 (search-unit compliance pass): text searches rank by relevance
+        // — the port's documented law, now enforced STRUCTURALLY. The native
+        // FTS/trgm queries own their complete ORDER BY (boost flag,
+        // ts_rank/word_similarity, id); Spring Data's string-query sort
+        // application (the official getSortedQuery → DefaultQueryEnhancer →
+        // QueryUtils.applySorting chain, measured on 4.1.1) would APPEND a
+        // second "order by" clause to the baked one on these queries —
+        // invalid SQL, a syntax error, an HTTP 500 for every text+sorted
+        // request. The adapter strips the sort to the page/size the
+        // LIMIT/OFFSET pagination consumes — the realestate adapter's own
+        // distancePaged() precedent ("the pageable arrives for LIMIT/OFFSET
+        // only"). Any caller passing a sort gets the documented relevance
+        // ranking, never a broken query.
         Page<ProviderListing> page = listingRepository.searchFullText(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                criteria.guests(), now, pageable);
+                criteria.guests(), now, unsorted(pageable));
         if (page.getTotalElements() == 0) {
             // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
             // stem match — retry with word-similarity so a one-edit typo
@@ -228,9 +241,11 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
             // R6: the fallback carries the SAME optional predicates — a
             // fallback that dropped the filters would answer the
             // typo-tolerated match set unfiltered.
+            // W6: the same relevance-ranked contract — the sort stays
+            // stripped for the fallback too (its ORDER BY is its own).
             page = listingRepository.searchSimilar(query,
                     criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                    criteria.guests(), now, pageable);
+                    criteria.guests(), now, unsorted(pageable));
         }
         return PagedResponse.of(toSummaryPage(page));
     }
@@ -249,11 +264,19 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         if (floor != null) {
             return searchByCriteriaRestricted(criteria, floor, request);
         }
+        // W6 (search-unit compliance pass): the criteria search rides the
+        // official Specifications path — the same findBoostFirst read every
+        // other ordered filter surface uses (listActive, listByCategory,
+        // the faceted and restricted-to-listings forms). The retired native
+        // twin baked its own ORDER BY: a sorted Pageable would have Spring
+        // Data APPEND a second "order by" clause to it (invalid SQL — the
+        // measured 4.1.1 applySorting chain), and its boost flag drifted
+        // from the one boost specification the L37 law prescribes ("one
+        // shape for every ordered public read"). The predicate parity is
+        // exact: ACTIVE + category/price/guests optional blocks + the
+        // @SoftDelete filter the native form spelled by hand.
         Pageable pageable = SpringPagination.toPageable(request);
-        Long minPrice = toMinorUnits(criteria.minPrice());
-        Long maxPrice = toMinorUnits(criteria.maxPrice());
-        Page<ProviderListing> page = listingRepository.searchByCriteria(
-                criteria.category(), minPrice, maxPrice, criteria.guests(), clock.instant(), pageable);
+        Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria), pageable);
         return PagedResponse.of(toSummaryPage(page));
     }
 
@@ -262,28 +285,42 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      * search — the same branch coverage and price mapping as
      * {@link #searchByCriteria(SearchCriteria, PagedRequest)} (category / price
      * / browse-all are optional predicates of the same query), plus the
-     * {@code provider_id IN (:providerIds)} restriction in BOTH the content
-     * and the count query. Deliberately NOT cached at this level: the
-     * whitelist varies per request, and the search module's
+     * {@code provider_id} restriction. Deliberately NOT cached at this
+     * level: the whitelist varies per request, and the search module's
      * {@code search-results-v5} cache (criteria-keyed, window included) is
      * the caching surface for window searches.
+     *
+     * <p><b>W6 (search-unit compliance pass):</b> the Specification path —
+     * the same findBoostFirst read every other ordered filter surface uses.
+     * The retired native twin baked its own ORDER BY, so the port's
+     * documented sort-bearing requests (the mapped price/newest/rating
+     * vocabulary PagedRequest carries) either broke the SQL (Spring Data's
+     * string-query sort application appends a second "order by" clause —
+     * the measured 4.1.1 chain) or were silently unreachable; now the
+     * windowed filter search HONORS the sort through the official
+     * two-specification overload (the requested sort + the id ASC tiebreak
+     * ride the content specification; the count specification keeps the
+     * predicates verbatim). The provider restriction composes as
+     * {@code hasProviderIdIn} — and the stars floor ANDs as a SECOND
+     * {@code hasProviderIdIn} predicate: the database's predicate AND owns
+     * the whitelist ∩ floor intersection (the retired Java-side set
+     * algebra — the manual step is gone; the query engine composes the
+     * restrictions the way it composes every other predicate).
      */
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchByCriteriaRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
-        // W3 (G17): the floor INTERSECTS the caller's whitelist — a
-        // windowed floor-carrying search restricts to providers that are
-        // BOTH available and above the stars floor. An empty intersection
-        // is the honest empty page (no query).
-        Set<UUID> effective = intersectRestrictions(providerIds, minRatingFloor(criteria));
-        if (effective != null && effective.isEmpty()) {
+        // W3 (G17): an empty floor answers the honest empty page before any
+        // predicate composes (an empty IN list is never a query).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
             return PagedResponse.empty(request);
         }
         Pageable pageable = SpringPagination.toPageable(request);
-        Long minPrice = toMinorUnits(criteria.minPrice());
-        Long maxPrice = toMinorUnits(criteria.maxPrice());
-        Page<ProviderListing> page = listingRepository.searchByCriteriaRestricted(
-                criteria.category(), minPrice, maxPrice, criteria.guests(), effective, clock.instant(), pageable);
+        Page<ProviderListing> page = findBoostFirst(criteriaSpecification(criteria)
+                .and(ProviderListingSpecifications.hasProviderIdIn(providerIds))
+                .and(ProviderListingSpecifications.hasProviderIdIn(floor)),
+                pageable);
         return PagedResponse.of(toSummaryPage(page));
     }
 
@@ -314,10 +351,18 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ListingSummary> searchFullTextRestricted(SearchCriteria criteria, Set<UUID> providerIds, PagedRequest request) {
-        // W3 (G17): the floor INTERSECTS the caller's whitelist (the
-        // criteria-restricted twin's own law, one branch over).
-        Set<UUID> effective = intersectRestrictions(providerIds, minRatingFloor(criteria));
-        if (effective != null && effective.isEmpty()) {
+        // W3 (G17): an empty floor answers the honest empty page before any
+        // query composes (no provider answers the stars floor).
+        Set<UUID> floor = minRatingFloor(criteria);
+        if (floor != null && floor.isEmpty()) {
+            return PagedResponse.empty(request);
+        }
+        // W6: the native text query takes ONE provider set, so the whitelist
+        // and the floor merge Java-side before it (bounded by the whitelist
+        // — the availability module's answer); an empty merge is the honest
+        // empty page (an empty IN list is never a query).
+        Set<UUID> effective = intersectRestrictions(providerIds, floor);
+        if (effective.isEmpty()) {
             return PagedResponse.empty(request);
         }
         Pageable pageable = SpringPagination.toPageable(request);
@@ -327,13 +372,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // adapter owns the trim the call sites used to perform (the exact
         // SQL parameter parity with the pre-wave text path).
         String query = criteria.query() == null ? null : criteria.query().trim();
+        // W6: text searches rank by relevance — the sort is stripped to
+        // the page/size the native queries consume (see searchFullText).
         Page<ProviderListing> page = listingRepository.searchFullTextRestricted(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                criteria.guests(), effective, now, pageable);
+                criteria.guests(), effective, now, unsorted(pageable));
         if (page.getTotalElements() == 0) {
             page = listingRepository.searchSimilarRestricted(query,
                     criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                    criteria.guests(), effective, now, pageable);
+                    criteria.guests(), effective, now, unsorted(pageable));
         }
         return PagedResponse.of(toSummaryPage(page));
     }
@@ -534,13 +581,15 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         // adapter owns the trim the call sites used to perform (the exact
         // SQL parameter parity with the pre-wave text path).
         String query = criteria.query() == null ? null : criteria.query().trim();
+        // W6: text searches rank by relevance — the sort is stripped to
+        // the page/size the native queries consume (see searchFullText).
         Page<ProviderListing> page = listingRepository.searchFullTextRestrictedToListings(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                criteria.guests(), listingIds, now, pageable);
+                criteria.guests(), listingIds, now, unsorted(pageable));
         if (page.getTotalElements() == 0) {
             page = listingRepository.searchSimilarRestrictedToListings(query,
                     criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
-                    criteria.guests(), listingIds, now, pageable);
+                    criteria.guests(), listingIds, now, unsorted(pageable));
         }
         return PagedResponse.of(toSummaryPage(page));
     }
@@ -564,8 +613,14 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> findActiveListingIdsMatching(SearchCriteria criteria) {
-        return listingRepository.findAll(criteriaSpecification(criteria))
-                .stream().map(ProviderListing::getId).collect(Collectors.toSet());
+        // W6: the id-only JPQL projection — no entity materialization (the
+        // former findAll(spec) loaded title/description for every eligible
+        // row only to discard all but the id). The predicates are the
+        // shared criteria specification's own (ACTIVE + category/price/
+        // guests optional blocks, @SoftDelete-filtered) — parity is exact.
+        return listingRepository.findIdsMatchingCriteria(ListingStatus.ACTIVE,
+                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
+                criteria.guests());
     }
 
     @Override
@@ -1032,9 +1087,13 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
     }
 
     /**
-     * W3 (G17): two optional provider-set restrictions compose by
-     * INTERSECTION (window whitelist ∩ stars floor) — null means absent on
-     * either side; a non-null empty result is the honest empty page.
+     * W3 (G17) / W6: the NATIVE text flow's single-set merge — the window
+     * whitelist ∩ stars floor, Java-side ONLY because the native FTS query
+     * takes one provider collection (null means absent on either side; the
+     * caller short-circuits an empty merge to the honest empty page). The
+     * Specification-backed filter flows no longer use this: their
+     * restrictions AND as separate {@code hasProviderIdIn} predicates and
+     * the DATABASE owns the intersection.
      */
     private static Set<UUID> intersectRestrictions(Set<UUID> whitelist, Set<UUID> floor) {
         if (whitelist == null) {

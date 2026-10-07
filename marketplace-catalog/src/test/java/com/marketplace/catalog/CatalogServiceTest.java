@@ -184,10 +184,22 @@ class CatalogServiceTest {
     private static final java.util.Set<java.util.UUID> PROVIDER_IDS =
             java.util.Set.of(java.util.UUID.randomUUID(), java.util.UUID.randomUUID());
 
+    /**
+     * W6 (search-unit compliance pass): the restricted criteria search rides
+     * the two-specification boost-first read — the same shape every other
+     * ordered filter surface uses. The predicate composition (the criteria's
+     * optional blocks + the provider IN restriction) is proven on the real
+     * database by the search integration tests; this slice pins the page
+     * mapping and the UNSORTED-pageable discipline (the total order lives
+     * INSIDE the content specification — see findBoostFirst).
+     */
     @Test
-    void searchByCriteriaRestricted_mapsPricesAndDelegatesWithTheWhitelist() {
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+    void searchByCriteriaRestricted_mapsTheCriteriaThroughTheSpecificationRead() {
+        ProviderListing active = listing(ListingStatus.ACTIVE);
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(active),
+                        inv.getArgument(2, Pageable.class), 1));
 
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(20));
@@ -195,30 +207,54 @@ class CatalogServiceTest {
         var result = catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
 
         assertThat(result.content()).hasSize(1);
-        // BigDecimal 10 -> 1000 cents: the same movePointRight(2) mapping as
-        // the unrestricted path rides the restricted query. guests rides
-        // through as null (criterion-less). The :now instant (L37) is the
-        // service clock's own reading — asserted only as "present" here;
-        // the boost semantics it feeds are integration-proven.
-        verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(1000L), eq(2000L), eq(null), eq(PROVIDER_IDS), any(java.time.Instant.class),
-                eq(PageRequest.of(0, 10)));
+        assertThat(result.content().get(0).id()).isEqualTo(active.getId());
+        // the two-specification overload with the page/size-only pageable —
+        // the retired native query took the whitelist as a bind parameter;
+        // the Specification composition owns it now (hasProviderIdIn).
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class),
+                captured.capture());
+        assertThat(captured.getValue().getPageNumber()).isZero();
+        assertThat(captured.getValue().getPageSize()).isEqualTo(10);
+        assertThat(captured.getValue().getSort().isSorted()).isFalse();
     }
 
+    /**
+     * W6: the mapped sort HONORS the restricted criteria search — the
+     * retired native twin's baked ORDER BY made a sorted request invalid
+     * SQL; the Specification path consumes the mapped vocabulary
+     * (priceCents + the id tiebreak) through the boost specification.
+     */
     @Test
-    void searchByCriteriaRestricted_guestsRideThroughToTheQuery() {
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+    void searchByCriteriaRestricted_honorsTheMappedSort() {
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(),
+                        inv.getArgument(2, Pageable.class), 0));
 
-        // A windowless guests-only criterion (I6).
         var criteria = new com.marketplace.shared.api.SearchCriteria(
-                null, null, null, null, null, null, 4);
+                null, null, null, java.math.BigDecimal.valueOf(20));
 
-        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS, PagedRequest.of(0, 10));
+        catalogService.searchByCriteriaRestricted(criteria, PROVIDER_IDS,
+                new PagedRequest(0, 10, java.util.List.of(
+                        new PagedRequest.Order("priceCents", true),
+                        new PagedRequest.Order("id", false))));
 
-        verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(null), eq(null), eq(4), eq(PROVIDER_IDS), any(java.time.Instant.class),
-                eq(PageRequest.of(0, 10)));
+        // the sort rides the request into the Specification read — the
+        // requested ordering + the id ASC tiebreak (the boost-first
+        // specification's own composition; the pageable stays UNSORTED
+        // because a sorted Pageable would REPLACE the specification's
+        // order — the documented findBoostFirst law).
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class),
+                captured.capture());
+        assertThat(captured.getValue().getSort().isSorted()).isFalse();
+        assertThat(captured.getValue().getPageNumber()).isZero();
+        assertThat(captured.getValue().getPageSize()).isEqualTo(10);
     }
 
     @Test
@@ -699,8 +735,10 @@ class CatalogServiceTest {
         java.util.UUID floorProvider = java.util.UUID.randomUUID();
         when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(4.0))
                 .thenReturn(java.util.Set.of(floorProvider));
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(listing(ListingStatus.ACTIVE)),
+                        inv.getArgument(2, Pageable.class), 1));
 
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, null, null, null, null, null, null, null, null,
@@ -709,16 +747,18 @@ class CatalogServiceTest {
         var result = catalogService.searchByCriteria(criteria, PagedRequest.of(0, 10));
 
         assertThat(result.content()).hasSize(1);
-        verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(null), eq(null), eq(null), eq(java.util.Set.of(floorProvider)),
-                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
-        verify(listingRepository, org.mockito.Mockito.never()).searchByCriteria(
-                any(), any(), any(), any(), any(), any());
+        // W6: the floor routes onto the restricted twin — the
+        // two-specification read with the floor ANDing as a second
+        // hasProviderIdIn predicate (the database owns the intersection).
+        verify(listingRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class));
     }
 
     /** No provider answers the floor: the honest empty page, no query. */
     @Test
-    void searchByCriteria_emptyFloor_answersTheHonestEmptyPage() {
+    void searchByCriteriaRestricted_emptyFloor_answersTheHonestEmptyPage() {
         when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(5.0))
                 .thenReturn(java.util.Set.of());
 
@@ -726,45 +766,56 @@ class CatalogServiceTest {
                 null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, java.math.BigDecimal.valueOf(5));
 
-        var result = catalogService.searchByCriteria(criteria, PagedRequest.of(0, 10));
+        var result = catalogService.searchByCriteriaRestricted(
+                criteria, java.util.Set.of(java.util.UUID.randomUUID()), PagedRequest.of(0, 10));
 
         assertThat(result.totalElements()).isZero();
         assertThat(result.content()).isEmpty();
         verifyNoInteractions(listingRepository);
     }
 
-    /** The floor INTERSECTS the caller's whitelist (window + stars compose). */
+    /**
+     * The floor ANDs with the caller's whitelist as a second provider
+     * predicate — the DATABASE evaluates the intersection (the retired
+     * Java-side merge short-circuited a disjoint pair; now the two IN
+     * predicates simply answer an empty page together).
+     */
     @Test
-    void searchByCriteriaRestricted_floorIntersectsTheWhitelist() {
-        java.util.UUID both = java.util.UUID.randomUUID();
-        java.util.UUID whitelistOnly = java.util.UUID.randomUUID();
+    void searchByCriteriaRestricted_floorDisjointWithTheWhitelist_answersTheEmptyPageFromTheComposedPredicates() {
+        java.util.UUID whitelistProvider = java.util.UUID.randomUUID();
         java.util.UUID floorOnly = java.util.UUID.randomUUID();
         when(reviewStatsPort.findProviderUserIdsWithRatingAtLeast(4.0))
-                .thenReturn(java.util.Set.of(both, floorOnly));
-        when(listingRepository.searchByCriteriaRestricted(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+                .thenReturn(java.util.Set.of(floorOnly));
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(),
+                        inv.getArgument(2, Pageable.class), 0));
 
         var criteria = new com.marketplace.shared.api.SearchCriteria(
                 null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, java.math.BigDecimal.valueOf(4));
 
-        catalogService.searchByCriteriaRestricted(
-                criteria, java.util.Set.of(both, whitelistOnly), PagedRequest.of(0, 10));
+        var result = catalogService.searchByCriteriaRestricted(
+                criteria, java.util.Set.of(whitelistProvider), PagedRequest.of(0, 10));
 
-        // The intersection alone rides the query — a provider outside the
-        // window whitelist never matches however high its stars, and a
-        // below-floor provider never matches however available it is.
-        verify(listingRepository).searchByCriteriaRestricted(
-                eq(null), eq(null), eq(null), eq(null), eq(java.util.Set.of(both)),
-                any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+        // the two restrictions compose in ONE Specification read — the
+        // database's predicate AND owns the intersection (a disjoint pair
+        // is an empty answer, not a Java-side set operation).
+        assertThat(result.totalElements()).isZero();
+        verify(listingRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(Pageable.class));
     }
 
     /** The stars ride the summary rows (G20) — the batched stats composition. */
     @Test
     void searchByCriteria_composesTheProviderStarsOntoTheRows() {
         ProviderListing active = listing(ListingStatus.ACTIVE);
-        when(listingRepository.searchByCriteria(any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(active)));
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(active),
+                        inv.getArgument(2, Pageable.class), 1));
         when(providerNameResolver.resolveNames(any()))
                 .thenReturn(java.util.Map.of(active.getProviderId(), "المزوّد"));
         when(reviewStatsPort.findStatsByProviderUserIds(any()))
@@ -784,8 +835,10 @@ class CatalogServiceTest {
     @Test
     void searchByCriteria_unratedProviderRidesAnHonestNull() {
         ProviderListing active = listing(ListingStatus.ACTIVE);
-        when(listingRepository.searchByCriteria(any(), any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(active)));
+        when(listingRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(List.of(active),
+                        inv.getArgument(2, Pageable.class), 1));
         when(providerNameResolver.resolveNames(any())).thenReturn(java.util.Map.of());
         when(reviewStatsPort.findStatsByProviderUserIds(any())).thenReturn(java.util.Map.of());
 
@@ -795,5 +848,89 @@ class CatalogServiceTest {
 
         assertThat(result.content().get(0).providerRating()).isNull();
         assertThat(result.content().get(0).providerReviewCount()).isZero();
+    }
+
+    // ---- W6 (search-unit compliance pass): the text forms' relevance
+    // contract and the id-only eligible-set projection ------------------------
+
+    /**
+     * W6: the text search strips the sort STRUCTURALLY — the native FTS
+     * query owns its complete ORDER BY (boost flag, ts_rank, id); a sorted
+     * Pageable on a string-based @Query would have Spring Data APPEND a
+     * second "order by" clause to the baked one (invalid SQL — the
+     * measured 4.1.1 applySorting chain). The repository receives the
+     * page/size only; the caller's sort is answered by the documented
+     * relevance ranking.
+     */
+    @Test
+    void searchFullText_stripsTheSort_theNativeQueryOwnsItsOrdering() {
+        // a NON-empty FTS page — the fallback must not run; the assertion
+        // targets the pageable the CONTENT query received.
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        catalogService.searchFullText(
+                new com.marketplace.shared.api.SearchCriteria("sea view", null, null, null),
+                new PagedRequest(0, 10, java.util.List.of(
+                        new PagedRequest.Order("priceCents", true),
+                        new PagedRequest.Order("id", false))));
+
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).searchFullText(eq("sea view"), eq(null), eq(null), eq(null),
+                eq(null), any(java.time.Instant.class), captured.capture());
+        assertThat(captured.getValue().getPageNumber()).isZero();
+        assertThat(captured.getValue().getPageSize()).isEqualTo(10);
+        assertThat(captured.getValue().getSort().isSorted()).isFalse();
+        // the fallback never ran — the FTS page had matches
+        verify(listingRepository, org.mockito.Mockito.never()).searchSimilar(
+                any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /** The restricted text form applies the same structural strip. */
+    @Test
+    void searchFullTextRestricted_stripsTheSort_theNativeQueryOwnsItsOrdering() {
+        // a NON-empty FTS page — the fallback must not run; the assertion
+        // targets the pageable the CONTENT query received.
+        when(listingRepository.searchFullTextRestricted(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(listing(ListingStatus.ACTIVE))));
+
+        catalogService.searchFullTextRestricted(
+                new com.marketplace.shared.api.SearchCriteria("sea view", null, null, null),
+                PROVIDER_IDS,
+                new PagedRequest(0, 10, java.util.List.of(
+                        new PagedRequest.Order("createdAt", false),
+                        new PagedRequest.Order("id", false))));
+
+        var captured = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).searchFullTextRestricted(eq("sea view"), eq(null), eq(null), eq(null),
+                eq(null), eq(PROVIDER_IDS), any(java.time.Instant.class), captured.capture());
+        assertThat(captured.getValue().getSort().isSorted()).isFalse();
+        verify(listingRepository, org.mockito.Mockito.never()).searchSimilarRestricted(
+                any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * W6: the criteria-eligible id set rides the id-only JPQL projection —
+     * no entity materialization (the former findAll(spec) loaded
+     * title/description for every eligible row only to discard all but
+     * the id). The predicates are the NULL-guarded blocks the projection
+     * query declares; the minor-units mapping rides the delegation.
+     */
+    @Test
+    void findActiveListingIdsMatching_delegatesToTheIdOnlyProjection() {
+        java.util.UUID eligible = java.util.UUID.randomUUID();
+        when(listingRepository.findIdsMatchingCriteria(any(), any(), any(), any(), any()))
+                .thenReturn(java.util.Set.of(eligible));
+
+        var result = catalogService.findActiveListingIdsMatching(
+                new com.marketplace.shared.api.SearchCriteria(
+                        null, "stay", java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(20),
+                        null, null, 4));
+
+        assertThat(result).containsExactly(eligible);
+        // ACTIVE + the criteria's optional predicates (category, the mapped
+        // price bounds, guests) ride the projection verbatim.
+        verify(listingRepository).findIdsMatchingCriteria(
+                eq(ListingStatus.ACTIVE), eq("stay"), eq(1000L), eq(2000L), eq(4));
     }
 }

@@ -46,10 +46,39 @@ class SearchControllerWebMvcTest {
 
     @Test
     void searchByCategory_returnsOk() throws Exception {
-        when(searchService.searchByCategory(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
+        // W6: the endpoint delegates to the ONE criteria search — the same
+        // search() the main surface enters.
+        when(searchService.search(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
 
         mockMvc.perform(get("/api/v1/search/category/{category}", "electronics"))
                 .andExpect(status().isOk());
+
+        ArgumentCaptor<SearchCriteria> criteria = ArgumentCaptor.forClass(SearchCriteria.class);
+        verify(searchService).search(criteria.capture(), any());
+        org.assertj.core.api.Assertions.assertThat(criteria.getValue().category())
+                .isEqualTo("electronics");
+    }
+
+    @Test
+    void searchByCategory_sortedRequest_isNormalizedThenReachesTheService() throws Exception {
+        // W6: the single normalization point — the category browse honors
+        // the sort whitelist exactly like the main surface (the retired
+        // delegation bypassed the gate and any sort failed as a server
+        // error deep in the query path).
+        when(searchService.search(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/search/category/{category}", "electronics")
+                        .param("sort", "price,desc"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void searchByCategory_unsupportedSort_is400() throws Exception {
+        mockMvc.perform(get("/api/v1/search/category/{category}", "electronics")
+                        .param("sort", "title,desc"))
+                .andExpect(status().isBadRequest());
+
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
     }
 
     // ---- L27: the stay window at the HTTP boundary --------------------------
