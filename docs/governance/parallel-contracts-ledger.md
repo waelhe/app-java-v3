@@ -34,6 +34,9 @@
 | `MediaUploadedEvent` | media | catalog |
 | `NewListingInNeighborhoodEvent` | community | notifications |
 | `PaymentStateChangedEvent` | payments | booking · disputes · ledger · notifications · platform-infra |
+| `OrderCancelledEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderCancelled` كُتب بيد مسار A في حديقة B؛ العبور موثق هنا وفي worklog، ومالك الوحدة الأصلي يراجعه §13؛ معه زوج V114/V115 لتوسيع قيد نوع التفضيلات — سابقة V110/V111) |
+| `OrderConfirmedEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderConfirmed` بالشكل نفسه أعلاه) |
+| `OrderFulfilledEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderFulfilled` بالشكل نفسه أعلاه) |
 | `PostCommentedEvent` | community | notifications (سياسة تعليق الذات عند المستهلك — الحقيقة تُنشر دائمًا) |
 | `PostReactedEvent` | community | notifications |
 | `ReviewCreatedEvent` | reviews | app · platform-infra · provider |

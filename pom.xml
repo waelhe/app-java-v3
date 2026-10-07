@@ -39,6 +39,8 @@
         <module>marketplace-realestate</module>
         <module>marketplace-community</module>
         <module>marketplace-ai</module>
+        <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
+        <module>marketplace-orders</module>
         <module>marketplace-app</module>
         <module>marketplace-edge</module>
     </modules>
@@ -421,6 +423,12 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-reviews</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- A-11 (compliance plan wave C: C.1) — the store's order flow. -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-orders</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

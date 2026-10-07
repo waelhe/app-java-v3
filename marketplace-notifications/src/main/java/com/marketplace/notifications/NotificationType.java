@@ -80,5 +80,18 @@ public enum NotificationType {
     CONTENT_MODERATED,
     POST_REACTED,
     FOLLOWED_PROVIDER_NEW_LISTING,
-    BOOKING_CONFIRMED
+    BOOKING_CONFIRMED,
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * notification leg; the V110 widening precedent applied three types
+     * later by V114/V115): the three order transitions whose buyer-facing
+     * information crosses the module boundary. The recipient is the order's
+     * consumer alone — the payload carries the id (the late-lander crossing
+     * is recorded in the parallel contracts ledger, execution plan §5.3:
+     * orders (Track A) publishes, the late-lander writes the listeners in
+     * notifications, and the module's owner reviews).
+     */
+    ORDER_CONFIRMED,
+    ORDER_FULFILLED,
+    ORDER_CANCELLED
 }

@@ -7,6 +7,9 @@ import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
+import com.marketplace.shared.api.OrderCancelledEvent;
+import com.marketplace.shared.api.OrderConfirmedEvent;
+import com.marketplace.shared.api.OrderFulfilledEvent;
 import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
@@ -88,6 +91,34 @@ public class NotificationEventListener {
     public void onBookingConfirmed(BookingConfirmedEvent event) {
         notificationService.onBookingConfirmed(event.bookingId());
         log.info("Notification sent for booking confirmed: {}", event.bookingId());
+    }
+
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * notification legs; the parallel contracts ledger records this
+     * late-lander crossing — orders (Track A) publishes, the late-lander
+     * writes the listener here in notifications, and the module's owner
+     * reviews it, execution plan §5.3). The payload carries the consumer
+     * id, so the listener resolves nothing — the same AFTER_COMMIT /
+     * independent-transaction contract every listener here rides
+     * (reference/events.html).
+     */
+    @ApplicationModuleListener
+    public void onOrderConfirmed(OrderConfirmedEvent event) {
+        notificationService.onOrderConfirmed(event.orderId(), event.consumerId());
+        log.info("Notification sent for order confirmed: {}", event.orderId());
+    }
+
+    @ApplicationModuleListener
+    public void onOrderFulfilled(OrderFulfilledEvent event) {
+        notificationService.onOrderFulfilled(event.orderId(), event.consumerId());
+        log.info("Notification sent for order fulfilled: {}", event.orderId());
+    }
+
+    @ApplicationModuleListener
+    public void onOrderCancelled(OrderCancelledEvent event) {
+        notificationService.onOrderCancelled(event.orderId(), event.consumerId(), event.reason());
+        log.info("Notification sent for order cancelled: {}", event.orderId());
     }
 
     @ApplicationModuleListener

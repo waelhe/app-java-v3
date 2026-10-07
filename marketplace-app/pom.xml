@@ -48,6 +48,12 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-reviews</artifactId>
         </dependency>
+        <!-- A-11 (compliance plan wave C: C.1) — the orders module joins the
+             aggregating application. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-orders</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-messaging</artifactId>

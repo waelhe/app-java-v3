@@ -81,7 +81,7 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(30);
+        assertThat(matrix).hasSize(39);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
@@ -114,7 +114,18 @@ class NotificationPreferenceServiceTest {
                 // the same point addition, default on across all three channels.
                 new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.WS, true));
+                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.WS, true),
+                // A-11 (order machine legs): the three order types join the
+                // effective matrix — default on, the L22 day-one contract.
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.WS, true));
     }
 
     @Test
@@ -141,7 +152,8 @@ class NotificationPreferenceServiceTest {
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
                         true, true, true, true, true, true,
-                        true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + A-03: BOOKING_CONFIRMED x3, default on
+                        true, true, true,
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3, default on
     }
 
     @Test
@@ -240,6 +252,7 @@ class NotificationPreferenceServiceTest {
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
                         true, true, true, true, true, true,
-                        true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + A-03: BOOKING_CONFIRMED x3, default on
+                        true, true, true,
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3, default on
     }
 }

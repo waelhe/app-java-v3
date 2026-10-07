@@ -160,6 +160,11 @@ class ObservationCoverageFilesTest {
                     "media.review.upload.confirm", "media.review.upload.request",
                     "media.thumbnail.process", "media.upload.confirm",
                     "media.upload.request", "media.upload.request.post")),            Map.entry("marketplace-messaging", List.of("messaging.send")),
+            Map.entry("marketplace-orders", List.of(
+                    // A-11 (compliance plan wave C: C.1) — the order machine's
+                    // four commands (the reads stay unobserved per the
+                    // commands-not-reads policy).
+                    "order.cancel", "order.confirm", "order.fulfill", "order.place")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.mark.read", "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(

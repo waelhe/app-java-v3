@@ -364,6 +364,60 @@ public class NotificationService {
                         "verificationLink", verificationLink));
     }
 
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * CONFIRMED leg). The recipient is the order's CONSUMER alone — the
+     * party waiting on the merchant's acceptance. The same delivery shape
+     * as onBookingConfirmed: the in-app row is always on, EMAIL rides the
+     * per-type/channel preference matrix (L22) from day one, WS honors an
+     * explicit opt-out. The event payload carries the consumer id, so
+     * unlike the booking legs this path never consults the participant
+     * provider — the payload IS the resolution (the ledger's placement
+     * rule paying off).
+     */
+    public void onOrderConfirmed(UUID orderId, UUID consumerId) {
+        String message = "Order confirmed: " + orderId;
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_CONFIRMED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Confirmed", "email/notification",
+                    Map.of("message", "Your order " + orderId + " has been confirmed."));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_CONFIRMED, message);
+    }
+
+    /**
+     * A-11 (C.1: the order machine's FULFILLED leg — the delivery
+     * completion). Recipient and channels as onOrderConfirmed.
+     */
+    public void onOrderFulfilled(UUID orderId, UUID consumerId) {
+        String message = "Order fulfilled: " + orderId;
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_FULFILLED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Fulfilled", "email/notification",
+                    Map.of("message", "Your order " + orderId + " has been fulfilled."));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_FULFILLED, message);
+    }
+
+    /**
+     * A-11 (C.1: the order machine's CANCELLED leg). The reason rides the
+     * event payload so the buyer learns WHY without any cross-module
+     * re-query.
+     */
+    public void onOrderCancelled(UUID orderId, UUID consumerId, String reason) {
+        String message = "Order cancelled: " + orderId + (reason == null || reason.isBlank() ? "" : " — " + reason);
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_CANCELLED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Cancelled", "email/notification",
+                    Map.of("message", "Your order " + orderId + " was cancelled"
+                            + (reason == null || reason.isBlank() ? "." : ": " + reason)));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_CANCELLED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
