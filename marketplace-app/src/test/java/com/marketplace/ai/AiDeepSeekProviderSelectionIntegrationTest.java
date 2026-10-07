@@ -1,8 +1,9 @@
 package com.marketplace.ai;
 
 import test.config.IntegrationContainers;
-
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,15 +16,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The other half of the documented multi-model selector: with both provider
- * starters present, {@code spring.ai.model.chat=deepseek} activates exactly
- * that provider's auto-configuration — one {@code ChatModel}, gateway
- * available. Mirrors {@link AiProviderSelectionIntegrationTest} (the
- * google-genai half) so a DeepSeek auto-configuration or property-wiring
- * regression cannot pass unnoticed (CodeRabbit incremental review finding,
- * round 3). No network is touched (the fake key only satisfies binding).
- */
 @SpringBootTest(properties = {
         "spring.ai.model.chat=deepseek",
         "spring.ai.deepseek.api-key=test-key",
@@ -34,18 +26,17 @@ class AiDeepSeekProviderSelectionIntegrationTest {
 
     @Container
     @ServiceConnection
-    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent (AiProviderSelectionIntegrationTest)
+    @SuppressWarnings({"resource", "rawtypes"})
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private ApplicationContext context;
 
-    @Autowired
-    private AiChatGateway gateway;
-
     @Test
-    void selectorActivatesExactlyOneProvider() {
+    void selectorActivatesProviderAndOfficialAutoConfigurationBuildsTheChatStack() {
         assertThat(context.getBeansOfType(ChatModel.class)).hasSize(1);
-        assertThat(gateway.available()).isTrue();
+        assertThat(context.getBeansOfType(ChatClient.Builder.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiChatGateway.class)).hasSize(1);
     }
 }
