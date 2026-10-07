@@ -547,3 +547,22 @@ Work Log:
 Stage Summary:
 - The owner's two asks are being executed exactly: (1) no passive waiting — the Track B line starts NOW from main with a recorded, reversible topology deviation; (2) nothing session-bound is lost — the worklog, the owner's start message, and the B-01 evidence now live on GitHub (docs/track-b-state), re-mirrored after every unit.
 - Next: B-02 measurement → implementation → local gate → push → worklog «تسليم للمراجعة» → B-03 immediately after.
+
+---
+Task ID: B-02
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-02 (compliance plan 0.2) — توحيد كاش نتائج البحث في GeoService + RealestateService
+
+Work Log:
+- MEASURED first (the pack's rule): the drift is real and WORSE than cosmetic — GeoService:50 and RealestateService:54-55 evicted `search-results-v4`, a name that is (a) NOT what SearchService caches under (both @Cacheable sites use `search-results-v5`, lines 97+132) and (b) NOT registered in application.yml's cache-names (line 203: only v5) — i.e. the evictions hit a DEAD, UNREGISTERED name, so geo amendments and property writes left stale search pages for the full TTL. The v4 mentions inside SearchService/SearchCriteriaCacheKeyGenerator are historical bump COMMENTS (v3→v4→v5), not live names. App-level contract enforcement (ListingSummaryCacheContractFilesTest) covers catalog+availability only — geo/realestate were the uncovered gap.
+- IMPLEMENTED inside my gardens only: GeoService.GEO_CACHE_NAMES → Set.of("geo-tree","search-results-v5") + javadoc citing 0.2/§3.4-1; RealestateService.REALESTATE_CACHE_NAMES → Set.of("search-results-v5") + same. The existing invalidation-event tests keep their constant-based assertions; TWO NEW pinning tests added ON PURPOSE as literals (geoCacheNames_carryTheLiveSearchResultsCacheName asserts contains v5 + geo-tree, doesNotContain v4; realestateCacheNames_areExactlyTheLiveSearchResultsCacheName asserts containsExactly v5) — a constant-only assertion would be tautological and let the name drift again silently.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-geo,marketplace-realestate -am — BUILD SUCCESS (6-module chain); GeoServiceTest 13/13 (was 12), RealestateServiceTest 12/12 (was 11); all pre-existing tests untouched-green.
+- PUSHED: feat/track-b-modules @ 0a04bde (the branch's first unit commit, forked from main @ dcdb5f8 per the recorded Task-64 deviation). PR-B OPENED as #508 (head feat/track-b-modules → base main, the integrative container per §4.2 — merge only by the owner's «ادمج» through the §15 ladder).
+- CR-1 RECORDED (B→A, §5.4): file marketplace-app/src/test/java/com/marketplace/shared/ListingSummaryCacheContractFilesTest.java (Track A's garden) — purpose: extend the source-scan contract to cover GeoService.java + RealestateService.java cache-name literals so the v5 alignment is enforced at app level exactly like catalog/availability already are; official reference: the test's own established pattern (same file, same discipline as its CatalogService/AvailabilityService rows). Alternative inside B's ownership (already shipped): the literal pinning tests above.
+- The search module itself was READ ONLY (reserve column) — no file touched there; its live v5 declarations are the measurement anchor.
+
+Stage Summary:
+- The measured defect §3.4-1 is CLOSED in my two gardens: evictions now carry the live registered name; two pinning tests make a silent re-drift impossible at unit level; CR-1 asks Track A for the app-level contract row.
+- Line state: B-01 ✓ (22/22 reactor) · B-02 ✓ pushed (0a04bde, PR-B #508) · B-03 next immediately (messaging unread counter excludes the sender — compliance plan 0.3).
+
+تسليم للمراجعة
