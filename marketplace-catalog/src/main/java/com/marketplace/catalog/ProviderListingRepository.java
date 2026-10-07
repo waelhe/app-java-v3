@@ -120,7 +120,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     /**
      * Full-text search using PostgreSQL tsvector with GIN index.
      * Searches title and description columns.
-     * Matches the GIN index defined in V9__search_index.sql.
+     * Matches the GIN index defined in V9__search_index.sql (rebuilt with
+     * the 'arabic' configuration by V106__search_fts_arabic_config.sql).
      *
      * <p>Uses the official {@code websearch_to_tsquery} — the PostgreSQL function
      * designed for raw user input: "simple unformatted text is a valid query"
@@ -132,6 +133,25 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * input containing quotes, parentheses or a leading dash. Users also gain
      * the officially supported web-search operators: {@code "quoted phrase"},
      * {@code OR}, and {@code -exclusion}.
+     *
+     * <p><b>W6 (search-unit compliance pass) — the 'arabic' text search
+     * configuration:</b> the tsvector/tsquery configuration moves from
+     * 'simple' to the officially generated {@code arabic} configuration
+     * (initdb creates it on every standard PostgreSQL install — the
+     * snowball {@code arabic_stem} dictionary). Official basis: the
+     * 'simple' template performs "no more than lower-casing" (docs 18
+     * §12.6.2), leaving the Arabic definite article, tashkeel and affix
+     * agglutination inside the lexeme — a 'شقة' query could not match
+     * 'الشقة' or 'شَقَّة'; the Snowball dictionaries exist precisely
+     * because "each algorithm understands how to reduce common variant
+     * forms of words to a base, or stem, spelling within its language"
+     * (docs 18 §12.6.6). The Arabic stemmer's rules operate on Arabic
+     * script only, so Latin-script tokens pass through lowercased and
+     * unchanged — mixed-language titles keep their exact 'simple'-era
+     * behavior for Latin words. The GIN index (V106) carries the
+     * IDENTICAL tsvector expression, as the official indexing contract
+     * requires (the index must match the query's expression; GIN is "the
+     * preferred text search index type" — docs 18 §12.9).</p>
      *
      * <p><b>L37 (realestate systems plan §5 — the featured boost):</b> the baked
      * ORDER BY gains the boost flag FIRST — "المعزّز أولًا داخل نفس الفرز
@@ -150,7 +170,7 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * measured in the 4.1.1 sources). The id tiebreak is appended (the L32
      * total-order rule — equal {@code ts_rank} values must not wobble across
      * pages; this closes the latent gap where the unrestricted text path
-     * ordered by rank alone).
+     * ordered by rank alone).</p>
      *
      * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5 — the composed
      * text+filter search):</b> the optional catalog predicates (category /
@@ -161,28 +181,28 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * contract {@code max_guests IS NOT NULL AND max_guests >= :guests}).
      * A text query no longer drops the filters that ride it — the review's
      * R6 finding; the composition happens BEFORE the count and the
-     * pagination, so the page totals describe the filtered set.
+     * pagination, so the page totals describe the filtered set.</p>
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
@@ -333,24 +353,24 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND provider_id IN (:providerIds)
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND provider_id IN (:providerIds)
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
@@ -424,24 +444,24 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND id IN (:listingIds)
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
             ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND id IN (:listingIds)
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)

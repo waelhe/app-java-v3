@@ -79,30 +79,22 @@ public class SearchService {
         this.realestatePropertyFilterPort = realestatePropertyFilterPort;
     }
 
-    // The -v3 suffix is the ListingSummary serialization-schema namespace —
-    // see CatalogService.CATALOG_CACHE_NAMES: the L32 criteria schema
-    // extension bumps it (the plan's D-R6 decision; the key generator's
-    // prefix bump l27v2 → l32v1 keeps the key spaces disjoint too — no
-    // pre-change entry can be read as a post-change hit; the one-time cold
-    // cycle is bounded by the 1h TTL).
-    // P1 (postgis integration plan §D-P12): the radius criteria extension
-    // bumps it again — search-results-v3 → v4 (the deploy-time eviction of
-    // the schema extension; the key generator's prefix bump l32v1 → l34v1
-    // keeps the key spaces disjoint too — the "bump together with the
-    // other three names" house discipline, #241).
-    // W3 (yelp-level plan §5 — G17/G20): the min-stars criterion and the
-    // ListingSummary star components bump it once more — search-results-v4
-    // → v5 (the key generator's prefix bump l34v1 → l35v1; the catalog's
-    // three names bump in the same batch — the same #241 discipline).
-    @Cacheable(cacheNames = "search-results-v5", key = "(#query == null ? '' : #query.trim()) + '|' + (#category == null ? '' : #category.trim()) + '|' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #pageable.sort")
-    public Page<ListingSummary> search(String query, String category, Pageable pageable) {
-        // CodeRabbit PR #299 round 1 (normalize ONCE): this legacy entry has
-        // no production caller, but its contract is the same as the
-        // controller's — the pageable is normalized at the service boundary
-        // so every downstream branch consumes one representation.
-        return search(new SearchCriteria(query, category, null, null),
-                SearchSorts.normalize(pageable));
-    }
+    // W6 (search-unit compliance pass): the legacy two-argument
+    // search(query, category, pageable) overload was REMOVED. Its
+    // @Cacheable key was a hand-rolled SpEL concatenation
+    // (query + '|' + category + '|' + page/size/sort) — the exact
+    // injectivity defect the dedicated SearchCriteriaCacheKeyGenerator
+    // was adopted to close (PR #256 round 1: two different
+    // (query, category) pairs can produce the SAME concatenated string —
+    // query="a|b" + category="c" collides with query="a" +
+    // category="b|c" — and one request is served the other's cached
+    // page). It had no production caller (the controller binds the
+    // criteria form; its own javadoc said so) and no test caller, so the
+    // removal is behavior-neutral for every live surface: the criteria
+    // form below is the single entry into the search-results-v5 cache,
+    // keyed exclusively through the generator. The criteria path is the
+    // ONE surface (the same law the catalog's CATALOG_CACHE_NAMES set
+    // documents for its own names).
 
     /**
      * The criteria path (the controller's entry). L27: the cache key comes

@@ -301,8 +301,10 @@ class CatalogServiceTest {
     void searchFullText_r6MapsTheFullCriteriaOntoTheNativeQueryAndItsFallback() {
         // R6 (Wave 5): the UNRESTRICTED text form maps the same full
         // criteria onto both the FTS query and the pg_trgm fallback —
-        // the empty first page (zero content) triggers the fallback,
-        // which must carry the same predicates.
+        // ZERO TOTAL matches (the empty first page carries total 0)
+        // triggers the fallback, which must carry the same predicates.
+        // W6: the gate is getTotalElements() == 0 — the PageImpl built
+        // here over empty content reports total 0, so the fallback fires.
         when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
         when(listingRepository.searchSimilar(any(), any(), any(), any(), any(), any(), any()))
@@ -318,6 +320,27 @@ class CatalogServiceTest {
                 eq(1000L), eq(8000L), eq(4), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
         verify(listingRepository).searchSimilar(eq("gardn"), eq("stay"),
                 eq(1000L), eq(8000L), eq(4), any(java.time.Instant.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void searchFullText_outOfRangePageOverRealMatches_staysEmpty_noFallback() {
+        // W6 (search-unit compliance pass): the MAIN text path carries
+        // its restricted twins' documented gate — the fallback fires only
+        // on ZERO TOTAL matches. Matches exist (total 1) but the requested
+        // page is past them: the content is legitimately empty (Spring
+        // Data's Page contract: isEmpty() describes the CURRENT page,
+        // getTotalElements() the whole result set) and must stay an honest
+        // empty page, never replaced by the similarity result set.
+        when(listingRepository.searchFullText(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(5, 10), 1));
+
+        var result = catalogService.searchFullText(
+                new com.marketplace.shared.api.SearchCriteria("garden", null, null, null),
+                PagedRequest.of(5, 10));
+
+        assertThat(result.isEmpty()).isTrue();
+        assertThat(result.totalElements()).isEqualTo(1);
+        verify(listingRepository, never()).searchSimilar(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

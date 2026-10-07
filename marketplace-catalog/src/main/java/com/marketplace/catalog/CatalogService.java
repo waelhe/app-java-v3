@@ -209,13 +209,22 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
         Page<ProviderListing> page = listingRepository.searchFullText(query,
                 criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),
                 criteria.guests(), now, pageable);
-        if (page.isEmpty()) {
+        if (page.getTotalElements() == 0) {
             // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
             // stem match — retry with word-similarity so a one-edit typo
             // ("gardn") still surfaces the intended listings ("garden").
-            // An implementation detail of the catalog's search: the port
-            // contract, the search module and every caller are unchanged.
-            // Cached as the final result of this query either way.
+            // The gate is the TOTAL-matches zero, not the page emptiness:
+            // Spring Data's Page contract distinguishes the current page's
+            // content (isEmpty()) from the whole result set's size
+            // (getTotalElements()) — an out-of-range page over real
+            // matches is legitimately empty while its total is positive,
+            // and must stay an honest empty page, not be replaced by the
+            // similarity result set (the restricted twins' own documented
+            // law — PR #256 full-review round; this main path now carries
+            // the identical gate). An implementation detail of the
+            // catalog's search: the port contract, the search module and
+            // every caller are unchanged. Cached as the final result of
+            // this query either way.
             // R6: the fallback carries the SAME optional predicates — a
             // fallback that dropped the filters would answer the
             // typo-tolerated match set unfiltered.

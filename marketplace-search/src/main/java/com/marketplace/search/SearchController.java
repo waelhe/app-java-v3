@@ -29,6 +29,8 @@ public class SearchController {
     @RateLimiter(name = "search")
     @Operation(summary = "Search listings",
             description = "Full-text search with typo tolerance (pg_trgm) and optional filters. "
+                    + "The price bounds are non-negative and ordered (min <= max when both "
+                    + "are present) — an inverted or negative range is a 400 before any query. "
                     + "When both stay-window dates are present, the window must be a valid "
                     + "half-open interval [checkIn, checkOut) and results are restricted to "
                     + "providers with an available slot overlapping it. A guests value, when "
@@ -60,9 +62,10 @@ public class SearchController {
             @RequestParam(required = false) String q,
             @Parameter(description = "Exact category filter", example = "stay")
             @RequestParam(required = false) String category,
-            @Parameter(description = "Minimum price filter (major units)", example = "150")
+            @Parameter(description = "Minimum price filter (major units; non-negative)", example = "150")
             @RequestParam(required = false) java.math.BigDecimal minPrice,
-            @Parameter(description = "Maximum price filter (major units)", example = "800")
+            @Parameter(description = "Maximum price filter (major units; non-negative, at least minPrice "
+                    + "when both bounds are present)", example = "800")
             @RequestParam(required = false) java.math.BigDecimal maxPrice,
             // L27: the stay window [checkIn, checkOut) — exclusive end. The
             // SearchCriteria record is the gate: an incomplete (one date

@@ -106,6 +106,49 @@ class SearchControllerWebMvcTest {
         verify(searchService, org.mockito.Mockito.never()).search(any(), any());
     }
 
+    // ---- W6: the price-bound invariants at the HTTP boundary ---------------
+
+    @Test
+    void negativePriceBound_isA400BeforeAnyQuery() throws Exception {
+        mockMvc.perform(get("/api/v1/search").param("minPrice", "-0.01"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/search").param("maxPrice", "-1"))
+                .andExpect(status().isBadRequest());
+
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @Test
+    void invertedPriceRange_isA400BeforeAnyQuery() throws Exception {
+        // The dominant real-world shape: the user swaps the two bounds
+        // (min 800, max 150) — the record's gate answers the 400 before
+        // any query, never the silently-empty page the raw SQL range
+        // would answer.
+        mockMvc.perform(get("/api/v1/search")
+                        .param("minPrice", "800")
+                        .param("maxPrice", "150"))
+                .andExpect(status().isBadRequest());
+
+        verify(searchService, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @Test
+    void zeroAndOrderedPriceBounds_returnOk() throws Exception {
+        // Zero is valid (the free-floor filter); an ordered range is the
+        // ordinary filter form — both reach the service untouched.
+        when(searchService.search(any(), any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/search")
+                        .param("minPrice", "0")
+                        .param("maxPrice", "800"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<SearchCriteria> criteria = ArgumentCaptor.forClass(SearchCriteria.class);
+        verify(searchService).search(criteria.capture(), any());
+        org.assertj.core.api.Assertions.assertThat(criteria.getValue().minPrice())
+                .isEqualByComparingTo(java.math.BigDecimal.ZERO);
+    }
+
     // ---- L32: the real-estate facet binding + the sort whitelist ----
 
     @org.junit.jupiter.api.Test
