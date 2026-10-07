@@ -761,3 +761,24 @@ Stage Summary:
 - Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (reactor) · B-13 ✓ · B-14 ✓ (fcb20a5) · B-05 + B-10 wait on the foundation BOM (CR-2) · B-15 next immediately (the console module — feature flags + Remote Config per Boot external-config, the last P3 unit before B-16 which waits on A-17).
 
 تسليم للمراجعة
+
+---
+Task ID: B-15 (+ CR-9 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-15 (compliance plan C.5) — وحدة console (أعلام ميزات + Remote Config بخصائص Boot)
+
+Work Log:
+- MEASURED first: C.5's two-halves design (the C.10 measured limit governs it: Boot's external-config governs the static AT BOOT exclusively; the operational is DATA at request time — never @ConditionalOnProperty for request-time semantics); the house @ConfigurationProperties pattern (MessagingProperties + the SearchPropertiesValidationTest runner pattern); the metrics channel (MeterRegistry — the Actuator endpoints reference's own data, the @Observed commands' registry); the admin-surface shapes (class-level @PreAuthorize ADMIN + the queue/verdict pattern); the identity statement's ACTIVE LIMIT («اللوحة إعداد وتشغيل ومحتوى وسياسات؛ والقدرة غير الموجودة كوداً تبقى تطويراً») — the console configures and reads, never builds.
+- IMPLEMENTED (my garden): marketplace-console on the reviews pattern (self-contained: allowedDependencies shared-api/shared-security/shared-jpa + micrometer-core for the MeterRegistry read, injected through ObjectProvider so the module degrades gracefully without a registry — the GlobalExceptionHandler pattern) — ConsoleProperties (the STATIC half: the flags' fail-closed policy default with @DefaultValue, environment-calibratable for the migration window) + ConsoleConfig (@EnableConfigurationProperties, the MessagingConfig pattern) + FeatureFlag + RemoteConfigValue (the OPERATIONAL half: one live row per key, the BaseEntity auditing fields as the change-history source) + ConsoleService (the request-time reads isEnabled/configValue with the policy defaults, the registrations with 409-on-duplicate, the flip/revision with 404-on-unknown, the metrics summary over what EXISTS, the change history over the auditing fields) + ConsoleAdminController (the ADMIN-gated surface: the tri-partite view + the boards + the writes + the two reads) + ConsoleView (the HONEST catalog — only verified controller paths: every section's surfaces measured against the code's own mappings).
+- V157 PROVEN ON THE LIVE DATABASE (scripts/ValidateV157.java): 10+10 columns + both _aud mirrors + both partial uniques asserted; the happy Arabic inserts; the duplicate live keys rejected 23505; a retired row never blocks its own re-registration; both aud shapes accepted.
+- GUARD BOOKKEEPING in the same unit: V157 registered (326534447, flyway-core 12.4.0's own ChecksumCalculator), SYSTEM.md updated (105 ترحيلة نسخية V1..V157 + 108 ملفًا في الشجرة), ObservationCoverageFilesTest's pin extended with the console's four commands.
+- LOCAL GATES GREEN: console standalone 22/22 (the properties gate 2/2 + the service contracts 11/11 incl. the REAL-registry metrics read + the console check 8/8 + the boundary gate 1/1); the guard sweep on the app (Modulith 1/1, MigrationChecksum 1/1, DocumentationNumbers 6/6, ObservationCoverage 2/2). One compile slip fixed in-unit (Meter.measure() returns an Iterable).
+- PUSHED: feat/track-b-modules @ 12d2bac (PR-B #508).
+- CR-9 RECORDED (B→A, §5.4 — the console reactor wiring, the CR-5/7/8 pattern verbatim): root pom <modules> row for marketplace-console + the dependencyManagement entry + the app pom aggregation dependency row + the SYSTEM.md/README/ARCHITECTURE module counts (+1 per landing; with CR-7/CR-8 pending: 23 today → 25/26 as they land together).
+
+Stage Summary:
+- C.5 landed as the TWO-HALVES console: the Boot static half + the operational data half, the tri-partite view as an honest catalog of the existing surfaces, the metrics/audit reads over what EXISTS — the identity statement's active limit embodied in every surface.
+- **P3's new-module wave COMPLETE for the executable set: B-12 (jobs, in the reactor) + B-13 (institutions) + B-14 (knowledge) + B-15 (console) all delivered** — the P3 line's remaining item is B-16 (M2 المتجر) which waits on A-17's landing per its recorded constraint.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (reactor) · B-13 ✓ · B-14 ✓ · B-15 ✓ (12d2bac) · B-05 + B-10 wait on the foundation BOM (CR-2 — feat/parallel-foundation EXISTS now; the BOM may be imminent) · B-16 waits on A-17 · CR-5 EXECUTED by Track A · CR-6/7/8/9 pending with paste-ready rows · the Track-B executable line is COMPLETE for every unit not gated on another's landing.
+
+تسليم للمراجعة
