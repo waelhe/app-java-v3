@@ -55,6 +55,20 @@ public class ListingExpiryJob {
      * synchronously on it: the exact serialization the jobs already had on
      * the default single-threaded {@code TaskScheduler}, preserved with zero
      * new concurrency.
+     *
+     * <p><b>Why a plain listener and NOT the house {@code @ApplicationModuleListener}
+     * (the availability/booking precedent):</b> Moments publishes from its
+     * {@code @Scheduled} thread with NO transaction, and the official
+     * Framework rule for {@code @TransactionalEventListener} is explicit —
+     * "if no transaction is running, the listener is not invoked at all"
+     * (unless {@code fallbackExecution = true}, which
+     * {@code @ApplicationModuleListener} does not set). A registry-tracked
+     * listener here would defer every tick's delivery to the boot-time
+     * republish or the staleness-to-FAILED recovery chain — the job would
+     * NOT run when the hour passes. The temporal jobs' own idempotent
+     * cadence IS their retry (the next tick resumes from the true backlog),
+     * so they take the guaranteed at-tick delivery instead of the durable
+     * deferred one.
      */
     @EventListener
     void on(HourHasPassed event) {

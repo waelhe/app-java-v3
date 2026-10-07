@@ -46,7 +46,14 @@ public class ListingRankingJob {
      * The daily tick — a plain {@code @EventListener} running synchronously
      * on Moments' scheduler thread: the exact serialization the jobs already
      * had on the default single-threaded {@code TaskScheduler}, preserved
-     * with zero new concurrency.
+     * with zero new concurrency. Deliberately NOT the house
+     * {@code @ApplicationModuleListener} (the availability/booking
+     * precedent): Moments publishes with no transaction and the official
+     * Framework rule says a {@code @TransactionalEventListener} without one
+     * "is not invoked at all" — a registry-tracked listener would defer this
+     * tick's delivery to boot-time republish or staleness recovery. The
+     * ranking's own idempotent cadence IS its retry (the next tick recomputes
+     * an unchanged roster to nothing).
      */
     @EventListener
     void on(DayHasPassed event) {

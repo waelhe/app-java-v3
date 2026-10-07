@@ -59,9 +59,20 @@ public class AdBillingJob {
     }
 
     /**
-     * The daily tick. Catch-up is structural: a campaign left behind by
-     * downtime settles its whole open span as ONE window on the next run
-     * (the charge's {@code window_start} is the span's own start).
+     * The daily tick — a plain {@code @EventListener} running synchronously
+     * on Moments' scheduler thread (the serialization the jobs already had
+     * on the default single-threaded {@code TaskScheduler}), and
+     * deliberately NOT the house {@code @ApplicationModuleListener}: Moments
+     * publishes with no transaction, and the official Framework rule says a
+     * {@code @TransactionalEventListener} without one "is not invoked at
+     * all" — a registry-tracked listener would defer the settle's delivery
+     * to boot-time republish or staleness recovery. The settle's own
+     * catch-up design IS its retry (an unsettled window waits complete in
+     * the campaign's open span for the next tick).
+     *
+     * <p>Catch-up is structural: a campaign left behind by downtime settles
+     * its whole open span as ONE window on the next run (the charge's
+     * {@code window_start} is the span's own start).</p>
      */
     @EventListener
     void on(DayHasPassed event) {
