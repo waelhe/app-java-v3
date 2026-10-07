@@ -2,8 +2,10 @@ package com.marketplace.edge;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.context.annotation.Profile;
 import org.springframework.mock.env.MockEnvironment;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -13,6 +15,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code JwkSourceProdHardeningTest} (marketplace-platform-infra).
  */
 class EdgeClientRegistrationTest {
+
+    /**
+     * B.2 (compliance plan wave B — the production-parity sandbox): both D6
+     * guards are declared active in {@code prod} AND {@code staging}, so a
+     * deployment that passes the sandbox exercises the exact fail-fast
+     * posture production exercises. Pinned by annotation reflection so an
+     * accidental profile narrowing regresses loudly.
+     */
+    @Test
+    void theD6GuardsRunInProdAndStaging() throws Exception {
+        for (String guard : new String[] { "edgeProdGuard", "edgeTransportGuard" }) {
+            java.lang.reflect.Method method = EdgeSecurityConfig.class
+                    .getDeclaredMethod(guard, org.springframework.core.env.Environment.class);
+            Profile profile = method.getAnnotation(Profile.class);
+            assertThat(profile).as("%s must declare @Profile", guard).isNotNull();
+            assertThat(profile.value())
+                    .as("%s activation profiles (prod + staging parity)", guard)
+                    .containsExactlyInAnyOrder("prod", "staging");
+        }
+    }
 
     @Test
     void blankSecretThrows() {

@@ -36,11 +36,14 @@ public class EdgeSecurityConfig {
     }
 
     /**
-     * Active on prod only: a blank or missing {@code EDGE_CLIENT_SECRET} is a
-     * startup failure, never a silent fallback (D6).
+     * Active in prod AND staging (the production-parity sandbox — B.2): a
+     * blank or missing {@code EDGE_CLIENT_SECRET} is a startup failure,
+     * never a silent fallback (D6). The sandbox must exercise the same
+     * fail-fast posture so a deployment that passes it behaves the way
+     * production behaves.
      */
     @Bean
-    @Profile("prod")
+    @Profile({"prod", "staging"})
     ApplicationRunner edgeProdGuard(Environment env) {
         return args -> {
             String secret = env.getProperty("EDGE_CLIENT_SECRET", "");
@@ -52,15 +55,16 @@ public class EdgeSecurityConfig {
     }
 
     /**
-     * Active on prod only: the relayed bearer must not travel over cleartext
-     * in a deployed environment (CWE-319 — adopted from CodeRabbit r1, Minor).
-     * HTTP stays allowed for local development (any non-prod profile skips
-     * this guard entirely) and for platform private-network hops behind an
-     * explicit {@code EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT=true} escape hatch
+     * Active in prod AND staging (B.2 production parity): the relayed bearer
+     * must not travel over cleartext in a deployed environment (CWE-319 —
+     * adopted from CodeRabbit r1, Minor). HTTP stays allowed for local
+     * development (any other profile skips this guard entirely) and for
+     * platform private-network hops behind an explicit
+     * {@code EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT=true} escape hatch
      * (documented, auditable, never silent).
      */
     @Bean
-    @Profile("prod")
+    @Profile({"prod", "staging"})
     ApplicationRunner edgeTransportGuard(Environment env) {
         return args -> {
             String backend = env.getProperty("EDGE_BACKEND_URL", "http://localhost:8080");
