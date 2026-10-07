@@ -155,6 +155,14 @@ class ObservationCoverageFilesTest {
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),
+            // B-13 (compliance plan C.3): the institution registry's three
+            // business commands (register + the verification request + the
+            // review verdict) — the module is not yet in the app reactor
+            // (CR-7's wiring rows), but this guard scans the source tree:
+            // the pin carries the commands from the day they exist.
+            Map.entry("marketplace-institutions", List.of(
+                    "institution.register", "institution.verification.request",
+                    "institution.verification.review")),
             Map.entry("marketplace-jobs", List.of(
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),

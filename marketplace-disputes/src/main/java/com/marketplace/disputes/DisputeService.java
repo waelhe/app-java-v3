@@ -66,7 +66,20 @@ public class DisputeService {
     /**
      * The amount-less resolve — the L24 call site, byte-identical (the
      * full-refund decision's shape; Track A's app-side stubs couple to it).
+     *
+     * <p>B-06's review fix (the app-level
+     * {@code DisputeServiceSecurityTest.resolve_whenNotAdmin} red): the
+     * annotations live HERE too, not only on the 4-arg chain — the
+     * security gate must fire on EVERY public entry (the L24 contract:
+     * "the gate fires BEFORE the refund path is ever touched"), and the
+     * observation likewise: the delegation below is an INTERNAL call
+     * (this.) that bypasses the proxy, so an undecorated overload had
+     * neither the {@code @PreAuthorize} gate nor the
+     * {@code @Observed} span — exactly the regression the security test
+     * caught.
      */
+    @Observed(name = "dispute.resolve")
+    @PreAuthorize("hasRole('ADMIN')")
     public Dispute resolve(UUID id, DisputeResolution resolution, Authentication authentication) {
         return resolve(id, resolution, null, authentication);
     }
