@@ -372,42 +372,417 @@ Stage Summary:
 - Forward risks on record: yelp waves #487 (91 files) + #462 dirty against main — re-measure OpenAPI the day they merge; JWT r3 rotation due before 2026-12-08.
 
 ---
-Task ID: B-11..B-15 (the parallel line's continuation)
-Agent: main (Track-B Developer role, session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
-Task: «أواصل بـB-11 (تعريب الإشعارات) ثم الوحدات الجديدة B-12–B-15» — the continuation of the parallel execution plan's Track B under the owner's directives (continuous flow, everything saved to GitHub)
+Task ID: 57
+Agent: main (platform agent — fullstack per the owner's standing directive)
+Task: Sandbox anomaly recovery + the owner's ask: «اريد خطة مستقلة للمتجر ومايحتاجه ليكتمل» — a standalone store completion plan
 
 Work Log:
-- SESSION REBOOT: the sandbox had reverted to an N6-era snapshot (JDK 25, the user-space PostgreSQL/Redis, and the whole ~/.m2 cache lost); the branch itself was intact on GitHub per the owner's persistence directive — re-provisioned Temurin 25.0.4.1 + the zonky PostgreSQL 16.4 (marketplace DB, JDBC channel), re-synced feat/track-b-modules, re-read the governing docs.
-- B-11 (تعريب الإشعارات) DELIVERED @ c0b2b6f: the module-local MessageSource channel (notifications-text/_ar bundles, PLATFORM_LOCALE=ar, the byte-identical English floor, zero CR — never a MessageSource-typed bean so the auto-configuration and validation interpolation stay untouched); the locale gate 6/6 + the delivery tests 26/26 pinning the Arabic composition end to end; messaging measured ZERO composed text (no bundle needed).
-- B-12 (jobs) DELIVERED @ e1d8492: the complete employment module on the reviews pattern (post-discover-apply-decide journey, V153 proven on the live DB incl. the partial-unique identity, the standalone Modulith boundary gate) — Track A then landed the CR-5 wiring batch (309c09d) putting jobs IN THE REACTOR.
-- THE FLAGGED RED FIXED (fix-forward): DisputeServiceSecurityTest.resolve_whenNotAdmin — B-06 had left the 3-arg resolve delegator bare of @PreAuthorize/@Observed (the internal (this.) call bypasses the proxy); both restored, the L24 gate holds on every public entry.
-- B-13 (institutions) DELIVERED @ c156422+923ba00: the registry + the schema.org Organization JSON-LD (the honest L30 chain mapping) + the institutional verification (the admin review as the verdict's only mover), V154 proven; V155 lands the community-side party widening's DB HALF (boot-safe, proven over a V60-shaped baseline); the CODE half + the wiring ride CR-6/CR-7.
-- B-14 (knowledge) DELIVERED @ fcb20a5: the community-built neighborhood guide with the NATIVE Arabic FTS discovery (the catalog precedent verbatim; the GIN index in the V9 pattern) + the search-integration EVENT PAIR (published/withdrawn — the complete indexing facts, the late-lander consumer on the search side); V156 proven incl. the Arabic full-text roundtrip.
-- B-15 (console) DELIVERED @ 12d2bac: the two-halves design (ConsoleProperties static @ boot + the flags/config DATA at request time — the C.10 limit embodied), the honest tri-partite catalog (only verified paths), the metrics read over MeterRegistry + the change history over the auditing fields; V157 proven.
-- Every unit: migration PROVEN on the live DB (JDBC validators), checksums registered (flyway-core 12.4.0's own ChecksumCalculator), SYSTEM.md's derived inventory updated, the ObservationCoverage pin extended, the curated app guard sweep GREEN (Modulith/MigrationChecksum/DocumentationNumbers/ObservationCoverage/DisputeServiceSecurity), pushed immediately (the continuous-flow rule — no CI waiting; the last glance shows the four gates in_progress on 12d2bac), the state mirror updated per unit (009-013 @ docs/track-b-state).
-- CRs RECORDED with paste-ready rows: CR-6 (the community membership CODE widening), CR-7/8/9 (the institutions/knowledge/console reactor wirings — the executed CR-5's pattern).
+- ANOMALY MEASURED: between the two IM messages of this session the sandbox reverted to an N6-era snapshot — web-marketplace .git was a fresh clone at 846b7f3 (reflog: clone af3f8c9 → ff c76ab8d → 846b7f3) with 210 stat-noise M files (0 insertions/0 deletions — content-identical), and the worklog itself lost Tasks 52–56 (this entry re-opens the ledger on the old snapshot's tail).
+- REMOTE TRUTH (ls-remote, the authority): frontend origin/main = 2e1d9f2 (the signed N15 state — the push and deployment f1ab06a4 are intact on GitHub/Railway); backend origin/main = dcdb5f8 (NEW since turn 1: the owner merged PR #500, the W5+L52 truth-sync docs — its own message records production still runs main 193ff248, ladder V105; docs-only, no deploy owed).
+- Both repos reset --hard to origin/main per the §3 bootstrap ritual. N15 artifacts verified present post-resync: src/app/store/* (6 files), docs/design/suq-storefront-2026-10-04.html, vision-store.ts carrying the suq product world.
+- NEW FORWARD CONTEXT measured from the fetches: frontend origin gained branch feat/neighborhood-polls (the L52 frontend side, in flight by another hand — DO NOT collide); backend origin gained feat/mobile-refresh-grant + feat/spring-security-711-compliance + waelhe-patch-3 (PR #502's branch).
+- RESTORED RECORD (from the reverted snapshot's ledger, verbatim from this session's turn-1 read): Task 54 = N15 built on feat/suq-storefront-design (the design transplanted to .suq CSS, honest mappings, two root repairs: vitest .tsx include gap + wing feed-tab prefix bug; locally merged a41d2ed, held). Task 55 = «ادفع» ritual executed: PR #31, two CI-caught root fixes (hydration beacon e2e pattern + allowedDevOrigins for 127.0.0.1 dev hydration), squash-merged 2e1d9f2, manual deploy f1ab06a4 SUCCESS with commitHash == HEAD, 16/16 signed production round (Tajawal/surface/CTA/radius/pill measured; beacon live; publish sheet with 5 intents; honest empty cart; Arabic-Indic riyals; 390px overflow 0; zero console errors). Task 56 = the images diagnosis (measured from the real N15 files in turn 1): store images absent because (1) the product world is display rows with no backend Product entity, (2) the signed media channel is target-gated listingId/postId — no productId, (3) the design's own 38 images are foreign-hosted aida-public mockup assets, recorded as faked-photo-forbidden per the adherence spec §3.5.
+- Turn-1 facts remain valid: all turn-1 reads (MediaController L48 gate, seed 57-photo strategy, R__seed bucket-outlives-db, MEDIA_S3_* config, adherence spec content) were taken from the true N15/N5-state files and are independently re-verifiable post-resync.
 
 Stage Summary:
-- The requested line COMPLETE: B-11 + B-12 + B-13 + B-14 + B-15 all delivered, gated, pushed, mirrored — the P3 new-module wave's executable set done; every deliverable safe on GitHub.
-- Remaining (not executable by Track B alone): B-05 + B-10 (the foundation BOM — CR-2; feat/parallel-foundation now exists), B-16 (waits on A-17), CR-6..CR-9 (Track A's wirings), PR #508 open for the owner's merge word.
+- Environment recovered to the signed canonical state on both repos; the ledger re-opened with the lost records restored; nothing of the owner's work was lost (origin was always the authority).
+- NOW OPEN: the standalone store completion plan (this task) — sources being read: product-charter.md, the 2026-10-04 backend-follow-plan (M1→M6), the suq adherence spec §6, the live /store family + /cart + /checkout + /orders surfaces, and the backend's module patterns (media/catalog/reviews) to ground each M-wave in the real layout.
+
 ---
-Task ID: RV-1 (مراجعة الخطة بعد الإدراج)
-Agent: main (Track-B Developer role, session web-636b708e)
-Task: المالك: «هل راجعت الخطة بعد تعديلها واضافة توصياتك وغيرها» — جولة مراجعة ما بعد الإدراج: تحقق مؤلف التوصيات من أن إدراجها في الطبقتين وفياً، والخطة متسقة داخلياً ومتسقة مع الفروع الحية
+Task ID: 57 (closure)
+Agent: main (platform agent — fullstack per the owner's standing directive)
+Task: «اريد خطة مستقلة للمتجر ومايحتاجه ليكتمل» — delivered
 
 Work Log:
-- قراءة الطبقتين على رأسيهما المدفوعين: خطة التوازي (docs/parallel-execution-plan @ f4a8322a) + حزمة التسليم (track-b-handoff @ f4a8322a) + طبقة المحتوى (docs/official-compliance-plan @ 07340d5e عبر PR #509) + ملف التوصية الوحيد (track-a-additions-recommendation @ a48d7aa1 — أمر المالك «ملف واحد فقط» محفوظ)
-- الحكم على الإدراج: وفٍ ومكتمل — بيان الهوية §0.1 حرفياً + قاعدة DoD-رحلة (سطر 31) + C.7/C.8 + حكم المؤسسات في C.3 حرفياً + C.9–C.12 + سجل الانتظار §13 (عدم الفقد الصامت) + استثناء المالك لـA-11/C.1 محترم؛ العدادات 18+19=37 متسقة عبر §4.1/§6/§7/§14/§16
-- قياس الفروع الحية: merge-base يثبت أن feat/track-b-modules وfeat/parallel-foundation أخوان من main @ dcdb5f80 (خط المطور بدأ قبل هبوط A-01)؛ BOM الطرفين (bucket4j/firebase-admin) وعقد CR-4 المشترك ليسا في خط المطور — علة تعطّل B-05/B-10 المسجلة سابقاً في worklog أصبحت الآن مقيّدة نصاً في الخطة (بعد درجة PR-F من §15)
-- ثلاثة ديون وُجدت وقُضيت في نفس الدفعة (قاعدة صفر دين): (1) مصفوفة §5.1 أسقطت marketplace-provider كلياً — العداد 27 يحصيه ولا عمود يحمله → أُضيف لعمود الاحتياط؛ (2) جدول بيئة الحزمة يثبّت المفاعل على 22 وحدة — متقادم بوحدة منذ CR-5 → صيغ آلية النمو المقيسة 22←23←26؛ (3) قاعدة §4.2 «يتفرعان من رأسه لا من main» تناقض المقيس بلا توثيق → صف «الحالة المقيسة للفروع» يسجل الأخوّة والمصالحة (درجة PR-F) وقيودها (no force-push، لا CR مكرر)
-- القيود نفسها نزلت في صفّي B-05/B-10 (§7) وفي سطرَي التبعيات والفرع بحزمة التسليم — مصدر تعليمات المطور الوحيد لا يناقض المقيس أبداً
-- الدفعة مدفوعة @ 046b21cd على فرع الخطة (PR #505 يحملها)؛ لم تُمس أي قاعدة منهجية (التدفق/الملكية/البوابات/السلّم بايتاً-بايتاً)
-- لمحة غير معطّلة على رأس خط المطور 12d2bac7: CodeQL + Container Scan خضران؛ CI + Integration قيد التقدم — القرار unchanged (التدفق المستمر)
+- Sources read post-resync for the plan: the 2026-10-04 backend-follow-plan in full (the L60–L65/M1→M6 definitions, the DoDs, the owner-gate table §4, the six standing disciplines §3) · product-charter.md N14/N15 rows + §7/9 gate · the suq adherence spec (§2 adoption decisions, §6 out-of-scope records: /cart /orders reskin, delivery modes, vendor store pages) · live surfaces measured (src/app/cart 131 lines, orders 92, store 367, product 130, vision-store 831 — the exact state/order vocabulary PREPARING/SHIPPED/DELIVERED/RECEIVED + checkout Server Action) · backend grounding: V70 categories registry (the reference-data pattern: code/name_ar/position + 400 write gate + "dictionary is data, not migrations"), ladder head V105, module list (disputes/reviews/ledger/media all standing — generalize, don't invent), MediaController's exactly-one-target gate (the L48 widening precedent for productId).
+- WROTE docs/superpowers/plans/2026-10-07-store-completion-plan.md (web-marketplace): §1 the completeness definition (zero display badges in the store family = the final test) · §2 the measured current state table · §3 the ordered gaps · §4 the waves in detail (M1 Product+dictionary+media-widening with V106+ note and branch-reservation discipline; M2 product page Q&A+vendor summary on the L36 pattern; M3 order-per-vendor with party-guarded transitions and the recorded cart-design decision point; M4 fulfillment+disputes+vendor ledger with escrow behind R1; M5 rating after RECEIVED only; M6 first-party products; F1 the /cart+/orders .suq reskin, F2 the Material Symbols FOUT hardening, F3 the chips-return-with-contracts rule) · §5 the sequence (store starts NOW — no dependency on L53–L59, the independence the owner asked for) · §6 the owner gates table with today's status · §7 the final DoD (signed end-to-end round, no number without a ledger entry, six gates + CodeRabbit per PR) · §8 the standing honesty rules.
+- Committed locally on main: 57fe23b (docs only). HOLD for the owner's «ادفع» per the §5-12 ritual.
 
 Stage Summary:
-- جواب سؤال المالك: الإدراج كان وفياً، والمراجعة وجدت ثلاثة ديون اتساق ورفعتها في نفس الدفعة — الخطة الآن تحكي الحقيقة المقيسة للفروع
-- الحقائق الحاكمة المثبتة نصاً: provider في مصفوفة الملكية؛ آلية نمو المفاعل؛ الأخوّة من main ومسار المصالحة عبر درجة PR-F؛ B-05/B-10/وصلة CR-4 بعد تلك الدرجة حصراً
-- كل شيء على GitHub: 046b21cd (فرع الخطة) + 12d2bac7 (خط الوحدات) + 90c57bdd (مرآة الحالة) — والـPRs الخمسة مفتوحة (#504/#505/#508/#509/#510)
+- The store now has its own independent completion plan, measured end to end: what exists (N15 in production, real cookie cart, the signed media channel, the V70 dictionary precedent), what's missing (the whole M-column — no Product entity exists), the wave-by-wave contracts with DoDs, and the four owner decision gates (dictionary landing, cart shape, guarantee ratio, paid tier).
+- The images answer rides M1: photos appear the moment the media channel gains its productId target — never faked before that.
+- Awaiting the owner's word: «ادفع» for the plan doc, and the gate decisions that unlock M1.
+
+---
+Task ID: 58 (B-01 — Track B bootstrap + the owner's comparison ask)
+Agent: main (platform agent — now also Track B developer per the owner's directive)
+Task: User: «تم تصميم خطة اريدك منك قراءتها ومقارنتها مع احتياجاتنا، وانت مطور ثاني فيها ستعمل عليها بالتوازي مع المطور الأول» — read + compare + accept the second-developer role
+
+Work Log:
+- READ IN FULL from the owner's branch (origin/docs/parallel-execution-plan @4445685, 2 files +394): (1) docs/parallel-execution-plan.md — the two-track methodology (Track A agent A-01..A-16 / Track B developer B-01..B-15, continuous flow with no CI waiting, exclusive ownership matrix + hot files, Flyway ranges A:V110–V149/B:V150–V189/shared:V106–V109, frozen event catalog additive-only, late-lander listener rule, CR protocol B→A, gate board + triage queue P0/P1/P2/CR, conflicts/CI-failure/CodeRabbit protocols, staged merge ladder «ادمج» owner-word-gated); (2) docs/handoff/track-b-handoff.md — my self-contained delivery pack (10 binding rules, ownership gardens: messaging/notifications/disputes/geo/realestate/reviews + catalog read paths + 4 new modules jobs/institutions/knowledge/console, per-unit gate mvn clean verify -pl <module> -am, commit format, worklog B-xx entries ending «تسليم للمراجعة»).
+- READ IN FULL the governing content layer (origin/docs/official-compliance-plan @f5c7e48): authority ladder (official Spring docs only — prior internal plans demoted to read-only archive), version baseline all-matching, the Attic finding (Spring Authorization Server) with owner decision options §9, 16-row compliance matrix, 22+5 module map, waves 0/A/B/C/D/E with the six-legged journey gate, anti-manual-intervention rules, DoD.
+- COMPARISON WRITTEN AND COMMITTED (web-marketplace, local): docs/superpowers/plans/2026-10-07-parallel-plan-vs-needs-comparison.md — measured row-by-row against the platform's living records (the 2026-10-04 backend-follow-plan L53–L75+ ladder + the 2026-10-07 store completion plan M1→M6 + charter §7 gates). VERDICT: the new plan excels at the horizontal compliance layer + channel quality + the 5 new modules + the store's order core (C.1≈M3, needs the frontend's exact contract vocabulary pinned — ESC-3); BUT measured ABSENT/PARTIAL: M1/M2 (the store's ROOT: Product entity + category dictionary + product media target — the owner's own images question from this session, answer rides M1 — ESC-1, highest value), C1/C2 neighborhood core contracts (conversations list + neighbor public profile), the whole E/K Redfin context column and T/D services column, M4/M5/M6, and a METHODOLOGY CONFLICT on institutions (new module per the new plan vs community generalization per the follow-plan — ESC-2). Governance note recorded: content changes are owner-word-gated (§3), so these are ESC escalations, not silent edits.
+- ROLE ACCEPTED: Track B developer. B-01 executed with measured environment facts: JDK 25 was absent (box had 21 only; apt candidate exists but sudo is password-gated) → provisioned Temurin 25.0.4.1 LTS locally at /home/z/my-project/tools/jdk-25.0.4.1+1 (135MB tarball, no sudo needed). Docker absent → Testcontainers skip locally (by design; CI judges — the pack's own rule).
+- B-01 BUILD GATE MEASURED: full single-run reactor is BLOCKED in this sandbox — attempt 1 killed mid-run at ~4min (log frozen at SecurityConfigJwtDecoderTest, process reaped, no verdict line), attempt 2 killed instantly (0-byte log; background processes die at tool-call boundaries). ISOLATION TEST: the module itself is innocent — chunked in-call runs are GREEN: marketplace-shared solo = BUILD SUCCESS 86/86 tests; marketplace-reviews -am chain = BUILD SUCCESS (shared 86 + platform-infra 122 + reviews 106 = 314 tests). CONCLUSION: the per-unit workflow gate (-pl <module> -am — the actual Track B unit gate) works perfectly here; only the one-time full-reactor bootstrap needs chunking (ESC-4 recorded).
+- START GATE MEASURED: feat/parallel-foundation and feat/track-b-modules DO NOT EXIST on origin yet (A-01 has not landed) — B-02+ must fork from the foundation head per §4.2, so my executable-now scope was exactly B-01, which is now done.
+
+Stage Summary:
+- The comparison is delivered: the parallel plan is methodologically strong and covers the store's order core, but the store's root (M1/M2 — including the images answer) and three other recorded need-columns are absent → four ESC items raised to the owner (ESC-1 M1/M2 insertion with ownership assignment; ESC-2 institutions approach conflict; ESC-3 pinning the frontend's order-state contract into A-11's spec; ESC-4 the sandbox reactor limitation).
+- Track B role accepted and bootstrapped: JDK 25 provisioned, governance read, module-scoped gates proven green (314 tests), worklog discipline live. Awaiting: the foundation branch (A-01) to fork feat/track-b-modules and start B-02, plus the owner's word on the ESC items.
+
+---
+Task ID: 58 (continuation — simplification answer)
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: User: «اشرح بتبسيط نتيجة المقارنة. وهل الخطة جاهزة للتنفيذ ام تحتاج تعديل»
+
+Work Log:
+- Re-verified state before answering: comparison doc present locally (7f83d86, 105 lines, docs/superpowers/plans/2026-10-07-parallel-plan-vs-needs-comparison.md); backend origin/docs/parallel-execution-plan @4445685 intact (282-line methodology + handoff pack); frontend main ahead 2 (57fe23b store plan + 7f83d86 comparison — both still held for «ادفع»).
+- Composed the simplified owner-facing verdict: methodology layer ready and already executing (B-01 done); content layer needs ONE essential amendment (ESC-1: M1/M2 store root — the images answer) + 3 lesser decisions (ESC-2/3/4); all content edits are owner-word-gated by the plan's own §3.
+
+Stage Summary:
+- Simplified comparison verdict delivered to the owner: the plan is a strong factory (two parallel lines, no CI waiting, conflict-proof ownership) that covers the store's order core — but the store's ROOT (Product entity + category dictionary + product media target = the images answer) is absent from every wave, so without ESC-1 the images stay pending even after both tracks complete. Awaiting: «ادفع» for the two held docs + the four ESC decisions + A-01's foundation branch to start B-02.
+
+---
+Task ID: 59
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: User: «اعطني ملف واحد توصية للمطور الاول وتعليمات محددة يراجعها ويضيفها. بالنسبة للمؤسسات فيها جزء من المجتمع» — one-file recommendation pack for the first developer + the owner's institutions ruling
+
+Work Log:
+- MEASURED before writing: ownership matrix §5.1 (orders→A new · catalog split A-jobs/B-reads · media+community in the untouched reserve · Flyway A:V110–V149/B:V150–V189/shared:V106–V109); Track unit lists (A-01..A-16 with A-11=C.1 orders; B-01..B-15 with B-13=C.3 institutions); compliance plan §5.2/§6 wave C rows; community module live code: NeighborhoodMembership (user_id+location_id+verification_state+member_since), MembershipVerificationState enum, NeighborhoodGroupMembership, NeighborhoodVerificationAdminController — the owner's «institutions are part of community» ruling is grounded in real standing machinery.
+- WROTE THE ONE FILE (148 lines, Arabic): download/2026-10-07-track-a-additions-recommendation.md — §0 three-line verdict (methodology untouched) · §1 ESC-1 as Addition 1: M1/M2 store root with exact paste-ready rows (C.7/C.8 in compliance plan wave C; A-17/B-16 new unit rows; §5.1 matrix edits), ownership proposal (M1→A because A-11 owns orders — one garden for the Product contract + signed media channel; M2→B because it extends B's catalog read paths, new files = no conflict), Flyway settlement (V110 dictionary/V111 products in A's range; V150 product_qa in B's; supersedes the store plan's «V106+» note — reconciliation recorded), DoD (signed image round via productId; 8-category dictionary with write gate; OpenAPI diff gate green) · §2 ESC-2 RESOLVED as Addition 2: the owner's ruling recorded verbatim («بالنسبة للمؤسسات فيها جزء من المجتمع») with the measured community membership machinery as grounding; C.3 row replaced (institutions ON community's generalized membership core, provider-style edges + JSON-LD in the new unit); B-13 scope widened; community moved out of the reserve column with the CR rule for existing files; DoD: no duplicated membership machinery · §3 ESC-3 as Addition 3: A-11/C.1 contract pinning (four states verbatim PREPARING/SHIPPED/DELIVERED/RECEIVED + order-per-vendor split + party-gated 403) · §4 waiting-list register (C1/C2, E/K, T/D, M4/M5/M6 — deliberately not inserted, each with its record reference and the no-silent-loss rule) · §5 closing notes (content-only amendments; the file is self-contained; B-02 start unaffected by his review).
+- VERSION PROTECTION: same content committed to web-marketplace docs/superpowers/plans/ (58032ed, local, held) — guards against the measured sandbox-revert risk; the download/ copy is the owner's handoff artifact.
+
+Stage Summary:
+- The owner's asks both delivered: ONE self-contained file (recommendation + specific paste-ready instructions for the first developer to review and add into the two plan branches), and his institutions ruling («part of community») recorded verbatim and grounded in the live community membership code — resolving ESC-2.
+- Frontend main now ahead 3 (57fe23b store plan · 7f83d86 comparison · 58032ed recommendation pack) — all awaiting one «ادفع».
+- Awaiting: the owner hands the file to the first developer; his review lands the amendments; A-01 foundation branch still gates my B-02 start.
+
+---
+Task ID: 60
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: User: «قلت لك لااريد الا ملف واحد يسلم للمطور. خطة واحدة وباقي الملفات والخطط لاحاجة لها ولا لدفعها» — keep ONE handoff file only, discard the rest, push nothing
+
+Work Log:
+- EXECUTED THE OWNER'S DISPOSAL: web-marketplace git reset --hard origin/main (2e1d9f2) — discarded all 3 never-pushed local commits (57fe23b store plan · 7f83d86 comparison · 58032ed repo copy of the recommendation). Repo now in sync with origin; origin was never touched; nothing anywhere is pending a push.
+- THE ONE FILE KEPT: /home/z/my-project/download/2026-10-07-track-a-additions-recommendation.md — the sole handoff artifact for the first developer.
+- CLEANED THE FILE for true self-containment (3 edits): §1.4 removed the reference to the discarded local store plan («محفوظة محليًا» — gone; the Flyway bullet now stands on the plan's own ranges + the «your redistribution call, contract vocabulary untouchable» bullet restored); §4 the M4/M5/M6 row now cites «عمود المتجر المسجّل نفسه (امتداد M1–M3 أعلاه)» instead of a deleted file; §5 note 2 now reads «مكتفٍ بذاته — لا يعتمد على أي وثيقة أخرى». References to the tracked repo docs (خطة المتابعة 2026-10-04 — on origin/main) remain valid and untouched.
+- Verified post-reset: no 2026-10-07 files remain in the repo working tree; git status clean; download/ holds the one file plus older accepted artifacts (n6-live-proof, neon-migration-summary, README) from prior sessions — left in place.
+
+Stage Summary:
+- The owner's directive is now exact: ONE file exists for handoff (the additions pack for the first developer, fully self-contained), everything else from this planning thread is discarded, and nothing was or will be pushed. The ESC substance survives only inside that one file (M1/M2 rows · the institutions ruling «جزء من المجتمع» · the A-11 contract pinning · the waiting-list register).
+- Next natural gates unchanged: the owner hands the file to the first developer; his review lands the amendments; A-01's foundation branch still gates my B-02 start.
+
+---
+Task ID: 61
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: Owner's platform identity statement («بالنسبة للمنصة اصبحت كما يلي...») — record it, measure it against the live code, and integrate it into the ONE handoff file
+
+Work Log:
+- MEASURED against live code before writing: PostCategory enum = GENERAL/CLASSIFIED/LOST_FOUND/RECOMMENDATION (توصية/مفقودات exist; استطلاع exists as its own entity from L52; **سؤال and طلب are ABSENT from the enum**) · EventCategory = SPORTS_FAMILY/VOLUNTEER/SOCIAL/MARKET/WORKSHOP (activities exist; «مبادرات» is a classification extension) · rg for vehicle/cars/broadcast/lending across all backend modules = no real hits (all genuinely new) · search module carries SavedSearch + SearchController + criteria cache (search exists; category+city/neighborhood scoping is a spec decision).
+- INTEGRATED the owner's identity statement into the ONE file (download/2026-10-07-track-a-additions-recommendation.md, 149→182 lines) — NO new files created, nothing pushed (frontend repo stays clean at 2e1d9f2):
+  * NEW §1 «بيان هوية المنصة» — the owner's words recorded verbatim + the four-section mapping table (المجتمع/السوق/دليل الأعمال/تعرف على + cross-cutting systems → existing modules → measured verdict per row) + two governing rules recorded (سقف «كل وحدة كاملة» = per-module functional completeness bar, DoD column per unit; «المالك يحدد المسار» = owner sequences) + §1.3 Nextdoor-style joining (verification exists via MembershipVerificationState + admin verification; the missing layer = recommendation/endorsement-based joining, an extension on the same membership machinery, consistent with the institutions ruling).
+  * Renumbered the old sections §1→§2 (store root), §2→§3 (institutions), §3→§4 (A-11 pinning), §4→§5 (waiting list), §5→§6 (closing notes) — internal cross-references updated coherently (verified by header scan).
+  * EXTENDED the waiting-list register with 7 new measured rows from the owner's statement: post types سؤال/طلب (enum extension, existing file ⇒ B-13 scope or CR) · paid lending + broadcast (entirely new, need contracts — lending is a community+booking+payments hybrid) · cars as a listing category (realestate pattern) · updates system + «أحدث إصدار» (beyond A-08 API versioning) · UI dash «التغيير من اللوحة لا من الكود» (ELEVATES console B-15 from feature flags to no-code appearance/content management — scope decision needed) · recommendation-based joining · direct appearance of community+directory products/services in the market (an integration contract over the additive-only event catalog).
+  * Self-containment hardening: dropped the last stale reference to the discarded comparison doc (ESC-2 «في مقارنتي» → plain), disambiguated «خريطة §5» → «خريطة §5.1 في الخطة المتوازية», header الغرض + أساس القياس now cite the owner's direct directives as sources.
+- File structure verified post-edit: §0..§6 with coherent subsection numbering, 182 lines, one file only.
+
+Stage Summary:
+- The owner's platform identity statement is now permanently carried inside the single handoff artifact the first developer will receive: verbatim governing text + measured mapping (what exists / what's planned / what's genuinely new) + the two governing rules + 7 new waiting-list items — nothing lost silently, nothing pushed, exactly one file as the owner ordered.
+- Key measured findings surfaced to the owner: (1) توصية/مفقودات/استطلاع already exist but سؤال/طلب do not; (2) paid lending and broadcast are entirely new scope; (3) «التغيير من اللوحة لا من الكود» significantly elevates the console unit (B-15, my Track-B garden); (4) knowledge (B-14) matches «تعرف على» verbatim.
+- Awaiting unchanged: A-01's foundation branch (gates my B-02 start) + the first developer's review of the file.
+
+---
+Task ID: 62
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: Owner's interpretation rule: «ان اذكر الهوية البسيط لتجربة المستخدم واما تجربة المستخدم الكاملة انت اكملها .. اي عندما اقول نشر تعليق اقصد كل تجربة المستخدم وليس فقط هؤلاء»
+
+Work Log:
+- RECORDED the rule verbatim in the ONE file as governing rule #3 in §1.2 («الهوية البسيطة ← التجربة الكاملة» — the binding interpretation rule over every item in §1): what the owner names is the simple label/identity of the experience, and its automatic meaning is the complete end-to-end UX.
+- ADDED §1.4 «النموذج المرجعي للتفسير» — the worked reference model using the owner's own example («نشر تعليق»), decomposed into 8 measured legs grounded in the platform's standing patterns: (1) entry (two routes to the composer; non-member gets the unified error contract 403, never a dead button) (2) composer+validation (RTL Arabic, length bounds, empty-submit prevention, 400 in the contract's own words) (3) submission (loading state, @Version idempotency = B-04 which exists precisely for this, retry without duplication) (4) persistence+display (PostComment standing: ordered list, pagination, my-comment highlighting) (5) follow-up interactions (reply, PostReaction standing, edit/delete own with ownership gates) (6) notifications (comment-on-my-post → Arabic i18n B-11 + Push B-10; event without listener = measured defect) (7) cross-cutting (390px zero overflow, accessibility, unified error contract, no faked images) (8) the signed production round (N6's 24/24 pattern) before the item counts as done.
+- Resulting rule pinned in §1.4 and echoed in §6 note 4: every DoD column in both plans is phrased as a JOURNEY, not a feature name — extending the compliance plan's own app-lifetime leg (§7) and full-journey gate (A-16) down to the level of every single §1 item.
+- §1.2 retitled from «قاعدتان» to «القواعد الحاكمة» (now three). File: 198 lines, structure verified §0..§6 coherent. Still ONE file, nothing pushed, repo untouched.
+
+Stage Summary:
+- The owner's interpretation rule is now a pinned governing rule inside the single handoff artifact: his words are the simple identity; the complete journey is the developers' automatic obligation (both tracks). The «نشر تعليق» reference model demonstrates the bar concretely on the platform's real standing machinery.
+- Every DoD in both plans now inherits the journey-phrasing obligation — this is the lens I will apply to my own B-units as well.
+- Awaiting unchanged: A-01's foundation branch + the first developer's review of the file.
+
+---
+Task ID: 63
+Agent: main (platform agent — Track B developer per the owner's directive)
+Task: Owner: «قم بدفع الملف» — the push ritual for the ONE file
+
+Work Log:
+- EXECUTED the push: backend repo (app-java-v3), branch docs/parallel-execution-plan (the first developer's plan branch — exactly where he works). Clean checkout from origin tip 4445685, working tree verified empty, file added as docs/handoff/track-a-additions-recommendation.md (symmetric with the existing docs/handoff/track-b-handoff.md — the handoff dir now carries both developer-facing packs), one commit, push accepted: 4445685..a48d7aa.
+- VERIFIED on the remote: git ls-remote shows refs/heads/docs/parallel-execution-plan = a48d7aa (the file is the branch's only new commit — purely additive, no plan file touched, consistent with the plan's own «new files = no conflict» rule §5.3).
+- Repo returned to main; local main was 26 commits stale (sandbox-era staleness, not new owner work) — reset --hard origin/main re-landed on dcdb5f8 (UNCHANGED: still the W5+L52 truth-sync #500; production still runs 193ff248). No feat/parallel-foundation / feat/track-b-modules on origin yet — my B-02 start gate still pending. One new remote branch noted in passing: origin/chore/safe-version-bumps (someone else's work — do not collide).
+- The download/ copy remains the owner's local artifact; the pushed copy is the delivery. Frontend repo untouched (clean at 2e1d9f2) — exactly one file pushed, as ordered.
+
+Stage Summary:
+- The ONE file is DELIVERED: origin/docs/parallel-execution-plan @ a48d7aa → docs/handoff/track-a-additions-recommendation.md (198 lines). It now travels with the plan branch itself — the first developer receives it the moment he touches his branch.
+- Nothing else pushed anywhere. Awaiting: the first developer's review of the pack; A-01's foundation branch (my B-02 gate).
+
+---
+Task ID: B-01
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-01 — الإقلاع والتحقق (بأمر المالك: «ابدأ تنفيذ الخطة الحالية للمطور الأول لحين قبول تعديلاتك»)
+
+Work Log:
+- (أ) الاستنساخ المستقل أُنشئ: app-java-v3-b من origin/main @ dcdb5f8 (شجرة الوكيل لم تُمس؛ التوكن من رابط الاستنساخ القائم — ملف الأسرار غير موجود). رسالة البدء محفوظة حرفيًا: download/track-b-handoff-message.md.
+- (ب) JDK 25 على PATH: Temurin 25.0.4.1 LTS (المجهز سلفًا في tools/) — java -version يظهر 25.0.4.1؛ JAVA_HOME أُفرغ (mvnw لا يقرأه).
+- القراءة الإلزامية بالترتيب: AGENTS.md كاملًا (حاكمية §0.1/§0.2 + بيان الإعلان الإجباري + سياسة اللغة: إنجليزية لطبقة الآلة/عربية لطبقة المالك) · SYSTEM.md §1–§15 (الملكية المزدوجة، البناء، الإقلاع، 21 وحدة Modulith، SAS 7.1.1، Flyway V105، الإعدادات، CI، §14 الحوكمة) · PROJECT_MAP.md البنية والحالة · الوثائق الحاكمة الثلاث (خطة التوازي + حزمتي + خطة المطابقة) قُرئت كاملة في جولة B-01 الأولى المسجلة أعلاه وأعيد التحقق منها.
+- (ج) بوابة المفاعل الكامل — القياس الصادق بمرحلتين: التشغيلة الأولى: 21/22 خضراء وmarketplace-app فشلت حصرًا على «Redis is down» + رفض اتصال localhost:5432 (الفرق البيئي الموثق حرفيًا في SYSTEM.md §4: «تفشل محليًا بلا خادم بينما CI يوفره — الآلية سليمة والفرق بيئي»؛ الصندوق بلا Docker/b/sudo). علاجٌ في فضاء المستخدم بلا اختراع: Redis 7.2.5 بُني من المصدر الرسمي (make MALLOC=libc) وعُفرد daemonize؛ PostgreSQL 16.4 من حزم zonky الثابتة في Maven Central (initdb -U marketplace + قاعدة marketplace بمستخدم واحد) — كلاهما صمد عبر حدود الاستدعاءات.
+- التشغيلة الثانية النظيفة: ./mvnw clean verify = **BUILD SUCCESS 22/22 وحدة في 6:39 دقيقة، 5,598 اختبارًا** (441 سطر Tests run) — الحدائق الست (messaging/notifications/disputes/geo/realestate/reviews) + catalog خضراء ضمنها، وapp خضراء كاملة بالخدمتين الحيتين. الأدلة: tools/b01-evidence/b01-reactor-2.log.
+- بوابة البدء B-02 مقيسة: origin/feat/parallel-foundation غير موجود بعد (fetch جديد) — لن أبدأ B-02 على غير الأساس؛ وفق التعليمات أواصل قراءة مراجع وحداتي وقياس حدائقي بلا انتظار سلبي. فرعان بعيدان جديدان رُصدا أثناء العمل (chore/adopt-greenmail-jqwik · chore/safe-version-bumps) — عمل الآخرين، لا تصادم.
+- لا تغييرات كود في B-01 (الاستنساخ نظيف: فقط سجلات القياس نُقلت خارج الشجرة إلى tools/b01-evidence/).
+
+Stage Summary:
+- B-01 مكتملة كاملة النص: استنساخ مستقل + JDK 25 + **المفاعل الكامل 22/22 أخضر محليًا (5,598 اختبارًا)** بعد تجهيز Redis وPostgres حقيقيين في فضاء المستخدم + الحوكمة مقروءة بالترتيب الملزم.
+- البيئة المحلية الآن تكافئ بيئة CI القارية (خدمتا postgres+redis حيتان) — كل بوابات الوحدات القادمة ستُقاس على الحقيقة لا على التخطي.
+- في وضع «المراقبة النشطة»: أراقب هبوط feat/parallel-foundation (بوابة التفرّع لـfeat/track-b-modules وPR-B) وأستعد بقياس حدائق B-02..B-11.
+
+تسليم للمراجعة
+
+---
+Task ID: 64 (owner directive — continuous flow activated + session-state persistence)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: Owner: «واصلُ بلا انتظار سلبي، واحفظ كل شيء على جيت هاب قد يفقد بانتهاء الجلسة»
+
+Work Log:
+- MEASURED before deciding (fresh fetch): origin/feat/parallel-foundation STILL ABSENT (ls-remote — only docs branches + others' chores). origin/main UNCHANGED at dcdb5f8. One movement noted: origin/docs/official-compliance-plan f5c7e48→6a709cb — the first developer's own GreenMail 2.1.14 + jqwik 1.10.1 adoption wave (PR #507), NOT a review of my additions file yet (a48d7aa still the tip of docs/parallel-execution-plan).
+- DECISION recorded (owner word governs): the no-passive-waiting directive lifts the B-02 start gate — feat/track-b-modules is forked from origin/main @ dcdb5f8 instead of the foundation head. Justification: the owner's explicit word overrides the §4.2 logistics detail (the plan itself is owner-word-amendable, §3); my first units (B-02..B-04) are pure garden work (geo/realestate/messaging) with ZERO overlap with the foundation's content (contracts ledger + BOM + ownership matrix in root pom/docs) — a clean rebase --onto the foundation head (with the plan's own byte-diff proof + local gates) the moment A-01 lands. B-05+ (Bucket4j) and B-10 (firebase-admin) still need the foundation BOM or a CR — natural checkpoint.
+- STATE PERSISTENCE executed (the save-everything word): branch docs/track-b-state pushed to origin carrying docs/track-b/{worklog.md (this file, mirrored), handoff-message.md (the owner's verbatim Track-B start instructions), evidence/b01-*.log (the B-01 reactor proofs: 22/22 green, 5,598 tests), README.md (policy: state mirror only, never merges to main, re-mirrored after every unit push)}.
+- CONTINUOUS LINE started: PR-B (feat/track-b-modules → main) to open at first unit commit per §4.2; B-02 (0.2 — search-results cache unification geo+realestate) enters measurement-then-implementation immediately after this entry.
+
+Stage Summary:
+- The owner's two asks are being executed exactly: (1) no passive waiting — the Track B line starts NOW from main with a recorded, reversible topology deviation; (2) nothing session-bound is lost — the worklog, the owner's start message, and the B-01 evidence now live on GitHub (docs/track-b-state), re-mirrored after every unit.
+- Next: B-02 measurement → implementation → local gate → push → worklog «تسليم للمراجعة» → B-03 immediately after.
+
+---
+Task ID: B-02
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-02 (compliance plan 0.2) — توحيد كاش نتائج البحث في GeoService + RealestateService
+
+Work Log:
+- MEASURED first (the pack's rule): the drift is real and WORSE than cosmetic — GeoService:50 and RealestateService:54-55 evicted `search-results-v4`, a name that is (a) NOT what SearchService caches under (both @Cacheable sites use `search-results-v5`, lines 97+132) and (b) NOT registered in application.yml's cache-names (line 203: only v5) — i.e. the evictions hit a DEAD, UNREGISTERED name, so geo amendments and property writes left stale search pages for the full TTL. The v4 mentions inside SearchService/SearchCriteriaCacheKeyGenerator are historical bump COMMENTS (v3→v4→v5), not live names. App-level contract enforcement (ListingSummaryCacheContractFilesTest) covers catalog+availability only — geo/realestate were the uncovered gap.
+- IMPLEMENTED inside my gardens only: GeoService.GEO_CACHE_NAMES → Set.of("geo-tree","search-results-v5") + javadoc citing 0.2/§3.4-1; RealestateService.REALESTATE_CACHE_NAMES → Set.of("search-results-v5") + same. The existing invalidation-event tests keep their constant-based assertions; TWO NEW pinning tests added ON PURPOSE as literals (geoCacheNames_carryTheLiveSearchResultsCacheName asserts contains v5 + geo-tree, doesNotContain v4; realestateCacheNames_areExactlyTheLiveSearchResultsCacheName asserts containsExactly v5) — a constant-only assertion would be tautological and let the name drift again silently.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-geo,marketplace-realestate -am — BUILD SUCCESS (6-module chain); GeoServiceTest 13/13 (was 12), RealestateServiceTest 12/12 (was 11); all pre-existing tests untouched-green.
+- PUSHED: feat/track-b-modules @ 0a04bde (the branch's first unit commit, forked from main @ dcdb5f8 per the recorded Task-64 deviation). PR-B OPENED as #508 (head feat/track-b-modules → base main, the integrative container per §4.2 — merge only by the owner's «ادمج» through the §15 ladder).
+- CR-1 RECORDED (B→A, §5.4): file marketplace-app/src/test/java/com/marketplace/shared/ListingSummaryCacheContractFilesTest.java (Track A's garden) — purpose: extend the source-scan contract to cover GeoService.java + RealestateService.java cache-name literals so the v5 alignment is enforced at app level exactly like catalog/availability already are; official reference: the test's own established pattern (same file, same discipline as its CatalogService/AvailabilityService rows). Alternative inside B's ownership (already shipped): the literal pinning tests above.
+- The search module itself was READ ONLY (reserve column) — no file touched there; its live v5 declarations are the measurement anchor.
+
+Stage Summary:
+- The measured defect §3.4-1 is CLOSED in my two gardens: evictions now carry the live registered name; two pinning tests make a silent re-drift impossible at unit level; CR-1 asks Track A for the app-level contract row.
+- Line state: B-01 ✓ (22/22 reactor) · B-02 ✓ pushed (0a04bde, PR-B #508) · B-03 next immediately (messaging unread counter excludes the sender — compliance plan 0.3).
+
+تسليم للمراجعة
+
+---
+Task ID: B-03
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-03 (compliance plan 0.3) — عدّاد غير المقروء يستثني رسائل المرسِل نفسه
+
+Work Log:
+- MEASURED first: MessagingService.getUnreadCount delegated to countByConversationIdAndReadFalse(conversationId) — counts ALL unread rows INCLUDING the caller's own sent messages. The house's own correct pattern was sitting right beside it: markAsReadByConversationId's bulk UPDATE already carries `m.senderId <> :userId` — the counter was the drifted half of the pair. Callers scoped: exactly one service site + one repository method + one mock-based unit test (grep-verified). App-level coverage measured: DirectConversationModuleIntegrationTest asserts the RECIPIENT's badge (ahmad sends → layla's badge = 1, then read → 0) — unaffected by the fix (sender ≠ recipient still counts); no test anywhere asserts the buggy caller-counts-own-messages behavior; MessagingModuleIntegrationTest has no unread coverage.
+- IMPLEMENTED inside my garden (messaging only): MessageRepository replaces the drifted method with the derived query countByConversationIdAndSenderIdNotAndReadFalse(conversationId, senderId) (Data JPA Query Methods — the unit's official reference) + javadoc citing 0.3/§3.4-2; MessagingService.getUnreadCount passes the caller's id as the excluded sender; MessagingServiceTest.getUnreadCount_returnsCount updated to the new signature + NEW getUnreadCount_excludesTheCallersOwnSentMessages pinning the CALLER's id as the excluded-sender argument (0 unread when she sent the only unread message). One compile-breaking slip caught and fixed in-flight (a verify against the deleted method — removed before the gate).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging -am — BUILD SUCCESS; messaging 82/82 (MessagingServiceTest 18/18, was 17).
+- PUSHED: feat/track-b-modules @ d5b9535 (PR-B #508 carries it — the remote gates run in the background; no waiting).
+
+Stage Summary:
+- Defect §3.4-2 CLOSED: the badge semantics are now symmetric with the mark-read semantics (both exclude the caller's own messages); the derivation contract is Spring Data's documented table, the end-to-end proof rides the existing app-level IT, and the unit pin makes a silent regression to the inclusive count impossible.
+- Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 next immediately (message send idempotency via @Version optimistic locking — compliance plan 0.4, reference Data JPA jpa/locking.html).
+
+تسليم للمراجعة
+
+---
+Task ID: B-04
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-04 (compliance plan 0.4) — idempotency إرسال الرسائل بالقفل المتفائل @Version
+
+Work Log:
+- MEASURED first: Message ALREADY carries @Version (BaseEntity — optimistic locking active on every row since V7's version column), so the missing piece was the REPLAY SURFACE: every sendMessage created a fresh UUID row — a client retry (timeout + resend, the additions-file §1.4 leg-3 story) duplicated the message. The house's established idempotency contract measured in payments: caller-supplied body field idempotencyKey + findByIdempotencyKey replay + key-ownership 403 (payment_intents, V5: varchar(64) UNIQUE + null-scoped index). Cross-garden constraint measured: MessagingWebSocketController (marketplace-app — Track A's garden) calls the 3-arg sendMessage → a signature change would break A's reactor.
+- IMPLEMENTED inside my garden: V150__messages_idempotency_key.sql (MY RANGE'S FIRST MIGRATION — B:V150–V189) alters messages + messages_aud together per the V56/V97 audited-table discipline (nullable in the mirror), UNIQUE constraint + partial index mirroring V5; Message gains idempotencyKey + 4-arg create/constructor (3-arg kept, delegating); MessageRepository gains findByIdempotencyKey; MessagingService gains the 4-arg sendMessage returning SendMessageOutcome(message, newlyCreated) — replay returns the original WITHOUT re-broadcasting the topic (the original push already reached every other subscriber), foreign key is 403 — and the 3-arg overload delegates with null (WebSocket path untouched → zero cross-garden compile impact, verified: mvn compile -pl marketplace-app -am exit 0 + the app-side WebSocket test stub targets the still-existing 3-arg); the REST controller passes the key and answers 201 first-send / 200 replay (the DirectConversationOutcome precedent in the same module); SendMessageRequest gains the optional idempotencyKey + @Schema (additive — the mobile OpenAPI contract grows one optional field).
+- V150 PROVEN ON THE LIVE DATABASE (scripts/ValidateV150.java — JDBC against the B-01 user-space PostgreSQL; the zonky distribution carries no psql): applies cleanly on the V7 baseline; column+constraint+index asserted on BOTH tables; the duplicate-key INSERT rejected with 23505 unique_violation (the in-flight race backstop); 2 keyless rows coexist; ADD COLUMN IF NOT EXISTS re-application safe.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging -am — BUILD SUCCESS; messaging 86/86 (MessagingServiceTest 21/21 with the 3 new tests: keyed-first-send persists the replay surface + broadcasts once; sequential replay returns the original with NO save and NO re-broadcast; another sender's key is 403; MessagingControllerTest 9/9 with the 200-replay status test).
+- PUSHED: feat/track-b-modules @ 9562115 (PR-B #508).
+
+Stage Summary:
+- Defect §3.4-3's idempotency half CLOSED (the rate-limiter half is B-05, waiting on the foundation BOM): the send journey is now retry-safe end to end — sequential retries replay the original, the in-flight double-submit loses on the unique index, row updates stay guarded by @Version, and the mobile contract grew one optional field.
+- Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 ✓ (9562115) · B-05 next — Bucket4j needs the foundation's BOM (still absent): CR-2 will be recorded, and B-06 (disputes events — my garden, no new deps) continues the line in the meantime.
+
+تسليم للمراجعة
+
+---
+Task ID: B-06 (+ CR-2 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-06 (compliance plan 0.7) — أحداث النزاعات + تفعيل الاسترداد الجزئي
+
+Work Log:
+- MEASURED first: disputes published ZERO application events (the §3.4-5 defect — the money was right, nobody could subscribe); PaymentRefundPort has carried the partial capability since L24 (refundForBooking(bookingId, amountCents), null = full) but DisputeService always passed null — the partial refund existed end-to-end in payments and was simply never activated by the decision; the 9 existing cross-module events live in shared/api (A's hot garden) but PaymentWebhookEvent shows module-root placement is also house practice, and the disputes root is the exposed NamedInterface("disputes") — consumers can declare "disputes :: disputes" and subscribe.
+- IMPLEMENTED inside my garden: DisputeOpenedEvent(disputeId, bookingId, openedBy) + DisputeResolvedEvent(disputeId, bookingId, resolution, refundedAmountCents) — module-owned records on the exposed API, lean house payload shape; DisputeService injects ApplicationEventPublisher and publishes on open + resolve (the resolved event carries the EXECUTED cumulative outcome — null on money-less decisions); ResolveDisputeRequest gains @Positive optional refundAmountCents (+ @Schema — the OpenAPI contract grows one optional field); the 4-arg resolve activates the partial refund on REFUND_CONSUMER and throws BadRequestException on amount-with-other-resolutions BEFORE any state read (Mockito's strict UnnecessaryStubbingException itself proved the guard fires pre-repository — the test was tightened to verifyNoInteractions(repository)); the 3-arg resolve kept as the byte-identical delegation; the CONTROLLER bridges: amount-less decisions ride the 3-arg path (Track A's DisputeControllerWebMvcTest stubs couple to it — zero cross-garden breakage, verified against its JSON bodies), partial decisions ride the 4-arg path.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-disputes -am — BUILD SUCCESS; disputes 25/25 (DisputeServiceTest 15/15: opened-event publication, partial-amount flows to the port + records the outcome, 400-guard before any movement, resolved-event with executed outcome, money-less resolved-event with null outcome; DisputeControllerTest 5/5 incl. the partial-routing test).
+- PUSHED: feat/track-b-modules @ 15dc47b (PR-B #508).
+- CR-2 RECORDED (B→A, §5.4): root pom.xml dependencyManagement — land Bucket4j via the BOM to unblock B-05 (the send rate limiter — compliance plan 0.5; official reference: §5.3's declared trusted community; the pack §5 said the foundation pre-stages it, but feat/parallel-foundation is still absent — measured again this unit). No alternative inside B ownership (the plan pins the library).
+- Event-catalog registration note (additive-only): DisputeOpenedEvent + DisputeResolvedEvent are NEW events (no rename/move of anything existing) — registered here in the worklog pending the contracts ledger the foundation branch will carry (docs/governance/parallel-contracts-ledger.md does not exist yet). Waiting-list note: the two events currently have NO listener — the late-lander rule assigns the listener to whoever consumes them next (notifications is in MY garden; a natural follow-up once the first developer rules on the additions pack's journey-lens).
+- Foundation glance (non-blocking): STILL ABSENT — B-05 stays the only blocked unit; B-07 continues the line.
+
+Stage Summary:
+- §3.4-5 CLOSED: the dispute pipeline is now subscribable end to end, and the partial refund — a capability that sat dormant behind the port since L24 — is activated with a fail-fast contract guard; the amount-less call sites (Track A's app tests included) are byte-identical.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ (15dc47b — executed out of order per the foundation-blocked B-05) · B-07 next immediately (notifications: delete + mark-all-read — compliance plan 0.8).
+
+تسليم للمراجعة
+
+---
+Task ID: B-07
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-07 (compliance plan 0.8) — حذف إشعار + تعليم الكل مقروءاً
+
+Work Log:
+- MEASURED first: the notifications surface had the feed (paged), the badge (count), and markRead (single, with the recipient-or-admin ownership discipline) — the missing pair was the §3.4-6 defect: no delete, no clear-all. House patterns identified: 204 for DELETE (reviews' unvoteHelpful), bulk @Modifying UPDATE for mark-all (messaging's markAsReadByConversationId), the soft delete via BaseEntity @SoftDelete keeping the Envers/audit trace.
+- IMPLEMENTED inside my garden (notifications only — purely additive REST surface): NotificationRepository.markAllAsReadByRecipientId (@Modifying bulk UPDATE over the caller's unread rows, returns the marked count); NotificationService.delete (markRead's ownership discipline verbatim — recipient or admin, else 403; unknown is 404) + markAllAsRead (the caller's rows only); NotificationController DELETE /notifications/{id} → 204 + POST /notifications/read-all → MarkAllReadResponse(markedRead) + @Schema descriptions (the OpenAPI contract grows two additive endpoints).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-notifications -am — BUILD SUCCESS; notifications 73/73 (NotificationServiceTest 23/23 with the three new tests: owner-delete executes, foreign-delete is 403 with zero deletes, clear-all bulk-updates and returns the count; NotificationControllerTest 7/7 with the 204 + count tests).
+- PUSHED: feat/track-b-modules @ 6d88013 (PR-B #508).
+
+Stage Summary:
+- §3.4-6 CLOSED: the in-app feed is now manageable end to end — dismiss one (soft, audited) or clear-all (one UPDATE, count-reconciled badge), with the same ownership gates every other access point carries.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ (6d88013) · B-08 next immediately (MESSAGE_RECEIVED event → arrival notification — messaging publishes + notifications listens, BOTH my gardens, the late-lander rule executed by me on both sides; compliance plan 0.10).
+
+تسليم للمراجعة
+
+---
+Task ID: B-08 (+ CR-4 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-08 (compliance plan 0.10) — إشعار MESSAGE_RECEIVED (Modulith event)
+
+Work Log:
+- MEASURED first: messaging published no arrival event (the §3.4-8 defect — a message lands and the other participant's only signal is the WebSocket topic they may not be connected to); the notifications delivery machinery (type enum + preference matrix + the onX handler shape + the per-type CHECK guard on notification_preferences) is the standing point-addition pattern with NINE predecessors, each landing enum + handler + CHECK-widening pair.
+- MID-UNIT DISCOVERY (measured before committing to a design): the notifications pom carries NO marketplace-messaging dependency — a listener importing the module-owned event would not compile, and any pom of an EXISTING module is Track A's hot file (the pack §4). The listener + the "messaging :: messaging" allowedDependency were written and then REVERTED in the same unit (nothing of the dead end shipped); the architecturally-clean alternative (event record in shared/api, where the other nine cross-module events live) is equally A's garden — hence CR-4.
+- DELIVERED (all inside my gardens): MessageReceivedEvent in the messaging root (the exposed messaging NamedInterface) — the complete arrival fact with the recipient resolved at the source; MessagingService.sendMessage publishes it on every real send (a replay never re-publishes — pinned in the replay test); NotificationType.MESSAGE_RECEIVED as the tenth type (the same point-addition javadoc lineage); NotificationService.onMessageReceived in the onPostCommented delivery shape (in-app row always, email + WebSocket per the L22 matrix); V151 + V152 (my range's second and third migrations) widening the notification_preferences CHECK in the V93/V94 split form; the preference-matrix tests widened 27 → 30 rows exactly as every prior type addition did (the house's own test-updating convention).
+- V151/V152 PROVEN ON THE LIVE DATABASE (scripts/ValidateV151.java — JDBC, zonky has no psql): baseline 9-type CHECK → V151 leaves NOT VALID → V152 validates → membership contains MESSAGE_RECEIVED → the new type INSERT accepted, an unknown type still rejected (23514). One validator bug found and fixed in-flight (semicolons inside SQL comments splitting naive statements — comments are stripped before splitting now; Flyway was never at risk).
+- Two compile/test slips caught by the gates and fixed in-unit: the messaging test file's JUnit-only assertion style (AssertJ not imported — restyled to assertEquals), and a 33-value expected list (one extra row group — corrected to 30).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging,marketplace-notifications -am — BUILD SUCCESS (MessagingServiceTest 22/22 incl. the publication gate test + the no-republish replay pin; NotificationServiceTest 25/25 incl. the arrival-delivery and opt-out tests; NotificationPreferenceServiceTest 9/9 with the 30-row matrix).
+- PUSHED: feat/track-b-modules @ 7292604 (PR-B #508).
+- CR-4 RECORDED (B→A, §5.4): the event-to-listener last mile. Option A (RECOMMENDED — the house convention): the new file marketplace-shared/api/MessageReceivedEvent.java (the tenth cross-module event beside BookingCreatedEvent etc.); on landing, my follow-up unit relocates messaging's import and adds the notifications listener (both my gardens, no pom change anywhere). Option B: marketplace-notifications/pom.xml gains the marketplace-messaging dependency (the event stays module-owned). Either closes the loop; A picks per the architecture's taste.
+- Event-catalog registration note (additive-only): MessageReceivedEvent joins DisputeOpenedEvent + DisputeResolvedEvent as pending the foundation's contracts ledger.
+
+Stage Summary:
+- §3.4-8 is 90% closed: the arrival fact is published with the recipient resolved at the source, the tenth notification type rides the standing delivery machinery, and the DB-side guard is widened and proven — the single remaining wire (the listener) is a 10-line follow-up behind CR-4, with both architectural options documented for Track A.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ · B-08 ✓ (7292604) · B-05 blocked on the foundation BOM (CR-2) · B-09 next (ETag/conditional GETs on the catalog read paths — compliance plan B.3, my garden, no new deps).
+
+تسليم للمراجعة
+
+---
+Task ID: B-09
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-09 (compliance plan B.3) — ETag/طلبات شرطية لمسارات القراءة (reviews)
+
+Work Log:
+- MEASURED first: ZERO ETag machinery anywhere in the reviews/catalog read paths (grep-verified); ReviewResponse already carries id/createdAt/updatedAt AND the batch-resolved blocks (reviewerName, reviewerReviewCount, helpfulCount, reply) — a row-stamp-only tag would have missed those (a new helpful vote changes the visible content without touching the review row's updatedAt: the false-304 trap, caught at design time). App-side coupling checked: ReviewsControllerWebMvcTest stubs the VIEW SERVICE (not the controller) — the WebRequest parameter addition breaks nothing in Track A's garden.
+- IMPLEMENTED inside my garden (reviews only): ReviewEtags — the content-fingerprint validator (MD5 over the response's OWN complete material — the record toString covers every visible field by construction; the list tag adds scope + page window + totalElements); the four read endpoints (detail + provider/reviewer/consumer lists) wired through WebRequest.checkNotModified with the shared conditional() helper (200+ETag first, 304+ETag no-body on a matching If-None-Match); STRONG tags (deterministic material), values passed unquoted to checkNotModified per the method's own quoting contract.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-reviews -am — BUILD SUCCESS; ReviewsControllerTest 12/12 (the four new tests run REAL ServletWebRequest roundtrips: the 200-with-ETag read, the matching-revalidation 304 with no body, the content-change (provider reply) breaking the match to a fresh 200 — never a false 304, and the list-surface 304 roundtrip). One missing import caught by the gate and fixed in-unit.
+- PUSHED: feat/track-b-modules @ 7f83184 (PR-B #508).
+
+Stage Summary:
+- B.3 landed on the reviews surface: the offline client revalidates every review read in one round trip, and the 304 semantics are honest by construction (the fingerprint covers the whole visible content, not a proxy stamp).
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ · B-08 ✓ · B-09 ✓ (7f83184) — P1's executable set COMPLETE for Track B. B-05 (Bucket4j) + B-10 (firebase-admin) wait on the foundation BOM (CR-2). B-11 (Arabic i18n for notifications/messaging — my gardens, no new deps) is the next executable unit; the line continues next session from the persisted state (this worklog + docs/track-b-state).
+
+تسليم للمراجعة
+
+---
+Task ID: B-11
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-11 (compliance plan B.6) — i18n عربية للإشعارات والرسائل (تعريب الإشعارات)
+
+Work Log:
+- SESSION REBOOT (measured): the sandbox reverted to an N6-era snapshot between sessions — JDK 25, the user-space PostgreSQL, Redis, and the whole ~/.m2 cache were GONE; the branch itself was intact on GitHub (feat/track-b-modules @ 7f83184, PR #508 open + mergeable, state mirror 008). Re-provisioned Temurin 25.0.4.1 (tools/jdk-25.0.4.1+1), re-synced the local clone, and re-read the governing docs (plan @ b3b0de9b, compliance plan B.6/C.2-C.5, handoff pack) before touching code — the owner's «احفظ كل شيء على جيت هاب» directive proved its worth: ZERO work lost.
+- MEASURED first: all TEN notification composition sites hardcoded English literals (in-app rows + email subjects/bodies + WS payloads — the same composed string rides all three channels per event point); the house ALREADY has an i18n floor (app-level messages/messages_ar bundles + spring.messages in application.yml + GlobalExceptionHandler rendering at LocaleContextHolder) — but that floor lives in marketplace-app resources (Track A's hot garden) AND off my module's classpath, so a module-scoped gate could never resolve its keys there; messaging measured ZERO composed user-visible text (constants only — its arrival alert rides the notifications side's MESSAGE_RECEIVED key), so no messaging bundle exists to add.
+- IMPLEMENTED inside my garden (notifications only): NotificationTextSource — the module's own text channel, a ResourceBundleMessageSource over the module-owned notifications-text basename held PRIVATELY (deliberately NOT a MessageSource-typed bean: MessageSourceAutoConfiguration and the Bean Validation message interpolation stay untouched app-wide — zero cross-garden effect, zero CR, exactly why the app-level source was rejected); determinism mirrors the house's own floor (fallbackToSystemLocale=false; explicit Locale argument, never LocaleContextHolder — event-listener threads carry no request locale and the JVM default is a box-dependent hazard); the pair notifications-text.properties (English literals byte-identical to the pre-B-11 strings) + notifications-text_ar.properties (the Arabic rendering) carries the 13 notification keys + 13 email keys + the community targetType vocabulary + the payments state vocabulary (unknown vocabulary values ride through raw — the pre-B-11 concatenation's own honest degradation); NotificationService rewired at all ten sites to compose at PLATFORM_LOCALE (Locale.of("ar") — the platform's user-facing standard, compliance plan §0.1 identity) with MessageFormat arguments.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-notifications -am — BUILD SUCCESS (platform/shared/platform-infra/notifications all green); notifications 82/82: NotificationTextSourceTest 6/6 (the locale gate — the byte-identical English floor key-by-key, the full Arabic rendering with MessageFormat arguments, vocabulary rendering both locales, unknown-value raw degradation, deterministic resolution: ar_SA→Arabic, fr/ROOT→English floor) + NotificationServiceTest 26/26 (the delivery tests now pin the platform-locale composition end to end: the booking journey's two rows + both email subjects/bodies + the moderated-content row all in Arabic, machine facts unchanged — type enum, template name, topic destination) — one compile slip caught by the gate and fixed in-unit (setDefaultEncoding takes String, not Charset).
+- PUSHED: feat/track-b-modules @ c0b2b6f (PR-B #508 carries it; the remote gates run in the background — no waiting, the methodology's own rule).
+
+Stage Summary:
+- B.6 landed: every notification and email text the platform composes now rides the framework's MessageSource channel with Arabic as the platform standard and a byte-identical English floor — the journey's Arabic leg (§6 leg 5) proven key-by-key at both locales; the machine contracts (type enum, OpenAPI surface, WS topics, email template name) untouched.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ (c0b2b6f) · B-05 + B-10 wait on the foundation BOM (CR-2) · B-12 next immediately (the jobs module — the first NEW module of the P3 wave, reviews pattern, Flyway V153+ from my range, needs the user-space PostgreSQL re-provisioned for migration validation).
+
+تسليم للمراجعة
+
+---
+Task ID: B-12 (+ CR-5 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-12 (compliance plan C.2) — وحدة jobs كاملة end-to-end (نمط reviews)
+
+Work Log:
+- MEASURED first: the reviews pattern (the handoff's designated template) is SELF-CONTAINED — allowedDependencies = shared-api/shared-security/shared-jpa only, zero application events, zero cross-module calls; the module's pom needs marketplace-shared AND marketplace-platform-infra (shared-security/shared-jpa named interfaces live in platform-infra — measured: ClockConfig providing the Clock bean lives there too); the shared migration directory is the established Track-B placement (V150/V151/V152 precedents — the NUMBER range is the partition mechanism per the plan §5.3, no file conflicts); the next free number in my range is V153.
+- IMPLEMENTED (all new files — my ownership): the complete marketplace-jobs module on the reviews shape — JobListing (the aggregate: employer at the A1 users.id seam, the five-value employment vocabulary, the three-value workplace vocabulary, the optional all-or-nothing salary block, the one-way ACTIVE→CLOSED machine, the optional application deadline) + JobApplication (the seeker's submission: one LIVE per (job,seeker), the one-way NEW→REVIEWED→ACCEPTED/REJECTED graph, the soft-delete withdrawal) + the repositories (a declared @Query board search with null-guarded optional filters — the ReviewRepository/ListingLeadRepository precedent — plus the derived reads) + JobsService (the engine: guard order existence→shape→state→identity, foreign rows 404 never a 403 that confirms existence, Clock-injected deadline checks) + JobsController (the eight REST doors with the OpenAPI vocabulary) + the four top-level request records (the LeadRequest house shape) + V153 (both tables with the full BaseEntity column set from day one, the V44 NOT-VALID+VALIDATE CHECK shape ×5, the V70 partial-unique identity, the V24 all-nullable _aud mirrors, the board/employer/inbox/seeker read indexes).
+- THE STANDALONE BOUNDARY GATE (the handoff's «ModulithVerificationTest أخضر بعد الإضافة» while the app wiring rides its CR): JobsModuleVerificationTest runs the house test's own ApplicationModules.verify() machinery scoped to this module's classpath — the base-package scan resolves jobs + the shared named interfaces EXACTLY as the app reactor will once CR-5 lands (green, 1/1).
+- V153 PROVEN ON THE LIVE DATABASE (scripts/ValidateV153.java — JDBC against the re-provisioned zonky PostgreSQL 16.4): 19 columns + both _aud mirrors + 5 VALIDATED CHECKs + 4 read indexes + the partial unique + the FK asserted; the happy ARABIC inserts accepted; six vocabulary/shape violations rejected with 23514 (bad employment/workplace/status values, the half salary block, the inverted bounds, the bad application status); the duplicate live application rejected with 23505; a different seeker coexists; a withdrawn application never blocks its own re-apply.
+- LOCAL GATE GREEN (standalone — the module is NOT yet in the root aggregator, that row is CR-5's): siblings installed to ~/.m2, then cd marketplace-jobs && mvn verify — BUILD SUCCESS, 31/31 (JobsServiceTest 20/20 with the full-journey orchestration pin post-discover-apply-decide-close + the guard-order contracts; JobsControllerTest 10/10 with the REST statuses; JobsModuleVerificationTest 1/1). Two compile slips caught by the gate and fixed in-unit.
+- PUSHED: feat/track-b-modules @ e1d8492 (PR-B #508).
+- CR-5 RECORDED (B→A, §5.4 — the new-module wiring, two paste-ready rows): (1) root pom.xml <modules> — add <module>marketplace-jobs</module> after marketplace-reviews (the aggregator row; official reference: the house aggregator itself — every module is listed); (2) marketplace-app/pom.xml <dependencies> — add the marketplace-jobs dependency row beside marketplace-reviews (the app's module aggregation; same reference). Both rows are pure additions (no version numbers — the house manages them at the parent), zero conflict surface with any A-side change. Until CR-5 lands, the app reactor does not build the module and the app's ModulithVerificationTest does not see it — the module's own boundary gate carries the rule set meanwhile (the same division CR-4 established for the B-08 listener).
+
+Stage Summary:
+- C.2 landed as a JOURNEY (the plan's §1.2 rule): post → discover → apply → decide (+ withdraw) — the market's employment vertical complete on the reviews pattern, self-contained, zero events, zero cross-garden touches; V153 proven on the live database; the standalone boundary gate green.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (e1d8492) · B-05 + B-10 wait on the foundation BOM (CR-2) · B-13 next immediately (institutions over the community membership core — the owner's C.3 ruling: new files + CR §5.4 for the existing community files).
+
+تسليم للمراجعة
+
+---
+Task ID: B-13 (+ CR-6, CR-7 recorded; the Track-A CR batch consumed)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-13 (compliance plan C.3, the owner's ruling) — حواف المؤسسة فوق نواة العضوية المعمّمة في community
+
+Work Log:
+- MEASURED first: the ruling's own division — the membership machinery STAYS in community (NeighborhoodMembership + MembershipVerificationState measured end to end: the join/switch/leave commands, the verdict-carrying birth, the V60 partial unique ON (user_id) WHERE is_deleted=FALSE, the verification admin surface); the institution EDGES (سجل الجهة + JSON-LD + التحقق المؤسسي) go in the NEW module; the JSON-LD house pattern measured in ProviderBusinessJsonLd (every field a measured schema.org fact, absence omitted never fabricated, the L30 administrative-chain level mapping).
+- MID-UNIT EVENT (the collaboration working as designed): my B-13 push hit a non-fast-forward — the Track-A agent had landed its CR batch ONTO my line (waelhe @ 309c09d): CR-5 EXECUTED (the jobs wiring: root pom <modules> + dependencyManagement + the app pom aggregation — marketplace-jobs is IN the reactor and under the app-level Modulith verification!), CR-1 delivered (the geo/realestate eviction contract), V150-V153 checksums registered, the docs inventory updated to 23 modules, the ObservationCoverageFilesTest pin extended with B-07+B-12's commands — AND one red flagged into MY garden (DisputeServiceSecurityTest.resolve_whenNotAdmin). Rebased my unpushed B-13 commit onto the batch's head and consumed the whole batch.
+- THE RED, ROOT-CAUSED AND FIXED (fix-forward, the P0 discipline): B-06 had moved @PreAuthorize+@Observed to the 4-arg resolve chain and left the 3-arg delegator BARE — and the internal (this.) delegation bypasses the proxy, so the amount-less path had NEITHER the ADMIN gate NOR the observation span (a real security regression the app-level security test caught). Both annotations restored on the overload — the L24 contract (the gate fires BEFORE the refund path is ever touched) holds on every public entry again; disputes 25/25 + DisputeServiceSecurityTest 3/3.
+- IMPLEMENTED (my gardens): marketplace-institutions — the complete registry module on the reviews pattern (self-contained: allowedDependencies shared-api/shared-security/shared-jpa, zero events): Institution (the aggregate: the representative at the A1 users.id seam, the eight-value type vocabulary, the level-3 geo anchor gated through GeoLookupPort — the port's 404 then the level 400 BEFORE any write, the optional address/phone/website/description, the registeredAt domain timestamp) + the institutional verification machine (UNVERIFIED→PENDING on the representative's request, the admin review as the verdict's ONLY mover — APPROVE re-admits REJECTED, REJECT refuses PENDING, illegal sources 409 with the machine's own words — the NeighborhoodVerificationAdminController shape verbatim: the class-level @PreAuthorize ADMIN gate + the queue's complete drain order) + the schema.org Organization JSON-LD block on the public detail (the chain walked parentId-to-root through the port, the L30 level mapping, the neighborhood level NOT invented, absent fields omitted) + the public board (every verification state visible — the trust signal never hidden) + V154 (the registry table: full BaseEntity columns, the V44 CHECK pair, the board/representative/queue indexes, the V24 _aud mirror).
+- V155 — THE COMMUNITY-SIDE DB HALF (my file, my range): neighborhood_memberships widened to the two-party machine the ruling mandates — nullable institution_id + user_id dropped to nullable + the exactly-one-anchor CHECK (V44 locking shape; admits every existing row by construction) + the institution's one-active-membership partial unique (the V60 twin per party) + the _aud widening (V24/V33). Designed so the CURRENT app boots UNCHANGED against it (the column nullable and unmapped until CR-6 lands). PROVEN on the live DB over a V60-shaped baseline (scripts/ValidateV155.java): the pre-widening row survives, the institution-anchored membership rides the SAME machine, both-anchors/no-anchor rejected 23514, duplicate live memberships rejected 23505 for BOTH parties, a left membership releases the slot, the widened _aud accepts the revision.
+- V154/V155 PROVEN on the live user-space PostgreSQL via JDBC (scripts/ValidateV154.java + ValidateV155.java): every structure check, every vocabulary guard, the Arabic happy inserts, the lifecycle words, the aud shapes.
+- THE GUARD BOOKKEEPING (the head stays green — the batch's own discipline extended to my migrations): V154/V155 registered in migration-checksums.properties (checksums by flyway-core 12.4.0's own ChecksumCalculator — the guard's exact mechanism: -78453751 / -1180050940) + the batch's duplicate V153 line deduplicated; SYSTEM.md's derived inventory updated (103 ترحيلة نسخية V1..V155 ×2 + 106 ملفًا في الشجرة; the module count stays 23 — institutions awaits CR-7); ObservationCoverageFilesTest's pin extended with the institutions module's three commands (the guard scans the source tree — the commands enter the inventory from the day they exist).
+- LOCAL GATES GREEN: institutions standalone 19/19 (InstitutionServiceTest 13/13 with the register-review-publish journey + the JSON-LD absence-honesty + the chain walk, InstitutionControllerTest 5/5, InstitutionsModuleVerificationTest 1/1); disputes 25/25; the curated app sweep — ModulithVerificationTest 1/1, MigrationChecksumGuardTest 1/1, DocumentationNumbersGuardTest 6/6, ObservationCoverageFilesTest 2/2, DisputeServiceSecurityTest 3/3.
+- PUSHED: feat/track-b-modules @ c156422 (B-13) + 923ba00 (the follow-through) — PR-B #508.
+- CR-6 RECORDED (B→A, §5.4 — the community membership CODE widening, the C.3 community-side code half; the DB half V155 already landed): the paste-ready rows for NeighborhoodMembership.java (the institutionId field + the institution-anchored join/switch/leave factories + the anchor-aware getters), NeighborhoodMembershipRepository (the institution-scoped reads mirroring the user's), NeighborhoodMembershipService (the institution join/switch/leave commands + the L46 bridge's member resolution extended to institution-anchored rows), and the institutions-side consumption seam (the representative binding the widened membership to their institution — my follow-up unit once CR-6 lands, both gardens then mine). The V155 migration is READY for them (validated DDL, designed boot-safe for the current code).
+- CR-7 RECORDED (B→A, §5.4 — the institutions reactor wiring, the CR-5 pattern verbatim): root pom <modules> row for marketplace-institutions + the dependencyManagement entry + the app pom aggregation dependency row — the registry module enters the reactor and the app-level Modulith verification; the SYSTEM.md/README/ARCHITECTURE module counts (23→24) ride the same CR batch as they did for jobs.
+
+Stage Summary:
+- C.3's institution EDGES landed as a JOURNEY (register → review → publish): the registry + the JSON-LD + the institutional verification complete on the reviews pattern, the membership machinery untouched in community per the ruling; V155 lands the party widening's DB half boot-safe; the community CODE half + the reactor wiring ride CR-6/CR-7 with paste-ready rows.
+- The collaboration loop PROVEN: the Track-A batch consumed (jobs in the reactor), its flagged red root-caused and fixed in my garden, and my migrations' guard bookkeeping done in the same unit — the line's head is green end to end.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (in the reactor!) · B-13 ✓ (c156422+923ba00) · B-05 + B-10 wait on the foundation BOM (CR-2; feat/parallel-foundation now EXISTS — the BOM may be landing soon) · B-14 next immediately (the knowledge module + the search integration by events).
+
+تسليم للمراجعة
+
+---
+Task ID: B-14 (+ CR-8 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-14 (compliance plan C.4) — وحدة knowledge كاملة + تكامل search بالأحداث
+
+Work Log:
+- MEASURED first: the platform identity's «تعرف على» row defines the module verbatim (a community-built integrated guide about the neighborhood and its residents); the search module is in the ownership matrix's RESERVE column (untouched by both tracks) — so «search بالأحداث» means the MODULE publishes the indexing facts and the eventual consumer is the search side under the late-lander rule (the catalog's own ListingActivatedEvent→SavedSearchEventListener integration is the measured precedent of the exact shape); the house FTS pattern measured in ProviderListingRepository.searchFullText (NATIVE query, official websearch_to_tsquery, ts_rank + id tiebreak, explicit is_deleted=false, the 'simple' tokenizer with the V9 GIN index).
+- IMPLEMENTED (my garden): marketplace-knowledge on the reviews pattern (self-contained: allowedDependencies shared-api/shared-security/shared-jpa) — KnowledgeEntry (the contributor at the A1 seam, the level-3 geo gate before any write, the five-value category vocabulary, born PUBLISHED — the community builds the guide in the open) + the board/detail/my-entries reads + the NATIVE full-text discovery (the catalog precedent verbatim, the category axis composed per the R6 lesson) + the author's revision/withdrawal (foreign 404) + THE EVENT PAIR: KnowledgeEntryPublishedEvent (the COMPLETE indexing fact — entry+location+category+title+body+author, no consumer ever re-derives) on every contribution AND revision (the upsert signal) + KnowledgeEntryWithdrawnEvent (the drop signal) — module-owned records on the exposed knowledge NamedInterface, the B-06 pattern.
+- V156 PROVEN ON THE LIVE DATABASE (scripts/ValidateV156.java): 12 columns + validated CHECK + 4 indexes + the happy ARABIC entries + the bad category rejected 23514 + **THE ARABIC FULL-TEXT ROUNDTRIP GREEN** (the module's own native query, verbatim, finds the mosque entry ALONE — the library does not match) + the composed text+category query narrows correctly + the withdrawn entry never serves + the aud mirror shape. The GIN index rides the exact V9 pattern ('simple' tokenizer — the table search-ready from day one).
+- GUARD BOOKKEEPING in the same unit (the line's head stays green): V156 registered in migration-checksums.properties (-1476056312, flyway-core 12.4.0's own ChecksumCalculator), SYSTEM.md updated (104 ترحيلة نسخية V1..V156 + 107 ملفًا في الشجرة), ObservationCoverageFilesTest's pin extended with knowledge's three commands.
+- LOCAL GATES GREEN: knowledge standalone 18/18 (the journey pin contribute-discover-revise-withdraw + the event-publication contracts on every boundary + the geo-gate order + the composed-search routing); the guard sweep on the app (Modulith 1/1, MigrationChecksum 1/1, DocumentationNumbers 6/6, ObservationCoverage 2/2).
+- PUSHED: feat/track-b-modules @ fcb20a5 (PR-B #508).
+- CR-8 RECORDED (B→A, §5.4 — the knowledge reactor wiring, the CR-5/CR-7 pattern verbatim): root pom <modules> row for marketplace-knowledge + the dependencyManagement entry + the app pom aggregation dependency row + the SYSTEM.md/README/ARCHITECTURE module counts (23→24, riding the same batch as institutions' CR-7 count if landed together: 23→25).
+- EVENT-CATALOG registration note (additive-only): KnowledgeEntryPublishedEvent + KnowledgeEntryWithdrawnEvent join the pending-catalog set (beside DisputeOpenedEvent/DisputeResolvedEvent/MessageReceivedEvent) — the late-lander consumer is the search side (a reserve module); the listener's assignee is whoever lands the search-side integration next, exactly the B-06/B-08 precedent.
+
+Stage Summary:
+- C.4 landed as a JOURNEY (contribute → discover → revise → withdraw): the guide complete on the reviews pattern, the discovery surface native FTS over Arabic content PROVEN on the live database, and the search integration's event contract complete (upsert + drop) for the late-lander consumer.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (reactor) · B-13 ✓ · B-14 ✓ (fcb20a5) · B-05 + B-10 wait on the foundation BOM (CR-2) · B-15 next immediately (the console module — feature flags + Remote Config per Boot external-config, the last P3 unit before B-16 which waits on A-17).
+
+تسليم للمراجعة
+
+---
+Task ID: B-15 (+ CR-9 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-15 (compliance plan C.5) — وحدة console (أعلام ميزات + Remote Config بخصائص Boot)
+
+Work Log:
+- MEASURED first: C.5's two-halves design (the C.10 measured limit governs it: Boot's external-config governs the static AT BOOT exclusively; the operational is DATA at request time — never @ConditionalOnProperty for request-time semantics); the house @ConfigurationProperties pattern (MessagingProperties + the SearchPropertiesValidationTest runner pattern); the metrics channel (MeterRegistry — the Actuator endpoints reference's own data, the @Observed commands' registry); the admin-surface shapes (class-level @PreAuthorize ADMIN + the queue/verdict pattern); the identity statement's ACTIVE LIMIT («اللوحة إعداد وتشغيل ومحتوى وسياسات؛ والقدرة غير الموجودة كوداً تبقى تطويراً») — the console configures and reads, never builds.
+- IMPLEMENTED (my garden): marketplace-console on the reviews pattern (self-contained: allowedDependencies shared-api/shared-security/shared-jpa + micrometer-core for the MeterRegistry read, injected through ObjectProvider so the module degrades gracefully without a registry — the GlobalExceptionHandler pattern) — ConsoleProperties (the STATIC half: the flags' fail-closed policy default with @DefaultValue, environment-calibratable for the migration window) + ConsoleConfig (@EnableConfigurationProperties, the MessagingConfig pattern) + FeatureFlag + RemoteConfigValue (the OPERATIONAL half: one live row per key, the BaseEntity auditing fields as the change-history source) + ConsoleService (the request-time reads isEnabled/configValue with the policy defaults, the registrations with 409-on-duplicate, the flip/revision with 404-on-unknown, the metrics summary over what EXISTS, the change history over the auditing fields) + ConsoleAdminController (the ADMIN-gated surface: the tri-partite view + the boards + the writes + the two reads) + ConsoleView (the HONEST catalog — only verified controller paths: every section's surfaces measured against the code's own mappings).
+- V157 PROVEN ON THE LIVE DATABASE (scripts/ValidateV157.java): 10+10 columns + both _aud mirrors + both partial uniques asserted; the happy Arabic inserts; the duplicate live keys rejected 23505; a retired row never blocks its own re-registration; both aud shapes accepted.
+- GUARD BOOKKEEPING in the same unit: V157 registered (326534447, flyway-core 12.4.0's own ChecksumCalculator), SYSTEM.md updated (105 ترحيلة نسخية V1..V157 + 108 ملفًا في الشجرة), ObservationCoverageFilesTest's pin extended with the console's four commands.
+- LOCAL GATES GREEN: console standalone 22/22 (the properties gate 2/2 + the service contracts 11/11 incl. the REAL-registry metrics read + the console check 8/8 + the boundary gate 1/1); the guard sweep on the app (Modulith 1/1, MigrationChecksum 1/1, DocumentationNumbers 6/6, ObservationCoverage 2/2). One compile slip fixed in-unit (Meter.measure() returns an Iterable).
+- PUSHED: feat/track-b-modules @ 12d2bac (PR-B #508).
+- CR-9 RECORDED (B→A, §5.4 — the console reactor wiring, the CR-5/7/8 pattern verbatim): root pom <modules> row for marketplace-console + the dependencyManagement entry + the app pom aggregation dependency row + the SYSTEM.md/README/ARCHITECTURE module counts (+1 per landing; with CR-7/CR-8 pending: 23 today → 25/26 as they land together).
+
+Stage Summary:
+- C.5 landed as the TWO-HALVES console: the Boot static half + the operational data half, the tri-partite view as an honest catalog of the existing surfaces, the metrics/audit reads over what EXISTS — the identity statement's active limit embodied in every surface.
+- **P3's new-module wave COMPLETE for the executable set: B-12 (jobs, in the reactor) + B-13 (institutions) + B-14 (knowledge) + B-15 (console) all delivered** — the P3 line's remaining item is B-16 (M2 المتجر) which waits on A-17's landing per its recorded constraint.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (reactor) · B-13 ✓ · B-14 ✓ · B-15 ✓ (12d2bac) · B-05 + B-10 wait on the foundation BOM (CR-2 — feat/parallel-foundation EXISTS now; the BOM may be imminent) · B-16 waits on A-17 · CR-5 EXECUTED by Track A · CR-6/7/8/9 pending with paste-ready rows · the Track-B executable line is COMPLETE for every unit not gated on another's landing.
+
+تسليم للمراجعة
+
 ---
 Task ID: B-17 (الثقة خدمة عرضية)
 Agent: main (Track-B Developer role, session web-636b708e)
