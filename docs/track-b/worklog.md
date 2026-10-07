@@ -583,3 +583,21 @@ Stage Summary:
 - Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 next immediately (message send idempotency via @Version optimistic locking — compliance plan 0.4, reference Data JPA jpa/locking.html).
 
 تسليم للمراجعة
+
+---
+Task ID: B-04
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-04 (compliance plan 0.4) — idempotency إرسال الرسائل بالقفل المتفائل @Version
+
+Work Log:
+- MEASURED first: Message ALREADY carries @Version (BaseEntity — optimistic locking active on every row since V7's version column), so the missing piece was the REPLAY SURFACE: every sendMessage created a fresh UUID row — a client retry (timeout + resend, the additions-file §1.4 leg-3 story) duplicated the message. The house's established idempotency contract measured in payments: caller-supplied body field idempotencyKey + findByIdempotencyKey replay + key-ownership 403 (payment_intents, V5: varchar(64) UNIQUE + null-scoped index). Cross-garden constraint measured: MessagingWebSocketController (marketplace-app — Track A's garden) calls the 3-arg sendMessage → a signature change would break A's reactor.
+- IMPLEMENTED inside my garden: V150__messages_idempotency_key.sql (MY RANGE'S FIRST MIGRATION — B:V150–V189) alters messages + messages_aud together per the V56/V97 audited-table discipline (nullable in the mirror), UNIQUE constraint + partial index mirroring V5; Message gains idempotencyKey + 4-arg create/constructor (3-arg kept, delegating); MessageRepository gains findByIdempotencyKey; MessagingService gains the 4-arg sendMessage returning SendMessageOutcome(message, newlyCreated) — replay returns the original WITHOUT re-broadcasting the topic (the original push already reached every other subscriber), foreign key is 403 — and the 3-arg overload delegates with null (WebSocket path untouched → zero cross-garden compile impact, verified: mvn compile -pl marketplace-app -am exit 0 + the app-side WebSocket test stub targets the still-existing 3-arg); the REST controller passes the key and answers 201 first-send / 200 replay (the DirectConversationOutcome precedent in the same module); SendMessageRequest gains the optional idempotencyKey + @Schema (additive — the mobile OpenAPI contract grows one optional field).
+- V150 PROVEN ON THE LIVE DATABASE (scripts/ValidateV150.java — JDBC against the B-01 user-space PostgreSQL; the zonky distribution carries no psql): applies cleanly on the V7 baseline; column+constraint+index asserted on BOTH tables; the duplicate-key INSERT rejected with 23505 unique_violation (the in-flight race backstop); 2 keyless rows coexist; ADD COLUMN IF NOT EXISTS re-application safe.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging -am — BUILD SUCCESS; messaging 86/86 (MessagingServiceTest 21/21 with the 3 new tests: keyed-first-send persists the replay surface + broadcasts once; sequential replay returns the original with NO save and NO re-broadcast; another sender's key is 403; MessagingControllerTest 9/9 with the 200-replay status test).
+- PUSHED: feat/track-b-modules @ 9562115 (PR-B #508).
+
+Stage Summary:
+- Defect §3.4-3's idempotency half CLOSED (the rate-limiter half is B-05, waiting on the foundation BOM): the send journey is now retry-safe end to end — sequential retries replay the original, the in-flight double-submit loses on the unique index, row updates stay guarded by @Version, and the mobile contract grew one optional field.
+- Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 ✓ (9562115) · B-05 next — Bucket4j needs the foundation's BOM (still absent): CR-2 will be recorded, and B-06 (disputes events — my garden, no new deps) continues the line in the meantime.
+
+تسليم للمراجعة
