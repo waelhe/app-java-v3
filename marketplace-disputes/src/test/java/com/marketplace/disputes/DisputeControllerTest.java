@@ -80,10 +80,36 @@ class DisputeControllerTest {
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
 
         ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId,
-                new ResolveDisputeRequest(DisputeResolution.NO_ACTION), authentication);
+                new ResolveDisputeRequest(DisputeResolution.NO_ACTION, null), authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isEqualTo(response);
+        // B-06: the amount-less decision rides the 3-arg path byte-identically.
+        verify(disputeService).resolve(disputeId, DisputeResolution.NO_ACTION, authentication);
+    }
+
+    /**
+     * B-06 (compliance plan 0.7): the partial decision rides the 4-arg
+     * path — the admin's REFUND_CONSUMER + refundAmountCents reaches the
+     * service that activates the partial refund on the payments port.
+     */
+    @Test
+    void resolve_partialRefund_ridesTheAmountPath() {
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        dispute.resolve(DisputeResolution.REFUND_CONSUMER);
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
+                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+                dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
+        when(disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, 2500L, authentication)).thenReturn(dispute);
+        when(disputeMapper.toResponse(dispute)).thenReturn(response);
+
+        ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId,
+                new ResolveDisputeRequest(DisputeResolution.REFUND_CONSUMER, 2500L), authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isEqualTo(response);
+        verify(disputeService).resolve(disputeId, DisputeResolution.REFUND_CONSUMER, 2500L, authentication);
     }
 
     @Test
