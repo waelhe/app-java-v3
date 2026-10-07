@@ -252,7 +252,12 @@ class SavedSearchIntegrationTest {
         String message = jdbc.queryForObject(
                 "SELECT message FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
                 String.class, consumerUserId);
-        assertThat(message).contains("2").contains("saved searches");
+        // B-11 localized the notifications' primary rendering to Arabic
+        // (notifications-text_ar.properties — the plural template
+        // "قائمة جديدة تطابق {0} من بحوثك المحفوظة: {1}"; the English
+        // ground lives on as the fallback bundle). The aggregation count
+        // rides the {0} slot, so pinning the Arabic prose pins both.
+        assertThat(message).contains("قائمة جديدة تطابق 2 من بحوثك المحفوظة:");
         // the WS push behind the L22 preference (default on) — observed once
         verify(messagingTemplate, timeout(5000).times(1)).convertAndSend(
                 eq("/topic/notifications/" + consumerUserId),
