@@ -61,7 +61,14 @@
         <jacoco.version>0.8.15</jacoco.version>
         <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
-        <springdoc.version>3.1.1</springdoc.version>
+        <!-- springdoc stays 3.1.0: 3.1.1 (measured 2026-10-07 on
+             chore/safe-version-bumps) changes generated-spec rendering —
+             Pageable query parameters newly documented on 7 endpoints and
+             response-documentation deltas — which the fail-closed OpenAPI
+             compatibility gate cannot express as allowlist entries (its
+             documented resolution: revert the add). Needs a dedicated PR
+             with the gate report-format decision; keep on 3.1.0 until then. -->
+        <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.1</instancio.version>
         <spring-ai.version>2.0.1</spring-ai.version>
@@ -305,15 +312,16 @@
                  controllers/records for the springdoc-generated public client
                  contract (feature-expansion roadmap §5 L29-ب). Annotations-only
                  artifact with zero transitive dependencies; version pinned to the
-                 exact swagger-core-jakarta chain springdoc 3.1.1 resolves
-                 (swagger-api.version=2.2.55 in springdoc-openapi-3.1.1.pom,
-                 verified via dependency:tree on marketplace-app). Runtime
+                 exact swagger-core-jakarta chain springdoc 3.1.0 resolves
+                 (swagger-api.version=2.2.52 in springdoc-openapi-3.1.0.pom,
+                 verified via dependency:tree on marketplace-app; 3.1.1 was
+                 measured and reverted with the springdoc property note above). Runtime
                  consumption of the annotations stays in marketplace-app (the
                  springdoc starter reads them from the application context). -->
             <dependency>
                 <groupId>io.swagger.core.v3</groupId>
                 <artifactId>swagger-annotations-jakarta</artifactId>
-                <version>2.2.55</version>
+                <version>2.2.52</version>
             </dependency>
             <!-- Exception #8: MapStruct — compile-time code generation for Entity↔DTO mapping -->
             <dependency>
