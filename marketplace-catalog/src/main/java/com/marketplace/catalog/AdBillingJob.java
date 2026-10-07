@@ -2,20 +2,37 @@ package com.marketplace.catalog;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.modulith.moments.DayHasPassed;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * W5 (yelp-level plan §5 — the ads & billing wave, G24): the periodic
- * debit — the plan's «وظيفة خصم دورية». Daily at 04:45 UTC, strictly
- * after the ranking job (03:30) and the event-publication cleanup
- * (03:00) — the billing reads the day the ranking already ranked and
- * settles COMPLETE UTC days only (the horizon is exclusive today).
+ * W5 (yelp-level plan §5 — the ads & billing wave, G24) + C.6 (the Moments
+ * migration): the periodic debit — the plan's «وظيفة خصم دورية», now a
+ * listener on Modulith Moments' {@link DayHasPassed} instead of the former
+ * manual {@code @Scheduled} cron (the compliance plan's own target: «الزمن
+ * بالأحداث لا بالمجدولات اليدوية»). It settles COMPLETE UTC days only —
+ * the horizon is exclusive today, derived from the event's own payload: the
+ * day AFTER the day that just passed.
+ *
+ * <p><b>The Moments cadence (the C.6 decision, stated honestly):</b> the run
+ * follows the day boundary — Moments publishes {@link DayHasPassed} at each
+ * midnight UTC (the default {@code spring.modulith.moments.zone-id}), where
+ * the former cron fired at 04:45. The settle no longer reads any wall clock:
+ * {@code DayHasPassed.getDate()} IS the completed day, so the horizon
+ * ({@code getDate().plusDays(1)}) is a pure function of the event — the
+ * whole journey deterministic under the {@code TimeMachine} (the C.6 gate).
+ * The ranking job now ticks on the SAME midnight event; both listeners run
+ * synchronously in publication order on Moments' scheduler thread — the
+ * exact serialization the jobs already had on the default single-threaded
+ * {@code TaskScheduler} — and the settle reads only the campaigns' own
+ * counters (impressions/clicks dailies), never the ranking's scores: no
+ * data dependency, only the old off-peak scheduling habit.
  *
  * <p><b>The orchestration shape is the {@code ListingRankingJob}'s:</b> a
  * thin loop over the executor's bounded {@code REQUIRES_NEW} work units.
@@ -34,31 +51,35 @@ public class AdBillingJob {
 
     private final AdCampaignRepository campaignRepository;
     private final AdBillingBatchExecutor batchExecutor;
-    private final Clock clock;
 
     public AdBillingJob(AdCampaignRepository campaignRepository,
-                        AdBillingBatchExecutor batchExecutor,
-                        Clock clock) {
+                        AdBillingBatchExecutor batchExecutor) {
         this.campaignRepository = campaignRepository;
         this.batchExecutor = batchExecutor;
-        this.clock = clock;
     }
 
     /**
-     * Runs daily (the plan's cadence — «وظيفة خصم دورية», one settle per
-     * day's window). Catch-up is structural: a campaign left behind by
+     * The daily tick. Catch-up is structural: a campaign left behind by
      * downtime settles its whole open span as ONE window on the next run
      * (the charge's {@code window_start} is the span's own start).
      */
-    @Scheduled(cron = "0 45 4 * * ?", zone = "UTC")
-    public void settleOpenWindows() {
-        var today = AdBillingBatchExecutor.todayUtc(clock);
-        List<UUID> candidates = campaignRepository.findBillableBefore(today);
+    @EventListener
+    void on(DayHasPassed event) {
+        settleWindowsThrough(event.getDate().plusDays(1));
+    }
+
+    /**
+     * Settles every campaign's open windows strictly before the horizon (a
+     * complete-UTC-days-only boundary — the exclusive {@code today} of the
+     * midnight the event fired, carried by the event itself).
+     */
+    void settleWindowsThrough(LocalDate horizon) {
+        List<UUID> candidates = campaignRepository.findBillableBefore(horizon);
         int settled = 0;
         int overlaps = 0;
         for (UUID campaignId : candidates) {
             try {
-                batchExecutor.settleOneCampaign(campaignId, today);
+                batchExecutor.settleOneCampaign(campaignId, horizon);
                 settled++;
             } catch (DataIntegrityViolationException violation) {
                 // CodeRabbit W5 r1, adopted: ONLY the window-uniqueness
@@ -76,7 +97,7 @@ public class AdBillingJob {
             }
         }
         log.info("Ad billing run over {} candidates: {} settled, {} overlaps, horizon {}",
-                candidates.size(), settled, overlaps, today);
+                candidates.size(), settled, overlaps, horizon);
     }
 
     /**
