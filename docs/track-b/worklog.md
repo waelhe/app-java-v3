@@ -660,3 +660,20 @@ Stage Summary:
 - Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ · B-08 ✓ (7292604) · B-05 blocked on the foundation BOM (CR-2) · B-09 next (ETag/conditional GETs on the catalog read paths — compliance plan B.3, my garden, no new deps).
 
 تسليم للمراجعة
+
+---
+Task ID: B-09
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-09 (compliance plan B.3) — ETag/طلبات شرطية لمسارات القراءة (reviews)
+
+Work Log:
+- MEASURED first: ZERO ETag machinery anywhere in the reviews/catalog read paths (grep-verified); ReviewResponse already carries id/createdAt/updatedAt AND the batch-resolved blocks (reviewerName, reviewerReviewCount, helpfulCount, reply) — a row-stamp-only tag would have missed those (a new helpful vote changes the visible content without touching the review row's updatedAt: the false-304 trap, caught at design time). App-side coupling checked: ReviewsControllerWebMvcTest stubs the VIEW SERVICE (not the controller) — the WebRequest parameter addition breaks nothing in Track A's garden.
+- IMPLEMENTED inside my garden (reviews only): ReviewEtags — the content-fingerprint validator (MD5 over the response's OWN complete material — the record toString covers every visible field by construction; the list tag adds scope + page window + totalElements); the four read endpoints (detail + provider/reviewer/consumer lists) wired through WebRequest.checkNotModified with the shared conditional() helper (200+ETag first, 304+ETag no-body on a matching If-None-Match); STRONG tags (deterministic material), values passed unquoted to checkNotModified per the method's own quoting contract.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-reviews -am — BUILD SUCCESS; ReviewsControllerTest 12/12 (the four new tests run REAL ServletWebRequest roundtrips: the 200-with-ETag read, the matching-revalidation 304 with no body, the content-change (provider reply) breaking the match to a fresh 200 — never a false 304, and the list-surface 304 roundtrip). One missing import caught by the gate and fixed in-unit.
+- PUSHED: feat/track-b-modules @ 7f83184 (PR-B #508).
+
+Stage Summary:
+- B.3 landed on the reviews surface: the offline client revalidates every review read in one round trip, and the 304 semantics are honest by construction (the fingerprint covers the whole visible content, not a proxy stamp).
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ · B-08 ✓ · B-09 ✓ (7f83184) — P1's executable set COMPLETE for Track B. B-05 (Bucket4j) + B-10 (firebase-admin) wait on the foundation BOM (CR-2). B-11 (Arabic i18n for notifications/messaging — my gardens, no new deps) is the next executable unit; the line continues next session from the persisted state (this worklog + docs/track-b-state).
+
+تسليم للمراجعة
