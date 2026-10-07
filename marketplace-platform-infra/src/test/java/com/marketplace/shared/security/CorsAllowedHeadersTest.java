@@ -53,7 +53,7 @@ class CorsAllowedHeadersTest {
                                 new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", "", ""),
                                 "marketplace-api"
                         ),
-                        new MarketplaceProperties.Security.Session(2),
+                        new MarketplaceProperties.Security.Session(2, false),
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),

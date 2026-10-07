@@ -691,6 +691,14 @@ marketplace:
         key-password: ${JWT_KEY_PASSWORD:}
     session:
       max-sessions: ${SESSION_MAX_SESSIONS:2}
+      # A.4 (official-compliance plan §6 wave A) — the multi-device overflow
+      # policy, the second documented half of the concurrency pair: false =
+      # the documented Spring Security default (the least-recent session is
+      # expired so the newest login always succeeds); true = the new login is
+      # rejected at the form-login failure URL instead. The env channel gives
+      # the platform owner the policy word, exactly like SESSION_MAX_SESSIONS
+      # above it.
+      max-sessions-prevents-login: ${SESSION_MAX_SESSIONS_PREVENTS_LOGIN:false}
     # N1 (admin-seed hardening): the break-glass administrator's password —
     # env-only channel in production, exactly like OAUTH_CLIENT_SECRET. The
     # fixed bcrypt hash that previously shipped in R__seed_oauth2_client.sql

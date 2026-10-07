@@ -140,8 +140,24 @@ public record MarketplaceProperties(
                 @DefaultValue("") String keyPassword
             ) {}
         }
+        /**
+         * A.4 (official-compliance plan §6 wave A) — the multi-device session
+         * policy, bound once and consumed by both session-bearing chains.
+         * {@code maxSessions} bounds how many concurrent authenticated
+         * sessions one principal may hold (Spring Security Reference › Servlet
+         * › Session Management: "This will prevent a user from logging in
+         * multiple times - a second login will cause the first to be
+         * invalidated"). {@code maxSessionsPreventsLogin} selects the
+         * documented overflow behavior: {@code false} — the documented
+         * default — expires the least-recent session so the newest login
+         * always succeeds; {@code true} instead rejects the new login
+         * outright ("The second login will then be rejected... the user will
+         * be sent to the authentication-failure-url if form-based login is
+         * being used").
+         */
         public record Session(
-            @DefaultValue("2") int maxSessions
+            @DefaultValue("2") int maxSessions,
+            @DefaultValue("false") boolean maxSessionsPreventsLogin
         ) {}
         public record OAuth2(
             @DefaultValue Client client,

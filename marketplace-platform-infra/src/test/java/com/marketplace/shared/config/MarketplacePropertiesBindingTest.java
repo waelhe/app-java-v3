@@ -80,6 +80,14 @@ class MarketplacePropertiesBindingTest {
         // session: the one bound key, with the documented default shape.
         assertThat(properties.security().session()).as("session section").isNotNull();
         assertThat(properties.security().session().maxSessions()).isEqualTo(2);
+        // A.4 (compliance plan wave A): the overflow half of the concurrency
+        // pair is primed with the documented default — false expires the
+        // least-recent session (the newest login succeeds); it must bind
+        // non-null-and-false when its key is absent, exactly like the bound
+        // maximum above, never an NPE in the filter chains' DSL lambda.
+        assertThat(properties.security().session().maxSessionsPreventsLogin())
+                .as("max-sessions-prevents-login documented default: false (least-recent session expires)")
+                .isFalse();
 
         // I7 (account-pseudonymization-plan §5-أ): the pseudonymization
         // section is primed non-null when absent — UserService and
@@ -131,6 +139,29 @@ class MarketplacePropertiesBindingTest {
 
         assertThat(properties.security().adminSeed().password())
                 .isEqualTo("env-delivered-secret");
+    }
+
+    /**
+     * A.4: the concurrent-session overflow policy binds from its property
+     * key — the shape {@code SESSION_MAX_SESSIONS_PREVENTS_LOGIN} delivers
+     * through the application.yml placeholder, riding the same binding
+     * channel as {@code SESSION_MAX_SESSIONS} above it.
+     */
+    @Test
+    void bindsConcurrentSessionOverflowPolicyFromItsPropertyKey() {
+        Map<String, Object> source = Map.of(
+                "marketplace.security.session.max-sessions", "3",
+                "marketplace.security.session.max-sessions-prevents-login", "true");
+
+        MarketplaceProperties properties = new Binder(ConfigurationPropertySources
+                .from(new MapPropertySource("test", source)))
+                .bind("marketplace", Bindable.of(MarketplaceProperties.class))
+                .get();
+
+        assertThat(properties.security().session().maxSessions()).isEqualTo(3);
+        assertThat(properties.security().session().maxSessionsPreventsLogin())
+                .as("the overflow policy binds from its key: true = the new login is rejected")
+                .isTrue();
     }
 
     /**

@@ -139,8 +139,15 @@ public class SecurityConfig {
                 // same bound property and the same SpringSessionBackedSessionRegistry
                 // bean: getAllSessions/principal indexing/expiry all live in the
                 // Spring Session store, one source of truth for both chains.
+                // A-06 (official-compliance plan §6 wave A — A.4) completes the
+                // documented concurrency pair with maxSessionsPreventsLogin from
+                // the same bound property: inert on THIS chain's login path (SAS
+                // owns the endpoint's strategy, per the bytecode note above) but
+                // kept symmetric so the policy stays one configuration, not two.
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maxSessions())
+                        .maxSessionsPreventsLogin(
+                                properties.security().session().maxSessionsPreventsLogin())
                         .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
@@ -348,8 +355,23 @@ public class SecurityConfig {
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                // A-06 (official-compliance plan §6 wave A — A.4): the
+                // multi-device policy's login-time leg — THE surface where the
+                // documented overflow decision lands (the form-login POST on
+                // this chain). maximumSessions + sessionRegistry are the R8-era
+                // wiring; maxSessionsPreventsLogin completes the documented pair
+                // (Spring Security Reference › Session Management: the
+                // maximumSessions/maxSessionsPreventsLogin samples): false (the
+                // bound default) expires the least-recent session on overflow so
+                // the newest login succeeds; true rejects the new login at the
+                // form-login failure URL. Session fixation protection needs no
+                // line here — changeSessionId is the documented default on
+                // Servlet 3.1+ containers, and the concurrent-sessions IT
+                // measures the id rotation across the login POST.
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maxSessions())
+                        .maxSessionsPreventsLogin(
+                                properties.security().session().maxSessionsPreventsLogin())
                         .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
