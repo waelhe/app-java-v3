@@ -638,3 +638,25 @@ Stage Summary:
 - Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ (6d88013) · B-08 next immediately (MESSAGE_RECEIVED event → arrival notification — messaging publishes + notifications listens, BOTH my gardens, the late-lander rule executed by me on both sides; compliance plan 0.10).
 
 تسليم للمراجعة
+
+---
+Task ID: B-08 (+ CR-4 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-08 (compliance plan 0.10) — إشعار MESSAGE_RECEIVED (Modulith event)
+
+Work Log:
+- MEASURED first: messaging published no arrival event (the §3.4-8 defect — a message lands and the other participant's only signal is the WebSocket topic they may not be connected to); the notifications delivery machinery (type enum + preference matrix + the onX handler shape + the per-type CHECK guard on notification_preferences) is the standing point-addition pattern with NINE predecessors, each landing enum + handler + CHECK-widening pair.
+- MID-UNIT DISCOVERY (measured before committing to a design): the notifications pom carries NO marketplace-messaging dependency — a listener importing the module-owned event would not compile, and any pom of an EXISTING module is Track A's hot file (the pack §4). The listener + the "messaging :: messaging" allowedDependency were written and then REVERTED in the same unit (nothing of the dead end shipped); the architecturally-clean alternative (event record in shared/api, where the other nine cross-module events live) is equally A's garden — hence CR-4.
+- DELIVERED (all inside my gardens): MessageReceivedEvent in the messaging root (the exposed messaging NamedInterface) — the complete arrival fact with the recipient resolved at the source; MessagingService.sendMessage publishes it on every real send (a replay never re-publishes — pinned in the replay test); NotificationType.MESSAGE_RECEIVED as the tenth type (the same point-addition javadoc lineage); NotificationService.onMessageReceived in the onPostCommented delivery shape (in-app row always, email + WebSocket per the L22 matrix); V151 + V152 (my range's second and third migrations) widening the notification_preferences CHECK in the V93/V94 split form; the preference-matrix tests widened 27 → 30 rows exactly as every prior type addition did (the house's own test-updating convention).
+- V151/V152 PROVEN ON THE LIVE DATABASE (scripts/ValidateV151.java — JDBC, zonky has no psql): baseline 9-type CHECK → V151 leaves NOT VALID → V152 validates → membership contains MESSAGE_RECEIVED → the new type INSERT accepted, an unknown type still rejected (23514). One validator bug found and fixed in-flight (semicolons inside SQL comments splitting naive statements — comments are stripped before splitting now; Flyway was never at risk).
+- Two compile/test slips caught by the gates and fixed in-unit: the messaging test file's JUnit-only assertion style (AssertJ not imported — restyled to assertEquals), and a 33-value expected list (one extra row group — corrected to 30).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging,marketplace-notifications -am — BUILD SUCCESS (MessagingServiceTest 22/22 incl. the publication gate test + the no-republish replay pin; NotificationServiceTest 25/25 incl. the arrival-delivery and opt-out tests; NotificationPreferenceServiceTest 9/9 with the 30-row matrix).
+- PUSHED: feat/track-b-modules @ 7292604 (PR-B #508).
+- CR-4 RECORDED (B→A, §5.4): the event-to-listener last mile. Option A (RECOMMENDED — the house convention): the new file marketplace-shared/api/MessageReceivedEvent.java (the tenth cross-module event beside BookingCreatedEvent etc.); on landing, my follow-up unit relocates messaging's import and adds the notifications listener (both my gardens, no pom change anywhere). Option B: marketplace-notifications/pom.xml gains the marketplace-messaging dependency (the event stays module-owned). Either closes the loop; A picks per the architecture's taste.
+- Event-catalog registration note (additive-only): MessageReceivedEvent joins DisputeOpenedEvent + DisputeResolvedEvent as pending the foundation's contracts ledger.
+
+Stage Summary:
+- §3.4-8 is 90% closed: the arrival fact is published with the recipient resolved at the source, the tenth notification type rides the standing delivery machinery, and the DB-side guard is widened and proven — the single remaining wire (the listener) is a 10-line follow-up behind CR-4, with both architectural options documented for Track A.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ · B-08 ✓ (7292604) · B-05 blocked on the foundation BOM (CR-2) · B-09 next (ETag/conditional GETs on the catalog read paths — compliance plan B.3, my garden, no new deps).
+
+تسليم للمراجعة
