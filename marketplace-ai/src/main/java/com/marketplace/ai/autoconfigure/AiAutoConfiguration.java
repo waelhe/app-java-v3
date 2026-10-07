@@ -1,7 +1,6 @@
 package com.marketplace.ai.autoconfigure;
 
 import com.marketplace.ai.AiChatGateway;
-import com.marketplace.ai.web.AiController;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -35,10 +34,4 @@ public class AiAutoConfiguration {
         );
     }
 
-    @Bean
-    @ConditionalOnBean(AiChatGateway.class)
-    @ConditionalOnMissingBean
-    AiController aiController(AiChatGateway aiChatGateway) {
-        return new AiController(aiChatGateway);
-    }
 }
