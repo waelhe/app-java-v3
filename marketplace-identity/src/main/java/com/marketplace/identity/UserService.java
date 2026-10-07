@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -416,8 +417,17 @@ public class UserService implements IdentitySpi {
      * <p><b>The audit record</b> (payments convention): actor, target,
      * old→new role — the same structured line {@code updateUserStatus}
      * writes.
+     * <p><b>A-07 (A.5) — the third layer made real:</b> this method now carries
+     * the service-level role gate the documented three-layer admin pattern
+     * demands (chain rule + controller class rule + THIS) — the measured
+     * starting state had only the first two (Spring Security Reference ›
+     * Servlet Authorization › Method Security: «unannotated methods are not
+     * secured» — the catch-all alone does not defend a bean called off the
+     * HTTP path). Single-contract surface: {@code AdminController} is the
+     * only caller.
      */
     @Observed(name = "user.role.update")
+    @PreAuthorize("hasRole('ADMIN')")
     @Override
     public void updateUserRole(UUID userId, String newRole, String actor) {
         UserRole target = UserRole.valueOf(newRole);
@@ -530,8 +540,13 @@ public class UserService implements IdentitySpi {
      * ADMIN is rejected — the guard counts enabled users holding
      * {@code ROLE_ADMIN} in {@code auth_authorities} (the login-side authority
      * that the JWT {@code roles} claim is minted from).
+     * <p><b>A-07 (A.5) — the third layer made real:</b> the service-level
+     * {@code hasRole('ADMIN')} gate joins the chain rule and the controller
+     * class rule (the documented three-layer admin pattern). Single-contract
+     * surface: {@code AdminController} is the only caller.
      */
     @Observed(name = "user.status.update")
+    @PreAuthorize("hasRole('ADMIN')")
     @Override
     public void updateUserStatus(UUID userId, String status, String reason, String actor) {
         boolean disable = "DISABLED".equals(status);
@@ -676,6 +691,7 @@ public class UserService implements IdentitySpi {
      *         the projection row (the L23 defensive shape)
      */
     @Observed(name = "user.pseudonymize")
+    @PreAuthorize("hasRole('ADMIN') or @authHelper.isCurrentUser(#userId, authentication)")
     @Override
     public void pseudonymizeAccount(UUID userId, String reason, String actor) {
         // The write path reads the source of truth directly — NOT the
@@ -762,8 +778,14 @@ public class UserService implements IdentitySpi {
      * open a transaction would make every adapter's {@code REQUIRED}
      * join it and rebuild the single heavy transaction the plan keeps the
      * purge out of.
+     *
+     * <p><b>A-07 (A.5) — the third layer made real:</b> the service-level
+     * {@code hasRole('ADMIN')} gate joins the chain and controller rules
+     * (the documented three-layer admin pattern). Single-contract surface:
+     * {@code AdminController} is the only caller.
      */
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int purgeAuthoredContent(UUID userId, String reason, String actor) {
         return authoredContentPurgeService.purge(userId, reason, actor);
@@ -783,8 +805,14 @@ public class UserService implements IdentitySpi {
      * autocommitted scrub statement and the deletion into a single giant
      * transaction — the exact shape the plan keeps the purge out of (the
      * gradation: a partial failure resumes on re-run).
+     *
+     * <p><b>A-07 (A.5) — the third layer made real:</b> the service-level
+     * {@code hasRole('ADMIN')} gate joins the chain and controller rules
+     * (the documented three-layer admin pattern). Single-contract surface:
+     * {@code AdminController} is the only caller.
      */
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor) {
         return auditHistoryPurgeService.purge(userId, reason, actor);

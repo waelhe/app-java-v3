@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -34,7 +35,14 @@ import java.util.UUID;
  * ({@code /api/v1/admin/**} → {@code hasRole('ADMIN')} in {@code SecurityConfig}),
  * the class-level {@code @PreAuthorize} on {@code AdminController}, and this
  * service — the only place allowed to touch the store. A writer that bypasses
- * HTTP cannot bypass the service.
+ * HTTP cannot bypass the service. <b>A-07 (A.5) made the third layer
+ * real:</b> the write methods now carry their own service-level
+ * {@code @PreAuthorize("hasRole('ADMIN')")} — before, the claim above was
+ * only about write-path centralization; a caller reaching the bean off the
+ * HTTP path met no role check at all (Spring Security Reference › Servlet
+ * Authorization › Method Security: «unannotated methods are not secured»).
+ * Single-contract surface: {@code AdminController} is the only caller of
+ * {@code create} and {@code update}.
  *
  * <p><b>Reads go through the cache; writes never do.</b> {@link SystemSettingReader}
  * serves the {@code @Cacheable} path; the write path reads the row from the
@@ -116,8 +124,12 @@ public class SystemSettingsService implements SystemSettingsPort {
      * operator introduces a <em>new</em> control, and silently overwriting an
      * existing one on a typo'd create would change platform behaviour without
      * anyone asking for it.
+     *
+     * <p><b>A-07 (A.5):</b> the service-level ADMIN gate — the documented
+     * third layer, now enforced (see the class javadoc).
      */
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public SystemSetting create(String key, JsonNode value, String description, String actor) {
         if (repository.findBySettingKey(key).isPresent()) {
             throw new ConflictException("Setting '" + key + "' already exists — PATCH it instead");
@@ -136,8 +148,12 @@ public class SystemSettingsService implements SystemSettingsPort {
      * Updates value and/or description. A change that changes nothing is a no-op
      * down to the cache: no revision in {@code system_settings_aud}, no eviction,
      * no event ({@link SystemSetting#replaceValue} is the decider).
+     *
+     * <p><b>A-07 (A.5):</b> the service-level ADMIN gate — the documented
+     * third layer, now enforced (see the class javadoc).
      */
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public SystemSetting update(String key, JsonNode value, String description, String actor) {
         SystemSetting setting = repository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException(

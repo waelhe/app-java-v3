@@ -529,8 +529,52 @@ public class SecurityConfig {
         objectMapper.writeValue(response.getOutputStream(), problemDetail);
     }
 
+    /**
+     * A-07 (official-compliance plan §6 wave A — A.6, «upgradeEncoding
+     * للترميز»): the password-upgrade leg of the login journey.
+     *
+     * <p><b>The official mechanism, as it stands in Spring Security 7.1.1</b>
+     * (bytecode-verified against the resolved artifacts this change): the
+     * {@code DaoAuthenticationProvider} the framework assembles from these
+     * beans ({@code InitializeUserDetailsBeanManagerConfigurer} — one
+     * {@code UserDetailsService} bean + the {@code PasswordEncoder} bean
+     * below) consults {@code PasswordEncoder#upgradeEncoding(String)} on
+     * every successful authentication. The {@code DelegatingPasswordEncoder}
+     * from {@link PasswordEncoderFactories} answers {@code true} whenever the
+     * stored {@code {id}} differs from the preferred one ({@code {bcrypt}})
+     * or the stored bcrypt strength is below the configured one — and the
+     * provider then re-encodes the presented raw password and persists it
+     * through {@code UserDetailsPasswordService#updatePassword}. The 6.x
+     * {@code setUpgradeEncoding(boolean)} switch no longer exists in 7.x: the
+     * decision is the encoder's own.
+     *
+     * <p><b>Why the declared return type is the concrete class.</b> The
+     * framework's assembly wires the password service through
+     * {@code getBeanProvider(UserDetailsPasswordService.class).getIfUnique()}
+     * — a lookup by the STATICALLY predicted bean type. Declared as
+     * {@code UserDetailsManager} (an interface that does not extend
+     * {@code UserDetailsPasswordService}) the lookup cannot match the
+     * factory-method prediction, and the upgrade path stays dormant behind
+     * the {@code NOOP} default. Declared as {@code JdbcUserDetailsManager}
+     * (which implements {@code UserDetailsPasswordService}), the provider is
+     * wired with the SAME manager instance the login chain already reads —
+     * no second bean, no custom {@code AuthenticationProvider} definition
+     * (the framework's own warning path when one exists).
+     *
+     * <p><b>The write switch.</b> {@code JdbcUserDetailsManager} carries the
+     * 7.x {@code enableUpdatePassword} flag (bytecode default: {@code false}
+     * — {@code updatePassword} then returns the user untouched without any
+     * SQL). Enabled here: {@code updatePassword} funnels into the SAME
+     * documented {@code updateUser} choreography the S2/N4/N6 role-change
+     * fix already trusts — the customized {@code updateUserSql} rewrites the
+     * {@code auth_users} row and the authority pair is replaced atomically,
+     * so an upgraded verifier lands exactly where every other login-row
+     * write lands. Login-time upgrade is the documented migration path for
+     * one-way hashes («Since there is no way to recover the plaintext, it is
+     * difficult to migrate the passwords» — the reference's own words).
+     */
     @Bean
-    UserDetailsManager userDetailsService(DataSource dataSource) {
+    JdbcUserDetailsManager userDetailsService(DataSource dataSource) {
         JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
         manager.setUsersByUsernameQuery("select username, password, enabled from auth_users where username = ?");
         manager.setAuthoritiesByUsernameQuery("select username, authority from auth_authorities where username = ?");
@@ -540,6 +584,7 @@ public class SecurityConfig {
         manager.setCreateAuthoritySql("insert into auth_authorities (username, authority) values (?, ?)");
         manager.setDeleteUserAuthoritiesSql("delete from auth_authorities where username = ?");
         manager.setUserExistsSql("select count(*) from auth_users where username = ?");
+        manager.setEnableUpdatePassword(true);
         return manager;
     }
 
