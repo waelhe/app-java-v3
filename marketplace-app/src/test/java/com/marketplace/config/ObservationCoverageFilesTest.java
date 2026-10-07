@@ -163,6 +163,12 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-institutions", List.of(
                     "institution.register", "institution.verification.request",
                     "institution.verification.review")),
+            // B-14 (compliance plan C.4): the knowledge guide's three
+            // business commands (the contribution + the revision + the
+            // withdrawal) — the same source-tree-scan discipline.
+            Map.entry("marketplace-knowledge", List.of(
+                    "knowledge.entry.create", "knowledge.entry.update",
+                    "knowledge.entry.withdraw")),
             Map.entry("marketplace-jobs", List.of(
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),
