@@ -340,4 +340,34 @@ public class NotificationService {
         repository.saveAndFlush(notification);
         return NotificationResponse.from(notification);
     }
+
+    /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): delete one
+     * notification — the caller's own only (the same ownership discipline
+     * {@link #markAsRead} carries: the recipient or an admin). The delete
+     * is the BaseEntity soft delete ({@code @SoftDelete} — {@code is_deleted}),
+     * so the Envers trace and the audit row survive.
+     */
+    @Observed(name = "notification.delete")
+    public void delete(UUID id, Authentication authentication) {
+        Notification notification = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + id));
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        if (!notification.getRecipientId().equals(userId) && !currentUserProvider.isAdmin(authentication)) {
+            throw new AccessDeniedException("Not allowed to access this notification");
+        }
+        repository.delete(notification);
+    }
+
+    /**
+     * B-07 (0.8): mark ALL the caller's unread notifications as read — the
+     * feed's clear-all (one bulk UPDATE, the count returned for the badge's
+     * immediate reconciliation). Only the CALLER's rows: an admin clearing
+     * their own feed, never anyone else's.
+     */
+    @Observed(name = "notification.mark.all.read")
+    public int markAllAsRead(Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return repository.markAllAsReadByRecipientId(userId);
+    }
 }

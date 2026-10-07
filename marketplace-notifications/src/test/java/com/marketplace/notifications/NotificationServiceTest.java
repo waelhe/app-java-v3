@@ -611,4 +611,89 @@ class NotificationServiceTest {
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
         verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
     }
+
+    /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): delete one
+     * notification — the owner's own row leaves the feed (the soft delete
+     * on the BaseEntity, so the audit trace survives).
+     */
+    @Test
+    void deleteRemovesTheOwnersNotification() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID userId = create(UUID.class);
+        Notification notification = of(Notification.class)
+                .set(field(Notification::getRecipientId), userId)
+                .set(field(Notification::getType), "BOOKING_CREATED")
+                .set(field(Notification::getMessage), "msg")
+                .create();
+        when(repository.findById(notification.getId())).thenReturn(Optional.of(notification));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+
+        service.delete(notification.getId(), authentication);
+
+        verify(repository).delete(notification);
+    }
+
+    /**
+     * B-07 (0.8): the delete ownership discipline is markRead's — someone
+     * else's notification is a 403, and no delete happens.
+     */
+    @Test
+    void deleteThrowsAccessDeniedForNonOwnerNonAdmin() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID ownerId = UUID.randomUUID();
+        UUID differentUserId = UUID.randomUUID();
+        Notification notification = mock(Notification.class);
+        when(notification.getRecipientId()).thenReturn(ownerId);
+        when(repository.findById(any())).thenReturn(Optional.of(notification));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(differentUserId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.delete(UUID.randomUUID(), authentication)
+        );
+        verify(repository, never()).delete(any(Notification.class));
+    }
+
+    /**
+     * B-07 (0.8): the clear-all — one bulk UPDATE over the CALLER's unread
+     * rows; the count comes back for the badge's immediate reconciliation.
+     */
+    @Test
+    void markAllAsReadBulkUpdatesTheCallersRows() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID userId = create(UUID.class);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(repository.markAllAsReadByRecipientId(userId)).thenReturn(7);
+
+        int marked = service.markAllAsRead(authentication);
+
+        assertThat(marked).isEqualTo(7);
+        verify(repository).markAllAsReadByRecipientId(userId);
+    }
 }

@@ -4,6 +4,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,4 +36,14 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * surface above keeps its existing ordering contract untouched.
      */
     List<Notification> findAllByRecipientIdOrderByCreatedAtDescIdDesc(UUID recipientId);
+
+    /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): the badge's
+     * clear-all — one bulk UPDATE over the caller's unread rows, no entity
+     * loading (the messaging module's {@code markAsReadByConversationId}
+     * @Modifying pattern). Returns the number of rows marked.
+     */
+    @Modifying
+    @Query("UPDATE Notification n SET n.read = true WHERE n.recipientId = :recipientId AND n.read = false")
+    int markAllAsReadByRecipientId(@Param("recipientId") UUID recipientId);
 }
