@@ -3,9 +3,11 @@ package com.marketplace.notifications;
 import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
+import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.PostReactedEvent;
@@ -30,6 +32,38 @@ public class NotificationEventListener {
     public void onBookingCreated(BookingCreatedEvent event) {
         notificationService.onBookingCreated(event.bookingId());
         log.info("Notification sent for booking created: {}", event.bookingId());
+    }
+
+    /**
+     * A-04 (official-compliance plan §6 wave A — A.1/A.2, the parallel
+     * contracts ledger's additive registration): the security-mail pair.
+     * Identity (Track A's garden) publishes each event inside the issuing
+     * transaction; this consumer renders the mail through the house seam —
+     * the mail channel ALONE, no in-app row, no WebSocket push, no
+     * preference gate (the measured exception both NotificationService
+     * methods document: the recipient is outside the application by
+     * definition, and the OWASP-declared security mail rides no marketing
+     * preference). The registry entry commits atomically with the token
+     * row on the publisher's side, and a failed mail leg stays incomplete
+     * for the framework's resubmission — the standing housekeeping.
+     */
+    @ApplicationModuleListener
+    public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
+        notificationService.onPasswordResetRequested(
+                event.userId(), event.displayName(), event.resetLink(), event.expiresAt());
+        log.info("Password reset mail sent: userId={}", event.userId());
+    }
+
+    /**
+     * A-04's A.2 leg — same contract as the reset listener above; the
+     * welcome mail carries the one-time verification deep link that lifts
+     * the registration hold (the dormant template's activation).
+     */
+    @ApplicationModuleListener
+    public void onEmailVerificationRequested(EmailVerificationRequestedEvent event) {
+        notificationService.onEmailVerificationRequested(
+                event.userId(), event.displayName(), event.verificationLink());
+        log.info("Email verification mail sent: userId={}", event.userId());
     }
 
     /**

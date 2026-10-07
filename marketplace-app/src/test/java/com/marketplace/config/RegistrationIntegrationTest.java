@@ -1,8 +1,13 @@
 package com.marketplace.config;
 
+import com.icegreen.greenmail.junit5.GreenMailExtension;
+import com.icegreen.greenmail.util.ServerSetupTest;
+import jakarta.mail.internet.MimeMessage;
 import test.config.IntegrationContainers;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,6 +41,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li><b>The S1 core:</b> an anonymous caller registers — 201, the CONSUMER
  *       profile in the response, both stores written in one transaction.</li>
+ *   <li><b>A-04 (compliance plan §6 wave A — A.2) lengthened the loop with the
+ *       email-verification hold, and this guard follows the measured truth:</b>
+ *       the birth mail (the activated dormant {@code email/welcome} template)
+ *       carries the one-time link, redemption lifts the hold, and ONLY THEN...</li>
  *   <li><b>The loop closes (the audit's real test):</b> the SAME credentials
  *       walk the full L23 login gate (the five-step PKCE browser-less flow,
  *       verbatim) and mint a REAL access token — the registered account is
@@ -47,6 +56,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       too-short password answers the clean 400 (the policy is the request
  *       contract — 8..72, the bcrypt byte ceiling).</li>
  * </ol>
+ * <p>The mail leg rides GreenMail (root exception #18) on the test profile's
+ * own standing {@code localhost:3025} binding — the full journey shape is
+ * measured in {@code AccountMailJourneyIntegrationTest} (A-04's own gate);
+ * THIS guard keeps the S1 birth-to-first-call loop's original spine.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
@@ -68,6 +81,10 @@ class RegistrationIntegrationTest {
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
+    /** GreenMail's SMTP test setup — port 3025, the test profile's own mail binding. */
+    @RegisterExtension
+    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.SMTP);
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -88,8 +105,13 @@ class RegistrationIntegrationTest {
         return "s1-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
     }
 
+    @BeforeEach
+    void purgeMailboxes() throws Exception {
+        greenMail.purgeEmailFromAllMailboxes();
+    }
+
     @Test
-    void theRegisteredAccountWalksTheFullLoop_registerLoginGateTokenThenMe() throws Exception {
+    void theRegisteredAccountWalksTheFullLoop_registerVerifyLoginGateTokenThenMe() throws Exception {
         String email = uniqueEmail();
         String password = "s1-valid-password";
 
@@ -106,6 +128,18 @@ class RegistrationIntegrationTest {
         assertThat(profile.path("displayName").asString()).isEqualTo("S1 Member");
         assertThat(profile.path("id").asString()).isNotBlank();
 
+        // (1.5 — A-04) The verification leg the hold added to the loop: the
+        // birth mail arrives through the REAL stack (GreenMail on the test
+        // profile's own 3025 binding) and carries the one-time link; the
+        // redemption lifts the hold — only then is the account loginable.
+        assertThat(greenMail.waitForIncomingEmail(10_000, 1)).isTrue();
+        String verificationToken = verificationTokenFromLatestMail(email);
+        assertThat(verificationToken).as("the welcome mail's one-time link").isNotBlank();
+        HttpResponse<String> verified = postJson("/api/v1/auth/email-verification/complete", """
+                {"token": "%s"}
+                """.formatted(verificationToken));
+        assertThat(verified.statusCode()).as("verification: %s", body(verified)).isEqualTo(204);
+
         // (2) The full L23 login gate with THOSE credentials — a real token.
         String accessToken = loginGateAccessToken(email, password);
         assertThat(accessToken).as("the registered account is loginable — the gate mints a real token").isNotBlank();
@@ -118,6 +152,22 @@ class RegistrationIntegrationTest {
         JsonNode meProfile = objectMapper.readTree(me.body());
         assertThat(meProfile.path("email").asString()).isEqualTo(email);
         assertThat(meProfile.path("displayName").asString()).isEqualTo("S1 Member");
+    }
+
+    /** Extracts the one-time token from the LATEST welcome mail for the recipient. */
+    private String verificationTokenFromLatestMail(String recipient) throws Exception {
+        MimeMessage latest = null;
+        for (MimeMessage message : greenMail.getReceivedMessages()) {
+            if (jakarta.mail.internet.InternetAddress.toString(
+                    message.getRecipients(jakarta.mail.Message.RecipientType.TO)).contains(recipient)) {
+                latest = message;
+            }
+        }
+        assertThat(latest).as("the welcome mail for %s", recipient).isNotNull();
+        Matcher matcher = Pattern.compile("token=([A-Za-z0-9_-]+)")
+                .matcher(latest.getContent().toString());
+        assertThat(matcher.find()).as("the welcome mail carries the verification deep link").isTrue();
+        return matcher.group(1);
     }
 
     @Test

@@ -246,6 +246,16 @@
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- A-04: GreenMail — the in-JVM SMTP receiver the account-mail journey ITs
+             read the real outbound mails from (version: root exception #18). The
+             JUnit 5 extension starts the server on GreenMail's default port 3025,
+             which the test profile's spring.mail binding already points at. -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>${greenmail.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Exception #10: spring-security-test — @WithMockUser for integration tests -->
         <dependency>
             <groupId>org.springframework.security</groupId>

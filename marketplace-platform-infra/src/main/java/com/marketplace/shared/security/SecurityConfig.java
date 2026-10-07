@@ -286,6 +286,25 @@ public class SecurityConfig {
                         // authenticated; the password lifecycle items of the
                         // gate will each carry their own line when they open.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                        // A-04 (official-compliance plan §6 wave A — A.1/A.2):
+                        // the four token-redemption surfaces join the register
+                        // precedent by the same measured rule — every one of
+                        // them PRECEDES an authenticated session by
+                        // definition (the reset requester forgot the
+                        // credential a session would need; the unverified
+                        // account's holder is locked out by the hold), and
+                        // the request's proof is NOT a session but the
+                        // single-use, time-limited V112 token the mail leg
+                        // delivered out of band. Enumeration-safe 202s answer
+                        // the two "send me the mail" surfaces; the
+                        // redemption pairs answer 204 or the honest 400 of
+                        // the single-use wall. Nothing here trusts the
+                        // caller beyond the token each redemption presents.
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/auth/password-reset/request",
+                                "/api/v1/auth/password-reset/complete",
+                                "/api/v1/auth/email-verification/resend",
+                                "/api/v1/auth/email-verification/complete").permitAll()
                         // L34 (realestate systems plan §5): the public lead
                         // submission — the plan's "بلا مصادقة إلزامية" (the
                         // guest fills name and phone). A public POST is the

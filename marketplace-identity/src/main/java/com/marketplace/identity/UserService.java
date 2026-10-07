@@ -48,6 +48,15 @@ public class UserService implements IdentitySpi {
     private final AuthoredContentPurgeService authoredContentPurgeService;
     private final AuditHistoryPurgeService auditHistoryPurgeService;
     /**
+     * A-04: the verification issuance arm of the registration hold (the
+     * javadoc on {@link #register} tells the whole story) and the token
+     * lifecycle the administrative surfaces below consume outstanding
+     * rights through (the ban-vs-verification invariant, V112's own
+     * registration). Both live in THIS module — no boundary crossing.
+     */
+    private final EmailVerificationService emailVerificationService;
+    private final AuthActionTokenService authActionTokenService;
+    /**
      * ObjectProvider (the Modulith module-slice shape — the #392 CI-round-1
      * lesson, measured again by #395's round): the encoder bean lives in the
      * shared security infrastructure (SecurityConfig), which identity's own
@@ -122,6 +131,8 @@ public class UserService implements IdentitySpi {
                        SubjectPseudonymizer subjectPseudonymizer,
                        AuthoredContentPurgeService authoredContentPurgeService,
                        AuditHistoryPurgeService auditHistoryPurgeService,
+                       EmailVerificationService emailVerificationService,
+                       AuthActionTokenService authActionTokenService,
                        org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder) {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -130,6 +141,8 @@ public class UserService implements IdentitySpi {
         this.subjectPseudonymizer = subjectPseudonymizer;
         this.authoredContentPurgeService = authoredContentPurgeService;
         this.auditHistoryPurgeService = auditHistoryPurgeService;
+        this.emailVerificationService = emailVerificationService;
+        this.authActionTokenService = authActionTokenService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -175,9 +188,25 @@ public class UserService implements IdentitySpi {
      *
      * <p><b>What registration deliberately does NOT grant:</b> any role above
      * CONSUMER (provider upgrades are the administrative flow with its own
-     * guard), enabled=false (no email-verification hold — the declared debt
-     * below), or an audit row (self-service birth, not an administrative
+     * guard) or an audit row (self-service birth, not an administrative
      * act on another account — the actor IS the account).
+     *
+     * <p><b>A-04 closed the declared debt (email-verification hold):</b> the
+     * account is now born HELD — {@code enabled=false} on the login row,
+     * the framework's own account-state primitive (the official bit
+     * DaoAuthenticationProvider consults; a disabled row makes the login
+     * gate refuse the account, so no authorization code or token can be
+     * minted for it) — and the birth transaction mints the single-use,
+     * time-limited verification right (V112) whose mail event
+     * ({@code EmailVerificationRequestedEvent}) commits atomically with
+     * both stores. The redemption leg — {@code EmailVerificationService.
+     * completeVerification}, the anonymous {@code /auth/email-verification/
+     * complete} surface — lifts the hold through the same framework
+     * manager. Previously this javadoc carried "enabled=false (no
+     * email-verification hold — the declared debt below)": the compliance
+     * plan's §3.4 defect 7 ("قوالب استعادة كلمة المرور وتوثيق البريد نائمة")
+     * and its wave-A A.2 row measured exactly this gap, and this unit
+     * closes it.
      *
      * @param email       the account's address — becomes the subject and the
      *                    login username; uniqueness enforced per address.
@@ -202,12 +231,20 @@ public class UserService implements IdentitySpi {
         }
         User user = userRepository.save(
                 User.create(subject, email, displayName, UserRole.CONSUMER));
+        // The A-04 hold: the login row is born disabled — the framework's
+        // account-state primitive is the ONLY enabled bit (no second
+        // "verified" column is invented outside the official model); the
+        // verification right (V112 token + mail event) is minted in this
+        // same transaction, so the account and its unlock path commit or
+        // roll back as one.
         userDetailsManager.createUser(org.springframework.security.core.userdetails.User
                 .withUsername(subject)
                 .password(passwordEncoder.getObject().encode(rawPassword))
                 .roles("CONSUMER")
+                .disabled(true)
                 .build());
-        log.info("Account registered: subject={}, role=CONSUMER", subject);
+        emailVerificationService.issueFor(subject);
+        log.info("Account registered — awaiting email verification: subject={}, role=CONSUMER", subject);
         return user;
     }
 
@@ -542,6 +579,13 @@ public class UserService implements IdentitySpi {
 
         if (disable) {
             jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);
+            // A-04 — the ban-vs-verification invariant's administrative leg:
+            // a disabled account holds NO outstanding redemption right, so
+            // the verification surface can never re-enable what this
+            // transaction shuts (the consumed latest token row refuses both
+            // resend and redemption — the V112 state model). The
+            // consumption is Envers-audited as a revision of THIS act.
+            authActionTokenService.invalidateOutstanding(username);
         }
 
         // R8 (comprehensive-review-ar fix plan §4, Wave 1): the surviving-session
@@ -681,6 +725,12 @@ public class UserService implements IdentitySpi {
         // Step 5 — the login identity dies through the framework manager: the
         // official JdbcUserDetailsManager.deleteUser order (7.1.1 bytecode)
         // is auth_authorities first, then auth_users — the FK-safe order.
+        // A-04 runs BEFORE that delete: the account's outstanding auth
+        // action tokens are consumed first because V112's FK to auth_users
+        // would otherwise reject the row's death — and because a
+        // pseudonymized account must hold no redemption right either way
+        // (the ban-vs-verification invariant, the auditable consumption).
+        authActionTokenService.invalidateOutstanding(originalSubject);
         userDetailsManager.deleteUser(originalSubject);
 
         // Step 6 — issued authorizations die immediately (no 7-day wait).

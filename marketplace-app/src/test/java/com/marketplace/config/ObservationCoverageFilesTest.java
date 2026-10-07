@@ -148,6 +148,8 @@ class ObservationCoverageFilesTest {
                     "community.report.create", "community.report.resolve")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
+                    "email.verification.complete", "email.verification.resend", "email.verification.send",
+                    "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),

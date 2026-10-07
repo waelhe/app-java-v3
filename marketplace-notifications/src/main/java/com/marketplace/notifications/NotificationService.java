@@ -318,6 +318,52 @@ public class NotificationService {
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
     }
 
+    /**
+     * A-04 (official-compliance plan §6 wave A — A.1): the password-reset
+     * mail leg — the DORMANT {@code email/password-reset} template's
+     * activation, with exactly the model variables it was authored with
+     * ({@code name}, {@code resetLink}, {@code expirationMinutes}).
+     *
+     * <p><b>Why this leg carries NO in-app row, NO WebSocket push, and NO
+     * preference gate — a measured exception to every channel rule above,
+     * stated here so the exception is policy, not omission:</b> the
+     * recipient is by definition OUTSIDE the application (the reset
+     * requester forgot the very credential a session would need), so the
+     * in-app channels have no reader to reach; and the OWASP Forgot
+     * Password Cheat Sheet (the declared trusted community source) treats
+     * this as security mail, not a notification preference — an account's
+     * redemption right is delivered regardless of marketing-channel
+     * opt-outs. The NotificationType vocabulary therefore gains nothing
+     * (no type, no preferences-CHECK widening pair): this is the mail
+     * channel alone, the same {@link EmailNotificationService} seam every
+     * other mail rides.</p>
+     */
+    public void onPasswordResetRequested(UUID userId, String displayName,
+                                         String resetLink, java.time.Instant expiresAt) {
+        long expirationMinutes = Math.max(0,
+                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        emailNotificationService.sendEmail(userId, "Reset Your Password", "email/password-reset",
+                Map.of("name", displayName == null ? "" : displayName,
+                        "resetLink", resetLink,
+                        "expirationMinutes", expirationMinutes));
+    }
+
+    /**
+     * A-04 (wave A — A.2): the email-verification mail leg — the DORMANT
+     * {@code email/welcome} template's activation for its real purpose:
+     * the welcome mail now carries the one-time verification deep link
+     * that lifts the registration hold. The same measured exception as
+     * {@link #onPasswordResetRequested}: the unverified account's holder
+     * cannot be inside the application (the hold locks the login gate), so
+     * no in-app channel and no preference gate — the mail channel alone.
+     */
+    public void onEmailVerificationRequested(UUID userId, String displayName, String verificationLink) {
+        emailNotificationService.sendEmail(userId, "Welcome to Marketplace — verify your email",
+                "email/welcome",
+                Map.of("name", displayName == null ? "" : displayName,
+                        "verificationLink", verificationLink));
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.
