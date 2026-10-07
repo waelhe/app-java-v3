@@ -356,11 +356,39 @@ class MessagingServiceTest {
                 .create();
 
         when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
-        when(messageRepository.countByConversationIdAndReadFalse(conversationId)).thenReturn(5L);
+        when(messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId)).thenReturn(5L);
 
         long count = service.getUnreadCount(conversationId, userId);
 
         assertEquals(5L, count);
+    }
+
+    /**
+     * B-03 (compliance plan 0.3 — the measured defect §3.4-2): the caller's
+     * own sent messages never count toward her badge. The service must
+     * hand the CALLER's id to the sender-excluding derived method — the
+     * repository derivation (SenderIdNot) is the Data JPA documented
+     * contract; the app-level IT (DirectConversationModuleIntegrationTest)
+     * proves the end-to-end badge against a real database.
+     */
+    @Test
+    void getUnreadCount_excludesTheCallersOwnSentMessages() {
+        UUID conversationId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
+        when(messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId)).thenReturn(0L);
+
+        long count = service.getUnreadCount(conversationId, userId);
+
+        // She sent the only unread message → her badge is 0: the caller's id
+        // is the EXCLUDED sender argument, not just a participation check.
+        assertEquals(0L, count);
+        verify(messageRepository).countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId);
     }
 
     @Test

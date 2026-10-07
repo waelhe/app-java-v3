@@ -23,7 +23,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID>, Revisio
      */
     List<Message> findAllBySenderIdOrderByCreatedAtAscIdAsc(UUID senderId);
 
-    long countByConversationIdAndReadFalse(UUID conversationId);
+    /**
+     * B-03 (compliance plan 0.3 — the measured defect §3.4-2): the unread
+     * badge counts only what the CALLER still needs to read — the caller's
+     * own sent messages are excluded, the same sender-exclusion discipline
+     * {@link #markAsReadByConversationId} already carries (a derived query
+     * method per the Data JPA reference, Query Methods).
+     */
+    long countByConversationIdAndSenderIdNotAndReadFalse(UUID conversationId, UUID senderId);
 
     /**
      * Bulk mark unread messages as read for a specific conversation (excluding sender's own messages).

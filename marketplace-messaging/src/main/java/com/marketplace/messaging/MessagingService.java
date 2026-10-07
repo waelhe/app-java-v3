@@ -89,7 +89,11 @@ public class MessagingService {
     @Transactional(readOnly = true)
     public long getUnreadCount(UUID conversationId, UUID userId) {
         getConversation(conversationId, userId);
-        return messageRepository.countByConversationIdAndReadFalse(conversationId);
+        // B-03 (0.3): the badge is what the CALLER still owes a read — her
+        // own sent messages never count toward it (the sender-exclusion the
+        // bulk mark-read below has carried all along; the counter was the
+        // drifted half of the pair).
+        return messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId);
     }
 
     public Conversation createConversation(UUID participantA, UUID bookingId) {
