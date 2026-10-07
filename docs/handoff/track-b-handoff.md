@@ -57,7 +57,7 @@
 - **التبعيات التي ستحتاجها مهيأة سلفاً في فرع الأساس** (`feat/parallel-foundation` — ستبني فوقه): Bucket4j (B-05) وfirebase-admin (B-10). لن تحتاج CR لهما.
 - خصائص `application.yml` الجديدة: صمّمها دائماً **خصائص وحدة نمطية** (`messaging.*`, `notifications.*`) بسجل `@ConfigurationProperties` داخل وحدتك مع قيم افتراضية — الربط بالملف المشترك يمر عبر CR.
 
-## 6. مواصفات وحداتك الخمس عشرة
+## 6. مواصفات وحداتك التسع عشرة
 
 > المحتوى التقني الكامل (المرجع الرسمي الدقيق لكل بند) في `docs/official-compliance-plan.md` — الجدول هنا فهرس تشغيلي. **قياس الكود قبل التنفيذ إلزامي في كل وحدة.**
 
@@ -78,8 +78,14 @@
 | B-13 | وحدة institutions (الجهات) كاملة + JSON-LD | institutions (جديد) | Data JPA + Web MVC (خطة المطابقة C.3) |
 | B-14 | وحدة knowledge (قاعدة المعرفة) + تكامل البحث بالأحداث | knowledge (جديد) | Data JPA + search FTS (خطة المطابقة C.4) |
 | B-15 | وحدة console: أعلام ميزات + Remote Config بخصائص Boot | console (جديد) | Boot `reference/features/external-config.html` (خطة المطابقة C.5) |
+| B-16 | M2 المتجر (٢/٢): أسئلة/أجوبة المنتج + ملخص البائع العام — ملفات **جديدة** في catalog (لا تلمس ملفات المسار A هناك) — **يبدأ بعد هبوط A-17** (قيده المسجل) | catalog (جديد) | Data JPA `reference/repositories/query-methods-details.html` + `reference/repositories/projections.html` + `reference/auditing.html` (خطة المطابقة C.8) |
+| B-17 | الثقة خدمة عرضية: أحداث منحة/سحب التوثيق والبلاغ المحسوم من آلة `MembershipVerificationState` القائمة — بلا وحدة جديدة (نمط B-13: ملفات جديدة في community + CR للقائمة)؛ الأسماء تُقيد في سجل العقود | community (جديد + CR) | Modulith `reference/events.html` + Data JPA `reference/auditing.html` + Security `servlet/authorization/method-security.html` (خطة المطابقة C.9) |
+| B-18 | إعدادات ميزات وارثة جغرافيًا (بلد←مدينة←حي): جدول بيانات على هرم geo + حلّ «الأخص يغلب الأعم» + الإدارة من console — **لا `@ConditionalOnProperty` جغرافيًا** (فحص وقت الطلب — الحد الرسمي المسجل) | geo + console (فوق B-15) | Data JPA `reference/repositories/query-methods-details.html` + Boot `reference/features/external-config.html` + Framework `reference/core/validation/beanvalidation.html` (خطة المطابقة C.10) |
+| B-19 | محرك قواعد إشراف تلقائية: قواعد **بيانات** فوق آلة البلاغات القائمة + تقييم داخل معاملة الإنشاء + حدث قرار ← الإشراف والإشعارات + CRUD ببوابة الدور | community/reviews (جديد + CR) | Data JPA `reference/jpa/transactions.html` + Modulith `reference/events.html` + Security `servlet/authorization/method-security.html` (خطة المطابقة C.11) |
 
 **قواعد الوحدات الجديدة (B-12…B-15):** `@ApplicationModule(allowedDependencies=…)` من أول يوم (Modulith `fundamentals.html`) • كيانات `@Audited` + ترحيلات من نطاقك • `package-info.java` بالاعتماديات المصرحة • `ModulithVerificationTest` أخضر بعد الإضافة • اختبار رحلة للوحدة كاملة (service + REST + حدث إن نشرت).
+
+**وحدات الحدائق القائمة (B-16…B-19):** ملفات جديدة فقط داخل حدائقك + CR §5.4 (القسم 5) لأي ملف قائم — B-16 بعد هبوط A-17؛ B-18 بعد B-15؛ B-17/B-19 يمكنهما البدء متى وصل دورك إليهما؛ كل حدث جديد يُقيد في السجل (إضافة فقط).
 
 ## 7. العقود المجمدة (لا تكسرها)
 
