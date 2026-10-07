@@ -7,6 +7,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.messages.AssistantMessage;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -18,14 +19,13 @@ class AiChatGatewayTest {
     void delegatesToTheAutoConfiguredChatClientAndReturnsFullResponse() {
         ChatClient client = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.AdvisorSpec advisors = mock(ChatClient.AdvisorSpec.class);
         ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
 
         ChatResponse response = new ChatResponse(
                 List.of(new Generation(new AssistantMessage("hi"))));
 
         when(client.prompt()).thenReturn(request);
-        when(request.advisors(org.mockito.ArgumentMatchers.any())).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
         when(request.user("hi")).thenReturn(request);
         when(request.call()).thenReturn(call);
         when(call.chatResponse()).thenReturn(response);
