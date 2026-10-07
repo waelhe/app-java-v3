@@ -152,7 +152,7 @@ class ObservationCoverageFilesTest {
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
-                    "user.status.update", "user.sync.oidc")),
+                    "user.self.deletion", "user.status.update", "user.sync.oidc")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(

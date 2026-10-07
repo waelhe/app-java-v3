@@ -52,7 +52,7 @@
 |---|---|---|
 | compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
 | test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
-| integration-test / verify | failsafe | اختبارات التكامل — **106 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
+| integration-test / verify | failsafe | اختبارات التكامل — **107 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
 | verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:242-244`) || validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.9,)` (`:230`) وJava `[21,)` (`:233`) |
 | package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
 
@@ -132,6 +132,8 @@ package com.marketplace.booking;
 **دروس مثبتة تجريبياً (لا تُعَد اكتشافها):** `ClientSettings.withSettings(map)` لا يطبق الافتراضات (`:115-118`) بينما نفس الصف يعوّض افتراض TokenSettings دون ClientSettings (`JdbcRegisteredClientRepository.java:362-367` — عدم تناظر الإطار يقوّي «قاعدة البيانات هي الحقيقة» D2)؛ وخريطة Jackson متعددة الأشكال تسمح `UnmodifiableMap` وترفض `ImmutableCollections$List12` (جولة aud/E5 مثبتة بـ `AudRoundTrip.java`).
 
 **الجلسات:** خزين Redis بمساحة `marketplace:session` (`application.yml:70-75`)، بحد أقصى جلستين (`:245-246`)، وكلمة المرور `DelegatingPasswordEncoder` مع bcrypt (`SecurityConfig:197-199`).
+
+**حذف الحساب ذاتياً (A-05 — بند A.3 من خطة المطابقة، متطلب المتاجر):** `DELETE /api/v1/users/me` بسطح /me المصادَق — التحقق المزدوج حرف خطة التمويه ب-5: توكن Bearer حي + كلمة المرور الحالية (`PasswordEncoder.matches` الرسمية — نفس بدائي DaoAuthenticationProvider؛ الخطأ = 401 ‏AUTHN-001 بصفر تغيير) — ثم تنفيذ آلية I7 القائمة نفسها (`pseudonymizeAccount`: المشتق anon-، موت صفوف الدخول عبر deleteUser الرسمي، موت `oauth2_authorization` فوراً، قنوات الكاش القائمة). رجل الخروج = وصيفة الوثيقة الرسمية لـendpoint الخروج المخصص حرفياً: `SecurityContextLogoutHandler` داخل المسار بعد نجاح الحذف (تحقق بايتكودي 7.1.1: `getSession(false)` إبطال + مسح الحامل + مسح المستودع) — الحارس التكاملي `AccountSelfDeletionIntegrationTest` يثبت موت جلسة الرسوم مع الحذف وبقاءها عند فشل التحقق.
 
 ---
 
