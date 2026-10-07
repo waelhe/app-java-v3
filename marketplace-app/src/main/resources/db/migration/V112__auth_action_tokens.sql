@@ -93,3 +93,32 @@ CREATE UNIQUE INDEX ix_auth_action_tokens_live
 CREATE INDEX idx_auth_action_tokens_username_live
     ON auth_action_tokens (username)
     WHERE consumed_at IS NULL AND is_deleted = FALSE;
+
+-- The Envers mirror (the V24 convention) — the migration's own design
+-- depends on it: the pseudonymize surface's FK-safe order explicitly
+-- leans on "Envers records the consumption as a revision", and every
+-- @Audited entity INSERT on the Flyway-managed schema needs the table
+-- present. The V24/V28 lesson in its purest form: the test profile
+-- builds its schema from the entities (ddl-auto create-drop), so CI's
+-- fresh databases never see a missing mirror — only the production
+-- boot pays, with 42P01 on the very first token issued. All business
+-- columns nullable (a DEL revision carries (id, rev, revtype) alone —
+-- the V24 lesson, addressed again in V54); the (id, rev) pair is the
+-- revision key; no FK (the mirror follows history, never enforces it).
+CREATE TABLE auth_action_tokens_aud (
+    id          UUID NOT NULL,
+    rev         INTEGER NOT NULL,
+    revtype     SMALLINT,
+    username    VARCHAR(50),
+    purpose     VARCHAR(30),
+    token_hash  VARCHAR(64),
+    expires_at  TIMESTAMPTZ,
+    consumed_at TIMESTAMPTZ,
+    is_deleted  BOOLEAN,
+    version     BIGINT,
+    created_by  VARCHAR(200),
+    created_at  TIMESTAMPTZ,
+    updated_by  VARCHAR(200),
+    updated_at  TIMESTAMPTZ,
+    PRIMARY KEY (id, rev)
+);
