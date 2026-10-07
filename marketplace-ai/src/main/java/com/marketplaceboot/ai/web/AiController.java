@@ -33,8 +33,9 @@ public final class AiController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ChatResponse> chat(@Valid @RequestBody ChatRequest request,
                                              Principal principal) {
-        String conversationId = principal.getName() + ":" + request.conversationId();
-        return ResponseEntity.ok(aiChatGateway.chat(conversationId, request.message()));
+        UUID scopedConversationId = UUID.nameUUIDFromBytes(
+                (principal.getName() + ":" + request.conversationId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return ResponseEntity.ok(aiChatGateway.chat(scopedConversationId.toString(), request.message()));
     }
 
     public record ChatRequest(
