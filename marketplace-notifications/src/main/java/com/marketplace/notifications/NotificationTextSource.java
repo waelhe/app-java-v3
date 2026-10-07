@@ -96,6 +96,21 @@ public class NotificationTextSource {
         return vocabularyWord("payment.state." + state, state, locale);
     }
 
+    /**
+     * B-17 (compliance plan C.9): the community domain's stored report
+     * OUTCOME name ("RESOLVED"/"DISMISSED" — the ReportStatus vocabulary,
+     * carried by {@code ContentReportResolvedEvent} as the stored name,
+     * the ContentModeratedEvent/PaymentStateChangedEvent String precedent)
+     * rendered as the outcome word at the locale:
+     * {@code reportoutcome.RESOLVED=resolved} (the English floor is
+     * byte-identical to the stored name's lowercase form — the
+     * {@code targettype.POST} discipline). An unknown outcome rides
+     * through as the raw value — the honest degradation.
+     */
+    public String reportOutcomeWord(String outcome, Locale locale) {
+        return vocabularyWord("reportoutcome." + outcome, outcome, locale);
+    }
+
     private String vocabularyWord(String key, String raw, Locale locale) {
         return source.getMessage(key, null, raw, locale);
     }

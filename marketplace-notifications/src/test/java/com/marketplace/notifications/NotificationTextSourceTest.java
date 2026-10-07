@@ -94,6 +94,15 @@ class NotificationTextSourceTest {
                 .isEqualTo("New Listing From a Provider You Follow");
         assertThat(text.compose("email.MESSAGE_RECEIVED.subject", english))
                 .isEqualTo("New Message");
+        // B-17: the trust sidecar's two new composed surfaces.
+        assertThat(text.compose("notification.MEMBERSHIP_VERIFIED", english, id))
+                .isEqualTo("Your neighborhood membership is now verified: " + id);
+        assertThat(text.compose("notification.REPORT_RESOLVED", english, "post", "resolved", id2))
+                .isEqualTo("Your report on the post was adjudicated: resolved — " + id2);
+        assertThat(text.compose("email.MEMBERSHIP_VERIFIED.subject", english))
+                .isEqualTo("Your Membership Is Verified");
+        assertThat(text.compose("email.REPORT_RESOLVED.subject", english))
+                .isEqualTo("Your Report Was Adjudicated");
     }
 
     /**
@@ -132,6 +141,11 @@ class NotificationTextSourceTest {
                 .isEqualTo("قائمة جديدة من مزوّد تتابعه: " + id);
         assertThat(text.compose("notification.MESSAGE_RECEIVED", platform, id))
                 .isEqualTo("رسالة جديدة في محادثتك: " + id);
+        // B-17: the trust sidecar's two new composed surfaces.
+        assertThat(text.compose("notification.MEMBERSHIP_VERIFIED", platform, id))
+                .isEqualTo("تم توثيق عضويتك في الحي: " + id);
+        assertThat(text.compose("notification.REPORT_RESOLVED", platform, "منشور", "تم اتخاذ إجراء", id))
+                .isEqualTo("صدر قرار في بلاغك على منشور: تم اتخاذ إجراء — " + id);
 
         assertThat(text.compose("email.BOOKING_CREATED.consumer.subject", platform))
                 .isEqualTo("تم إنشاء الحجز");
@@ -159,6 +173,10 @@ class NotificationTextSourceTest {
                 .isEqualTo("قائمة جديدة من مزوّد تتابعه");
         assertThat(text.compose("email.MESSAGE_RECEIVED.subject", platform))
                 .isEqualTo("رسالة جديدة");
+        assertThat(text.compose("email.MEMBERSHIP_VERIFIED.subject", platform))
+                .isEqualTo("تم توثيق عضويتك");
+        assertThat(text.compose("email.REPORT_RESOLVED.subject", platform))
+                .isEqualTo("قرار في بلاغك");
     }
 
     /** The platform standard IS the Arabic locale (the composition locale). */
@@ -182,6 +200,13 @@ class NotificationTextSourceTest {
         // targetType.toLowerCase() and the raw state concatenation.
         assertThat(text.targetTypeWord("POST", english)).isEqualTo("post");
         assertThat(text.targetTypeWord("COMMENT", english)).isEqualTo("comment");
+        // B-17: the REVIEW entry restores the pre-B-11 floor for the third
+        // stored target name (the B-11 bundle's measured drift, closed in
+        // the same batch — zero debt), and the report OUTCOME vocabulary
+        // joins with the same discipline.
+        assertThat(text.targetTypeWord("REVIEW", english)).isEqualTo("review");
+        assertThat(text.reportOutcomeWord("RESOLVED", english)).isEqualTo("resolved");
+        assertThat(text.reportOutcomeWord("DISMISSED", english)).isEqualTo("dismissed");
         List.of("INITIATED", "PENDING", "PROCESSING", "COMPLETED",
                         "SUCCEEDED", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED")
                 .forEach(state -> assertThat(text.paymentStateWord(state, english)).isEqualTo(state));
@@ -189,6 +214,9 @@ class NotificationTextSourceTest {
         // The Arabic rendering.
         assertThat(text.targetTypeWord("POST", platform)).isEqualTo("منشور");
         assertThat(text.targetTypeWord("COMMENT", platform)).isEqualTo("تعليق");
+        assertThat(text.targetTypeWord("REVIEW", platform)).isEqualTo("مراجعة");
+        assertThat(text.reportOutcomeWord("RESOLVED", platform)).isEqualTo("تم اتخاذ إجراء");
+        assertThat(text.reportOutcomeWord("DISMISSED", platform)).isEqualTo("تم رفض البلاغ");
         assertThat(text.paymentStateWord("COMPLETED", platform)).isEqualTo("مكتمل");
         assertThat(text.paymentStateWord("FAILED", platform)).isEqualTo("فشل");
         assertThat(text.paymentStateWord("PARTIALLY_REFUNDED", platform)).isEqualTo("مُسترد جزئياً");

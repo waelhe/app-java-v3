@@ -807,4 +807,145 @@ class NotificationServiceTest {
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
         verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
     }
+
+    /**
+     * B-17 (compliance plan C.9 — the trust &amp; verification sidecar):
+     * the member's VERIFIED notification — the in-app row always lands
+     * (the neighborhood id in the message body, the Arabic composition
+     * riding the B-11 channel), the push channels ride the L22 matrix
+     * with the defaults on. The handler itself is wired to the
+     * MembershipVerificationGrantedEvent listener via CR-10 (the event
+     * type's cross-module placement — the B-08/CR-4 flow verbatim).
+     */
+    @Test
+    void onVerificationGrantedDeliversTheVerifiedNotification() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID locationId = create(UUID.class);
+
+        service.onVerificationGranted(CONSUMER_ID, locationId);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("MEMBERSHIP_VERIFIED");
+        assertThat(saved.getValue().getMessage()).contains(locationId.toString());
+        assertThat(saved.getValue().getMessage()).contains("تم توثيق عضويتك");
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+    }
+
+    /**
+     * B-17 (C.9): the member's preference opt-out — the L22 matrix gates
+     * the push channels per (recipient, MEMBERSHIP_VERIFIED, channel);
+     * the in-app row always lands ("inside the app always").
+     */
+    @Test
+    void onVerificationGrantedHonorsTheMemberPreferenceOptOut() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
+        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
+                eq(NotificationChannel.EMAIL))).thenReturn(false);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
+                eq(NotificationChannel.WS))).thenReturn(false);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        service.onVerificationGranted(CONSUMER_ID, create(UUID.class));
+
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+    }
+
+    /**
+     * B-17 (compliance plan C.9): the REPORTER's adjudication
+     * notification — the in-app row always lands with the composed
+     * Arabic adjudication text (the target word and the outcome word
+     * rendered through the bundle's vocabulary channel, the target id
+     * carried as the fact), the push channels ride the L22 matrix with
+     * the defaults on. The handler itself is wired to the
+     * ContentReportResolvedEvent listener via CR-10 (the B-08/CR-4 flow
+     * verbatim).
+     */
+    @Test
+    void onReportResolvedDeliversTheAdjudicationNotification() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID targetId = create(UUID.class);
+
+        service.onReportResolved(CONSUMER_ID, "POST", targetId, "RESOLVED");
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("REPORT_RESOLVED");
+        assertThat(saved.getValue().getMessage()).contains("منشور");
+        assertThat(saved.getValue().getMessage()).contains("تم اتخاذ إجراء");
+        assertThat(saved.getValue().getMessage()).contains(targetId.toString());
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+    }
+
+    /**
+     * B-17 (C.9): the reporter's preference opt-out — the L22 matrix
+     * gates the push channels per (reporter, REPORT_RESOLVED, channel);
+     * the in-app row always lands. The DISMISSED outcome word renders
+     * through the same vocabulary channel (every outcome is the
+     * reporter's journey's arrival).
+     */
+    @Test
+    void onReportResolvedHonorsTheReporterPreferenceOptOut() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
+        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
+                eq(NotificationChannel.EMAIL))).thenReturn(false);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
+                eq(NotificationChannel.WS))).thenReturn(false);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        service.onReportResolved(CONSUMER_ID, "COMMENT", create(UUID.class), "DISMISSED");
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getMessage()).contains("تم رفض البلاغ");
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+    }
 }
