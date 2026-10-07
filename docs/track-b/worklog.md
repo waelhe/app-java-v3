@@ -621,3 +621,20 @@ Stage Summary:
 - Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ (15dc47b — executed out of order per the foundation-blocked B-05) · B-07 next immediately (notifications: delete + mark-all-read — compliance plan 0.8).
 
 تسليم للمراجعة
+
+---
+Task ID: B-07
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-07 (compliance plan 0.8) — حذف إشعار + تعليم الكل مقروءاً
+
+Work Log:
+- MEASURED first: the notifications surface had the feed (paged), the badge (count), and markRead (single, with the recipient-or-admin ownership discipline) — the missing pair was the §3.4-6 defect: no delete, no clear-all. House patterns identified: 204 for DELETE (reviews' unvoteHelpful), bulk @Modifying UPDATE for mark-all (messaging's markAsReadByConversationId), the soft delete via BaseEntity @SoftDelete keeping the Envers/audit trace.
+- IMPLEMENTED inside my garden (notifications only — purely additive REST surface): NotificationRepository.markAllAsReadByRecipientId (@Modifying bulk UPDATE over the caller's unread rows, returns the marked count); NotificationService.delete (markRead's ownership discipline verbatim — recipient or admin, else 403; unknown is 404) + markAllAsRead (the caller's rows only); NotificationController DELETE /notifications/{id} → 204 + POST /notifications/read-all → MarkAllReadResponse(markedRead) + @Schema descriptions (the OpenAPI contract grows two additive endpoints).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-notifications -am — BUILD SUCCESS; notifications 73/73 (NotificationServiceTest 23/23 with the three new tests: owner-delete executes, foreign-delete is 403 with zero deletes, clear-all bulk-updates and returns the count; NotificationControllerTest 7/7 with the 204 + count tests).
+- PUSHED: feat/track-b-modules @ 6d88013 (PR-B #508).
+
+Stage Summary:
+- §3.4-6 CLOSED: the in-app feed is now manageable end to end — dismiss one (soft, audited) or clear-all (one UPDATE, count-reconciled badge), with the same ownership gates every other access point carries.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ · B-07 ✓ (6d88013) · B-08 next immediately (MESSAGE_RECEIVED event → arrival notification — messaging publishes + notifications listens, BOTH my gardens, the late-lander rule executed by me on both sides; compliance plan 0.10).
+
+تسليم للمراجعة
