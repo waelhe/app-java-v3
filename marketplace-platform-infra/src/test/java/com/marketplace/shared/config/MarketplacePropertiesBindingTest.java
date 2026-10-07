@@ -165,6 +165,64 @@ class MarketplacePropertiesBindingTest {
     }
 
     /**
+     * B.1: the api-versioning section is primed non-null with an EMPTY map
+     * when its keys are absent — ApiVersioningConfig dereferences
+     * apiVersioning().deprecations() unconditionally on every boot (the
+     * CodeRabbit #241 lesson applied to the new section), and an empty map
+     * is the honest live state: no version is deprecated today, so no
+     * deprecation handler is registered at all.
+     */
+    @Test
+    void bindsAbsentApiVersioningSectionToAnEmptyDeprecationsMap() {
+        Map<String, Object> source = Map.of("marketplace.security.session.max-sessions", "2");
+
+        MarketplaceProperties properties = new Binder(ConfigurationPropertySources
+                .from(new MapPropertySource("test", source)))
+                .bind("marketplace", Bindable.of(MarketplaceProperties.class))
+                .get();
+
+        assertThat(properties.apiVersioning())
+                .as("api-versioning section (absent keys — ApiVersioningConfig dereferences it)")
+                .isNotNull();
+        assertThat(properties.apiVersioning().deprecations())
+                .as("deprecations map (absent keys — empty, never null)")
+                .isNotNull()
+                .isEmpty();
+    }
+
+    /**
+     * B.1: a deprecated version binds from the bracket-notation map key —
+     * the shape that carries a version string containing a dot
+     * ({@code marketplace.api-versioning.deprecations[1.0].*}), exactly the
+     * version callers send in {@code X-API-Version}. Dates bind from
+     * ISO-8601 strings; the link binds as the migration document URI.
+     */
+    @Test
+    void bindsDeprecatedVersionFromBracketNotationKey() {
+        Map<String, Object> source = Map.of(
+                "marketplace.security.session.max-sessions", "2",
+                "marketplace.api-versioning.deprecations[1.0].deprecation-date", "2026-11-01T00:00:00Z",
+                "marketplace.api-versioning.deprecations[1.0].sunset-date", "2027-06-01T00:00:00Z",
+                "marketplace.api-versioning.deprecations[1.0].link", "https://developer.marketplace.com/api/migration");
+
+        MarketplaceProperties properties = new Binder(ConfigurationPropertySources
+                .from(new MapPropertySource("test", source)))
+                .bind("marketplace", Bindable.of(MarketplaceProperties.class))
+                .get();
+
+        assertThat(properties.apiVersioning().deprecations())
+                .containsKey("1.0");
+        MarketplaceProperties.ApiVersioning.Deprecation spec =
+                properties.apiVersioning().deprecations().get("1.0");
+        assertThat(spec.deprecationDate())
+                .isEqualTo(java.time.ZonedDateTime.parse("2026-11-01T00:00:00Z"));
+        assertThat(spec.sunsetDate())
+                .isEqualTo(java.time.ZonedDateTime.parse("2027-06-01T00:00:00Z"));
+        assertThat(spec.link())
+                .isEqualTo("https://developer.marketplace.com/api/migration");
+    }
+
+    /**
      * I7 §9 (rotation row — resolved option 1, the keyring): the retained
      * previous keys bind from a comma-separated property value into the
      * {@code List<String>} component — the shape the environment channel

@@ -86,7 +86,7 @@ public class ModuleTestConfig {
                         // boot (PricingModuleIntegrationTest / AdminModuleIntegrationTest
                         // — the CI round-2 failures). Blank keeps the documented
                         // contract: not configured = the break-glass bootstrap skips.
-                        new MarketplaceProperties.Security.AdminSeed(""))
-        );
+                        new MarketplaceProperties.Security.AdminSeed("")),
+        new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
     }
 }

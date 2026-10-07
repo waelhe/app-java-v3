@@ -196,7 +196,7 @@ class OAuth2TokenCustomizerTest {
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
                         new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()),
-                        null)
-        );
+                        null),
+        new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
     }
 }
