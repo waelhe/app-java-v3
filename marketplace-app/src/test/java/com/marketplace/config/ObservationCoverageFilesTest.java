@@ -149,7 +149,16 @@ class ObservationCoverageFilesTest {
                     "community.poll.create", "community.poll.vote", "community.poll.withdraw",
                     "community.post.comment", "community.post.create", "community.post.delete",
                     "community.post.react", "community.post.unreact",
-                    "community.report.create", "community.report.resolve")),
+                    // B-19 (compliance plan C.11): the automatic moderation
+                    // rules' operator commands — register/revise/toggle/retire.
+                    // The engine's own evaluation rides the creation command's
+                    // span (community.report.create) exactly as the human
+                    // resolve's hide rides community.report.resolve: the
+                    // commands-not-reads policy, the automatic action a side
+                    // effect of the report's creation.
+                    "community.report.create", "community.report.resolve",
+                    "community.rule.register", "community.rule.retire",
+                    "community.rule.toggle", "community.rule.update")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "provider.follow.create", "provider.follow.delete",
