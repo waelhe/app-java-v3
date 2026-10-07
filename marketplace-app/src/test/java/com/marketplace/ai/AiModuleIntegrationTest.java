@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.ApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -27,9 +28,15 @@ class AiModuleIntegrationTest {
     @Autowired
     private ApplicationContext context;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void capabilityOffMeansMarketplaceAiAutoConfigurationDoesNotCreateApplicationBeans() {
         assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.tables where table_name = 'spring_ai_chat_memory'",
+                Integer.class)).isEqualTo(1);
     }
 }
