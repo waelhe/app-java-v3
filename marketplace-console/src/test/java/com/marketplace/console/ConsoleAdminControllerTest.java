@@ -132,4 +132,82 @@ class ConsoleAdminControllerTest {
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
+
+    // -------------------------------------------------------------------------
+    // B-18 (compliance plan C.10 — the geographic settings surfaces)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void geographicRegistrationAnswers201() {
+        var request = new ConsoleAdminController.GeographicSettingRequest(
+                "community.polls.enabled", java.util.UUID.randomUUID(), true);
+        when(consoleService.registerGeographicSetting(request.key(), request.locationId(), request.enabled()))
+                .thenReturn(GeographicFeatureSetting.register(request.key(), request.locationId(), true));
+
+        ResponseEntity<ConsoleAdminController.GeographicSettingResponse> result =
+                controller.registerGeographicSetting(request);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(result.getBody().key()).isEqualTo("community.polls.enabled");
+        assertThat(result.getBody().enabled()).isTrue();
+        assertThat(result.getBody().locationId()).isEqualTo(request.locationId());
+    }
+
+    @Test
+    void theGeographicFlipAnswers200() {
+        java.util.UUID locationId = java.util.UUID.randomUUID();
+        GeographicFeatureSetting setting = GeographicFeatureSetting.register("some.key", locationId, false);
+        setting.setEnabled(true);
+        when(consoleService.setGeographicSetting("some.key", locationId, true)).thenReturn(setting);
+
+        ResponseEntity<ConsoleAdminController.GeographicSettingResponse> result =
+                controller.flipGeographicSetting("some.key", locationId,
+                        new ConsoleAdminController.FlagFlipRequest(true));
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody().enabled()).isTrue();
+        assertThat(result.getBody().locationId()).isEqualTo(locationId);
+    }
+
+    @Test
+    void theGeographicBoardAnswers200() {
+        when(consoleService.geographicSettings()).thenReturn(List.of(
+                GeographicFeatureSetting.register("a.key", java.util.UUID.randomUUID(), true)));
+
+        ResponseEntity<List<ConsoleAdminController.GeographicSettingResponse>> result =
+                controller.geographicSettings();
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).hasSize(1);
+        assertThat(result.getBody().get(0).key()).isEqualTo("a.key");
+    }
+
+    @Test
+    void theEffectiveGateReadAnswers200WithTheResolvedValue() {
+        java.util.UUID locationId = java.util.UUID.randomUUID();
+        when(consoleService.isEnabled("some.key", locationId)).thenReturn(true);
+
+        ResponseEntity<ConsoleAdminController.EffectiveGateResponse> result =
+                controller.effectiveGate("some.key", locationId);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody().key()).isEqualTo("some.key");
+        assertThat(result.getBody().locationId()).isEqualTo(locationId);
+        assertThat(result.getBody().enabled()).isTrue();
+    }
+
+    /**
+     * The honest catalog (the B-15 discipline — new surfaces join the
+     * view in the same unit that lands them): the geographic settings'
+     * two surfaces now carry in the النظام section.
+     */
+    @Test
+    void theViewCarriesTheGeographicSurfaces() {
+        ResponseEntity<ConsoleView> result = controller.view();
+
+        ConsoleView.Section system = result.getBody().sections().get(2);
+        assertThat(system.surfaces()).extracting(ConsoleView.Surface::path)
+                .contains("/api/v1/admin/console/geo-settings",
+                        "/api/v1/admin/console/geo-settings/effective");
+    }
 }

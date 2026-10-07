@@ -169,13 +169,15 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-knowledge", List.of(
                     "knowledge.entry.create", "knowledge.entry.update",
                     "knowledge.entry.withdraw")),
-            // B-15 (compliance plan C.5): the console's four business
-            // commands (the flag/config registrations + updates) — the
-            // reads (view/flags/metrics/audit) carry no observation by
-            // the commands-not-reads policy.
+            // B-15 (compliance plan C.5): the console's business commands
+            // (the flag/config/geo-setting registrations + updates) — the
+            // reads (view/flags/metrics/audit/effective) carry no
+            // observation by the commands-not-reads policy. B-18 (C.10)
+            // adds the geographic setting pair.
             Map.entry("marketplace-console", List.of(
                     "console.config.register", "console.config.update",
-                    "console.flag.register", "console.flag.update")),
+                    "console.flag.register", "console.flag.update",
+                    "console.geo.setting.register", "console.geo.setting.update")),
             Map.entry("marketplace-jobs", List.of(
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),

@@ -60,6 +60,8 @@ public record ConsoleView(
                         new Surface("مراجعات الكيانات", "/api/v1/admin/revisions/entities"),
                         new Surface("أعلام الميزات", "/api/v1/admin/console/flags"),
                         new Surface("الإعداد البعيد", "/api/v1/admin/console/config"),
+                        new Surface("إعدادات الميزات الجغرافية (بلد ← مدينة ← حي)", "/api/v1/admin/console/geo-settings"),
+                        new Surface("البوابة الفعّالة عند نطاق جغرافي (قراءة)", "/api/v1/admin/console/geo-settings/effective"),
                         new Surface("المقاييس (قراءة)", "/api/v1/admin/console/metrics"),
                         new Surface("سجل التغييرات (قراءة)", "/api/v1/admin/console/audit")))));
     }

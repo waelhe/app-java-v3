@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * B-15 (compliance plan C.5): the console's surface — the
@@ -106,6 +107,52 @@ public class ConsoleAdminController {
         return ResponseEntity.ok(consoleService.metrics());
     }
 
+    @GetMapping("/console/geo-settings")
+    @Operation(summary = "The geographic feature settings board",
+            description = "B-18 (C.10): the operator's geographic inventory — every live (feature key, geo "
+                    + "scope, value) row. The resolution contract: the most specific scope wins "
+                    + "(«الأخص يغلب الأعم»), then the global flag, then the fail-closed default.")
+    public ResponseEntity<List<GeographicSettingResponse>> geographicSettings() {
+        return ResponseEntity.ok(consoleService.geographicSettings().stream()
+                .map(GeographicSettingResponse::from).toList());
+    }
+
+    @PostMapping("/console/geo-settings")
+    @Operation(summary = "Register a geographic feature setting",
+            description = "B-18 (C.10): one feature-setting row scoped to one geo hierarchy node (بلد ← مدينة "
+                    + "← حي). The location resolves through the geo port first (unknown 404, before any "
+                    + "write); a duplicate live (key, location) pair answers 409. Read at request time by "
+                    + "the location-aware services — never a boot-time conditional.")
+    public ResponseEntity<GeographicSettingResponse> registerGeographicSetting(
+            @Valid @RequestBody GeographicSettingRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(GeographicSettingResponse.from(consoleService.registerGeographicSetting(
+                        request.key(), request.locationId(), request.enabled())));
+    }
+
+    @PatchMapping("/console/geo-settings/{key}/{locationId}")
+    @Operation(summary = "Flip a geographic feature setting",
+            description = "The operator's flip at one scope — the auditing fields record who and when. "
+                    + "Unknown (key, location) pair answers 404.")
+    public ResponseEntity<GeographicSettingResponse> flipGeographicSetting(
+            @PathVariable String key, @PathVariable UUID locationId,
+            @Valid @RequestBody FlagFlipRequest request) {
+        return ResponseEntity.ok(GeographicSettingResponse.from(
+                consoleService.setGeographicSetting(key, locationId, request.enabled())));
+    }
+
+    @GetMapping("/console/geo-settings/effective")
+    @Operation(summary = "The effective feature gate at a location (read)",
+            description = "B-18 (C.10) — the resolution's own proof surface: the nearest ancestor's live row "
+                    + "(the neighborhood beats the city beats the country), then the global flag, then the "
+                    + "fail-closed default. The same service-layer read the location-aware services call at "
+                    + "request time — never a boot-time conditional (the C.10 measured limit).")
+    public ResponseEntity<EffectiveGateResponse> effectiveGate(
+            @RequestParam String key, @RequestParam UUID locationId) {
+        return ResponseEntity.ok(new EffectiveGateResponse(key, locationId,
+                consoleService.isEnabled(key, locationId)));
+    }
+
     @GetMapping("/console/audit")
     @Operation(summary = "The change history (read)",
             description = "The flags' and the config rows' own Data JPA auditing fields — who registered, "
@@ -147,6 +194,46 @@ public class ConsoleAdminController {
             @Size(max = 2000)
             @Schema(description = "What the value calibrates — the operator's own documentation.")
             String description
+    ) {
+    }
+
+    /** B-18 (C.10): the geographic setting registration body. */
+    public record GeographicSettingRequest(
+            @NotBlank @Size(max = 200)
+            @Schema(description = "The feature's key — the same lookup name the services gate on.",
+                    example = "community.polls.enabled")
+            String key,
+            @NotNull
+            @Schema(description = "The geo hierarchy node this row scopes (بلد ← مدينة ← حي) — resolved "
+                    + "through the geo port; unknown answers 404 before any write.")
+            UUID locationId,
+            @NotNull
+            @Schema(description = "The feature-gate value at this scope.")
+            boolean enabled
+    ) {
+    }
+
+    /** B-18 (C.10): the geographic setting's read model. */
+    public record GeographicSettingResponse(
+            @Schema(description = "The feature's key.") String key,
+            @Schema(description = "The geo scope this row pins.") UUID locationId,
+            @Schema(description = "The feature-gate value at this scope.") boolean enabled,
+            @Schema(description = "Who last changed it (the auditing field).") String updatedBy,
+            @Schema(description = "When it was last changed (the auditing field).") java.time.Instant updatedAt
+    ) {
+
+        static GeographicSettingResponse from(GeographicFeatureSetting setting) {
+            return new GeographicSettingResponse(setting.getKey(), setting.getLocationId(),
+                    setting.isEnabled(), setting.getUpdatedBy(), setting.getUpdatedAt());
+        }
+    }
+
+    /** B-18 (C.10): the effective gate at a location — the resolution's own proof surface. */
+    public record EffectiveGateResponse(
+            @Schema(description = "The feature's key.") String key,
+            @Schema(description = "The location the gate was resolved at.") UUID locationId,
+            @Schema(description = "The effective value: the nearest ancestor's row, then the global flag, "
+                    + "then the fail-closed default.") boolean enabled
     ) {
     }
 
