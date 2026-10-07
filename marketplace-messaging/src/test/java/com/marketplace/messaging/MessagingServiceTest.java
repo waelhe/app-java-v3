@@ -289,6 +289,101 @@ class MessagingServiceTest {
                 () -> service.sendMessage(conv.getId(), outsider, "hack"));
     }
 
+    /**
+     * B-04 (compliance plan 0.4 — Data JPA jpa/locking.html): the first
+     * keyed submission persists the replay surface WITH the message and
+     * broadcasts once; the sequential replay (below) and the in-flight
+     * race (V150's UNIQUE index + @Version on every row) close the
+     * duplication story end to end.
+     */
+    @Test
+    void sendMessage_withKey_persistsTheReplaySurfaceAndBroadcastsOnce() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findByIdempotencyKey("msg-2026-10-07-001")).thenReturn(Optional.empty());
+        when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        assertTrue(outcome.newlyCreated());
+        org.mockito.ArgumentCaptor<Message> captor = org.mockito.ArgumentCaptor.forClass(Message.class);
+        verify(messageRepository).save(captor.capture());
+        assertEquals("msg-2026-10-07-001", captor.getValue().getIdempotencyKey());
+        assertEquals(participantA, captor.getValue().getSenderId());
+        verify(messagingTemplate).convertAndSend(eq("/topic/conversations/" + conv.getId()), any(Object.class));
+    }
+
+    /**
+     * B-04 (0.4): the sequential retry — same key, same sender — returns
+     * the ORIGINAL message (same id), saves nothing, and never re-broadcasts
+     * (the topic already carries the original push; a second broadcast
+     * would duplicate it for every other subscriber).
+     */
+    @Test
+    void sendMessage_replayedKey_returnsTheOriginalWithoutDuplicateOrRebroadcast() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        Message original = Message.create(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findByIdempotencyKey("msg-2026-10-07-001")).thenReturn(Optional.of(original));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantA, "Hello! (client retried)", "msg-2026-10-07-001");
+
+        assertFalse(outcome.newlyCreated());
+        assertEquals(original.getId(), outcome.message().id());
+        verify(messageRepository, never()).save(any());
+        verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+    }
+
+    /**
+     * B-04 (0.4): a replay key belongs to its sender — another participant
+     * replaying someone else's key gets 403, exactly the payment_intents
+     * ownership check on the idempotency surface.
+     */
+    @Test
+    void sendMessage_replayedKeyOfAnotherSender_is403() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        Message original = Message.create(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findByIdempotencyKey("msg-2026-10-07-001")).thenReturn(Optional.of(original));
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.sendMessage(conv.getId(), participantB, "mine now", "msg-2026-10-07-001"));
+        verify(messageRepository, never()).save(any());
+    }
+
     @Test
     void getConversation_throwsWhenNotFound() {
         UUID id = Instancio.create(UUID.class);

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<Message, UUID>, RevisionRepository<Message, UUID, Integer> {
@@ -31,6 +32,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID>, Revisio
      * method per the Data JPA reference, Query Methods).
      */
     long countByConversationIdAndSenderIdNotAndReadFalse(UUID conversationId, UUID senderId);
+
+    /**
+     * B-04 (compliance plan 0.4): the send's replay lookup — the caller's
+     * deduplication surface (the payment_intents contract mirrored: the
+     * UNIQUE index from V150 is the in-flight race backstop, this lookup
+     * answers the sequential retry).
+     */
+    Optional<Message> findByIdempotencyKey(String idempotencyKey);
 
     /**
      * Bulk mark unread messages as read for a specific conversation (excluding sender's own messages).

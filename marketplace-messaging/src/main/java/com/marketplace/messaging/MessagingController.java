@@ -99,13 +99,18 @@ public class MessagingController {
 
     @PostMapping("/conversations/{conversationId}/messages")
     @Operation(summary = "Send a message", description = "Sends a chat message to a conversation "
-            + "the caller participates in; the other participant is notified.")
+            + "the caller participates in; the other participant is notified. The optional "
+            + "idempotencyKey is the caller's deduplication surface: a retried submission with "
+            + "the same key returns the ORIGINAL message (200) instead of a duplicate (201) — "
+            + "the payment_intents contract.")
     public ResponseEntity<MessageResponse> sendMessage(@PathVariable UUID conversationId,
                                                        @Valid @RequestBody SendMessageRequest request,
                                                        Authentication authentication) {
         UUID senderId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(messagingService.sendMessage(conversationId, senderId, request.content()));
+        MessagingService.SendMessageOutcome outcome =
+                messagingService.sendMessage(conversationId, senderId, request.content(), request.idempotencyKey());
+        return ResponseEntity.status(outcome.newlyCreated() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(outcome.message());
     }
 
     @PostMapping("/conversations/{conversationId}/read")
@@ -137,7 +142,12 @@ public class MessagingController {
     @Schema(description = "Outbound chat message")
     public record SendMessageRequest(
             @Schema(description = "Message body (plain text)", example = "Hi! Is early check-in possible?")
-            @NotBlank String content
+            @NotBlank String content,
+            @Schema(description = "Optional replay key — the caller's deduplication surface: a "
+                    + "retried submission with the same key returns the original message instead "
+                    + "of a duplicate (mirrors payment_intents' idempotencyKey)",
+                    example = "msg-2026-10-07-001")
+            String idempotencyKey
     ) {
     }
 

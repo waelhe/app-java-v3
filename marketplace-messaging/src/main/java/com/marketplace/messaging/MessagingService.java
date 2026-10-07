@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -201,13 +202,52 @@ public class MessagingService {
     public record DirectConversationOutcome(Conversation conversation, boolean newlyCreated) {
     }
 
-    @Observed(name = "messaging.send")
+    /**
+     * The WebSocket path's send (interactive — no replay key on the socket;
+     * the REST path carries the caller's deduplication surface).
+     */
     public MessageResponse sendMessage(UUID conversationId, UUID senderId, String content) {
+        return sendMessage(conversationId, senderId, content, null).message();
+    }
+
+    /**
+     * B-04 (compliance plan 0.4 — Data JPA jpa/locking.html): the send is
+     * idempotent on the caller's replay key — a retried submission returns
+     * the ORIGINAL message instead of a duplicate row (the payment_intents
+     * contract mirrored exactly: same key + same sender → replay; a key
+     * belonging to another sender is 403). The @Version optimistic lock
+     * (BaseEntity, on every message row) plus V150's UNIQUE index close the
+     * in-flight race: the concurrent same-key double-submit loses at flush,
+     * never a duplicate row.
+     */
+    @Observed(name = "messaging.send")
+    public SendMessageOutcome sendMessage(UUID conversationId, UUID senderId, String content, String idempotencyKey) {
         getConversation(conversationId, senderId);
-        Message saved = messageRepository.save(Message.create(conversationId, senderId, content));
+        if (idempotencyKey != null) {
+            Optional<Message> existing = messageRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                if (!existing.get().getSenderId().equals(senderId)) {
+                    throw new AccessDeniedException("Idempotency key belongs to another sender");
+                }
+                // Replay: the original WebSocket push already reached the
+                // topic — a second broadcast would duplicate it for every
+                // other subscriber.
+                return new SendMessageOutcome(messageMapper.toResponse(existing.get()), false);
+            }
+        }
+        Message saved = messageRepository.save(Message.create(conversationId, senderId, content, idempotencyKey));
         MessageResponse response = messageMapper.toResponse(saved);
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, response);
-        return response;
+        return new SendMessageOutcome(response, true);
+    }
+
+    /**
+     * The send's 201/200 outcome — {@code newlyCreated} carries the same
+     * distinction {@link DirectConversationOutcome} made explicit for the
+     * L44 direct-open surface (201 the first time, 200 the idempotent
+     * replay).
+     */
+    public record SendMessageOutcome(MessageResponse message, boolean newlyCreated) {
     }
 
     public void markAsRead(UUID conversationId, UUID userId) {
