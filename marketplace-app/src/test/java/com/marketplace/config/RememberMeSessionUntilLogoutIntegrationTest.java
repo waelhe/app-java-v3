@@ -122,12 +122,14 @@ class RememberMeSessionUntilLogoutIntegrationTest {
 
     @Test
     void formLoginRaisesTheSessionToThirtyDaysAndTheCookieToIntegerMaxValue() throws Exception {
-        String loginCsrf = csrfOf(loginPage(null));
+        MvcResult page = loginPageResult(null);
+        String loginCsrf = csrfOf(page.getResponse().getContentAsString());
 
         MvcResult login = mockMvc.perform(post("/login")
                         .param("username", USERNAME)
                         .param("password", PASSWORD)
-                        .param("_csrf", loginCsrf))
+                        .param("_csrf", loginCsrf)
+                        .cookie(page.getResponse().getCookies()))
                 .andExpect(status().is3xxRedirection())
                 .andReturn();
 
@@ -195,11 +197,13 @@ class RememberMeSessionUntilLogoutIntegrationTest {
      * Performs the honest form login and returns the established session id.
      */
     private String loginForSession() throws Exception {
-        String loginCsrf = csrfOf(loginPage(null));
+        MvcResult page = loginPageResult(null);
+        String loginCsrf = csrfOf(page.getResponse().getContentAsString());
         MvcResult login = mockMvc.perform(post("/login")
                         .param("username", USERNAME)
                         .param("password", PASSWORD)
-                        .param("_csrf", loginCsrf))
+                        .param("_csrf", loginCsrf)
+                        .cookie(page.getResponse().getCookies()))
                 .andExpect(status().is3xxRedirection())
                 .andReturn();
         return cookieValue(login.getResponse(), "SESSION");
@@ -210,15 +214,25 @@ class RememberMeSessionUntilLogoutIntegrationTest {
      * CSRF token can be posted honestly — the black-box IT idiom.
      */
     private String loginPage(String sessionId) throws Exception {
+        return loginPageResult(sessionId).getResponse().getContentAsString();
+    }
+
+    /**
+     * The full login-page result. The app's CsrfFilter is active on /login
+     * and keeps the token in the session this very GET issues, so the
+     * follow-up POST must carry this response's cookies alongside the
+     * token parameter — dropping them left the repository without the
+     * session and the filter answered 403 (measured on this IT's first CI
+     * run; locally it never executed, being docker-gated).
+     */
+    private MvcResult loginPageResult(String sessionId) throws Exception {
         var request = get("/login");
         if (sessionId != null) {
             request.cookie(new Cookie("SESSION", sessionId));
         }
         return mockMvc.perform(request)
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+                .andReturn();
     }
 
     private static String csrfOf(String loginPageHtml) {
