@@ -566,3 +566,20 @@ Stage Summary:
 - Line state: B-01 ✓ (22/22 reactor) · B-02 ✓ pushed (0a04bde, PR-B #508) · B-03 next immediately (messaging unread counter excludes the sender — compliance plan 0.3).
 
 تسليم للمراجعة
+
+---
+Task ID: B-03
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-03 (compliance plan 0.3) — عدّاد غير المقروء يستثني رسائل المرسِل نفسه
+
+Work Log:
+- MEASURED first: MessagingService.getUnreadCount delegated to countByConversationIdAndReadFalse(conversationId) — counts ALL unread rows INCLUDING the caller's own sent messages. The house's own correct pattern was sitting right beside it: markAsReadByConversationId's bulk UPDATE already carries `m.senderId <> :userId` — the counter was the drifted half of the pair. Callers scoped: exactly one service site + one repository method + one mock-based unit test (grep-verified). App-level coverage measured: DirectConversationModuleIntegrationTest asserts the RECIPIENT's badge (ahmad sends → layla's badge = 1, then read → 0) — unaffected by the fix (sender ≠ recipient still counts); no test anywhere asserts the buggy caller-counts-own-messages behavior; MessagingModuleIntegrationTest has no unread coverage.
+- IMPLEMENTED inside my garden (messaging only): MessageRepository replaces the drifted method with the derived query countByConversationIdAndSenderIdNotAndReadFalse(conversationId, senderId) (Data JPA Query Methods — the unit's official reference) + javadoc citing 0.3/§3.4-2; MessagingService.getUnreadCount passes the caller's id as the excluded sender; MessagingServiceTest.getUnreadCount_returnsCount updated to the new signature + NEW getUnreadCount_excludesTheCallersOwnSentMessages pinning the CALLER's id as the excluded-sender argument (0 unread when she sent the only unread message). One compile-breaking slip caught and fixed in-flight (a verify against the deleted method — removed before the gate).
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-messaging -am — BUILD SUCCESS; messaging 82/82 (MessagingServiceTest 18/18, was 17).
+- PUSHED: feat/track-b-modules @ d5b9535 (PR-B #508 carries it — the remote gates run in the background; no waiting).
+
+Stage Summary:
+- Defect §3.4-2 CLOSED: the badge semantics are now symmetric with the mark-read semantics (both exclude the caller's own messages); the derivation contract is Spring Data's documented table, the end-to-end proof rides the existing app-level IT, and the unit pin makes a silent regression to the inclusive count impossible.
+- Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 next immediately (message send idempotency via @Version optimistic locking — compliance plan 0.4, reference Data JPA jpa/locking.html).
+
+تسليم للمراجعة
