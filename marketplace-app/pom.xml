@@ -180,7 +180,17 @@
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-actuator</artifactId>
         </dependency>
-        <!-- spring-modulith-observability removed in Modulith 2.1 — functionality subsumed by Micrometer Observation -->
+        <!-- spring-modulith-observability-core is NOT removed in 2.1.1 (measured:
+             it exists on Maven Central, HTTP 200, and the 2.1.1 "Production-ready
+             Features" reference documents it) — the earlier "removed in Modulith
+             2.1" note below this line was factually wrong. It is deliberately NOT
+             declared here: D.1's incomplete-publication monitoring rides the
+             health contributor + the modulith actuator (both official channels,
+             both present), and the observability artifact's module-API span
+             aspect + module.events.published counters overlap the house's own
+             Micrometer Observation discipline (@Observed pins guarded by
+             ObservationCoverageFilesTest) — adding it is an owner decision, not
+             a per-unit one. -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-core</artifactId>
