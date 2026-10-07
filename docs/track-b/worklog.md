@@ -601,3 +601,23 @@ Stage Summary:
 - Line state: B-01 ✓ · B-02 ✓ (0a04bde) · B-03 ✓ (d5b9535) · B-04 ✓ (9562115) · B-05 next — Bucket4j needs the foundation's BOM (still absent): CR-2 will be recorded, and B-06 (disputes events — my garden, no new deps) continues the line in the meantime.
 
 تسليم للمراجعة
+
+---
+Task ID: B-06 (+ CR-2 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-06 (compliance plan 0.7) — أحداث النزاعات + تفعيل الاسترداد الجزئي
+
+Work Log:
+- MEASURED first: disputes published ZERO application events (the §3.4-5 defect — the money was right, nobody could subscribe); PaymentRefundPort has carried the partial capability since L24 (refundForBooking(bookingId, amountCents), null = full) but DisputeService always passed null — the partial refund existed end-to-end in payments and was simply never activated by the decision; the 9 existing cross-module events live in shared/api (A's hot garden) but PaymentWebhookEvent shows module-root placement is also house practice, and the disputes root is the exposed NamedInterface("disputes") — consumers can declare "disputes :: disputes" and subscribe.
+- IMPLEMENTED inside my garden: DisputeOpenedEvent(disputeId, bookingId, openedBy) + DisputeResolvedEvent(disputeId, bookingId, resolution, refundedAmountCents) — module-owned records on the exposed API, lean house payload shape; DisputeService injects ApplicationEventPublisher and publishes on open + resolve (the resolved event carries the EXECUTED cumulative outcome — null on money-less decisions); ResolveDisputeRequest gains @Positive optional refundAmountCents (+ @Schema — the OpenAPI contract grows one optional field); the 4-arg resolve activates the partial refund on REFUND_CONSUMER and throws BadRequestException on amount-with-other-resolutions BEFORE any state read (Mockito's strict UnnecessaryStubbingException itself proved the guard fires pre-repository — the test was tightened to verifyNoInteractions(repository)); the 3-arg resolve kept as the byte-identical delegation; the CONTROLLER bridges: amount-less decisions ride the 3-arg path (Track A's DisputeControllerWebMvcTest stubs couple to it — zero cross-garden breakage, verified against its JSON bodies), partial decisions ride the 4-arg path.
+- LOCAL GATE GREEN: ./mvnw clean verify -pl marketplace-disputes -am — BUILD SUCCESS; disputes 25/25 (DisputeServiceTest 15/15: opened-event publication, partial-amount flows to the port + records the outcome, 400-guard before any movement, resolved-event with executed outcome, money-less resolved-event with null outcome; DisputeControllerTest 5/5 incl. the partial-routing test).
+- PUSHED: feat/track-b-modules @ 15dc47b (PR-B #508).
+- CR-2 RECORDED (B→A, §5.4): root pom.xml dependencyManagement — land Bucket4j via the BOM to unblock B-05 (the send rate limiter — compliance plan 0.5; official reference: §5.3's declared trusted community; the pack §5 said the foundation pre-stages it, but feat/parallel-foundation is still absent — measured again this unit). No alternative inside B ownership (the plan pins the library).
+- Event-catalog registration note (additive-only): DisputeOpenedEvent + DisputeResolvedEvent are NEW events (no rename/move of anything existing) — registered here in the worklog pending the contracts ledger the foundation branch will carry (docs/governance/parallel-contracts-ledger.md does not exist yet). Waiting-list note: the two events currently have NO listener — the late-lander rule assigns the listener to whoever consumes them next (notifications is in MY garden; a natural follow-up once the first developer rules on the additions pack's journey-lens).
+- Foundation glance (non-blocking): STILL ABSENT — B-05 stays the only blocked unit; B-07 continues the line.
+
+Stage Summary:
+- §3.4-5 CLOSED: the dispute pipeline is now subscribable end to end, and the partial refund — a capability that sat dormant behind the port since L24 — is activated with a fail-fast contract guard; the amount-less call sites (Track A's app tests included) are byte-identical.
+- Line state: B-01 ✓ · B-02 ✓ · B-03 ✓ · B-04 ✓ · B-06 ✓ (15dc47b — executed out of order per the foundation-blocked B-05) · B-07 next immediately (notifications: delete + mark-all-read — compliance plan 0.8).
+
+تسليم للمراجعة
