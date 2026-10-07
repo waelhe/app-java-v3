@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **22 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **23 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -80,7 +80,7 @@ L1: 18 domain modules            ← Bounded contexts (each owns its data + logi
 L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero domain dependencies)
 ```
 
-### The 22 Modules
+### The 23 Modules
 
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
@@ -106,6 +106,7 @@ L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero doma
 | 20 | `marketplace-ai` | L1 | Domain support | Provider-agnostic AI chat gateway |
 | 21 | `marketplace-app` | L4 | Composition | @SpringBootApplication, Admin REST |
 | 22 | `marketplace-edge` | L5 | Edge BFF | Spring Cloud Gateway Server MVC, TokenRelay, shared sessions |
+| 23 | `marketplace-jobs` | L1 | Domain core | Employment vertical: job listings + applications (B-12, C.2) |
 
 ### Spring Modulith Boundaries
 

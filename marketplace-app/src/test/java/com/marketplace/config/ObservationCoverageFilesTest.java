@@ -86,8 +86,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the SAME channel's post-targeted declare, its own command point:
  *       the member flow's author gate and per-post position lock are its
  *       own work, measured apart from the provider flow's)</li> *   <li>messaging — send</li>
- *   <li>notifications — mark.read, preferences.update (L22 — the
- *       per-channel unsubscribe switch write)</li>
+ *   <li>jobs — create, close, application.create, application.move,
+ *       application.withdraw (B-12 — the employment vertical's five
+ *       commands, the reviews-pattern module)</li>
+ *   <li>notifications — delete, mark.all.read, mark.read, preferences.update
+ *       (delete + mark.all.read are B-07's feed pair; preferences.update is L22 —
+ *       the per-channel unsubscribe switch write)</li>
  *   <li>payments — process, confirm, cancel; psp.create + psp.webhook
  *       (layer 9 — the real PSP channel; the webhook observation lives on
  *       the Stripe entry point, not the shared dispatch helper, so the
@@ -151,6 +155,9 @@ class ObservationCoverageFilesTest {
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.status.update", "user.sync.oidc")),
+            Map.entry("marketplace-jobs", List.of(
+                    "job.application.create", "job.application.move",
+                    "job.application.withdraw", "job.close", "job.create")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
@@ -159,6 +166,7 @@ class ObservationCoverageFilesTest {
                     "media.thumbnail.process", "media.upload.confirm",
                     "media.upload.request", "media.upload.request.post")),            Map.entry("marketplace-messaging", List.of("messaging.send")),
             Map.entry("marketplace-notifications", List.of(
+                    "notification.delete", "notification.mark.all.read",
                     "notification.mark.read", "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
                     "payment.cancel", "payment.confirm", "payment.fail", "payment.process",
