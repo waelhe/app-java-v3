@@ -740,3 +740,24 @@ Stage Summary:
 - Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (in the reactor!) · B-13 ✓ (c156422+923ba00) · B-05 + B-10 wait on the foundation BOM (CR-2; feat/parallel-foundation now EXISTS — the BOM may be landing soon) · B-14 next immediately (the knowledge module + the search integration by events).
 
 تسليم للمراجعة
+
+---
+Task ID: B-14 (+ CR-8 recorded)
+Agent: Track-B Developer (session web-636b708e-e9d8-4775-9c2f-8f14d3331c3d)
+Task: B-14 (compliance plan C.4) — وحدة knowledge كاملة + تكامل search بالأحداث
+
+Work Log:
+- MEASURED first: the platform identity's «تعرف على» row defines the module verbatim (a community-built integrated guide about the neighborhood and its residents); the search module is in the ownership matrix's RESERVE column (untouched by both tracks) — so «search بالأحداث» means the MODULE publishes the indexing facts and the eventual consumer is the search side under the late-lander rule (the catalog's own ListingActivatedEvent→SavedSearchEventListener integration is the measured precedent of the exact shape); the house FTS pattern measured in ProviderListingRepository.searchFullText (NATIVE query, official websearch_to_tsquery, ts_rank + id tiebreak, explicit is_deleted=false, the 'simple' tokenizer with the V9 GIN index).
+- IMPLEMENTED (my garden): marketplace-knowledge on the reviews pattern (self-contained: allowedDependencies shared-api/shared-security/shared-jpa) — KnowledgeEntry (the contributor at the A1 seam, the level-3 geo gate before any write, the five-value category vocabulary, born PUBLISHED — the community builds the guide in the open) + the board/detail/my-entries reads + the NATIVE full-text discovery (the catalog precedent verbatim, the category axis composed per the R6 lesson) + the author's revision/withdrawal (foreign 404) + THE EVENT PAIR: KnowledgeEntryPublishedEvent (the COMPLETE indexing fact — entry+location+category+title+body+author, no consumer ever re-derives) on every contribution AND revision (the upsert signal) + KnowledgeEntryWithdrawnEvent (the drop signal) — module-owned records on the exposed knowledge NamedInterface, the B-06 pattern.
+- V156 PROVEN ON THE LIVE DATABASE (scripts/ValidateV156.java): 12 columns + validated CHECK + 4 indexes + the happy ARABIC entries + the bad category rejected 23514 + **THE ARABIC FULL-TEXT ROUNDTRIP GREEN** (the module's own native query, verbatim, finds the mosque entry ALONE — the library does not match) + the composed text+category query narrows correctly + the withdrawn entry never serves + the aud mirror shape. The GIN index rides the exact V9 pattern ('simple' tokenizer — the table search-ready from day one).
+- GUARD BOOKKEEPING in the same unit (the line's head stays green): V156 registered in migration-checksums.properties (-1476056312, flyway-core 12.4.0's own ChecksumCalculator), SYSTEM.md updated (104 ترحيلة نسخية V1..V156 + 107 ملفًا في الشجرة), ObservationCoverageFilesTest's pin extended with knowledge's three commands.
+- LOCAL GATES GREEN: knowledge standalone 18/18 (the journey pin contribute-discover-revise-withdraw + the event-publication contracts on every boundary + the geo-gate order + the composed-search routing); the guard sweep on the app (Modulith 1/1, MigrationChecksum 1/1, DocumentationNumbers 6/6, ObservationCoverage 2/2).
+- PUSHED: feat/track-b-modules @ fcb20a5 (PR-B #508).
+- CR-8 RECORDED (B→A, §5.4 — the knowledge reactor wiring, the CR-5/CR-7 pattern verbatim): root pom <modules> row for marketplace-knowledge + the dependencyManagement entry + the app pom aggregation dependency row + the SYSTEM.md/README/ARCHITECTURE module counts (23→24, riding the same batch as institutions' CR-7 count if landed together: 23→25).
+- EVENT-CATALOG registration note (additive-only): KnowledgeEntryPublishedEvent + KnowledgeEntryWithdrawnEvent join the pending-catalog set (beside DisputeOpenedEvent/DisputeResolvedEvent/MessageReceivedEvent) — the late-lander consumer is the search side (a reserve module); the listener's assignee is whoever lands the search-side integration next, exactly the B-06/B-08 precedent.
+
+Stage Summary:
+- C.4 landed as a JOURNEY (contribute → discover → revise → withdraw): the guide complete on the reviews pattern, the discovery surface native FTS over Arabic content PROVEN on the live database, and the search integration's event contract complete (upsert + drop) for the late-lander consumer.
+- Line state: B-01..B-04 ✓ · B-06..B-09 ✓ · B-11 ✓ · B-12 ✓ (reactor) · B-13 ✓ · B-14 ✓ (fcb20a5) · B-05 + B-10 wait on the foundation BOM (CR-2) · B-15 next immediately (the console module — feature flags + Remote Config per Boot external-config, the last P3 unit before B-16 which waits on A-17).
+
+تسليم للمراجعة
