@@ -17,9 +17,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Production wiring for the TokenRelay token store, no HTTP and no server:
  * the {@code OAuth2AuthorizedClientService} bean must be the Redis-backed
  * implementation (the official remedy for the in-memory default — Gateway
- * Server MVC TokenRelay reference), and the repository the same
- * {@code AuthenticatedPrincipalOAuth2AuthorizedClientRepository} type Boot
- * itself auto-configures for the servlet stack.
+ * Server MVC TokenRelay reference), and the repository must arrive through
+ * Boot's own automatic management — OAuth2ClientWebSecurityAutoConfiguration
+ * is armed by the service bean's very presence (class-level
+ * ConditionalOnBean, measured on the 4.1.1 bytecode) — proving the shared
+ * store rides the framework's wiring untouched, not a hand-declared copy.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -39,9 +41,9 @@ class EdgeAuthorizedClientStoreSelectionTest {
     }
 
     @Test
-    void authorizedClientRepositoryMatchesBootServletDefaultType() {
+    void authorizedClientRepositoryIsProvidedAutomaticallyByBoot() {
         assertThat(context.getBean(OAuth2AuthorizedClientRepository.class))
-                .as("repository must be Boot's own servlet type, only backed by the shared store")
+                .as("the repository must be Boot's own auto-configured servlet type, armed by the service bean alone")
                 .isInstanceOf(AuthenticatedPrincipalOAuth2AuthorizedClientRepository.class);
     }
 }

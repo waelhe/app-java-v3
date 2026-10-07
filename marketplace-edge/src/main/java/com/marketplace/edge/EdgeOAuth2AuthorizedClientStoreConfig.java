@@ -17,8 +17,8 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.AuthenticatedPrincipalOAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+
+
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.util.StringUtils;
@@ -43,12 +43,22 @@ import org.springframework.util.StringUtils;
  * the same managed infrastructure (zero new dependencies, zero new secrets,
  * zero manual steps).
  *
- * <p>Bean wiring follows Spring Boot's own auto-configuration contract:
- * declaring these beans backs off Boot's in-memory defaults via
- * {@code @ConditionalOnMissingBean} (Boot API), and the gateway's
- * {@code DefaultOAuth2AuthorizedClientManager} (auto-configured from these
- * beans) transparently persists refreshed tokens back through the same
- * service — automatic token lifecycle management end to end.
+ * <p>Bean wiring follows Spring Boot's own auto-configuration contract,
+ * measured on the 4.1.1 bytecode: declaring the service bean alone backs
+ * off Boot's in-memory default
+ * ({@code OAuth2ClientConfigurations$OAuth2AuthorizedClientServiceConfiguration}
+ * is {@code @ConditionalOnMissingBean}) AND arms
+ * {@code OAuth2ClientWebSecurityAutoConfiguration} — class-level
+ * {@code @ConditionalOnBean(OAuth2AuthorizedClientService.class)} — whose
+ * {@code @ConditionalOnMissingBean authorizedClientRepository(...)} bean
+ * supplies the {@code AuthenticatedPrincipalOAuth2AuthorizedClientRepository}
+ * backed by this service. This configuration therefore declares ONLY the
+ * service bean: the repository, the authorized-client manager and the
+ * refreshed-token persistence all stay on the framework's automatic
+ * management (the earlier manual repository bean duplicated exactly what
+ * the auto-configuration already provides once the service exists — the
+ * redundant declaration is removed; the selection test now proves the
+ * AUTOMATIC wiring, not a copy of it).
  */
 @Configuration
 class EdgeOAuth2AuthorizedClientStoreConfig {
@@ -59,15 +69,6 @@ class EdgeOAuth2AuthorizedClientStoreConfig {
             StringRedisTemplate redis,
             @Value("${spring.session.timeout:30m}") Duration sessionTimeout) {
         return new RedisOAuth2AuthorizedClientService(clientRegistrationRepository, redis, sessionTimeout);
-    }
-
-    @Bean
-    OAuth2AuthorizedClientRepository oAuth2AuthorizedClientRepository(
-            OAuth2AuthorizedClientService authorizedClientService) {
-        // The same repository type Boot itself auto-configures for the
-        // servlet stack (OAuth2ClientAutoConfiguration), only backed by the
-        // shared store instead of the in-memory default.
-        return new AuthenticatedPrincipalOAuth2AuthorizedClientRepository(authorizedClientService);
     }
 }
 
