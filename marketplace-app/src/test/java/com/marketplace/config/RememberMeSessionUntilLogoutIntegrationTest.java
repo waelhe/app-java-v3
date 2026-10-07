@@ -144,8 +144,19 @@ class RememberMeSessionUntilLogoutIntegrationTest {
         // length" — the stored session reads back the class's official
         // thirty-days default (the Redis record's TTL equals it by Spring
         // Session's own construction).
-        String sessionId = cookieValue(login.getResponse(), "SESSION");
-        assertThat(sessionId).as("a session was established").isNotBlank();
+        //
+        // The cookie VALUE is the base64-encoded session id — the default
+        // DefaultCookieSerializer writes it encoded (useBase64Encoding=true,
+        // source-verified on spring-session-core 4.1.1) and decodes it on the
+        // way IN (readCookieValues -> base64Decode). A browser round-trips
+        // the encoded value untouched, so the repository key — the RAW id —
+        // is only reachable after the same decode the serializer performs.
+        // Looking the encoded value up (the first CI run's measurement)
+        // queries a key that never exists: findById answers null for a
+        // session that is alive and well in Redis.
+        String sessionCookie = cookieValue(login.getResponse(), "SESSION");
+        assertThat(sessionCookie).as("a session was established").isNotBlank();
+        String sessionId = rawSessionId(sessionCookie);
         Session stored = sessionRepository.findById(sessionId);
         assertThat(stored).as("the session is in the Redis-backed repository").isNotNull();
         assertThat(stored.getMaxInactiveInterval().toSeconds())
@@ -155,11 +166,18 @@ class RememberMeSessionUntilLogoutIntegrationTest {
 
     @Test
     void logoutClearsSiteDataCookiesAndEndsTheSession() throws Exception {
-        String sessionId = loginForSession();
-        String logoutCsrf = csrfOf(loginPage(sessionId));
+        // The cookie round-trips its ENCODED value (exactly what a browser
+        // sends back — the serializer decodes it on read), while the
+        // repository lookup below asserts on the DECODED id: the previous
+        // form looked the encoded value up, so the "session is gone"
+        // assertion passed VACUOUSLY — the wrong key is absent whether or
+        // not the logout actually invalidated the session.
+        String sessionCookie = loginForSession();
+        String sessionId = rawSessionId(sessionCookie);
+        String logoutCsrf = csrfOf(loginPage(sessionCookie));
 
         MvcResult logout = mockMvc.perform(post("/logout")
-                        .cookie(new Cookie("SESSION", sessionId))
+                        .cookie(new Cookie("SESSION", sessionCookie))
                         .param("_csrf", logoutCsrf)
                         .secure(true))
                 .andExpect(status().is3xxRedirection())
@@ -172,7 +190,7 @@ class RememberMeSessionUntilLogoutIntegrationTest {
                 .isEqualTo("\"cookies\"");
 
         // "Until logout" means the logout actually ends the session: the
-        // stored record is gone.
+        // stored record is gone — asserted on the REAL repository key.
         assertThat(sessionRepository.findById(sessionId))
                 .as("the session is invalidated by the default logout machinery")
                 .isNull();
@@ -194,7 +212,20 @@ class RememberMeSessionUntilLogoutIntegrationTest {
     }
 
     /**
-     * Performs the honest form login and returns the established session id.
+     * The raw repository key of the session cookie's value — the exact
+     * decode the default serializer applies on every inbound request
+     * (DefaultCookieSerializer.base64Decode: RFC 4648 basic decoder, UTF-8).
+     * Mirrored here because the repository keys sessions by the RAW id,
+     * while the cookie carries the encoded form a browser would return.
+     */
+    private static String rawSessionId(String sessionCookieValue) {
+        return new String(java.util.Base64.getDecoder().decode(sessionCookieValue));
+    }
+
+    /**
+     * Performs the honest form login and returns the established session's
+     * COOKIE value (the encoded form — pass it to requests unchanged, the
+     * way a browser would).
      */
     private String loginForSession() throws Exception {
         MvcResult page = loginPageResult(null);
