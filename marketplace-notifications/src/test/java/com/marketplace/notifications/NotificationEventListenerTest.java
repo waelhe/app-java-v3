@@ -1,5 +1,6 @@
 package com.marketplace.notifications;
 
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
@@ -62,6 +63,46 @@ class NotificationEventListenerTest {
 
         assertThrows(RuntimeException.class,
                 () -> listener.onBookingCreated(event));
+    }
+
+    @Test
+    void onBookingConfirmed_callsNotificationService_a03() {
+        // A-03 (compliance plan 0.6 — the dead BookingConfirmedEvent's
+        // delivery): the listener delegates the booking id to the delivery
+        // service, exactly the onBookingCreated contract shape.
+        UUID bookingId = UUID.randomUUID();
+        BookingConfirmedEvent event = new BookingConfirmedEvent(bookingId);
+
+        listener.onBookingConfirmed(event);
+
+        verify(notificationService).onBookingConfirmed(bookingId);
+    }
+
+    @Test
+    void onBookingConfirmed_propagatesException_a03() {
+        // The @ApplicationModuleListener failure contract: an exception the
+        // delivery raises leaves the listener incomplete in the registry so
+        // the framework's retry/resubmission machinery owns it — the
+        // listener must never swallow it.
+        UUID bookingId = UUID.randomUUID();
+        BookingConfirmedEvent event = new BookingConfirmedEvent(bookingId);
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onBookingConfirmed(bookingId);
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onBookingConfirmed(event));
+    }
+
+    @Test
+    void onBookingConfirmed_usesApplicationModuleListenerAnnotation_a03() throws NoSuchMethodException {
+        // The official Modulith listener contract (reference/events.html):
+        // AFTER_COMMIT, its own transaction, registry-tracked completion —
+        // the annotation is what makes the event's journey real.
+        var method = NotificationEventListener.class.getMethod(
+                "onBookingConfirmed", BookingConfirmedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
     }
 
     @Test

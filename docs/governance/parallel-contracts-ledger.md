@@ -24,7 +24,7 @@
 |---|---|---|
 | `AdWindowBilledEvent` | catalog | ledger · payments |
 | `BookingCancelledEvent` | booking | payments |
-| `BookingConfirmedEvent` | booking | (لا مستهلك بعد — النشر قائم؛ رحلته الكاملة تعود بجولة A-03) |
+| `BookingConfirmedEvent` | booking | notifications (A-03، 2026-10-07 — الواصل المتأخر §5.3: المستمع `onBookingConfirmed` كُتب بيد مسار A في حديقة B لأن الحدث كان بلا مستقبل نهائيًا «حدث بلا مستمع = عيب مقيس»؛ العبور موثق هنا وفي worklog، ومالك الوحدة الأصلي يراجعه §13؛ معه زوج V110/V111 لتوسيع قيد نوع التفضيلات) |
 | `BookingCreatedEvent` | booking | catalog · disputes · notifications · platform-infra |
 | `ContentModeratedEvent` | community | notifications |
 | `FollowedProviderNewListingEvent` | identity | notifications |

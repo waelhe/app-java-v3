@@ -67,6 +67,31 @@ public class NotificationService {
         sendWebSocket(info.providerId(), NotificationType.BOOKING_CREATED, "New booking request: " + bookingId);
     }
 
+    public void onBookingConfirmed(UUID bookingId) {
+        BookingInfo info = bookingParticipantProvider.getBookingInfo(bookingId);
+        // A-03 (compliance plan 0.6 — the dead BookingConfirmedEvent's
+        // delivery, the notification leg of the owner's identity rule "an
+        // event without a listener is a measured defect"): the recipient is
+        // the CONSUMER alone — the party whose booking just moved to
+        // CONFIRMED and who is waiting on that answer. The provider's
+        // knowledge of the same moment already arrives on its own channel:
+        // on the manual path the provider performed the confirm themselves,
+        // and on the payment-driven autoConfirm path both parties already
+        // receive the PAYMENT_STATE notification for the state change that
+        // triggered it — a second provider row here would duplicate that
+        // alert, not carry a new fact. Same delivery shape as
+        // onBookingCreated: the in-app row is always on, EMAIL rides the
+        // per-type/channel preference matrix (L22) from day one, WS honors
+        // an explicit opt-out.
+        repository.save(Notification.create(info.consumerId(),
+                NotificationType.BOOKING_CONFIRMED.name(), "Booking confirmed: " + bookingId));
+        if (preferences.isChannelEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(info.consumerId(), "Booking Confirmed", "email/notification",
+                    Map.of("message", "Your booking " + bookingId + " has been confirmed."));
+        }
+        sendWebSocket(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
+    }
+
     public void onPaymentStateChanged(UUID paymentIntentId, String state) {
         paymentIntentLookupPort.findById(paymentIntentId).ifPresent(intent -> {
             // W5 (yelp-level plan §5 — G24): the ad bill's own shape — the

@@ -59,6 +59,16 @@ package com.marketplace.notifications;
  * "exactly once"), so one event is one notification; the delivery rides
  * the standing L22 per-type/channel preference matrix from day one, no
  * new mechanism.
+ *
+ * <p>A-03 (official-compliance plan 0.6 — the dead {@code BookingConfirmedEvent}'s
+ * delivery, the notification leg of the owner's identity rule "an event
+ * without a listener is a measured defect"): {@code BOOKING_CONFIRMED} joins
+ * as the tenth type — the same point addition (the V110 CHECK widens the
+ * DB-side membership guard to match, V111 validates it under SHARE UPDATE
+ * EXCLUSIVE alone — the V74/V75 precedent verbatim). The recipient is the
+ * booking's consumer alone; the listener is the {@code BookingConfirmedEvent}
+ * consumer the parallel contracts ledger recorded as "returning with round
+ * A-03" (the late-lander crossing documented there).
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -69,5 +79,6 @@ public enum NotificationType {
     NEW_LISTING_IN_NEIGHBORHOOD,
     CONTENT_MODERATED,
     POST_REACTED,
-    FOLLOWED_PROVIDER_NEW_LISTING
+    FOLLOWED_PROVIDER_NEW_LISTING,
+    BOOKING_CONFIRMED
 }

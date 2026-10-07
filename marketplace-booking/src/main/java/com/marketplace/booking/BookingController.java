@@ -77,21 +77,27 @@ public class BookingController {
 
     @PostMapping("/{id}/confirm")
     @Operation(summary = "Confirm a booking (provider)", description = "Accepts a PENDING booking; "
-            + "frees the slot window and starts the payment intent flow.")
+            + "frees the slot window and starts the payment intent flow. PROVIDER or ADMIN role "
+            + "required; a provider who does not own the booking gets 403 (the ownership gate "
+            + "— the operation is a documented write, not an existence probe).")
     public ResponseEntity<BookingResponse> confirm(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.confirm(id, authentication)));
     }
 
     @PostMapping("/{id}/complete")
     @Operation(summary = "Complete a booking (provider)", description = "Marks a confirmed stay "
-            + "completed — the state from which the consumer may review.")
+            + "completed — the state from which the consumer may review. PROVIDER or ADMIN role "
+            + "required; a provider who does not own the booking gets 403 (the same ownership gate "
+            + "as confirm).")
     public ResponseEntity<BookingResponse> complete(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.complete(id, authentication)));
     }
 
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel a booking", description = "Consumer or provider cancellation; "
-            + "frees the slot window and triggers the payment refund path (L19).")
+            + "frees the slot window and triggers the payment refund path (L19). Only a booking "
+            + "participant (or ADMIN) may cancel — an authenticated outsider gets 403, the "
+            + "ownership gate on this documented write path.")
     public ResponseEntity<BookingResponse> cancel(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(bookingMapper.toResponse(bookingService.cancel(id, authentication)));
     }

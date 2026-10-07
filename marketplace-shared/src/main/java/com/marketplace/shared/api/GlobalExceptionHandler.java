@@ -12,7 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
-import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -24,7 +25,44 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * Global REST exception handler using RFC 7807 {@link ProblemDetail}.
+ * Global REST exception handler using RFC 9457 {@link ProblemDetail}.
+ *
+ * <p><b>A-03 (compliance plan 0.9 — the ordered composition the official doc
+ * prescribes, verbatim):</b> with {@code spring.mvc.problemdetails.enabled=true}
+ * Spring Boot autoconfigures its own {@code ResponseEntityExceptionHandler}
+ * {@code @ControllerAdvice} — {@code ProblemDetailsExceptionHandler}, measured
+ * {@code @Order(0)} in Boot's {@code WebMvcAutoConfiguration} — which handles
+ * every built-in Spring MVC exception with RFC 9457 problem details. The
+ * official reference ({@code mvc-ann-rest-exceptions.html}) prescribes the
+ * composition for taking a built-in over: "you may prefer to create another
+ * {@code @ControllerAdvice} instead of extending
+ * {@code ResponseEntityExceptionHandler} if you want to take over the handling
+ * of a specific built-in exception. You'll need to ensure your handler is
+ * ordered ahead of the one configured by Spring Boot whose order is 0."
+ * This advice carries that {@code @Order(Ordered.HIGHEST_PRECEDENCE)}.
+ *
+ * <p><b>The division of labor it produces (measured handler-resolution
+ * semantics — advices are consulted in order, first match wins; within one
+ * advice the most specific mapped type wins):</b> this advice takes over
+ * exactly the built-ins whose <em>documented house contract</em> is richer
+ * than the automatic body —
+ * {@link MethodArgumentNotValidException} (the {@code fieldErrors} extension
+ * the API error contract promises on every 400 validation answer) and
+ * {@link NoResourceFoundException} (the taxonomy 404 with
+ * {@code errorCode}/{@code category}/{@code instance}); every other built-in
+ * (405, 415, 406, unreadable body, ...) falls through to Boot's automatic
+ * handler and renders the Framework's own RFC 9457 body — the official
+ * automatic first, the house's hand only where the contract demands more.
+ * The uncaught-exception safety net ({@code @ExceptionHandler(Exception.class)}
+ * → the 500 INTERNAL contract) lives in a SEPARATE last-ordered advice,
+ * {@link GlobalErrorFallbackHandler} — measured: a catch-all inside this
+ * advice would swallow the built-ins ahead of the automatic handler (a
+ * 405 became a 500). Before the ordering, the automatic handler silently
+ * shadowed the two house built-in handlers above (it was {@code @Order(0)};
+ * an unordered advice is {@code LOWEST_PRECEDENCE}), so the documented
+ * {@code fieldErrors} contract was dead code at the HTTP layer — the
+ * measured 0.9 defect this unit closes with the contract tests that now
+ * pin both sides of the split.
  *
  * <p>i18n layer (roadmap B4 / gap G-PROD-4): when a {@link MessageSource}
  * is bound, the fixed English literals of this handler resolve through it
@@ -42,14 +80,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  * default path is byte-identical to the previous behavior.</p>
  */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-    private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
-    private static final String CORRELATION_ID_ATTRIBUTE = "correlationId";
-
-    private static final String KEY_PREFIX = "error.";
-
     private final MessageSource messageSource;
 
     public GlobalExceptionHandler() {
@@ -124,9 +158,11 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ex.getBody();
         pd.setInstance(URI.create(request.getRequestURI()));
         ApiErrorTaxonomy taxonomy = ex.taxonomy();
-        pd.setTitle(resolve(KEY_PREFIX + taxonomy.errorCode() + ".title", taxonomy.title()));
+        pd.setTitle(ProblemDetailRendering.resolve(messageSource,
+                ProblemDetailRendering.KEY_PREFIX + taxonomy.errorCode() + ".title", taxonomy.title()));
         if (pd.getProperties() == null || pd.getProperties().get("userMessage") == null) {
-            String userMessage = resolve(KEY_PREFIX + taxonomy.errorCode() + ".user", null);
+            String userMessage = ProblemDetailRendering.resolve(messageSource,
+                    ProblemDetailRendering.KEY_PREFIX + taxonomy.errorCode() + ".user", null);
             if (userMessage != null) {
                 pd.setProperty("userMessage", userMessage);
             }
@@ -191,7 +227,7 @@ public class GlobalExceptionHandler {
      * acceptance criterion "two property blocks for one listing are
      * impossible — DB constraint + 409"). Every other integrity violation
      * (NOT NULL, FK, CHECK) is a server-side anomaly and keeps falling to
-     * {@link #handleGeneral}.
+     * {@link GlobalErrorFallbackHandler#handleUncaught}.
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleUniqueViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
@@ -234,49 +270,11 @@ public class GlobalExceptionHandler {
         return cause.getMessage();
     }
 
-    @ExceptionHandler(Exception.class)
-    public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
-        log.error("Unhandled exception for {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        return problem(ApiErrorTaxonomy.INTERNAL, "An unexpected error occurred", request, null, "detail");
-    }
-
     private ProblemDetail problem(ApiErrorTaxonomy taxonomy, String detail, HttpServletRequest request,
                                   String userMessage, String detailKeySuffix) {
-        String traceId = request.getHeader(CORRELATION_ID_HEADER);
-        if (traceId == null || traceId.isBlank()) {
-            Object correlationIdAttribute = request.getAttribute(CORRELATION_ID_HEADER);
-            if (!(correlationIdAttribute instanceof String correlationId) || correlationId.isBlank()) {
-                correlationIdAttribute = request.getAttribute(CORRELATION_ID_ATTRIBUTE);
-            }
-            if (correlationIdAttribute instanceof String correlationId && !correlationId.isBlank()) {
-                traceId = correlationId;
-            }
-        }
-
-        String localizedDetail = resolve(KEY_PREFIX + taxonomy.errorCode() + "." + detailKeySuffix, detail);
-        String resolvedUserMessage = userMessage != null
-                ? userMessage
-                : resolve(KEY_PREFIX + taxonomy.errorCode() + ".user", null);
-
-        ProblemDetail pd = ApiProblemDetails.fromTaxonomy(taxonomy, localizedDetail, request.getRequestURI(),
-                resolvedUserMessage, traceId);
-        pd.setTitle(resolve(KEY_PREFIX + taxonomy.errorCode() + ".title", taxonomy.title()));
-        return pd;
-    }
-
-    /**
-     * Resolves a message at the request locale; returns the exact fallback
-     * literal when no MessageSource is bound or the key has no entry —
-     * the pre-B4 behavior is the floor, not an approximation.
-     */
-    private String resolve(String code, String fallback) {
-        if (messageSource == null || code == null) {
-            return fallback;
-        }
-        // LocaleContextHolder carries the framework-resolved request locale
-        // (AcceptHeaderLocaleResolver) and degrades to the JVM default when
-        // no request is in flight — exactly the resolution contract the MVC
-        // stack itself uses.
-        return messageSource.getMessage(code, null, fallback, LocaleContextHolder.getLocale());
+        // A-03: the rendering machinery (traceId lookup + i18n + taxonomy
+        // build) lives in ProblemDetailRendering so the fallback advice
+        // shares this exact implementation — one source of truth.
+        return ProblemDetailRendering.problem(taxonomy, detail, request, userMessage, detailKeySuffix, messageSource);
     }
 }

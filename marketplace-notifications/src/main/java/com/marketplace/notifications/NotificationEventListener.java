@@ -1,5 +1,6 @@
 package com.marketplace.notifications;
 
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
@@ -29,6 +30,30 @@ public class NotificationEventListener {
     public void onBookingCreated(BookingCreatedEvent event) {
         notificationService.onBookingCreated(event.bookingId());
         log.info("Notification sent for booking created: {}", event.bookingId());
+    }
+
+    /**
+     * A-03 (official-compliance plan 0.6 — the dead BookingConfirmedEvent's
+     * delivery; the parallel contracts ledger recorded this consumer as
+     * "returning with round A-03" and rules the crossing: booking (Track A)
+     * publishes, the late-lander writes the listener here in notifications,
+     * and the module's owner reviews it — execution plan §5.3). The event was
+     * published at both confirm sites (the provider's confirm and the
+     * payment-driven autoConfirm) with no consumer at all — which in the
+     * official Modulith mechanism (reference/events.html) means the
+     * Event Publication Registry never wrote an entry for it: the registry
+     * "finds out about the transactional event listeners that will get the
+     * event delivered and writes entries for each of them", so a
+     * listener-less event is a fire into the void — no registry row, no
+     * completion tracking, no retry. This listener completes the journey:
+     * from here the publication rides the registry like every other house
+     * event (AFTER_COMMIT, its own transaction, framework-managed
+     * completion/resubmission).
+     */
+    @ApplicationModuleListener
+    public void onBookingConfirmed(BookingConfirmedEvent event) {
+        notificationService.onBookingConfirmed(event.bookingId());
+        log.info("Notification sent for booking confirmed: {}", event.bookingId());
     }
 
     @ApplicationModuleListener
