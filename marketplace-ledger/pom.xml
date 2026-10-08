@@ -26,5 +26,12 @@
       <artifactId>instancio-junit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Exception #17: jqwik — property-based money-arithmetic invariants
+         (generated inputs over credit/debit/balance). -->
+    <dependency>
+      <groupId>net.jqwik</groupId>
+      <artifactId>jqwik</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>
