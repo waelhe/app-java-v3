@@ -22,20 +22,21 @@ import org.springframework.web.socket.config.annotation.WebSocketTransportRegist
  * its configurers as an {@code @Autowired List} — sorted by
  * {@code AnnotationAwareOrderComparator} — and invokes each one's
  * {@code configureClientInboundChannel} on the SAME registration, so the
- * interceptors run in configurer order. Both this class and Spring Security's
- * {@code WebSocketMessageBrokerSecurityConfiguration} are unordered, and the
- * security configurer wins the tie (it registers first), producing the chain
- * [SecurityContext, csrf, Authorization, JWT] — the lifted CONNECT user
- * arrives AFTER the authorization decision, every token CONNECT reads as
- * anonymous, and {@code AuthorizationChannelInterceptor} answers
+ * interceptors run in configurer order. This class and the security wiring
+ * ({@code WebSocketSecurityConfig} — the documented manual configuration of
+ * the 7.1.1 compliance wave §7-а) are competitors for that list, and an
+ * unordered security configurer can land anywhere: the measured CI round
+ * once produced [SecurityContext, Authorization, JWT] where the lifted
+ * CONNECT user arrived AFTER the authorization decision, every token CONNECT
+ * read as anonymous, and the authorization interceptor answered
  * {@code AccessDeniedException} (the exact CI signature: the connection dies
  * at CONNECT, and the synthetic DISCONNECT then fails the same way —
  * measured in the round-2 logs).
  * {@code HIGHEST_PRECEDENCE} puts the JWT lifter FIRST:
- * [JWT, SecurityContext, csrf, Authorization] — the user is lifted, the
+ * [JWT, Identity, SecurityContext, Authorization] — the user is lifted, the
  * security context is populated from it, and the authorization manager sees
  * the authenticated CONNECT it is meant to judge. (Bytecode-verified against
- * spring-websocket 7.0.9 + spring-security-config 7.1.1 this session.)
+ * spring-websocket 7.0.9 + spring-security-config 7.1.1.)
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Configuration

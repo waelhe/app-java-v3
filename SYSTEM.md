@@ -52,7 +52,7 @@
 |---|---|---|
 | compile | compiler | `failOnWarning` — أي تحذير يُفشل البناء |
 | test | surefire | اختبارات الوحدة (`*Test`) — منفصلة تماماً عن التكامل |
-| integration-test / verify | failsafe | اختبارات التكامل — **105 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
+| integration-test / verify | failsafe | اختبارات التكامل — **106 ملفًا** تختارها أنماط التضمين (`**/*IT.java` + `**/*IntegrationTest.java`؛ 2 منها بلاحقة `*IT`)؛ البيئية منها تُتخطى بلا Docker (`disabledWithoutDocker`) — الحارس `DocumentationNumbersGuardTest` يستمد العدد من أشجار اختبار الوحدات |
 | verify | jacoco | تقرير + **check: BUNDLE ≥ 0.70 لكل وحدة** (`pom.xml:242-244`) || validate | enforcer | 5 قواعد؛ أشهرها Maven `[3.9,)` (`:230`) وJava `[21,)` (`:233`) |
 | package | spring-boot-maven | `repackage` → jar تنفيذي لوحدة `marketplace-app` فقط |
 
@@ -106,9 +106,9 @@ package com.marketplace.booking;
 
 | @Order | السلسلة | الوظيفة | الدليل |
 |---|---|---|---|
-| 1 | `authorizationServerSecurityFilterChain` | نقاط AS + OIDC، `securityMatcher(endpointsMatcher)` | `:93-111` |
-| 2 | `resourceServerSecurityFilterChain` | واجهات API عديمة الحالة (STATELESS) عبر JWT، `/api/v1/admin/** → ADMIN` + `anyRequest().authenticated()` | `:113-132` |
-| 3 | `defaultSecurityFilterChain` | تسجيل الدخول النموذجي + جلسات (Redis) | `:143-152` |
+| 1 | `authorizationServerSecurityFilterChain` | نقاط AS + OIDC، `securityMatcher(endpointsMatcher)` | `:112-148` |
+| 2 | `resourceServerSecurityFilterChain` | واجهات API عديمة الحالة (STATELESS) عبر JWT، `/api/v1/admin/** → ADMIN` + `anyRequest().authenticated()` | `:154-324` |
+| 3 | `defaultSecurityFilterChain` | تسجيل الدخول النموذجي + جلسات (Redis) + remember-me الرسمي + مسح كوكيز الخروج | `:328-386` |
 
 **مصدر المفاتيح JWK — المسار المزدوج بحارس prod (`SecurityConfig.jwkSource`):** في prod يُقرأ keystore من `MarketplaceProperties.Security.Jwt.KeyStore` (record متداخل: path/password/alias — `MarketplaceProperties.java:30-37`)، وخاناته الأربع في `application-prod.yml` **إلزامية بلا افتراضات ⇒ فشل فوري إن غابت** (قرار D6: مفاتيح دائمة في الإنتاج). **حارس إضافي بالكود (المرحلة 4):** بروفايل `prod` نشط + أي خانة فارغة ⇒ `IllegalStateException` عند الإقلاع — السقوط إلى المفتاح العابر مستحيل في prod (دفاع عميق يُمسك السلاسل الفارغة وانجراف الربط)؛ تُفرض البوابة في CI عبر `JwkSourceProdHardeningTest` (وحدة infra — 3 حالات على JKS حقيقي). في dev الخانات فارغة افتراضاً ⇒ توليد RSA عابر (نمط quickstart الرسمي — للتطوير فقط) بتصميم مقصود. Runbook التوليد/التدوير: `keys/README.md`.
 
@@ -131,7 +131,7 @@ package com.marketplace.booking;
 
 **دروس مثبتة تجريبياً (لا تُعَد اكتشافها):** `ClientSettings.withSettings(map)` لا يطبق الافتراضات (`:115-118`) بينما نفس الصف يعوّض افتراض TokenSettings دون ClientSettings (`JdbcRegisteredClientRepository.java:362-367` — عدم تناظر الإطار يقوّي «قاعدة البيانات هي الحقيقة» D2)؛ وخريطة Jackson متعددة الأشكال تسمح `UnmodifiableMap` وترفض `ImmutableCollections$List12` (جولة aud/E5 مثبتة بـ `AudRoundTrip.java`).
 
-**الجلسات:** خزين Redis بمساحة `marketplace:session` (`application.yml:70-75`)، بحد أقصى جلستين (`:245-246`)، وكلمة المرور `DelegatingPasswordEncoder` مع bcrypt (`SecurityConfig:197-199`).
+**الجلسات — «حتى الخروج» بالمسار الرسمي (موجة مطابقة 7.1.1، 2026-10-07):** خزين Redis بمساحة `marketplace:session` (`application.yml` — `repository-type: indexed`) بحد أقصى جلستين (`SESSION_MAX_SESSIONS:2`) عبر `SpringSessionBackedSessionRegistry` (التكامل الموثق)، و`spring.session.timeout: 30m` يبقى افتراض الجلسات قبل الدخول؛ وبعد دخول form ناجح ترفع حبة `SpringSessionRememberMeServices` الرسمية (`setAlwaysRemember(true)` — مفتاح «optionally customize» الموثق) الجلسة إلى **2592000 ثانية (30 يوماً منزلقة — افتراض `THIRTY_DAYS_SECONDS` الرسمي)** وتُكتب كوكي `SESSION` بـ**`Max-Age=2147483647`** تلقائياً (وجود الحبة يسلّح `CookieSerializer` الافتراضي — مقيس بايت-كودياً)، والخروج ينهيها فعلاً مع `Clear-Site-Data: "cookies"` على الطلبات الآمنة (النمط الموثق «Using Clear-Site-Data to Clear Cookies»). كلمة المرور `DelegatingPasswordEncoder` مع bcrypt. رصد أحداث المصادقة موثق بـ`AuthenticationEvents` (ناشر Boot التلقائي + مستمع العينة المرجعية)، وخروج edge يتبع RP-initiated الموثق (`OidcClientInitiatedLogoutSuccessHandler` + `{baseUrl}`). وثيقة الحكم الكاملة بكل الاقتباسات الحرفية: `docs/security/spring-security-7.1.1-compliance-audit.md`.
 
 ---
 
