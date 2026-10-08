@@ -12,7 +12,10 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
 
 import java.util.List;
 import java.util.UUID;
@@ -42,19 +45,81 @@ class ReviewsControllerTest {
                 null, null, null, null, null, 0L, 0L);
     }
 
+    /** B-09: a REAL WebRequest over a mock request — checkNotModified's genuine behavior. */
+    private static ServletWebRequest webRequest() {
+        return new ServletWebRequest(new MockHttpServletRequest());
+    }
+
+    /** B-09: a WebRequest whose If-None-Match carries the given ETag header value. */
+    private static ServletWebRequest webRequestMatching(String eTagHeaderValue) {
+        MockHttpServletRequest servlet = new MockHttpServletRequest();
+        servlet.addHeader("If-None-Match", eTagHeaderValue);
+        return new ServletWebRequest(servlet);
+    }
+
     @Test
     void getById_returnsReview() {
         UUID id = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
-        Review review = Review.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 4, "Good");
         ReviewResponse response = response(id);
 
         when(reviewsViewService.getVisible(id, auth)).thenReturn(response);
 
-        ResponseEntity<ReviewResponse> result = controller.getById(id, auth);
+        ResponseEntity<ReviewResponse> result = controller.getById(id, auth, webRequest());
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(response, result.getBody());
+        assertNotNull(result.getHeaders().getETag());
+    }
+
+    /**
+     * B-09 (compliance plan B.3 — the 304 gate): the conditional roundtrip —
+     * the first read answers 200 with the content-fingerprint ETag, and the
+     * revalidation carrying it back answers 304 with NO body.
+     */
+    @Test
+    void getById_conditional_answers304OnTheRevalidation() {
+        UUID id = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        ReviewResponse response = response(id);
+        when(reviewsViewService.getVisible(id, auth)).thenReturn(response);
+
+        ResponseEntity<ReviewResponse> first = controller.getById(id, auth, webRequest());
+        assertEquals(HttpStatus.OK, first.getStatusCode());
+        String eTag = first.getHeaders().getETag();
+        assertNotNull(eTag);
+
+        ResponseEntity<ReviewResponse> revalidated =
+                controller.getById(id, auth, webRequestMatching(eTag));
+
+        assertEquals(HttpStatus.NOT_MODIFIED, revalidated.getStatusCode());
+        assertNull(revalidated.getBody());
+        assertEquals(eTag, revalidated.getHeaders().getETag());
+    }
+
+    /**
+     * B-09 (B.3): the fingerprint is over the CONTENT — a changed row (any
+     * visible field, here the reply) produces a DIFFERENT tag, so the
+     * client's stale If-None-Match gets a fresh 200, never a false 304.
+     */
+    @Test
+    void getById_conditional_contentChangeBreaksTheMatch() {
+        UUID id = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        when(reviewsViewService.getVisible(id, auth)).thenReturn(response(id));
+
+        ResponseEntity<ReviewResponse> first = controller.getById(id, auth, webRequest());
+        String staleTag = first.getHeaders().getETag();
+
+        when(reviewsViewService.getVisible(id, auth)).thenReturn(new ReviewResponse(
+                id, null, null, null, "the provider replied", null, null, null, null,
+                null, null, null, null, null, 0L, 0L));
+
+        ResponseEntity<ReviewResponse> after = controller.getById(id, auth, webRequestMatching(staleTag));
+
+        assertEquals(HttpStatus.OK, after.getStatusCode());
+        assertNotNull(after.getBody());
+        assertNotEquals(staleTag, after.getHeaders().getETag());
     }
 
     @Test
@@ -64,9 +129,35 @@ class ReviewsControllerTest {
         when(reviewsViewService.listByProvider(providerId, pageable))
                 .thenReturn(new PageImpl<>(List.of(response(UUID.randomUUID()))));
 
-        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByProvider(providerId, pageable);
+        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByProvider(providerId, pageable, webRequest());
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    /**
+     * B-09 (B.3 — the 304 gate on the list surface): the page roundtrip —
+     * 200 with the page fingerprint, then the matching revalidation gets
+     * 304 with no body.
+     */
+    @Test
+    void listByProvider_conditional_answers304OnTheRevalidation() {
+        UUID providerId = UUID.randomUUID();
+        PageRequest pageable = PageRequest.of(0, 10);
+        when(reviewsViewService.listByProvider(providerId, pageable))
+                .thenReturn(new PageImpl<>(List.of(response(UUID.randomUUID()))));
+
+        ResponseEntity<PagedResponse<ReviewResponse>> first =
+                controller.listByProvider(providerId, pageable, webRequest());
+        assertEquals(HttpStatus.OK, first.getStatusCode());
+        String eTag = first.getHeaders().getETag();
+        assertNotNull(eTag);
+
+        ResponseEntity<PagedResponse<ReviewResponse>> revalidated =
+                controller.listByProvider(providerId, pageable, webRequestMatching(eTag));
+
+        assertEquals(HttpStatus.NOT_MODIFIED, revalidated.getStatusCode());
+        assertNull(revalidated.getBody());
+        assertEquals(eTag, revalidated.getHeaders().getETag());
     }
 
     @Test
@@ -76,7 +167,7 @@ class ReviewsControllerTest {
         when(reviewsViewService.listByReviewer(reviewerId, pageable, null))
                 .thenReturn(new PageImpl<>(List.of(response(UUID.randomUUID()))));
 
-        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByReviewer(reviewerId, pageable, null);
+        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByReviewer(reviewerId, pageable, null, webRequest());
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
@@ -185,7 +276,7 @@ class ReviewsControllerTest {
         when(reviewsViewService.listByReviewee(consumerId, pageable))
                 .thenReturn(new PageImpl<>(List.of(response(UUID.randomUUID()))));
 
-        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByReviewee(consumerId, pageable);
+        ResponseEntity<PagedResponse<ReviewResponse>> result = controller.listByReviewee(consumerId, pageable, webRequest());
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }

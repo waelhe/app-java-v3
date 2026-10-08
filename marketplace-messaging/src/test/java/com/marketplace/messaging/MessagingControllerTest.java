@@ -172,16 +172,40 @@ class MessagingControllerTest {
         UUID conversationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         Authentication auth = mock(Authentication.class);
-        var request = new MessagingController.SendMessageRequest("Hello");
+        var request = new MessagingController.SendMessageRequest("Hello", null);
         MessageResponse response = new MessageResponse(UUID.randomUUID(), conversationId, userId, "Hello", false, null, null);
 
         when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
-        when(messagingService.sendMessage(conversationId, userId, "Hello")).thenReturn(response);
+        when(messagingService.sendMessage(conversationId, userId, "Hello", null))
+                .thenReturn(new MessagingService.SendMessageOutcome(response, true));
 
         ResponseEntity<MessageResponse> result = controller.sendMessage(conversationId, request, auth);
 
         assertEquals(HttpStatus.CREATED, result.getStatusCode());
         assertEquals(response, result.getBody());
+    }
+
+    /**
+     * B-04 (compliance plan 0.4): the idempotent replay answers 200 with
+     * the ORIGINAL message — the caller's retry with the same key never
+     * produces a duplicate.
+     */
+    @Test
+    void sendMessage_idempotentReplay_returns200WithTheOriginal() {
+        UUID conversationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Authentication auth = mock(Authentication.class);
+        var request = new MessagingController.SendMessageRequest("Hello", "msg-2026-10-07-001");
+        MessageResponse original = new MessageResponse(UUID.randomUUID(), conversationId, userId, "Hello", false, null, null);
+
+        when(currentUserProvider.getCurrentUserId(auth)).thenReturn(userId);
+        when(messagingService.sendMessage(conversationId, userId, "Hello", "msg-2026-10-07-001"))
+                .thenReturn(new MessagingService.SendMessageOutcome(original, false));
+
+        ResponseEntity<MessageResponse> result = controller.sendMessage(conversationId, request, auth);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(original, result.getBody());
     }
 
     @Test

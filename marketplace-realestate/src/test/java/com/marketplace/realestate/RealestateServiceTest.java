@@ -207,4 +207,19 @@ class RealestateServiceTest {
         assertThat(captor.getValue().cacheNames())
                 .containsExactlyInAnyOrderElementsOf(RealestateService.REALESTATE_CACHE_NAMES);
     }
+
+    /**
+     * B-02 (compliance plan 0.2 — the measured defect §3.4-1): the set is
+     * EXACTLY the live search cache name. SearchService caches under
+     * {@code search-results-v5} (its two {@code @Cacheable} sites); the
+     * prior {@code -v4} literal here was a dead name — property writes
+     * evicted nothing and stale search pages rode the full TTL. The literal
+     * is pinned ON PURPOSE: asserting against the constant alone would be
+     * tautological and let the name drift again silently.
+     */
+    @Test
+    void realestateCacheNames_areExactlyTheLiveSearchResultsCacheName() {
+        assertThat(RealestateService.REALESTATE_CACHE_NAMES)
+                .containsExactly("search-results-v5");
+    }
 }

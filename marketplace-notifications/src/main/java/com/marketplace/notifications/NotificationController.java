@@ -72,6 +72,41 @@ public class NotificationController {
     }
 
     /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): delete one
+     * in-app notification — the recipient's own (or an admin's), 204 on
+     * success (the reviews module's {@code unvoteHelpful} house precedent
+     * for the delete status), the BaseEntity soft delete so the audit
+     * trace survives.
+     */
+    @DeleteMapping("/notifications/{id}")
+    @Operation(summary = "Delete a notification", description = "Soft-deletes one in-app "
+            + "notification owned by the caller (404 unknown, 403 someone else's).")
+    public ResponseEntity<Void> delete(@PathVariable UUID id, Authentication authentication) {
+        service.delete(id, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * B-07 (0.8): the feed's clear-all — one bulk UPDATE over the CALLER's
+     * unread rows; the response carries the count marked so the badge
+     * reconciles immediately.
+     */
+    @PostMapping("/notifications/read-all")
+    @Operation(summary = "Mark all my notifications as read", description = "Marks every "
+            + "unread in-app notification of the CALLER as read in one bulk update — the "
+            + "clear-all action; the response carries how many rows were marked.")
+    public ResponseEntity<MarkAllReadResponse> markAllRead(Authentication authentication) {
+        return ResponseEntity.ok(new MarkAllReadResponse(service.markAllAsRead(authentication)));
+    }
+
+    @Schema(description = "The clear-all outcome")
+    public record MarkAllReadResponse(
+            @Schema(description = "How many unread rows were marked read", example = "7")
+            long markedRead
+    ) {
+    }
+
+    /**
      * L22 (feature-expansion roadmap §5, Week 2): the caller's effective
      * notification preference matrix — every type × every channel with the
      * stored override or the enabled default.

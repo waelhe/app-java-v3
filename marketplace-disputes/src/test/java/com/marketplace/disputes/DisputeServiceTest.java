@@ -2,6 +2,7 @@ package com.marketplace.disputes;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
@@ -9,9 +10,11 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
@@ -38,6 +41,9 @@ class DisputeServiceTest {
 
     @Mock
     private PaymentRefundPort paymentRefundPort;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private DisputeService disputeService;
@@ -184,5 +190,121 @@ class DisputeServiceTest {
         assertThrows(ResourceNotFoundException.class,
                 () -> disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication));
         verifyNoInteractions(paymentRefundPort);
+    }
+
+    /**
+     * B-06 (compliance plan 0.7 — Modulith events.html): opening a dispute
+     * publishes DisputeOpenedEvent — the module's first application event
+     * (the measured defect §3.4-5: zero events, nobody could subscribe to
+     * the pipeline's entry).
+     */
+    @Test
+    void open_publishesDisputeOpenedEvent() {
+        UUID bookingId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        BookingInfo info = new BookingInfo(userId, UUID.randomUUID(), "CONFIRMED", 5000L, "SAR", Instant.now(), Instant.now());
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(info);
+        when(repository.save(any(Dispute.class))).thenAnswer(i -> i.getArgument(0));
+
+        disputeService.open(bookingId, "late arrival", authentication);
+
+        ArgumentCaptor<DisputeOpenedEvent> captor = ArgumentCaptor.forClass(DisputeOpenedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(captor.getValue().openedBy()).isEqualTo(userId);
+        assertThat(captor.getValue().disputeId()).isNotNull();
+    }
+
+    /**
+     * B-06 (0.7): the PARTIAL refund activation — the admin's amount flows
+     * to the payments port (which has carried the capability since L24)
+     * and the dispute records the EXECUTED cumulative outcome, exactly as
+     * the full-refund path does.
+     */
+    @Test
+    void resolve_refundConsumer_partialAmount_flowsToTheRefundPortAndRecordsTheOutcome() {
+        UUID disputeId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+        when(paymentRefundPort.refundForBooking(bookingId, 2500L))
+                .thenReturn(new RefundOutcome(paymentId, 2500L));
+
+        Dispute result = disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, 2500L, authentication);
+
+        assertThat(result.getRefundPaymentId()).isEqualTo(paymentId);
+        assertThat(result.getRefundedAmountCents()).isEqualTo(2500L);
+        verify(paymentRefundPort, times(1)).refundForBooking(bookingId, 2500L);
+    }
+
+    /**
+     * B-06 (0.7): money never moves implicitly — an amount on a
+     * non-refund decision is a contract error (400) BEFORE any state
+     * change or refund attempt.
+     */
+    @Test
+    void resolve_amountOnNonRefundDecision_is400BeforeAnyMovement() {
+        UUID disputeId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+
+        assertThrows(BadRequestException.class,
+                () -> disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, 2500L, authentication));
+        verifyNoInteractions(paymentRefundPort);
+        // the guard is a request-shape contract check: it fires BEFORE the
+        // repository is even consulted (no stub needed — Mockito's strict
+        // discipline itself proves the ordering) and the dispute stays OPEN.
+        assertThat(dispute.getStatus()).isEqualTo(DisputeStatus.OPEN);
+        verifyNoInteractions(repository);
+    }
+
+    /**
+     * B-06 (0.7 — the events half's gate): the resolve decision publishes
+     * DisputeResolvedEvent carrying the EXECUTED financial outcome (the
+     * cumulative refunded total on a refund decision; null on the
+     * money-less decisions) — a consumer never re-derives money facts
+     * from the enum.
+     */
+    @Test
+    void resolve_publishesDisputeResolvedEventWithTheExecutedOutcome() {
+        UUID disputeId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+        when(paymentRefundPort.refundForBooking(bookingId, null))
+                .thenReturn(new RefundOutcome(paymentId, 5000L));
+
+        disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, authentication);
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue()).isInstanceOf(DisputeResolvedEvent.class);
+        DisputeResolvedEvent event = (DisputeResolvedEvent) captor.getValue();
+        assertThat(event.disputeId()).isEqualTo(disputeId);
+        assertThat(event.bookingId()).isEqualTo(bookingId);
+        assertThat(event.resolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
+        assertThat(event.refundedAmountCents()).isEqualTo(5000L);
+    }
+
+    /**
+     * B-06 (0.7): the money-less decision publishes the event too — with a
+     * null outcome (RELEASE_PROVIDER: the money stays).
+     */
+    @Test
+    void resolve_moneyLessDecision_publishesTheEventWithNullOutcome() {
+        UUID disputeId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
+
+        disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, authentication);
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        DisputeResolvedEvent event = (DisputeResolvedEvent) captor.getValue();
+        assertThat(event.resolution()).isEqualTo(DisputeResolution.RELEASE_PROVIDER);
+        assertThat(event.refundedAmountCents()).isNull();
     }
 }
