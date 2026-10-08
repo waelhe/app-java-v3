@@ -8,6 +8,11 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
+import org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration;
+import org.springframework.ai.model.google.genai.autoconfigure.chat.GoogleGenAiChatAutoConfiguration;
+import org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
@@ -16,18 +21,18 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
-import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
-import org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration;
 
 @AutoConfiguration(after = {
         ChatClientAutoConfiguration.class,
-        ChatMemoryAutoConfiguration.class
+        ChatMemoryAutoConfiguration.class,
+        GoogleGenAiChatAutoConfiguration.class,
+        DeepSeekChatAutoConfiguration.class
 })
 @ConditionalOnClass(ChatClient.class)
 public class AiAutoConfiguration {
 
     @Bean
-    @ConditionalOnBean({ChatClient.Builder.class, ChatMemory.class})
+    @ConditionalOnBean({ChatModel.class, ChatClient.Builder.class, ChatMemory.class})
     @ConditionalOnMissingBean
     AiChatGateway aiChatGateway(
             ChatClient.Builder builder,
@@ -51,7 +56,7 @@ public class AiAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(ChatClient.Builder.class)
+    @ConditionalOnBean({ChatModel.class, ChatClient.Builder.class})
     @ConditionalOnMissingBean
     AiQueryUnderstanding aiQueryUnderstanding(ChatClient.Builder builder) {
         return new AiQueryUnderstanding(builder);
