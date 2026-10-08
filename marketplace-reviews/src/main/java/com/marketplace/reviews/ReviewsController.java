@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.WebRequest;
 
 import java.util.UUID;
 
@@ -39,32 +40,60 @@ public class ReviewsController {
      * W1 §4.5: the single read rides the visibility gate — a PUBLISHED
      * review is public; a pending/hidden one is the author's own (or an
      * admin's), everyone else gets the honest 404.
+     *
+     * <p>B-09 (compliance plan B.3 — mvc-caching.html): the read is now
+     * CONDITIONAL — the ETag is the response's own content fingerprint
+     * ({@link ReviewEtags#forReview}), and an If-None-Match match answers
+     * 304 with no body (the offline client's one-round-trip revalidation).
      */
     @GetMapping("/{id}")
     @Operation(summary = "Get one review", description = "A single published review with the "
             + "provider reply when one exists. A non-published review is visible to its author "
-            + "and to admins only (404 for everyone else).")
-    public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(reviewsViewService.getVisible(id, authentication));
+            + "and to admins only (404 for everyone else). Conditional: an If-None-Match match "
+            + "answers 304 Not Modified.")
+    public ResponseEntity<ReviewResponse> getById(@PathVariable UUID id, Authentication authentication,
+                                                   WebRequest request) {
+        ReviewResponse response = reviewsViewService.getVisible(id, authentication);
+        return conditional(ReviewEtags.forReview(response), request, response);
+    }
+
+    /**
+     * B-09 (B.3): the shared conditional wiring — checkNotModified on the
+     * content fingerprint: a match answers 304 with the ETag and no body,
+     * otherwise 200 with the ETag set (the client's next revalidation key).
+     */
+    private <T> ResponseEntity<T> conditional(String eTagValue, WebRequest request, T body) {
+        if (request.checkNotModified(eTagValue)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag("\"" + eTagValue + "\"")
+                    .build();
+        }
+        return ResponseEntity.ok()
+                .eTag("\"" + eTagValue + "\"")
+                .body(body);
     }
 
     @GetMapping("/provider/{providerId}")
     @Operation(summary = "List a provider's reviews", description = "Paginated public reviews of a "
             + "provider (consumer-to-provider direction), newest first. PUBLISHED reviews only — "
-            + "a pending or moderator-hidden review is absent.")
+            + "a pending or moderator-hidden review is absent. Conditional: an If-None-Match "
+            + "match answers 304 Not Modified.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByProvider(
-            @PathVariable UUID providerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsViewService.listByProvider(providerId, pageable)));
+            @PathVariable UUID providerId, Pageable pageable, WebRequest request) {
+        PagedResponse<ReviewResponse> page = PagedResponse.of(reviewsViewService.listByProvider(providerId, pageable));
+        return conditional(ReviewEtags.forPage("provider", providerId, page), request, page);
     }
 
     @GetMapping("/reviewer/{reviewerId}")
     @Operation(summary = "List a reviewer's reviews", description = "Paginated reviews written by "
             + "one user. The reviews' author (or an admin) sees every moderation state; everyone "
-            + "else sees the published surface only.")
+            + "else sees the published surface only. Conditional: an If-None-Match match answers "
+            + "304 Not Modified.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewer(
-            @PathVariable UUID reviewerId, Pageable pageable, Authentication authentication) {
-        return ResponseEntity.ok(PagedResponse.of(
-                reviewsViewService.listByReviewer(reviewerId, pageable, authentication)));
+            @PathVariable UUID reviewerId, Pageable pageable, Authentication authentication, WebRequest request) {
+        PagedResponse<ReviewResponse> page = PagedResponse.of(
+                reviewsViewService.listByReviewer(reviewerId, pageable, authentication));
+        return conditional(ReviewEtags.forPage("reviewer", reviewerId, page), request, page);
     }
 
     /**
@@ -75,10 +104,12 @@ public class ReviewsController {
     @GetMapping("/consumer/{consumerId}")
     @Operation(summary = "List the reviews written about a consumer", description = "Paginated "
             + "provider-to-consumer reviews (I8 reverse direction) — the consumer's "
-            + "trust surface: what providers said about them after completed bookings.")
+            + "trust surface: what providers said about them after completed bookings. "
+            + "Conditional: an If-None-Match match answers 304 Not Modified.")
     public ResponseEntity<PagedResponse<ReviewResponse>> listByReviewee(
-            @PathVariable UUID consumerId, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(reviewsViewService.listByReviewee(consumerId, pageable)));
+            @PathVariable UUID consumerId, Pageable pageable, WebRequest request) {
+        PagedResponse<ReviewResponse> page = PagedResponse.of(reviewsViewService.listByReviewee(consumerId, pageable));
+        return conditional(ReviewEtags.forPage("consumer", consumerId, page), request, page);
     }
 
     /**

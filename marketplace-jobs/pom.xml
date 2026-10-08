@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.marketplace</groupId>
+        <artifactId>marketplace-platform</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>marketplace-jobs</artifactId>
+    <name>marketplace-jobs</name>
+
+    <dependencies>
+        <!-- B-12 (compliance plan C.2): OpenAPI annotation vocabulary for the
+             springdoc-generated public client contract (summaries/examples on
+             the mobile-consumed endpoints and request records). Managed at the
+             root (Exception #12) aligned with the springdoc-resolved chain. -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-shared</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-platform-infra</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-envers</artifactId>
+        </dependency>
+
+        <!-- The module-boundary gate for this module standalone (the house
+             ModulithVerificationTest's own machinery, scoped to this module's
+             classpath while the app wiring rides its CR): the core engine
+             resolves the shared named interfaces (shared-api / shared-security
+             / shared-jpa) exactly as the app reactor does. -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.instancio</groupId>
+            <artifactId>instancio-junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -47,12 +47,19 @@ public class RealestateService implements PropertyDetailsPort {
 
     /**
      * A property write changes the faceted-search matching set — the cached
-     * {@code search-results-v4} pages must evict through the existing
+     * {@code search-results-v5} pages must evict through the existing
      * AFTER_COMMIT relay (the same freshness contract every catalog write
      * already carries; L32's facet results are as stale-prone as price).
+     *
+     * <p>B-02 (compliance plan 0.2 — the measured defect §3.4-1): aligned
+     * with the LIVE search cache name {@code search-results-v5} — the name
+     * SearchService's two {@code @Cacheable} sites actually cache under.
+     * The prior {@code -v4} literal was a dead name: property writes
+     * evicted nothing and stale search pages rode the full TTL. The test
+     * pins the literal on purpose — see RealestateServiceTest.
      */
     public static final java.util.Set<String> REALESTATE_CACHE_NAMES =
-            java.util.Set.of("search-results-v4");
+            java.util.Set.of("search-results-v5");
 
     private final PropertyDetailsRepository repository;
     private final ListingPriceProvider listingPriceProvider;

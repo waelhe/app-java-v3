@@ -125,6 +125,32 @@ class ListingSummaryCacheContractFilesTest {
                 .contains("Set.of(\"availability\", \"search-results-v5\")");
     }
 
+    /**
+     * CR-1 (the Track-B developer's request, delivered by Track A per the
+     * parallel plan §5.4 — B-02's drift guard): geo amendments and realestate
+     * property writes must evict the LIVE search cache name
+     * {@code search-results-v5}. The drift class this pins: an eviction set
+     * carrying a dead, unregistered name (the pre-B-02 {@code -v4} literal)
+     * leaves stale search pages for the full TTL and nothing at runtime
+     * rejects it — only a pinned test keeps the eviction names honest, the
+     * same way the four ListingSummary namespaces above are pinned.
+     */
+    @Test
+    void geoAndRealestateWritePathsEvictTheLiveSearchResultsName() throws IOException {
+        String geoService = read("marketplace-geo/src/main/java/com/marketplace/geo/GeoService.java");
+
+        assertThat(geoService)
+                .as("geo's invalidation set carries the LIVE search cache name (CR-1 / B-02)")
+                .contains("Set.of(\"geo-tree\", \"search-results-v5\")");
+
+        String realestateService = read(
+                "marketplace-realestate/src/main/java/com/marketplace/realestate/RealestateService.java");
+
+        assertThat(realestateService)
+                .as("realestate's eviction set carries the LIVE search cache name (CR-1 / B-02)")
+                .contains("Set.of(\"search-results-v5\")");
+    }
+
     private java.util.Set<String> cacheableNames(String source) {
         java.util.Set<String> names = new java.util.LinkedHashSet<>();
         Matcher matcher = CACHEABLE_NAME.matcher(source);

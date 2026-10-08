@@ -13,27 +13,35 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * D6 for the edge: a prod edge without EDGE_CLIENT_SECRET must fail fast at
  * startup — never fall back to an anonymous/secret-less client. Mirrors
  * {@code JwkSourceProdHardeningTest} (marketplace-platform-infra).
+ *
+ * <p>Union note 2026-10-08: the transport-guard trio (httpBackendThrows /
+ * httpsBackendPasses / explicitInsecureHatchPasses) retired with the runner
+ * itself — main's {@code EdgeBackendProperties} binding-time guard owns the
+ * CWE-319 leg now and carries its own {@code EdgeBackendPropertiesTest}
+ * (Boot's Binder utility, the official test idiom). This file pins the
+ * surviving D6 secret guard only.</p>
  */
 class EdgeClientRegistrationTest {
 
     /**
-     * B.2 (compliance plan wave B — the production-parity sandbox): both D6
-     * guards are declared active in {@code prod} AND {@code staging}, so a
-     * deployment that passes the sandbox exercises the exact fail-fast
+     * B.2 (compliance plan wave B — the production-parity sandbox): the D6
+     * secret guard is declared active in {@code prod} AND {@code staging},
+     * so a deployment that passes the sandbox exercises the exact fail-fast
      * posture production exercises. Pinned by annotation reflection so an
-     * accidental profile narrowing regresses loudly.
+     * accidental profile narrowing regresses loudly. (The transport twin's
+     * profile pin moved with it into EdgeBackendPropertiesTest — the
+     * binding-time guard is profile-independent by design, every profile
+     * boot validates it.)
      */
     @Test
-    void theD6GuardsRunInProdAndStaging() throws Exception {
-        for (String guard : new String[] { "edgeProdGuard", "edgeTransportGuard" }) {
-            java.lang.reflect.Method method = EdgeSecurityConfig.class
-                    .getDeclaredMethod(guard, org.springframework.core.env.Environment.class);
-            Profile profile = method.getAnnotation(Profile.class);
-            assertThat(profile).as("%s must declare @Profile", guard).isNotNull();
-            assertThat(profile.value())
-                    .as("%s activation profiles (prod + staging parity)", guard)
-                    .containsExactlyInAnyOrder("prod", "staging");
-        }
+    void theD6GuardRunsInProdAndStaging() throws Exception {
+        java.lang.reflect.Method method = EdgeSecurityConfig.class
+                .getDeclaredMethod("edgeProdGuard", org.springframework.core.env.Environment.class);
+        Profile profile = method.getAnnotation(Profile.class);
+        assertThat(profile).as("edgeProdGuard must declare @Profile").isNotNull();
+        assertThat(profile.value())
+                .as("edgeProdGuard activation profiles (prod + staging parity)")
+                .containsExactlyInAnyOrder("prod", "staging");
     }
 
     @Test
@@ -69,38 +77,6 @@ class EdgeClientRegistrationTest {
         MockEnvironment env = new MockEnvironment().withProperty("EDGE_CLIENT_SECRET", "it-edge-guard-secret");
 
         assertThatCode(() -> new EdgeSecurityConfig().edgeProdGuard(env)
-                .run(new DefaultApplicationArguments()))
-                .doesNotThrowAnyException();
-    }
-
-    @Test
-    void httpBackendThrowsInProd() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("EDGE_BACKEND_URL", "http://backend.internal:8080");
-
-        assertThatThrownBy(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
-                .run(new DefaultApplicationArguments()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("https");
-    }
-
-    @Test
-    void httpsBackendPassesInProd() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("EDGE_BACKEND_URL", "https://backend.internal:8080");
-
-        assertThatCode(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
-                .run(new DefaultApplicationArguments()))
-                .doesNotThrowAnyException();
-    }
-
-    @Test
-    void explicitInsecureHatchPassesInProd() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("EDGE_BACKEND_URL", "http://backend.internal:8080")
-                .withProperty("EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT", "true");
-
-        assertThatCode(() -> new EdgeSecurityConfig().edgeTransportGuard(env)
                 .run(new DefaultApplicationArguments()))
                 .doesNotThrowAnyException();
     }

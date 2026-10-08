@@ -1,7 +1,7 @@
 # Marketplace Backend (app-java-v3)
 
 Local-services marketplace backend: **REST + GraphQL** in a single Spring context,
-built as a **Spring Modulith** of 23 Maven modules (19 domain modules + the app
+built as a **Spring Modulith** of 26 Maven modules (22 domain modules + the app
 assembly + shared contracts + platform infrastructure + the edge BFF).
 
 | | |

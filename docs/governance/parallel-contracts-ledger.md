@@ -24,8 +24,7 @@
 |---|---|---|
 | `AdWindowBilledEvent` | catalog | ledger · payments |
 | `BookingCancelledEvent` | booking | payments |
-| `BookingConfirmedEvent` | booking | notifications (A-03، 2026-10-07 — الواصل المتأخر §5.3: المستمع `onBookingConfirmed` كُتب بيد مسار A في حديقة B لأن الحدث كان بلا مستقبل نهائيًا «حدث بلا مستمع = عيب مقيس»؛ العبور موثق هنا وفي worklog، ومالك الوحدة الأصلي يراجعه §13؛ معه زوج V110/V111 لتوسيع قيد نوع التفضيلات) |
-| `BookingCreatedEvent` | booking | catalog · disputes · notifications · platform-infra |
+| `BookingConfirmedEvent` | booking | notifications (A-03، 2026-10-07 — الواصل المتأخر §5.3: المستمع `onBookingConfirmed` كُتب بيد مسار A في حديقة B لأن الحدث كان بلا مستقبل نهائيًا «حدث بلا مستمع = عيب مقيس»؛ العبور موثق هنا وفي worklog، ومالك الوحدة الأصلي يراجعه §13؛ معه زوج V110/V111 لتوسيع قيد نوع التفضيلات) || `BookingCreatedEvent` | booking | catalog · disputes · notifications · platform-infra |
 | `ContentModeratedEvent` | community | notifications |
 | `FollowedProviderNewListingEvent` | identity | notifications |
 | `ListingActivatedEvent` | catalog | app · community · identity · search |
@@ -36,8 +35,7 @@
 | `PaymentStateChangedEvent` | payments | booking · disputes · ledger · notifications · platform-infra |
 | `OrderCancelledEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderCancelled` كُتب بيد مسار A في حديقة B؛ العبور موثق هنا وفي worklog، ومالك الوحدة الأصلي يراجعه §13؛ معه زوج V114/V115 لتوسيع قيد نوع التفضيلات — سابقة V110/V111) |
 | `OrderConfirmedEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderConfirmed` بالشكل نفسه أعلاه) |
-| `OrderFulfilledEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderFulfilled` بالشكل نفسه أعلاه) |
-| `PostCommentedEvent` | community | notifications (سياسة تعليق الذات عند المستهلك — الحقيقة تُنشر دائمًا) |
+| `OrderFulfilledEvent` | orders | notifications (A-11، 2026-10-08 — الواصل المتأخر §5.3: المستمع `onOrderFulfilled` بالشكل نفسه أعلاه) || `PostCommentedEvent` | community | notifications (سياسة تعليق الذات عند المستهلك — الحقيقة تُنشر دائمًا) |
 | `PostReactedEvent` | community | notifications |
 | `ReviewCreatedEvent` | reviews | app · platform-infra · provider |
 | `ReviewUpdatedEvent` | reviews | app · provider |
@@ -51,6 +49,8 @@
 | `DisputeOpenedEvent` | محلي وحدة disputes (منشور على الواجهة المكشوفة `NamedInterface`) | مقيد بالإضافة فقط؛ **عند أول مستهلك عبر الحدود**: ينتقل السجل إلى `shared/api` (العرف المقيس أعلاه) — النقل بقرار موثق لا اجتهاد |
 | `DisputeResolvedEvent` | محلي وحدة disputes | نفس القاعدة — حاملته تحمل القرار مع نتيجته المالية المنفّذة كي لا يعيد أي مستهلك اشتقاق حقائق المال |
 | `MessageReceivedEvent` | **العقد القانوني مُقرَّر هنا على فرع الأساس (CR-4 — كوميت A-01 نفسه): السجل الكامل في `shared/api/MessageReceivedEvent.java` بحاملة مطابقة بايتًا لبايت لنسخة مسار B المحلية** | الناشر messaging؛ المستهلك notifications يُكمل توصيل السلسلة (إتمام B-08) بعد إعادة تموضع فرع B على رأس الأساس: حذف النسخة المحلية + استيراد السجل المشترك — بلا أي تغيير pom في أي وحدة |
+| `MembershipVerificationGrantedEvent` | community | notifications (B-17، الاتحاد 2026-10-08 — تسجيل الفجوة المقيسة: الحدث العابر كان في `shared/api` والمستمع يعمل دون صف هنا، والسجل نفسه يحكم «كل حدث عابر يسكن السجل ويُقيَّد» — الناشر `NeighborhoodMembershipService` يطلق المنحة على `PENDING -> VERIFIED` و`REJECTED -> VERIFIED` معًا؛ معه زوج `V158`/`V159` لتوسيع قيد النوع) |
+| `ContentReportResolvedEvent` | community | notifications (B-17، الاتحاد 2026-10-08 — نفس الفجوة المقيسة: الناشر `ContentReportService` عبر `ModerationRuleEngine` يطلق الفصل على كل نتيجة — RESOLVED خلف HIDE_CONTENT وDISMISSED خلف DISMISS — والمستمع `onContentReportResolved` يعمل دون صف هنا؛ الصف يُغلق التسجيل بنمط الواصل المتأخر نفسه) |
 
 ### §1.2 أحداث مسار A — تسجيل إضافي (A-04، بتاريخ 2026-10-07)
 
@@ -58,7 +58,6 @@
 |---|---|---|
 | `PasswordResetRequestedEvent` | `shared/api` (كوميت A-04 نفسه) | الناشر identity؛ المستهلك notifications (مستمع `onPasswordResetRequested`) — حملة استثناء موثقة من عرف «معرّفات فقط»: الرابط أحادي الاستخدام هو **مضمون البريد** لا معرّف عمل قابل للاشتقاق، وسقف بقائه في سجل النشر مقيس على دورة الإكمال الرسمية (archive + النقاء اليومي القائم 7 أيام؛ delete في dev) وخلوده الذاتي TTL (30 د قياساً افتراضياً) |
 | `EmailVerificationRequestedEvent` | `shared/api` (كوميت A-04 نفسه) | الناشر identity (ولادة register المحتجزة + سطح resend المجهول)؛ المستهلك notifications (مستمع `onEmailVerificationRequested`) — نفس حكم الحملة والسقف؛ ومعه ثابت «الحظر ضد التحقق» المقيس: آخر سجل رمز مستهلَد = الحالة، والأسطح الإدارية (تعطيل/مجهولة) تُستهلك الرموز القائمة داخل معاملاتها فلا يمكن للتحقق إعادة تمكين ما أغلقه إداري |
-
 **قاعدة الواصل المتأخر (late-lander):** أي حدث عابر جديد (مثال قادم: أحداث C.9/C.11/C.12 من موجات خطة المطابقة): من يصل أخيرًا إلى التقاطع يكتب المستمع في وحدة الطرف الآخر — عبور موثق هنا وفي worklog، والمالك الأصلي للوحدة يراجعه (خطة التنفيذ §5.3).
 
 ---

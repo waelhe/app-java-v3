@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -99,13 +100,18 @@ public class MessagingController {
 
     @PostMapping("/conversations/{conversationId}/messages")
     @Operation(summary = "Send a message", description = "Sends a chat message to a conversation "
-            + "the caller participates in; the other participant is notified.")
+            + "the caller participates in; the other participant is notified. The optional "
+            + "idempotencyKey is the caller's deduplication surface: a retried submission with "
+            + "the same key returns the ORIGINAL message (200) instead of a duplicate (201) — "
+            + "the payment_intents contract.")
     public ResponseEntity<MessageResponse> sendMessage(@PathVariable UUID conversationId,
                                                        @Valid @RequestBody SendMessageRequest request,
                                                        Authentication authentication) {
         UUID senderId = currentUserProvider.getCurrentUserId(authentication);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(messagingService.sendMessage(conversationId, senderId, request.content()));
+        MessagingService.SendMessageOutcome outcome =
+                messagingService.sendMessage(conversationId, senderId, request.content(), request.idempotencyKey());
+        return ResponseEntity.status(outcome.newlyCreated() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(outcome.message());
     }
 
     @PostMapping("/conversations/{conversationId}/read")
@@ -137,7 +143,17 @@ public class MessagingController {
     @Schema(description = "Outbound chat message")
     public record SendMessageRequest(
             @Schema(description = "Message body (plain text)", example = "Hi! Is early check-in possible?")
-            @NotBlank String content
+            @NotBlank String content,
+            // The size contract matches the V150 column exactly (VARCHAR(64)):
+            // a longer key used to ride to the INSERT and surface as a 500-
+            // flavored length violation; a blank one used to be stored as a
+            // real key. Null stays valid — the key is optional.
+            @Size(min = 1, max = 64)
+            @Schema(description = "Optional replay key — the caller's deduplication surface: a "
+                    + "retried submission with the same key returns the original message instead "
+                    + "of a duplicate (mirrors payment_intents' idempotencyKey)",
+                    example = "msg-2026-10-07-001")
+            String idempotencyKey
     ) {
     }
 

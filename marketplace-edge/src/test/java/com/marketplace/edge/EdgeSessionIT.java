@@ -29,6 +29,8 @@ import org.springframework.session.data.redis.RedisSessionRepository;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -97,7 +99,11 @@ class EdgeSessionIT {
         registry.add("AUTH_SERVER_ISSUER", backend::baseUrl);
         registry.add("EDGE_CLIENT_SECRET", () -> "test-secret");
         registry.add("spring.autoconfigure.exclude",
-                () -> "org.springframework.boot.session.data.redis.autoconfigure.SessionDataRedisAutoConfiguration");
+                () -> "org.springframework.boot.session.data.redis.autoconfigure.SessionDataRedisAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration," +
+                        "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration");
     }
 
     @AfterAll
@@ -107,6 +113,11 @@ class EdgeSessionIT {
 
     @Autowired
     MockMvc mockMvc;
+
+    // The persistent (JDBC) authorized-client service needs a database; these
+    // container-free tests replace it with the official @MockitoBean override.
+    @MockitoBean
+    OAuth2AuthorizedClientService authorizedClientService;
 
     // The REAL, property-built registration repository (its discovery
     // metadata is served by the WireMock stub above, including the
@@ -240,10 +251,19 @@ class EdgeSessionIT {
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration,"
+                + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration")
 class EdgeSessionBackendSelectionTest {
 
     @MockitoBean
     ClientRegistrationRepository clientRegistrationRepository;
+
+    // The persistent (JDBC) authorized-client service needs a database; these
+    // container-free tests replace it with the official @MockitoBean override.
+    @MockitoBean
+    OAuth2AuthorizedClientService authorizedClientService;
 
     // Declared so a missing Redis bean fails compilation of intent, not just
     // the assertion: the test classpath must see the production backend type.

@@ -96,4 +96,32 @@ class NotificationControllerTest {
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(matrix);
     }
+
+    /**
+     * B-07 (compliance plan 0.8): the delete answers 204 — the reviews
+     * module's house precedent for the delete status.
+     */
+    @Test
+    void deleteReturnsNoContentAndDelegates() {
+        UUID id = UUID.randomUUID();
+
+        ResponseEntity<Void> result = controller.delete(id, authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(service).delete(id, authentication);
+    }
+
+    /**
+     * B-07 (0.8): the clear-all response carries the marked count.
+     */
+    @Test
+    void markAllReadReturnsTheMarkedCount() {
+        when(service.markAllAsRead(authentication)).thenReturn(7);
+
+        ResponseEntity<NotificationController.MarkAllReadResponse> result =
+                controller.markAllRead(authentication);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody().markedRead()).isEqualTo(7L);
+    }
 }

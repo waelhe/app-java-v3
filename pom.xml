@@ -38,6 +38,9 @@
         <module>marketplace-geo</module>
         <module>marketplace-realestate</module>
         <module>marketplace-community</module>
+        <module>marketplace-jobs</module>
+        <module>marketplace-knowledge</module>
+        <module>marketplace-console</module>
         <module>marketplace-ai</module>
         <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
         <module>marketplace-orders</module>
@@ -523,6 +526,24 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-community</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-12 wiring (CR): the jobs module's managed version entry -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-jobs</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-15 wiring (CR): the knowledge module's managed version entry -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-knowledge</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-16 wiring (CR): the console module's managed version entry -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-console</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

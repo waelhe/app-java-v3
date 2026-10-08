@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -95,7 +96,11 @@ class EdgeRelayIT {
         // exclusion was measured as not applied, while the identical key via
         // env/DynamicPropertySource excludes correctly.)
         registry.add("spring.autoconfigure.exclude",
-                () -> "org.springframework.boot.session.data.redis.autoconfigure.SessionDataRedisAutoConfiguration");
+                () -> "org.springframework.boot.session.data.redis.autoconfigure.SessionDataRedisAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration," +
+                        "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration," +
+                        "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration");
     }
 
     @AfterAll
@@ -112,6 +117,11 @@ class EdgeRelayIT {
     // live SAS round-trip is needed.
     @MockitoBean
     OAuth2AuthorizedClientManager authorizedClientManager;
+
+    // The persistent (JDBC) authorized-client service needs a database; these
+    // container-free tests replace it with the official @MockitoBean override.
+    @MockitoBean
+    OAuth2AuthorizedClientService authorizedClientService;
 
     // Test-scope transport pin (prod untouched): Gateway 5.0.3 builds its proxy
     // RestClient from Boot's RestClient.Builder via

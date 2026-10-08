@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewLookupPort;
 import io.micrometer.observation.annotation.Observed;
@@ -69,19 +70,22 @@ public class ContentReportService {
     private final ReviewLookupPort reviewLookupPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final ModerationRuleEngine moderationRuleEngine;
 
     public ContentReportService(ContentReportRepository reportRepository,
                                 NeighborhoodPostRepository postRepository,
                                 PostCommentRepository commentRepository,
                                 ReviewLookupPort reviewLookupPort,
                                 ApplicationEventPublisher eventPublisher,
-                                Clock clock) {
+                                Clock clock,
+                                ModerationRuleEngine moderationRuleEngine) {
         this.reportRepository = reportRepository;
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.reviewLookupPort = reviewLookupPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
+        this.moderationRuleEngine = moderationRuleEngine;
     }
 
     /**
@@ -106,6 +110,15 @@ public class ContentReportService {
                 });
         ContentReport saved = reportRepository.save(
                 ContentReport.report(reporterId, targetType, targetId, reason));
+        // B-19 wiring (the engine's own documented contract — "the
+        // evaluation rides the creation command's own transaction"): the
+        // rule evaluation runs INSIDE this command's unit, so the report's
+        // creation, the content flip and every resolve land together or
+        // not at all. A registered live rule at or past its distinct-
+        // reporter threshold fires the automatic action here — without
+        // this call the whole rule machine is dead code in production
+        // (the CodeRabbit-measured gap).
+        moderationRuleEngine.evaluate(saved);
         return ContentReportView.of(saved);
     }
 
@@ -138,6 +151,18 @@ public class ContentReportService {
                 report.resolve(ReportStatus.RESOLVED, note, adminId, clock);
             }
         }
+        // B-17 (C.9 — the CodeRabbit round-1 adoption closing the wiring gap
+        // the review measured): the REPORTER's adjudication fact publishes on
+        // the HUMAN path exactly as the engine's automatic path already does
+        // — every outcome fires it (RESOLVED behind HIDE_CONTENT, DISMISSED
+        // behind DISMISS), because the reporter's journey is «my report left
+        // the queue», whichever way the verdict went. Published inside the
+        // resolver's own transaction (Modulith reference/events.html): the
+        // registry entry commits atomically with the report's close.
+        eventPublisher.publishEvent(new ContentReportResolvedEvent(
+                report.getId(), report.getReporterId(),
+                report.getTargetType().name(), report.getTargetId(),
+                report.getStatus().name()));
         return ContentReportView.of(reportRepository.save(report));
     }
 

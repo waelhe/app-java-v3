@@ -3,9 +3,12 @@ package com.marketplace.notifications;
 import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
+import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
@@ -280,4 +283,71 @@ public class NotificationEventListener {
                 event.recipientId(), event.listingId());
     }
 
+
+    /**
+     * B-08 (compliance plan 0.10 — the CR-4 wiring, completing the arrival
+     * chain end to end): the recipient's MESSAGE_RECEIVED alert. The event
+     * record lives in shared/api (the house convention for cross-boundary
+     * events, measured on every record this listener already consumes) —
+     * the notifications pom carries no messaging dependency, so the shared
+     * placement needs no pom change anywhere. Same contract as the
+     * listeners above — after commit, its own transaction, the framework's
+     * retry: a failed delivery never loses the arrival notification.
+     */
+    @ApplicationModuleListener
+    public void onMessageReceived(MessageReceivedEvent event) {
+        notificationService.onMessageReceived(event.conversationId(), event.recipientId());
+        log.info("Notification sent for message received: messageId={}, conversationId={}",
+                event.messageId(), event.conversationId());
+    }
+
+    /**
+     * B-17 (compliance plan C.9 — the CodeRabbit round-1 adoption landing
+     * the CR-10 crossing): the member's MEMBERSHIP_VERIFIED notification —
+     * the grant verdict's own journey's arrival point (the platform
+     * identity §0.1 rule: a notification for every event; an event without
+     * a listener is a measured defect). The event record lives in
+     * shared/api (the CR-4 placement, the MessageReceivedEvent flow
+     * verbatim — no pom change anywhere) and is published by
+     * {@code NeighborhoodMembershipService.reviewVerification} on the
+     * approve direction inside the reviewer's own transaction. Same
+     * contract as the listeners above — after commit, its own transaction,
+     * the framework's retry: a failed delivery never loses the verified
+     * member's notification (the registry entry stays incomplete until
+     * the listener succeeds). The delivery itself is unconditional — the
+     * recipient arrives resolved at the source (the event carries the
+     * complete trust fact), keeping the delivery contract one shape for
+     * every caller.
+     */
+    @ApplicationModuleListener
+    public void onMembershipVerificationGranted(MembershipVerificationGrantedEvent event) {
+        notificationService.onVerificationGranted(event.userId(), event.locationId());
+        log.info("Notification sent for membership verification granted: membershipId={}, userId={}, "
+                        + "locationId={}", event.membershipId(), event.userId(), event.locationId());
+    }
+
+    /**
+     * B-17 (compliance plan C.9 — the CodeRabbit round-1 adoption landing
+     * the CR-10 crossing): the REPORTER's REPORT_RESOLVED notification —
+     * every resolve outcome is the reporter's journey's arrival
+     * ({@code RESOLVED} behind {@code HIDE_CONTENT} and {@code DISMISSED}
+     * behind {@code DISMISS} alike; distinct from the author's
+     * CONTENT_MODERATED alert, which is the hide fact alone). Both
+     * publication paths fire it — the human
+     * {@code ContentReportService.resolveReport} and the automatic
+     * {@code ModerationRuleEngine} — and the event record lives in
+     * shared/api (the CR-4 placement, the MessageReceivedEvent flow
+     * verbatim — no pom change anywhere). Same contract as the listeners
+     * above — after commit, its own transaction, the framework's retry: a
+     * failed delivery never loses the reporter's adjudication
+     * notification (the registry entry stays incomplete until the
+     * listener succeeds).
+     */
+    @ApplicationModuleListener
+    public void onContentReportResolved(ContentReportResolvedEvent event) {
+        notificationService.onReportResolved(
+                event.reporterId(), event.targetType(), event.targetId(), event.outcome());
+        log.info("Notification sent for content report resolved: reportId={}, reporterId={}, "
+                        + "outcome={}", event.reportId(), event.reporterId(), event.outcome());
+    }
 }

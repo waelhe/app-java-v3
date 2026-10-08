@@ -6,6 +6,7 @@ import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.UserSummary;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.Test;
@@ -259,7 +260,7 @@ class MessagingServiceTest {
                 .create();
 
         when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
-        when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.saveAndFlush(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
         when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
             Message saved = inv.getArgument(0);
             return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
@@ -287,6 +288,218 @@ class MessagingServiceTest {
 
         assertThrows(AccessDeniedException.class,
                 () -> service.sendMessage(conv.getId(), outsider, "hack"));
+    }
+
+    /**
+     * B-04 (compliance plan 0.4 — Data JPA jpa/locking.html): the first
+     * keyed submission persists the replay surface WITH the message and
+     * broadcasts once; the sequential replay (below) and the in-flight
+     * race (V150's UNIQUE index + @Version on every row) close the
+     * duplication story end to end.
+     */
+    @Test
+    void sendMessage_withKey_persistsTheReplaySurfaceAndBroadcastsOnce() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findBySenderIdAndIdempotencyKey(participantA, "msg-2026-10-07-001"))
+                .thenReturn(Optional.empty());
+        when(messageRepository.saveAndFlush(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        assertTrue(outcome.newlyCreated());
+        org.mockito.ArgumentCaptor<Message> captor = org.mockito.ArgumentCaptor.forClass(Message.class);
+        // The write rides MessageSendWriter's REQUIRES_NEW unit — flushed
+        // inside persist() so the unique violation surfaces there, not at
+        // the caller's commit (the round-1 adoption's own shape).
+        verify(messageRepository).saveAndFlush(captor.capture());
+        assertEquals("msg-2026-10-07-001", captor.getValue().getIdempotencyKey());
+        assertEquals(participantA, captor.getValue().getSenderId());
+        verify(messagingTemplate).convertAndSend(eq("/topic/conversations/" + conv.getId()), any(Object.class));
+    }
+
+    /**
+     * B-04 (0.4): the sequential retry — same key, same sender — returns
+     * the ORIGINAL message (same id), saves nothing, and never re-broadcasts
+     * (the topic already carries the original push; a second broadcast
+     * would duplicate it for every other subscriber).
+     */
+    @Test
+    void sendMessage_replayedKey_returnsTheOriginalWithoutDuplicateOrRebroadcast() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        Message original = Message.create(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findBySenderIdAndIdempotencyKey(participantA, "msg-2026-10-07-001"))
+                .thenReturn(Optional.of(original));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantA, "Hello! (client retried)", "msg-2026-10-07-001");
+
+        assertFalse(outcome.newlyCreated());
+        assertEquals(original.getId(), outcome.message().id());
+        verify(messageRepository, never()).saveAndFlush(any());
+        verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        // B-08: the replay never re-publishes the arrival fact either —
+        // the original send already notified the recipient.
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /**
+     * B-08 (compliance plan 0.10 — the unit's publication gate): every
+     * real send publishes the arrival fact with the recipient resolved at
+     * the source — the OTHER participant, never the sender. The replay
+     * (above) never re-publishes.
+     */
+    @Test
+    void sendMessage_publishesMessageReceivedEventForTheOtherParticipant() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.saveAndFlush(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        service.sendMessage(conv.getId(), participantA, "Hello!");
+
+        org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertTrue(captor.getValue() instanceof MessageReceivedEvent);
+        MessageReceivedEvent event = (MessageReceivedEvent) captor.getValue();
+        assertEquals(conv.getId(), event.conversationId());
+        assertEquals(participantA, event.senderId());
+        assertEquals(participantB, event.recipientId());
+        assertNotNull(event.messageId());
+    }
+
+    /**
+     * B-04 (0.4 — the CodeRabbit round-1 root adoption): ONE KEY SPACE PER
+     * SENDER. A client-chosen key such as "msg-2026-10-07-001" is
+     * realistic to collide across senders — the second sender's message is
+     * LEGITIMATE, so his own key space answers 201 with his own new
+     * message (never the first sender's 403, which also leaked that
+     * another user had burned the key). The lookup and the V150
+     * uq_messages_sender_idempotency_key constraint share the same
+     * (sender_id, idempotency_key) scope.
+     */
+    @Test
+    void sendMessage_sameKeyOfAnotherSender_isHisOwnNewMessage() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        Message firstSendersMessage = Message.create(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        // participantB's own key space is EMPTY for the same literal key...
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        when(messageRepository.findBySenderIdAndIdempotencyKey(participantB, "msg-2026-10-07-001"))
+                .thenReturn(Optional.empty());
+        when(messageRepository.saveAndFlush(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        // ...so his send lands as HIS new message — the arrival fact goes
+        // to participantA (the other participant), never to himself.
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantB, "mine now", "msg-2026-10-07-001");
+
+        assertTrue(outcome.newlyCreated());
+        assertEquals(participantB, outcome.message().senderId());
+        org.mockito.ArgumentCaptor<Object> eventCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        MessageReceivedEvent event = (MessageReceivedEvent) eventCaptor.getValue();
+        assertEquals(participantA, event.recipientId());
+        // the first sender's row was never touched — his key space is intact
+        org.mockito.ArgumentCaptor<Message> savedCaptor = org.mockito.ArgumentCaptor.forClass(Message.class);
+        verify(messageRepository).saveAndFlush(savedCaptor.capture());
+        assertEquals(participantB, savedCaptor.getValue().getSenderId());
+        assertEquals("msg-2026-10-07-001", savedCaptor.getValue().getIdempotencyKey());
+    }
+
+    /**
+     * B-04 (0.4 — the CodeRabbit round-1 root adoption): the in-flight
+     * race. Two concurrent same-key requests both miss the replay lookup;
+     * the loser's INSERT takes the unique violation at ITS OWN flush (the
+     * MessageSendWriter REQUIRES_NEW unit) — and the loser still gets the
+     * documented 200 replay: the catch re-reads the winner's committed row
+     * in a fresh transaction. Never a 409/500-flavored error for a
+     * legitimate retry, never a duplicate broadcast, never a second
+     * arrival fact.
+     */
+    @Test
+    void sendMessage_concurrentSameKeyRace_loserReplaysTheWinnersRow() {
+        UUID participantA = Instancio.create(UUID.class);
+        UUID participantB = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), participantA)
+                .set(field(Conversation::getParticipantB), participantB)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+        Message winner = Message.create(conv.getId(), participantA, "Hello!", "msg-2026-10-07-001");
+
+        when(conversationRepository.findById(conv.getId())).thenReturn(Optional.of(conv));
+        // first read: the race's both-miss; second read (the writer's fresh
+        // replay transaction): the winner's committed row
+        when(messageRepository.findBySenderIdAndIdempotencyKey(participantA, "msg-2026-10-07-001"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        when(messageRepository.saveAndFlush(any(Message.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "uq_messages_sender_idempotency_key lost the race"));
+        when(messageMapper.toResponse(any(Message.class))).thenAnswer(inv -> {
+            Message saved = inv.getArgument(0);
+            return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                    saved.getContent(), saved.isRead(), saved.getCreatedAt(), saved.getUpdatedAt());
+        });
+
+        MessagingService.SendMessageOutcome outcome =
+                service.sendMessage(conv.getId(), participantA, "Hello! (raced)", "msg-2026-10-07-001");
+
+        assertFalse(outcome.newlyCreated());
+        assertEquals(winner.getId(), outcome.message().id());
+        // the loser never re-broadcasts (the winner's push already reached
+        // the topic) and never re-publishes the arrival fact
+        verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -356,11 +569,39 @@ class MessagingServiceTest {
                 .create();
 
         when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
-        when(messageRepository.countByConversationIdAndReadFalse(conversationId)).thenReturn(5L);
+        when(messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId)).thenReturn(5L);
 
         long count = service.getUnreadCount(conversationId, userId);
 
         assertEquals(5L, count);
+    }
+
+    /**
+     * B-03 (compliance plan 0.3 — the measured defect §3.4-2): the caller's
+     * own sent messages never count toward her badge. The service must
+     * hand the CALLER's id to the sender-excluding derived method — the
+     * repository derivation (SenderIdNot) is the Data JPA documented
+     * contract; the app-level IT (DirectConversationModuleIntegrationTest)
+     * proves the end-to-end badge against a real database.
+     */
+    @Test
+    void getUnreadCount_excludesTheCallersOwnSentMessages() {
+        UUID conversationId = Instancio.create(UUID.class);
+        UUID userId = Instancio.create(UUID.class);
+        Conversation conv = Instancio.of(Conversation.class)
+                .set(field(Conversation::getParticipantA), userId)
+                .set(field(Conversation::getBookingId), null)
+                .create();
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conv));
+        when(messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId)).thenReturn(0L);
+
+        long count = service.getUnreadCount(conversationId, userId);
+
+        // She sent the only unread message → her badge is 0: the caller's id
+        // is the EXCLUDED sender argument, not just a participation check.
+        assertEquals(0L, count);
+        verify(messageRepository).countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId);
     }
 
     @Test

@@ -134,6 +134,22 @@ class GeoServiceTest {
                 .containsExactlyInAnyOrderElementsOf(GeoService.GEO_CACHE_NAMES);
     }
 
+    /**
+     * B-02 (compliance plan 0.2 — the measured defect §3.4-1): the set must
+     * carry the LIVE search cache name. SearchService caches under
+     * {@code search-results-v5} (its two {@code @Cacheable} sites); the
+     * prior {@code -v4} literal here was a dead name — create/update/delete
+     * amendments evicted nothing and stale search pages rode the full TTL.
+     * The literal is pinned ON PURPOSE: asserting against the constant
+     * alone would be tautological and let the name drift again silently.
+     */
+    @Test
+    void geoCacheNames_carryTheLiveSearchResultsCacheName() {
+        assertThat(GeoService.GEO_CACHE_NAMES)
+                .contains("geo-tree", "search-results-v5")
+                .doesNotContain("search-results-v4");
+    }
+
     @Test
     void delete_withChildren_is409NoDeletion() {
         UUID id = city.getId();

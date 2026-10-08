@@ -86,8 +86,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the SAME channel's post-targeted declare, its own command point:
  *       the member flow's author gate and per-post position lock are its
  *       own work, measured apart from the provider flow's)</li> *   <li>messaging — send</li>
- *   <li>notifications — mark.read, preferences.update (L22 — the
- *       per-channel unsubscribe switch write)</li>
+ *   <li>jobs — create, close, application.create, application.move,
+ *       application.withdraw (B-12 — the employment vertical's five
+ *       commands, the reviews-pattern module)</li>
+ *   <li>notifications — delete, mark.all.read, mark.read, preferences.update
+ *       (delete + mark.all.read are B-07's feed pair; preferences.update is L22 —
+ *       the per-channel unsubscribe switch write)</li>
  *   <li>payments — process, confirm, cancel; psp.create + psp.webhook
  *       (layer 9 — the real PSP channel; the webhook observation lives on
  *       the Stripe entry point, not the shared dispatch helper, so the
@@ -148,7 +152,16 @@ class ObservationCoverageFilesTest {
                     "community.poll.create", "community.poll.vote", "community.poll.withdraw",
                     "community.post.comment", "community.post.create", "community.post.delete",
                     "community.post.react", "community.post.unreact",
-                    "community.report.create", "community.report.resolve")),
+                    // B-19 (compliance plan C.11): the automatic moderation
+                    // rules' operator commands — register/revise/toggle/retire.
+                    // The engine's own evaluation rides the creation command's
+                    // span (community.report.create) exactly as the human
+                    // resolve's hide rides community.report.resolve: the
+                    // commands-not-reads policy, the automatic action a side
+                    // effect of the report's creation.
+                    "community.report.create", "community.report.resolve",
+                    "community.rule.register", "community.rule.retire",
+                    "community.rule.toggle", "community.rule.update")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "email.verification.complete", "email.verification.resend", "email.verification.send",
@@ -156,6 +169,32 @@ class ObservationCoverageFilesTest {
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
                     "user.self.deletion", "user.status.update", "user.sync.oidc")),
+            // B-13 (compliance plan C.3): the institution registry's three
+            // business commands (register + the verification request + the
+            // review verdict) — the module is not yet in the app reactor
+            // (CR-7's wiring rows), but this guard scans the source tree:
+            // the pin carries the commands from the day they exist.
+            Map.entry("marketplace-institutions", List.of(
+                    "institution.register", "institution.verification.request",
+                    "institution.verification.review")),
+            // B-14 (compliance plan C.4): the knowledge guide's three
+            // business commands (the contribution + the revision + the
+            // withdrawal) — the same source-tree-scan discipline.
+            Map.entry("marketplace-knowledge", List.of(
+                    "knowledge.entry.create", "knowledge.entry.update",
+                    "knowledge.entry.withdraw")),
+            // B-15 (compliance plan C.5): the console's business commands
+            // (the flag/config/geo-setting registrations + updates) — the
+            // reads (view/flags/metrics/audit/effective) carry no
+            // observation by the commands-not-reads policy. B-18 (C.10)
+            // adds the geographic setting pair.
+            Map.entry("marketplace-console", List.of(
+                    "console.config.register", "console.config.update",
+                    "console.flag.register", "console.flag.update",
+                    "console.geo.setting.register", "console.geo.setting.update")),
+            Map.entry("marketplace-jobs", List.of(
+                    "job.application.create", "job.application.move",
+                    "job.application.withdraw", "job.close", "job.create")),
             Map.entry("marketplace-ledger", List.of(
                     "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund")),
             Map.entry("marketplace-media", List.of(
@@ -169,6 +208,7 @@ class ObservationCoverageFilesTest {
                     // commands-not-reads policy).
                     "order.cancel", "order.confirm", "order.fulfill", "order.place")),
             Map.entry("marketplace-notifications", List.of(
+                    "notification.delete", "notification.mark.all.read",
                     "notification.mark.read", "notification.preferences.update")),
             Map.entry("marketplace-payments", List.of(
                     "payment.cancel", "payment.confirm", "payment.fail", "payment.process",

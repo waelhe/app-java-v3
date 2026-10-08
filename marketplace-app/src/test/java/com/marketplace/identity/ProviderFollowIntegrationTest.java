@@ -373,6 +373,10 @@ class ProviderFollowIntegrationTest {
         // ("داخل التطبيق دائمًا"). The PUT itself also proves V93's widened
         // CHECK accepts the ninth type on the real Flyway schema — the
         // row write is the DB-side half of the type addition's contract.
+        // The read-back matrix is twelve types x three channels = 36 rows
+        // (B-11 added MESSAGE_RECEIVED via V151/V152; B-17 added
+        // MEMBERSHIP_VERIFIED + REPORT_RESOLVED via V158/V159 — the
+        // measured 27-to-36 CI shift of PR-B's extension wave).
         UUID listingId = seedDraftListing();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerUserId);
         mockMvc.perform(put("/api/v1/notifications/preferences")
@@ -381,7 +385,7 @@ class ProviderFollowIntegrationTest {
                         .content("{\"preferences\": [{\"type\": \"FOLLOWED_PROVIDER_NEW_LISTING\", "
                                 + "\"channel\": \"WS\", \"enabled\": false}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(27));
+                .andExpect(jsonPath("$.length()").value(36));
 
         follow();
         activateListing(listingId);
