@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,7 +30,8 @@ class MarketplaceSearchToolsTest {
 
         MarketplaceSearchTools tools = new MarketplaceSearchTools(port);
         MarketplaceSearchTools.MarketplaceSearchResult result =
-                tools.searchListings("laptop", null, null, null, null);
+                tools.searchListings("laptop", null, null, null, null,
+                        new ToolContext(Map.of("userId", "11111111-1111-1111-1111-111111111111")));
 
         assertThat(result.listings()).containsExactly(listing);
         assertThat(result.totalMatches()).isEqualTo(1L);
@@ -49,7 +51,8 @@ class MarketplaceSearchToolsTest {
 
         MarketplaceSearchTools tools = new MarketplaceSearchTools(port);
         MarketplaceSearchTools.MarketplaceSearchResult result =
-                tools.searchListings(null, "real-estate", null, null, null);
+                tools.searchListings(null, "real-estate", null, null, null,
+                        new ToolContext(Map.of("userId", "11111111-1111-1111-1111-111111111111")));
 
         assertThat(result.listings()).containsExactly(listing);
         verify(port).searchByCriteria(any(SearchCriteria.class),
@@ -57,3 +60,4 @@ class MarketplaceSearchToolsTest {
                         request -> request.page() == 0 && request.size() == 5));
     }
 }
+
