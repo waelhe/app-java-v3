@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -38,6 +39,15 @@ class MarketplaceSearchToolsTest {
         verify(port).searchFullText(any(SearchCriteria.class),
                 org.mockito.ArgumentMatchers.argThat(
                         request -> request.page() == 0 && request.size() == 5));
+    }
+
+    @Test
+    void requiresNonModelUserContext() {
+        MarketplaceSearchTools tools = new MarketplaceSearchTools(mock(CatalogSearchPort.class));
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tools.searchListings("laptop", null, null, null, null, null))
+                .withMessage("toolContext must not be null");
     }
 
     @Test
