@@ -272,7 +272,7 @@ class JobsServiceTest {
                 PageRequest.of(0, 20)))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Job not found");
-        verify(applicationRepository, never()).findByJobId(any(), any());
+        verify(applicationRepository, never()).findByJobIdOrderByCreatedAtDescIdDesc(any(), any());
     }
 
     @Test
@@ -392,7 +392,7 @@ class JobsServiceTest {
 
         // 4. The employer reads the inbox and decides.
         callerIs(EMPLOYER_ID);
-        when(applicationRepository.findByJobId(job.getId(), PageRequest.of(0, 20)))
+        when(applicationRepository.findByJobIdOrderByCreatedAtDescIdDesc(job.getId(), PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(application), PageRequest.of(0, 20), 1));
         assertThat(service.jobInbox(job.getId(), authentication, null, PageRequest.of(0, 20)))
                 .hasSize(1);

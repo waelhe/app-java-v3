@@ -162,8 +162,8 @@ public class JobsService {
                 .filter(j -> j.getEmployerId().equals(employerId))
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + jobId));
         return status != null
-                ? applicationRepository.findByJobIdAndStatus(jobId, status, pageable)
-                : applicationRepository.findByJobId(jobId, pageable);
+                ? applicationRepository.findByJobIdAndStatusOrderByCreatedAtDescIdDesc(jobId, status, pageable)
+                : applicationRepository.findByJobIdOrderByCreatedAtDescIdDesc(jobId, pageable);
     }
 
     /** The seeker's own applications — every job they applied to, optionally filtered. */
@@ -172,8 +172,8 @@ public class JobsService {
                                                ApplicationStatus status, Pageable pageable) {
         UUID seekerId = currentUserProvider.getCurrentUserId(authentication);
         return status != null
-                ? applicationRepository.findBySeekerIdAndStatus(seekerId, status, pageable)
-                : applicationRepository.findBySeekerId(seekerId, pageable);
+                ? applicationRepository.findBySeekerIdAndStatusOrderByCreatedAtDescIdDesc(seekerId, status, pageable)
+                : applicationRepository.findBySeekerIdOrderByCreatedAtDescIdDesc(seekerId, pageable);
     }
 
     /**
