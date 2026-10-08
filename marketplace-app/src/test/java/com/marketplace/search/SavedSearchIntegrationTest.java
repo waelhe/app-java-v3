@@ -252,7 +252,7 @@ class SavedSearchIntegrationTest {
         String message = jdbc.queryForObject(
                 "SELECT message FROM notifications WHERE recipient_id = ? AND type = 'SAVED_SEARCH_MATCH'",
                 String.class, consumerUserId);
-        assertThat(message).contains("2").contains("saved searches");
+        assertThat(message).contains("2").contains("بحوثك المحفوظة");
         // the WS push behind the L22 preference (default on) — observed once
         verify(messagingTemplate, timeout(5000).times(1)).convertAndSend(
                 eq("/topic/notifications/" + consumerUserId),

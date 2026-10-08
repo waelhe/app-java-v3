@@ -381,7 +381,7 @@ class ProviderFollowIntegrationTest {
                         .content("{\"preferences\": [{\"type\": \"FOLLOWED_PROVIDER_NEW_LISTING\", "
                                 + "\"channel\": \"WS\", \"enabled\": false}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(27));
+                .andExpect(jsonPath("$.length()").value(30));
 
         follow();
         activateListing(listingId);
