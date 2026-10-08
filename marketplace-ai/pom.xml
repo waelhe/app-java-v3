@@ -3,32 +3,48 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.marketplace</groupId>
         <artifactId>marketplace-platform</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
-
     <artifactId>marketplace-ai</artifactId>
     <name>marketplace-ai</name>
-    <description>AI chat-client foundation — provider-neutral wiring over Spring AI (google-genai + deepseek starters behind the spring.ai.model.chat selector); no business surface yet</description>
-
+    <description>Provider-neutral AI capabilities using Spring AI auto-configuration</description>
     <dependencies>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
         <dependency><groupId>org.springframework.modulith</groupId><artifactId>spring-modulith-api</artifactId></dependency>
-        <!-- Spring AI provider starters (versions from the spring-ai-bom,
-             exception #13 in the root pom). Both stay on the classpath and
-             exactly one provider autoconfigures, selected by
-             spring.ai.model.chat (google-genai | deepseek | none) — the
-             documented multi-model selector (reference 2.0.1:
-             api/chat/google-genai-chat.html + api/chat/deepseek-chat.html,
-             "Chat Properties"). Provider choice is a deployment decision,
-             not a code decision. -->
         <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-model-google-genai</artifactId></dependency>
         <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-model-deepseek</artifactId></dependency>
-
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-model-chat-memory-repository-jdbc</artifactId></dependency>
+        <!-- The vector-store capability set (spring-ai-starter-model-google-genai-embedding
+             + spring-ai-starter-vector-store-pgvector) is deliberately NOT on the
+             compile classpath yet, measured on v2.0.1 source: the embedding
+             CONNECTION auto-config (GoogleGenAiEmbeddingConnectionAutoConfiguration)
+             carries only @ConditionalOnClass — the documented
+             spring.ai.model.embedding.text=none disable does NOT reach it — and its
+             @Bean throws "Google GenAI project-id must be set!" whenever neither
+             api-key nor project-id is configured (the OpenAI family gates the whole
+             embedding auto-config on the model property; the google-genai split lost
+             that gate on the connection half — the measured upstream inconsistency).
+             With the starter on the classpath and no credentials (the default state —
+             AI activation is a pending owner decision), every boot fails. The
+             framework's own official gate is @ConditionalOnClass: the impl jar absent
+             keeps the whole embedding chain inert exactly as the docs' none promises
+             (main's measured production-live state). The advisor jar stays (API-only,
+             zero auto-configs): AiAutoConfiguration and AiKnowledgeGateway compile and
+             degrade gracefully (ObjectProvider / @ConditionalOnBean). The operator-
+             activation wave adds the two starters back together with the credentials —
+             then the official chain boots end to end: connection from api-key, model
+             from spring.ai.model.embedding.text=google-genai, store from
+             spring.ai.vectorstore.type=pgvector (the documented selectors the yml
+             already carries). -->
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-vector-store-advisor</artifactId></dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

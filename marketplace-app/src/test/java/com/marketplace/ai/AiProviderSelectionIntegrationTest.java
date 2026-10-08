@@ -1,8 +1,9 @@
 package com.marketplace.ai;
 
 import test.config.IntegrationContainers;
-
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,13 +16,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The documented multi-model selector on this classpath: with both provider
- * starters present, {@code spring.ai.model.chat=google-genai} activates
- * exactly that provider's auto-configuration — one {@code ChatModel},
- * gateway available. No network is touched (bean creation is lazy; the fake
- * key only satisfies binding).
- */
 @SpringBootTest(properties = {
         "spring.ai.model.chat=google-genai",
         "spring.ai.google.genai.api-key=test-key",
@@ -32,18 +26,17 @@ class AiProviderSelectionIntegrationTest {
 
     @Container
     @ServiceConnection
-    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by the @Testcontainers extension; raw type matches the house precedent (CatalogSearchFullTextIntegrationTest)
+    @SuppressWarnings({"resource", "rawtypes"})
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
     @Autowired
     private ApplicationContext context;
 
-    @Autowired
-    private AiChatGateway gateway;
-
     @Test
-    void selectorActivatesExactlyOneProvider() {
+    void selectorActivatesProviderAndOfficialAutoConfigurationBuildsTheChatStack() {
         assertThat(context.getBeansOfType(ChatModel.class)).hasSize(1);
-        assertThat(gateway.available()).isTrue();
+        assertThat(context.getBeansOfType(ChatClient.Builder.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiChatGateway.class)).hasSize(1);
     }
 }

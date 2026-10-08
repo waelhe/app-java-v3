@@ -1,110 +1,93 @@
 package com.marketplace.ai;
 
-import com.marketplace.shared.api.ServiceUnavailableException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.mock.env.MockEnvironment;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import reactor.core.publisher.Flux;
 
-import java.util.List;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * The gateway's two honest states: OFF (no ChatModel bound — the default
- * {@code spring.ai.model.chat=none}) answers 503 SU-001 without touching any
- * provider; ON delegates one user turn through the documented
- * {@code ChatClient.create} factory around the bound model. Constructor
- * shapes below are the Spring AI 2.0.1 API itself (verified against the
- * resolved spring-ai-model jar), not test doubles of framework behavior.
- * The OFF detail is proven environment-sourced: whatever the selector
- * actually holds (unset, none, or an unmatched value) is what the message
- * reports — never an assumed literal.
- */
-@ExtendWith(MockitoExtension.class)
 class AiChatGatewayTest {
-
-    /** Minimal in-memory ChatModel: canned answer, no network, no threads. */
-    static class FakeChatModel implements ChatModel {
-        @Override
-        public ChatResponse call(Prompt prompt) {
-            return new ChatResponse(List.of(new Generation(new AssistantMessage("hi"))));
-        }
-
-        @Override
-        public Flux<ChatResponse> stream(Prompt prompt) {
-            return Flux.just(call(prompt));
-        }
-    }
-
-    @Mock
-    ObjectProvider<ChatModel> models;
-
-    private AiChatGateway gatewayWithSelector(String selectorValue) {
-        MockEnvironment environment = new MockEnvironment();
-        if (selectorValue != null) {
-            environment.setProperty(AiChatGateway.CHAT_SELECTOR_PROPERTY, selectorValue);
-        }
-        return new AiChatGateway(models, environment);
+    @Test
+    void delegatesToSpringAiAndScopesConversationByUser() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        ChatClientResponse response = mock(ChatClientResponse.class);
+        when(chatClient.prompt()).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(response);
+        when(response.chatResponse()).thenReturn(mock(org.springframework.ai.chat.model.ChatResponse.class));
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThat(gateway.chat(UUID.randomUUID(), "conversation-1", "hello")).isSameAs(response);
     }
 
     @Test
-    void capabilityOffWhenNoChatModelBound() {
-        AiChatGateway gateway = gatewayWithSelector("none");
+    void delegatesToOfficialStreamingChatClientPath() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.StreamResponseSpec responseSpec = mock(ChatClient.StreamResponseSpec.class);
+        ChatClientResponse response = mock(ChatClientResponse.class);
+        when(chatClient.prompt()).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.stream()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(Flux.just(response));
 
-        assertThat(gateway.available()).isFalse();
-        assertThatThrownBy(() -> gateway.chat("hi"))
-                .isInstanceOfSatisfying(ServiceUnavailableException.class, ex -> {
-                    assertThat(ex.getStatusCode().value()).isEqualTo(503);
-                    assertThat(ex.getMessage())
-                            .contains(AiChatGateway.CHAT_SELECTOR_PROPERTY + "=none")
-                            .contains("google-genai | deepseek");
-                });
-    }
-
-    /**
-     * Regression for the CodeRabbit round-2 finding: the OFF detail must
-     * report the selector's actually configured value, never a hardcoded
-     * {@code =none} — an unmatched value binds no ChatModel either, and the
-     * operator reading the 503 needs the real state.
-     */
-    @Test
-    void offDetailReportsTheActualSelectorValueNotAnAssumedNone() {
-        AiChatGateway gateway = gatewayWithSelector("some-unmatched-value");
-
-        assertThatThrownBy(() -> gateway.chat("hi"))
-                .isInstanceOfSatisfying(ServiceUnavailableException.class, ex -> {
-                    assertThat(ex.getMessage())
-                            .contains(AiChatGateway.CHAT_SELECTOR_PROPERTY + "=some-unmatched-value")
-                            .doesNotContain("=none)");
-                });
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThat(gateway.stream(UUID.randomUUID(), "conversation-1", "hello")
+                .collectList().block())
+                .containsExactly(response);
     }
 
     @Test
-    void offDetailReportsUnsetWhenSelectorHasNoValue() {
-        AiChatGateway gateway = gatewayWithSelector(null);
-
-        assertThatThrownBy(() -> gateway.chat("hi"))
-                .isInstanceOfSatisfying(ServiceUnavailableException.class, ex ->
-                        assertThat(ex.getMessage()).contains("(unset)"));
+    void rejectsBlankConversationId() {
+        AiChatGateway gateway = new AiChatGateway(mock(ChatClient.class));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), " ", "hello"))
+                .withMessage("conversationId must not be blank");
     }
 
     @Test
-    void delegatesToChatClientWhenBound() {
-        when(models.getIfAvailable()).thenReturn(new FakeChatModel());
-        AiChatGateway gateway = gatewayWithSelector("google-genai");
+    void rejectsNullChatResponse() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(null);
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThatIllegalStateException()
+                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), "conversation-1", "hello"))
+                .withMessage("Spring AI returned an empty chat response");
+    }
 
-        assertThat(gateway.available()).isTrue();
-        assertThat(gateway.chat("hi")).isEqualTo("hi");
+    @Test
+    void scopesConversationDeterministically() {
+        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        // The derived 36-char key: deterministic for the same (user,
+        // conversation) pair — the V107-safe shape the raw concatenation
+        // could never be (41+ chars against VARCHAR(36)).
+        String first = AiChatGateway.scopeConversation(userId, " abc ");
+        String second = AiChatGateway.scopeConversation(userId, "abc");
+        assertThat(first).isEqualTo(second);
+        assertThat(first).hasSize(36);
+        // Per-user isolation: a different user never derives the same row.
+        UUID other = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        assertThat(AiChatGateway.scopeConversation(other, "abc")).isNotEqualTo(first);
     }
 }

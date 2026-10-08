@@ -3,7 +3,6 @@ package com.marketplace.ai;
 import test.config.IntegrationContainers;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,12 +16,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-        "spring.ai.model.chat=deepseek",
-        "spring.ai.deepseek.api-key=test-key",
+        "spring.ai.model.chat=google-genai",
+        "spring.ai.google.genai.api-key=test-key",
+        "spring.ai.chat.client.enabled=false"
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
-class AiDeepSeekProviderSelectionIntegrationTest {
+class AiChatClientDisabledIntegrationTest {
 
     @Container
     @ServiceConnection
@@ -33,10 +33,10 @@ class AiDeepSeekProviderSelectionIntegrationTest {
     private ApplicationContext context;
 
     @Test
-    void selectorActivatesProviderAndOfficialAutoConfigurationBuildsTheChatStack() {
+    void officialChatClientDisablementPreventsApplicationAiChatBeans() {
         assertThat(context.getBeansOfType(ChatModel.class)).hasSize(1);
-        assertThat(context.getBeansOfType(ChatClient.Builder.class)).hasSize(1);
-        assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
-        assertThat(context.getBeansOfType(AiChatGateway.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ChatClient.Builder.class)).isEmpty();
+        assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();
+        assertThat(context.getBeansOfType(AiQueryUnderstanding.class)).isEmpty();
     }
 }

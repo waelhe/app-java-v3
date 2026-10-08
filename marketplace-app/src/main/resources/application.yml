@@ -11,32 +11,41 @@ spring:
       enabled: false
 
   ai:
-    # AI foundation (marketplace-ai module) — Spring AI 2.0.1 provider wiring.
-    # The top-level selector enables exactly one provider auto-configuration
-    # (google-genai | deepseek) or disables all of them (none) — the documented
-    # multi-model switch (reference 2.0.1: api/chat/google-genai-chat.html +
-    # api/chat/deepseek-chat.html, "Chat Properties"). Default none keeps the
-    # capability OFF (no ChatModel beans; AiChatGateway answers 503 SU-001)
-    # until an operator selects a provider — provider choice is a deployment
-    # decision, not a code decision. Keys are environment-only (secrets-policy
-    # §1): blank = unbound, never a default credential.
+    # Spring AI owns provider/model auto-configuration and the ToolCallingAdvisor.
+    tools:
+      limits:
+        max-calls-per-tool-default: ${SPRING_AI_TOOLS_MAX_CALLS_PER_TOOL_DEFAULT:10}
+        max-total-tool-calls: ${SPRING_AI_TOOLS_MAX_TOTAL_TOOL_CALLS:30}
+        on-limit-exceeded: ${SPRING_AI_TOOLS_ON_LIMIT_EXCEEDED:RETURN_ERROR_RESPONSE}
+    # The application composes only official Spring AI extension points.
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:none}
     google:
       genai:
         api-key: ${GOOGLE_GENAI_API_KEY:}
         chat:
-          # Measured default (2026-09-17, live generateContent): this exact
-          # model answers 200 on the project account (flash-latest was 503
-          # high-demand; 2.5-flash-lite is 404 "no longer available to new
-          # users"). Override per environment with GOOGLE_GENAI_CHAT_MODEL.
-          model: ${GOOGLE_GENAI_CHAT_MODEL:gemini-3.5-flash-lite}
+          model: ${GOOGLE_GENAI_CHAT_MODEL:gemini-2.5-flash}
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}
       chat:
-        # Spring AI documented default (api/chat/deepseek-chat.html).
         model: ${DEEPSEEK_CHAT_MODEL:deepseek-v4-flash}
-
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never
+    # (No vectorstore block: the pgvector starter is NOT on the classpath —
+    # the whole RAG chain (embedding connection from api-key + model from
+    # spring.ai.model.embedding.text=google-genai + store from
+    # spring.ai.vectorstore.type=pgvector) joins ONE operator-activation wave
+    # with its starter, its selector and its credentials together, never as
+    # an unbootable or dead classpath presence. Measured basis: the official
+    # 2.0.1 GoogleGenAiEmbeddingConnectionAutoConfiguration carries no
+    # selector gate and hard-requires embedding credentials; the secrets
+    # policy forbids default credentials, so the capability cannot ship
+    # dormant.)
   datasource:
     # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
     # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
