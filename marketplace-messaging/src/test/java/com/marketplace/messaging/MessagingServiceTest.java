@@ -322,7 +322,10 @@ class MessagingServiceTest {
 
         assertTrue(outcome.newlyCreated());
         org.mockito.ArgumentCaptor<Message> captor = org.mockito.ArgumentCaptor.forClass(Message.class);
-        verify(messageRepository).save(captor.capture());
+        // The write rides MessageSendWriter's REQUIRES_NEW unit — flushed
+        // inside persist() so the unique violation surfaces there, not at
+        // the caller's commit (the round-1 adoption's own shape).
+        verify(messageRepository).saveAndFlush(captor.capture());
         assertEquals("msg-2026-10-07-001", captor.getValue().getIdempotencyKey());
         assertEquals(participantA, captor.getValue().getSenderId());
         verify(messagingTemplate).convertAndSend(eq("/topic/conversations/" + conv.getId()), any(Object.class));
