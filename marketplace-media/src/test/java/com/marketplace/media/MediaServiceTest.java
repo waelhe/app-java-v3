@@ -59,6 +59,8 @@ class MediaServiceTest {
     @Mock
     private PostLookupPort postLookupPort;
     @Mock
+    private com.marketplace.shared.api.ProductLookupPort productLookupPort;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
@@ -81,7 +83,7 @@ class MediaServiceTest {
     void setUp() {
         service = new MediaService(repository, storageProvider, mediaProperties(),
                 listingPriceProvider, listingPublicStatePort, providerLookupPort, postLookupPort,
-                currentUserProvider, eventPublisher, new MediaThumbnailMetrics(meterRegistry));
+                productLookupPort, currentUserProvider, eventPublisher, new MediaThumbnailMetrics(meterRegistry));
         // R5 default: the listing is on the public surface — every test that
         // does not stub the publication state explicitly reads the public
         // path (the pre-fix behavior's surface).

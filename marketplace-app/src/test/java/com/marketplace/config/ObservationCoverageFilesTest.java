@@ -132,7 +132,10 @@ class ObservationCoverageFilesTest {
                     "catalog.create.listing",
                     // W3 (G19): the favorites surface's two commands — the
                     // same commands-not-reads policy as every house entry.
-                    "catalog.favorites.save", "catalog.favorites.unsave")),
+                    "catalog.favorites.save", "catalog.favorites.unsave",
+                    // A-17 (C.7 — the M1 store root): the registration command;
+                    // the owner read stays unobserved (the commands-not-reads policy).
+                    "catalog.product.register")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
