@@ -72,6 +72,14 @@
         <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <instancio.version>6.0.1</instancio.version>
+        <!-- Track-B community tools (parallel execution plan §5.4 — CR-2, the
+             foundation BOM drop): versions for the developer line ONLY, pinned
+             HERE so no module pom ever carries a number (house BOM rule).
+             Measured 2026-10-07 from repo1.maven.org maven-metadata.xml
+             (latest GA releases; the search API's index lagged — the canonical
+             metadata is the measure). No Boot 4.1.1 management for either. -->
+        <bucket4j.version>8.21.0</bucket4j.version>
+        <firebase-admin.version>9.11.0</firebase-admin.version>
         <spring-ai.version>2.0.1</spring-ai.version>
         <!-- Cloud train for the edge BFF (exception #14): single property,
              per-artifact versions stay managed by the BOM below. -->
@@ -367,6 +375,24 @@
                 <artifactId>instancio-junit</artifactId>
                 <version>${instancio.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <!-- Exception #16: Bucket4j — the messaging send-rate limiter (Track-B
+                 unit B-05). Community standard for rate limiting; no official
+             framework alternative (compliance plan §5.3). Managed here per the
+                 CR-2 foundation drop; consumers reference it WITHOUT a version. -->
+            <dependency>
+                <groupId>com.bucket4j</groupId>
+                <artifactId>bucket4j_jdk17-core</artifactId>
+                <version>${bucket4j.version}</version>
+            </dependency>
+            <!-- Exception #17: firebase-admin — the FCM push channel (Track-B unit
+                 B-10). Google's own SDK for the ecosystem — the official client;
+                 no Spring-native equivalent exists (compliance plan §5.3).
+                 Managed here per the CR-2 foundation drop. -->
+            <dependency>
+                <groupId>com.google.firebase</groupId>
+                <artifactId>firebase-admin</artifactId>
+                <version>${firebase-admin.version}</version>
             </dependency>
             <!-- Exception #10: AWS SDK v2 BOM — Boot does not manage the AWS SDK.
                  Consumed only by marketplace-media (S3-compatible presigned channel,
