@@ -55,6 +55,18 @@ public final class AiChatGateway {
         if (conversationId == null || conversationId.isBlank()) {
             throw new IllegalArgumentException("conversationId must not be blank");
         }
-        return CONVERSATION_PREFIX + userId + ":" + conversationId.trim();
+        // A deterministic UUIDv3 derived from the scoped pair — the raw
+        // concatenation ("ai:" + 36-char user id + ":" + conversation id)
+        // overflows V107's official conversation_id VARCHAR(36) at its
+        // shortest input (41 chars), and PostgreSQL rejects every chat
+        // memory write with "value too long" once a provider is active
+        // (invisible to the mocked-ChatClient unit tests). The derived key
+        // is exactly 36 chars, stays deterministic (the same user +
+        // conversation always map to the same memory row) and stays
+        // per-user (different users never collide — the user id is inside
+        // the hashed scope).
+        String scope = CONVERSATION_PREFIX + userId + ":" + conversationId.trim();
+        return UUID.nameUUIDFromBytes(scope.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .toString();
     }
 }

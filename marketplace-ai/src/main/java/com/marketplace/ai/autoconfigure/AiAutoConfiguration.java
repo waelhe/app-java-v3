@@ -22,6 +22,15 @@ import org.springframework.context.annotation.Bean;
         "org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration",
         "org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration",
         "org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration",
+        // The provider ChatModel sources (the @ConditionalOnBean evaluation-
+        // order rule: a condition can only match against bean definitions
+        // processed so far — without these edges the gateway's
+        // ConditionalOnBean(ChatModel) can evaluate before the selected
+        // provider registers its ChatModel, and the gateway bean silently
+        // never exists; the CodeRabbit-measured gap, the same class the
+        // 45d3fdc2 fix closed for the memory/client sources).
+        "org.springframework.ai.model.google.genai.autoconfigure.chat.GoogleGenAiChatAutoConfiguration",
+        "org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration",
         "org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration"
 })
 @ConditionalOnClass(ChatClient.class)

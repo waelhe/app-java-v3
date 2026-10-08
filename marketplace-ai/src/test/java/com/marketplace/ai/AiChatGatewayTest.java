@@ -79,7 +79,15 @@ class AiChatGatewayTest {
     @Test
     void scopesConversationDeterministically() {
         UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
-        assertThat(AiChatGateway.scopeConversation(userId, " abc "))
-                .isEqualTo("ai:11111111-1111-1111-1111-111111111111:abc");
+        // The derived 36-char key: deterministic for the same (user,
+        // conversation) pair — the V107-safe shape the raw concatenation
+        // could never be (41+ chars against VARCHAR(36)).
+        String first = AiChatGateway.scopeConversation(userId, " abc ");
+        String second = AiChatGateway.scopeConversation(userId, "abc");
+        assertThat(first).isEqualTo(second);
+        assertThat(first).hasSize(36);
+        // Per-user isolation: a different user never derives the same row.
+        UUID other = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        assertThat(AiChatGateway.scopeConversation(other, "abc")).isNotEqualTo(first);
     }
 }
