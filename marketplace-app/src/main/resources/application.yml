@@ -36,17 +36,16 @@ spring:
         repository:
           jdbc:
             initialize-schema: never
-    vectorstore:
-      # Official multi-model selection switch (SpringAIVectorStoreTypes.TYPE:
-      # spring.ai.vectorstore.type — @ConditionalOnProperty(havingValue="pgvector",
-      # matchIfMissing=true) on PgVectorStoreAutoConfiguration, v2.0.1 measured).
-      # Same documented disable pattern as spring.ai.model.chat / .model.embedding.text
-      # (=none, reference: api/embeddings/google-genai-embeddings-text.adoc NOTE).
-      # Default none keeps the vector store OFF until the operator-activation wave:
-      # the store's starter joins the classpath together with the credentials, then
-      # the official chain boots end to end (connection from api-key, model from
-      # spring.ai.model.embedding.text=google-genai, store from type=pgvector).
-      type: ${SPRING_AI_VECTORSTORE_TYPE:none}
+    # (No vectorstore block: the pgvector starter is NOT on the classpath —
+    # the whole RAG chain (embedding connection from api-key + model from
+    # spring.ai.model.embedding.text=google-genai + store from
+    # spring.ai.vectorstore.type=pgvector) joins ONE operator-activation wave
+    # with its starter, its selector and its credentials together, never as
+    # an unbootable or dead classpath presence. Measured basis: the official
+    # 2.0.1 GoogleGenAiEmbeddingConnectionAutoConfiguration carries no
+    # selector gate and hard-requires embedding credentials; the secrets
+    # policy forbids default credentials, so the capability cannot ship
+    # dormant.)
   datasource:
     # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
     # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
