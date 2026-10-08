@@ -2,6 +2,8 @@ package com.marketplace.shared.resilience;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
+
+import java.util.UUID;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,11 +38,11 @@ import static org.mockito.Mockito.lenient;
  * sees (the {@code ObjectProvider<ChatModel>} seam resolves the mock the
  * same way it resolves a real provider's model).
  *
- * <p><b>The measured contract</b> (decorator composition measured from the
- * Resilience4j bytecode: Retry aspect order 2147483642 wraps CircuitBreaker's
- * 2147483643 — Retry OUTER, CircuitBreaker INNER; each failed call's retry
- * attempts count into the breaker window individually, so with max-attempts
- * 2 two failed calls fill the compressed 4-call window at 100% failure):</p>
+ * <p><b>The measured contract</b> (union 2026-10-08: the #514
+ * conversational gateway carries ChatMemory writes, so the retry leg
+ * retired — a retried call would duplicate the user turn — and each failed
+ * call now counts ONE breaker-window sample; four failed calls fill the
+ * compressed 4-call window at 100% failure):</p>
  * <ol>
  *   <li>Provider failures count into the {@code aiChat} circuit — a
  *       sustained outage OPENS it, and the next call fails FAST with
@@ -63,10 +65,6 @@ import static org.mockito.Mockito.lenient;
         "resilience4j.circuitbreaker.instances.aiChat.minimum-number-of-calls=4",
         "resilience4j.circuitbreaker.instances.aiChat.failure-rate-threshold=50",
         "resilience4j.circuitbreaker.instances.aiChat.wait-duration-in-open-state=60s",
-        // The retry stays in the loop but compressed: 2 attempts, no backoff wait.
-        "resilience4j.retry.instances.aiChat.max-attempts=2",
-        "resilience4j.retry.instances.aiChat.wait-duration=10ms",
-        "resilience4j.retry.instances.aiChat.enable-exponential-backoff=false",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -100,11 +98,13 @@ class AiChatChannelIsolationIntegrationTest {
         lenient().when(chatModel.call(any(Prompt.class)))
                 .thenThrow(new IllegalStateException("provider outage simulation"));
 
-        // Phase 1 — two failed calls: each retried once (max-attempts 2),
-        // four breaker-window samples, 100% failure.
-        for (int i = 0; i < 2; i++) {
+        // Phase 1 — four failed calls: one breaker-window sample each (the
+        // retry leg retired with the single-turn design — ChatMemory writes
+        // make a retried call non-idempotent), 100% failure in the window.
+        for (int i = 0; i < 4; i++) {
             int attempt = i + 1;
-            assertThatThrownBy(() -> aiChatGateway.chat("isolation gate " + attempt))
+            assertThatThrownBy(() -> aiChatGateway.chat(
+                    UUID.randomUUID(), "isolation-" + attempt, "isolation gate " + attempt))
                     .as("chat call %d against the dead provider fails honestly", attempt)
                     .isInstanceOf(RuntimeException.class)
                     .isNotInstanceOf(ServiceUnavailableException.class);
@@ -116,7 +116,7 @@ class AiChatChannelIsolationIntegrationTest {
         assertThat(aiChat.getState())
                 .as("the sustained provider outage crossed the failure-rate threshold — aiChat is OPEN")
                 .isEqualTo(CircuitBreaker.State.OPEN);
-        assertThatThrownBy(() -> aiChatGateway.chat("isolation gate — isolated"))
+        assertThatThrownBy(() -> aiChatGateway.chat(UUID.randomUUID(), "isolation", "isolation gate — isolated"))
                 .as("an OPEN circuit refuses the call without touching the provider")
                 .isInstanceOf(CallNotPermittedException.class);
     }
@@ -125,9 +125,9 @@ class AiChatChannelIsolationIntegrationTest {
     void theOffStateNeverOpensTheCircuit() {
         // The honest-OFF pin, asserted from the LIVE instance's own config:
         // ServiceUnavailableException (503 SU-001 — "capability is OFF, not
-        // broken") rides the ignore-exceptions list of BOTH the circuit and
-        // its retry, so an OFF deployment's honest 503s are invisible to the
-        // breaker — the circuit reports the PROVIDER's health only. The
+        // broken") rides the circuit's ignore-exceptions list, so an OFF
+        // deployment's honest 503s are invisible to the breaker — the
+        // circuit reports the PROVIDER's health only. The
         // predicate is the live behavioral truth (not the raw yml text).
         CircuitBreakerConfig config = circuitBreakers.circuitBreaker("aiChat").getCircuitBreakerConfig();
 

@@ -1,125 +1,113 @@
 package com.marketplace.ai;
 
-import com.marketplace.shared.api.ServiceUnavailableException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.core.env.Environment;
-import org.springframework.stereotype.Service;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.memory.ChatMemory;
+
+import reactor.core.publisher.Flux;
+
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
- * The single entry point to the AI chat capability — a thin, provider-neutral
- * gate over the active Spring AI {@code ChatModel}.
+ * The single entry point to the AI chat capability — the conversational
+ * gateway over Spring AI's {@code ChatClient} with per-(user, conversation)
+ * memory scoping (the V107 chat-memory schema).
  *
- * <p>Provider wiring is entirely Spring AI's official auto-configuration: the
- * {@code spring-ai-starter-model-google-genai} and
- * {@code spring-ai-starter-model-deepseek} starters share this classpath and
- * exactly one provider activates behind the documented top-level selector
- * {@code spring.ai.model.chat} ({@code google-genai | deepseek | none}) —
- * "Enabling and disabling of the chat auto-configurations are now configured
- * via top level properties with the prefix {@code spring.ai.model.chat}"
- * (Spring AI reference 2.0.1: {@code api/chat/google-genai-chat.html} and
- * {@code api/chat/deepseek-chat.html}, "Chat Properties").
+ * <p><b>Union note (2026-10-08, the two-generation merge):</b> this class is
+ * the #514 design (merged, three CodeRabbit rounds adopted) — the
+ * conversation-scoped {@code chat}/{@code stream} pair carrying
+ * {@link ChatMemory} and the tool context. Track A's earlier single-turn
+ * gate retired with its design. What survives from Track A's D.4 (channel
+ * resilience wave) is the outage-isolation half: {@code chat} — the
+ * synchronous external crossing — wears
+ * {@code @CircuitBreaker(name = "aiChat")}, the official Resilience4j
+ * annotation mirroring the payments PSP house pattern; the instance (with
+ * the OFF-state honesty ignore-list) rides {@code application.yml}, and the
+ * class dropped {@code final} for the CGLIB proxy the annotation aspect
+ * needs (a final class proxies silently to nothing — the measured trap this
+ * note exists to prevent).
  *
- * <p>Why the optional {@code ChatModel} and not the auto-configured
- * {@code ChatClient.Builder}: the builder bean's factory method requires a
- * {@code ChatModel}, so with the selector at {@code none} its definition
- * exists but is un-instantiable — touching it eagerly fails the caller while
- * the context itself boots cleanly (measured: {@code getBeansOfType} on the
- * builder throws {@code UnsatisfiedDependencyException} with zero models
- * bound). Resolving the optional model instead keeps the OFF state honest:
- * nothing AI-related is ever instantiated. The client is built with the
- * documented {@code ChatClient.create} factory (reference 2.0.1:
- * {@code api/chatclient.html}).
- *
- * <p>No client-level customizers are registered anywhere in this codebase, so
- * no observability is bypassed by building the client here; call-site
- * observation stays at the consuming services' {@code @Observed} boundary
- * per the house commands-not-reads policy (the observation pin test guards
- * it). Client-level wiring arrives with the first consuming capability if
- * one ever needs it — no speculative abstraction.
- *
- * <p>Graceful-off contract (the PSP/MAIL house gate — "the capability is OFF,
- * not broken"): the default selector value is {@code none}, so no
- * {@code ChatModel} binds and the context still boots cleanly.
- * {@link #available()} reports the state and {@link #chat} answers 503
- * SU-001 while off — never a startup failure, never a health contribution.
- * The 503 detail reports the selector's <em>actual configured value</em> (read
- * from the {@link Environment} — an unmatched value binds no model either,
- * so the message must never assume {@code none}); selecting a provider
- * without its key is a broken selection, not an off state, and fails at the
- * provider's own startup assertion.
- *
- * <p><b>D.4 (compliance plan wave D — channel resilience):</b> when a
- * provider IS bound, {@link #chat} is the AI channel's single external
- * crossing, so it carries the same official Resilience4j guards the payments
- * PSP channel wears (the {@code paymentProcessing} house pattern):
- * {@code @Retry(name = "aiChat")} absorbs transient provider blips (the call
- * is an idempotent completion — no side effects to double-apply), and
- * {@code @CircuitBreaker(name = "aiChat")} isolates a provider outage: calls
- * fail FAST with {@code CallNotPermittedException} → the existing 503
- * handler (the same SERVICE_UNAVAILABLE taxonomy the OFF contract answers),
- * never a hung request thread. The breaker's OFF-state honesty is pinned in
- * application.yml: {@code ServiceUnavailableException} is ignored by both
- * instances — "capability OFF" is a state, not a channel failure, and must
- * never open the circuit.
+ * <p><b>Why @Retry did not survive the union:</b> the D.4 wave's retry leg
+ * was measured safe on the single-turn design ("an idempotent completion —
+ * no side effects to double-apply"), but THIS design writes the user turn
+ * into {@link ChatMemory} through the advisor on every invocation — a
+ * retried call would duplicate the turn in the conversation history, so the
+ * retry instance was retired rather than transplanted (the yml documents
+ * the retirement where the instance used to live). {@code stream()} stays
+ * unannotated: the Flux-returning crossing would need the reactor-typed
+ * resilience support on this module's classpath, and no speculative
+ * dependency rides an unwired consumer — the first streaming consumer's
+ * own wiring carries that decision.
  */
-@Service
 public class AiChatGateway {
 
-    /**
-     * The Spring AI provider selector this gate mirrors. Single source of
-     * truth stays in {@code application.yml} ({@code spring.ai.model.chat});
-     * this constant only names it in the 503 detail.
-     */
-    public static final String CHAT_SELECTOR_PROPERTY = "spring.ai.model.chat";
+    private static final String CONVERSATION_PREFIX = "ai:";
+    private final ChatClient chatClient;
 
-    private final ObjectProvider<ChatModel> models;
-    private final Environment environment;
+    public AiChatGateway(ChatClient chatClient) {
+        this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
+    }
 
-    public AiChatGateway(ObjectProvider<ChatModel> models, Environment environment) {
-        this.models = models;
-        this.environment = environment;
+    public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        String scopedConversationId = scopeConversation(userId, conversationId);
+
+        return chatClient.prompt()
+                .advisors(advisors -> advisors.param(
+                        ChatMemory.CONVERSATION_ID, scopedConversationId))
+                .toolContext(Map.of("userId", userId.toString()))
+                .user(Objects.requireNonNull(userText, "userText must not be null"))
+                .stream()
+                .chatClientResponse();
     }
 
     /**
-     * Whether a chat provider is currently bound (selector picked a provider
-     * whose auto-configuration produced a {@code ChatModel}).
+     * Sends one user turn to the bound provider and returns its response —
+     * the AI channel's synchronous external crossing, so it wears the D.4
+     * outage-isolation breaker ({@code aiChat}): a provider outage fails
+     * FAST with {@code CallNotPermittedException} instead of hanging a
+     * request thread. The OFF state stays honest — the yml instance's
+     * ignore-list keeps the circuit closed on the capability's own 503s.
      */
-    public boolean available() {
-        return models.getIfAvailable() != null;
-    }
-
-    /**
-     * Sends one user turn to the bound provider and returns its text answer.
-     *
-     * @throws ServiceUnavailableException (503 SU-001) when the capability is
-     *         OFF — no provider selected or bound. The detail names the
-     *         selector property with its actually configured value (or that
-     *         it is unset), never an assumed one.
-     */
-    @Retry(name = "aiChat")
     @CircuitBreaker(name = "aiChat")
-    public String chat(String userText) {
-        ChatModel model = models.getIfAvailable();
-        if (model == null) {
-            throw new ServiceUnavailableException(
-                    "The AI chat capability is OFF: no ChatModel is bound for " + CHAT_SELECTOR_PROPERTY
-                            + selectorState() + " — select a provider (google-genai | deepseek) with its API key to turn it on");
+    public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        String scopedConversationId = scopeConversation(userId, conversationId);
+
+        ChatClientResponse response = chatClient.prompt()
+                .advisors(advisors -> advisors.param(
+                        ChatMemory.CONVERSATION_ID, scopedConversationId))
+                .toolContext(Map.of("userId", userId.toString()))
+                .user(Objects.requireNonNull(userText, "userText must not be null"))
+                .call()
+                .chatClientResponse();
+
+        if (response == null || response.chatResponse() == null) {
+            throw new IllegalStateException("Spring AI returned an empty chat response");
         }
-        return ChatClient.create(model).prompt().user(userText).call().content();
+        return response;
     }
 
-    /**
-     * The selector's configured value as reported in the 503 detail — the
-     * measured fact from the {@link Environment}, not an assumption: any
-     * value other than a configured provider (including {@code none} or an
-     * unmatched string, or no value at all) leaves no {@code ChatModel} bound.
-     */
-    private String selectorState() {
-        String selector = environment.getProperty(CHAT_SELECTOR_PROPERTY);
-        return selector == null ? " (unset)" : "=" + selector;
+    static String scopeConversation(UUID userId, String conversationId) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("conversationId must not be blank");
+        }
+        // A deterministic UUIDv3 derived from the scoped pair — the raw
+        // concatenation ("ai:" + 36-char user id + ":" + conversation id)
+        // overflows V107's official conversation_id VARCHAR(36) at its
+        // shortest input (41 chars), and PostgreSQL rejects every chat
+        // memory write with "value too long" once a provider is active
+        // (invisible to the mocked-ChatClient unit tests). The derived key
+        // is exactly 36 chars, stays deterministic (the same user +
+        // conversation always map to the same memory row) and stays
+        // per-user (different users never collide — the user id is inside
+        // the hashed scope).
+        String scope = CONVERSATION_PREFIX + userId + ":" + conversationId.trim();
+        return UUID.nameUUIDFromBytes(scope.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .toString();
     }
 }
