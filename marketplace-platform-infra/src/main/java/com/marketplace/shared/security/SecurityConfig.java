@@ -57,11 +57,14 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.logout.HeaderWriterLogoutHandler;
+import org.springframework.security.web.header.writers.ClearSiteDataHeaderWriter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.session.security.SpringSessionBackedSessionRegistry;
+import org.springframework.session.security.web.authentication.SpringSessionRememberMeServices;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -164,13 +167,14 @@ public class SecurityConfig {
                 // attacks"). Without this line the CsrfFilter mints an
                 // HttpSession + CsrfToken on the stateless handshake itself,
                 // the session attribute rides into the WebSocket session, and
-                // the STOMP-level XorCsrfChannelInterceptor then demands a
-                // token the stateless token client never has — the exact
-                // rejection measured in CI round 1. The STOMP message layer
-                // keeps the same-origin defense for cookie-session clients
-                // (their pre-existing session token is enforced by the
-                // csrfChannelInterceptor override); the token flow is
-                // CSRF-immune by construction.
+                // a STOMP-level CSRF interceptor would then demand a token the
+                // stateless token client never has. The STOMP message layer
+                // carries no CSRF interceptor at all since the 7.1.1
+                // compliance wave §7-а rebuilt it on the reference's
+                // documented manual wiring (see WebSocketSecurityConfig in
+                // marketplace-messaging); the token flow is CSRF-immune by
+                // construction and the same-origin defense for the transport
+                // stays with the endpoint's allowed-origins.
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql",
                         "/v3/api-docs/**", "/ws/**"))
                 .cors(Customizer.withDefaults())
@@ -329,12 +333,88 @@ public class SecurityConfig {
                         .requestMatchers("/assets/**", "/login").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                // "Sessions until logout" (the Spring Security 7.1.1 compliance wave, G-2) —
+                // the OFFICIAL documented path, verbatim from the Spring Session 4.1.1
+                // reference (Spring Security Integration, guides/security.html):
+                // "Spring Session provides integration with Spring Security's Remember-me
+                // Authentication. The support: Changes the session expiration length.
+                // Ensures that the session cookie expires at Integer.MAX_VALUE."
+                // and the documented Java Configuration:
+                // "@Bean SecurityFilterChain securityFilterChain(HttpSecurity http) throws
+                // Exception { http // ... additional configuration ...
+                // .rememberMe((rememberMe) -> rememberMe
+                // .rememberMeServices(rememberMeServices())); }".
+                // The mechanism is otherwise fully automatic (verified against the
+                // spring-session-core 4.1.1 sources): the BEAN'S PRESENCE makes
+                // SpringHttpSessionConfiguration#setApplicationContext arm the default
+                // CookieSerializer with setRememberMeRequestAttribute(REMEMBER_ME_LOGIN_ATTR),
+                // so DefaultCookieSerializer#getCookieMaxAge writes Integer.MAX_VALUE
+                // (2147483647) whenever loginSuccess set the request attribute, while
+                // loginSuccess itself raises the session to setMaxInactiveInterval(2592000)
+                // — the class's documented THIRTY_DAYS_SECONDS default. No property or
+                // auto-configuration exists for this wiring (RememberMeConfigurer has no
+                // bean pickup of RememberMeServices — verified against spring-security-
+                // config 7.1.1), which is why the reference documents exactly this DSL
+                // call as the configuration. The default login page has no remember-me
+                // checkbox, so the alwaysRemember flag — the reference's "optionally
+                // customize" knob — carries the platform's every-login policy.
+                .rememberMe((rememberMe) -> rememberMe
+                        .rememberMeServices(rememberMeServices()))
+                // C-8 (the same compliance wave) — the documented logout cleanup,
+                // verbatim from the Spring Security 7.1.1 reference (Handling Logouts,
+                // "Using Clear-Site-Data to Clear Cookies"):
+                // "HeaderWriterLogoutHandler clearSiteData =
+                // new HeaderWriterLogoutHandler(new ClearSiteDataHeaderWriter(Directive.COOKIES));
+                // http .logout((logout) -> logout.addLogoutHandler(clearSiteData));"
+                // The directive is COOKIES (the cookies-only variant the reference
+                // shows for this purpose), not ALL — cache/storage clearing is a
+                // stronger browser-side wipe than this logout needs. The header writer
+                // engages on secure requests only (its SecureRequestMatcher), so local
+                // http development is unaffected while production https gets the cleanup.
+                // The DSL call keeps every other logout default (the /logout endpoint,
+                // session invalidation, SecurityContext clearing, the /login?logout
+                // redirect) exactly as the reference's "Adding Clean-up Actions"
+                // section prescribes.
+                .logout((logout) -> logout
+                        .addLogoutHandler(new HeaderWriterLogoutHandler(
+                                new ClearSiteDataHeaderWriter(ClearSiteDataHeaderWriter.Directive.COOKIES))))
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maxSessions())
                         .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
         return http.build();
+    }
+
+    /**
+     * The "session until logout" services (G-2) — the documented bean of the
+     * Spring Session 4.1.1 reference's Spring Security Integration page:
+     * "@Bean public SpringSessionRememberMeServices rememberMeServices() {
+     * SpringSessionRememberMeServices rememberMeServices =
+     * new SpringSessionRememberMeServices();
+     * // optionally customize
+     * rememberMeServices.setAlwaysRemember(true);
+     * return rememberMeServices; }".
+     *
+     * <p>The class carries the whole documented behavior (spring-session-core 4.1.1,
+     * source-verified): {@code loginSuccess} raises the session to
+     * {@code setMaxInactiveInterval(2592000)} (the documented thirty-days default —
+     * no custom validity is set, the official default IS the policy) and marks the
+     * request with {@code REMEMBER_ME_LOGIN_ATTR}; the bean's presence alone arms
+     * the default {@code CookieSerializer} so the session cookie is written at
+     * {@code Integer.MAX_VALUE}; {@code logout} removes the stored security context
+     * (it implements {@code LogoutHandler}, and {@code RememberMeConfigurer} wires it
+     * into the logout handlers automatically). {@code autoLogin} returns null by
+     * design — the session cookie itself is the persistence, there is no separate
+     * remember-me token to replay.</p>
+     *
+     * @return the always-remember services wired into the form-login chain
+     */
+    @Bean
+    SpringSessionRememberMeServices rememberMeServices() {
+        SpringSessionRememberMeServices rememberMeServices = new SpringSessionRememberMeServices();
+        rememberMeServices.setAlwaysRemember(true);
+        return rememberMeServices;
     }
 
     @Bean
