@@ -21,13 +21,14 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration(afterName = {
         "org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration",
         "org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration",
-        "org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration"
+        "org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration",
+        "org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration"
 })
-@ConditionalOnClass({ChatClient.class, ChatMemory.class})
-@ConditionalOnBean({ChatModel.class, ChatMemory.class})
+@ConditionalOnClass(ChatClient.class)
 public class AiAutoConfiguration {
 
     @Bean
+    @ConditionalOnBean({ChatModel.class, ChatMemory.class})
     @ConditionalOnMissingBean
     AiChatGateway aiChatGateway(
             ChatClient.Builder builder,
@@ -53,6 +54,7 @@ public class AiAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(ChatModel.class)
     @ConditionalOnMissingBean
     AiQueryUnderstanding aiQueryUnderstanding(ChatClient.Builder builder) {
         return new AiQueryUnderstanding(builder);
