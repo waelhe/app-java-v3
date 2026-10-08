@@ -41,14 +41,18 @@ import org.springframework.stereotype.Component;
  * surfaced as {@code InvalidBearerTokenException}) reach the Spring event
  * bus without a single hand-wired bean.</p>
  *
- * <p>Bodies stay minimal and PII-free by construction: the success leg is a
- * debug-level marker, the failure leg logs the event type and the exception's
- * class and message (the framework's failure messages — "Bad credentials",
- * "User account is locked" — carry no subject identifiers; a locked-out or
- * unknown account is observable without its name). The listener "can be used
- * independently from the servlet API", as the reference notes — one grep over
- * the log now answers "when did authentication start failing and with what
- * error", the exact operational visibility the gap described.</p>
+ * <p>Bodies stay minimal and PII-free by construction: the success leg is
+ * a debug-level marker carrying only the event's own type, and the failure
+ * leg logs the event type and the exception's class — never the event's
+ * source (the {@link Authentication} object: principal and details) and
+ * never the exception's message (a wrapped provider exception's message
+ * can carry subject identifiers, so it is dropped per the measured
+ * community rule "never log raw tokens, credentials, or other sensitive
+ * values, even at debug level"). The failure EVENT TYPE is itself the
+ * documented exception-to-event table's category (bad credentials,
+ * locked, expired, ...), so one grep over the log still answers "when did
+ * authentication start failing and why", the exact operational visibility
+ * the gap described.</p>
  */
 @Component
 public class AuthenticationEvents {
@@ -65,7 +69,8 @@ public class AuthenticationEvents {
      */
     @EventListener
     public void onSuccess(AuthenticationSuccessEvent success) {
-        log.debug("Authentication success event received (source: {})", success.getSource());
+        log.debug("Authentication success event received ({})",
+                success.getClass().getSimpleName());
     }
 
     /**
@@ -79,9 +84,8 @@ public class AuthenticationEvents {
      */
     @EventListener
     public void onFailure(AbstractAuthenticationFailureEvent failures) {
-        Exception exception = failures.getException();
         log.warn("Authentication failure event received: {} — {}",
-                exception.getClass().getSimpleName(),
-                exception.getMessage());
+                failures.getClass().getSimpleName(),
+                failures.getException().getClass().getSimpleName());
     }
 }
