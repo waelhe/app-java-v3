@@ -1,39 +1,21 @@
+# Build artifacts and compiled files
 target/
+*.class
+*.jar
+*.war
+*.ear
+
+# IDE and Editor settings
 .idea/
-*.iml
 .vscode/
-.classpath
-.project
-.settings/
+*.iml
+*.swp
+*.swo
+
+# OS generated files
 .DS_Store
+Thumbs.db
 
-cp.txt
-
-# Private keys — never commit. Reference: GitHub Removing sensitive data
-# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository
-*.pem
-*.key
-*.p12
-*.jks
-*.keystore
-# Exception — test fixture only (documented in keys/README.md §5): a throwaway
-# RSA-2048/JKS key for JwkSourceProdHardeningTest (alias test-jwt, non-production
-# passwords, CN=marketplace-jwt-test). Never a production key.
-!marketplace-platform-infra/src/test/resources/keys/test-jwt.jks
-
-# Environment files with real secrets — never commit.
-# .env.example is the committed template; .env holds real values.
-.env
-.env.*
-!.env.example
-
-# TestSprite agent artifacts (local run logs, failure traces, generated code).
-# These are local-only outputs from the TestSprite AI testing agent and must
-# never be committed -- they contain environment-specific paths and may leak
-# internal test data. See https://www.testsprite.com/
-.testsprite/
-.testsprite
-
-# Node — Railway IaC SDK (needed only to evaluate .railway/railway.ts via the
-# Railway CLI; the app itself is Java/Maven and has no Node runtime)
-node_modules/
+# Logs and temp files
+*.log
+*.tmp

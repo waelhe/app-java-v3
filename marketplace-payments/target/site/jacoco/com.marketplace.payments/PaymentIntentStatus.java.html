@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentIntentStatus.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentIntentStatus.java</span></div><h1>PaymentIntentStatus.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.api.ConflictException;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+
+<span class="fc" id="L9">public enum PaymentIntentStatus {</span>
+<span class="fc" id="L10">    CREATED,</span>
+<span class="fc" id="L11">    PROCESSING,</span>
+<span class="fc" id="L12">    SUCCEEDED,</span>
+<span class="fc" id="L13">    FAILED,</span>
+<span class="fc" id="L14">    CANCELLED,</span>
+<span class="fc" id="L15">    REFUNDED,</span>
+<span class="fc" id="L16">    PARTIALLY_REFUNDED;</span>
+
+    /**
+     * R4 (comprehensive-review-ar-fix plan §4/R4 — one collectible attempt
+     * per booking): the states an intent can still COLLECT money in. The
+     * partial unique index {@code uq_payment_intents_one_active_attempt}
+     * (V81) admits at most ONE live row per booking in these states — the
+     * decided model's database invariant; the scoped repository searches
+     * and {@code createIntent}'s state guard read the same scope.
+     */
+<span class="fc" id="L26">    public static final List&lt;PaymentIntentStatus&gt; COLLECTIBLE = List.of(CREATED, PROCESSING);</span>
+
+    /**
+     * R4: the states where money HAS MOVED for the booking — the intent
+     * collected (and may be mid-refund). The deterministic financial
+     * searches ({@code findFirstByBookingIdAndStatusIn...}, latest by
+     * {@code (createdAt, id)}) are scoped to these states for the refund
+     * paths, and a live row here also blocks a fresh attempt: the booking
+     * is paid — another collectible intent would re-open the double-charge
+     * window this wave closes.
+     */
+<span class="fc" id="L37">    public static final List&lt;PaymentIntentStatus&gt; COLLECTED =</span>
+<span class="fc" id="L38">            List.of(SUCCEEDED, PARTIALLY_REFUNDED, REFUNDED);</span>
+
+    /**
+     * R4: the states after which a NEW attempt may be created — the plan's
+     * own model sentence (&quot;a new intent for the booking only after the
+     * previous FAILED or was CANCELLED&quot;). Every other live row blocks the
+     * creation guard ({@code findFirstByBookingIdAndStatusNotIn}).
+     */
+<span class="fc" id="L46">    public static final List&lt;PaymentIntentStatus&gt; RETRYABLE = List.of(FAILED, CANCELLED);</span>
+
+<span class="fc" id="L48">    public static final java.util.Map&lt;PaymentIntentStatus, Set&lt;PaymentIntentStatus&gt;&gt; TRANSITIONS =</span>
+<span class="fc" id="L49">            Collections.unmodifiableMap(java.util.Map.of(</span>
+<span class="fc" id="L50">                    CREATED, EnumSet.of(PROCESSING, CANCELLED),</span>
+<span class="fc" id="L51">                    PROCESSING, EnumSet.of(SUCCEEDED, FAILED),</span>
+<span class="fc" id="L52">                    SUCCEEDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED),</span>
+<span class="fc" id="L53">                    FAILED, EnumSet.noneOf(PaymentIntentStatus.class),</span>
+<span class="fc" id="L54">                    CANCELLED, EnumSet.noneOf(PaymentIntentStatus.class),</span>
+<span class="fc" id="L55">                    REFUNDED, EnumSet.noneOf(PaymentIntentStatus.class),</span>
+<span class="fc" id="L56">                    PARTIALLY_REFUNDED, EnumSet.of(REFUNDED, PARTIALLY_REFUNDED)</span>
+            ));
+
+    public void validateTransitionTo(PaymentIntentStatus target) {
+<span class="fc" id="L60">        Set&lt;PaymentIntentStatus&gt; allowed = TRANSITIONS.get(this);</span>
+<span class="pc bpc" id="L61" title="1 of 4 branches missed.">        if (allowed == null || !allowed.contains(target)) {</span>
+<span class="fc" id="L62">            throw new ConflictException(</span>
+                    &quot;Cannot transition from &quot; + this + &quot; to &quot; + target
+            );
+        }
+<span class="fc" id="L66">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

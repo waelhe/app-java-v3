@@ -1,0 +1,8 @@
+com/marketplace/realestate/RealestateService.class
+com/marketplace/realestate/RealestateModule.class
+com/marketplace/realestate/PropertyDetailsRepository.class
+com/marketplace/realestate/PropertyDetailsRequest.class
+com/marketplace/realestate/PropertyFilterAdapter.class
+com/marketplace/realestate/PropertyDetails.class
+com/marketplace/realestate/package-info.class
+com/marketplace/realestate/PropertyController.class

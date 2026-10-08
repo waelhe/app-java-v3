@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking</a> &gt; <span class="el_source">BookingController.java</span></div><h1>BookingController.java</h1><pre class="source lang-java linenums">package com.marketplace.booking;
+
+import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@RestController
+@RequestMapping(value = ApiConstants.BOOKING, version = &quot;1.0&quot;)
+public class BookingController {
+
+    private final BookingService bookingService;
+    private final CurrentUserProvider currentUserProvider;
+    private final BookingMapper bookingMapper;
+
+<span class="fc" id="L28">    public BookingController(BookingService bookingService, CurrentUserProvider currentUserProvider, BookingMapper bookingMapper) {</span>
+<span class="fc" id="L29">        this.bookingService = bookingService;</span>
+<span class="fc" id="L30">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L31">        this.bookingMapper = bookingMapper;</span>
+<span class="fc" id="L32">    }</span>
+
+    @GetMapping(&quot;/{id}&quot;)
+    @Operation(summary = &quot;Get one booking&quot;, description = &quot;Participant-scoped: the consumer or the &quot;
+            + &quot;provider of the booking (or ADMIN); anyone else gets 404.&quot;)
+    public ResponseEntity&lt;BookingResponse&gt; getById(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L38">        return ResponseEntity.ok(bookingMapper.toResponse(bookingService.getByIdForUser(id, authentication)));</span>
+    }
+
+    @GetMapping(&quot;/consumer/{consumerId}&quot;)
+    @Operation(summary = &quot;List a consumer's bookings&quot;, description = &quot;Paginated bookings placed by the &quot;
+            + &quot;given consumer. Self or ADMIN only.&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;BookingResponse&gt;&gt; listByConsumer(
+            @PathVariable UUID consumerId, Pageable pageable, Authentication authentication) {
+<span class="fc" id="L46">        return ResponseEntity.ok(PagedResponse.of(</span>
+<span class="fc" id="L47">                bookingService.listByConsumer(consumerId, pageable, authentication).map(bookingMapper::toResponse)));</span>
+    }
+
+    @GetMapping(&quot;/provider/{providerId}&quot;)
+    @Operation(summary = &quot;List a provider's bookings&quot;, description = &quot;Paginated bookings for the &quot;
+            + &quot;given provider's listings. Owning provider or ADMIN only.&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;BookingResponse&gt;&gt; listByProvider(
+            @PathVariable UUID providerId, Pageable pageable, Authentication authentication) {
+<span class="fc" id="L55">        return ResponseEntity.ok(PagedResponse.of(</span>
+<span class="fc" id="L56">                bookingService.listByProvider(providerId, pageable, authentication).map(bookingMapper::toResponse)));</span>
+    }
+
+    /**
+     * L29 (feature-expansion roadmap §5, Week 4): the booking write is one of
+     * the three high-impact public write endpoints covered by an independent
+     * named rate-limiter instance. timeout-duration 0 (application.yml) — a
+     * limited call fails fast with 429 RL-001 instead of queueing.
+     */
+    @PostMapping
+    @RateLimiter(name = &quot;bookingCreate&quot;)
+    @Operation(summary = &quot;Create a booking request&quot;,
+            description = &quot;Books a stay window for a listing. The nightly total is derived server-side &quot;
+                    + &quot;from the effective price — the client never supplies pricing.&quot;)
+    public ResponseEntity&lt;BookingResponse&gt; create(@Valid @RequestBody CreateBookingRequest request,
+                                                  Authentication authentication) {
+<span class="fc" id="L72">        UUID consumerId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc" id="L73">        Booking booking = bookingService.create(</span>
+<span class="fc" id="L74">                consumerId, request.listingId(), request.startsAt(), request.endsAt(), request.notes());</span>
+<span class="fc" id="L75">        return ResponseEntity.status(HttpStatus.CREATED).body(bookingMapper.toResponse(booking));</span>
+    }
+
+    @PostMapping(&quot;/{id}/confirm&quot;)
+    @Operation(summary = &quot;Confirm a booking (provider)&quot;, description = &quot;Accepts a PENDING booking; &quot;
+            + &quot;frees the slot window and starts the payment intent flow.&quot;)
+    public ResponseEntity&lt;BookingResponse&gt; confirm(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L82">        return ResponseEntity.ok(bookingMapper.toResponse(bookingService.confirm(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/complete&quot;)
+    @Operation(summary = &quot;Complete a booking (provider)&quot;, description = &quot;Marks a confirmed stay &quot;
+            + &quot;completed — the state from which the consumer may review.&quot;)
+    public ResponseEntity&lt;BookingResponse&gt; complete(@PathVariable UUID id, Authentication authentication) {
+<span class="nc" id="L89">        return ResponseEntity.ok(bookingMapper.toResponse(bookingService.complete(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/cancel&quot;)
+    @Operation(summary = &quot;Cancel a booking&quot;, description = &quot;Consumer or provider cancellation; &quot;
+            + &quot;frees the slot window and triggers the payment refund path (L19).&quot;)
+    public ResponseEntity&lt;BookingResponse&gt; cancel(@PathVariable UUID id, Authentication authentication) {
+<span class="nc" id="L96">        return ResponseEntity.ok(bookingMapper.toResponse(bookingService.cancel(id, authentication)));</span>
+    }
+
+    /**
+     * L29: request contract for {@link #create}. The stay window is
+     * [startsAt, endsAt) with an exclusive end — the L27/L26 half-open
+     * interval convention.
+     */
+    @Schema(description = &quot;Booking request: a listing id plus the stay window; pricing is derived server-side&quot;)
+<span class="fc" id="L105">    public record CreateBookingRequest(</span>
+            @Schema(description = &quot;The listing to book&quot;, example = &quot;7c9e6679-7425-40de-944b-e07fc1f90ae7&quot;)
+            @NotNull UUID listingId,
+            @Schema(description = &quot;Stay start (inclusive), ISO-8601 instant&quot;,
+                    example = &quot;2026-10-01T14:00:00Z&quot;)
+            @NotNull Instant startsAt,
+            @Schema(description = &quot;Stay end (EXCLUSIVE — the checkout morning is not a priced night), &quot;
+                    + &quot;ISO-8601 instant&quot;, example = &quot;2026-10-04T10:00:00Z&quot;)
+            @NotNull Instant endsAt,
+            @Schema(description = &quot;Optional free-text note for the provider&quot;,
+                    example = &quot;Arriving late, please keep the key in the lockbox&quot;)
+            String notes
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

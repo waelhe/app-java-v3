@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Booking.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking</a> &gt; <span class="el_source">Booking.java</span></div><h1>Booking.java</h1><pre class="source lang-java linenums">package com.marketplace.booking;
+
+import com.marketplace.shared.api.Currencies;
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = &quot;bookings&quot;)
+@Audited
+public class Booking extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;consumer_id&quot;, nullable = false)
+    private UUID consumerId;
+
+    @Column(name = &quot;provider_id&quot;, nullable = false)
+    private UUID providerId;
+
+    @Column(name = &quot;listing_id&quot;, nullable = false)
+    private UUID listingId;
+
+<span class="fc" id="L33">    @Enumerated(EnumType.STRING)</span>
+    @Column(name = &quot;status&quot;, nullable = false, length = 20)
+    private BookingStatus status = BookingStatus.PENDING;
+
+    @Column(name = &quot;price_cents&quot;, nullable = false)
+    private Long priceCents;
+
+<span class="fc" id="L40">    @Column(name = &quot;currency&quot;, nullable = false, length = 3)</span>
+    private String currency = &quot;SAR&quot;;
+
+    @Column(name = &quot;starts_at&quot;)
+    private Instant startsAt;
+
+    @Column(name = &quot;ends_at&quot;)
+    private Instant endsAt;
+
+    @Column(name = &quot;notes&quot;, columnDefinition = &quot;TEXT&quot;)
+    private String notes;
+
+<span class="fc" id="L52">    protected Booking() {</span>
+<span class="fc" id="L53">    }</span>
+
+    public Booking(UUID id, UUID consumerId, UUID providerId, UUID listingId,
+                   Long priceCents, Instant startsAt, Instant endsAt, String notes) {
+<span class="fc" id="L57">        this(id, consumerId, providerId, listingId, priceCents, null, startsAt, endsAt, notes);</span>
+<span class="fc" id="L58">    }</span>
+
+    Booking(UUID id, UUID consumerId, UUID providerId, UUID listingId,
+<span class="fc" id="L61">            Long priceCents, String currency, Instant startsAt, Instant endsAt, String notes) {</span>
+<span class="fc" id="L62">        this.id = id;</span>
+<span class="fc" id="L63">        this.consumerId = consumerId;</span>
+<span class="fc" id="L64">        this.providerId = providerId;</span>
+<span class="fc" id="L65">        this.listingId = listingId;</span>
+<span class="fc" id="L66">        this.priceCents = priceCents;</span>
+<span class="fc" id="L67">        this.currency = Currencies.normalizeOrDefault(currency, &quot;SAR&quot;);</span>
+<span class="fc" id="L68">        this.startsAt = startsAt;</span>
+<span class="fc" id="L69">        this.endsAt = endsAt;</span>
+<span class="fc" id="L70">        this.notes = notes;</span>
+<span class="fc" id="L71">    }</span>
+
+    public static Booking create(UUID consumerId, UUID providerId, UUID listingId,
+                                 Long priceCents, Instant startsAt, Instant endsAt, String notes) {
+<span class="fc" id="L75">        return create(consumerId, providerId, listingId, priceCents, null, startsAt, endsAt, notes);</span>
+    }
+
+    /**
+     * Creates a booking carrying the listing's ISO 4217 currency (roadmap
+     * B4): the money snapshot of the listing at booking time — same
+     * snapshot semantics as the price. Blank/null keeps the house default
+     * SAR, exactly the pre-existing behavior.
+     */
+    public static Booking create(UUID consumerId, UUID providerId, UUID listingId,
+                                 Long priceCents, String currency, Instant startsAt, Instant endsAt, String notes) {
+<span class="fc" id="L86">        return new Booking(UUID.randomUUID(), consumerId, providerId, listingId, priceCents,</span>
+                currency, startsAt, endsAt, notes);
+    }
+
+    @Override
+<span class="fc" id="L91">    public UUID getId() { return id; }</span>
+<span class="fc" id="L92">    public UUID getConsumerId() { return consumerId; }</span>
+<span class="fc" id="L93">    public UUID getProviderId() { return providerId; }</span>
+<span class="fc" id="L94">    public UUID getListingId() { return listingId; }</span>
+<span class="fc" id="L95">    public BookingStatus getStatus() { return status; }</span>
+<span class="fc" id="L96">    public Long getPriceCents() { return priceCents; }</span>
+<span class="fc" id="L97">    public String getCurrency() { return currency; }</span>
+<span class="fc" id="L98">    public Instant getStartsAt() { return startsAt; }</span>
+<span class="fc" id="L99">    public Instant getEndsAt() { return endsAt; }</span>
+<span class="fc" id="L100">    public String getNotes() { return notes; }</span>
+
+    public void confirm() {
+<span class="fc" id="L103">        this.status.validateTransitionTo(BookingStatus.CONFIRMED);</span>
+<span class="fc" id="L104">        this.status = BookingStatus.CONFIRMED;</span>
+<span class="fc" id="L105">    }</span>
+
+    public void complete() {
+<span class="fc" id="L108">        this.status.validateTransitionTo(BookingStatus.COMPLETED);</span>
+<span class="fc" id="L109">        this.status = BookingStatus.COMPLETED;</span>
+<span class="fc" id="L110">    }</span>
+
+    public void cancel() {
+<span class="fc" id="L113">        this.status.validateTransitionTo(BookingStatus.CANCELLED);</span>
+<span class="fc" id="L114">        this.status = BookingStatus.CANCELLED;</span>
+<span class="fc" id="L115">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

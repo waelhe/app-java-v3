@@ -1,0 +1,24 @@
+-------------------------------------------------------------------------------
+Test set: com.marketplace.pricing.ListingPriceCalendarServiceTest
+-------------------------------------------------------------------------------
+Tests run: 21, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 10.11 s <<< FAILURE! -- in com.marketplace.pricing.ListingPriceCalendarServiceTest
+com.marketplace.pricing.ListingPriceCalendarServiceTest.upsertWeekendRule_lostInsertRace_retriesOnceAndCompletesAsUpdate -- Time elapsed: 0.071 s <<< ERROR!
+org.springframework.dao.DataIntegrityViolationException: 
+could not execute statement [ERROR: duplicate key value violates unique constraint "uq_listing_weekend_rules_live_listing"
+  Detail: Key (listing_id)=(245d0446-e2df-407c-8795-466ec46f027b) already exists.]
+	at com.marketplace.pricing.ListingPriceCalendarService.lambda$upsertWeekendRuleInNewTransaction$0(ListingPriceCalendarService.java:171)
+	at org.springframework.transaction.support.TransactionTemplate.execute(TransactionTemplate.java:137)
+	at com.marketplace.pricing.ListingPriceCalendarService.upsertWeekendRuleInNewTransaction(ListingPriceCalendarService.java:164)
+	at com.marketplace.pricing.ListingPriceCalendarService.upsertWeekendRule(ListingPriceCalendarService.java:148)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:359)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:715)
+	at com.marketplace.pricing.ListingPriceCalendarService$$SpringCGLIB$$0.upsertWeekendRule(<generated>)
+	at com.marketplace.pricing.ListingPriceCalendarServiceTest.upsertWeekendRule_lostInsertRace_retriesOnceAndCompletesAsUpdate(ListingPriceCalendarServiceTest.java:221)
+Caused by: org.hibernate.exception.ConstraintViolationException: could not execute statement
+	at com.marketplace.pricing.ListingPriceCalendarServiceTest.upsertWeekendRule_lostInsertRace_retriesOnceAndCompletesAsUpdate(ListingPriceCalendarServiceTest.java:214)
+Caused by: java.sql.SQLException: could not execute statement [ERROR: duplicate key value violates unique constraint "uq_listing_weekend_rules_live_listing"
+  Detail: Key (listing_id)=(245d0446-e2df-407c-8795-466ec46f027b) already exists.]
+	... 1 more
+

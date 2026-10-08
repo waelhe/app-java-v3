@@ -1,0 +1,12 @@
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/Dispute.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeController.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeMapper.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeRepository.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeResolution.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeResponse.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeService.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputeStatus.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/DisputesModule.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/ResolveDisputeRequest.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/package-info.java
+/workspace/marketplace-disputes/src/main/java/com/marketplace/disputes/spi/DisputesContentPurgeAdapter.java

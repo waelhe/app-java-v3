@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CategoryAttributeType.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CategoryAttributeType.java</span></div><h1>CategoryAttributeType.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+/**
+ * W2 (yelp-level plan §5 — the business page): the closed value-type
+ * vocabulary of the category-attribute registry (V97's CHECK) — the
+ * declared shape an attribute's VALUE carries.
+ *
+ * &lt;p&gt;Three types, deliberately closed: TEXT (a short free-text value),
+ * NUMBER (a numeric value), BOOLEAN (a yes/no amenity — wifi, parking,
+ * electronic payment, the plan's own examples). A fourth type (say, a
+ * range or an enum) is a migration-widened decision through the same
+ * V68/V69 discipline every house vocabulary follows — never a silent
+ * insertion.
+ */
+<span class="fc" id="L15">public enum CategoryAttributeType {</span>
+<span class="fc" id="L16">    TEXT,</span>
+<span class="fc" id="L17">    NUMBER,</span>
+<span class="fc" id="L18">    BOOLEAN</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

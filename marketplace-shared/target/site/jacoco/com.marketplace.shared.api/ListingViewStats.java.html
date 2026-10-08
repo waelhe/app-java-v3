@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingViewStats.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ListingViewStats.java</span></div><h1>ListingViewStats.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.UUID;
+
+/**
+ * L40 (realestate systems plan §5 — view analytics): one listing's view
+ * total over the requested window, for the provider's own analytics
+ * surface. The listing id is the catalog-space {@code provider_listings.id};
+ * the title is the current title of that listing (the join the aggregate
+ * rides — the provider recognizes the row by title, the id is the stable
+ * key); the count is the sum of {@code listing_views_daily.view_count}
+ * over the window's UTC day buckets.
+ *
+ * @param listingId the listing's id (catalog space, {@code provider_listings.id})
+ * @param title     the listing's current title (display recognition —
+ *                  the id is the stable key)
+ * @param views     deduplicated views summed over the window (0 when the
+ *                  listing was never viewed inside it)
+ */
+<span class="nc" id="L20">public record ListingViewStats(UUID listingId, String title, long views) {</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

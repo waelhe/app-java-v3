@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdCampaignService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdCampaignService.java</span></div><h1>AdCampaignService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.security.CurrentUserProvider;
+import com.marketplace.shared.api.ProviderLookupPort;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the campaign's
+ * owner-facing surface — create, read, pause/resume, and the immutable
+ * billing history. The service lives in catalog because the campaign IS
+ * the listing's paid promotion (the module that owns the listing, the
+ * views and the boost ordering owns the promotion that rides them); the
+ * money side crosses module boundaries ONLY through the
+ * {@code AdWindowBilledEvent} (the Modulith law).
+ *
+ * &lt;p&gt;&lt;b&gt;Creation gates (in order):&lt;/b&gt; the listing exists, is ACTIVE,
+ * and belongs to the caller (the {@code verifyOwnership} law — the
+ * providerId is a user id, resolved through the user-owned profile);
+ * no live campaign exists for the listing (the single-promotion Yelp
+ * semantics — the service's friendly 409, the V103 partial unique index
+ * the concurrency backstop); the budget is positive and the prices
+ * non-negative (the request's bean validation); the duration's end is
+ * strictly in the future. The campaign starts NOW ({@code AdCampaign.start})
+ * — no future scheduling exists in this wave (a documented boundary, not
+ * an oversight: the plan's «مدة» is the running window's end).&lt;/p&gt;
+ */
+@Service
+public class AdCampaignService {
+
+    private final AdCampaignRepository campaignRepository;
+    private final AdBillingChargeRepository chargeRepository;
+    private final ProviderListingRepository listingRepository;
+    private final CurrentUserProvider currentUserProvider;
+    private final ProviderLookupPort providerLookupPort;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final java.time.Clock clock;
+
+    public AdCampaignService(AdCampaignRepository campaignRepository,
+                             AdBillingChargeRepository chargeRepository,
+                             ProviderListingRepository listingRepository,
+                             CurrentUserProvider currentUserProvider,
+                             ProviderLookupPort providerLookupPort,
+                             ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L59">                             java.time.Clock clock) {</span>
+<span class="fc" id="L60">        this.campaignRepository = campaignRepository;</span>
+<span class="fc" id="L61">        this.chargeRepository = chargeRepository;</span>
+<span class="fc" id="L62">        this.listingRepository = listingRepository;</span>
+<span class="fc" id="L63">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L64">        this.providerLookupPort = providerLookupPort;</span>
+<span class="fc" id="L65">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L66">        this.clock = clock;</span>
+<span class="fc" id="L67">    }</span>
+
+    /**
+     * Starts one paid promotion for the caller's ACTIVE listing. The
+     * currency defaults to the house SAR and must be a valid ISO 4217
+     * code ({@code Currencies.normalize}'s authority — the same validation
+     * every money field carries).
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    @Transactional
+    public AdCampaignView create(CreateAdCampaignRequest request, Authentication authentication) {
+<span class="fc" id="L78">        ProviderListing listing = listingRepository.findById(request.listingId())</span>
+<span class="pc" id="L79">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Listing&quot;, request.listingId()));</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        if (listing.getStatus() != ListingStatus.ACTIVE) {</span>
+<span class="fc" id="L81">            throw new ConflictException(&quot;Listing &quot; + request.listingId()</span>
+<span class="fc" id="L82">                    + &quot; is &quot; + listing.getStatus() + &quot; — only an ACTIVE listing can be promoted&quot;);</span>
+        }
+<span class="fc" id="L84">        verifyOwnership(listing.getProviderId(), authentication);</span>
+
+<span class="fc" id="L86">        campaignRepository</span>
+<span class="fc" id="L87">                .findFirstByListingIdAndStatusOrderByIdAsc(request.listingId(), AdCampaignStatus.ACTIVE)</span>
+<span class="fc" id="L88">                .ifPresent(existing -&gt; {</span>
+<span class="fc" id="L89">                    throw new ConflictException(&quot;Listing &quot; + request.listingId()</span>
+<span class="fc" id="L90">                            + &quot; already has a live campaign (&quot; + existing.getId()</span>
+                            + &quot;) — the single-promotion law: pause or let it end first&quot;);
+                });
+
+<span class="fc" id="L94">        Instant now = clock.instant();</span>
+<span class="fc bfc" id="L95" title="All 4 branches covered.">        if (request.endsAt() != null &amp;&amp; !request.endsAt().isAfter(now)) {</span>
+<span class="fc" id="L96">            throw new BadRequestException(&quot;endsAt must be strictly in the future&quot;);</span>
+        }
+<span class="fc" id="L98">        AdCampaign campaign = AdCampaign.start(listing.getProviderId(), listing.getId(),</span>
+<span class="fc" id="L99">                request.budgetCents(), request.clickPriceCents(), request.impressionPriceCents(),</span>
+<span class="fc" id="L100">                request.currency(), now, request.endsAt());</span>
+<span class="fc" id="L101">        AdCampaignView view = toView(campaignRepository.save(campaign));</span>
+        // CodeRabbit W5 r1, adopted: the boost's truth changed — a live paid
+        // campaign now carries the listing — and the ordered pages must not
+        // serve yesterday's order (the same AFTER_COMMIT eviction law every
+        // listing write and the ranking job apply).
+<span class="fc" id="L106">        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L107">        return view;</span>
+    }
+
+    /** The caller's own campaigns — the honest consumption state on every row. */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    @Transactional(readOnly = true)
+    public List&lt;AdCampaignView&gt; listMine(Authentication authentication) {
+<span class="nc" id="L114">        UUID providerUserId = resolveProviderUserId(authentication);</span>
+<span class="nc" id="L115">        return campaignRepository.findByProviderIdOrderByCreatedAtDescIdDesc(providerUserId)</span>
+<span class="nc" id="L116">                .stream().map(this::toView).toList();</span>
+    }
+
+    /** The owner's hold — no boost, no accrual; the paused gap never bills. */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    @Transactional
+    public AdCampaignView pause(UUID campaignId, Authentication authentication) {
+<span class="fc" id="L123">        AdCampaign campaign = ownedCampaign(campaignId, authentication);</span>
+        try {
+<span class="fc" id="L125">            campaign.pause();</span>
+<span class="nc" id="L126">        } catch (IllegalStateException e) {</span>
+<span class="nc" id="L127">            throw new ConflictException(e.getMessage());</span>
+<span class="fc" id="L128">        }</span>
+        // The boost's truth changed — the dark campaign's listing loses the
+        // paid tier NOW, not at the next cache TTL (the eviction law above).
+<span class="fc" id="L131">        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L132">        return toView(campaign);</span>
+    }
+
+    /**
+     * The hold lifts — the billing marker jumps past the dark days (see
+     * {@link AdCampaign#resume}). A campaign whose duration already ended
+     * cannot lift back (CodeRabbit W5 r1, adopted): the billing run skips
+     * PAUSED campaigns, so an expired-but-paused campaign would otherwise
+     * return to the boost with a dead duration until the next daily run.
+     *
+     * &lt;p&gt;&lt;b&gt;The single-promotion law guards the lift too&lt;/b&gt; (CodeRabbit
+     * W5 r3, adopted): {@code create} rejects only an ACTIVE campaign, so a
+     * PAUSED campaign's listing may carry a NEWER live campaign. Resuming
+     * the paused one then would put two ACTIVE campaigns on one listing —
+     * the V103 partial unique index would still catch the pair at commit
+     * (the concurrency backstop), but the owner deserves the same friendly
+     * 409 {@code create} states, not a raw constraint error.&lt;/p&gt;
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    @Transactional
+    public AdCampaignView resume(UUID campaignId, Authentication authentication) {
+<span class="fc" id="L153">        AdCampaign campaign = ownedCampaign(campaignId, authentication);</span>
+<span class="pc bpc" id="L154" title="1 of 4 branches missed.">        if (campaign.getEndsAt() != null &amp;&amp; !campaign.getEndsAt().isAfter(clock.instant())) {</span>
+<span class="fc" id="L155">            throw new ConflictException(&quot;Campaign &quot; + campaignId</span>
+<span class="fc" id="L156">                    + &quot; ended at &quot; + campaign.getEndsAt() + &quot; — its duration is over; start a new campaign&quot;);</span>
+        }
+<span class="fc" id="L158">        campaignRepository</span>
+<span class="fc" id="L159">                .findFirstByListingIdAndStatusOrderByIdAsc(campaign.getListingId(), AdCampaignStatus.ACTIVE)</span>
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">                .filter(live -&gt; !live.getId().equals(campaignId))</span>
+<span class="fc" id="L161">                .ifPresent(live -&gt; {</span>
+<span class="fc" id="L162">                    throw new ConflictException(&quot;Listing &quot; + campaign.getListingId()</span>
+<span class="fc" id="L163">                            + &quot; already has a live campaign (&quot; + live.getId()</span>
+                            + &quot;) — the single-promotion law: resume is a no-go until it ends&quot;);
+                });
+        try {
+<span class="fc" id="L167">            campaign.resume(AdBillingBatchExecutor.todayUtc(clock));</span>
+<span class="nc" id="L168">        } catch (IllegalStateException e) {</span>
+<span class="nc" id="L169">            throw new ConflictException(e.getMessage());</span>
+<span class="fc" id="L170">        }</span>
+        // The boost's truth changed — the listing regains the paid tier NOW.
+<span class="fc" id="L172">        eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L173">        return toView(campaign);</span>
+    }
+
+    /**
+     * The immutable billing history — the frozen charge rows, newest
+     * window first. Read-only by construction: no surface exists that
+     * could ever answer anything but the frozen truth.
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    @Transactional(readOnly = true)
+    public List&lt;AdBillingChargeView&gt; charges(UUID campaignId, Authentication authentication) {
+<span class="nc" id="L184">        AdCampaign campaign = ownedCampaign(campaignId, authentication);</span>
+<span class="nc" id="L185">        return chargeRepository.findByCampaignIdOrderByWindowStartDescIdDesc(campaign.getId()).stream()</span>
+<span class="nc" id="L186">                .map(AdCampaignService::toChargeView).toList();</span>
+    }
+
+    private AdCampaign ownedCampaign(UUID campaignId, Authentication authentication) {
+<span class="fc" id="L190">        UUID providerUserId = resolveProviderUserId(authentication);</span>
+<span class="fc" id="L191">        return campaignRepository.findByIdAndProviderId(campaignId, providerUserId)</span>
+<span class="fc" id="L192">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;AdCampaign&quot;, campaignId));</span>
+    }
+
+    /**
+     * The caller's provider id: admins bypass ownership (the
+     * {@code verifyOwnership} law) — but the ads surface is the OWNER's
+     * own ledger ({@code /providers/me}), so the admin path resolves the
+     * first campaign/ownership the caller names instead: an admin calling
+     * a /me surface without being a provider gets the honest 404.
+     */
+    private UUID resolveProviderUserId(Authentication authentication) {
+<span class="fc" id="L203">        return currentUserProvider.getCurrentUserId(authentication);</span>
+    }
+
+    private void verifyOwnership(UUID providerId, Authentication authentication) {
+<span class="fc" id="L207">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">        if (currentUserProvider.isAdmin(authentication)) {</span>
+<span class="nc" id="L209">            return;</span>
+        }
+        // A1: the providerId of a listing is a user id, so compare against
+        // the user-owned profile via findByUserId (the house convention).
+<span class="fc" id="L213">        providerLookupPort.findByUserId(providerId)</span>
+<span class="pc bpc" id="L214" title="1 of 4 branches missed.">                .filter(provider -&gt; provider.userId() != null &amp;&amp; provider.userId().equals(currentUserId))</span>
+<span class="fc" id="L215">                .orElseThrow(() -&gt; new AccessDeniedException(&quot;You do not own this listing&quot;));</span>
+<span class="fc" id="L216">    }</span>
+
+    private AdCampaignView toView(AdCampaign c) {
+<span class="fc" id="L219">        return new AdCampaignView(c.getId(), c.getListingId(), c.getBudgetCents(),</span>
+<span class="fc" id="L220">                c.getClickPriceCents(), c.getImpressionPriceCents(), c.getConsumedCents(),</span>
+<span class="fc" id="L221">                c.getBudgetCents() - c.getConsumedCents(), c.getCurrency(),</span>
+<span class="fc" id="L222">                c.getStatus().name(), c.getStartsAt(), c.getEndsAt(), c.getBilledThrough(),</span>
+<span class="fc" id="L223">                c.getCreatedAt());</span>
+    }
+
+    private static AdBillingChargeView toChargeView(AdBillingCharge ch) {
+<span class="nc" id="L227">        return new AdBillingChargeView(ch.getWindowStart(), ch.getWindowEnd(),</span>
+<span class="nc" id="L228">                ch.getImpressions(), ch.getClicks(), ch.getAmountCents(), ch.getCurrency(),</span>
+<span class="nc" id="L229">                ch.getCreatedAt());</span>
+    }
+
+    /** The campaign's owner-facing truth — the frozen money state included. */
+<span class="fc" id="L233">    public record AdCampaignView(</span>
+            UUID id,
+            UUID listingId,
+            long budgetCents,
+            long clickPriceCents,
+            long impressionPriceCents,
+            long consumedCents,
+            long remainingCents,
+            String currency,
+            String status,
+            Instant startsAt,
+            Instant endsAt,
+            LocalDate billedThrough,
+            Instant createdAt
+    ) {
+    }
+
+    /** One frozen window of the immutable billing history. */
+<span class="nc" id="L251">    public record AdBillingChargeView(</span>
+            LocalDate windowStart,
+            LocalDate windowEnd,
+            long impressions,
+            long clicks,
+            long amountCents,
+            String currency,
+            Instant frozenAt
+    ) {
+    }
+
+    /**
+     * The creation request — bean-validated at the controller: the budget
+     * positive (a zero-budget campaign is the no-campaign), the prices
+     * non-negative (a zero price honestly makes that event free), the
+     * currency a valid ISO 4217 code (blank keeps the house default).
+     */
+<span class="fc" id="L268">    public record CreateAdCampaignRequest(</span>
+            @jakarta.validation.constraints.NotNull UUID listingId,
+            @jakarta.validation.constraints.Positive long budgetCents,
+            @jakarta.validation.constraints.PositiveOrZero long clickPriceCents,
+            @jakarta.validation.constraints.PositiveOrZero long impressionPriceCents,
+            String currency,
+            Instant endsAt
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

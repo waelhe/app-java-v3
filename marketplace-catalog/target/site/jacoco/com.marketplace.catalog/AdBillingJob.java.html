@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdBillingJob.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdBillingJob.java</span></div><h1>AdBillingJob.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the periodic
+ * debit — the plan's «وظيفة خصم دورية». Daily at 04:45 UTC, strictly
+ * after the ranking job (03:30) and the event-publication cleanup
+ * (03:00) — the billing reads the day the ranking already ranked and
+ * settles COMPLETE UTC days only (the horizon is exclusive today).
+ *
+ * &lt;p&gt;&lt;b&gt;The orchestration shape is the {@code ListingRankingJob}'s:&lt;/b&gt; a
+ * thin loop over the executor's bounded {@code REQUIRES_NEW} work units.
+ * The candidate list is advisory (each settle re-reads fresh state); an
+ * overlapping run's loser surfaces as the charge insert's
+ * {@link DataIntegrityViolationException} — the EXPECTED deterministic
+ * outcome (one window, one charge), logged and skipped so the run keeps
+ * settling the other campaigns. Any other failure propagates: the job
+ * fails loudly and the next run retries the unsettled windows (the
+ * marker never advanced).&lt;/p&gt;
+ */
+@Component
+public class AdBillingJob {
+
+<span class="nc" id="L33">    private static final Logger log = LoggerFactory.getLogger(AdBillingJob.class);</span>
+
+    private final AdCampaignRepository campaignRepository;
+    private final AdBillingBatchExecutor batchExecutor;
+    private final Clock clock;
+
+    public AdBillingJob(AdCampaignRepository campaignRepository,
+                        AdBillingBatchExecutor batchExecutor,
+<span class="nc" id="L41">                        Clock clock) {</span>
+<span class="nc" id="L42">        this.campaignRepository = campaignRepository;</span>
+<span class="nc" id="L43">        this.batchExecutor = batchExecutor;</span>
+<span class="nc" id="L44">        this.clock = clock;</span>
+<span class="nc" id="L45">    }</span>
+
+    /**
+     * Runs daily (the plan's cadence — «وظيفة خصم دورية», one settle per
+     * day's window). Catch-up is structural: a campaign left behind by
+     * downtime settles its whole open span as ONE window on the next run
+     * (the charge's {@code window_start} is the span's own start).
+     */
+    @Scheduled(cron = &quot;0 45 4 * * ?&quot;, zone = &quot;UTC&quot;)
+    public void settleOpenWindows() {
+<span class="nc" id="L55">        var today = AdBillingBatchExecutor.todayUtc(clock);</span>
+<span class="nc" id="L56">        List&lt;UUID&gt; candidates = campaignRepository.findBillableBefore(today);</span>
+<span class="nc" id="L57">        int settled = 0;</span>
+<span class="nc" id="L58">        int overlaps = 0;</span>
+<span class="nc bnc" id="L59" title="All 2 branches missed.">        for (UUID campaignId : candidates) {</span>
+            try {
+<span class="nc" id="L61">                batchExecutor.settleOneCampaign(campaignId, today);</span>
+<span class="nc" id="L62">                settled++;</span>
+<span class="nc" id="L63">            } catch (DataIntegrityViolationException violation) {</span>
+                // CodeRabbit W5 r1, adopted: ONLY the window-uniqueness
+                // violation is the expected deterministic outcome (one
+                // window, one charge — the loser's rollback). Any other
+                // integrity failure is a billing bug this run must surface
+                // loudly, never swallow as a fake overlap.
+<span class="nc bnc" id="L69" title="All 2 branches missed.">                if (!isWindowUniquenessViolation(violation)) {</span>
+<span class="nc" id="L70">                    throw violation;</span>
+                }
+<span class="nc" id="L72">                overlaps++;</span>
+<span class="nc" id="L73">                log.info(&quot;Ad billing overlap: campaign {}'s window was settled by a concurrent run &quot;</span>
+                                + &quot;(the deterministic backstop rejected this one) — one window, one charge&quot;,
+                        campaignId);
+<span class="nc" id="L76">            }</span>
+<span class="nc" id="L77">        }</span>
+<span class="nc" id="L78">        log.info(&quot;Ad billing run over {} candidates: {} settled, {} overlaps, horizon {}&quot;,</span>
+<span class="nc" id="L79">                candidates.size(), settled, overlaps, today);</span>
+<span class="nc" id="L80">    }</span>
+
+    /**
+     * The window-uniqueness backstop's own signature: the constraint name
+     * in the violation's most specific cause — the same
+     * {@code isWeekendRuleInsertRace} discrimination the pricing insert-race
+     * retry uses (a DIVE carries more than uniqueness; blind catching
+     * would hide real billing bugs).
+     */
+    private static boolean isWindowUniquenessViolation(DataIntegrityViolationException violation) {
+<span class="nc" id="L90">        Throwable cause = violation;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">        while (cause != null) {</span>
+<span class="nc" id="L92">            String message = cause.getMessage();</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">            if (message != null &amp;&amp; message.contains(WINDOW_UNIQUENESS_CONSTRAINT)) {</span>
+<span class="nc" id="L94">                return true;</span>
+            }
+<span class="nc" id="L96">            cause = cause.getCause();</span>
+<span class="nc" id="L97">        }</span>
+<span class="nc" id="L98">        return false;</span>
+    }
+
+    /** The charge table's window-identity constraint — the overlap backstop's own name. */
+    static final String WINDOW_UNIQUENESS_CONSTRAINT = &quot;uk_ad_billing_charges_campaign_window&quot;;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

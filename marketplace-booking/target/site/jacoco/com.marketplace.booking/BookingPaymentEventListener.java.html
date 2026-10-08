@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingPaymentEventListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking</a> &gt; <span class="el_source">BookingPaymentEventListener.java</span></div><h1>BookingPaymentEventListener.java</h1><pre class="source lang-java linenums">package com.marketplace.booking;
+
+import com.marketplace.shared.api.PaymentIntentLookupPort;
+import com.marketplace.shared.api.PaymentStateChangedEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class BookingPaymentEventListener {
+
+<span class="fc" id="L13">    private static final Logger log = LoggerFactory.getLogger(BookingPaymentEventListener.class);</span>
+
+    private final BookingService bookingService;
+    private final PaymentIntentLookupPort paymentIntentLookupPort;
+
+    public BookingPaymentEventListener(BookingService bookingService,
+<span class="fc" id="L19">                                        PaymentIntentLookupPort paymentIntentLookupPort) {</span>
+<span class="fc" id="L20">        this.bookingService = bookingService;</span>
+<span class="fc" id="L21">        this.paymentIntentLookupPort = paymentIntentLookupPort;</span>
+<span class="fc" id="L22">    }</span>
+
+    @ApplicationModuleListener
+    public void onPaymentCompleted(PaymentStateChangedEvent event) {
+<span class="pc bpc" id="L26" title="1 of 2 branches missed.">        if (!&quot;COMPLETED&quot;.equals(event.state())) {</span>
+<span class="fc" id="L27">            return;</span>
+        }
+<span class="nc" id="L29">        paymentIntentLookupPort.findById(event.paymentIntentId()).ifPresent(intent -&gt; {</span>
+            // W5 (yelp-level plan §5 — G24): an ad bill's completion settles
+            // the provider's ad spend — there is no booking to confirm (the
+            // origin pairing guarantees bookingId is null). Skipping keeps
+            // this listener's retry loop out of a payment that is not its.
+<span class="nc bnc" id="L34" title="All 2 branches missed.">            if (intent.isAdOrigin()) {</span>
+<span class="nc" id="L35">                log.info(&quot;Payment completion is an ad bill — no booking to confirm &quot;</span>
+                        + &quot;(paymentIntentId={}, campaign={})&quot;,
+<span class="nc" id="L37">                        intent.paymentIntentId(), intent.adCampaignId());</span>
+<span class="nc" id="L38">                return;</span>
+            }
+<span class="nc" id="L40">            bookingService.autoConfirm(intent.bookingId());</span>
+<span class="nc" id="L41">            log.info(&quot;Booking auto-confirmed from payment: bookingId={}, paymentIntentId={}&quot;,</span>
+<span class="nc" id="L42">                    intent.bookingId(), intent.paymentIntentId());</span>
+<span class="nc" id="L43">        });</span>
+<span class="nc" id="L44">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

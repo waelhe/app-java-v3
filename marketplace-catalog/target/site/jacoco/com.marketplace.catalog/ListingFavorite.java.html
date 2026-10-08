@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingFavorite.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingFavorite.java</span></div><h1>ListingFavorite.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * W3 (yelp-level-plan §5 — G19): one member's saved listing — the
+ * «حفظ لاحقًا» relation. A favorite is a CLAIMED relation between one
+ * member and one listing: one live row per pair (the partial unique
+ * index V98 keeps), withdrawn by the house soft delete (the row stays
+ * for the audit trail — the Envers mirror records every save/withdraw —
+ * and a withdrawn favorite can be re-saved as a fresh row).
+ *
+ * &lt;p&gt;&lt;b&gt;The listing's lifecycle is not the favorite's:&lt;/b&gt; a saved
+ * listing that later expires, pauses or is withdrawn by its provider
+ * stays saved (the relation is the member's own data, b-5's retention
+ * discipline); the list view carries the listing's CURRENT status so the
+ * member sees the truth. A hard listing deletion does not exist in this
+ * system (soft delete everywhere — the FK stays honest).
+ */
+@Entity
+@Table(name = &quot;listing_favorites&quot;)
+@Audited
+public class ListingFavorite extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    /** The saving member — the users.id space (the ownership key). */
+    @Column(name = &quot;user_id&quot;, nullable = false)
+    private UUID userId;
+
+    /** The saved listing — the FK's own existence guarantee (V98). */
+    @Column(name = &quot;listing_id&quot;, nullable = false)
+    private UUID listingId;
+
+<span class="nc" id="L44">    protected ListingFavorite() {</span>
+        // JPA
+<span class="nc" id="L46">    }</span>
+
+<span class="fc" id="L48">    private ListingFavorite(UUID id, UUID userId, UUID listingId) {</span>
+<span class="fc" id="L49">        this.id = id;</span>
+<span class="fc" id="L50">        this.userId = userId;</span>
+<span class="fc" id="L51">        this.listingId = listingId;</span>
+<span class="fc" id="L52">    }</span>
+
+    /** Factory: the member's first save of this listing (the only creator). */
+    public static ListingFavorite save(UUID userId, UUID listingId) {
+<span class="fc" id="L56">        return new ListingFavorite(UUID.randomUUID(), userId, listingId);</span>
+    }
+
+    public UUID getId() {
+<span class="nc" id="L60">        return id;</span>
+    }
+
+    public UUID getUserId() {
+<span class="nc" id="L64">        return userId;</span>
+    }
+
+    public UUID getListingId() {
+<span class="fc" id="L68">        return listingId;</span>
+    }
+
+    public Instant getSavedAt() {
+<span class="fc" id="L72">        return getCreatedAt();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuthHelper.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.security</a> &gt; <span class="el_source">AuthHelper.java</span></div><h1>AuthHelper.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.security;
+
+import com.marketplace.shared.api.ProviderLookupPort;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Component;
+
+import java.util.UUID;
+
+@Component(&quot;authHelper&quot;)
+public class AuthHelper {
+
+    private final CurrentUserProvider currentUserProvider;
+    private final ProviderLookupPort providerLookupPort;
+
+    public AuthHelper(CurrentUserProvider currentUserProvider,
+<span class="fc" id="L16">                      ProviderLookupPort providerLookupPort) {</span>
+<span class="fc" id="L17">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L18">        this.providerLookupPort = providerLookupPort;</span>
+<span class="fc" id="L19">    }</span>
+
+    public boolean isCurrentUser(UUID userId, Authentication authentication) {
+<span class="fc" id="L22">        return currentUserProvider.getCurrentUserId(authentication).equals(userId);</span>
+    }
+
+    /**
+     * Whether the authentication carries the ADMIN authority — delegates to
+     * the shared current-user provider.
+     */
+    public boolean isAdmin(Authentication authentication) {
+<span class="fc" id="L30">        return currentUserProvider.isAdmin(authentication);</span>
+    }
+
+    /**
+     * Whether the authenticated user owns the provider record identified by the
+     * given provider id.
+     *
+     * &lt;p&gt;The {@code providerId} universe is the {@code users.id} space — every
+     * cross-module {@code provider_id} column (catalog, booking, reviews, media,
+     * availability, ledger) carries a user id, not a {@code provider_profiles.id}
+     * (A1). A client-supplied provider id therefore must resolve through the
+     * user-owned &quot;me&quot; seam {@code findByUserId}, never {@code findById} (which
+     * queries the unrelated {@code provider_profiles.id} space) — otherwise the
+     * legitimate owner is always denied. Database truth: V2/V3/V6 reference
+     * {@code users(id)}; Spring Data derived query: {@code findByUserId}.
+     */
+    public boolean ownsProvider(UUID providerId, Authentication authentication) {
+<span class="fc" id="L47">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc" id="L48">        return providerLookupPort.findByUserId(providerId)</span>
+<span class="pc bpc" id="L49" title="1 of 4 branches missed.">                .map(provider -&gt; provider.userId() != null &amp;&amp; provider.userId().equals(currentUserId))</span>
+<span class="fc" id="L50">                .orElse(false);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

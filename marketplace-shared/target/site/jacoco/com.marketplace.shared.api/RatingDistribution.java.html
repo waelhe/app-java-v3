@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RatingDistribution.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">RatingDistribution.java</span></div><h1>RatingDistribution.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W2 (yelp-level plan §5 — the business page): the provider's rating
+ * histogram — the «توزيع نجوم» block the wave's acceptance criterion names
+ * («صفحة مزود كاملة: ساعات + خدمات + توزيع نجوم + إشارتا التقييم»).
+ *
+ * &lt;p&gt;&lt;b&gt;All five buckets always present (1..5), zeros included:&lt;/b&gt; a
+ * histogram that omits empty buckets leaves the renderer guessing whether
+ * &quot;no 1-star row&quot; means zero or unknown — the exact ambiguity the
+ * {@code rating_general_count = 0} &quot;exact rather than unknown&quot; rule (W1)
+ * exists to prevent. The constructor-fills enforce the complete shape.
+ *
+ * &lt;p&gt;Like {@link ReviewStats}, the distribution is always recomputed from
+ * the reviews table — never stored — so it cannot drift from the source
+ * of truth.
+ */
+<span class="fc" id="L21">public record RatingDistribution(</span>
+        UUID providerId,
+        List&lt;RatingBucket&gt; buckets
+) {
+
+    /** One histogram bar: the star value and its live published count. */
+<span class="fc" id="L27">    public record RatingBucket(int rating, long count) {</span>
+    }
+
+    /**
+     * Builds the complete histogram over a sparse {(rating, count)} input:
+     * every rating 1..5 appears exactly once, missing ratings carry 0.
+     */
+    public static RatingDistribution of(UUID providerId, List&lt;RatingBucket&gt; sparse) {
+<span class="fc" id="L35">        long[] counts = new long[6]; // index 1..5 — index 0 unused, ratings are 1-based</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        for (RatingBucket bucket : sparse) {</span>
+<span class="fc" id="L37">            counts[bucket.rating()] = bucket.count();</span>
+<span class="fc" id="L38">        }</span>
+<span class="fc" id="L39">        List&lt;RatingBucket&gt; complete = java.util.stream.IntStream.rangeClosed(1, 5)</span>
+<span class="fc" id="L40">                .mapToObj(rating -&gt; new RatingBucket(rating, counts[rating]))</span>
+<span class="fc" id="L41">                .toList();</span>
+<span class="fc" id="L42">        return new RatingDistribution(providerId, List.copyOf(complete));</span>
+    }
+
+    /**
+     * W2 (§4.1 — the OPEN mode's single merged signal): the element-wise
+     * sum of two complete histograms — the display law's own arithmetic
+     * («متوسط واحد يجمع المراجعات العامة والموثقة معًا»), applied to the
+     * bars the way the page's weighted mean applies to the average. Both
+     * inputs are complete (1..5, zeros included) by construction, so the
+     * merge is a plain per-bucket sum.
+     */
+    public static RatingDistribution merge(RatingDistribution verified, RatingDistribution general) {
+<span class="fc" id="L54">        List&lt;RatingBucket&gt; merged = new java.util.ArrayList&lt;&gt;(5);</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        for (int rating = 1; rating &lt;= 5; rating++) {</span>
+<span class="fc" id="L56">            long count = bucket(verified, rating) + bucket(general, rating);</span>
+<span class="fc" id="L57">            merged.add(new RatingBucket(rating, count));</span>
+        }
+<span class="fc" id="L59">        return new RatingDistribution(verified.providerId(), List.copyOf(merged));</span>
+    }
+
+    private static long bucket(RatingDistribution distribution, int rating) {
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (distribution == null) {</span>
+<span class="fc" id="L64">            return 0;</span>
+        }
+<span class="fc" id="L66">        return distribution.buckets().stream()</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">                .filter(b -&gt; b.rating() == rating)</span>
+<span class="fc" id="L68">                .mapToLong(RatingBucket::count)</span>
+<span class="fc" id="L69">                .findFirst().orElse(0L);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

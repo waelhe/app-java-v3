@@ -1,0 +1,15 @@
+com/marketplace/shared/api/GlobalExceptionHandlerTest.class
+com/marketplace/shared/api/StubHttpServletRequest.class
+com/marketplace/shared/api/UserSummaryTest.class
+com/marketplace/shared/api/ApiProblemDetailExceptionTest.class
+com/marketplace/shared/api/GlobalExceptionHandlerTest$Constrained.class
+com/marketplace/shared/api/GeoNodeTest.class
+com/marketplace/shared/api/PagedResponseTest.class
+com/marketplace/shared/api/PropertyContractTypesTest.class
+com/marketplace/shared/api/BookingInfoTest.class
+com/marketplace/shared/api/GlobalExceptionHandlerTest$TestController.class
+com/marketplace/shared/api/GlobalExceptionHandlerTest$1.class
+com/marketplace/shared/api/IsoCurrencyCodeValidatorTest.class
+com/marketplace/shared/api/SpringPaginationTest.class
+com/marketplace/shared/api/ErrorResponseImportConflictTest.class
+com/marketplace/shared/api/RatingDistributionTest.class

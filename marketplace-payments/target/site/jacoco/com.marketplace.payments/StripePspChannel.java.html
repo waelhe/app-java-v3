@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StripePspChannel.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">StripePspChannel.java</span></div><h1>StripePspChannel.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.stripe.exception.EventDataObjectDeserializationException;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Charge;
+import com.stripe.model.Event;
+import com.stripe.model.PaymentIntent;
+import com.stripe.net.RequestOptions;
+import com.stripe.net.Webhook;
+import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.RefundCreateParams;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * The Stripe implementation of the outbound payment channel — the ONLY class
+ * in the codebase importing {@code com.stripe} (isolation rule of
+ * {@code S3MediaStorage}). Official bits (artifact 33.4.1, evidence cached
+ * under {@code scripts/psp-doc-verify/}, bytecode + official docs):
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code PaymentIntent.create(params, requestOptions)} with
+ *       {@code RequestOptions.builder().setApiKey(..).setIdempotencyKey(..)}
+ *       — per-call key material, never global mutable state.&lt;/li&gt;
+ *   &lt;li&gt;Amount model matches the house model exactly: &quot;a positive integer
+ *       ... in the smallest currency unit&quot; — the local amountCents is passed
+ *       through unchanged.&lt;/li&gt;
+ *   &lt;li&gt;Webhook verification is the SDK's own
+ *       {@code Webhook.constructEvent(payload, sigHeader, secret)} with
+ *       DEFAULT_TOLERANCE = 300 seconds — verified from the sources jar.&lt;/li&gt;
+ *   &lt;li&gt;Event data extraction follows the official javadoc pattern
+ *       (&quot;safe integration pattern&quot;): {@code getObject()} when API versions
+ *       match, {@code deserializeUnsafe()} as the documented fallback —
+ *       webhook snapshots never change, so id/type/metadata are stable.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Test vs live mode is a property of the bound key (sk_test_... vs
+ * sk_live_...) — the official sandbox channel; CI never binds any key, so
+ * the channel stays inert in every pipeline run.
+ *
+ * &lt;p&gt;Not final: {@code payment.psp.create} is observed, so Spring builds a
+ * CGLIB proxy of this bean when the channel is bound — CGLIB cannot subclass
+ * final classes (live boot proof, this branch).
+ */
+class StripePspChannel implements PspChannel {
+
+<span class="fc" id="L51">    private static final Logger log = LoggerFactory.getLogger(StripePspChannel.class);</span>
+
+    /** Metadata key carrying the marketplace intent id into the remote intent. */
+    static final String MARKETPLACE_INTENT_ID = &quot;marketplace_intent_id&quot;;
+
+    private final String apiKey;
+    private final String webhookSecret;
+
+<span class="fc" id="L59">    StripePspChannel(String apiKey, String webhookSecret) {</span>
+<span class="fc" id="L60">        this.apiKey = apiKey;</span>
+<span class="fc" id="L61">        this.webhookSecret = webhookSecret;</span>
+<span class="fc" id="L62">    }</span>
+
+    @Override
+    @Observed(name = &quot;payment.psp.create&quot;)
+    public RemoteIntent createRemoteIntent(UUID marketplaceIntentId, long amountCents, String currency,
+                                           String idempotencyKey) {
+<span class="nc" id="L68">        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()</span>
+<span class="nc" id="L69">                .setAmount(amountCents)</span>
+                // Locale.ROOT: ISO currency codes are ASCII — the default-locale
+                // lowercase turns ILS into &quot;ıls&quot; under a Turkish JVM locale and
+                // Stripe rejects the code (CodeRabbit #241; same rule as
+                // Currencies.normalize / CurrencyExchangeProperties).
+<span class="nc" id="L74">                .setCurrency(currency.toLowerCase(java.util.Locale.ROOT))</span>
+<span class="nc" id="L75">                .putMetadata(MARKETPLACE_INTENT_ID, marketplaceIntentId.toString())</span>
+<span class="nc" id="L76">                .build();</span>
+<span class="nc" id="L77">        RequestOptions options = RequestOptions.builder()</span>
+<span class="nc" id="L78">                .setApiKey(apiKey)</span>
+<span class="nc" id="L79">                .setIdempotencyKey(idempotencyKey)</span>
+<span class="nc" id="L80">                .build();</span>
+        try {
+<span class="nc" id="L82">            PaymentIntent remote = PaymentIntent.create(params, options);</span>
+<span class="nc" id="L83">            return new RemoteIntent(remote.getId(), remote.getClientSecret());</span>
+<span class="nc" id="L84">        } catch (StripeException e) {</span>
+<span class="nc" id="L85">            throw new PspChannelException(&quot;Stripe PaymentIntent creation failed for marketplace intent &quot;</span>
+<span class="nc" id="L86">                    + marketplaceIntentId + &quot;: &quot; + e.getMessage(), e);</span>
+        }
+    }
+
+    @Override
+    @Observed(name = &quot;payment.psp.refund&quot;)
+    public RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents, String idempotencyKey) {
+<span class="nc" id="L93">        RefundCreateParams.Builder params = RefundCreateParams.builder()</span>
+<span class="nc" id="L94">                .setPaymentIntent(pspIntentId);</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        if (amountCents != null) {</span>
+<span class="nc" id="L96">            params.setAmount(amountCents);</span>
+        }
+<span class="nc" id="L98">        RequestOptions options = RequestOptions.builder()</span>
+<span class="nc" id="L99">                .setApiKey(apiKey)</span>
+<span class="nc" id="L100">                .setIdempotencyKey(idempotencyKey)</span>
+<span class="nc" id="L101">                .build();</span>
+        try {
+<span class="nc" id="L103">            com.stripe.model.Refund refund = com.stripe.model.Refund.create(params.build(), options);</span>
+            // The cumulative remote actual lives on the charge the refund
+            // landed on (&quot;amount_refunded&quot;, Charges API) — the local books
+            // must reflect the provider's number, not a local sum. A refund
+            // created by payment intent always resolves to its charge; a
+            // null charge id means the provider answered incoherently and
+            // is surfaced loudly instead of being papered over.
+<span class="nc bnc" id="L110" title="All 2 branches missed.">            if (refund.getCharge() == null) {</span>
+<span class="nc" id="L111">                throw new PspChannelException(&quot;Stripe refund &quot; + refund.getId()</span>
+                        + &quot; for intent &quot; + pspIntentId + &quot; carried no charge id — cannot read the&quot;
+                        + &quot; cumulative refunded amount&quot;);
+            }
+<span class="nc" id="L115">            Charge charge = Charge.retrieve(refund.getCharge(), RequestOptions.builder()</span>
+<span class="nc" id="L116">                    .setApiKey(apiKey).build());</span>
+<span class="nc" id="L117">            Long cumulative = charge.getAmountRefunded();</span>
+<span class="nc" id="L118">            return new RemoteRefund(refund.getId(), refund.getStatus(),</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">                    cumulative == null ? 0L : cumulative);</span>
+<span class="nc" id="L120">        } catch (StripeException e) {</span>
+<span class="nc" id="L121">            throw new PspChannelException(&quot;Stripe refund creation failed for intent &quot;</span>
+<span class="nc" id="L122">                    + pspIntentId + &quot;: &quot; + e.getMessage(), e);</span>
+        }
+    }
+
+    @Override
+    public VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader) {
+        Event event;
+        try {
+<span class="fc" id="L130">            event = Webhook.constructEvent(rawPayload, signatureHeader, webhookSecret);</span>
+<span class="fc" id="L131">        } catch (Exception e) {</span>
+            // SignatureVerificationException (official doc: &quot;at least one of the
+            // three parameters ... is incorrect&quot;) or malformed JSON — rejected
+            // as a unit, no partial state. Same exception family (and thus the
+            // same 403 answer) as the legacy HMAC channel's &quot;Invalid webhook
+            // signature&quot; — one contract for forged notifications, whichever
+            // channel they arrive on.
+<span class="fc" id="L138">            throw new AccessDeniedException(&quot;Stripe webhook signature verification failed: &quot; + e.getMessage());</span>
+<span class="fc" id="L139">        }</span>
+<span class="fc" id="L140">        PaymentIntent data = extractPaymentIntent(event);</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (data == null) {</span>
+            // charge.refunded events carry a Charge, not a PaymentIntent (L19):
+            // the charge's payment_intent resolves the local intent through
+            // the V33 link and its amount_refunded is the remote actual.
+<span class="fc" id="L145">            Charge charge = extractCharge(event);</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">            if (charge != null) {</span>
+<span class="fc" id="L147">                Long cumulative = charge.getAmountRefunded();</span>
+<span class="fc" id="L148">                return new VerifiedWebhook(event.getId(), event.getType(), null,</span>
+<span class="fc" id="L149">                        charge.getPaymentIntent(),</span>
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">                        new RefundSnapshot(cumulative == null ? 0L : cumulative));</span>
+            }
+            // Events we did not subscribe to (or unknown objects) —
+            // acknowledged and ignored by returning a no-op record; dispatch
+            // treats unknown types as debug-level noise, exactly like the
+            // legacy webhook contract.
+<span class="nc" id="L156">            log.debug(&quot;Stripe event {} carried no payment intent object: {}&quot;, event.getId(), event.getType());</span>
+<span class="nc" id="L157">            return new VerifiedWebhook(event.getId(), event.getType(), null, null, null);</span>
+        }
+<span class="fc" id="L159">        UUID marketplaceIntentId = metadataIntentId(data.getMetadata());</span>
+<span class="fc" id="L160">        return new VerifiedWebhook(event.getId(), event.getType(), marketplaceIntentId, data.getId(), null);</span>
+    }
+
+    /**
+     * Official extraction pattern (Event javadoc): version-safe
+     * {@code getObject()} first, documented fallback
+     * {@code deserializeUnsafe()} when API versions differ.
+     */
+    private PaymentIntent extractPaymentIntent(Event event) {
+<span class="fc" id="L169">        var deserializer = event.getDataObjectDeserializer();</span>
+<span class="fc" id="L170">        var safe = deserializer.getObject();</span>
+<span class="pc bpc" id="L171" title="3 of 4 branches missed.">        if (safe.isPresent() &amp;&amp; safe.get() instanceof PaymentIntent intent) {</span>
+<span class="nc" id="L172">            return intent;</span>
+        }
+        try {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">            if (deserializer.deserializeUnsafe() instanceof PaymentIntent intent) {</span>
+<span class="fc" id="L176">                return intent;</span>
+            }
+<span class="nc" id="L178">        } catch (EventDataObjectDeserializationException e) {</span>
+<span class="nc" id="L179">            log.warn(&quot;Stripe event {} data could not be deserialized: {}&quot;, event.getId(), e.getMessage());</span>
+<span class="fc" id="L180">        }</span>
+<span class="fc" id="L181">        return null;</span>
+    }
+
+    /** Same official extraction pattern for Charge-carrying events (L19). */
+    private Charge extractCharge(Event event) {
+<span class="fc" id="L186">        var deserializer = event.getDataObjectDeserializer();</span>
+<span class="fc" id="L187">        var safe = deserializer.getObject();</span>
+<span class="pc bpc" id="L188" title="3 of 4 branches missed.">        if (safe.isPresent() &amp;&amp; safe.get() instanceof Charge charge) {</span>
+<span class="nc" id="L189">            return charge;</span>
+        }
+        try {
+<span class="pc bpc" id="L192" title="1 of 2 branches missed.">            if (deserializer.deserializeUnsafe() instanceof Charge charge) {</span>
+<span class="fc" id="L193">                return charge;</span>
+            }
+<span class="nc" id="L195">        } catch (EventDataObjectDeserializationException e) {</span>
+<span class="nc" id="L196">            log.warn(&quot;Stripe event {} data could not be deserialized: {}&quot;, event.getId(), e.getMessage());</span>
+<span class="nc" id="L197">        }</span>
+<span class="nc" id="L198">        return null;</span>
+    }
+
+    private UUID metadataIntentId(Map&lt;String, String&gt; metadata) {
+<span class="fc bfc" id="L202" title="All 2 branches covered.">        if (metadata == null) {</span>
+<span class="fc" id="L203">            return null;</span>
+        }
+<span class="fc" id="L205">        String raw = metadata.get(MARKETPLACE_INTENT_ID);</span>
+<span class="pc bpc" id="L206" title="2 of 4 branches missed.">        if (raw == null || raw.isBlank()) {</span>
+<span class="nc" id="L207">            return null;</span>
+        }
+        try {
+<span class="fc" id="L210">            return UUID.fromString(raw);</span>
+<span class="nc" id="L211">        } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L212">            log.warn(&quot;Stripe metadata carried a non-UUID marketplace intent id: {}&quot;, raw);</span>
+<span class="nc" id="L213">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

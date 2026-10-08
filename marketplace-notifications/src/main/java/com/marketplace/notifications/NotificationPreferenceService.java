@@ -2,6 +2,8 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import com.marketplace.shared.resilience.InsertRaceRetryConfiguration;
+import io.github.resilience4j.retry.annotation.Retry;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
@@ -38,18 +40,21 @@ import java.util.stream.Collectors;
  * honors an explicit opt-out. A DB opt-in ({@code enabled = true}) is
  * accepted — it merely affirms the default.
  *
- * <p><b>Upsert atomicity (CodeRabbit round 1):</b> the class-level
- * {@code @Transactional} does not serialize concurrent PUTs — two requests
- * for the same {@code (userId, type, channel)} can both read "no row" and
- * both insert; the unique constraint then aborts one VALID request. The
- * write therefore runs inside a {@link TransactionTemplate} with
- * {@code REQUIRES_NEW}: a lost race surfaces as
- * {@link DataIntegrityViolationException} from that inner, already-rolled
- * back transaction, and the whole request is retried once in a fresh
- * transaction — where the winner's row now exists, so the same request
- * takes the flip path (re-applying the batch is value-idempotent: a
- * no-change flip writes nothing). Every state change — insert or flip —
- * still goes through the ORM, so Envers keeps auditing both.
+ * <p><b>Upsert atomicity (CodeRabbit round 1, framework-managed since
+ * G-RETRY-1):</b> the class-level {@code @Transactional} does not serialize
+ * concurrent PUTs — two requests for the same {@code (userId, type,
+ * channel)} can both read "no row" and both insert; the unique constraint
+ * then aborts one VALID request. The write therefore runs inside
+ * {@link #applySwitchesInNewTransaction} — a {@code REQUIRES_NEW} boundary
+ * whose lost race surfaces as {@link DataIntegrityViolationException} from
+ * the already-rolled-back inner transaction, and the shared Resilience4j
+ * {@code @Retry(name = INSERT_RACE_RETRY)}
+ * ({@link InsertRaceRetryConfiguration}) re-invokes the whole batch
+ * through this bean's proxy — no hand-coded catch-and-retry. The fresh
+ * attempt finds the winner's row, so the same request takes the flip path
+ * (re-applying the batch is value-idempotent: a no-change flip writes
+ * nothing). Every state change — insert or flip — still goes through the
+ * ORM, so Envers keeps auditing both.
  */
 @Service
 @Transactional
@@ -137,23 +142,20 @@ public class NotificationPreferenceService {
                                 + " (type=" + update.type() + ")");
             }
         }
-        try {
-            applySwitches(userId, request);
-        } catch (DataIntegrityViolationException lostInsertRace) {
-            // A concurrent PUT inserted the same (userId, type, channel)
-            // key first: the unique constraint already rolled back this
-            // inner transaction. Retry once in a fresh transaction — the
-            // row now exists, so the same request takes the flip path.
-            applySwitches(userId, request);
-        }
+        applySwitchesInNewTransaction(userId, request);
         return effectiveMatrix(userId);
     }
 
     /**
      * Applies the request's switches inside the dedicated
-     * {@code REQUIRES_NEW} transaction (see the class javadoc).
+     * {@code REQUIRES_NEW} transaction (see the class javadoc). The public
+     * seam exists so the shared insert-race {@code @Retry} can re-invoke
+     * the whole batch through this bean's Spring proxy — a private method
+     * or self-invocation would make the annotation a silent no-op (Spring
+     * Framework reference, Proxying Modes).
      */
-    private void applySwitches(UUID userId, NotificationPreferencesUpdateRequest request) {
+    @Retry(name = InsertRaceRetryConfiguration.INSERT_RACE_RETRY)
+    public void applySwitchesInNewTransaction(UUID userId, NotificationPreferencesUpdateRequest request) {
         upsertTransaction.executeWithoutResult(status -> {
             for (NotificationPreferenceUpdate update : request.preferences()) {
                 repository.findByUserIdAndTypeAndChannel(userId, update.type(), update.channel())

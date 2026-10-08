@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.marketplace.pricing.PricingServiceWindowTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.002 s -- in com.marketplace.pricing.PricingServiceWindowTest

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>User.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">User.java</span></div><h1>User.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+
+@Entity
+@Table(name = &quot;users&quot;)
+@Audited
+public class User extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;subject&quot;, nullable = false, unique = true, length = 200)
+    private String subject;
+
+    @Column(name = &quot;email&quot;, length = 320)
+    private String email;
+
+    @Column(name = &quot;display_name&quot;, length = 200)
+    private String displayName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = &quot;role&quot;, nullable = false, length = 30)
+    private UserRole role;
+
+    /**
+     * I7 (account-pseudonymization-plan §5-أ step 4 / V46): the account's
+     * pseudonymization marker. {@code null} = a live account; non-null = the
+     * one-transaction operation ran — direct identifiers replaced, login
+     * identity rows deleted. Doubles as the idempotence marker (the second
+     * call is a documented no-op) and the &quot;former member&quot; switch for read
+     * DTOs (the neutral label is rendered at the response level only).
+     */
+    @Column(name = &quot;pseudonymized_at&quot;)
+    private Instant pseudonymizedAt;
+
+<span class="fc" id="L48">    protected User() {</span>
+<span class="fc" id="L49">    }</span>
+
+<span class="fc" id="L51">    public User(UUID id, String subject, String email, String displayName, UserRole role) {</span>
+<span class="fc" id="L52">        this.id = id;</span>
+<span class="fc" id="L53">        this.subject = subject;</span>
+<span class="fc" id="L54">        this.email = email;</span>
+<span class="fc" id="L55">        this.displayName = displayName;</span>
+<span class="fc" id="L56">        this.role = role;</span>
+<span class="fc" id="L57">    }</span>
+
+    public static User create(String subject, String email, String displayName, UserRole role) {
+<span class="fc" id="L60">        return new User(UUID.randomUUID(), subject, email, displayName, role);</span>
+    }
+
+    @Override
+<span class="fc" id="L64">    public UUID getId() { return id; }</span>
+
+<span class="fc" id="L66">    public String getSubject() { return subject; }</span>
+<span class="fc" id="L67">    public String getEmail() { return email; }</span>
+<span class="fc" id="L68">    public String getDisplayName() { return displayName; }</span>
+<span class="fc" id="L69">    public UserRole getRole() { return role; }</span>
+<span class="fc" id="L70">    public Instant getPseudonymizedAt() { return pseudonymizedAt; }</span>
+
+    /**
+     * S1/B1 (measured by the full-loop guard): an ABSENT value is not an
+     * erase command. The native login's tokens carry no {@code email}/{@code name}
+     * claims (the DaoAuthentication principal holds only the username and
+     * authorities) — under the old unconditional-write semantics the FIRST
+     * {@code /users/me} call after registration wiped the just-stored profile.
+     * The same hazard exists in the OIDC world: an IdP that drops the email
+     * scope must not erase every profile it touches. {@code null} now means
+     * &quot;no information — keep the stored value&quot;; an explicit erase keeps its
+     * own path ({@link #applyPseudonymization} — I7's deliberate nulling).
+     */
+    public boolean updateProfile(String email, String displayName) {
+<span class="fc" id="L84">        boolean changed = false;</span>
+<span class="fc bfc" id="L85" title="All 4 branches covered.">        if (email != null &amp;&amp; !Objects.equals(this.email, email)) {</span>
+<span class="fc" id="L86">            this.email = email;</span>
+<span class="fc" id="L87">            changed = true;</span>
+        }
+<span class="fc bfc" id="L89" title="All 4 branches covered.">        if (displayName != null &amp;&amp; !Objects.equals(this.displayName, displayName)) {</span>
+<span class="fc" id="L90">            this.displayName = displayName;</span>
+<span class="fc" id="L91">            changed = true;</span>
+        }
+<span class="fc" id="L93">        return changed;</span>
+    }
+
+    public void changeRole(UserRole newRole) {
+<span class="fc" id="L97">        this.role = newRole;</span>
+<span class="fc" id="L98">    }</span>
+
+    /**
+     * I7 (account-pseudonymization-plan §5-أ step 3): replaces the direct
+     * identifiers on the account row — the subject becomes the derived
+     * replacement ({@code &quot;anon-&quot; + hex(HMAC-SHA256(K_env, subject))}, the
+     * b-2(b) transformation), and the two profile columns (P2) go to
+     * {@code null} (Art. 17(1)(a): identification is no longer necessary for
+     * the marketplace purposes once the membership ends). The UUID primary
+     * key and every referencing row are untouched on purpose — reference
+     * integrity and the other parties' rights (Art. 17(3)(b) / 20(4)) keep
+     * the records alive in pseudonymized form.
+     *
+     * &lt;p&gt;The read surfaces render the neutral &quot;former member&quot; label at the
+     * response-DTO level ({@code UserMapper} / {@code toUserSummary}) — never
+     * stored here: storage stays {@code null}.
+     *
+     * @param replacementSubject the deterministic HMAC-derived replacement
+     *                            (produced by {@code SubjectPseudonymizer})
+     */
+    void applyPseudonymization(String replacementSubject) {
+<span class="fc" id="L119">        this.subject = replacementSubject;</span>
+<span class="fc" id="L120">        this.email = null;</span>
+<span class="fc" id="L121">        this.displayName = null;</span>
+<span class="fc" id="L122">        this.pseudonymizedAt = Instant.now();</span>
+<span class="fc" id="L123">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

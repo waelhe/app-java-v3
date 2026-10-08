@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingCompletenessResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingCompletenessResponse.java</span></div><h1>ListingCompletenessResponse.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.PropertyDetailsPort;
+
+/**
+ * L38 (realestate systems plan §5): the listing completeness score — a
+ * pure, always-recomputed function over the listing's existing data. NO
+ * storage (the plan's &quot;حساب عابر بلا تخزين&quot;: recomputing on read is
+ * cheaper than syncing a stored column), NO cache (the plan's acceptance
+ * criterion 3: the score changes immediately when a photo lands — every
+ * read is fresh by construction).
+ *
+ * &lt;p&gt;&lt;b&gt;The documented equation (the plan's component list, equal
+ * quarters):&lt;/b&gt;
+ * &lt;pre&gt;
+ *   completeness% = 25 × (core fields)      + 25 × (photo)      +
+ *                   25 × (property details) + 25 × (location)
+ *
+ *   core fields      — title present, description present, price declared
+ *                      (title and price are schema-mandatory NOT NULL, but
+ *                      the score MEASURES them instead of assuming them —
+ *                      defence in depth; description is the live variable)
+ *   photo            — at least one media asset in status UPLOADED
+ *                      (MediaLookupPort's storage-verified-only count;
+ *                      a PENDING_UPLOAD asset never counts)
+ *   property details — the L31 realestate block exists (its purpose and
+ *                      property type are schema-mandatory, so a present
+ *                      block is never empty)
+ *   location         — the L30 administrative node is attached
+ *                      (property block's location_id; the optional
+ *                      lat/lng display coordinates are NOT this criterion)
+ * &lt;/pre&gt;
+ *
+ * &lt;p&gt;A listing with everything answers {@code 100}; a listing with only
+ * the core fields answers {@code 25}; the boundary values are asserted in
+ * {@code ListingCompletenessTest}.
+ *
+ * &lt;p&gt;The four boolean components ride along so the provider sees exactly
+ * WHICH quarter is missing (the score guides, the checklist tells where
+ * to go) — the same read shape the plan's &quot;معروضة للمزوّد في نقاط قراءته
+ * فقط&quot; describes.
+ */
+<span class="fc" id="L43">public record ListingCompletenessResponse(</span>
+        int percent,
+        boolean coreFieldsPresent,
+        boolean photosPresent,
+        boolean propertyDetailsPresent,
+        boolean locationPresent
+) {
+
+    /** Each of the plan's four component groups earns an equal quarter. */
+    static final int PERCENT_PER_GROUP = 25;
+
+    /**
+     * The single source of the equation: measures the listing's own data,
+     * the storage-verified photo count and the optional L31 property view.
+     *
+     * @param listing        the catalog listing (title/description/price)
+     * @param uploadedPhotos the UPLOADED asset count for the listing
+     * @param property       the L31 property block, {@code null} when the
+     *                       listing has none
+     */
+    public static ListingCompletenessResponse of(ProviderListing listing,
+                                                 long uploadedPhotos,
+                                                 PropertyDetailsPort.PropertyView property) {
+<span class="pc bpc" id="L66" title="1 of 4 branches missed.">        boolean core = listing.getTitle() != null &amp;&amp; !listing.getTitle().isBlank()</span>
+<span class="fc bfc" id="L67" title="All 4 branches covered.">                &amp;&amp; listing.getDescription() != null &amp;&amp; !listing.getDescription().isBlank()</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">                &amp;&amp; listing.getPriceCents() != null;</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        boolean photos = uploadedPhotos &gt;= 1;</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        boolean details = property != null;</span>
+<span class="fc bfc" id="L71" title="All 4 branches covered.">        boolean location = property != null &amp;&amp; property.locationId() != null;</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        int percent = (core ? PERCENT_PER_GROUP : 0)</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">                + (photos ? PERCENT_PER_GROUP : 0)</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">                + (details ? PERCENT_PER_GROUP : 0)</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">                + (location ? PERCENT_PER_GROUP : 0);</span>
+<span class="fc" id="L76">        return new ListingCompletenessResponse(percent, core, photos, details, location);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

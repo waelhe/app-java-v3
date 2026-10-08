@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CacheInvalidationMetrics.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.cache</a> &gt; <span class="el_source">CacheInvalidationMetrics.java</span></div><h1>CacheInvalidationMetrics.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.cache;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+/**
+ * Micrometer counters for cache invalidation failures.
+ *
+ * &lt;p&gt;Official source — Spring Boot 3.x Reference:
+ * &lt;a href=&quot;https://docs.spring.io/spring-boot/reference/actuator/metrics.html&quot;&gt;
+ * Metrics&lt;/a&gt;:
+ * &quot;Spring Boot auto-configures a composite {@code MeterRegistry} and adds a
+ * registry to the composite for each of the supported implementations that
+ * it finds on the classpath.&quot;
+ *
+ * &lt;p&gt;Counters exposed:
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code marketplace.cache.invalidation.evict.failure} — incremented
+ *       when {@code Cache.clear()} or {@code Cache.evict()} throws&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+@Component
+public class CacheInvalidationMetrics {
+
+    private final MeterRegistry meterRegistry;
+
+<span class="fc" id="L28">    public CacheInvalidationMetrics(MeterRegistry meterRegistry) {</span>
+<span class="fc" id="L29">        this.meterRegistry = meterRegistry;</span>
+<span class="fc" id="L30">    }</span>
+
+    /**
+     * Increments the eviction-failure counter for the given cache name.
+     *
+     * @param cacheName the cache that failed to evict
+     */
+    public void incrementEvictFailure(String cacheName) {
+<span class="fc" id="L38">        Counter.builder(&quot;marketplace.cache.invalidation.evict.failure&quot;)</span>
+<span class="fc" id="L39">                .description(&quot;Cache eviction failures after transaction commit&quot;)</span>
+<span class="fc" id="L40">                .tag(&quot;cache&quot;, cacheName)</span>
+<span class="fc" id="L41">                .register(meterRegistry)</span>
+<span class="fc" id="L42">                .increment();</span>
+<span class="fc" id="L43">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

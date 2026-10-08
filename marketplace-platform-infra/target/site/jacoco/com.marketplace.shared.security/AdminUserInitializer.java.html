@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdminUserInitializer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.security</a> &gt; <span class="el_source">AdminUserInitializer.java</span></div><h1>AdminUserInitializer.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.security;
+
+import com.marketplace.shared.config.MarketplaceProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+/**
+ * Bootstraps the break-glass {@code admin} user from external configuration
+ * (the {@code ADMIN_SEED_PASSWORD} environment variable) into the
+ * {@code auth_users}/{@code auth_authorities} tables at startup — the same
+ * env-to-DB convergence architecture as {@link OAuth2ClientSecretInitializer},
+ * and the fix for the N1 finding: the pre-fix source was a fixed bcrypt hash
+ * burned into the repeatable migration {@code R__seed_oauth2_client.sql}, a
+ * credential shipped in the repository and the jar for every environment.
+ *
+ * &lt;p&gt;This is the single official mutation path for the seeded user:
+ * {@link UserDetailsManager} (Spring Security's provisioning API — the
+ * {@code JdbcUserDetailsManager} bean from {@code SecurityConfig} wired to
+ * the custom {@code auth_*} SQL). No hand-written SQL touches the tables.
+ *
+ * &lt;p&gt;&lt;b&gt;Converge-on-boot:&lt;/b&gt; the seeded user is environment-owned break-glass
+ * tooling — the stored row is never a source of truth. When absent it is
+ * &lt;em&gt;created&lt;/em&gt; ({@code ROLE_ADMIN}); when present it is compared against
+ * the derived definition (password via {@link PasswordEncoder#matches},
+ * authority set, enabled flag) and {@code updateUser} converges any
+ * difference. Rotation is therefore an environment change, exactly like
+ * {@code OAUTH_CLIENT_SECRET}. Deliberate consequence (documented): an
+ * operator who hand-edits this row fights the next boot — additional or
+ * customized administrative accounts belong to the future user-management
+ * surface (roadmap B1), not to the break-glass seed.
+ *
+ * &lt;p&gt;&lt;b&gt;Fail-fast by profile:&lt;/b&gt; in {@code prod} a blank password fails
+ * startup with the operational message (the yml binding without a default is
+ * the first defense layer — identical to {@code OAUTH_CLIENT_SECRET}).
+ * Outside {@code prod} a blank password is a &lt;b&gt;designed no-op&lt;/b&gt; — exactly
+ * the {@link OAuth2ClientSecretInitializer} contract (&quot;when no client is
+ * configured and the prod profile is not active, startup is a deliberate
+ * no-op&quot;): development convenience comes from the base {@code application.yml}
+ * default ({@code admin-dev}), while Flyway-disabled test contexts (JPA-only
+ * create-drop schemas that intentionally lack the {@code auth_*} tables —
+ * the security schema is Flyway-owned) leave the property blank so this
+ * runner never touches tables that do not exist there.
+ *
+ * &lt;p&gt;&lt;b&gt;Idempotence guard:&lt;/b&gt; {@code updateUser} runs only when the derived
+ * definition differs from the stored row, so a matching row is a no-op and
+ * concurrent replicas converge without rewriting identical rows. The
+ * concurrent-bootstrap race (two replicas both insert) loses cleanly on the
+ * unique username index and converges onto the winner's row — the same
+ * CodeRabbit #241 pattern the client initializer applies.
+ *
+ * @see &lt;a href=&quot;https://docs.spring.io/spring-security/reference/servlet/authentication/passwords/jdbc.html&quot;&gt;Spring Security — JdbcUserDetailsManager&lt;/a&gt;
+ */
+@Component
+public class AdminUserInitializer implements ApplicationRunner {
+
+<span class="fc" id="L68">    private static final Logger log = LoggerFactory.getLogger(AdminUserInitializer.class);</span>
+
+<span class="fc" id="L70">    private static final Profiles PROD_PROFILE = Profiles.of(&quot;prod&quot;);</span>
+
+    /** The break-glass identity: referenced by the seed contract only. */
+    static final String ADMIN_USERNAME = &quot;admin&quot;;
+
+    private final MarketplaceProperties properties;
+    private final UserDetailsManager userDetailsManager;
+    private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
+
+    public AdminUserInitializer(MarketplaceProperties properties,
+                                UserDetailsManager userDetailsManager,
+                                PasswordEncoder passwordEncoder,
+<span class="fc" id="L83">                                Environment environment) {</span>
+<span class="fc" id="L84">        this.properties = properties;</span>
+<span class="fc" id="L85">        this.userDetailsManager = userDetailsManager;</span>
+<span class="fc" id="L86">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L87">        this.environment = environment;</span>
+<span class="fc" id="L88">    }</span>
+
+    @Override
+    public void run(ApplicationArguments args) {
+<span class="fc" id="L92">        String rawPassword = properties.security().adminSeed().password();</span>
+<span class="fc" id="L93">        boolean prodProfile = environment.acceptsProfiles(PROD_PROFILE);</span>
+
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (!StringUtils.hasText(rawPassword)) {</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">            if (prodProfile) {</span>
+<span class="fc" id="L97">                throw new IllegalStateException(</span>
+                        &quot;marketplace.security.admin-seed.password must be configured in production&quot;
+                                + &quot; (ADMIN_SEED_PASSWORD) — the fixed-hash migration seed is retired (N1)&quot;);
+            }
+            // Designed no-op (the client initializer's contract): blank outside
+            // prod means the environment did not ask for a break-glass admin —
+            // development uses the base application.yml default (admin-dev),
+            // and Flyway-disabled test contexts have no auth_* schema at all.
+<span class="fc" id="L105">            log.info(&quot;admin-seed password not configured — break-glass admin bootstrap skipped&quot;);</span>
+<span class="fc" id="L106">            return;</span>
+        }
+
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (!userDetailsManager.userExists(ADMIN_USERNAME)) {</span>
+            try {
+<span class="fc" id="L111">                userDetailsManager.createUser(derivedUser(rawPassword));</span>
+<span class="fc" id="L112">                log.info(&quot;Bootstrapped break-glass admin user from environment configuration&quot;);</span>
+<span class="fc" id="L113">            } catch (DataIntegrityViolationException ex) {</span>
+                // Concurrent-replica bootstrap: the loser of the unique-username
+                // insert converges onto the winner's row instead of failing
+                // startup (the client initializer's CodeRabbit #241 pattern).
+<span class="fc bfc" id="L117" title="All 2 branches covered.">                if (!userDetailsManager.userExists(ADMIN_USERNAME)) {</span>
+                    // Not a duplicate-key failure after all — do not mask it.
+<span class="fc" id="L119">                    throw ex;</span>
+                }
+<span class="fc" id="L121">                convergeExisting(rawPassword);</span>
+<span class="fc" id="L122">                log.info(&quot;Converged break-glass admin user after concurrent bootstrap by another replica&quot;);</span>
+<span class="fc" id="L123">            }</span>
+<span class="fc" id="L124">            return;</span>
+        }
+<span class="fc" id="L126">        convergeExisting(rawPassword);</span>
+<span class="fc" id="L127">    }</span>
+
+    private void convergeExisting(String rawPassword) {
+        UserDetails existing;
+        try {
+<span class="fc" id="L132">            existing = userDetailsManager.loadUserByUsername(ADMIN_USERNAME);</span>
+<span class="fc" id="L133">        } catch (UsernameNotFoundException ex) {</span>
+            // CodeRabbit #432 (root-adopted 2026-09-28): userExists() returned
+            // true moments ago, so the row IS in auth_users — the manager
+            // throws &quot;not found&quot; here for exactly one repairable state: the
+            // user has NO authority rows (JdbcDaoImpl's documented semantics:
+            // a user with no authorities is considered not found). An
+            // incomplete bootstrap or an operator-stripped authority set must
+            // CONVERGE — this class's own contract: the stored row is never a
+            // source of truth — instead of failing startup: updateUser
+            // rewrites the user row and re-creates its authorities through
+            // the official provisioning path. (If the row vanished in a
+            // mid-boot deletion race instead, the authorities insert hits the
+            // fk_auth_authorities_users foreign key and fails loudly.)
+<span class="fc" id="L146">            userDetailsManager.updateUser(derivedUser(rawPassword));</span>
+<span class="fc" id="L147">            log.info(&quot;Repaired break-glass admin user whose authority rows were missing&quot;</span>
+                    + &quot; (converged back to ROLE_ADMIN through the provisioning path)&quot;);
+<span class="fc" id="L149">            return;</span>
+<span class="fc" id="L150">        }</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        if (matchesDerivedDefinition(existing, rawPassword)) {</span>
+<span class="fc" id="L152">            return;</span>
+        }
+<span class="fc" id="L154">        userDetailsManager.updateUser(derivedUser(rawPassword));</span>
+<span class="fc" id="L155">        log.info(&quot;Converged break-glass admin user from environment configuration (password rotated or&quot;</span>
+                + &quot; definition drifted)&quot;);
+<span class="fc" id="L157">    }</span>
+
+    private boolean matchesDerivedDefinition(UserDetails existing, String rawPassword) {
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">        if (!existing.isEnabled()) {</span>
+<span class="nc" id="L161">            return false;</span>
+        }
+<span class="fc bfc" id="L163" title="All 2 branches covered.">        if (!passwordEncoder.matches(rawPassword, existing.getPassword())) {</span>
+<span class="fc" id="L164">            return false;</span>
+        }
+<span class="fc" id="L166">        return existing.getAuthorities().stream()</span>
+<span class="fc" id="L167">                .map(Object::toString)</span>
+<span class="fc bfc" id="L168" title="All 2 branches covered.">                .allMatch(&quot;ROLE_ADMIN&quot;::equals)</span>
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">                &amp;&amp; existing.getAuthorities().size() == 1;</span>
+    }
+
+    private UserDetails derivedUser(String rawPassword) {
+<span class="fc" id="L173">        return User.withUsername(ADMIN_USERNAME)</span>
+<span class="fc" id="L174">                .password(passwordEncoder.encode(rawPassword))</span>
+<span class="fc" id="L175">                .roles(&quot;ADMIN&quot;)</span>
+<span class="fc" id="L176">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

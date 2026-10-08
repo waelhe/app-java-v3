@@ -3,7 +3,6 @@ package com.marketplace.catalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -108,7 +107,10 @@ public class ListingViewCounter {
                 return; // no remote address — the same unavailability rule
             }
             if (markFirstVisit(listingId, fingerprint)) {
-                addViewWithInsertRaceRetry(listingId, LocalDate.now(ZoneOffset.UTC));
+                // The +1 with the framework-managed insert-race retry:
+                // ListingViewsDailyService's @Retry(INSERT_RACE_RETRY) owns
+                // the recovery now (G-RETRY-1 — no hand-coded catch here).
+                viewsService.addView(listingId, LocalDate.now(ZoneOffset.UTC));
             }
         } catch (DataAccessException analyticsFailure) {
             log.warn("Listing view counting degraded — the public read is unaffected "
@@ -133,19 +135,6 @@ public class ListingViewCounter {
         Duration window = properties.views().dedupWindow();
         Boolean first = redisTemplate.opsForValue().setIfAbsent(key, "1", window);
         return Boolean.TRUE.equals(first);
-    }
-
-    /**
-     * The +1 with the exactly-one retry the insert race needs — see
-     * {@link ListingViewsDailyService}'s javadoc for why the retry must be
-     * a NEW transaction and why one suffices by PostgreSQL semantics.
-     */
-    private void addViewWithInsertRaceRetry(UUID listingId, LocalDate viewDate) {
-        try {
-            viewsService.addView(listingId, viewDate);
-        } catch (DataIntegrityViolationException lostInsertRace) {
-            viewsService.addView(listingId, viewDate);
-        }
     }
 
     /**

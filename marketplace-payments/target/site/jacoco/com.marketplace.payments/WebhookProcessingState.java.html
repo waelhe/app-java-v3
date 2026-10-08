@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>WebhookProcessingState.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">WebhookProcessingState.java</span></div><h1>WebhookProcessingState.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+/**
+ * R10 (comprehensive-review-ar fix plan §4/R10 — Wave 2): the lifecycle of a
+ * webhook inbox row on {@code payment_webhook_events} — the durable inbox the
+ * plan models on Spring Modulith's own Event Publication Registry (&quot;the
+ * persistent abstraction of them … will grow unbounded&quot; housekeeping pattern;
+ * {@code event_publication} + the V28 archive mode is the repository's
+ * standing precedent for exactly this structure).
+ *
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@link #RECEIVED} — the row's payload is committed and the dispatch
+ *       may or may not have run: the crash window between the recorder's
+ *       {@code REQUIRES_NEW} commit and the dispatch's completion is covered
+ *       by the recovery sweep ({@code WebhookInboxRecovery}), which re-delivers
+ *       every RECEIVED row older than the staleness threshold — the closed
+ *       loop with no loss window (the measured defect: a worker stop between
+ *       the two committed the dedup row forever while the settlement never
+ *       happened — the provider's retries were acknowledged as
+ *       already-processed against a tombstone);&lt;/li&gt;
+ *   &lt;li&gt;{@link #SETTLED} — the dispatch's effects are durably committed. For
+ *       the settlement events this mark is written &lt;i&gt;inside the settlement's
+ *       own transaction&lt;/i&gt; ({@code PaymentIntentSettlementService}), so
+ *       &quot;SETTLED&quot; and &quot;the money moved&quot; are one atomic fact; for the
+ *       non-settlement events the mark follows the dispatch in the carrier's
+ *       transaction (their effects are idempotent by design, so a crash in
+ *       the tiny gap self-heals on the next recovery sweep as a no-op);&lt;/li&gt;
+ *   &lt;li&gt;{@link #FAILED} — a recovery re-delivery that can never apply legally
+ *       (the intent moved past the event's transition by another path): the
+ *       terminal, inspectable operator signal. The row carries the failure
+ *       reason and is &lt;i&gt;never&lt;/i&gt; purged by the retention sweep — unlike
+ *       SETTLED rows it is the loud residue that demands a human decision
+ *       (re-arm by deleting the row, or accept the outcome).&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Every state answers the provider's retry through the existing dedup
+ * gate (&quot;already processed&quot;) — the difference R10 makes is that RECEIVED and
+ * FAILED rows are no longer silent: one is re-delivered automatically, the
+ * other is visible with its reason.
+ */
+<span class="fc" id="L41">public enum WebhookProcessingState {</span>
+<span class="fc" id="L42">    RECEIVED,</span>
+<span class="fc" id="L43">    SETTLED,</span>
+<span class="fc" id="L44">    FAILED</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

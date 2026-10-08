@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SitemapEntry.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">SitemapEntry.java</span></div><h1>SitemapEntry.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * L39 (realestate systems plan §5 — SEO and structured data): the
+ * read-only projection a sitemap page enumerates — exactly the two facts
+ * the sitemaps.org 0.90 {@code &lt;url&gt;} entry carries for a listing page:
+ * its identifier (to build {@code &lt;loc&gt;}) and the {@code updated_at}
+ * audit column (to build {@code &lt;lastmod&gt;}). Nothing else is fetched —
+ * a 50,000-URL page (the standard's per-file cap) must never load full
+ * entities.
+ */
+<span class="fc" id="L15">public record SitemapEntry(</span>
+        UUID id,
+        Instant updatedAt
+) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

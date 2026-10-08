@@ -1,0 +1,1072 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CatalogService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CatalogService.java</span></div><h1>CatalogService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.catalog.ProviderListingSpecifications;
+import com.marketplace.catalog.spi.CatalogSpi;
+import org.springframework.data.jpa.domain.Specification;
+import com.marketplace.shared.api.CatalogSearchPort;
+import org.springframework.modulith.NamedInterface;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ListingActivatedEvent;
+import com.marketplace.shared.api.ListingCreatedEvent;
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPublicStatePort;
+import com.marketplace.shared.api.ProviderListingSummary;
+import com.marketplace.shared.api.ProviderListingView;
+import com.marketplace.shared.api.SearchCriteria;
+import com.marketplace.shared.api.BadRequestException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.PagedRequest;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.SpringPagination;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderNameResolver;
+import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import io.micrometer.observation.annotation.Observed;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Implements {@link ListingPriceProvider} so that the booking module can
+ * derive price and provider from a listing synchronously.
+ * See {@code ListingPriceProvider} Javadoc for the design rationale
+ * (synchronous interface vs. asynchronous event).
+ *
+ * &lt;p&gt;&lt;b&gt;R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy):&lt;/b&gt;
+ * also implements {@link ListingPublicStatePort} — the catalog owns the
+ * listing's publication state, so it answers the &quot;is this listing on the
+ * public read surface?&quot; question for the media module's visibility gate
+ * (the same ACTIVE filter {@link #getActiveById} applies; the media read
+ * keeps the public surface's appearance consistency).&lt;/p&gt;
+ */
+@Service
+@Transactional
+@NamedInterface(&quot;catalog-api&quot;)
+public class CatalogService implements CatalogSearchPort, ListingPriceProvider, CatalogSpi, ListingPublicStatePort {
+
+    private final ProviderListingRepository listingRepository;
+    private final CurrentUserProvider currentUserProvider;
+    private final ProviderNameResolver providerNameResolver;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ProviderLookupPort providerLookupPort;
+    private final java.time.Clock clock;
+    private final CatalogProperties catalogProperties;
+    private final CategoryRepository categoryRepository;
+    private final com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
+
+    public CatalogService(ProviderListingRepository listingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ProviderNameResolver providerNameResolver,
+                          ApplicationEventPublisher eventPublisher,
+                          ProviderLookupPort providerLookupPort,
+                          java.time.Clock clock,
+                          CatalogProperties catalogProperties,
+                          CategoryRepository categoryRepository,
+<span class="fc" id="L83">                          com.marketplace.shared.api.ReviewStatsPort reviewStatsPort) {</span>
+<span class="fc" id="L84">        this.listingRepository = listingRepository;</span>
+<span class="fc" id="L85">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L86">        this.providerNameResolver = providerNameResolver;</span>
+<span class="fc" id="L87">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L88">        this.providerLookupPort = providerLookupPort;</span>
+<span class="fc" id="L89">        this.clock = clock;</span>
+<span class="fc" id="L90">        this.catalogProperties = catalogProperties;</span>
+<span class="fc" id="L91">        this.categoryRepository = categoryRepository;</span>
+<span class="fc" id="L92">        this.reviewStatsPort = reviewStatsPort;</span>
+<span class="fc" id="L93">    }</span>
+
+    @Override
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = &quot;catalog-active-v3&quot;, key = &quot;#request.page + '-' + #request.size + '-' + #request.sort&quot;)
+    public PagedResponse&lt;ListingSummary&gt; listActive(PagedRequest request) {
+<span class="nc" id="L99">        Pageable pageable = SpringPagination.toPageable(request);</span>
+        // L37: the derived query rides the official Specifications path now —
+        // boost-first + the L32 total order (see findBoostFirst). The cache
+        // key keeps the ARGUMENT pageable's shape (page/size/sort), so the
+        // key space is unchanged; entries filled before the L37 deploy
+        // (arbitrary pre-L37 order) age out within the 1h TTL.
+<span class="nc" id="L105">        Page&lt;ProviderListing&gt; page = findBoostFirst(</span>
+<span class="nc" id="L106">                ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE), pageable);</span>
+<span class="nc" id="L107">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = &quot;catalog-by-category-v3&quot;, key = &quot;#category + '-' + #request.page + '-' + #request.size + '-' + #request.sort&quot;)
+    public PagedResponse&lt;ListingSummary&gt; listByCategory(String category, PagedRequest request) {
+<span class="nc" id="L114">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="nc" id="L115">        Page&lt;ProviderListing&gt; page = findBoostFirst(</span>
+<span class="nc" id="L116">                ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)</span>
+<span class="nc" id="L117">                        .and(ProviderListingSpecifications.hasCategory(category)), pageable);</span>
+<span class="nc" id="L118">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;ProviderListing&gt; listByProvider(UUID providerId, Pageable pageable) {
+        // CodeRabbit PR #299 round 1 (CWE-200): this is the PUBLIC provider
+        // profile surface (&quot;Browse one provider's active listings&quot;) — the
+        // status filter is the documented contract, and it also guards the
+        // L31 property embed from ever carrying non-ACTIVE listings' data.
+        // L37: the same boost-first read as every ordered public surface
+        // (the provider page's own listings reorder under the same rule).
+<span class="nc" id="L129">        return findBoostFirst(</span>
+<span class="nc" id="L130">                ProviderListingSpecifications.hasProviderId(providerId)</span>
+<span class="nc" id="L131">                        .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),</span>
+                pageable);
+    }
+
+    /**
+     * L36 (realestate systems plan §5): the shared-api port form of the
+     * same public read — the provider module's public page composes its
+     * listings block through this method. Same repository predicates, same
+     * ACTIVE-only documented contract as the REST surface; the summaries
+     * mapping is the port's contract (the property embed stays a REST-side
+     * concern of the catalog controller). Uncached like the REST path —
+     * the profile block rides the provider module's own &quot;providers&quot; cache.
+     *
+     * &lt;p&gt;CodeRabbit PR #318 round 1 (adopted): an unsorted {@link Pageable}
+     * would paginate non-deterministically (offset pagination can
+     * duplicate or omit rows across pages) — the L32 total-order rule
+     * (requested sort with the id ASC tiebreak, unsorted defaults to id
+     * ASC) now rides the L37 boost-first ordering specification (one
+     * discipline for every ordered public read — see findBoostFirst).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; listActiveByProvider(UUID providerUserId, PagedRequest request) {
+<span class="fc" id="L154">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="fc" id="L155">        return PagedResponse.of(toSummaryPage(findBoostFirst(</span>
+<span class="fc" id="L156">                ProviderListingSpecifications.hasProviderId(providerUserId)</span>
+<span class="fc" id="L157">                        .and(ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)),</span>
+                pageable)));
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;ProviderListingView&gt; findAll(Pageable pageable) {
+<span class="nc" id="L163">        return listingRepository.findByStatus(ListingStatus.ACTIVE, pageable)</span>
+<span class="nc" id="L164">                .map(this::toProviderListingView);</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    // R6 (comprehensive-review-ar fix plan §4, Wave 5): the contract carries
+    // the FULL criteria now. The catalog-level page cache serves ONLY the
+    // filter-free pure-text form (the legacy key space, unchanged — the
+    // condition requires every optional predicate absent, so the query text
+    // is the only variable and the key stays injective over that subspace).
+    // The FILTERED text form deliberately bypasses this cache: its caching
+    // surface is the search module's criteria-keyed search-results-v4 — the
+    // documented surface for every other criteria branch — whose injective
+    // length-prefixed key already covers every criteria component. A
+    // concatenation key over the criteria here would reproduce the exact
+    // ambiguity the repository fixed with SearchCriteriaCacheKeyGenerator
+    // (PR #256 round 1) — the house discipline rejects it.
+    @Cacheable(cacheNames = &quot;catalog-search-v3&quot;,
+            condition = &quot;#criteria != null &amp;&amp; #criteria.category == null &amp;&amp; #criteria.minPrice == null &amp;&amp; #criteria.maxPrice == null &amp;&amp; #criteria.guests == null &amp;&amp; #criteria.minRating == null&quot;,
+            key = &quot;#criteria.query + '-' + #request.page + '-' + #request.size + '-' + #request.sort&quot;)
+    public PagedResponse&lt;ListingSummary&gt; searchFullText(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the rating floor routes the unfiltered text form onto
+        // its restricted twin BEFORE any query — the floor is a provider
+        // set exactly like the availability whitelist, and the cached
+        // condition above excludes floor-carrying criteria (the floor is
+        // not in this cache's key; its caching surface is the search
+        // module's criteria-keyed cache, whose generator carries the
+        // floor as a first-class segment).
+<span class="fc" id="L192">        Set&lt;UUID&gt; floor = minRatingFloor(criteria);</span>
+<span class="pc bpc" id="L193" title="3 of 4 branches missed.">        if (floor != null &amp;&amp; floor.isEmpty()) {</span>
+<span class="nc" id="L194">            return PagedResponse.empty(request); // no provider answers the floor</span>
+        }
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">        if (floor != null) {</span>
+<span class="nc" id="L197">            return searchFullTextRestricted(criteria, floor, request);</span>
+        }
+<span class="fc" id="L199">        Pageable pageable = SpringPagination.toPageable(request);</span>
+        // L37: one read, one &quot;now&quot; — the FTS page and its typo-tolerance
+        // fallback share the same instant, so the boost state cannot
+        // straddle a window boundary between them.
+<span class="fc" id="L203">        java.time.Instant now = clock.instant();</span>
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">        String query = criteria.query() == null ? null : criteria.query().trim();</span>
+<span class="fc" id="L209">        Page&lt;ProviderListing&gt; page = listingRepository.searchFullText(query,</span>
+<span class="fc" id="L210">                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L211">                criteria.guests(), now, pageable);</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        if (page.isEmpty()) {</span>
+            // Typo-tolerance fallback (V34 / pg_trgm): lexical FTS found no
+            // stem match — retry with word-similarity so a one-edit typo
+            // (&quot;gardn&quot;) still surfaces the intended listings (&quot;garden&quot;).
+            // An implementation detail of the catalog's search: the port
+            // contract, the search module and every caller are unchanged.
+            // Cached as the final result of this query either way.
+            // R6: the fallback carries the SAME optional predicates — a
+            // fallback that dropped the filters would answer the
+            // typo-tolerated match set unfiltered.
+<span class="fc" id="L222">            page = listingRepository.searchSimilar(query,</span>
+<span class="fc" id="L223">                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L224">                    criteria.guests(), now, pageable);</span>
+        }
+<span class="fc" id="L226">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchByCriteria(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the rating floor routes the plain criteria form onto
+        // its restricted twin — the same one-wiring-point law as the text
+        // form above (an empty floor answers the honest empty page, no
+        // query).
+<span class="fc" id="L236">        Set&lt;UUID&gt; floor = minRatingFloor(criteria);</span>
+<span class="fc bfc" id="L237" title="All 4 branches covered.">        if (floor != null &amp;&amp; floor.isEmpty()) {</span>
+<span class="fc" id="L238">            return PagedResponse.empty(request);</span>
+        }
+<span class="fc bfc" id="L240" title="All 2 branches covered.">        if (floor != null) {</span>
+<span class="fc" id="L241">            return searchByCriteriaRestricted(criteria, floor, request);</span>
+        }
+<span class="fc" id="L243">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="fc" id="L244">        Long minPrice = toMinorUnits(criteria.minPrice());</span>
+<span class="fc" id="L245">        Long maxPrice = toMinorUnits(criteria.maxPrice());</span>
+<span class="fc" id="L246">        Page&lt;ProviderListing&gt; page = listingRepository.searchByCriteria(</span>
+<span class="fc" id="L247">                criteria.category(), minPrice, maxPrice, criteria.guests(), clock.instant(), pageable);</span>
+<span class="fc" id="L248">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    /**
+     * L27 (feature-expansion roadmap §5): the window-restricted criteria
+     * search — the same branch coverage and price mapping as
+     * {@link #searchByCriteria(SearchCriteria, PagedRequest)} (category / price
+     * / browse-all are optional predicates of the same query), plus the
+     * {@code provider_id IN (:providerIds)} restriction in BOTH the content
+     * and the count query. Deliberately NOT cached at this level: the
+     * whitelist varies per request, and the search module's
+     * {@code search-results-v5} cache (criteria-keyed, window included) is
+     * the caching surface for window searches.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchByCriteriaRestricted(SearchCriteria criteria, Set&lt;UUID&gt; providerIds, PagedRequest request) {
+        // W3 (G17): the floor INTERSECTS the caller's whitelist — a
+        // windowed floor-carrying search restricts to providers that are
+        // BOTH available and above the stars floor. An empty intersection
+        // is the honest empty page (no query).
+<span class="fc" id="L269">        Set&lt;UUID&gt; effective = intersectRestrictions(providerIds, minRatingFloor(criteria));</span>
+<span class="pc bpc" id="L270" title="2 of 4 branches missed.">        if (effective != null &amp;&amp; effective.isEmpty()) {</span>
+<span class="nc" id="L271">            return PagedResponse.empty(request);</span>
+        }
+<span class="fc" id="L273">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="fc" id="L274">        Long minPrice = toMinorUnits(criteria.minPrice());</span>
+<span class="fc" id="L275">        Long maxPrice = toMinorUnits(criteria.maxPrice());</span>
+<span class="fc" id="L276">        Page&lt;ProviderListing&gt; page = listingRepository.searchByCriteriaRestricted(</span>
+<span class="fc" id="L277">                criteria.category(), minPrice, maxPrice, criteria.guests(), effective, clock.instant(), pageable);</span>
+<span class="fc" id="L278">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    /**
+     * L27: the window-restricted full-text search — mirrors
+     * {@link #searchFullText(SearchCriteria, PagedRequest)} (official
+     * {@code websearch_to_tsquery} ranking, plus the pg_trgm
+     * typo-tolerance fallback), with the
+     * {@code provider_id IN (:providerIds)} restriction applied to both
+     * queries and their counts.
+     *
+     * &lt;p&gt;Fallback condition (PR #256 full-review round): the fallback runs
+     * only when NO full-text match exists at all
+     * ({@code getTotalElements() == 0}) — an out-of-range page over real
+     * matches is legitimately empty ({@code isEmpty()} is true while
+     * {@code getTotalElements() &gt; 0}) and must stay an honest empty page,
+     * not be replaced by the similarity result set.
+     *
+     * &lt;p&gt;&lt;b&gt;R6 (Wave 5):&lt;/b&gt; the criteria's optional catalog predicates
+     * (category / price bounds / guests) compose with the text predicate
+     * and the provider restriction in BOTH queries and counts — the
+     * windowed text search no longer drops the filters that ride it.
+     * Deliberately NOT cached at this level (the same policy as
+     * {@link #searchByCriteriaRestricted}): the search module's
+     * criteria-keyed {@code search-results-v5} cache is the caching
+     * surface for the restricted window searches.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchFullTextRestricted(SearchCriteria criteria, Set&lt;UUID&gt; providerIds, PagedRequest request) {
+        // W3 (G17): the floor INTERSECTS the caller's whitelist (the
+        // criteria-restricted twin's own law, one branch over).
+<span class="fc" id="L310">        Set&lt;UUID&gt; effective = intersectRestrictions(providerIds, minRatingFloor(criteria));</span>
+<span class="pc bpc" id="L311" title="2 of 4 branches missed.">        if (effective != null &amp;&amp; effective.isEmpty()) {</span>
+<span class="nc" id="L312">            return PagedResponse.empty(request);</span>
+        }
+<span class="fc" id="L314">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="fc" id="L315">        java.time.Instant now = clock.instant();</span>
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+<span class="pc bpc" id="L320" title="1 of 2 branches missed.">        String query = criteria.query() == null ? null : criteria.query().trim();</span>
+<span class="fc" id="L321">        Page&lt;ProviderListing&gt; page = listingRepository.searchFullTextRestricted(query,</span>
+<span class="fc" id="L322">                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L323">                criteria.guests(), effective, now, pageable);</span>
+<span class="fc bfc" id="L324" title="All 2 branches covered.">        if (page.getTotalElements() == 0) {</span>
+<span class="fc" id="L325">            page = listingRepository.searchSimilarRestricted(query,</span>
+<span class="fc" id="L326">                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L327">                    criteria.guests(), effective, now, pageable);</span>
+        }
+<span class="fc" id="L329">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;ListingSummary&gt; listByCategorySummary(String category, Pageable pageable) {
+<span class="nc" id="L334">        return SpringPagination.toPage(</span>
+<span class="nc" id="L335">                listByCategory(category, SpringPagination.toPagedRequest(pageable)), pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;ListingSummary&gt; listActiveSummary(Pageable pageable) {
+<span class="nc" id="L340">        return SpringPagination.toPage(</span>
+<span class="nc" id="L341">                listActive(SpringPagination.toPagedRequest(pageable)), pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public ProviderListing getById(UUID id) {
+<span class="fc" id="L346">        return listingRepository.findById(id)</span>
+<span class="fc" id="L347">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Listing&quot;, id));</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProviderListingView getActiveById(UUID id) {
+<span class="fc" id="L353">        return listingRepository.findById(id)</span>
+<span class="fc bfc" id="L354" title="All 2 branches covered.">                .filter(listing -&gt; listing.getStatus() == ListingStatus.ACTIVE)</span>
+<span class="fc" id="L355">                .map(this::toProviderListingView)</span>
+<span class="fc" id="L356">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Listing&quot;, id));</span>
+    }
+
+    /**
+     * R5 (comprehensive-review-ar-fix plan §4/R5 — media privacy): the
+     * public-visibility predicate — the SAME filter {@link #getActiveById}
+     * (the public detail endpoint's resolver) applies, as a boolean for the
+     * media module's request-time gate. ACTIVE = on the public surface;
+     * DRAFT/PAUSED/ARCHIVED, unknown ids and soft-deleted rows are not
+     * (the repository's {@code @SoftDelete} filter already hides dead rows).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isPubliclyVisible(UUID listingId) {
+<span class="nc" id="L370">        return listingRepository.findById(listingId)</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">                .filter(listing -&gt; listing.getStatus() == ListingStatus.ACTIVE)</span>
+<span class="nc" id="L372">                .isPresent();</span>
+    }
+
+    /**
+     * The booking-facing projection: exposes exactly the provider id, price
+     * and currency the booking flow needs — no other listing state.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ListingInfo getListingInfo(UUID listingId) {
+<span class="nc" id="L382">        ProviderListing listing = getById(listingId);</span>
+<span class="nc" id="L383">        return new ListingInfo(listing.getProviderId(), listing.getPriceCents(), listing.getCurrency());</span>
+    }
+
+    /**
+     * L38 (realestate systems plan §5 — completeness score): the provider's
+     * OWN read of his listing in ANY status (the score guides completion
+     * before activation, so the public ACTIVE-only gate does not apply).
+     * The ownership gate is the update/pause/renew contract verbatim — 404
+     * for an unknown id, 403 for a foreign provider (admin passes,
+     * {@link #verifyOwnership}).
+     *
+     * &lt;p&gt;&lt;b&gt;Why this stops at the entity (the L31 architecture, restored):&lt;/b&gt;
+     * the property block and the photo count compose at the CONTROLLER —
+     * {@code RealestateService} implements {@code PropertyDetailsPort} while
+     * depending on this service (ListingPriceProvider + CatalogSpi), so this
+     * service must NEVER inject that port or the context boots a circular
+     * reference (measured: CI round 1 on this very layer). The controller is
+     * a leaf bean — the L31 embed point, now the L38 composition point.
+     *
+     * &lt;p&gt;&lt;b&gt;Always fresh (the plan's criterion 3):&lt;/b&gt; no {@code @Cacheable}
+     * here and the read rides the uncached {@link #getById} — the ports the
+     * controller adds are uncached reads too, so a photo that lands between
+     * two requests is visible on the very next one.
+     *
+     * &lt;p&gt;&lt;b&gt;The admin-family gate (CodeRabbit round 1 adoption):&lt;/b&gt;
+     * {@code hasAnyRole('PROVIDER','ADMIN')} — the archive family's own
+     * precedent in this service, matching {@link #verifyOwnership}'s
+     * documented &quot;admins bypass&quot; contract: with a single-role gate that
+     * branch of the very helper this method calls would be unreachable.
+     */
+    @PreAuthorize(&quot;hasAnyRole('PROVIDER','ADMIN')&quot;)
+    @Transactional(readOnly = true)
+    public ProviderListing getOwnedListing(UUID id, Authentication authentication) {
+<span class="fc" id="L416">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L417">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L418">        return listing;</span>
+    }
+
+    /**
+     * L32: the criteria search restricted to the realestate module's
+     * matching-id set — the property-facet flow. Backed by the official
+     * Specifications (hasStatus + hasCategory + priceBetween + minGuests +
+     * hasListingIdIn), so it honors the Pageable sort (the price/newest
+     * whitelist mapped by the search surface) with the id tiebreak — and
+     * the UNSORTED default is {@code id ASC}, byte-identical to the native
+     * criteria path's ORDER BY id.
+     *
+     * &lt;p&gt;L37: the boost-first ordering composes into the CONTENT
+     * specification while the count specification keeps the predicates
+     * verbatim — the two-specification {@code findAll(spec, countSpec,
+     * pageable)} overload (see findBoostFirst; the plan's criterion 2 is
+     * structural: the count query is byte-identical to the pre-L37 one).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchByCriteriaRestrictedToListings(SearchCriteria criteria,
+                                                                     Set&lt;UUID&gt; listingIds,
+                                                                     PagedRequest request) {
+        // W3 (G17): the floor composes as the provider-set predicate — the
+        // property flow's listing-id restriction and the stars floor AND
+        // together (the saved-search matcher inherits this entry's floor
+        // for free — the matcher's own composition never resolves stats).
+<span class="nc" id="L445">        Set&lt;UUID&gt; floor = minRatingFloor(criteria);</span>
+<span class="nc bnc" id="L446" title="All 4 branches missed.">        if (floor != null &amp;&amp; floor.isEmpty()) {</span>
+<span class="nc" id="L447">            return PagedResponse.empty(request);</span>
+        }
+<span class="nc" id="L449">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="nc" id="L450">        var predicates = criteriaSpecification(criteria)</span>
+<span class="nc" id="L451">                .and(ProviderListingSpecifications.hasListingIdIn(listingIds))</span>
+<span class="nc" id="L452">                .and(ProviderListingSpecifications.hasProviderIdIn(floor));</span>
+<span class="nc" id="L453">        Page&lt;ProviderListing&gt; page = findBoostFirst(predicates, pageable);</span>
+<span class="nc" id="L454">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchByCriteriaFaceted(SearchCriteria criteria, PagedRequest request) {
+        // W3 (G17): the faceted path composes the floor as the provider-set
+        // predicate — the Specification flow's own composition form (the
+        // plain-criteria and text twins route onto their Restricted forms
+        // instead; this one ANDs the predicate directly).
+<span class="nc" id="L464">        Set&lt;UUID&gt; floor = minRatingFloor(criteria);</span>
+<span class="nc bnc" id="L465" title="All 4 branches missed.">        if (floor != null &amp;&amp; floor.isEmpty()) {</span>
+<span class="nc" id="L466">            return PagedResponse.empty(request);</span>
+        }
+<span class="nc" id="L468">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="nc" id="L469">        Page&lt;ProviderListing&gt; page = findBoostFirst(</span>
+<span class="nc" id="L470">                criteriaSpecification(criteria).and(ProviderListingSpecifications.hasProviderIdIn(floor)),</span>
+                pageable);
+<span class="nc" id="L472">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    /** The shared optional-predicate specification of the faceted paths. */
+    private static Specification&lt;ProviderListing&gt; criteriaSpecification(SearchCriteria criteria) {
+<span class="nc" id="L477">        return ProviderListingSpecifications.hasStatus(ListingStatus.ACTIVE)</span>
+<span class="nc" id="L478">                .and(ProviderListingSpecifications.hasCategory(criteria.category()))</span>
+<span class="nc" id="L479">                .and(ProviderListingSpecifications.priceBetween(</span>
+<span class="nc" id="L480">                        toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice())))</span>
+<span class="nc" id="L481">                .and(ProviderListingSpecifications.minGuests(criteria.guests()));</span>
+    }
+
+    /**
+     * L32: the full-text search restricted to the given listing ids —
+     * official websearch_to_tsquery ranking + the pg_trgm typo-tolerance
+     * fallback, with the id restriction in both the content and count
+     * queries. Text searches rank by relevance (documented: the facet sort
+     * whitelist does not apply).
+     *
+     * &lt;p&gt;&lt;b&gt;R6 (comprehensive-review-ar fix plan §4, Wave 5):&lt;/b&gt; the
+     * criteria's optional catalog predicates (category / price bounds /
+     * guests) compose with the text predicate and the id restriction in
+     * BOTH the content and count queries — the property flow's text branch
+     * and the saved-search matcher's membership probe no longer drop the
+     * filters that ride them. Deliberately NOT cached at this level: the
+     * search module's criteria-keyed {@code search-results-v5} cache is
+     * the caching surface for the id-restricted forms.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse&lt;ListingSummary&gt; searchFullTextRestrictedToListings(SearchCriteria criteria, Set&lt;UUID&gt; listingIds, PagedRequest request) {
+        // W3 (G17): the floor intersects the LISTING-id restriction itself —
+        // the property text flow's own composition point (the relevance
+        // ranking and the repo query shapes stay untouched; the floor's
+        // eligible listing set is small by construction: the floor
+        // providers' ACTIVE listings).
+<span class="fc" id="L508">        Set&lt;UUID&gt; floor = minRatingFloor(criteria);</span>
+<span class="pc bpc" id="L509" title="1 of 2 branches missed.">        if (floor != null) {</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">            Set&lt;UUID&gt; eligibleIds = floor.isEmpty()</span>
+<span class="nc" id="L511">                    ? java.util.Set.of()</span>
+<span class="nc" id="L512">                    : listingRepository.findIdsByStatusAndProviderIdIn(ListingStatus.ACTIVE, floor);</span>
+<span class="nc" id="L513">            Set&lt;UUID&gt; effective = listingIds.stream()</span>
+<span class="nc" id="L514">                    .filter(eligibleIds::contains)</span>
+<span class="nc" id="L515">                    .collect(java.util.stream.Collectors.toSet());</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">            if (effective.isEmpty()) {</span>
+<span class="nc" id="L517">                return PagedResponse.empty(request); // no floor provider owns a facet-matching listing</span>
+            }
+<span class="nc" id="L519">            listingIds = effective;</span>
+        }
+<span class="fc" id="L521">        Pageable pageable = SpringPagination.toPageable(request);</span>
+<span class="fc" id="L522">        java.time.Instant now = clock.instant();</span>
+        // R6 (Wave 5 — CodeRabbit round 1 adoption): the callers now pass
+        // the full criteria, so the raw query rides the record — the
+        // adapter owns the trim the call sites used to perform (the exact
+        // SQL parameter parity with the pre-wave text path).
+<span class="pc bpc" id="L527" title="1 of 2 branches missed.">        String query = criteria.query() == null ? null : criteria.query().trim();</span>
+<span class="fc" id="L528">        Page&lt;ProviderListing&gt; page = listingRepository.searchFullTextRestrictedToListings(query,</span>
+<span class="fc" id="L529">                criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L530">                criteria.guests(), listingIds, now, pageable);</span>
+<span class="fc bfc" id="L531" title="All 2 branches covered.">        if (page.getTotalElements() == 0) {</span>
+<span class="fc" id="L532">            page = listingRepository.searchSimilarRestrictedToListings(query,</span>
+<span class="fc" id="L533">                    criteria.category(), toMinorUnits(criteria.minPrice()), toMinorUnits(criteria.maxPrice()),</span>
+<span class="fc" id="L534">                    criteria.guests(), listingIds, now, pageable);</span>
+        }
+<span class="fc" id="L536">        return PagedResponse.of(toSummaryPage(page));</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set&lt;UUID&gt; findActiveListingIds() {
+<span class="nc" id="L542">        return listingRepository.findIdsByStatus(ListingStatus.ACTIVE);</span>
+    }
+
+    /**
+     * CodeRabbit PR #300 round 1: the criteria-eligible ACTIVE id set — the
+     * shared criteria specification (ACTIVE + category/price/guests) through
+     * the official Specifications path, mapped to ids in the realestate
+     * adapter's own set-form shape (its {@code findListingIdsMatching} runs
+     * the identical composition over {@code property_details}). A criteria
+     * with every catalog predicate absent degenerates to the ACTIVE set —
+     * the caller gates on {@code hasCatalogCriteria()} and keeps the
+     * cheaper derived-query path for that case.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Set&lt;UUID&gt; findActiveListingIdsMatching(SearchCriteria criteria) {
+<span class="nc" id="L558">        return listingRepository.findAll(criteriaSpecification(criteria))</span>
+<span class="nc" id="L559">                .stream().map(ProviderListing::getId).collect(Collectors.toSet());</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List&lt;ListingSummary&gt; findSummariesByIds(List&lt;UUID&gt; idsInOrder) {
+<span class="nc bnc" id="L565" title="All 2 branches missed.">        if (idsInOrder.isEmpty()) {</span>
+<span class="nc" id="L566">            return List.of();</span>
+        }
+        // resolve only ACTIVE listings (the area-flow ids are already
+        // active-restricted; this keeps the projection honest regardless)
+<span class="nc" id="L570">        Map&lt;UUID, ProviderListing&gt; byId = listingRepository.findAllById(idsInOrder).stream()</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">                .filter(listing -&gt; listing.getStatus() == ListingStatus.ACTIVE)</span>
+<span class="nc" id="L572">                .collect(Collectors.toMap(ProviderListing::getId, listing -&gt; listing));</span>
+        // batch-resolve provider names (the toSummaryPage discipline)
+<span class="nc" id="L574">        Map&lt;UUID, String&gt; providerNames = providerNameResolver.resolveNames(</span>
+<span class="nc" id="L575">                byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));</span>
+        // W3 (G20): the stars ride the same batch discipline (the shared
+        // row composition keeps the paged and by-ids paths one shape).
+<span class="nc" id="L578">        Map&lt;UUID, com.marketplace.shared.api.ReviewStats&gt; ratings = reviewStatsPort.findStatsByProviderUserIds(</span>
+<span class="nc" id="L579">                byId.values().stream().map(ProviderListing::getProviderId).collect(Collectors.toSet()));</span>
+        // restore the caller's order (the area-sorted page assembly)
+<span class="nc" id="L581">        return idsInOrder.stream()</span>
+<span class="nc" id="L582">                .map(byId::get)</span>
+<span class="nc" id="L583">                .filter(Objects::nonNull)</span>
+<span class="nc" id="L584">                .map(listing -&gt; toSummary(listing, providerNames, ratings))</span>
+<span class="nc" id="L585">                .toList();</span>
+    }
+
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the one
+     * boost-first read for every Specification-backed ordered surface —
+     * the official two-specification overload
+     * {@code JpaSpecificationExecutor.findAll(spec, countSpec, pageable)}
+     * (since 3.5):
+     *
+     * &lt;ul&gt;
+     *   &lt;li&gt;&lt;b&gt;spec&lt;/b&gt; — the predicates composed with
+     *       {@link ProviderListingSpecifications#boostFirst(Sort, Instant)}
+     *       LAST (the composition order guarantees its ordering wins), so
+     *       the content query orders
+     *       {@code boost DESC, effective sort, id ASC} and carries the
+     *       predicates;&lt;/li&gt;
+     *   &lt;li&gt;&lt;b&gt;countSpec&lt;/b&gt; — the predicates VERBATIM. Measured necessity:
+     *       the same {@code toPredicate} also runs for the count query, and
+     *       PostgreSQL rejects an aggregate whose ORDER BY references a
+     *       non-grouped column — so the ordering must stay out of the count
+     *       spec (this is exactly what the second specification parameter
+     *       exists for);&lt;/li&gt;
+     *   &lt;li&gt;&lt;b&gt;pageable&lt;/b&gt; — UNSORTED (page/size only): a sorted Pageable
+     *       would REPLACE the specification's order
+     *       ({@code SimpleJpaRepository.getQuery} applies
+     *       {@code if (sort.isSorted()) query.orderBy(toOrders(...))} AFTER
+     *       the specification — the JPA {@code orderBy} contract replaces).
+     *       The requested sort rides the boost specification instead, via
+     *       the framework's own {@code QueryUtils.toOrders}.&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * &lt;p&gt;The cache staleness bound: the caller's {@code @Cacheable} pages
+     * reflect the boost state at fill time — an admin shading evicts
+     * through the standard {@code CacheInvalidationRequested} relay (the
+     * mutation contract), and a pure window EXPIRY ages out within the 1h
+     * TTL (the same bounded staleness the L33 expiry job's half-hour ticks
+     * already document for paused listings).
+     */
+    private Page&lt;ProviderListing&gt; findBoostFirst(Specification&lt;ProviderListing&gt; predicates, Pageable pageable) {
+<span class="fc" id="L625">        java.time.Instant now = clock.instant();</span>
+<span class="fc" id="L626">        return listingRepository.findAll(</span>
+<span class="fc" id="L627">                predicates.and(ProviderListingSpecifications.boostFirst(pageable.getSort(), now)),</span>
+                predicates,
+<span class="fc" id="L629">                unsorted(pageable));</span>
+    }
+
+    /** The page/size of the request, without its sort (see findBoostFirst). */
+    private static Pageable unsorted(Pageable pageable) {
+<span class="pc bpc" id="L634" title="1 of 2 branches missed.">        return pageable.isPaged()</span>
+<span class="fc" id="L635">                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())</span>
+<span class="nc" id="L636">                : Pageable.unpaged();</span>
+    }
+
+    /** The min/max price mapping shared by the criteria paths. */
+    private static Long toMinorUnits(BigDecimal price) {
+<span class="fc bfc" id="L641" title="All 2 branches covered.">        return price != null ? price.movePointRight(2).longValue() : null;</span>
+    }
+
+    // Cache names are NAMESPACED BY SCHEMA VERSION (CodeRabbit #241): the four
+    // ListingSummary caches hold JDK-serialized records — a record-component
+    // change (currency was added by the B4 layer) lets a stale pre-change entry
+    // deserialize with null components and serve it as a cache hit, bypassing
+    // the mapping that populates the new component. Bumping the name with every
+    // ListingSummary component change evicts at deploy time through the deploy
+    // itself (old entries become unreachable and expire via the 1h TTL). Any
+    // future change to ListingSummary MUST bump this suffix — pinned by
+    // ListingSummaryCacheContractFilesTest.
+    // L32: search-results bumps to -v3 with the criteria schema extension
+    // (the plan's D-R6 decision — the criteria record gained six components;
+    // the key generator's prefix bump keeps the key spaces disjoint AND the
+    // name bump evicts at deploy time through the deploy itself).
+<span class="fc" id="L657">    static final Set&lt;String&gt; CATALOG_CACHE_NAMES =</span>
+<span class="fc" id="L658">            Set.of(&quot;catalog-active-v3&quot;, &quot;catalog-by-category-v3&quot;, &quot;catalog-search-v3&quot;, &quot;search-results-v5&quot;);</span>
+
+    /**
+     * Creates a listing for the caller-owned provider profile. The
+     * {@code providerId} argument lives in the users.id space (V2
+     * references users(id)) and is resolved through {@code findByUserId}
+     * (A1) so the VERIFIED gate matches the profile owned by that user id.
+     *
+     * &lt;p&gt;{@code @Observed} is on BOTH proxy-visible entry forms (the CodeRabbit
+     * #270 Major, adopted): this six-argument overload is the GraphQL/SPI
+     * entry point and the seven-argument form is the REST entry point. The
+     * official AOP proxying rule (Spring Framework Reference, Proxying
+     * Mechanisms — &quot;self invocation ... will bypass the advice&quot;) means the
+     * delegation from this overload to the full form runs unproxied, so the
+     * full form's annotation alone leaves the GraphQL {@code createService}
+     * mutation unobserved (it was observed before the I6 split — one
+     * six-argument method). Each external call now crosses the proxy exactly
+     * once at ITS entry form: exactly one observation per create, no
+     * double-counting — the same inventory name {@code catalog.create.listing}
+     * on both forms (the pin counts names, not methods).
+     */
+    @Observed(name = &quot;catalog.create.listing&quot;)
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListingView create(UUID providerId, String title, String description,
+                                      String category, Long priceCents, String currency) {
+<span class="fc" id="L683">        return create(providerId, title, description, category, priceCents, currency, null);</span>
+    }
+
+    /**
+     * I6: full creation form with the optional guest capacity — {@code null}
+     * leaves capacity undeclared. The value is already gated at the API
+     * surface ({@code @Positive} Bean Validation); the entity floor and the
+     * V44 CHECK constraint back it.
+     */
+    @Observed(name = &quot;catalog.create.listing&quot;)
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListingView create(UUID providerId, String title, String description,
+                                      String category, Long priceCents, String currency,
+                                      Integer maxGuests) {
+<span class="fc" id="L697">        requireKnownCategory(category);</span>
+<span class="fc" id="L698">        providerLookupPort.findByUserId(providerId)</span>
+<span class="fc" id="L699">                .filter(p -&gt; &quot;VERIFIED&quot;.equals(p.status()))</span>
+<span class="pc" id="L700">                .orElseThrow(() -&gt; new BadRequestException(&quot;Provider is not verified&quot;));</span>
+<span class="fc" id="L701">        ProviderListing listing = ProviderListing.create(providerId, title, description, category,</span>
+                priceCents, currency, maxGuests);
+<span class="fc" id="L703">        ProviderListing saved = listingRepository.save(listing);</span>
+<span class="fc" id="L704">        eventPublisher.publishEvent(new ListingCreatedEvent(saved.getId()));</span>
+<span class="fc" id="L705">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L706">        return toProviderListingView(saved);</span>
+    }
+
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing update(UUID id, String title, String description,
+                                  String category, Long priceCents, Authentication authentication) {
+<span class="fc" id="L712">        return update(id, title, description, category, priceCents, null, authentication);</span>
+    }
+
+    /**
+     * Updates the listing; blank currency keeps the stored ISO 4217 code
+     * (omitting the field does not reset money semantics).
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing update(UUID id, String title, String description,
+                                  String category, Long priceCents, String currency,
+                                  Authentication authentication) {
+<span class="fc" id="L723">        return update(id, title, description, category, priceCents, currency, null, authentication);</span>
+    }
+
+    /**
+     * I6: full update form — capacity follows the currency contract
+     * (omitted keeps the stored value; an explicit positive value
+     * re-declares it).
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing update(UUID id, String title, String description,
+                                  String category, Long priceCents, String currency,
+                                  Integer maxGuests, Authentication authentication) {
+<span class="fc" id="L735">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L736">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L737">        requireKnownCategoryUnlessUnchanged(listing, category);</span>
+<span class="fc" id="L738">        listing.update(title, description, category, priceCents, currency, maxGuests);</span>
+<span class="fc" id="L739">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L740">        return listing;</span>
+    }
+
+    /**
+     * S6 update leg (CodeRabbit round 1, adopted): an UNCHANGED category is
+     * not a vocabulary write. A pre-registry listing carrying a legacy
+     * category (seeded before V70, or by the SQL fixtures the FK debt
+     * documents) keeps that value through any update — only a CHANGED
+     * category must be a registered code. Without this leg every legacy
+     * listing with a non-registry category would be frozen out of updates
+     * entirely (400 on every save, even category-untouched ones) — the
+     * exact regression the review measured. Creation keeps the strict gate:
+     * a new listing is always a new vocabulary write.
+     */
+    private void requireKnownCategoryUnlessUnchanged(ProviderListing listing, String category) {
+<span class="fc bfc" id="L755" title="All 2 branches covered.">        if (!listing.getCategory().equals(category)) {</span>
+<span class="fc" id="L756">            requireKnownCategory(category);</span>
+        }
+<span class="fc" id="L758">    }</span>
+
+    /**
+     * S6 (comprehensive repair plan §10/2.3): the write gate — the listing's
+     * category must be an ACTIVE registry row (V70). The clean 400 precedes
+     * any DB-level rejection; the DB FK is the declared debt that completes
+     * this gate when the product vocabulary decision lands (the PR body's
+     * measured rationale — an enforced FK with the one-value starter
+     * vocabulary would either break the category-diversity tests or pollute
+     * the vocabulary with test artifacts).
+     */
+    private void requireKnownCategory(String category) {
+<span class="fc" id="L770">        categoryRepository.findByCode(category)</span>
+<span class="fc" id="L771">                .orElseThrow(() -&gt; new BadRequestException(</span>
+                        &quot;Unknown listing category: &quot; + category
+                                + &quot; (see GET /api/v1/listings/categories)&quot;));
+<span class="fc" id="L774">    }</span>
+
+    /**
+     * S6: the public registry read — the storefront's category picker, in the
+     * registry's display order. Reference data (the geo public-read pattern).
+     */
+    @Transactional(readOnly = true)
+    public java.util.List&lt;CategoryView&gt; listCategories() {
+<span class="nc" id="L782">        return categoryRepository.findAllByOrderByPositionAsc().stream()</span>
+<span class="nc" id="L783">                .map(c -&gt; new CategoryView(c.getCode(), c.getNameEn(), c.getNameAr()))</span>
+<span class="nc" id="L784">                .toList();</span>
+    }
+
+    /** The registry's public read shape — the code plus the display names. */
+<span class="nc" id="L788">    public record CategoryView(String code, String nameEn, String nameAr) {</span>
+    }
+
+    /**
+     * L33: activation now resolves the publication window — an explicit
+     * {@code expiresAt} wins; otherwise the configured policy (expiry-days
+     * from now); with neither, a 409 (&quot;no silently-immortal listing&quot;).
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing activate(UUID id, Authentication authentication) {
+<span class="fc" id="L798">        return activate(id, null, authentication);</span>
+    }
+
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing activate(UUID id, java.time.Instant expiresAt,
+                                    Authentication authentication) {
+<span class="fc" id="L804">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L805">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L806">        java.time.Instant now = clock.instant();</span>
+<span class="fc bfc" id="L807" title="All 2 branches covered.">        java.time.Instant resolved = expiresAt != null</span>
+<span class="fc" id="L808">                ? expiresAt</span>
+<span class="fc" id="L809">                : policyExpiry(now);</span>
+        // CodeRabbit PR #299 round 1: a past or current expiry would make
+        // the listing publicly ACTIVE until the next job tick — the
+        // boundary is strictly future (the same rule renewal enforces).
+<span class="fc bfc" id="L813" title="All 2 branches covered.">        if (!resolved.isAfter(now)) {</span>
+<span class="fc" id="L814">            throw new com.marketplace.shared.api.BadRequestException(</span>
+                    &quot;expiresAt must be strictly in the future&quot;);
+        }
+<span class="fc" id="L817">        listing.activate(resolved);</span>
+        // L35 (realestate systems plan §5 — saved searches and alerts): the
+        // activation event, published inside the writer's transaction (the
+        // BookingCreatedEvent/MediaUploadedEvent house pattern) so the Event
+        // Publication Registry writes its entries atomically with the state
+        // change. The publisher knows NOTHING about its consumers (the
+        // search module's saved-search matcher today; the community layer's
+        // L46 neighborhood bridge when its window opens — one publisher,
+        // many consumers, the Modulith fan-out). Renewal (renew()) is a
+        // different transition and deliberately does not fire this event.
+<span class="fc" id="L827">        eventPublisher.publishEvent(new ListingActivatedEvent(id, listing.getProviderId()));</span>
+<span class="fc" id="L828">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L829">        return listing;</span>
+    }
+
+    /**
+     * L33 renewal: works only on the EXPIRED pause (a MANUAL pause answers
+     * 409 — deliberate pauses stay until re-activated), bounded by the
+     * cooldown (the anti-recycling floor: at most one renewal per window).
+     * The new window runs from NOW by the policy.
+     */
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing renew(UUID id, Authentication authentication) {
+<span class="fc" id="L840">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L841">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L842">        java.time.Instant now = clock.instant();</span>
+<span class="fc bfc" id="L843" title="All 2 branches covered.">        if (listing.getRenewedAt() != null) {</span>
+<span class="fc" id="L844">            java.time.Instant cooldownEnd = listing.getRenewedAt()</span>
+<span class="fc" id="L845">                    .plus(java.time.Duration.ofDays(cooldownDays()));</span>
+<span class="fc bfc" id="L846" title="All 2 branches covered.">            if (now.isBefore(cooldownEnd)) {</span>
+<span class="fc" id="L847">                throw new com.marketplace.shared.api.ConflictException(</span>
+                        &quot;Listing &quot; + id + &quot; was renewed within the cooldown window (&quot;
+<span class="fc" id="L849">                                + cooldownDays() + &quot; days)&quot;);</span>
+            }
+        }
+<span class="fc" id="L852">        listing.renew(now, policyExpiry(now));</span>
+<span class="fc" id="L853">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L854">        return listing;</span>
+    }
+
+    /** The configured publication window, or the 409 policy gap. */
+    private java.time.Instant policyExpiry(java.time.Instant now) {
+<span class="fc" id="L859">        Integer days = catalogProperties.expiry().expiryDays();</span>
+<span class="fc bfc" id="L860" title="All 2 branches covered.">        if (days == null) {</span>
+<span class="fc" id="L861">            throw new com.marketplace.shared.api.ConflictException(</span>
+                    &quot;No expiry policy configured (marketplace.catalog.expiry.expiry-days)&quot;
+                            + &quot; and no explicit expiry date provided&quot;);
+        }
+<span class="fc" id="L865">        return now.plus(java.time.Duration.ofDays(days));</span>
+    }
+
+    private long cooldownDays() {
+<span class="fc" id="L869">        Integer days = catalogProperties.expiry().renewalCooldownDays();</span>
+<span class="pc bpc" id="L870" title="2 of 4 branches missed.">        return days != null &amp;&amp; days &gt; 0 ? days : 1;</span>
+    }
+
+    @PreAuthorize(&quot;hasRole('PROVIDER')&quot;)
+    public ProviderListing pause(UUID id, Authentication authentication) {
+<span class="fc" id="L875">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L876">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L877">        listing.pause();</span>
+<span class="fc" id="L878">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L879">        return listing;</span>
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page&lt;ProviderListingSummary&gt; findAllSummaries(Pageable pageable) {
+<span class="fc" id="L885">        return listingRepository.findAll(pageable).map(this::toProviderListingSummary);</span>
+    }
+
+    @Override
+    @PreAuthorize(&quot;hasAnyRole('PROVIDER','ADMIN')&quot;)
+    public ProviderListingSummary archiveListing(UUID id, Authentication authentication) {
+<span class="fc" id="L891">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L892">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L893">        listing.archive();</span>
+<span class="fc" id="L894">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L895">        return toProviderListingSummary(listing);</span>
+    }
+
+    /**
+     * Archives the caller’s own listing (ownership verified against the
+     * users.id space per A1) and requests the catalog cache invalidation.
+     */
+    @PreAuthorize(&quot;hasAnyRole('PROVIDER','ADMIN')&quot;)
+    public ProviderListing archive(UUID id, Authentication authentication) {
+<span class="fc" id="L904">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L905">        verifyOwnership(listing, authentication);</span>
+<span class="fc" id="L906">        listing.archive();</span>
+<span class="fc" id="L907">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L908">        return listing;</span>
+    }
+
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the
+     * administrative shading point — &quot;ADMIN يظلّل لب until&quot;. Sets the
+     * listing's boost window (or CLEARS it with a null {@code until} — an
+     * admin correcting a shading is the documented exit; the request field
+     * is optional exactly like the L36 bio fields' PUT contract).
+     *
+     * &lt;p&gt;&lt;b&gt;Validation:&lt;/b&gt; a non-null window must be strictly future at
+     * the INJECTED clock (the activate/renew boundary rule verbatim — a
+     * past window would be a silent no-op ordering). One seam, one clock:
+     * deliberately no bean-validation {@code @Future} at the controller —
+     * it would validate against the JVM clock while the service validates
+     * against the injected one, and the two can legitimately diverge in
+     * clock-injection tests (the L38 single-source lesson).
+     *
+     * &lt;p&gt;&lt;b&gt;Why no status gate:&lt;/b&gt; the boost reorders ACTIVE result sets
+     * only (the ordering criterion composes with the status predicates —
+     * it never touches WHERE), so shading a DRAFT/PAUSED/ARCHIVED listing
+     * is a dormant window, not an error; the status machine stays
+     * untouched (D-R7). Activation does not clear the window and pause
+     * does not interact with it — the window is a plain timestamp, not
+     * lifecycle state.
+     *
+     * &lt;p&gt;&lt;b&gt;The audit trail (the plan's criterion 4):&lt;/b&gt; the shading is
+     * an @Audited entity UPDATE — the Envers revision (with the
+     * {@code updated_by} attribution from the security context) IS the
+     * record; the admin revisions surface reads it directly. The response
+     * carries the resulting state (a cleared boost reports {@code null}).
+     *
+     * &lt;p&gt;&lt;b&gt;Cache:&lt;/b&gt; every ordering-bearing page evicts through the
+     * standard relay — the boost reorders cached pages, so the shading
+     * mutation is a cache invalidation event exactly like every other
+     * listing write.
+     */
+    @Override
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    public com.marketplace.shared.api.ListingPromotion setListingPromotion(
+            UUID id, java.time.Instant until) {
+<span class="fc" id="L949">        ProviderListing listing = getById(id);</span>
+<span class="fc" id="L950">        java.time.Instant now = clock.instant();</span>
+<span class="fc bfc" id="L951" title="All 4 branches covered.">        if (until != null &amp;&amp; !until.isAfter(now)) {</span>
+<span class="fc" id="L952">            throw new BadRequestException(&quot;promotedUntil must be strictly in the future&quot;);</span>
+        }
+<span class="fc" id="L954">        listing.promoteUntil(until);</span>
+<span class="fc" id="L955">        eventPublisher.publishEvent(new CacheInvalidationRequested(CATALOG_CACHE_NAMES));</span>
+<span class="fc" id="L956">        return new com.marketplace.shared.api.ListingPromotion(listing.getId(), listing.getPromotedUntil());</span>
+    }
+
+    /**
+     * Verifies the listing belongs to the calling user (admins bypass):
+     * the listing's provider id is a user id (A1 — V2 references
+     * users(id)), so the owner check resolves the user-owned profile via
+     * {@code findByUserId}.
+     */
+    private void verifyOwnership(ProviderListing listing, Authentication authentication) {
+<span class="fc" id="L966">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc bfc" id="L967" title="All 2 branches covered.">        if (currentUserProvider.isAdmin(authentication)) return;</span>
+        // A1: listing.getProviderId() lives in the users.id space (V2 references
+        // users(id)) — resolve through findByUserId, not findById (provider_profiles.id).
+<span class="fc" id="L970">        providerLookupPort.findByUserId(listing.getProviderId())</span>
+<span class="pc bpc" id="L971" title="1 of 4 branches missed.">                .filter(provider -&gt; provider.userId() != null &amp;&amp; provider.userId().equals(currentUserId))</span>
+<span class="fc" id="L972">                .orElseThrow(() -&gt; new AccessDeniedException(&quot;You do not own this listing&quot;));</span>
+<span class="fc" id="L973">    }</span>
+
+    /**
+     * Batch-resolve provider names for an entire page, then map to ListingSummary.
+     * Avoids N+1 queries by calling resolveNames once per page.
+     */
+    private Page&lt;ListingSummary&gt; toSummaryPage(Page&lt;ProviderListing&gt; page) {
+<span class="fc" id="L980">        Set&lt;UUID&gt; providerIds = page.getContent().stream()</span>
+<span class="fc" id="L981">                .map(ProviderListing::getProviderId)</span>
+<span class="fc" id="L982">                .collect(Collectors.toSet());</span>
+<span class="fc" id="L983">        Map&lt;UUID, String&gt; providerNames = providerNameResolver.resolveNames(providerIds);</span>
+        // W3 (G20): the stars ride the same batch-resolution discipline —
+        // one grouped stats query for the page's distinct providers, never
+        // per-row (a page costs the names query + the stats query, bounded
+        // by the page size no matter the total).
+<span class="fc" id="L988">        Map&lt;UUID, com.marketplace.shared.api.ReviewStats&gt; ratings =</span>
+<span class="fc" id="L989">                reviewStatsPort.findStatsByProviderUserIds(providerIds);</span>
+<span class="fc" id="L990">        return page.map(listing -&gt; toSummary(listing, providerNames, ratings));</span>
+    }
+
+    /** The single row composition — shared by the paged and the by-ids paths. */
+    private static ListingSummary toSummary(ProviderListing listing,
+                                            Map&lt;UUID, String&gt; providerNames,
+                                            Map&lt;UUID, com.marketplace.shared.api.ReviewStats&gt; ratings) {
+<span class="fc" id="L997">        com.marketplace.shared.api.ReviewStats stats = ratings.get(listing.getProviderId());</span>
+<span class="fc" id="L998">        return new ListingSummary(</span>
+<span class="fc" id="L999">                listing.getId(),</span>
+<span class="fc" id="L1000">                listing.getTitle(),</span>
+<span class="fc" id="L1001">                listing.getCategory(),</span>
+<span class="fc" id="L1002">                BigDecimal.valueOf(listing.getPriceCents(), 2),</span>
+<span class="fc" id="L1003">                listing.getCurrency(),</span>
+<span class="fc" id="L1004">                providerNames.getOrDefault(listing.getProviderId(), &quot;Unknown Provider&quot;),</span>
+                // The honest not-yet-rated row: null rating, zero count —
+                // never a fabricated zero (a provider with no verified
+                // reviews is absent from the batch answer by construction).
+<span class="fc bfc" id="L1008" title="All 2 branches covered.">                stats == null ? null : stats.averageRating(),</span>
+<span class="fc bfc" id="L1009" title="All 2 branches covered.">                stats == null ? 0L : stats.reviewCount()</span>
+        );
+    }
+
+    /**
+     * W3 (G17): the rating-floor set — null when the criterion is absent
+     * (the unrestricted form); empty when NO provider answers the floor
+     * (the honest-empty-page short-circuit every caller applies).
+     */
+    private Set&lt;UUID&gt; minRatingFloor(SearchCriteria criteria) {
+<span class="pc bpc" id="L1019" title="1 of 4 branches missed.">        if (criteria == null || !criteria.hasMinRating()) {</span>
+<span class="fc" id="L1020">            return null;</span>
+        }
+<span class="fc" id="L1022">        return reviewStatsPort.findProviderUserIdsWithRatingAtLeast(criteria.minRating().doubleValue());</span>
+    }
+
+    /**
+     * W3 (G17): two optional provider-set restrictions compose by
+     * INTERSECTION (window whitelist ∩ stars floor) — null means absent on
+     * either side; a non-null empty result is the honest empty page.
+     */
+    private static Set&lt;UUID&gt; intersectRestrictions(Set&lt;UUID&gt; whitelist, Set&lt;UUID&gt; floor) {
+<span class="pc bpc" id="L1031" title="1 of 2 branches missed.">        if (whitelist == null) {</span>
+<span class="nc" id="L1032">            return floor;</span>
+        }
+<span class="fc bfc" id="L1034" title="All 2 branches covered.">        if (floor == null) {</span>
+<span class="fc" id="L1035">            return whitelist;</span>
+        }
+<span class="fc" id="L1037">        return whitelist.stream().filter(floor::contains).collect(Collectors.toSet());</span>
+    }
+
+    private ProviderListingView toProviderListingView(ProviderListing listing) {
+<span class="fc" id="L1041">        return new ProviderListingView(</span>
+<span class="fc" id="L1042">                listing.getId(),</span>
+<span class="fc" id="L1043">                listing.getTitle(),</span>
+<span class="fc" id="L1044">                listing.getDescription(),</span>
+<span class="fc" id="L1045">                listing.getCategory(),</span>
+<span class="fc" id="L1046">                listing.getPriceCents(),</span>
+<span class="fc" id="L1047">                listing.getCurrency(),</span>
+<span class="fc" id="L1048">                listing.getProviderId(),</span>
+<span class="fc" id="L1049">                listing.getStatus().name(),</span>
+<span class="fc" id="L1050">                listing.getMaxGuests(),</span>
+<span class="fc" id="L1051">                listing.getCreatedAt(),</span>
+<span class="fc" id="L1052">                listing.getUpdatedAt(),</span>
+<span class="fc" id="L1053">                listing.getExpiresAt(),</span>
+<span class="fc" id="L1054">                listing.getPausedReason()</span>
+        );
+    }
+
+    private ProviderListingSummary toProviderListingSummary(ProviderListing listing) {
+<span class="fc" id="L1059">        return new ProviderListingSummary(</span>
+<span class="fc" id="L1060">                listing.getId(),</span>
+<span class="fc" id="L1061">                listing.getTitle(),</span>
+<span class="fc" id="L1062">                listing.getCategory(),</span>
+<span class="fc" id="L1063">                BigDecimal.valueOf(listing.getPriceCents(), 2),</span>
+<span class="fc" id="L1064">                listing.getCurrency(),</span>
+<span class="fc" id="L1065">                listing.getProviderId(),</span>
+<span class="fc" id="L1066">                listing.getStatus().name(),</span>
+<span class="fc" id="L1067">                listing.getCreatedAt(),</span>
+<span class="fc" id="L1068">                listing.getUpdatedAt()</span>
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

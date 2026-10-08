@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UserLookupPortImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">UserLookupPortImpl.java</span></div><h1>UserLookupPortImpl.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.UserLookupPort;
+import com.marketplace.shared.api.UserSummary;
+import org.springframework.stereotype.Component;
+
+import java.util.Collection;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Component
+public class UserLookupPortImpl implements UserLookupPort {
+
+    private final UserRepository userRepository;
+
+<span class="nc" id="L18">    public UserLookupPortImpl(UserRepository userRepository) {</span>
+<span class="nc" id="L19">        this.userRepository = userRepository;</span>
+<span class="nc" id="L20">    }</span>
+
+    @Override
+    public Optional&lt;UserSummary&gt; findById(UUID userId) {
+<span class="nc" id="L24">        return userRepository.findById(userId).map(UserLookupPortImpl::toSummary);</span>
+    }
+
+    /**
+     * W1 (§4.4/§4.5): the batch form — one {@code findAllById} for a whole
+     * reviews page's distinct authors (the ProviderNameResolver rationale
+     * &quot;batch resolution via findAllById to avoid N+1 queries&quot;). Ids without
+     * a row are simply absent (the caller's own fallback applies).
+     */
+    @Override
+    public Map&lt;UUID, UserSummary&gt; findAllByIds(Collection&lt;UUID&gt; userIds) {
+<span class="nc bnc" id="L35" title="All 4 branches missed.">        if (userIds == null || userIds.isEmpty()) {</span>
+<span class="nc" id="L36">            return Map.of();</span>
+        }
+<span class="nc" id="L38">        return userRepository.findAllById(userIds).stream()</span>
+<span class="nc" id="L39">                .collect(Collectors.toMap(</span>
+                        User::getId,
+                        UserLookupPortImpl::toSummary,
+<span class="nc" id="L42">                        (left, right) -&gt; left));</span>
+    }
+
+    /**
+     * I7 note: the RAW profile values plus the pseudonymization marker —
+     * the neutral &quot;former member&quot; rendering is the reader's decision
+     * ({@code UserSummary.publicDisplayName()}), so every cross-module
+     * surface answers the same word for the same account.
+     */
+    private static UserSummary toSummary(User user) {
+<span class="nc" id="L52">        return new UserSummary(user.getId(), user.getEmail(), user.getDisplayName(),</span>
+<span class="nc" id="L53">                user.getRole().name(), user.getCreatedAt(), user.getUpdatedAt(),</span>
+<span class="nc" id="L54">                user.getPseudonymizedAt());</span>
+    }
+
+    /**
+     * R7 (Wave 5 — the unified WebSocket identity): the subject-keyed
+     * lookup, the same {@code findBySubject} resolution the REST surface's
+     * {@code IdentityUserProvider} rides — the users table's unique stable
+     * key a minted token's {@code sub} carries. See
+     * {@link UserLookupPort#findBySubject(String)} for the contract.
+     */
+    @Override
+    public Optional&lt;UserSummary&gt; findBySubject(String subject) {
+        // toSummary carries the pseudonymization marker (I7) — the same
+        // 7-arg construction every other lookup on this port uses; the
+        // reconciliation merge kept main's 6-arg shape, which no longer
+        // compiles against the W1 record.
+<span class="nc" id="L70">        return userRepository.findBySubject(subject).map(UserLookupPortImpl::toSummary);</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,12 @@
+com/marketplace/identity/ReviewerBadgeTest.class
+com/marketplace/identity/UserMapperTest.class
+com/marketplace/identity/ProviderFollowServiceTest.class
+com/marketplace/identity/ReviewerPublicProfileServiceTest.class
+com/marketplace/identity/IdentityProviderNameResolverTest.class
+com/marketplace/identity/AuditHistoryPurgeServiceTest.class
+com/marketplace/identity/UserControllerTest.class
+com/marketplace/identity/UserDataExportServiceTest.class
+com/marketplace/identity/IdentityUserProviderTest.class
+com/marketplace/identity/UserServiceTest.class
+com/marketplace/identity/ReviewerTrustScoreTest.class
+com/marketplace/identity/AuthoredContentPurgeServiceTest.class

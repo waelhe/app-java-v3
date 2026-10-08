@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderFollowService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ProviderFollowService.java</span></div><h1>ProviderFollowService.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.FollowedProviderNewListingEvent;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ProviderSummary;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * W4 (yelp-level plan §5 — the reviewer identity &amp;amp; engagement wave, G21):
+ * the follow domain — the /me CRUD and the activation bridge.
+ *
+ * &lt;p&gt;&lt;b&gt;The write path (the {@code createOrganic} W1 gate order, measured):&lt;/b&gt;
+ * the provider PROFILE id is resolved through {@link ProviderLookupPort}
+ * (404 for an unknown profile — never a silently-empty page), the self-follow
+ * pair answers 400 (the &quot;not the provider itself&quot; precedent — a member never
+ * follows his own provider profile), a live duplicate answers the explicit
+ * 409, and V93's partial unique index is the concurrent-insert backstop.
+ * The stored {@code provider_user_id} is the USER id (A1) — the id
+ * {@code ListingActivatedEvent} carries, so the bridge joins directly.
+ *
+ * &lt;p&gt;&lt;b&gt;The activation bridge (the saved-search matcher's own shape, the
+ * same event):&lt;/b&gt; {@link #onListingActivated} scans every live follow of
+ * the listing's provider, inserts one alert-ledger row per (follower,
+ * listing) pair with a native {@code INSERT ... ON CONFLICT DO NOTHING} (the
+ * {@code saved_search_matches} V54 precedent — the skip is a returned 0,
+ * never a transaction-aborting 23505), and publishes ONE
+ * {@link FollowedProviderNewListingEvent} per NEW pair. The ledger is the
+ * &quot;تنبيهًا واحدًا&quot; guarantee made structural: a registry re-delivery of the
+ * same activation (the at-least-once D-E10 semantics) inserts nothing and
+ * publishes nothing, so a follower is told about a listing announcement
+ * exactly once — ever — regardless of retries.
+ *
+ * &lt;p&gt;The bridge unit runs inside the listener's own transaction
+ * (REQUIRES_NEW): the ledger inserts and the published events commit
+ * atomically — a crash rolls the whole unit back and the registry retries
+ * the event cleanly (the {@code processListingActivated} contract).
+ */
+@Service
+@Transactional
+public class ProviderFollowService {
+
+<span class="fc" id="L57">    private static final Logger log = LoggerFactory.getLogger(ProviderFollowService.class);</span>
+
+    private final ProviderFollowRepository repository;
+    private final ProviderLookupPort providerLookupPort;
+    private final ApplicationEventPublisher eventPublisher;
+    private final JdbcTemplate jdbcTemplate;
+
+    public ProviderFollowService(ProviderFollowRepository repository,
+                                 ProviderLookupPort providerLookupPort,
+                                 ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L67">                                 JdbcTemplate jdbcTemplate) {</span>
+<span class="fc" id="L68">        this.repository = repository;</span>
+<span class="fc" id="L69">        this.providerLookupPort = providerLookupPort;</span>
+<span class="fc" id="L70">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L71">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L72">    }</span>
+
+    // ------------------------------------------------------------------
+    // The /me CRUD — the service composes the DTO views (the
+    // controllersMustNotDependOnJpaEntities gate: the HTTP boundary speaks
+    // the ProviderFollowView record only; the entity never crosses it)
+    // ------------------------------------------------------------------
+
+    /**
+     * Follow a provider. The request's provider id is the PUBLIC PAGE's key
+     * (the profile id — the same client-facing convention the organic
+     * review's {@code providerId} pins); storage keeps the USER id. The
+     * answer is the composed view (the summary the resolution already
+     * fetched — no second lookup on the write path).
+     */
+    @Observed(name = &quot;provider.follow.create&quot;)
+    public ProviderFollowView create(UUID userId, UUID providerProfileId) {
+<span class="fc" id="L89">        ProviderSummary provider = providerLookupPort.findById(providerProfileId)</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">                .filter(summary -&gt; summary.userId() != null)</span>
+<span class="fc" id="L91">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Provider not found: &quot; + providerProfileId));</span>
+<span class="fc" id="L92">        UUID providerUserId = provider.userId();</span>
+
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        if (providerUserId.equals(userId)) {</span>
+<span class="fc" id="L95">            throw new BadRequestException(&quot;You cannot follow your own provider profile&quot;);</span>
+        }
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (repository.existsByUserIdAndProviderUserId(userId, providerUserId)) {</span>
+<span class="fc" id="L98">            throw new ConflictException(&quot;You already follow this provider&quot;);</span>
+        }
+<span class="fc" id="L100">        ProviderFollow saved = repository.save(</span>
+<span class="fc" id="L101">                ProviderFollow.create(UUID.randomUUID(), userId, providerUserId));</span>
+<span class="fc" id="L102">        return ProviderFollowView.of(saved, provider);</span>
+    }
+
+    /**
+     * The member's &quot;my follows&quot; page — the follows composed with the
+     * followed providers' current public identity in ONE batch provider
+     * resolution for the whole page (the W1 {@code findAllByIds} N+1 rule),
+     * never a lookup per row; an empty page costs no query at all.
+     */
+    @Transactional(readOnly = true)
+    public Page&lt;ProviderFollowView&gt; listFor(UUID userId, Pageable pageable) {
+<span class="fc" id="L113">        Page&lt;ProviderFollow&gt; page = repository.findByUserIdOrderByCreatedAtDescIdDesc(userId, pageable);</span>
+<span class="fc" id="L114">        Map&lt;UUID, ProviderSummary&gt; providers = providersOf(page);</span>
+<span class="fc" id="L115">        return page.map(follow -&gt; ProviderFollowView.of(follow, providers.get(follow.getProviderUserId())));</span>
+    }
+
+    /**
+     * The list's batch name resolution — one {@code findAllByUserIds} for
+     * the page's distinct followed providers, keyed by the stored USER id
+     * (the row's own key, so the composition is a direct map lookup).
+     */
+    private Map&lt;UUID, ProviderSummary&gt; providersOf(Page&lt;ProviderFollow&gt; page) {
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (page.isEmpty()) {</span>
+<span class="fc" id="L125">            return Map.of();</span>
+        }
+<span class="fc" id="L127">        return providerLookupPort.findAllByUserIds(</span>
+<span class="fc" id="L128">                page.getContent().stream().map(ProviderFollow::getProviderUserId).collect(Collectors.toSet()));</span>
+    }
+
+    /** Owner-scoped soft delete — a foreign id is an honest 404 (the /me convention). */
+    @Observed(name = &quot;provider.follow.delete&quot;)
+    public void delete(UUID userId, UUID followId) {
+<span class="fc" id="L134">        ProviderFollow follow = repository.findByIdAndUserId(followId, userId)</span>
+<span class="fc" id="L135">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Follow not found: &quot; + followId));</span>
+<span class="fc" id="L136">        repository.delete(follow);</span>
+<span class="fc" id="L137">    }</span>
+
+    // ------------------------------------------------------------------
+    // The activation bridge
+    // ------------------------------------------------------------------
+
+    /**
+     * The {@code ListingActivatedEvent} handler body — returns the number
+     * of followers genuinely alerted (the log line's counter, never a line
+     * per follower).
+     */
+    @Transactional
+    public int onListingActivated(UUID listingId, UUID providerUserId) {
+<span class="fc" id="L150">        int alerted = 0;</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        for (ProviderFollow follow : repository.findByProviderUserId(providerUserId)) {</span>
+            // The self-follow row cannot exist (the create gate), so no
+            // publisher-exclusion branch here — unlike the community
+            // bridge, whose memberships CAN include the listing's own
+            // provider. Every row this loop sees is a genuine follower.
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (insertAlertLedgerRow(follow.getUserId(), listingId) == 0) {</span>
+<span class="fc" id="L157">                continue; // the documented skip — this (follower, listing) pair was already alerted</span>
+            }
+<span class="fc" id="L159">            eventPublisher.publishEvent(</span>
+<span class="fc" id="L160">                    new FollowedProviderNewListingEvent(follow.getUserId(), listingId));</span>
+<span class="fc" id="L161">            alerted++;</span>
+<span class="fc" id="L162">        }</span>
+        // ONE structured line for the whole bridge — never a line per
+        // follower (the saved-search scan's criterion-2 discipline).
+<span class="fc" id="L165">        log.info(&quot;Provider-follow bridge: listingId={}, providerUserId={}, followersAlerted={}&quot;,</span>
+<span class="fc" id="L166">                listingId, providerUserId, alerted);</span>
+<span class="fc" id="L167">        return alerted;</span>
+    }
+
+    /**
+     * The idempotency ledger insert — native {@code INSERT ... ON CONFLICT
+     * DO NOTHING} (the V54 {@code saved_search_matches} precedent): the
+     * skip is the affected-row count, so a re-run of the bridge on a
+     * re-delivered activation is a quiet no-op instead of a
+     * transaction-aborting constraint violation.
+     */
+    private int insertAlertLedgerRow(UUID followerId, UUID listingId) {
+<span class="fc" id="L178">        return jdbcTemplate.update(</span>
+                &quot;INSERT INTO provider_follow_alerts (id, user_id, listing_id, alerted_at) &quot;
+                        + &quot;VALUES (?, ?, ?, now()) ON CONFLICT DO NOTHING&quot;,
+<span class="fc" id="L181">                UUID.randomUUID(), followerId, listingId);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

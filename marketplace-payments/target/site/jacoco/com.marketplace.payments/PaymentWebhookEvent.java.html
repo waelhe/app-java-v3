@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentWebhookEvent.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentWebhookEvent.java</span></div><h1>PaymentWebhookEvent.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.envers.Audited;
+import org.hibernate.type.SqlTypes;
+
+import java.util.UUID;
+
+/**
+ * R10 (comprehensive-review-ar fix plan §4/R10 — Wave 2): the webhook event
+ * row grows from a bare dedup tombstone into the durable inbox — the row now
+ * carries the complete re-delivery contract (event type, resolved intent,
+ * external id, refund snapshot amount) plus the raw provider payload for
+ * inspection, and a {@link WebhookProcessingState} lifecycle the recovery
+ * sweep ({@code WebhookInboxRecovery}) closes over the crash window the
+ * tombstone used to leave open (recorded-and-lost).
+ *
+ * &lt;p&gt;&lt;b&gt;Payload storage (the V48/amenities and V54/saved-searches
+ * precedent):&lt;/b&gt; the raw provider notification is kept as JSONB through the
+ * official Hibernate JSON mapping — a structured, queryable column, not a
+ * text blob. The Java side is {@code String} because the payload arrives as
+ * the already-verified raw body ({@code PaymentsController.stripeWebhook}
+ * reads it byte-identical for signature verification); the legacy HMAC route
+ * carries no body at all, so the column is nullable by contract.
+ *
+ * &lt;p&gt;&lt;b&gt;Soft delete:&lt;/b&gt; inherited from {@link BaseEntity} — the retention
+ * purge of SETTLED rows is a hard {@code DELETE} through JDBC (the
+ * {@code ExpiredAuthorizationsCleanup} pattern), so soft-deleted and purged
+ * rows are the same thing to every query: gone.
+ */
+@Entity
+@Table(name = &quot;payment_webhook_events&quot;)
+@Audited
+public class PaymentWebhookEvent extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;provider&quot;, nullable = false, length = 50)
+    private String provider;
+
+    @Column(name = &quot;event_id&quot;, nullable = false, length = 200)
+    private String eventId;
+
+    @Column(name = &quot;event_type&quot;, nullable = false, length = 100)
+    private String eventType;
+
+    /**
+     * The inbox lifecycle — never written by a silent database default: the
+     * factory below is the only creator and it always states
+     * {@link WebhookProcessingState#RECEIVED} explicitly (V71 dropped the
+     * backfill default precisely so a forgetful future writer fails loudly).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = &quot;processing_state&quot;, nullable = false, length = 20)
+    private WebhookProcessingState processingState;
+
+    /**
+     * The raw provider notification for inspection — the durable JSON
+     * document, not a byte-exact copy: PostgreSQL jsonb renders the stored
+     * document back in its documented canonical form (whitespace-normalized
+     * — the official jsonb behavior), so the round-trip contract is DOCUMENT
+     * equality, never byte equality. The re-delivery contract itself is the
+     * row's structured columns (event type, resolved intent, external id,
+     * refund snapshot) — the recovery sweep never parses this column.
+     * String + {@code SqlTypes.JSON} is the RAW-document mapping, verified
+     * against the shipped Hibernate 7.4.5 bytecode:
+     * {@code AbstractJsonFormatMapper.toString} returns the value as-is when
+     * the Java type is String (and {@code fromString} parses nothing) — the
+     * JSON document is the string itself, never a double-encoded JSON string
+     * (the same bytecode-verification discipline the repository applies to
+     * framework claims; the integration test asserts the stored column
+     * round-trips the same JSON document and parses as a JSON object).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = &quot;payload&quot;, columnDefinition = &quot;jsonb&quot;)
+    private String payload;
+
+    /** The dispatch's resolved intent (nullable: not every event resolves one). */
+    @Column(name = &quot;payment_intent_id&quot;)
+    private UUID paymentIntentId;
+
+    /** The provider's intent id as the dispatch saw it (V33 link side). */
+    @Column(name = &quot;external_id&quot;, length = 200)
+    private String externalId;
+
+    /**
+     * The refund snapshot's cumulative amount for {@code charge.refunded}
+     * rows — the dispatch input the recovery sweep replays without the
+     * channel being bound (the raw payload stays the human-readable source).
+     */
+    @Column(name = &quot;refund_amount_cents&quot;)
+    private Long refundAmountCents;
+
+    /** Why a recovery re-delivery terminally failed — the operator signal. */
+    @Column(name = &quot;failure_reason&quot;, length = 1000)
+    private String failureReason;
+
+<span class="fc" id="L106">    protected PaymentWebhookEvent() {}</span>
+
+    private PaymentWebhookEvent(UUID id, String provider, String eventId, String eventType,
+                                String payload, UUID paymentIntentId, String externalId,
+<span class="fc" id="L110">                                Long refundAmountCents) {</span>
+<span class="fc" id="L111">        this.id = id;</span>
+<span class="fc" id="L112">        this.provider = provider;</span>
+<span class="fc" id="L113">        this.eventId = eventId;</span>
+<span class="fc" id="L114">        this.eventType = eventType;</span>
+<span class="fc" id="L115">        this.processingState = WebhookProcessingState.RECEIVED;</span>
+<span class="fc" id="L116">        this.payload = payload;</span>
+<span class="fc" id="L117">        this.paymentIntentId = paymentIntentId;</span>
+<span class="fc" id="L118">        this.externalId = externalId;</span>
+<span class="fc" id="L119">        this.refundAmountCents = refundAmountCents;</span>
+<span class="fc" id="L120">    }</span>
+
+    /**
+     * The inbox's single creation point: every row is born RECEIVED with the
+     * complete re-delivery contract. The unique {@code (provider, event_id)}
+     * key (V42) keeps this insert the serialization point between concurrent
+     * deliveries — unchanged dedup semantics (CodeRabbit #241).
+     */
+    public static PaymentWebhookEvent create(String provider, String eventId, String eventType,
+                                             String payload, UUID paymentIntentId,
+                                             String externalId, Long refundAmountCents) {
+<span class="fc" id="L131">        return new PaymentWebhookEvent(UUID.randomUUID(), provider, eventId, eventType,</span>
+                payload, paymentIntentId, externalId, refundAmountCents);
+    }
+
+    /** Terminal success — written inside the dispatch's transaction (R10). */
+    void markSettled() {
+<span class="nc" id="L137">        this.processingState = WebhookProcessingState.SETTLED;</span>
+<span class="nc" id="L138">    }</span>
+
+    /** Terminal, inspectable failure — written by the recovery sweep only. */
+    void markFailed(String reason) {
+<span class="nc" id="L142">        this.processingState = WebhookProcessingState.FAILED;</span>
+<span class="nc bnc" id="L143" title="All 4 branches missed.">        this.failureReason = reason != null &amp;&amp; reason.length() &gt; 1000</span>
+<span class="nc" id="L144">                ? reason.substring(0, 1000)</span>
+<span class="nc" id="L145">                : reason;</span>
+<span class="nc" id="L146">    }</span>
+
+    @Override
+<span class="nc" id="L149">    public UUID getId() { return id; }</span>
+<span class="fc" id="L150">    public String getProvider() { return provider; }</span>
+<span class="fc" id="L151">    public String getEventId() { return eventId; }</span>
+<span class="fc" id="L152">    public String getEventType() { return eventType; }</span>
+<span class="fc" id="L153">    public WebhookProcessingState getProcessingState() { return processingState; }</span>
+<span class="fc" id="L154">    public String getPayload() { return payload; }</span>
+<span class="fc" id="L155">    public UUID getPaymentIntentId() { return paymentIntentId; }</span>
+<span class="fc" id="L156">    public String getExternalId() { return externalId; }</span>
+<span class="fc" id="L157">    public Long getRefundAmountCents() { return refundAmountCents; }</span>
+<span class="nc" id="L158">    public String getFailureReason() { return failureReason; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

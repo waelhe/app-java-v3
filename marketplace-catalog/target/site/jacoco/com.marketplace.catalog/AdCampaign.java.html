@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdCampaign.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdCampaign.java</span></div><h1>AdCampaign.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.Currencies;
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the paid
+ * promotion — the plan's «حملات (ad_campaigns: ميزانية، تسعير نقرة/ظهور،
+ * مدة)». One campaign promotes ONE listing with ONE budget: the
+ * {@code uq_ad_campaigns_one_active_per_listing} partial unique index
+ * (V103) holds the single-live-campaign law the service's friendly 409
+ * states first.
+ *
+ * &lt;p&gt;&lt;b&gt;The money model (the plan's own words):&lt;/b&gt; {@code budgetCents}
+ * is the hard ceiling — consumption caps at it and the campaign ENDS the
+ * moment a charge reaches it («حملة بميزانية تنتهي بنفادها»); both event
+ * prices bill together (a zero price honestly makes that event free — the
+ * plan prices «نقرة/ظهور» as a pair); {@code consumedCents} is the frozen
+ * billed running total, denormalized in the SAME transaction as each
+ * immutable charge insert so it is always exactly
+ * {@code SUM(ad_billing_charges.amount_cents)} (the V85 stored-pair
+ * precedent); {@code currency} is the money's own denomination — V82's
+ * multi-currency ledger carries it through to the balance.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The window identity (the plan's «مؤشر billed_through»):&lt;/b&gt;
+ * {@code billedThrough} is the FIRST unsettled UTC date — everything
+ * strictly before it is frozen inside immutable charge rows. The daily
+ * billing run settles {@code [billedThrough, horizon)} as ONE window,
+ * advances the marker atomically with the charge insert, and the pause
+ * gap skips billing because {@code resume()} moves the marker past the
+ * paused days (the provider never pays for days the campaign was dark).&lt;/p&gt;
+ */
+@Entity
+@Table(name = &quot;ad_campaigns&quot;)
+@Audited
+public class AdCampaign extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    /** The advertiser — the listing's owner and the ad bill's payer. */
+    @Column(name = &quot;provider_id&quot;, nullable = false)
+    private UUID providerId;
+
+    /** The promoted listing (the FK is this module's own table — the V5 booking_id precedent). */
+    @Column(name = &quot;listing_id&quot;, nullable = false)
+    private UUID listingId;
+
+    /** The hard ceiling — consumption caps at it, the campaign ends when it is reached. */
+    @Column(name = &quot;budget_cents&quot;, nullable = false)
+    private long budgetCents;
+
+    /** The per-click price (cents) — bills together with the impression price. */
+    @Column(name = &quot;click_price_cents&quot;, nullable = false)
+    private long clickPriceCents;
+
+    /** The per-impression price (cents) — bills together with the click price. */
+    @Column(name = &quot;impression_price_cents&quot;, nullable = false)
+    private long impressionPriceCents;
+
+    /**
+     * The frozen billed running total — always exactly
+     * {@code SUM(ad_billing_charges.amount_cents)}: the charge insert and
+     * this column move in the SAME transaction (see the class javadoc).
+     */
+    @Column(name = &quot;consumed_cents&quot;, nullable = false)
+    private long consumedCents;
+
+    /** The money's own ISO 4217 denomination (carried to the charge, the intent and the ledger). */
+    @Column(name = &quot;currency&quot;, nullable = false, length = 3)
+    private String currency;
+
+<span class="pc" id="L84">    @Enumerated(EnumType.STRING)</span>
+    @Column(name = &quot;status&quot;, nullable = false, length = 12)
+    private AdCampaignStatus status = AdCampaignStatus.ACTIVE;
+
+    /** The campaign's birth instant (the accrual's first billable date is its UTC date). */
+    @Column(name = &quot;starts_at&quot;, nullable = false)
+    private Instant startsAt;
+
+    /** The duration's end — null means &quot;until the budget runs out&quot;. */
+    @Column(name = &quot;ends_at&quot;)
+    private Instant endsAt;
+
+    /**
+     * The window identity: the FIRST unsettled UTC date. Everything
+     * strictly before it is frozen inside immutable charge rows; the
+     * billing run settles forward from it and never backward.
+     */
+    @Column(name = &quot;billed_through&quot;, nullable = false)
+    private LocalDate billedThrough;
+
+<span class="nc" id="L104">    protected AdCampaign() {</span>
+        // JPA
+<span class="nc" id="L106">    }</span>
+
+    private AdCampaign(UUID id, UUID providerId, UUID listingId, long budgetCents,
+                       long clickPriceCents, long impressionPriceCents, String currency,
+<span class="fc" id="L110">                       Instant startsAt, Instant endsAt, LocalDate billedThrough) {</span>
+<span class="fc" id="L111">        this.id = id;</span>
+<span class="fc" id="L112">        this.providerId = providerId;</span>
+<span class="fc" id="L113">        this.listingId = listingId;</span>
+<span class="fc" id="L114">        this.budgetCents = budgetCents;</span>
+<span class="fc" id="L115">        this.clickPriceCents = clickPriceCents;</span>
+<span class="fc" id="L116">        this.impressionPriceCents = impressionPriceCents;</span>
+<span class="fc" id="L117">        this.currency = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);</span>
+<span class="fc" id="L118">        this.startsAt = startsAt;</span>
+<span class="fc" id="L119">        this.endsAt = endsAt;</span>
+<span class="fc" id="L120">        this.billedThrough = billedThrough;</span>
+<span class="fc" id="L121">    }</span>
+
+    /**
+     * The campaign's birth — ACTIVE from the first instant. The billing
+     * marker starts at the start date's NEXT UTC day: the birth day itself
+     * is unbilled (CodeRabbit W5 r1, adopted — the daily-grain honesty:
+     * listing_views_daily counts whole days, so a mid-day birth cannot be
+     * separated from the pre-birth views of the same day — charging them
+     * would bill impressions the campaign never bought. The birth day is
+     * therefore FREE, the provider-favorable direction, the same
+     * daily-grain forfeit the pause day already carries in this design).
+     */
+    static AdCampaign start(UUID providerId, UUID listingId, long budgetCents,
+                            long clickPriceCents, long impressionPriceCents, String currency,
+                            Instant now, Instant endsAt) {
+<span class="fc" id="L136">        return new AdCampaign(UUID.randomUUID(), providerId, listingId, budgetCents,</span>
+                clickPriceCents, impressionPriceCents, currency, now, endsAt,
+<span class="fc" id="L138">                LocalDate.ofInstant(now, java.time.ZoneOffset.UTC).plusDays(1));</span>
+    }
+
+    /** The owner's hold — no boost, no accrual; the paused gap never bills. */
+    void pause() {
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">        if (this.status != AdCampaignStatus.ACTIVE) {</span>
+<span class="nc" id="L144">            throw new IllegalStateException(&quot;Only an ACTIVE campaign can pause: &quot; + this.status);</span>
+        }
+<span class="fc" id="L146">        this.status = AdCampaignStatus.PAUSED;</span>
+<span class="fc" id="L147">    }</span>
+
+    /**
+     * The hold lifts — and the billing marker jumps past the paused gap:
+     * the resume day itself is the first unsettled billable date, so the
+     * dark days in between can never reach a charge row (the daily-grain
+     * trade documented in the migration: the pause day itself is forfeit).
+     */
+    void resume(LocalDate today) {
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">        if (this.status != AdCampaignStatus.PAUSED) {</span>
+<span class="nc" id="L157">            throw new IllegalStateException(&quot;Only a PAUSED campaign can resume: &quot; + this.status);</span>
+        }
+<span class="fc" id="L159">        this.status = AdCampaignStatus.ACTIVE;</span>
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">        if (today.isAfter(this.billedThrough)) {</span>
+<span class="fc" id="L161">            this.billedThrough = today;</span>
+        }
+<span class="fc" id="L163">    }</span>
+
+    /** The duration's own end — the billing run's decision, not the owner's. */
+    void endByDuration() {
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">        if (this.status == AdCampaignStatus.ENDED) {</span>
+<span class="nc" id="L168">            return;</span>
+        }
+<span class="fc" id="L170">        this.status = AdCampaignStatus.ENDED;</span>
+<span class="fc" id="L171">    }</span>
+
+    /**
+     * The frozen charge's ledger-side move: the amount lands on
+     * {@code consumedCents} in the SAME transaction the immutable charge
+     * row is inserted. The campaign ends the moment the budget is fully
+     * consumed («حملة بميزانية تنتهي بنفادها») — the caller's capped
+     * amount guarantees the column never exceeds the ceiling (the CHECK
+     * is the backstop).
+     */
+    void consume(long amountCents) {
+<span class="fc" id="L182">        this.consumedCents += amountCents;</span>
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        if (this.consumedCents &gt;= this.budgetCents) {</span>
+<span class="fc" id="L184">            this.status = AdCampaignStatus.ENDED;</span>
+        }
+<span class="fc" id="L186">    }</span>
+
+    /** The window just frozen — the marker's atomic advance (the charge's own transaction). */
+    void markBilledThrough(LocalDate nextWindowStart) {
+<span class="fc bfc" id="L190" title="All 2 branches covered.">        if (nextWindowStart.isAfter(this.billedThrough)) {</span>
+<span class="fc" id="L191">            this.billedThrough = nextWindowStart;</span>
+        }
+<span class="fc" id="L193">    }</span>
+
+    boolean hasRemainingBudget() {
+<span class="fc bfc" id="L196" title="All 2 branches covered.">        return this.consumedCents &lt; this.budgetCents;</span>
+    }
+
+<span class="fc" id="L199">    UUID getProviderId() { return providerId; }</span>
+<span class="fc" id="L200">    UUID getListingId() { return listingId; }</span>
+<span class="fc" id="L201">    long getBudgetCents() { return budgetCents; }</span>
+<span class="fc" id="L202">    long getClickPriceCents() { return clickPriceCents; }</span>
+<span class="fc" id="L203">    long getImpressionPriceCents() { return impressionPriceCents; }</span>
+<span class="fc" id="L204">    long getConsumedCents() { return consumedCents; }</span>
+<span class="fc" id="L205">    String getCurrency() { return currency; }</span>
+<span class="fc" id="L206">    AdCampaignStatus getStatus() { return status; }</span>
+<span class="fc" id="L207">    Instant getStartsAt() { return startsAt; }</span>
+<span class="fc" id="L208">    Instant getEndsAt() { return endsAt; }</span>
+<span class="fc" id="L209">    LocalDate getBilledThrough() { return billedThrough; }</span>
+
+    @Override
+<span class="fc" id="L212">    public UUID getId() { return id; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

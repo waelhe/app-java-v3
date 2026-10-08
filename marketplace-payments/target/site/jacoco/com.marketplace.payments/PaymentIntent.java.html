@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentIntent.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentIntent.java</span></div><h1>PaymentIntent.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.api.Currencies;
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.util.UUID;
+
+@Entity
+@Table(name = &quot;payment_intents&quot;)
+@Audited
+public class PaymentIntent extends BaseEntity {
+
+    /** The verified path's origin — the whole pre-W5 table (see {@link #origin}). */
+    static final String ORIGIN_BOOKING = &quot;BOOKING&quot;;
+
+    /** W5's ad-bill origin — the payer is the provider, no booking. */
+    static final String ORIGIN_AD = &quot;AD&quot;;
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;booking_id&quot;)
+    private UUID bookingId;
+
+    /**
+     * W5 (yelp-level plan §5 — the ads &amp; billing wave): the intent's
+     * origin — the plan's §4.2 explicit shape held by the DB CHECK
+     * ({@code chk_payment_intents_origin}), not a Java enum (the W1
+     * review-origin decision, verbatim). 'BOOKING' is the whole pre-W5
+     * table; 'AD' is the ad-bill path whose payer is the provider.
+     */
+<span class="fc" id="L39">    @Column(name = &quot;origin&quot;, nullable = false, length = 12)</span>
+    private String origin = ORIGIN_BOOKING;
+
+    /**
+     * W5: the ad campaign this intent bills — null iff origin is BOOKING
+     * (the cross-column CHECK {@code ck_payment_intents_origin_pairing}
+     * pins the pairing at the database level).
+     */
+    @Column(name = &quot;ad_campaign_id&quot;)
+    private UUID adCampaignId;
+
+    @Column(name = &quot;consumer_id&quot;, nullable = false)
+    private UUID consumerId;
+
+    @Column(name = &quot;amount_cents&quot;, nullable = false)
+    private Long amountCents;
+
+<span class="fc" id="L56">    @Column(name = &quot;currency&quot;, nullable = false, length = 3)</span>
+    private String currency = &quot;SAR&quot;;
+
+<span class="fc" id="L59">    @Enumerated(EnumType.STRING)</span>
+    @Column(name = &quot;status&quot;, nullable = false, length = 20)
+    private PaymentIntentStatus status = PaymentIntentStatus.CREATED;
+
+<span class="fc" id="L63">    @Column(name = &quot;refunded_amount_cents&quot;, nullable = false)</span>
+<span class="fc" id="L64">    private Long refundedAmountCents = 0L;</span>
+
+    @Column(name = &quot;idempotency_key&quot;, length = 64, unique = true)
+    private String idempotencyKey;
+
+    /**
+     * Id of the remote PaymentIntent at the PSP (e.g. {@code pi_...}). Filled
+     * once when the remote intent is created via the PspChannel; webhooks
+     * resolve the local intent through it (V33). Nullable — the column only
+     * carries a value when the real payment channel is bound.
+     */
+    @Column(name = &quot;psp_intent_id&quot;, length = 100)
+    private String pspIntentId;
+
+<span class="fc" id="L78">    protected PaymentIntent() {</span>
+<span class="fc" id="L79">    }</span>
+
+    public PaymentIntent(UUID id, UUID bookingId, UUID consumerId,
+                         Long amountCents, String idempotencyKey) {
+<span class="fc" id="L83">        this(id, bookingId, consumerId, amountCents, null, idempotencyKey);</span>
+<span class="fc" id="L84">    }</span>
+
+    PaymentIntent(UUID id, UUID bookingId, UUID consumerId,
+<span class="fc" id="L87">                  Long amountCents, String currency, String idempotencyKey) {</span>
+<span class="fc" id="L88">        this.id = id;</span>
+<span class="fc" id="L89">        this.bookingId = bookingId;</span>
+<span class="fc" id="L90">        this.consumerId = consumerId;</span>
+<span class="fc" id="L91">        this.amountCents = amountCents;</span>
+<span class="fc" id="L92">        this.currency = Currencies.normalizeOrDefault(currency, &quot;SAR&quot;);</span>
+<span class="fc" id="L93">        this.idempotencyKey = idempotencyKey;</span>
+<span class="fc" id="L94">    }</span>
+
+    public static PaymentIntent create(UUID bookingId, UUID consumerId,
+                                        Long amountCents, String idempotencyKey) {
+<span class="fc" id="L98">        return create(bookingId, consumerId, amountCents, null, idempotencyKey);</span>
+    }
+
+    /**
+     * Creates an intent denominated in the booking's ISO 4217 currency
+     * (roadmap B4) — the money snapshot the PSP charge will carry. Blank/null
+     * keeps the house default SAR, exactly the pre-existing behavior.
+     */
+    public static PaymentIntent create(UUID bookingId, UUID consumerId,
+                                        Long amountCents, String currency, String idempotencyKey) {
+<span class="fc" id="L108">        return new PaymentIntent(UUID.randomUUID(), bookingId, consumerId, amountCents, currency, idempotencyKey);</span>
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — «وظيفة خصم دورية تُصدر نية دفع»): the ad
+     * bill's intent. The payer is the PROVIDER (consumer_id carries the
+     * provider's user id — the column's &quot;payer&quot; semantics are exactly
+     * what the ad bill needs), the booking coupling is lifted the way
+     * W1 lifted the review's (origin + cross-column CHECK), and the
+     * idempotency key is the DETERMINISTIC window key
+     * {@code ad-debit-{campaignId}-{windowStart}} — the listener derives
+     * it, the column's UNIQUE index rejects the replay.
+     */
+    public static PaymentIntent createForAds(UUID providerId, UUID campaignId,
+                                              Long amountCents, String currency, String idempotencyKey) {
+<span class="fc" id="L123">        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, providerId,</span>
+                amountCents, currency, idempotencyKey);
+<span class="fc" id="L125">        intent.origin = ORIGIN_AD;</span>
+<span class="fc" id="L126">        intent.adCampaignId = campaignId;</span>
+<span class="fc" id="L127">        return intent;</span>
+    }
+
+    @Override
+<span class="fc" id="L131">    public UUID getId() { return id; }</span>
+<span class="fc" id="L132">    public UUID getBookingId() { return bookingId; }</span>
+<span class="fc" id="L133">    public UUID getConsumerId() { return consumerId; }</span>
+<span class="fc" id="L134">    public String getOrigin() { return origin; }</span>
+<span class="fc" id="L135">    public UUID getAdCampaignId() { return adCampaignId; }</span>
+<span class="fc" id="L136">    public Long getAmountCents() { return amountCents; }</span>
+<span class="fc" id="L137">    public String getCurrency() { return currency; }</span>
+<span class="fc" id="L138">    public PaymentIntentStatus getStatus() { return status; }</span>
+<span class="fc" id="L139">    public Long getRefundedAmountCents() { return refundedAmountCents; }</span>
+<span class="nc" id="L140">    public String getIdempotencyKey() { return idempotencyKey; }</span>
+<span class="fc" id="L141">    public String getPspIntentId() { return pspIntentId; }</span>
+
+    /**
+     * Links this intent to its remote PSP counterpart. Idempotent: a repeated
+     * call with the same id keeps the link, a conflicting id is rejected —
+     * one local intent maps to exactly one remote intent.
+     */
+    public void assignPspIntentId(String pspIntentId) {
+<span class="fc bfc" id="L149" title="All 4 branches covered.">        if (this.pspIntentId != null &amp;&amp; !this.pspIntentId.equals(pspIntentId)) {</span>
+<span class="fc" id="L150">            throw new IllegalStateException(</span>
+                    &quot;Payment intent already linked to a different PSP intent: &quot; + this.pspIntentId);
+        }
+<span class="fc" id="L153">        this.pspIntentId = pspIntentId;</span>
+<span class="fc" id="L154">    }</span>
+
+    public void markProcessing() {
+<span class="fc" id="L157">        this.status.validateTransitionTo(PaymentIntentStatus.PROCESSING);</span>
+<span class="fc" id="L158">        this.status = PaymentIntentStatus.PROCESSING;</span>
+<span class="fc" id="L159">    }</span>
+
+    public void markSucceeded() {
+<span class="fc" id="L162">        this.status.validateTransitionTo(PaymentIntentStatus.SUCCEEDED);</span>
+<span class="fc" id="L163">        this.status = PaymentIntentStatus.SUCCEEDED;</span>
+<span class="fc" id="L164">    }</span>
+
+    public void markFailed() {
+<span class="fc" id="L167">        this.status.validateTransitionTo(PaymentIntentStatus.FAILED);</span>
+<span class="fc" id="L168">        this.status = PaymentIntentStatus.FAILED;</span>
+<span class="fc" id="L169">    }</span>
+
+    public void cancel() {
+<span class="fc" id="L172">        this.status.validateTransitionTo(PaymentIntentStatus.CANCELLED);</span>
+<span class="fc" id="L173">        this.status = PaymentIntentStatus.CANCELLED;</span>
+<span class="fc" id="L174">    }</span>
+
+    public void markRefunded() {
+<span class="fc" id="L177">        this.status.validateTransitionTo(PaymentIntentStatus.REFUNDED);</span>
+<span class="fc" id="L178">        this.status = PaymentIntentStatus.REFUNDED;</span>
+<span class="fc" id="L179">        this.refundedAmountCents = this.amountCents;</span>
+<span class="fc" id="L180">    }</span>
+
+    public void markPartiallyRefunded(Long refundAmountCents) {
+<span class="fc" id="L183">        this.status.validateTransitionTo(PaymentIntentStatus.PARTIALLY_REFUNDED);</span>
+<span class="fc" id="L184">        this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;</span>
+<span class="fc" id="L185">        this.refundedAmountCents += refundAmountCents;</span>
+<span class="fc" id="L186">    }</span>
+
+    /**
+     * L19: partial refund whose amount is the remote provider's cumulative
+     * actual — SET (not summed) to the remote total, mirroring
+     * {@code Payment.markPartiallyRefundedTotal}.
+     */
+    public void markPartiallyRefundedTotal(long refundedTotalCents) {
+<span class="fc" id="L194">        this.status.validateTransitionTo(PaymentIntentStatus.PARTIALLY_REFUNDED);</span>
+<span class="fc" id="L195">        this.status = PaymentIntentStatus.PARTIALLY_REFUNDED;</span>
+<span class="fc" id="L196">        this.refundedAmountCents = refundedTotalCents;</span>
+<span class="fc" id="L197">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

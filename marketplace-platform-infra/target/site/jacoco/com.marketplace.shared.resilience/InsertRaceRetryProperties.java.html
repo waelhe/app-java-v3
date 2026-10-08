@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InsertRaceRetryProperties.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.resilience</a> &gt; <span class="el_source">InsertRaceRetryProperties.java</span></div><h1>InsertRaceRetryProperties.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.resilience;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.time.Duration;
+
+/**
+ * The bounded-retry knobs of the insert-race recovery (roadmap gap G-RETRY-1).
+ *
+ * &lt;p&gt;Bound to {@code marketplace.resilience.insert-race-retry.*} — consumed by
+ * {@link InsertRaceRetryConfiguration}'s programmatic Resilience4j
+ * {@code RetryConfig}. Defaults: three attempts, 100 ms wait with a ×2
+ * exponential multiplier. A lost insert race is resolved by PostgreSQL
+ * semantics on the FIRST retry (the winner has committed by the time the
+ * loser's constraint violation surfaces), so the extra attempts only cover a
+ * second concurrent writer inserting in the same window; the wait keeps that
+ * retry off the hot path of the aborted transaction.
+ *
+ * &lt;p&gt;Official reference: resilience4j &quot;How to create a RetryConfig programmatically&quot;
+ * (&lt;a href=&quot;https://resilience4j.readme.io/docs/retry&quot;&gt;resilience4j.readme.io/docs/retry&lt;/a&gt;).
+ */
+@ConfigurationProperties(prefix = &quot;marketplace.resilience.insert-race-retry&quot;)
+public record InsertRaceRetryProperties(int maxAttempts, Duration waitDuration, double multiplier) {
+
+<span class="nc" id="L25">    public InsertRaceRetryProperties {</span>
+<span class="nc bnc" id="L26" title="All 2 branches missed.">        if (maxAttempts &lt; 1) {</span>
+<span class="nc" id="L27">            throw new IllegalArgumentException(</span>
+                    &quot;marketplace.resilience.insert-race-retry.max-attempts must be &gt;= 1, got &quot; + maxAttempts);
+        }
+<span class="nc bnc" id="L30" title="All 6 branches missed.">        if (waitDuration == null || waitDuration.isNegative() || waitDuration.isZero()) {</span>
+<span class="nc" id="L31">            throw new IllegalArgumentException(</span>
+                    &quot;marketplace.resilience.insert-race-retry.wait-duration must be positive, got &quot; + waitDuration);
+        }
+<span class="nc bnc" id="L34" title="All 2 branches missed.">        if (multiplier &lt; 1) {</span>
+<span class="nc" id="L35">            throw new IllegalArgumentException(</span>
+                    &quot;marketplace.resilience.insert-race-retry.multiplier must be &gt;= 1, got &quot; + multiplier);
+        }
+<span class="nc" id="L38">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

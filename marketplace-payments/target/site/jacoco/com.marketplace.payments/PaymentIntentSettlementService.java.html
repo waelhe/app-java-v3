@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentIntentSettlementService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentIntentSettlementService.java</span></div><h1>PaymentIntentSettlementService.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.github.resilience4j.retry.annotation.Retry;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Provider-verified settlement of a payment intent — the L19 closed loop's
+ * domain half. Two entry surfaces call it, deliberately with DIFFERENT
+ * authorization contracts:
+ * &lt;ul&gt;
+ *   &lt;li&gt;the admin command {@code PaymentsService.confirmIntent(...)} —
+ *       {@code @PreAuthorize(&quot;hasRole('ADMIN')&quot;)} on the command shell;&lt;/li&gt;
+ *   &lt;li&gt;the verified webhook dispatch
+ *       ({@code PaymentsService.dispatchWebhookEvent}) — provider
+ *       signature is the authorization (D-009: the MAC carries the
+ *       dispatch-relevant fields, including the confirm target).&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Why this class exists (N2):&lt;/b&gt; both methods previously lived on
+ * {@code PaymentsService}, and the webhook path reached them through
+ * &lt;em&gt;self-invocation&lt;/em&gt; — documented Spring Framework AOP behavior
+ * (Reference › AOP › Proxying Mechanisms): a target-method call bypasses
+ * the proxy, so the annotations on {@code confirmIntent} were silently
+ * skipped on that path. The {@code @PreAuthorize} read as a security
+ * boundary while one path went around it — an architecture lie — and
+ * {@code @Observed}/{@code @Retry} never fired for webhook settlements
+ * (the observation on {@code failIntent} was dead outright: it had no
+ * other caller). Extracting the domain transition into its own bean puts
+ * EVERY call through a proxy: the role check now lives on the admin
+ * surface only (where it is true), and observability/resilience apply to
+ * both paths.
+ *
+ * &lt;p&gt;&lt;b&gt;Reads are fresh, not cached&lt;/b&gt; (the {@code refundPayment}
+ * pattern): settlement is a mutation — it must transition the CURRENT
+ * row, never a cached snapshot of an earlier state. The cache is evicted
+ * after commit through {@link CacheInvalidationRequested}, exactly like
+ * every other mutating path in the module.
+ */
+@Service
+@Transactional
+public class PaymentIntentSettlementService {
+
+<span class="fc" id="L55">    private static final Logger log = LoggerFactory.getLogger(PaymentIntentSettlementService.class);</span>
+
+    private final PaymentIntentRepository paymentIntentRepository;
+    private final PaymentRepository paymentRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final WebhookEventRecorder webhookEventRecorder;
+
+    public PaymentIntentSettlementService(PaymentIntentRepository paymentIntentRepository,
+                                          PaymentRepository paymentRepository,
+                                          ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L65">                                          WebhookEventRecorder webhookEventRecorder) {</span>
+<span class="fc" id="L66">        this.paymentIntentRepository = paymentIntentRepository;</span>
+<span class="fc" id="L67">        this.paymentRepository = paymentRepository;</span>
+<span class="fc" id="L68">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L69">        this.webhookEventRecorder = webhookEventRecorder;</span>
+<span class="fc" id="L70">    }</span>
+
+    /**
+     * Provider-confirmed success: the intent lands SUCCEEDED, its payment
+     * row COMPLETED, and the domain events fire (ledger credit + booking
+     * auto-confirm listen for COMPLETED; cache evicted after commit).
+     *
+     * &lt;p&gt;&lt;b&gt;REQUIRES_NEW — the settlement owns its transaction (CodeRabbit
+     * #431, adopted from the root 2026-09-28):&lt;/b&gt; this method runs under
+     * {@code @Retry(name = &quot;paymentProcessing&quot;)}, and the carrier it is
+     * called from is itself transactional on BOTH paths (the class-level
+     * {@code @Transactional} on {@code PaymentsService}). Under the default
+     * REQUIRED propagation a first attempt that throws a retryable exception
+     * crosses this method's transaction boundary and marks the SHARED
+     * carrier transaction rollback-only (Spring Framework Reference,
+     * Declarative Transaction Management: a runtime exception thrown through
+     * a participating REQUIRED scope marks the whole transaction
+     * rollback-only — the successful retry then joins the same poisoned
+     * transaction and commits nothing, surfacing
+     * {@code UnexpectedRollbackException} at the carrier's commit). That
+     * failure mode is worst on the webhook path: the commit failure fires
+     * from the interceptor AFTER {@code handleVerifiedWebhook}'s body — the
+     * compensating dedup delete (the catch inside the body) never runs, the
+     * already-committed dedup row (its own REQUIRES_NEW in
+     * {@link WebhookEventRecorder}) survives, and the provider's retry is
+     * acknowledged as already-processed — the payment never settles.
+     * {@code REQUIRES_NEW} breaks the poisoning at the root: each confirm
+     * attempt is its own transaction, so a failed attempt rolls back only
+     * itself, the carrier is never marked, and the retry can actually
+     * commit. The admin carrier is safe to suspend: {@code confirmIntent}'s
+     * transaction contains nothing but this call (the command shell
+     * delegates directly), so the settlement's independence breaks no
+     * atomicity. The webhook carrier is equally safe: it holds only the
+     * dedup SELECT (no write locks for the classic REQUIRES_NEW
+     * self-deadlock to bite on). And if the settlement's OWN commit fails,
+     * the exception surfaces inside the dispatch body where the documented
+     * compensating delete (dedup row removed, provider retry re-processes)
+     * already runs.
+     */
+    @Observed(name = &quot;payment.confirm&quot;)
+    @Retry(name = &quot;paymentProcessing&quot;)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentIntent confirm(UUID id, String externalId) {
+<span class="fc" id="L113">        return confirm(id, externalId, null);</span>
+    }
+
+    /**
+     * The webhook-dispatch half of the closed loop, carrying its inbox row
+     * (R10 — Wave 2): the settlement marks the row SETTLED INSIDE this
+     * transaction, so &quot;the inbox row settled&quot; and &quot;the money moved&quot; commit
+     * as one atomic fact. A crash between the recorder's REQUIRES_NEW commit
+     * and this method's commit leaves the row RECEIVED — the recovery sweep
+     * re-delivers it; a crash after the commit leaves both facts durable.
+     * The admin surface keeps the two-argument form (no inbox row exists for
+     * an admin command).
+     */
+    @Observed(name = &quot;payment.confirm&quot;)
+    @Retry(name = &quot;paymentProcessing&quot;)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentIntent confirm(UUID id, String externalId, WebhookEventRef inboxRow) {
+<span class="fc" id="L130">        PaymentIntent intent = requireIntent(id);</span>
+<span class="fc" id="L131">        intent.markSucceeded();</span>
+<span class="fc" id="L132">        paymentRepository.findByPaymentIntentId(id)</span>
+<span class="pc" id="L133">                .ifPresent(p -&gt; p.markCompleted(externalId));</span>
+<span class="fc" id="L134">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;COMPLETED&quot;));</span>
+<span class="fc" id="L135">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), id));</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (inboxRow != null) {</span>
+            // REQUIRED propagation joins THIS transaction — the atomicity
+            // contract; the idempotent filter inside leaves a row the retry
+            // attempt already marked untouched.
+<span class="fc" id="L140">            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());</span>
+        }
+<span class="fc" id="L142">        return intent;</span>
+    }
+
+    /**
+     * The failure half of the closed payment loop: mirrors
+     * {@link #confirm(UUID, String)} exactly (state machine, payment row,
+     * event, cache invalidation) so a provider-confirmed failure lands the
+     * same way a provider-confirmed success does. The ledger listener
+     * ignores non-COMPLETED states, so nothing is ever credited for a
+     * failed payment.
+     */
+    @Observed(name = &quot;payment.fail&quot;)
+    public PaymentIntent fail(UUID id) {
+<span class="nc" id="L155">        return fail(id, null);</span>
+    }
+
+    /**
+     * The webhook-dispatch half carrying its inbox row (R10 — Wave 2): the
+     * failure settlement marks the row SETTLED inside the transaction its
+     * effects commit in (the class-level {@code @Transactional} scope this
+     * method has always run under — REQUIRED, joining the dispatch carrier),
+     * so a crash between the recorder's commit and this method's commit
+     * leaves the row RECEIVED for the recovery sweep, and a completed
+     * dispatch leaves both facts durable together.
+     */
+    @Observed(name = &quot;payment.fail&quot;)
+    public PaymentIntent fail(UUID id, WebhookEventRef inboxRow) {
+<span class="fc" id="L169">        PaymentIntent intent = requireIntent(id);</span>
+<span class="fc" id="L170">        intent.markFailed();</span>
+<span class="fc" id="L171">        paymentRepository.findByPaymentIntentId(id)</span>
+<span class="fc" id="L172">                .ifPresent(Payment::markFailed);</span>
+<span class="fc" id="L173">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;FAILED&quot;));</span>
+<span class="fc" id="L174">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), id));</span>
+<span class="pc bpc" id="L175" title="1 of 2 branches missed.">        if (inboxRow != null) {</span>
+<span class="fc" id="L176">            webhookEventRecorder.markSettled(inboxRow.provider(), inboxRow.eventId());</span>
+        }
+<span class="fc" id="L178">        log.info(&quot;Payment intent {} settled as FAILED by the provider&quot;, id);</span>
+<span class="fc" id="L179">        return intent;</span>
+    }
+
+    private PaymentIntent requireIntent(UUID id) {
+<span class="fc" id="L183">        return paymentIntentRepository.findById(id)</span>
+<span class="fc" id="L184">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Payment intent not found: &quot; + id));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

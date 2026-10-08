@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Payment.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">Payment.java</span></div><h1>Payment.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.util.UUID;
+
+@Entity
+@Table(name = &quot;payments&quot;)
+@Audited
+public class Payment extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;payment_intent_id&quot;, nullable = false)
+    private UUID paymentIntentId;
+
+    @Column(name = &quot;amount_cents&quot;, nullable = false)
+    private Long amountCents;
+
+<span class="fc" id="L28">    @Enumerated(EnumType.STRING)</span>
+    @Column(name = &quot;status&quot;, nullable = false, length = 20)
+    private PaymentStatus status = PaymentStatus.PENDING;
+
+<span class="fc" id="L32">    @Column(name = &quot;refunded_amount_cents&quot;, nullable = false)</span>
+<span class="fc" id="L33">    private Long refundedAmountCents = 0L;</span>
+
+    @Column(name = &quot;external_id&quot;, length = 200)
+    private String externalId;
+
+<span class="fc" id="L38">    protected Payment() {</span>
+<span class="fc" id="L39">    }</span>
+
+<span class="fc" id="L41">    public Payment(UUID id, UUID paymentIntentId, Long amountCents) {</span>
+<span class="fc" id="L42">        this.id = id;</span>
+<span class="fc" id="L43">        this.paymentIntentId = paymentIntentId;</span>
+<span class="fc" id="L44">        this.amountCents = amountCents;</span>
+<span class="fc" id="L45">    }</span>
+
+    public static Payment create(UUID paymentIntentId, Long amountCents) {
+<span class="fc" id="L48">        return new Payment(UUID.randomUUID(), paymentIntentId, amountCents);</span>
+    }
+
+    @Override
+<span class="fc" id="L52">    public UUID getId() { return id; }</span>
+<span class="fc" id="L53">    public UUID getPaymentIntentId() { return paymentIntentId; }</span>
+<span class="fc" id="L54">    public Long getAmountCents() { return amountCents; }</span>
+<span class="fc" id="L55">    public PaymentStatus getStatus() { return status; }</span>
+<span class="fc" id="L56">    public Long getRefundedAmountCents() { return refundedAmountCents; }</span>
+<span class="nc" id="L57">    public String getExternalId() { return externalId; }</span>
+
+    public void markCompleted(String externalId) {
+<span class="fc" id="L60">        this.status.validateTransitionTo(PaymentStatus.COMPLETED);</span>
+<span class="fc" id="L61">        this.status = PaymentStatus.COMPLETED;</span>
+<span class="fc" id="L62">        this.externalId = externalId;</span>
+<span class="fc" id="L63">    }</span>
+
+    public void markFailed() {
+<span class="fc" id="L66">        this.status.validateTransitionTo(PaymentStatus.FAILED);</span>
+<span class="fc" id="L67">        this.status = PaymentStatus.FAILED;</span>
+<span class="fc" id="L68">    }</span>
+
+    public void markRefunded() {
+<span class="fc" id="L71">        this.status.validateTransitionTo(PaymentStatus.REFUNDED);</span>
+<span class="fc" id="L72">        this.status = PaymentStatus.REFUNDED;</span>
+<span class="fc" id="L73">        this.refundedAmountCents = this.amountCents;</span>
+<span class="fc" id="L74">    }</span>
+
+    public void markPartiallyRefunded(Long refundAmountCents) {
+<span class="fc" id="L77">        this.status.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED);</span>
+<span class="fc" id="L78">        this.status = PaymentStatus.PARTIALLY_REFUNDED;</span>
+<span class="fc" id="L79">        this.refundedAmountCents += refundAmountCents;</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * L19: partial refund whose amount is the remote provider's cumulative
+     * actual (the PSP is the source of truth), not a locally summed delta —
+     * the field is SET to the remote total, so local books stay correct even
+     * when refunds happened outside this service.
+     */
+    public void markPartiallyRefundedTotal(long refundedTotalCents) {
+<span class="fc" id="L89">        this.status.validateTransitionTo(PaymentStatus.PARTIALLY_REFUNDED);</span>
+<span class="fc" id="L90">        this.status = PaymentStatus.PARTIALLY_REFUNDED;</span>
+<span class="fc" id="L91">        this.refundedAmountCents = refundedTotalCents;</span>
+<span class="fc" id="L92">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

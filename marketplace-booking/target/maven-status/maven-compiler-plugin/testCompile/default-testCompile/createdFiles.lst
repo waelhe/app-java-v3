@@ -1,0 +1,11 @@
+com/marketplace/booking/spi/BookingExportAdapterTest.class
+com/marketplace/booking/BookingExpirationServiceTest.class
+com/marketplace/booking/BookingExpirationServiceTest$TestConfig.class
+com/marketplace/booking/BookingControllerTest.class
+com/marketplace/booking/BookingSpecificationsTest.class
+com/marketplace/booking/BookingServiceTest.class
+com/marketplace/booking/BookingStatusTest.class
+com/marketplace/booking/BookingMapperTest.class
+com/marketplace/booking/BookingParticipantProviderAdapterTest.class
+com/marketplace/booking/BookingPaymentEventListenerTest$TestConfig.class
+com/marketplace/booking/BookingPaymentEventListenerTest.class

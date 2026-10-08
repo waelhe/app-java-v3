@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PublishedReviewView.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">PublishedReviewView.java</span></div><h1>PublishedReviewView.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * W1 (yelp-level plan §4.4/§4.5 — the provider public page's reviews block):
+ * one PUBLISHED review row as the public page composes it. The projection
+ * the {@link PublishedReviewsPort} serves across the module boundary — the
+ * shared-space twin of the reviews module's own {@code ReviewResponse},
+ * carrying exactly the fields a public row renders and nothing else.
+ *
+ * &lt;p&gt;Field discipline (the {@code ProviderPublicPageResponse} whitelist
+ * rule — &quot;the record cannot leak what it does not declare&quot;):
+ * &lt;ul&gt;
+ *   &lt;li&gt;no {@code bookingId} — the verified badge is {@code origin}, not a
+ *       booking pointer;&lt;/li&gt;
+ *   &lt;li&gt;no {@code direction} — the block is the forward surface by
+ *       construction ({@code CONSUMER_TO_PROVIDER});&lt;/li&gt;
+ *   &lt;li&gt;no {@code moderationStatus} — every row here is {@code PUBLISHED}
+ *       (the visibility gate is the serving port's own contract);&lt;/li&gt;
+ *   &lt;li&gt;no {@code listingId} — the public row has no listing renderer
+ *       today (a title would be a second cross-module join; the W2
+ *       business page owns that decision, not this projection).&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;The reviewer identity block rides the row exactly as the plan's
+ * §4.4 &quot;هوية المراجع في الاستجابة&quot; shapes it: a display name honouring
+ * {@code pseudonymized_at} (resolved by the owning module), his published
+ * count, and the helpful-vote count — the three batch-resolved blocks,
+ * never per-review queries. W4 (§5 — G28) adds the row's click target:
+ * {@code reviewerId} is the public reviewer page's own key
+ * ({@code GET /api/v1/users/{id}/public}), so the &quot;نقرة من مراجعة إلى
+ * صفحة المراجع&quot; link travels with the row itself.
+ *
+ * @param id                  the review's own id (the vote/flag/report target)
+ * @param rating              1..5 (the V6 CHECK bounds)
+ * @param comment             the public text, nullable
+ * @param reply               the reviewed provider's one public reply, nullable
+ * @param repliedAt           when the provider replied, nullable
+ * @param createdAt           when the review was written
+ * @param origin              {@code BOOKING} («موثّقة») or {@code ORGANIC}
+ *                            («عامة») — the V85 provenance column
+ * @param reviewerId          the reviewer's user id — the public reviewer
+ *                            page's key (W4/G28; already the public key of
+ *                            {@code GET /api/v1/reviews/reviewer/{id}})
+ * @param reviewerName        the pseudonym-honouring display name
+ * @param reviewerReviewCount the reviewer's published-review count
+ * @param helpfulCount        how many neighbours marked the review helpful
+ */
+<span class="nc" id="L51">public record PublishedReviewView(</span>
+        UUID id,
+        Integer rating,
+        String comment,
+        String reply,
+        Instant repliedAt,
+        Instant createdAt,
+        String origin,
+        UUID reviewerId,
+        String reviewerName,
+        long reviewerReviewCount,
+        long helpfulCount
+) {
+
+    /**
+     * The origin value the reviews module stores for a booking-gated review
+     * (the V85 {@code origin} column's CHECK-held vocabulary, mirrored here
+     * because THIS record is the cross-module contract that carries it —
+     * consumers outside the reviews module must not hardcode the literal).
+     */
+    public static final String ORIGIN_BOOKING = &quot;BOOKING&quot;;
+
+    /** The origin value the reviews module stores for an organic review ({@code ORGANIC}). */
+    public static final String ORIGIN_ORGANIC = &quot;ORGANIC&quot;;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UserDataExportResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">UserDataExportResponse.java</span></div><h1>UserDataExportResponse.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.BookingExportEntry;
+import com.marketplace.shared.api.CommunityCommentExportEntry;
+import com.marketplace.shared.api.CommunityEventExportEntry;
+import com.marketplace.shared.api.CommunityEventSeatExportEntry;
+import com.marketplace.shared.api.CommunityGroupMembershipExportEntry;
+import com.marketplace.shared.api.CommunityMarketItemExportEntry;
+import com.marketplace.shared.api.CommunityMembershipExportEntry;
+import com.marketplace.shared.api.CommunityPostExportEntry;
+import com.marketplace.shared.api.CommunityReactionExportEntry;
+import com.marketplace.shared.api.ConversationExportEntry;
+import com.marketplace.shared.api.MediaExportEntry;
+import com.marketplace.shared.api.MessageExportEntry;
+import com.marketplace.shared.api.NotificationExportEntry;
+import com.marketplace.shared.api.ReviewExportEntry;
+import com.marketplace.shared.api.SavedSearchExportEntry;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * I7 Phase 2 (account-pseudonymization-plan §5-ج — the Art. 20 export
+ * contract, gate b-5 opened by the user's word): the data-subject export
+ * response — a structured, commonly used, machine-readable JSON document
+ * (Art. 20(1) verbatim: &quot;in a structured, commonly used and machine-readable
+ * format&quot;).
+ *
+ * &lt;p&gt;&lt;b&gt;The boundary notice travels with the data (the plan's §5-ج closing
+ * rule):&lt;/b&gt; the {@link ExportMetadata} header documents the export's scope
+ * and generation time inside the response itself — an auditable record of
+ * the Art. 20 execution that survives any transport (machine-readable and
+ * self-describing, unlike transport headers).
+ *
+ * &lt;p&gt;&lt;b&gt;The sections (the plan's provenance contract, verbatim):&lt;/b&gt; the
+ * requester's account profile, his first-party bookings
+ * (status/dates/amounts), the reviews and messages he authored, the
+ * metadata of his media (never file bytes), and his notifications. Shared
+ * records carry the counterparty as an opaque UUID only. Internal system
+ * columns (version/is_deleted/created_by/updated_by), operational data
+ * (the event archive), and every record where the requester is not a first
+ * party are excluded — the explicit exclusion rule.
+ */
+<span class="fc" id="L45">public record UserDataExportResponse(</span>
+        ExportMetadata export,
+        Profile profile,
+        List&lt;BookingExportEntry&gt; bookings,
+        List&lt;ReviewExportEntry&gt; reviews,
+        List&lt;ConversationExportEntry&gt; conversations,
+        List&lt;MessageExportEntry&gt; messages,
+        List&lt;MediaExportEntry&gt; media,
+        List&lt;NotificationExportEntry&gt; notifications,
+        List&lt;SavedSearchExportEntry&gt; savedSearches,
+        List&lt;CommunityMembershipExportEntry&gt; memberships,
+        List&lt;CommunityPostExportEntry&gt; communityPosts,
+        List&lt;CommunityCommentExportEntry&gt; communityComments,
+        List&lt;CommunityReactionExportEntry&gt; communityReactions,
+        List&lt;CommunityEventExportEntry&gt; communityEvents,
+        List&lt;CommunityEventSeatExportEntry&gt; communityEventSeats,
+        List&lt;CommunityMarketItemExportEntry&gt; communityMarketItems,
+        List&lt;CommunityGroupMembershipExportEntry&gt; communityGroupMemberships,
+        List&lt;ProviderFollowExportEntry&gt; providerFollows,
+        List&lt;com.marketplace.shared.api.ListingFavoriteExportEntry&gt; listingFavorites
+) {
+
+    /**
+     * The boundary notice (the plan's §5-ج: &quot;رأس تعريفي يوثّق نطاق التصدير
+     * وتاريخه&quot;) — the fixed scope statement plus the generation timestamp.
+     */
+<span class="fc" id="L71">    public record ExportMetadata(</span>
+            Instant generatedAt,
+            String scopeNotice
+    ) {
+    }
+
+    /**
+     * The requester's account profile (P1/P2 of the plan's inventory): the
+     * identifiers and profile fields the account row holds. The neutral
+     * &quot;Former member&quot; rendering never applies here — a pseudonymized
+     * account cannot authenticate, so an authenticated export is by
+     * construction the live account's data.
+     */
+<span class="fc" id="L84">    public record Profile(</span>
+            UUID id,
+            String subject,
+            String email,
+            String displayName,
+            String role,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+    }
+
+    /**
+     * W4 (yelp-level plan §5 — G21, the b-3 export duty): the providers the
+     * account chose to follow — as stored, withdrawn follows included (the
+     * b-5 discrimination: surface deletion is a visibility flag, not an
+     * erasure). Identity-local data, so the section composes directly in
+     * the aggregation service (the Profile precedent — no port crosses a
+     * boundary the owning module already owns).
+     */
+<span class="fc" id="L103">    public record ProviderFollowExportEntry(</span>
+            UUID id,
+            UUID providerUserId,
+            Instant createdAt,
+            Instant updatedAt,
+            boolean deleted
+    ) {
+    }
+
+    /** The fixed scope statement — the contract the sections implement. */
+    static final String SCOPE_NOTICE = &quot;&quot;&quot;
+            Personal data held by this controller and provided by you (GDPR Art. 20(1)) \
+            — exported as structured, machine-readable JSON:
+            your account profile; bookings where you are a first party (status, dates, amounts); \
+            reviews and messages you authored; descriptive metadata of your media (never file bytes); \
+            your notifications; your saved searches (criteria as stored, alerts flag); \
+            your neighborhood memberships (the self-declared home location — active and left, as stored); \
+            your neighborhood posts and comments (the community texts you authored — as stored, \
+            including author-deleted ones, with the moderation status of each post); \
+            your neighborhood reactions (the posts you thanked — as stored, including removed ones); \
+            your neighborhood events (the authored titles, descriptions and display labels — as stored, \
+            including organizer-deleted ones) and your event seats (the attendance declarations — \
+            held and freed, as stored); \
+            your neighborhood market items (the listings you published — title, pickup-spot label, \
+            and the stored pricing declaration — as stored, including withdrawn and sold ones); \
+            your neighborhood group memberships (the groups you joined — live and left, as stored); \
+            the listings you saved for later (your favorites — the save/withdraw relation itself, \
+            as stored, including withdrawn ones); \
+            and the providers you follow (as stored, including withdrawn follows).
+            Shared records carry the counterparty as an opaque identifier only (no name, email, or profile). \
+            Excluded: internal system columns, operational data (event archive, saved-search match ledger, \
+            the follow-alert delivery ledger), audit strings, \
+            and any record where you are not a first party.
+            The provider persona (provider profile) is outside this export contract \
+            (account-pseudonymization-plan §5-ج provenance enumeration).&quot;&quot;&quot;;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

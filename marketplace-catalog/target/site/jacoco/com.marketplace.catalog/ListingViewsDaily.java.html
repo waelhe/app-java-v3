@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingViewsDaily.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingViewsDaily.java</span></div><h1>ListingViewsDaily.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import org.hibernate.envers.Audited;
+
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * L40 (realestate systems plan §5 — view analytics): one listing's view
+ * count for one UTC day — the plan's aggregate table (&quot;جدول تجميعي
+ * listing_views_daily (listing_id, view_date, count)&quot;; the count column is
+ * named {@code view_count} because a column literally named {@code count}
+ * collides with the SQL aggregate in every query that reads the table).
+ *
+ * &lt;p&gt;&lt;b&gt;How a row changes — the L21 stored-aggregate pattern, not a native
+ * upsert:&lt;/b&gt; the plan's wording says &quot;زيادة ذرّية بسيطة (INSERT ON
+ * CONFLICT DO UPDATE)&quot;, but the same plan binds D-R8: the aggregate is
+ * audited &quot;تجميعي يُدقَّق كالكيانات&quot;. Those two are in tension — Envers
+ * records entity operations only; a native upsert bypasses the listeners
+ * and leaves the {@code _aud} mirror a dead empty shell. The increment
+ * therefore rides the pessimistic-locked read-modify-write the house
+ * already uses for stored aggregates (L21 {@code refreshRatingAverage}
+ * → {@code findByIdForUpdate}); the atomicity the upsert existed for is
+ * preserved by the UNIQUE (listing_id, view_date) constraint (the insert
+ * race surfaces as a constraint violation retried in a NEW transaction —
+ * PostgreSQL aborts the transaction after a violation, the retry cannot
+ * share it) plus the row lock serializing concurrent {@code +1}s.
+ *
+ * &lt;p&gt;&lt;b&gt;Day semantics:&lt;/b&gt; {@code viewDate} is the UTC day of the view
+ * (the house timestamps are UTC instants; the container clock is UTC).
+ * The Redis dedup marker is TTL-based (24h from the visitor's FIRST
+ * view), so a bucket boundary and a dedup boundary can disagree by hours
+ * — the plan's own documented trade (&quot;Redis TTL يوم&quot;).
+ */
+@Entity
+@Table(name = &quot;listing_views_daily&quot;,
+        uniqueConstraints = @UniqueConstraint(
+                name = &quot;uk_listing_views_daily_listing_date&quot;,
+                columnNames = {&quot;listing_id&quot;, &quot;view_date&quot;}))
+@Audited
+public class ListingViewsDaily extends BaseEntity {
+
+    /** A row exists only because at least one deduplicated view happened (CHECK view_count &gt;= 1). */
+    static final long FIRST_VIEW_COUNT = 1L;
+
+    @Id
+    private UUID id;
+
+    /** The viewed listing — plain UUID, no FK (the V20/V32/V48/V52 discipline). */
+    @Column(name = &quot;listing_id&quot;, nullable = false)
+    private UUID listingId;
+
+    /** The UTC day of the counted views. */
+    @Column(name = &quot;view_date&quot;, nullable = false)
+    private LocalDate viewDate;
+
+    /** That day's deduplicated view count — monotonic, &gt;= 1 by the CHECK. */
+    @Column(name = &quot;view_count&quot;, nullable = false)
+    private long viewCount;
+
+<span class="nc" id="L67">    protected ListingViewsDaily() {</span>
+        // JPA
+<span class="nc" id="L69">    }</span>
+
+<span class="fc" id="L71">    private ListingViewsDaily(UUID id, UUID listingId, LocalDate viewDate, long viewCount) {</span>
+<span class="fc" id="L72">        this.id = id;</span>
+<span class="fc" id="L73">        this.listingId = listingId;</span>
+<span class="fc" id="L74">        this.viewDate = viewDate;</span>
+<span class="fc" id="L75">        this.viewCount = viewCount;</span>
+<span class="fc" id="L76">    }</span>
+
+    /**
+     * The first deduplicated view of one listing-day — the row the unique
+     * constraint guards. Ids are application-assigned UUIDs (the D-I7
+     * lesson: no sequences, so no missing-sequence privilege can break the
+     * surface silently).
+     */
+    static ListingViewsDaily firstView(UUID listingId, LocalDate viewDate) {
+<span class="fc" id="L85">        return new ListingViewsDaily(UUID.randomUUID(), listingId, viewDate, FIRST_VIEW_COUNT);</span>
+    }
+
+    /** The atomic +1 — called with the row locked (see the class javadoc). */
+    void addView() {
+<span class="fc" id="L90">        this.viewCount++;</span>
+<span class="fc" id="L91">    }</span>
+
+    UUID getListingId() {
+<span class="fc" id="L94">        return listingId;</span>
+    }
+
+    LocalDate getViewDate() {
+<span class="fc" id="L98">        return viewDate;</span>
+    }
+
+    long getViewCount() {
+<span class="fc" id="L102">        return viewCount;</span>
+    }
+
+    @Override
+    public UUID getId() {
+<span class="fc" id="L107">        return id;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

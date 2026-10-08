@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingContentPurgeAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking.spi</a> &gt; <span class="el_source">BookingContentPurgeAdapter.java</span></div><h1>BookingContentPurgeAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.booking.spi;
+
+import java.util.UUID;
+
+import com.marketplace.shared.api.AuthoredContentPurgePort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * I7 Phase 3 (account-pseudonymization-plan §2 gate b-3 — the free-text
+ * purge): the booking module's implementation of the
+ * {@link AuthoredContentPurgePort} cross-module contract. Purges the
+ * {@code notes} of the bookings the subject &lt;em&gt;requested&lt;/em&gt; — the plan
+ * names this column explicitly (&quot;{@code bookings.notes}&quot;) and the write
+ * path is measured: {@code BookingService.create(consumerId, …, notes)}
+ * is the only writer of the column, so {@code consumer_id = ?} is exactly
+ * the subject's authored set. The booking row itself, its status history
+ * and its financial columns stay (Art. 17(3)(b) / 20(4) — the plan's §4).
+ *
+ * &lt;p&gt;&lt;b&gt;Schema facts (measured, V3):&lt;/b&gt; {@code bookings.notes} is
+ * nullable {@code text} — the purge writes NULL (the Phase 1 storage
+ * convention). {@code bookings_aud} mirrors {@code consumer_id} and
+ * {@code notes} (V24 §3), so the mirror purges with the same predicate.
+ *
+ * &lt;p&gt;&lt;b&gt;Statement shape (the port's contract):&lt;/b&gt; native JDBC UPDATE,
+ * idempotent by the {@code notes IS NOT NULL} filter — exact counts, zero
+ * matches on re-run; no Envers revision for the purge itself (the
+ * orchestrator's structured log line is the audit record).
+ */
+@Component
+public class BookingContentPurgeAdapter implements AuthoredContentPurgePort {
+
+<span class="nc" id="L36">    private static final Logger log = LoggerFactory.getLogger(BookingContentPurgeAdapter.class);</span>
+
+    private final JdbcTemplate jdbcTemplate;
+
+<span class="nc" id="L40">    public BookingContentPurgeAdapter(JdbcTemplate jdbcTemplate) {</span>
+<span class="nc" id="L41">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="nc" id="L42">    }</span>
+
+    @Override
+    @Transactional
+    public int purgeAuthoredTexts(UUID userId) {
+<span class="nc" id="L47">        int bookings = jdbcTemplate.update(</span>
+                &quot;UPDATE bookings SET notes = NULL WHERE consumer_id = ? AND notes IS NOT NULL&quot;,
+                userId);
+<span class="nc" id="L50">        int auditRows = jdbcTemplate.update(</span>
+                &quot;UPDATE bookings_aud SET notes = NULL WHERE consumer_id = ? AND notes IS NOT NULL&quot;,
+                userId);
+<span class="nc" id="L53">        log.info(&quot;Booking content purge: userId={}, bookings={}, auditRows={}&quot;, userId, bookings, auditRows);</span>
+<span class="nc" id="L54">        return bookings + auditRows;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,756 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UserService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">UserService.java</span></div><h1>UserService.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.identity.spi.AuditHistoryPurgeResult;
+import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.shared.api.AccountStatusChanged;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
+import com.marketplace.shared.api.UserSummary;
+import com.marketplace.shared.api.UserRoleChanged;
+import com.marketplace.shared.security.SubjectPseudonymizer;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+@Service
+@Transactional
+public class UserService implements IdentitySpi {
+
+<span class="fc" id="L41">    private static final Logger log = LoggerFactory.getLogger(UserService.class);</span>
+
+    private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final UserDetailsManager userDetailsManager;
+    private final JdbcTemplate jdbcTemplate;
+    private final SubjectPseudonymizer subjectPseudonymizer;
+    private final AuthoredContentPurgeService authoredContentPurgeService;
+    private final AuditHistoryPurgeService auditHistoryPurgeService;
+    /**
+     * ObjectProvider (the Modulith module-slice shape — the #392 CI-round-1
+     * lesson, measured again by #395's round): the encoder bean lives in the
+     * shared security infrastructure (SecurityConfig), which identity's own
+     * module slice does NOT carry — constructor injection fails the whole
+     * slice context. The provider resolves lazily at REGISTER time: in the
+     * full application the bean is always present (the same one every
+     * surface uses); in a module slice registration is never invoked (no
+     * HTTP arrives there) — and if it ever were, the explicit
+     * {@link java.util.NoSuchElementException} from {@code getObject()} is
+     * the honest failure, not a silent no-op.
+     */
+    private final org.springframework.beans.factory.ObjectProvider&lt;org.springframework.security.crypto.password.PasswordEncoder&gt; passwordEncoder;
+
+<span class="fc" id="L64">    private static final Set&lt;String&gt; USER_CACHE_NAMES = Set.of(&quot;users&quot;, &quot;userSubjects&quot;);</span>
+
+    /**
+     * I7 §5-أ step 3 — the neutral label read surfaces render for a
+     * pseudonymized account, at the response-DTO level only (never stored:
+     * the storage columns are NULL, the label is the API's honest rendering).
+     */
+    static final String FORMER_MEMBER_LABEL = &quot;Former member&quot;;
+
+    /** Authorization rows in the SAS store (V13) are keyed by the principal name. */
+    static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
+            &quot;DELETE FROM oauth2_authorization WHERE principal_name = ?&quot;;
+
+    /**
+     * Counting constraint (roadmap L23 acceptance 2): the last active ADMIN is
+     * untouchable. The lock matters (CodeRabbit round 1): the counting read
+     * and the flip below must be atomic — two concurrent disable requests
+     * must not both pass a count of 2 and leave the system with zero active
+     * admins. {@code FOR UPDATE} on the counted rows (stable order, no
+     * deadlock) holds them for the rest of this transaction, so a concurrent
+     * transaction re-reads the post-commit state. Row locks on an aggregate
+     * are not allowed on PostgreSQL, hence the row select counted in Java.
+     */
+    static final String LOCK_ACTIVE_ADMINS = &quot;&quot;&quot;
+            SELECT u.username FROM auth_users u
+             WHERE u.enabled = true
+               AND EXISTS (SELECT 1 FROM auth_authorities a
+                            WHERE a.username = u.username AND a.authority = 'ROLE_ADMIN')
+             ORDER BY u.username
+             FOR UPDATE
+            &quot;&quot;&quot;;
+
+    /**
+     * The serialization point for every active-ADMIN removal (CodeRabbit
+     * round 2, adopted): ONE transaction-scoped advisory lock on ONE stable
+     * key. The row-level {@code FOR UPDATE} in {@link #LOCK_ACTIVE_ADMINS}
+     * serializes transactions on the COUNTED ROWS, but at PostgreSQL READ
+     * COMMITTED a waited-on row is re-checked with EvalPlanQual — the outer
+     * {@code auth_users} row is re-read post-wait while the
+     * {@code auth_authorities} EXISTS subquery can still evaluate against the
+     * pre-wait statement snapshot: two concurrent removals on a two-admin
+     * system can each count two, each pass, and each replace its ROLE_ADMIN
+     * rows — zero admins left standing. The advisory lock closes the window
+     * at the decision level: removal transactions serialize whole, the waiter
+     * re-counts AFTER the leader committed (a fresh snapshot that sees the
+     * replacement), and the second removal answers the same 409. Keyed by
+     * {@code hashtextextended} (stable across sessions) and transaction-scoped
+     * (released at commit/rollback — no unlock path to forget, no orphan lock
+     * on an exception).
+     */
+    static final String LOCK_ACTIVE_ADMIN_INVARIANT = &quot;&quot;&quot;
+            SELECT pg_advisory_xact_lock(hashtextextended('marketplace.active-admins', 0))
+            &quot;&quot;&quot;;
+
+    public UserService(UserRepository userRepository,
+                       ApplicationEventPublisher eventPublisher,
+                       UserDetailsManager userDetailsManager,
+                       JdbcTemplate jdbcTemplate,
+                       SubjectPseudonymizer subjectPseudonymizer,
+                       AuthoredContentPurgeService authoredContentPurgeService,
+                       AuditHistoryPurgeService auditHistoryPurgeService,
+<span class="fc" id="L125">                       org.springframework.beans.factory.ObjectProvider&lt;org.springframework.security.crypto.password.PasswordEncoder&gt; passwordEncoder) {</span>
+<span class="fc" id="L126">        this.userRepository = userRepository;</span>
+<span class="fc" id="L127">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L128">        this.userDetailsManager = userDetailsManager;</span>
+<span class="fc" id="L129">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L130">        this.subjectPseudonymizer = subjectPseudonymizer;</span>
+<span class="fc" id="L131">        this.authoredContentPurgeService = authoredContentPurgeService;</span>
+<span class="fc" id="L132">        this.auditHistoryPurgeService = auditHistoryPurgeService;</span>
+<span class="fc" id="L133">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L134">    }</span>
+
+    @Transactional(readOnly = true)
+    @Cacheable(&quot;users&quot;)
+    public User getById(UUID id) {
+<span class="fc" id="L139">        return userRepository.findById(id)</span>
+<span class="fc" id="L140">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + id));</span>
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(&quot;userSubjects&quot;)
+    public User getBySubject(String subject) {
+<span class="fc" id="L146">        return userRepository.findBySubject(subject)</span>
+<span class="fc" id="L147">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + subject));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;User&gt; findAll(Pageable pageable) {
+<span class="fc" id="L152">        return userRepository.findAll(pageable);</span>
+    }
+
+    /**
+     * S1/B1 (platform-readiness audit §6 gate B1 — the registration surface):
+     * self-service account creation, BOTH stores in ONE transaction — the
+     * same single-transaction truth the role-change surface established
+     * (S2/N4/N6): the domain row ({@code users}, CONSUMER — the platform's
+     * default role, the only self-serviceable one) and the login rows
+     * ({@code auth_users} + {@code auth_authorities}, written through the
+     * framework's {@link UserDetailsManager#createUser} — the official
+     * registration entry, D7's custom-SQL manager).
+     *
+     * &lt;p&gt;&lt;b&gt;The password never crosses a boundary raw:&lt;/b&gt; encoded HERE, in
+     * the service, before the manager persists it — {@code JdbcUserDetailsManager}
+     * stores the given value verbatim (encoding is the caller's contract),
+     * and the {@code DelegatingPasswordEncoder} (SecurityConfig, the official
+     * default) answers {@code {bcrypt}...} — the stored form the login gate's
+     * DaoAuthenticationProvider already verifies. The subject IS the email:
+     * the marketplace's natural login handle (the OIDC world's opaque
+     * subjects are minted by the IdP; the native world's handle is the
+     * account's own address — the unique constraint enforces one account
+     * per address).
+     *
+     * &lt;p&gt;&lt;b&gt;What registration deliberately does NOT grant:&lt;/b&gt; any role above
+     * CONSUMER (provider upgrades are the administrative flow with its own
+     * guard), enabled=false (no email-verification hold — the declared debt
+     * below), or an audit row (self-service birth, not an administrative
+     * act on another account — the actor IS the account).
+     *
+     * @param email       the account's address — becomes the subject and the
+     *                    login username; uniqueness enforced per address.
+     *                    Capped at 50 characters: the login store's own
+     *                    domain (auth_users.username VARCHAR(50), V13) — the
+     *                    honest contract, validated at the request layer
+     *                    (a longer address answers the clean 400, never a
+     *                    storage-time 500)
+     * @param rawPassword the CLEAR password — validated by the request layer
+     *                    (8..72, the bcrypt byte ceiling — longer input is
+     *                    rejected, never silently truncated) and encoded here
+     * @param displayName the optional display name
+     * @return the created domain row (the response shape /me already speaks)
+     * @throws ConflictException the address already owns an account — the
+     *                          honest 409 before any store is written
+     */
+    public User register(String email, String rawPassword, String displayName) {
+<span class="fc" id="L198">        String subject = email;</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">        if (userRepository.existsBySubject(subject)</span>
+<span class="fc bfc" id="L200" title="All 2 branches covered.">                || userDetailsManager.userExists(subject)) {</span>
+<span class="fc" id="L201">            throw new ConflictException(&quot;An account already exists for this email&quot;);</span>
+        }
+<span class="fc" id="L203">        User user = userRepository.save(</span>
+<span class="fc" id="L204">                User.create(subject, email, displayName, UserRole.CONSUMER));</span>
+<span class="fc" id="L205">        userDetailsManager.createUser(org.springframework.security.core.userdetails.User</span>
+<span class="fc" id="L206">                .withUsername(subject)</span>
+<span class="fc" id="L207">                .password(passwordEncoder.getObject().encode(rawPassword))</span>
+<span class="fc" id="L208">                .roles(&quot;CONSUMER&quot;)</span>
+<span class="fc" id="L209">                .build());</span>
+<span class="fc" id="L210">        log.info(&quot;Account registered: subject={}, role=CONSUMER&quot;, subject);</span>
+<span class="fc" id="L211">        return user;</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;UserSummary&gt; findAllSummaries(Pageable pageable) {
+<span class="fc" id="L216">        return findAll(pageable).map(this::toUserSummary);</span>
+    }
+
+    /**
+     * Syncs user from OIDC token — creates if new, updates if changed.
+     * Publishes a cache invalidation only when the user was created or
+     * the profile actually changed, avoiding redundant cache thrash and
+     * unbounded growth of the event publication archive on every /me call.
+     *
+     * &lt;p&gt;&lt;b&gt;Defect fix shipped with L23:&lt;/b&gt; the parameter is the plain
+     * {@link Authentication} (house convention — every other controller
+     * receives it) narrowed by an {@code instanceof} guard, the
+     * {@code IdentityUserProvider} pattern verbatim. The previous
+     * {@code @AuthenticationPrincipal JwtAuthenticationToken} parameter
+     * resolved to {@code null} for real Bearer requests —
+     * {@code AuthenticationPrincipalArgumentResolver} resolves to
+     * {@code authentication.getPrincipal()} (the {@code Jwt} for the
+     * resource server), the type mismatch yields {@code null}, and every
+     * real-client /me call died with 500 INT-001. No prior test injected a
+     * real JWT through the resolver (the slice mocked the service), so the
+     * defect sat latent on main until the L23 gate test exercised /me
+     * end-to-end.
+     */
+    @Observed(name = &quot;user.sync.oidc&quot;)
+    public User syncFromOidc(Authentication authentication) {
+<span class="fc bfc" id="L241" title="All 2 branches covered.">        if (!(authentication instanceof JwtAuthenticationToken token)) {</span>
+<span class="fc" id="L242">            throw new IllegalArgumentException(</span>
+                    &quot;Unsupported authentication type: &quot; + authentication);
+        }
+<span class="fc" id="L245">        String subject = token.getToken().getSubject();</span>
+<span class="fc" id="L246">        String email = token.getToken().getClaimAsString(&quot;email&quot;);</span>
+<span class="fc" id="L247">        String name = token.getToken().getClaimAsString(&quot;name&quot;);</span>
+
+<span class="fc" id="L249">        AtomicBoolean profileChanged = new AtomicBoolean(false);</span>
+<span class="fc" id="L250">        User user = userRepository.findBySubject(subject)</span>
+<span class="fc" id="L251">                .map(existing -&gt; {</span>
+<span class="fc bfc" id="L252" title="All 2 branches covered.">                    if (existing.updateProfile(email, name)) {</span>
+<span class="fc" id="L253">                        profileChanged.set(true);</span>
+                    }
+<span class="fc" id="L255">                    return existing;</span>
+                })
+<span class="fc" id="L257">                .orElseGet(() -&gt; {</span>
+                    // I7 §5-أ step 8 — the pre-provisioning deny check: the
+                    // identity's raw subject was pseudonymized under one of
+                    // the configured keys, and the deterministic derivation
+                    // is the tombstone. Probing EVERY derivation the keyring
+                    // can produce (active + retained previous keys — §9
+                    // rotation row, resolved option 1) before any creation
+                    // closes the account-recreation hole: a re-issued raw
+                    // sub (an identity provider re-issuing the same subject,
+                    // or a live access token's 900s window) must not
+                    // resurrect the identity — including tombstones written
+                    // before a key rotation. Inert while the ring is empty —
+                    // no tombstone can exist while no key ever existed.
+<span class="fc" id="L270">                    List&lt;String&gt; candidateTombstones = subjectPseudonymizer.deriveAll(subject);</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">                    if (!candidateTombstones.isEmpty()</span>
+<span class="pc bpc" id="L272" title="1 of 2 branches missed.">                            &amp;&amp; userRepository.existsBySubjectIn(candidateTombstones)) {</span>
+<span class="fc" id="L273">                        throw new ConflictException(</span>
+                                &quot;Account for this subject was pseudonymized and cannot be &quot;
+                                        + &quot;re-provisioned: &quot; + subject);
+                    }
+<span class="fc" id="L277">                    UserRole role = resolveRole(subject, token);</span>
+<span class="fc" id="L278">                    User newUser = User.create(subject, email, name, role);</span>
+<span class="fc" id="L279">                    profileChanged.set(true);</span>
+<span class="fc" id="L280">                    return userRepository.save(newUser);</span>
+                });
+<span class="fc bfc" id="L282" title="All 2 branches covered.">        if (profileChanged.get()) {</span>
+<span class="fc" id="L283">            eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));</span>
+        }
+<span class="fc" id="L285">        return user;</span>
+    }
+
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the creation
+     * path derives the role from the LIVE login-side store —
+     * {@code auth_authorities} read through the framework
+     * {@code UserDetailsManager} — not from the JWT's {@code roles} claim.
+     * The claim is a snapshot of the authorities taken when the token was
+     * minted (up to its 900s TTL); reading the live store closes the
+     * window where an administrative role change lands between issuance
+     * and the account's first {@code /me} bootstrap — the new row records
+     * the operative role, not the stale one. This is the truth-direction
+     * flip the plan mandates: the login store is the authority projection
+     * (kept in sync by {@link #updateUserRole}), the {@code users.role}
+     * column its domain mirror.
+     *
+     * &lt;p&gt;The JWT-claim fallback stays for subjects with no login account
+     * ({@code UsernameNotFoundException} — the documented manager
+     * contract): a token minted by this AS implies an account, so the
+     * fallback only serves foreign/test-minted tokens, and the account
+     * bootstrap keeps working exactly as before in every environment.
+     */
+    private UserRole resolveRole(String subject, JwtAuthenticationToken token) {
+        try {
+<span class="fc" id="L310">            UserDetails stored = userDetailsManager.loadUserByUsername(subject);</span>
+<span class="fc" id="L311">            return fromAuthorities(stored.getAuthorities());</span>
+<span class="fc" id="L312">        } catch (UsernameNotFoundException ex) {</span>
+<span class="fc" id="L313">            return resolveRoleFromClaim(token);</span>
+        }
+    }
+
+    /** The stored authority set → the domain role (the seed's shape: one {@code ROLE_&lt;role&gt;}). */
+    private static UserRole fromAuthorities(Collection&lt;? extends GrantedAuthority&gt; authorities) {
+<span class="fc bfc" id="L319" title="All 2 branches covered.">        for (GrantedAuthority authority : authorities) {</span>
+<span class="fc" id="L320">            String name = authority.getAuthority();</span>
+<span class="pc bpc" id="L321" title="1 of 2 branches missed.">            if (&quot;ROLE_ADMIN&quot;.equals(name)) return UserRole.ADMIN;</span>
+<span class="pc bpc" id="L322" title="1 of 2 branches missed.">            if (&quot;ROLE_PROVIDER&quot;.equals(name)) return UserRole.PROVIDER;</span>
+<span class="fc" id="L323">        }</span>
+<span class="fc" id="L324">        return UserRole.CONSUMER;</span>
+    }
+
+    private static UserRole resolveRoleFromClaim(JwtAuthenticationToken token) {
+<span class="fc" id="L328">        var roles = token.getToken().getClaimAsStringList(&quot;roles&quot;);</span>
+<span class="fc bfc" id="L329" title="All 4 branches covered.">        if (roles != null &amp;&amp; roles.contains(&quot;ADMIN&quot;)) return UserRole.ADMIN;</span>
+<span class="pc bpc" id="L330" title="1 of 4 branches missed.">        if (roles != null &amp;&amp; roles.contains(&quot;PROVIDER&quot;)) return UserRole.PROVIDER;</span>
+<span class="fc" id="L331">        return UserRole.CONSUMER;</span>
+    }
+
+    /**
+     * S2/N4/N6 root fix (comprehensive repair plan §10/1.5): the role
+     * change as one transaction on BOTH stores of truth. Before this fix
+     * the command wrote {@code users.role} alone — the {@code roles} claim
+     * of every future token is minted from the login-side
+     * {@code auth_authorities} projection
+     * ({@code SecurityConfig.jwtTokenCustomizer} reads
+     * {@code context.getPrincipal().getAuthorities()}), so the upgrade was
+     * a silent no-op on authorization (N4) and the two stores drifted with
+     * no reconciliation in either direction (N6).
+     *
+     * &lt;p&gt;&lt;b&gt;The official contract doing the sync:&lt;/b&gt;
+     * {@code JdbcUserDetailsManager.updateUser} (spring-security-core
+     * 7.1.1, bytecode-verified this change) executes {@code updateUserSql},
+     * then — {@code enableAuthorities} default true —
+     * {@code deleteUserAuthoritiesSql} followed by
+     * {@code insertUserAuthorities} per authority via
+     * {@code createAuthoritySql} (both wired in {@code SecurityConfig}).
+     * The manager is plain JDBC (no transaction annotation of its own), so
+     * inside this {@code @Transactional} service the whole replacement is
+     * atomic with the {@code users.role} write — the &quot;same transaction&quot;
+     * guarantee the plan demands. Password and account flags are replayed
+     * verbatim from the loaded row (the L23 {@code updateUserStatus}
+     * pattern); the authorities are REPLACED with the target role's single
+     * {@code ROLE_&lt;role&gt;} authority — the system's authority shape since
+     * the seed (one {@code ROLE_ADMIN} row), and the role enum is the
+     * authority set by design.
+     *
+     * &lt;p&gt;&lt;b&gt;Issued authorizations die with the change&lt;/b&gt; (the L23
+     * documented basis, verified against the SAS 7.1.1 source): the
+     * {@code refresh_token} grant deserializes the principal stored in
+     * {@code oauth2_authorization} instead of re-reading the account, so a
+     * pre-change refresh token would keep minting old-role access tokens
+     * until its own expiry. Deleting the rows forces a re-login — the next
+     * token is minted from the updated authorities. Access tokens already
+     * in flight are self-contained and die by their 900s TTL (the same
+     * documented L23 basis).
+     *
+     * &lt;p&gt;&lt;b&gt;The last-active-ADMIN counting constraint&lt;/b&gt; (L23 acceptance 2,
+     * verbatim reuse — {@link #LOCK_ACTIVE_ADMINS}): a change that removes
+     * the {@code ROLE_ADMIN} authority from the only enabled account
+     * holding it is rejected. The documented invariant is &quot;the last active
+     * ADMIN is untouchable&quot;; an operative role change must not open the
+     * lockout hole the disable guard already closes.
+     *
+     * &lt;p&gt;&lt;b&gt;The audit record&lt;/b&gt; (payments convention): actor, target,
+     * old→new role — the same structured line {@code updateUserStatus}
+     * writes.
+     */
+    @Observed(name = &quot;user.role.update&quot;)
+    @Override
+    public void updateUserRole(UUID userId, String newRole, String actor) {
+<span class="fc" id="L386">        UserRole target = UserRole.valueOf(newRole);</span>
+        // The write path reads the source of truth directly — NOT the
+        // @Cacheable getById (a cache hit hands back a JDK-deserialized
+        // DETACHED copy, and dirty checking never sees its mutations: the
+        // role change would be silently lost while the response looks
+        // applied). Same-class fix discovered while building I7's
+        // pseudonymizeAccount write path; the read cache stays for readers.
+<span class="fc" id="L393">        User user = userRepository.findById(userId)</span>
+<span class="fc" id="L394">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + userId));</span>
+<span class="fc" id="L395">        UserRole previous = user.getRole();</span>
+<span class="fc" id="L396">        user.changeRole(target);</span>
+
+<span class="fc" id="L398">        String username = user.getSubject();</span>
+        UserDetails stored;
+        try {
+<span class="fc" id="L401">            stored = userDetailsManager.loadUserByUsername(username);</span>
+<span class="fc" id="L402">        } catch (UsernameNotFoundException ex) {</span>
+<span class="fc" id="L403">            throw new ResourceNotFoundException(</span>
+                    &quot;No authentication account for user: &quot; + userId + &quot; (subject: &quot; + username + &quot;)&quot;);
+<span class="fc" id="L405">        }</span>
+
+        // The counting constraint protects the authority REMOVAL (an
+        // anything→non-ADMIN replacement of an enabled account that HOLDS
+        // ROLE_ADMIN), exactly like the disable surface it was built for —
+        // same lock, same FOR UPDATE serialization rationale (concurrent
+        // admin removals serialize on the counted rows). CodeRabbit round 1,
+        // adopted from the root: the decision reads the STORED authority (the
+        // login-side rows this update is about to replace), never
+        // {@code previous} (the users.role mirror) — a drifted pair (role
+        // CONSUMER, authority ROLE_ADMIN — the pre-fix stock) must still hit
+        // the guard, because what the replacement removes is the ROLE_ADMIN
+        // row; and a reverse drift (role ADMIN, authority gone) removes
+        // nothing and correctly skips.
+<span class="pc bpc" id="L419" title="1 of 6 branches missed.">        if (target != UserRole.ADMIN &amp;&amp; stored.isEnabled() &amp;&amp; hasAdminAuthority(stored)) {</span>
+            // The advisory lock serializes the decision itself (see
+            // LOCK_ACTIVE_ADMIN_INVARIANT) — the count below then reads a
+            // post-commit truth, not a pre-wait snapshot.
+<span class="fc" id="L423">            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);</span>
+<span class="fc" id="L424">            List&lt;String&gt; activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);</span>
+<span class="fc bfc" id="L425" title="All 2 branches covered.">            if (activeAdmins.size() &lt;= 1) {</span>
+<span class="fc" id="L426">                throw new ConflictException(&quot;Cannot remove the last active ADMIN role&quot;);</span>
+            }
+        }
+
+        // The login-side projection: authorities replaced with the target
+        // role's, everything else replayed verbatim (the L23 builder shape
+        // — the manager's updateUser SQL pair writes password/enabled and
+        // re-creates the authority rows atomically in THIS transaction).
+        // roles() is the builder's own ROLE_-prefixing contract — the
+        // authority shape the seed and every hasRole gate already speak.
+<span class="fc" id="L436">        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User</span>
+<span class="fc" id="L437">                .withUsername(username)</span>
+<span class="fc" id="L438">                .password(stored.getPassword())</span>
+<span class="fc" id="L439">                .roles(target.name())</span>
+<span class="pc bpc" id="L440" title="1 of 2 branches missed.">                .accountExpired(!stored.isAccountNonExpired())</span>
+<span class="pc bpc" id="L441" title="1 of 2 branches missed.">                .accountLocked(!stored.isAccountNonLocked())</span>
+<span class="pc bpc" id="L442" title="1 of 2 branches missed.">                .credentialsExpired(!stored.isCredentialsNonExpired())</span>
+<span class="pc bpc" id="L443" title="1 of 2 branches missed.">                .disabled(!stored.isEnabled())</span>
+<span class="fc" id="L444">                .build());</span>
+
+        // Issued authorizations die with the change (refresh resurrection
+        // kill — the L23 documented SAS basis, see the javadoc above).
+<span class="fc" id="L448">        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);</span>
+
+<span class="fc" id="L450">        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));</span>
+        // R8 Wave 1: username joins the payload so the session invalidator
+        // consumes the fact without a query back into this module — the
+        // authorities inside every live session are stale against the
+        // replaced projection, so they all expire.
+<span class="fc" id="L455">        eventPublisher.publishEvent(new UserRoleChanged(userId, username, previous.name(), target.name()));</span>
+
+<span class="fc" id="L457">        log.info(&quot;Account role audit: userId={}, username={}, role: {} -&gt; {}, actor={}&quot;,</span>
+                userId, username, previous, target, actor);
+<span class="fc" id="L459">    }</span>
+
+    /**
+     * L23 (feature-expansion roadmap §5) — administrative account disable/enable.
+     *
+     * &lt;p&gt;&lt;b&gt;The operative change&lt;/b&gt; is {@code auth_users.enabled}, written through
+     * the framework-managed {@link UserDetailsManager} bean (the same manager the
+     * authentication chain reads from — {@code JdbcUserDetailsManager} wired in
+     * {@code SecurityConfig}: a disabled row makes the next form-login attempt
+     * throw {@code DisabledException}, so no new authorization code or token can
+     * be minted for the account).
+     *
+     * &lt;p&gt;&lt;b&gt;Tokens already issued:&lt;/b&gt; Spring Authorization Server 7.1.1 does not
+     * re-read {@code enabled} on the {@code refresh_token} grant (it deserializes
+     * the principal stored in {@code oauth2_authorization} — verified against the
+     * framework source). Disabling therefore also removes the account's
+     * authorization rows — the same store OAuth2 token revocation operates on —
+     * so the next refresh-token request returns {@code invalid_grant}
+     * (&quot;Invalid request: refresh_token is invalid&quot;). The already-minted access
+     * JWTs are self-contained and die by their 900s TTL; the roadmap's basis is
+     * the login chain, so per-request JWT revocation is deliberately out of
+     * scope. Enabling emits no token: the user simply logs in again.
+     *
+     * &lt;p&gt;&lt;b&gt;The audit record:&lt;/b&gt; the action with its reason lands as a
+     * structured log line (actor, target, old→new status, reason — the same
+     * record convention the payments module uses for money movements). The
+     * {@code audit_log} table (V8) was assessed as the target and rejected with
+     * live CI evidence: its script is not idempotent, which breaks the
+     * login-gate {@code sql.init} pattern the CI &quot;Build &amp;amp; Test&quot; job runs on
+     * a database the OpenAPI gate has already migrated with Flyway
+     * ({@code relation &quot;idx_audit_entity&quot; already exists}), and a first wiring
+     * of a 31-migration-old unused table exceeds the roadmap's effort=1 scope.
+     *
+     * &lt;p&gt;&lt;b&gt;Counting constraint&lt;/b&gt; (acceptance 2): disabling the last active
+     * ADMIN is rejected — the guard counts enabled users holding
+     * {@code ROLE_ADMIN} in {@code auth_authorities} (the login-side authority
+     * that the JWT {@code roles} claim is minted from).
+     */
+    @Observed(name = &quot;user.status.update&quot;)
+    @Override
+    public void updateUserStatus(UUID userId, String status, String reason, String actor) {
+<span class="fc" id="L500">        boolean disable = &quot;DISABLED&quot;.equals(status);</span>
+<span class="fc bfc" id="L501" title="All 4 branches covered.">        if (!disable &amp;&amp; !&quot;ENABLED&quot;.equals(status)) {</span>
+<span class="fc" id="L502">            throw new IllegalArgumentException(</span>
+                    &quot;Unknown account status: &quot; + status + &quot; (expected DISABLED or ENABLED)&quot;);
+        }
+<span class="fc" id="L505">        User user = getById(userId);</span>
+<span class="fc" id="L506">        String username = user.getSubject();</span>
+        UserDetails stored;
+        try {
+<span class="fc" id="L509">            stored = userDetailsManager.loadUserByUsername(username);</span>
+<span class="fc" id="L510">        } catch (UsernameNotFoundException ex) {</span>
+<span class="fc" id="L511">            throw new ResourceNotFoundException(</span>
+                    &quot;No authentication account for user: &quot; + userId + &quot; (subject: &quot; + username + &quot;)&quot;);
+<span class="fc" id="L513">        }</span>
+
+<span class="pc bpc" id="L515" title="1 of 6 branches missed.">        if (disable &amp;&amp; stored.isEnabled() &amp;&amp; hasAdminAuthority(stored)) {</span>
+            // The lock is taken BEFORE the guard's decision (see
+            // LOCK_ACTIVE_ADMINS) — and the advisory invariant lock first
+            // (LOCK_ACTIVE_ADMIN_INVARIANT): the counted rows stay locked
+            // through the flip, and the decision itself is serialized against
+            // every other admin removal, so concurrent disables queue and the
+            // waiter re-counts the committed truth instead of racing it.
+<span class="fc" id="L522">            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);</span>
+<span class="fc" id="L523">            List&lt;String&gt; activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);</span>
+<span class="fc bfc" id="L524" title="All 2 branches covered.">            if (activeAdmins.size() &lt;= 1) {</span>
+<span class="fc" id="L525">                throw new ConflictException(&quot;Cannot disable the last active ADMIN account&quot;);</span>
+            }
+        }
+
+<span class="fc" id="L529">        boolean wasEnabled = stored.isEnabled();</span>
+        // The builder's disabled(...) flag drives auth_users.enabled on the manager's
+        // updateUser SQL; password and authorities are replayed verbatim so only the
+        // flag flips. The remaining account flags are preserved from the loaded row.
+<span class="fc" id="L533">        userDetailsManager.updateUser(org.springframework.security.core.userdetails.User</span>
+<span class="fc" id="L534">                .withUsername(username)</span>
+<span class="fc" id="L535">                .password(stored.getPassword())</span>
+<span class="fc" id="L536">                .authorities(stored.getAuthorities())</span>
+<span class="pc bpc" id="L537" title="1 of 2 branches missed.">                .accountExpired(!stored.isAccountNonExpired())</span>
+<span class="pc bpc" id="L538" title="1 of 2 branches missed.">                .accountLocked(!stored.isAccountNonLocked())</span>
+<span class="pc bpc" id="L539" title="1 of 2 branches missed.">                .credentialsExpired(!stored.isCredentialsNonExpired())</span>
+<span class="fc" id="L540">                .disabled(disable)</span>
+<span class="fc" id="L541">                .build());</span>
+
+<span class="fc bfc" id="L543" title="All 2 branches covered.">        if (disable) {</span>
+<span class="fc" id="L544">            jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, username);</span>
+        }
+
+        // R8 (comprehensive-review-ar fix plan §4, Wave 1): the surviving-session
+        // gap. Removing the authorization rows kills the refresh grant, but the
+        // live form-login session keeps authenticating and can mint fresh
+        // authorization codes for the disabled account. The domain fact is
+        // published inside this transaction (the Modulith house pattern —
+        // CacheInvalidationRequested/UserRoleChanged precedents) so the
+        // publication row commits atomically with the flip and the
+        // AccountStatusSessionInvalidator consumer runs AFTER_COMMIT with the
+        // framework's resubmission on failure. Both directions publish: the
+        // fact stays complete; the security consumer acts on disable only.
+<span class="fc bfc" id="L557" title="All 2 branches covered.">        eventPublisher.publishEvent(new AccountStatusChanged(userId, username, !disable));</span>
+
+<span class="fc" id="L559">        log.info(&quot;Account status audit: userId={}, username={}, status: {} -&gt; {}, actor={}, reason='{}'&quot;,</span>
+<span class="fc bfc" id="L560" title="All 2 branches covered.">                userId, username, wasEnabled ? &quot;ENABLED&quot; : &quot;DISABLED&quot;,</span>
+<span class="fc bfc" id="L561" title="All 2 branches covered.">                disable ? &quot;DISABLED&quot; : &quot;ENABLED&quot;, actor, reason);</span>
+<span class="fc" id="L562">    }</span>
+
+    private static boolean hasAdminAuthority(UserDetails details) {
+<span class="fc" id="L565">        return details.getAuthorities().stream()</span>
+<span class="fc" id="L566">                .anyMatch(a -&gt; &quot;ROLE_ADMIN&quot;.equals(a.getAuthority()));</span>
+    }
+
+    /**
+     * I7 Phase 1 (account-pseudonymization-plan §5-أ — the plan adopted by
+     * PR #276): account pseudonymization — the one-transaction operation that
+     * erases the login identity and replaces the direct identifiers, then
+     * lets the existing channels finish the job (cache eviction after the
+     * commit, tokens by their TTL). Official basis: GDPR Art. 4(5) (the
+     * pseudonymisation definition — replacement + separately-kept additional
+     * information), Art. 17(1)(a) (erasure of direct identifiers), EDPB
+     * 01/2025 §3 (the controller's three actions: transform / keep the secret
+     * separately / restrict access — the key is env-only, secrets-policy §1).
+     *
+     * &lt;p&gt;&lt;b&gt;Sequence (§5-أ, one transaction, strict order):&lt;/b&gt;&lt;/p&gt;
+     * &lt;ol&gt;
+     *   &lt;li&gt;Last-active-ADMIN guard — the counting constraint reused verbatim
+     *       from L23 (the row-locking rationale documented on
+     *       {@link #LOCK_ACTIVE_ADMINS} applies unchanged: two concurrent
+     *       attempts must not both pass a count of 2).&lt;/li&gt;
+     *   &lt;li&gt;Idempotence — a row carrying {@code pseudonymized_at} is a
+     *       documented no-op: re-running the operation must never collide
+     *       with the {@code unique} constraint on {@code users.subject}.&lt;/li&gt;
+     *   &lt;li&gt;The transformation (b-2(b)): {@code subject} becomes the derived
+     *       replacement, {@code email}/{@code display_name} become NULL.
+     *       Read surfaces render the neutral label at the DTO level only.&lt;/li&gt;
+     *   &lt;li&gt;The status column stamps {@code pseudonymized_at} (V46).&lt;/li&gt;
+     *   &lt;li&gt;The login identity (P3) dies through the framework's own
+     *       {@link UserDetailsManager#deleteUser(String)} — the official
+     *       JdbcUserDetailsManager order (verified against the 7.1.1 bytecode)
+     *       deletes {@code auth_authorities} first, then the
+     *       {@code auth_users} row: exactly the FK-safe order of V13.&lt;/li&gt;
+     *   &lt;li&gt;The issued authorizations (P4) are removed immediately — no
+     *       &quot;undue delay&quot; (Art. 17(1)): the refresh grant dies with its
+     *       {@code oauth2_authorization} rows; already-minted access JWTs are
+     *       self-contained and die by their 900s TTL (the same documented L23
+     *       basis). The periodic cleanup keeps sweeping the rest.&lt;/li&gt;
+     *   &lt;li&gt;The {@code users}/{@code userSubjects} caches are invalidated
+     *       through the standing AFTER_COMMIT channel
+     *       ({@code CacheInvalidationRequested} → {@code CacheInvalidationRelay})
+     *       — the I5-guarded mechanism, not a new one.&lt;/li&gt;
+     * &lt;/ol&gt;
+     *
+     * &lt;p&gt;&lt;b&gt;What this deliberately never touches (§5-أ closing + §4):&lt;/b&gt; the
+     * UUID primary key and every referencing row (P9–P16) stay — reference
+     * integrity, the accounting source of truth, and the counterparties'
+     * rights (Art. 17(3)(b), Art. 20(4)) keep the records alive in
+     * pseudonymized form. The raw subject strings remaining in the audit
+     * columns ({@code created_by}/{@code updated_by}), the Envers history and
+     * the free texts are the declared residuals of gate b-4/b-3 — declared,
+     * not claimed erased (EDPB §131 residual-risk scope, plan §5-أ closing).
+     *
+     * &lt;p&gt;&lt;b&gt;The audit record (§5-أ step 9, CodeRabbit round 1 adopted):&lt;/b&gt; a
+     * structured log line — actor, target (userId), replacement subject,
+     * reason — the payments module's record convention. The raw old→new
+     * mapping is deliberately NOT logged (CWE-532: the log line would
+     * re-store the direct identifier in yet another store outside the
+     * pseudonymized domain); the mapping remains recoverable exactly where
+     * the plan declares it — the Envers revision history (P6, gate b-4's
+     * windowed residual). The {@code audit_log} table stays rejected on the
+     * standing L23 evidence.
+     *
+     * @throws ServiceUnavailableException the secret channel is unbound —
+     *         the capability is OFF (503 SU-001), never a silent fallback
+     * @throws ConflictException            the target is the last active ADMIN
+     * @throws ResourceNotFoundException    no live authentication account for
+     *         the projection row (the L23 defensive shape)
+     */
+    @Observed(name = &quot;user.pseudonymize&quot;)
+    @Override
+    public void pseudonymizeAccount(UUID userId, String reason, String actor) {
+        // The write path reads the source of truth directly — NOT the
+        // @Cacheable getById: a cache hit returns a JDK-deserialized DETACHED
+        // copy, and applyPseudonymization on it would be invisible to dirty
+        // checking (the transformation silently lost while the transaction
+        // commits green). The read cache stays exactly where it belongs —
+        // on the readers; the AFTER_COMMIT invalidation clears their copies.
+<span class="fc" id="L643">        User user = userRepository.findById(userId)</span>
+<span class="pc" id="L644">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + userId));</span>
+
+        // Step 2 — idempotence: a pseudonymized row is a documented no-op.
+<span class="fc bfc" id="L647" title="All 2 branches covered.">        if (user.getPseudonymizedAt() != null) {</span>
+<span class="fc" id="L648">            log.info(&quot;Account pseudonymization idempotent no-op: userId={}, actor={}, reason='{}'&quot;,</span>
+                    userId, actor, reason);
+<span class="fc" id="L650">            return;</span>
+        }
+
+<span class="fc" id="L653">        String originalSubject = user.getSubject();</span>
+        UserDetails stored;
+        try {
+<span class="fc" id="L656">            stored = userDetailsManager.loadUserByUsername(originalSubject);</span>
+<span class="fc" id="L657">        } catch (UsernameNotFoundException ex) {</span>
+<span class="fc" id="L658">            throw new ResourceNotFoundException(</span>
+                    &quot;No authentication account for user: &quot; + userId
+                            + &quot; (subject: &quot; + originalSubject + &quot;)&quot;);
+<span class="fc" id="L661">        }</span>
+
+        // Step 1 — the last-active-ADMIN counting constraint (L23 verbatim;
+        // the lock rationale on LOCK_ACTIVE_ADMINS applies unchanged, and the
+        // advisory invariant lock serializes the decision against every other
+        // admin removal — see LOCK_ACTIVE_ADMIN_INVARIANT).
+<span class="pc bpc" id="L667" title="1 of 4 branches missed.">        if (stored.isEnabled() &amp;&amp; hasAdminAuthority(stored)) {</span>
+<span class="fc" id="L668">            jdbcTemplate.execute(LOCK_ACTIVE_ADMIN_INVARIANT);</span>
+<span class="fc" id="L669">            List&lt;String&gt; activeAdmins = jdbcTemplate.queryForList(LOCK_ACTIVE_ADMINS, String.class);</span>
+<span class="pc bpc" id="L670" title="1 of 2 branches missed.">            if (activeAdmins.size() &lt;= 1) {</span>
+<span class="fc" id="L671">                throw new ConflictException(&quot;Cannot pseudonymize the last active ADMIN account&quot;);</span>
+            }
+        }
+
+        // Step 3 + 4 — the derived replacement (b-2(b)), then the domain
+        // transform: subject := replacement, email/displayName := NULL,
+        // pseudonymized_at := now (V46 column).
+<span class="fc" id="L678">        String replacementSubject = subjectPseudonymizer.derive(originalSubject);</span>
+<span class="fc" id="L679">        user.applyPseudonymization(replacementSubject);</span>
+
+        // Step 5 — the login identity dies through the framework manager: the
+        // official JdbcUserDetailsManager.deleteUser order (7.1.1 bytecode)
+        // is auth_authorities first, then auth_users — the FK-safe order.
+<span class="fc" id="L684">        userDetailsManager.deleteUser(originalSubject);</span>
+
+        // Step 6 — issued authorizations die immediately (no 7-day wait).
+<span class="fc" id="L687">        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, originalSubject);</span>
+
+        // Step 7 — the standing AFTER_COMMIT cache channel (I5-guarded).
+<span class="fc" id="L690">        eventPublisher.publishEvent(new CacheInvalidationRequested(USER_CACHE_NAMES));</span>
+
+        // Step 9 — the structured audit line (payments convention). The raw
+        // old subject is deliberately absent (CWE-532, CodeRabbit round 1):
+        // the old→new mapping lives in the Envers history — the declared b-4
+        // residual — not duplicated into log storage.
+<span class="fc" id="L696">        log.info(&quot;Account pseudonymization audit: userId={}, subject -&gt; {}, &quot;</span>
+                        + &quot;email -&gt; null, displayName -&gt; null, actor={}, reason='{}'&quot;,
+                userId, replacementSubject, actor, reason);
+<span class="fc" id="L699">    }</span>
+
+    /**
+     * I7 Phase 3 (gate b-3 — the free-text purge): the module surface the
+     * admin API calls. Thin delegation to {@link AuthoredContentPurgeService}
+     * — the orchestration (guard + the per-module purge ports + the audit
+     * line) lives there; this method exists so the cross-module surface
+     * stays the single named interface ({@code IdentitySpi}, the Modulith
+     * discipline the {@code AdminController} already consumes).
+     *
+     * &lt;p&gt;Deliberately suspends the class-level transaction
+     * ({@code NOT_SUPPORTED}): the purge runs one transaction per module
+     * adapter (the plan's §2 b-3 gradualism shape) — letting this level
+     * open a transaction would make every adapter's {@code REQUIRED}
+     * join it and rebuild the single heavy transaction the plan keeps the
+     * purge out of.
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public int purgeAuthoredContent(UUID userId, String reason, String actor) {
+<span class="nc" id="L719">        return authoredContentPurgeService.purge(userId, reason, actor);</span>
+    }
+
+    /**
+     * I7 Phase 3 (gate b-4 — the audit history purge): the module surface
+     * the admin API calls. Thin delegation to
+     * {@link AuditHistoryPurgeService} — the orchestration (the 409 guard,
+     * the subject-closure recovery from the mirror history, the column
+     * scrub, the wholesale mirror deletion, the audit line) lives there.
+     *
+     * &lt;p&gt;Deliberately suspends the class-level transaction
+     * ({@code NOT_SUPPORTED}) — the plan's b-4 letter: &quot;عملية ثقيلة
+     * تُشغَّل خارج المعاملة&quot; (a heavy operation run OUTSIDE the
+     * transaction). Letting this level open one would wrap every
+     * autocommitted scrub statement and the deletion into a single giant
+     * transaction — the exact shape the plan keeps the purge out of (the
+     * gradation: a partial failure resumes on re-run).
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor) {
+<span class="nc" id="L740">        return auditHistoryPurgeService.purge(userId, reason, actor);</span>
+    }
+
+    private UserSummary toUserSummary(User user) {
+<span class="fc bfc" id="L744" title="All 2 branches covered.">        boolean pseudonymized = user.getPseudonymizedAt() != null;</span>
+<span class="fc" id="L745">        return new UserSummary(</span>
+<span class="fc" id="L746">                user.getId(),</span>
+<span class="fc" id="L747">                user.getEmail(),</span>
+<span class="fc bfc" id="L748" title="All 2 branches covered.">                pseudonymized ? UserService.FORMER_MEMBER_LABEL : user.getDisplayName(),</span>
+<span class="fc" id="L749">                user.getRole().name(),</span>
+<span class="fc" id="L750">                user.getCreatedAt(),</span>
+<span class="fc" id="L751">                user.getUpdatedAt(),</span>
+<span class="fc" id="L752">                user.getPseudonymizedAt()</span>
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

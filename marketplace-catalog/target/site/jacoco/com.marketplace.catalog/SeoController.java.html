@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SeoController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">SeoController.java</span></div><h1>SeoController.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.BadRequestException;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * L39 (realestate systems plan §5 — SEO and structured data): the two
+ * crawler surfaces, at the root paths the standards themselves fix —
+ * robots.txt &quot;MUST be located … in the top-level path&quot; (RFC 9309) and
+ * the sitemap is {@code /sitemap.xml} by universal convention
+ * (sitemaps.org). Both are public GETs on the resource-server chain
+ * with precise {@code permitAll} lines (the L34/L36 precedent — the
+ * SecurityConfig matcher carries the two root paths alongside the API
+ * prefixes, so they never fall to the form-login default chain).
+ *
+ * &lt;p&gt;&lt;b&gt;Ownership (the plan's boundary):&lt;/b&gt; the backend serves the
+ * DATA — the sitemap enumerates the clean ACTIVE set and robots.txt is
+ * the configured policy; the HTML pages they describe belong to the
+ * public site origin (the client-hosting plan's frontend), which is
+ * why every URL is built from {@code marketplace.catalog.seo}
+ * configuration, never from this API's own origin.
+ *
+ * &lt;p&gt;&lt;b&gt;Rate limiting (the plan's criterion 4):&lt;/b&gt; the sitemap rides
+ * the {@code seo} named limiter (fail fast, 429 RL-001 — the
+ * geoSuggest model: a crawler's burst must not eat the shared catalog
+ * read budget). robots.txt is a pure configuration emission with no
+ * data path — no limiter (crawlers refetch it by design before every
+ * session; throttling it would break the protocol's own etiquette).
+ */
+@RestController
+public class SeoController {
+
+    private final SitemapService sitemapService;
+    private final CatalogProperties catalogProperties;
+
+    public SeoController(SitemapService sitemapService,
+<span class="nc" id="L46">                         CatalogProperties catalogProperties) {</span>
+<span class="nc" id="L47">        this.sitemapService = sitemapService;</span>
+<span class="nc" id="L48">        this.catalogProperties = catalogProperties;</span>
+<span class="nc" id="L49">    }</span>
+
+    /**
+     * The sitemap: the root returns the single urlset when the clean
+     * ACTIVE set fits one page (the sitemaps.org 50,000-URL cap), or the
+     * sitemap index when it does not; {@code ?page=N} returns that
+     * page's urlset.
+     */
+    @GetMapping(value = &quot;/sitemap.xml&quot;, produces = MediaType.APPLICATION_XML_VALUE)
+    @RateLimiter(name = &quot;seo&quot;)
+    @Operation(summary = &quot;The listing sitemap (sitemaps.org 0.90)&quot;,
+            description = &quot;L39: built on demand from the clean ACTIVE set (ACTIVE &quot;
+                    + &quot;status and an un-passed expiry window) — one &lt;url&gt; per listing &quot;
+                    + &quot;page with its lastmod from the updated_at audit column, &quot;
+                    + &quot;paginated by the standard's 50,000-URL cap with a sitemap &quot;
+                    + &quot;index at the root when the set spans more than one page. &quot;
+                    + &quot;The &lt;loc&gt; URLs describe the PUBLIC SITE origin bound in &quot;
+                    + &quot;marketplace.catalog.seo — this API's own origin never appears. &quot;
+                    + &quot;503 SU-001 when no public origin is bound (capability OFF, &quot;
+                    + &quot;not broken); 404 when there is nothing to enumerate (no valid &quot;
+                    + &quot;empty sitemap document exists per the standard's XSDs).&quot;)
+    public ResponseEntity&lt;String&gt; sitemap(
+            @Parameter(description = &quot;The page sitemap to fetch (1-based) — the root &quot;
+                    + &quot;serves the index or the single urlset&quot;)
+            @RequestParam(required = false) Integer page) {
+<span class="nc bnc" id="L74" title="All 4 branches missed.">        if (page != null &amp;&amp; page &lt; 1) {</span>
+<span class="nc" id="L75">            throw new BadRequestException(&quot;Sitemap page numbers are 1-based&quot;);</span>
+        }
+<span class="nc" id="L77">        SitemapService.SeoDocument document = sitemapService.sitemap(page);</span>
+<span class="nc" id="L78">        return ResponseEntity.ok()</span>
+<span class="nc" id="L79">                .contentType(document.mediaType())</span>
+<span class="nc" id="L80">                .body(document.body());</span>
+    }
+
+    /**
+     * robots.txt (RFC 9309): the configured crawl policy — the
+     * {@code User-agent: *} group with the configured Disallow paths
+     * (an empty list emits the canonical allow-all
+     * {@code Disallow:} line), plus the sitemaps.org
+     * {@code Sitemap:} pointer when the public origin is bound.
+     */
+    @GetMapping(value = &quot;/robots.txt&quot;, produces = &quot;text/plain;charset=UTF-8&quot;)
+    @Operation(summary = &quot;The crawler policy (RFC 9309)&quot;,
+            description = &quot;L39: plain UTF-8 text/plain at the top-level path the &quot;
+                    + &quot;standard fixes. The Disallow lines come from &quot;
+                    + &quot;marketplace.catalog.seo.robots-disallow-paths (each must &quot;
+                    + &quot;start with /; empty = allow all — the canonical empty &quot;
+                    + &quot;Disallow), and the Sitemap line points at the bound public &quot;
+                    + &quot;origin's /sitemap.xml. The /robots.txt URI itself is &quot;
+                    + &quot;implicitly allowed (RFC 9309).&quot;)
+    public ResponseEntity&lt;String&gt; robots() {
+        // RFC 9309: the file MUST be UTF-8 — the explicit content type keeps
+        // the mapping's charset (CodeRabbit round 1: ResponseEntity's plain
+        // TEXT_PLAIN would hand StringHttpMessageConverter its ISO-8859-1
+        // default — the produces charset is only honored when the response
+        // entity does not override it).
+<span class="nc" id="L105">        return ResponseEntity.ok()</span>
+<span class="nc" id="L106">                .contentType(new MediaType(MediaType.TEXT_PLAIN, java.nio.charset.StandardCharsets.UTF_8))</span>
+<span class="nc" id="L107">                .body(robotsBody());</span>
+    }
+
+    /**
+     * The RFC 9309 body: one {@code User-agent: *} group, the configured
+     * {@code Disallow} lines (or the explicit empty one — the grammar's
+     * {@code empty-pattern}, the universally parsed allow-all form), and
+     * the {@code Sitemap:} extension line (sitemaps.org — &quot;Tell the
+     * crawlers about your sitemap in robots.txt&quot;) only when a public
+     * origin is bound.
+     */
+    private String robotsBody() {
+<span class="nc" id="L119">        CatalogProperties.Seo seo = catalogProperties.seo();</span>
+<span class="nc" id="L120">        StringBuilder body = new StringBuilder(128);</span>
+<span class="nc" id="L121">        body.append(&quot;User-agent: *\n&quot;);</span>
+<span class="nc" id="L122">        List&lt;String&gt; disallowPaths = seo.conformingDisallowPaths();</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">        if (disallowPaths.isEmpty()) {</span>
+<span class="nc" id="L124">            body.append(&quot;Disallow:\n&quot;);</span>
+        } else {
+<span class="nc" id="L126">            disallowPaths.forEach(path -&gt; body.append(&quot;Disallow: &quot;).append(path).append('\n'));</span>
+        }
+<span class="nc" id="L128">        seo.sitemapUrl().ifPresent(loc -&gt; body.append(&quot;Sitemap: &quot;).append(loc).append('\n'));</span>
+<span class="nc" id="L129">        return body.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

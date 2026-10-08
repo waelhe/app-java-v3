@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SitemapService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">SitemapService.java</span></div><h1>SitemapService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.util.List;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+
+/**
+ * L39 (realestate systems plan §5 — SEO and structured data): the
+ * sitemap.xml builder — on demand, from the clean ACTIVE set, as plain
+ * XML with zero dependencies (the plan's &quot;XML بسيط بلا اعتماديات —
+ * جافادوك يوثق المعيار&quot;).
+ *
+ * &lt;p&gt;&lt;b&gt;The standard (sitemaps.org 0.90, measured and cached):&lt;/b&gt; each
+ * sitemap file holds &quot;no more than 50,000 URLs and must be no larger
+ * than 50MB&quot;; larger sites use a sitemap index whose {@code &lt;loc&gt;}
+ * children point at the page sitemaps; {@code &lt;lastmod&gt;} is the W3C
+ * Datetime form of the linked page's last modification (&quot;the date the
+ * linked page was last modified, not when the sitemap is generated&quot;);
+ * {@code &lt;loc&gt;} is a full URI under 2,048 characters. The page size is
+ * therefore the standard's own cap — a fixed constant, not a knob that
+ * a misconfiguration could push past the cap — and the pagination it
+ * provides is the response-size bound (the plan's criterion 4).
+ *
+ * &lt;p&gt;&lt;b&gt;The clean ACTIVE set (the L33 seam):&lt;/b&gt; {@code status = ACTIVE}
+ * AND {@code expires_at} strictly in the future (or absent — the
+ * pre-L33 rows' byte-identical contract). This is deliberately stricter
+ * than the expiry job's own match window: between the job's half-hour
+ * runs a listing whose window has already passed is still ACTIVE in
+ * status, and the sitemap must never advertise a page that is about to
+ * answer 404 (&quot;الانتهاء يحدد مجموعة ACTIVE النظيفة&quot;). Soft-deleted rows
+ * are excluded structurally — {@code @SoftDelete} appends the filter to
+ * every derived and declared query.
+ *
+ * &lt;p&gt;&lt;b&gt;Three honest states (never a fabricated URL):&lt;/b&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;Capability OFF (no public site origin bound, or a listing path
+ *       that cannot vary per listing) → 503 SU-001 through
+ *       {@link ServiceUnavailableException} — the same gate family as the
+ *       PSP/MAIL/pseudonymization capabilities. The sitemap describes
+ *       pages of the PUBLIC SITE origin, which is a deployment fact the
+ *       backend cannot invent.&lt;/li&gt;
+ *   &lt;li&gt;Nothing to enumerate (empty catalog or an out-of-range page) →
+ *       404. The sitemaps.org XSDs require at least one {@code &lt;url&gt;} in
+ *       a {@code &lt;urlset&gt;} and one {@code &lt;sitemap&gt;} in a
+ *       {@code &lt;sitemapindex&gt;}: there is no valid empty sitemap document,
+ *       so an honest 404 beats an invalid 200.&lt;/li&gt;
+ *   &lt;li&gt;One page → the {@code &lt;urlset&gt;} directly; more than one page →
+ *       a {@code &lt;sitemapindex&gt;} at the root pointing at
+ *       {@code {base}/sitemap.xml?page=N} children.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Deterministic pagination (the L32 total-order rule):&lt;/b&gt; the
+ * enumeration sorts by {@code id} ascending — offset pagination over a
+ * total order never duplicates or omits a listing between crawl visits.
+ *
+ * &lt;p&gt;&lt;b&gt;The served media type (a measured choice):&lt;/b&gt;
+ * {@code application/xml} without a charset parameter, exactly as
+ * RFC 7303 prescribes for XML media types (&quot;the charset parameter
+ * SHOULD NOT be used… the encoding declaration in the XML prolog
+ * governs&quot;). The prolog declares UTF-8 and the document is
+ * ASCII-by-construction — {@code &lt;loc&gt;} URIs (RFC 3986: URIs are
+ * ASCII/percent-encoded) and ISO-8601 {@code &lt;lastmod&gt;} timestamps —
+ * and ASCII is a byte-identical subset of UTF-8, so whatever charset
+ * the String converter applies, the bytes satisfy the prolog. The
+ * robots.txt sibling is the deliberate contrast: RFC 9309 declares the
+ * file UTF-8 with no prolog to govern, so THAT content type carries
+ * the charset explicitly (see {@code SeoController}).
+ */
+@Service
+public class SitemapService {
+
+    /** sitemaps.org 0.90: &quot;each Sitemap file … no more than 50,000 URLs&quot;. */
+    public static final int SITEMAP_PAGE_SIZE = 50_000;
+
+    /**
+     * sitemaps.org 0.90: &quot;Sitemap index files may not list more than
+     * 50,000 Sitemaps&quot; — the single-index capacity, and with it the
+     * layer's designed scale ceiling: 50,000 pages × 50,000 URLs =
+     * 2.5 billion clean-ACTIVE listings. Beyond it the capability
+     * answers 503 (CodeRabbit round 2 adoption: never an invalid
+     * document, never silent truncation) — the multi-level index
+     * redesign (one Sitemap: line per root index in robots.txt, the
+     * standard's own &quot;You can have more than one Sitemap index file&quot;)
+     * is the documented escalation path, deliberately not built for a
+     * threshold five orders of magnitude beyond this system's envelope
+     * (the D-E6 closure-point pattern: qudsya's catalog by multiples,
+     * revisited at full-city scale).
+     */
+    public static final int MAX_INDEX_ENTRIES = 50_000;
+
+    /** The W3C Datetime form of an {@link java.time.Instant} (xsd:dateTime). */
+<span class="fc" id="L103">    private static final DateTimeFormatter LASTMOD = DateTimeFormatter.ISO_INSTANT;</span>
+
+    private static final String URLSET_OPEN = &quot;&lt;?xml version=\&quot;1.0\&quot; encoding=\&quot;UTF-8\&quot;?&gt;&quot;
+            + &quot;&lt;urlset xmlns=\&quot;http://www.sitemaps.org/schemas/sitemap/0.9\&quot;&gt;&quot;;
+    private static final String SITEMAPINDEX_OPEN = &quot;&lt;?xml version=\&quot;1.0\&quot; encoding=\&quot;UTF-8\&quot;?&gt;&quot;
+            + &quot;&lt;sitemapindex xmlns=\&quot;http://www.sitemaps.org/schemas/sitemap/0.9\&quot;&gt;&quot;;
+
+    private final ProviderListingRepository listingRepository;
+    private final CategoryRepository categoryRepository;
+    private final Clock clock;
+    private final CatalogProperties catalogProperties;
+
+    public SitemapService(ProviderListingRepository listingRepository,
+                          CategoryRepository categoryRepository,
+                          Clock clock,
+<span class="fc" id="L118">                          CatalogProperties catalogProperties) {</span>
+<span class="fc" id="L119">        this.listingRepository = listingRepository;</span>
+<span class="fc" id="L120">        this.categoryRepository = categoryRepository;</span>
+<span class="fc" id="L121">        this.clock = clock;</span>
+<span class="fc" id="L122">        this.catalogProperties = catalogProperties;</span>
+<span class="fc" id="L123">    }</span>
+
+    /**
+     * The sitemap document for a request: {@code page == null} is the
+     * root (the urlset when it fits one page, the sitemap index when it
+     * does not); a positive page number is that page's urlset.
+     *
+     * &lt;p&gt;The root decision rides a COUNT, never a row fetch (CodeRabbit
+     * round 1: a multi-page root must not materialize a 50,000-row page
+     * only to read {@code totalPages} and discard it) — rows are fetched
+     * only when the response is a urlset.
+     */
+    @Transactional(readOnly = true)
+    public SeoDocument sitemap(Integer page) {
+<span class="fc" id="L137">        CatalogProperties.Seo seo = catalogProperties.seo();</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (seo.capabilityOff()) {</span>
+<span class="fc" id="L139">            throw new ServiceUnavailableException(</span>
+                    &quot;The sitemap capability is OFF: no public site origin is bound &quot;
+                            + &quot;(marketplace.catalog.seo.public-site-base-url) or the listing &quot;
+                            + &quot;path template has no {id} placeholder&quot;);
+        }
+        // One &quot;as of&quot; instant per request (CodeRabbit's final advisory,
+        // adopted): the root's count and the single-page fetch share it, so
+        // a listing cannot expire BETWEEN the two queries and turn a
+        // positive count into an empty fetch (a 404 with a lying cause).
+        // A multi-page root returns the index before any fetch; child pages
+        // take their own instants by design (each request stands alone).
+<span class="fc" id="L150">        Instant now = clock.instant();</span>
+        // W2 (G23 — the public category pages): the registry rows the
+        // categories block enumerates (the full live set — a category's
+        // browse page exists and answers regardless of how many listings
+        // currently carry its name; the sitemap advertises PAGES, not
+        // inventory). Soft-deleted rows are structurally filtered by
+        // @SoftDelete. The count rides the root's own capacity math.
+        //
+        // The category block carries its OWN capability gate (CodeRabbit
+        // W2 round, adopted from the root): the sitemap's entry gate checks
+        // the LISTING path, so an operator binding a site origin but a
+        // category path without {code} would reach categoryUrl's empty
+        // Optional and a 500. The honest degradation: the category pages
+        // drop out of the sitemap (the listing-only document this layer
+        // served before W2, byte-identical) — the capability that is OFF
+        // is the category pages, not the sitemap.
+<span class="fc bfc" id="L166" title="All 2 branches covered.">        List&lt;Category&gt; categories = seo.categoryPagesOff()</span>
+<span class="fc" id="L167">                ? List.of()</span>
+<span class="fc" id="L168">                : categoryRepository.findAll(org.springframework.data.domain.Sort.by(</span>
+                        org.springframework.data.domain.Sort.Direction.ASC, &quot;code&quot;));
+<span class="fc" id="L170">        long categoryCount = categories.size();</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">        if (categoryCount &gt; SITEMAP_PAGE_SIZE) {</span>
+            // Beyond the designed scale of the registry vocabulary — the
+            // same family as the index-capacity gate (never an invalid
+            // document, never silent truncation).
+<span class="nc" id="L175">            throw new ServiceUnavailableException(</span>
+                    &quot;The category registry exceeds one sitemap page (50,000) — beyond the &quot;
+                            + &quot;layer's designed scale&quot;);
+        }
+<span class="fc bfc" id="L179" title="All 2 branches covered.">        if (page == null) {</span>
+<span class="fc" id="L180">            long totalListings = listingRepository.countSitemapEntries(ListingStatus.ACTIVE, now);</span>
+<span class="fc" id="L181">            long total = totalListings + categoryCount;</span>
+<span class="fc bfc" id="L182" title="All 2 branches covered.">            if (total == 0) {</span>
+                // No valid empty sitemap exists per the XSDs — the honest
+                // answer for an empty catalog is 404.
+<span class="fc" id="L185">                throw new ResourceNotFoundException(&quot;Sitemap&quot;, null);</span>
+            }
+<span class="fc" id="L187">            long pageCount = (total + SITEMAP_PAGE_SIZE - 1) / SITEMAP_PAGE_SIZE;</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">            if (pageCount &gt; MAX_INDEX_ENTRIES) {</span>
+<span class="fc" id="L189">                throw new ServiceUnavailableException(</span>
+                        &quot;The clean ACTIVE set exceeds the single sitemap index capacity &quot;
+                                + &quot;(50,000 pages x 50,000 URLs = 2.5 billion listings) — beyond the &quot;
+                                + &quot;layer's designed scale; multi-level sitemap indexes are the &quot;
+                                + &quot;escalation path&quot;);
+            }
+<span class="fc bfc" id="L195" title="All 2 branches covered.">            if (pageCount &gt; 1) {</span>
+<span class="fc" id="L196">                return new SeoDocument(indexXml((int) pageCount), MediaType.APPLICATION_XML);</span>
+            }
+        }
+        // W2 (G23): the categories ride the FIRST served urlset — the root
+        // single page, or numbered page 1 — prepended before the listings
+        // in the registry's own stable order (code ascending, the URL key:
+        // deterministic between crawl visits, the L32 total-order rule).
+        // The first page's listing capacity shrinks by the category count
+        // (the 50,000 cap is per FILE, the standard's own line), and the
+        // later pages' offsets account for the shift — the pagination
+        // never duplicates or omits a listing.
+<span class="fc bfc" id="L207" title="All 4 branches covered.">        boolean firstPage = page == null || page == 1;</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        long offset = (page == null ? 0L : (long) page - 1) * SITEMAP_PAGE_SIZE - categoryCount;</span>
+<span class="fc" id="L209">        int limit = SITEMAP_PAGE_SIZE;</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (offset &lt; 0) {</span>
+<span class="fc" id="L211">            limit = SITEMAP_PAGE_SIZE + (int) offset; // the categories' own rows</span>
+<span class="fc" id="L212">            offset = 0;</span>
+        }
+        // Explicit offset/limit pagination (the shifted first page makes a
+        // derived page number meaningless — the exact pair is the honest
+        // shape; the id-ascending total order keeps offset pagination
+        // duplicate-free and omission-free between crawl visits).
+        //
+        // A zero listing limit (greptile W2 round, adopted): exactly
+        // 50,000 live categories fill the whole first page's capacity — the
+        // listing query would run with LIMIT 0 and answer nothing. The
+        // categories ARE the page; the query is skipped, not run empty.
+<span class="fc" id="L223">        Pageable pageable = new ShiftedPageable(offset, limit, Sort.by(Sort.Direction.ASC, &quot;id&quot;));</span>
+<span class="fc bfc" id="L224" title="All 2 branches covered.">        Page&lt;SitemapEntry&gt; entries = limit &gt; 0</span>
+<span class="fc" id="L225">                ? listingRepository.findSitemapEntries(ListingStatus.ACTIVE, now, pageable)</span>
+<span class="fc" id="L226">                : Page.empty(pageable);</span>
+<span class="fc bfc" id="L227" title="All 4 branches covered.">        if (entries.getContent().isEmpty() &amp;&amp; !firstPage) {</span>
+            // An out-of-range page has nothing to enumerate — 404. (The
+            // first page answered already — the root's count said so.)
+<span class="fc" id="L230">            throw new ResourceNotFoundException(&quot;Sitemap page&quot;, page);</span>
+        }
+<span class="pc bpc" id="L232" title="1 of 4 branches missed.">        if (entries.getContent().isEmpty() &amp;&amp; categories.isEmpty()) {</span>
+<span class="nc" id="L233">            throw new ResourceNotFoundException(&quot;Sitemap page&quot;, page);</span>
+        }
+<span class="fc bfc" id="L235" title="All 2 branches covered.">        return new SeoDocument(urlsetXml(entries, firstPage ? categories : List.of()),</span>
+                MediaType.APPLICATION_XML);
+    }
+
+    /**
+     * One urlset page: the category URLs (first page only, prepended in
+     * the registry's stable order) then a {@code &lt;url&gt;&lt;loc/&gt;&lt;lastmod/&gt;&lt;/url&gt;}
+     * per listing entry.
+     */
+    private String urlsetXml(Page&lt;SitemapEntry&gt; entries, List&lt;Category&gt; categories) {
+<span class="fc" id="L245">        StringBuilder xml = new StringBuilder(</span>
+<span class="fc" id="L246">                256 + entries.getNumberOfElements() * 160 + categories.size() * 160);</span>
+<span class="fc" id="L247">        xml.append(URLSET_OPEN);</span>
+<span class="fc bfc" id="L248" title="All 2 branches covered.">        for (Category category : categories) {</span>
+<span class="fc" id="L249">            String loc = catalogProperties.seo().categoryUrl(category.getCode()).orElseThrow(</span>
+<span class="nc" id="L250">                    () -&gt; new IllegalStateException(&quot;the capability gate already stood&quot;));</span>
+<span class="fc" id="L251">            xml.append(&quot;&lt;url&gt;&lt;loc&gt;&quot;).append(escape(loc))</span>
+<span class="fc" id="L252">                    .append(&quot;&lt;/loc&gt;&lt;lastmod&gt;&quot;)</span>
+<span class="fc" id="L253">                    .append(LASTMOD.format(category.getUpdatedAt()))</span>
+<span class="fc" id="L254">                    .append(&quot;&lt;/lastmod&gt;&lt;/url&gt;&quot;);</span>
+<span class="fc" id="L255">        }</span>
+<span class="fc bfc" id="L256" title="All 2 branches covered.">        for (SitemapEntry entry : entries) {</span>
+<span class="fc" id="L257">            String loc = catalogProperties.seo().listingUrl(entry.id()).orElseThrow();</span>
+<span class="fc" id="L258">            xml.append(&quot;&lt;url&gt;&lt;loc&gt;&quot;).append(escape(loc))</span>
+<span class="fc" id="L259">                    .append(&quot;&lt;/loc&gt;&lt;lastmod&gt;&quot;)</span>
+<span class="fc" id="L260">                    .append(LASTMOD.format(entry.updatedAt()))</span>
+<span class="fc" id="L261">                    .append(&quot;&lt;/lastmod&gt;&lt;/url&gt;&quot;);</span>
+<span class="fc" id="L262">        }</span>
+<span class="fc" id="L263">        return xml.append(&quot;&lt;/urlset&gt;&quot;).toString();</span>
+    }
+
+    /** The index: one child {@code &lt;loc&gt;} per page sitemap. */
+    private String indexXml(int totalPages) {
+<span class="fc" id="L268">        StringBuilder xml = new StringBuilder(128 + totalPages * 96);</span>
+<span class="fc" id="L269">        xml.append(SITEMAPINDEX_OPEN);</span>
+<span class="fc bfc" id="L270" title="All 2 branches covered.">        for (int page = 1; page &lt;= totalPages; page++) {</span>
+<span class="fc" id="L271">            String loc = catalogProperties.seo().sitemapIndexChildUrl(page).orElseThrow(</span>
+<span class="nc" id="L272">                    () -&gt; new IllegalStateException(&quot;the capability gate already stood&quot;));</span>
+<span class="fc" id="L273">            xml.append(&quot;&lt;sitemap&gt;&lt;loc&gt;&quot;).append(escape(loc))</span>
+<span class="fc" id="L274">                    .append(&quot;&lt;/loc&gt;&lt;/sitemap&gt;&quot;);</span>
+        }
+<span class="fc" id="L276">        return xml.append(&quot;&lt;/sitemapindex&gt;&quot;).toString();</span>
+    }
+
+    /**
+     * XML escaping for the URL text nodes — the inputs are
+     * configuration-sourced and UUID-bearing (no user text ever enters
+     * the sitemap), so this is defense in depth, not a data path.
+     */
+    private static String escape(String value) {
+<span class="fc" id="L285">        return value.replace(&quot;&amp;&quot;, &quot;&amp;amp;&quot;)</span>
+<span class="fc" id="L286">                .replace(&quot;&lt;&quot;, &quot;&amp;lt;&quot;)</span>
+<span class="fc" id="L287">                .replace(&quot;&gt;&quot;, &quot;&amp;gt;&quot;)</span>
+<span class="fc" id="L288">                .replace(&quot;\&quot;&quot;, &quot;&amp;quot;&quot;)</span>
+<span class="fc" id="L289">                .replace(&quot;'&quot;, &quot;&amp;apos;&quot;);</span>
+    }
+
+    /** The served document: the body plus its media type. */
+<span class="fc" id="L293">    public record SeoDocument(String body, MediaType mediaType) {</span>
+    }
+
+    /**
+     * W2 (G23): an exact offset/limit {@link Pageable} — the shifted
+     * first page (the categories' own rows eat into its 50,000-URL
+     * capacity) makes the page-number arithmetic of
+     * {@link PageRequest#of(int, int, Sort)} unable to express where page
+     * N's listings begin. Spring Data's repository execution reads
+     * {@link Pageable#getOffset()} for {@code setFirstResult} and
+     * {@link Pageable#getPageSize()} for {@code setMaxResults} — this
+     * record carries the exact pair the shift computed, over the same
+     * id-ascending total order (the L32 pagination rule holds: offset
+     * pagination over a total order never duplicates or omits).
+     */
+<span class="fc" id="L308">    private record ShiftedPageable(long offset, int limit, Sort sort) implements Pageable {</span>
+
+        @Override
+        public int getPageNumber() {
+            // Never the query's authority (getOffset is); an honest derived
+            // value for logging and contract checks only.
+<span class="pc bpc" id="L314" title="1 of 2 branches missed.">            return limit == 0 ? 0 : (int) (offset / limit);</span>
+        }
+
+        @Override
+        public int getPageSize() {
+<span class="fc" id="L319">            return limit;</span>
+        }
+
+        @Override
+        public long getOffset() {
+<span class="fc" id="L324">            return offset;</span>
+        }
+
+        @Override
+        public Sort getSort() {
+<span class="fc" id="L329">            return sort;</span>
+        }
+
+        @Override
+        public Pageable next() {
+<span class="nc" id="L334">            return new ShiftedPageable(offset + limit, limit, sort);</span>
+        }
+
+        @Override
+        public Pageable previousOrFirst() {
+<span class="nc bnc" id="L339" title="All 2 branches missed.">            return offset == 0 ? this : new ShiftedPageable(Math.max(0, offset - limit), limit, sort);</span>
+        }
+
+        @Override
+        public Pageable first() {
+<span class="nc" id="L344">            return new ShiftedPageable(0, limit, sort);</span>
+        }
+
+        @Override
+        public boolean hasPrevious() {
+<span class="nc bnc" id="L349" title="All 2 branches missed.">            return offset &gt; 0;</span>
+        }
+
+        @Override
+        public Pageable withPage(int page) {
+<span class="nc" id="L354">            return new ShiftedPageable((long) page * limit, limit, sort);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

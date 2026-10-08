@@ -3,7 +3,6 @@ package com.marketplace.catalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -100,7 +99,10 @@ public class AdClickCounter {
                 return Optional.of(campaignId); // no remote address — the same unavailability rule
             }
             if (markFirstClick(campaignId, fingerprint)) {
-                addClickWithInsertRaceRetry(campaignId, LocalDate.now(ZoneOffset.UTC));
+                // The +1 with the framework-managed insert-race retry:
+                // AdClicksDailyService's @Retry(INSERT_RACE_RETRY) owns the
+                // recovery now (G-RETRY-1 — no hand-coded catch here).
+                clicksService.addClick(campaignId, LocalDate.now(ZoneOffset.UTC));
             }
             return Optional.of(campaignId);
         } catch (DataAccessException countingFailure) {
@@ -132,18 +134,5 @@ public class AdClickCounter {
         Duration window = properties.ads().clickDedupWindow();
         Boolean first = redisTemplate.opsForValue().setIfAbsent(key, "1", window);
         return Boolean.TRUE.equals(first);
-    }
-
-    /**
-     * The +1 with the exactly-one retry the insert race needs —
-     * {@code AdClicksDailyService}'s javadoc for why the retry must be a
-     * NEW transaction and why one suffices by PostgreSQL semantics.
-     */
-    private void addClickWithInsertRaceRetry(UUID campaignId, LocalDate clickDate) {
-        try {
-            clicksService.addClick(campaignId, clickDate);
-        } catch (DataIntegrityViolationException lostInsertRace) {
-            clicksService.addClick(campaignId, clickDate);
-        }
     }
 }

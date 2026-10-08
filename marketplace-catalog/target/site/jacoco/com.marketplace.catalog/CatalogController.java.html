@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CatalogController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CatalogController.java</span></div><h1>CatalogController.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.IsoCurrencyCode;
+import com.marketplace.shared.api.ListingSummary;
+import com.marketplace.shared.api.MediaLookupPort;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.api.PropertyDetailsPort;
+import com.marketplace.shared.api.ProviderListingView;
+import com.marketplace.shared.api.SpringPagination;
+import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@RestController
+@RequestMapping(value = ApiConstants.CATALOG, version = &quot;1.0&quot;)
+public class CatalogController {
+
+    private final CatalogService catalogService;
+    private final CurrentUserProvider currentUserProvider;
+    private final ListingMapper listingMapper;
+    private final PropertyDetailsPort propertyDetailsPort;
+
+    // L38: the completeness photo count — a leaf port like the property
+    // embed port above it (the media adapter depends on nothing in this
+    // module, so the controller stays the cycle-free composition point).
+    private final MediaLookupPort mediaLookupPort;
+
+    // L39: the JSON-LD composition (the same leaf architecture — the
+    // geo tree port depends on nothing in this module; the cross-module
+    // reads ride the leaf, never the service layer).
+    private final ListingSeoService listingSeoService;
+
+    // L40: the view counter — the public read point's own analytics. The
+    // controller (not the service) is the hook because the plan counts
+    // &quot;من نقطة القراءة العامة للوحة&quot;: CatalogService.getActiveById is
+    // ALSO the lead-submission liveness gate (messaging's resolveLiveListing
+    // — a lead is not a view), and the IP the fingerprint needs is a
+    // web-layer fact the service layer never touches (the LeadsController
+    // seam).
+    private final ListingViewCounter listingViewCounter;
+
+    public CatalogController(CatalogService catalogService,
+                             CurrentUserProvider currentUserProvider,
+                             ListingMapper listingMapper,
+                             PropertyDetailsPort propertyDetailsPort,
+                             MediaLookupPort mediaLookupPort,
+                             ListingSeoService listingSeoService,
+<span class="fc" id="L64">                             ListingViewCounter listingViewCounter) {</span>
+<span class="fc" id="L65">        this.catalogService = catalogService;</span>
+<span class="fc" id="L66">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L67">        this.listingMapper = listingMapper;</span>
+<span class="fc" id="L68">        this.propertyDetailsPort = propertyDetailsPort;</span>
+<span class="fc" id="L69">        this.mediaLookupPort = mediaLookupPort;</span>
+<span class="fc" id="L70">        this.listingSeoService = listingSeoService;</span>
+<span class="fc" id="L71">        this.listingViewCounter = listingViewCounter;</span>
+<span class="fc" id="L72">    }</span>
+
+    @GetMapping
+    @RateLimiter(name = &quot;catalog&quot;)
+    @Operation(summary = &quot;Browse active listings&quot;, description = &quot;Paginated ACTIVE listings — the &quot;
+            + &quot;public browse surface (L29 mobile docs).&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;ListingSummary&gt;&gt; listActive(Pageable pageable) {
+<span class="fc" id="L79">        return ResponseEntity.ok(catalogService.listActive(SpringPagination.toPagedRequest(pageable)));</span>
+    }
+
+    /**
+     * S6 (comprehensive repair plan §10/2.3): the category registry's public
+     * read — the storefront's category picker, in display order. Reference
+     * data (the geo public-read pattern): the exact-literal path wins over
+     * the {@code /{id}} template below it, and the blanket public listings
+     * GET line in the security chain already covers this surface — no new
+     * security line. The registry's codes are the only values the listing
+     * write surfaces accept (the service's write gate).
+     */
+    @GetMapping(&quot;/categories&quot;)
+    @RateLimiter(name = &quot;catalog&quot;)
+    @Operation(summary = &quot;List the listing categories&quot;,
+            description = &quot;The category registry in display order — the vocabulary the listing &quot;
+                    + &quot;write surfaces accept (create/update reject unknown codes with 400).&quot;)
+    public ResponseEntity&lt;java.util.List&lt;CatalogService.CategoryView&gt;&gt; listCategories() {
+<span class="nc" id="L97">        return ResponseEntity.ok(catalogService.listCategories());</span>
+    }
+
+    @GetMapping(&quot;/category/{category}&quot;)
+    @RateLimiter(name = &quot;catalog&quot;)
+    @Operation(summary = &quot;Browse active listings by category&quot;,
+            description = &quot;Paginated ACTIVE listings filtered to one category.&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;ListingSummary&gt;&gt; listByCategory(
+            @PathVariable String category, Pageable pageable) {
+<span class="fc" id="L106">        return ResponseEntity.ok(catalogService.listByCategory(category, SpringPagination.toPagedRequest(pageable)));</span>
+    }
+
+    @GetMapping(&quot;/provider/{providerId}&quot;)
+    @Operation(summary = &quot;Browse one provider's active listings&quot;,
+            description = &quot;Paginated ACTIVE listings of a provider (public provider profile surface). &quot;
+                    + &quot;L31: each listing embeds its real-estate property block when present &quot;
+                    + &quot;(one batch association per page).&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;ListingResponse&gt;&gt; listByProvider(
+            @PathVariable UUID providerId, Pageable pageable) {
+<span class="fc" id="L116">        var page = catalogService.listByProvider(providerId, pageable).map(listingMapper::toResponse);</span>
+<span class="fc" id="L117">        Map&lt;UUID, PropertyDetailsPort.PropertyView&gt; properties =</span>
+<span class="fc" id="L118">                propertyDetailsPort.findByListingIds(</span>
+<span class="fc" id="L119">                        page.getContent().stream().map(ListingResponse::id).collect(Collectors.toSet()));</span>
+<span class="fc" id="L120">        return ResponseEntity.ok(PagedResponse.of(page.map(response -&gt;</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">                properties.containsKey(response.id())</span>
+<span class="fc" id="L122">                        ? response.withProperty(properties.get(response.id()))</span>
+<span class="fc" id="L123">                        : response)));</span>
+    }
+
+    @GetMapping(&quot;/{id}&quot;)
+    @RateLimiter(name = &quot;catalog&quot;)
+    @Operation(summary = &quot;Get one active listing&quot;, description = &quot;The public listing detail — &quot;
+            + &quot;INACTIVE/ARCHIVED listings answer 404 on this surface. L31: the real-estate &quot;
+            + &quot;property block is embedded when the listing has one. L39: the schema.org &quot;
+            + &quot;RealEstateListing JSON-LD block is composed on this read when the property &quot;
+            + &quot;block exists — the structured data the frontend embeds for search-engine &quot;
+            + &quot;verification (url only when a public site origin is bound). L40: every &quot;
+            + &quot;successful read counts one (deduplicated) view of the listing — the &quot;
+            + &quot;provider-facing analytics signal; a 404 does not count.&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; getById(@PathVariable UUID id,
+                                                    HttpServletRequest httpRequest) {
+<span class="fc" id="L138">        ListingResponse response = listingMapper.toResponse(catalogService.getActiveById(id));</span>
+        // L40 (CodeRabbit round 1, adopted): compose the COMPLETE response
+        // first — a failed property/JSON-LD composition must not count as a
+        // view (the visitor saw an error, not the listing). The counter is
+        // total (never throws — its own contract), so the composed response
+        // above is the response regardless.
+<span class="fc" id="L144">        ListingResponse composed = withJsonLd(withProperty(response));</span>
+<span class="fc" id="L145">        listingViewCounter.recordView(id, httpRequest.getRemoteAddr());</span>
+<span class="fc" id="L146">        return ResponseEntity.ok(composed);</span>
+    }
+
+    /**
+     * L31 embed: the property block of one response, when present.
+     */
+    private ListingResponse withProperty(ListingResponse response) {
+<span class="fc" id="L153">        return propertyDetailsPort.findByListingId(response.id())</span>
+<span class="fc" id="L154">                .map(response::withProperty)</span>
+<span class="fc" id="L155">                .orElse(response);</span>
+    }
+
+    /**
+     * L39: the structured-data block of one composed response — the
+     * leaf composition (the L38 architecture: this controller is the
+     * cycle-free point where the cross-module reads meet; the block
+     * itself only exists for real-estate listings with a property
+     * block, and its URL field only when the public site origin is
+     * bound).
+     */
+    private ListingResponse withJsonLd(ListingResponse response) {
+<span class="fc" id="L167">        return listingSeoService.jsonLdFor(response)</span>
+<span class="fc" id="L168">                .map(response::withJsonLd)</span>
+<span class="fc" id="L169">                .orElse(response);</span>
+    }
+
+    /**
+     * L38 (realestate systems plan §5 — completeness score): the provider's
+     * own read. The service owns the security contract (PROVIDER role + the
+     * update/pause/renew ownership gate: 404 unknown, 403 foreign); THIS
+     * controller is the cross-module composition point (the L31 embed
+     * architecture — {@code RealestateService} implements the property port
+     * while depending on {@code CatalogService}, so the service must not
+     * inject it; the leaf controller breaks the circle). Every read on this
+     * path is uncached — a photo that lands between two requests shows on
+     * the very next one (the plan's criterion 3). Owner read, so no
+     * public-surface rate limiter (the authenticated owner surfaces'
+     * contract).
+     */
+    @GetMapping(&quot;/{id}/completeness&quot;)
+    @Operation(summary = &quot;My listing's completeness score (provider)&quot;,
+            description = &quot;L38: a pure recomputed-on-read score — no storage, no cache; every &quot;
+                    + &quot;read is fresh. The documented equation (equal quarters over the plan's &quot;
+                    + &quot;four component groups): 25% core fields (title, description, price) + &quot;
+                    + &quot;25% at least one UPLOADED photo (storage-verified; a pending upload &quot;
+                    + &quot;never counts) + 25% the real-estate details block (L31) + 25% the &quot;
+                    + &quot;administrative location attached (L30 — the property block's &quot;
+                    + &quot;location_id, not the display coordinates). The four component flags &quot;
+                    + &quot;tell the provider exactly which quarter is missing.&quot;)
+    public ResponseEntity&lt;ListingCompletenessResponse&gt; completeness(
+            @PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L197">        ProviderListing listing = catalogService.getOwnedListing(id, authentication);</span>
+<span class="fc" id="L198">        long uploadedPhotos = mediaLookupPort.countUploadedByListing(id);</span>
+<span class="fc" id="L199">        PropertyDetailsPort.PropertyView property =</span>
+<span class="fc" id="L200">                propertyDetailsPort.findByListingId(id).orElse(null);</span>
+<span class="fc" id="L201">        return ResponseEntity.ok(</span>
+<span class="fc" id="L202">                ListingCompletenessResponse.of(listing, uploadedPhotos, property));</span>
+    }
+
+    @PostMapping
+    @Operation(summary = &quot;Create a listing (provider)&quot;, description = &quot;Publishes a new service &quot;
+            + &quot;listing with a base nightly price in minor units and an optional guest capacity.&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; create(@Valid @RequestBody CreateListingRequest request,
+                                                  Authentication authentication) {
+<span class="fc" id="L210">        UUID providerId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc" id="L211">        ProviderListingView listing = catalogService.create(</span>
+<span class="fc" id="L212">                providerId, request.title(), request.description(),</span>
+<span class="fc" id="L213">                request.category(), request.priceCents(), request.currency(),</span>
+<span class="fc" id="L214">                request.maxGuests());</span>
+<span class="fc" id="L215">        return ResponseEntity.status(HttpStatus.CREATED).body(listingMapper.toResponse(listing));</span>
+    }
+
+    @PutMapping(&quot;/{id}&quot;)
+    @Operation(summary = &quot;Update my listing (provider)&quot;, description = &quot;Owner-scoped update of &quot;
+            + &quot;title/description/category/base price; the stored currency is kept when omitted, &quot;
+            + &quot;and the stored guest capacity is kept when omitted (the currency contract).&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; update(@PathVariable UUID id,
+                                                  @Valid @RequestBody UpdateListingRequest request,
+                                                  Authentication authentication) {
+<span class="fc" id="L225">        return ResponseEntity.ok(listingMapper.toResponse(catalogService.update(</span>
+<span class="fc" id="L226">                id, request.title(), request.description(),</span>
+<span class="fc" id="L227">                request.category(), request.priceCents(), request.currency(),</span>
+<span class="fc" id="L228">                request.maxGuests(), authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/activate&quot;)
+    @Operation(summary = &quot;Activate a listing (provider)&quot;, description = &quot;Moves a paused listing &quot;
+            + &quot;back to ACTIVE — visible on the public browse surface. L33: the publication &quot;
+            + &quot;window is resolved from the optional body date or the configured expiry policy &quot;
+            + &quot;(90 days by default); with neither, 409 — no silently-immortal listing.&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; activate(
+            @PathVariable UUID id,
+            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            @jakarta.validation.Valid ActivateListingRequest request,
+            Authentication authentication) {
+<span class="fc" id="L241">        return ResponseEntity.ok(listingMapper.toResponse(catalogService.activate(</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">                id, request != null ? request.expiresAt() : null, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/renew&quot;)
+    @Operation(summary = &quot;Renew an expired listing (provider)&quot;, description = &quot;L33: extends the &quot;
+            + &quot;publication window of a listing paused by expiry (EXPIRED pause only — a &quot;
+            + &quot;deliberate MANUAL pause answers 409), from now by the expiry policy. Bounded &quot;
+            + &quot;by the renewal cooldown (409 inside the window).&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; renew(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L251">        return ResponseEntity.ok(listingMapper.toResponse(catalogService.renew(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/pause&quot;)
+    @Operation(summary = &quot;Pause a listing (provider)&quot;, description = &quot;Hides the listing from &quot;
+            + &quot;the public surface without archiving it.&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; pause(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L258">        return ResponseEntity.ok(listingMapper.toResponse(catalogService.pause(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{id}/archive&quot;)
+    @Operation(summary = &quot;Archive a listing (provider)&quot;, description = &quot;Retires the listing — &quot;
+            + &quot;it leaves the public surface permanently (soft delete).&quot;)
+    public ResponseEntity&lt;ListingResponse&gt; archive(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L265">        return ResponseEntity.ok(listingMapper.toResponse(catalogService.archive(id, authentication)));</span>
+    }
+
+    /**
+     * L33: optional explicit publication end. Absent = the configured
+     * expiry policy applies.
+     */
+    @Schema(description = &quot;Listing activation: optional explicit publication end &quot;
+            + &quot;(ISO-8601 instant; the configured expiry policy applies when omitted)&quot;)
+<span class="fc" id="L274">    public record ActivateListingRequest(</span>
+            @Schema(description = &quot;When the listing's publication ends&quot;, example = &quot;2026-12-31T23:59:59Z&quot;)
+            java.time.Instant expiresAt
+    ) {
+    }
+
+    /**
+     * Optional ISO 4217 currency of the listing price (roadmap B4). Blank
+     * or omitted keeps the house default SAR — existing clients keep the
+     * exact previous contract.
+     */
+    @Schema(description = &quot;Listing creation: title, category, base nightly price in minor units; &quot;
+            + &quot;optional ISO 4217 currency (SAR default); optional guest capacity (searchable)&quot;)
+<span class="fc" id="L287">    public record CreateListingRequest(</span>
+            @Schema(description = &quot;Listing title&quot;, example = &quot;Sea-view studio in Jeddah&quot;)
+            @NotBlank String title,
+            @Schema(description = &quot;Optional description&quot;, example = &quot;Two guests, king bed, &quot;
+                    + &quot;five minutes from the corniche.&quot;)
+            String description,
+            @Schema(description = &quot;Listing category&quot;, example = &quot;stay&quot;)
+            @NotBlank String category,
+            @Schema(description = &quot;Base price per night in minor units (halalas for SAR)&quot;,
+                    example = &quot;35000&quot;)
+            @NotNull Long priceCents,
+            @Schema(description = &quot;ISO 4217 currency of the price (optional, SAR default)&quot;,
+                    example = &quot;SAR&quot;)
+            @IsoCurrencyCode String currency,
+            @Schema(description = &quot;Maximum guests the listing accommodates (optional, &quot;
+                    + &quot;positive; undeclared when omitted — I6/roadmap D1)&quot;, example = &quot;4&quot;)
+            @Positive Integer maxGuests
+    ) {
+    }
+
+    /**
+     * Optional ISO 4217 currency: blank/omitted keeps the stored currency
+     * (an update that omits the field does not reset money semantics).
+     */
+    @Schema(description = &quot;Listing update: the same creation shape; an omitted currency keeps &quot;
+            + &quot;the stored one, an omitted maxGuests keeps the stored capacity&quot;)
+<span class="fc" id="L313">    public record UpdateListingRequest(</span>
+            @Schema(description = &quot;Listing title&quot;, example = &quot;Sea-view studio in Jeddah (renovated)&quot;)
+            @NotBlank String title,
+            @Schema(description = &quot;Optional description&quot;, example = &quot;Renovated bathroom, new &quot;
+                    + &quot;photos in the gallery.&quot;)
+            String description,
+            @Schema(description = &quot;Listing category&quot;, example = &quot;stay&quot;)
+            @NotBlank String category,
+            @Schema(description = &quot;Base price per night in minor units&quot;, example = &quot;39000&quot;)
+            @NotNull Long priceCents,
+            @Schema(description = &quot;ISO 4217 currency of the price (optional — keeps stored)&quot;,
+                    example = &quot;SAR&quot;)
+            @IsoCurrencyCode String currency,
+            @Schema(description = &quot;Maximum guests (optional, positive — keeps stored when &quot;
+                    + &quot;omitted; I6/roadmap D1)&quot;, example = &quot;6&quot;)
+            @Positive Integer maxGuests
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

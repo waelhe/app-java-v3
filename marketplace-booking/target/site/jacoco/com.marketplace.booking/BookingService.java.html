@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking</a> &gt; <span class="el_source">BookingService.java</span></div><h1>BookingService.java</h1><pre class="source lang-java linenums">package com.marketplace.booking;
+
+import com.marketplace.booking.spi.BookingSpi;
+import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.BookingSummary;
+import com.marketplace.shared.api.BookingCancelledEvent;
+import com.marketplace.shared.api.BookingConfirmedEvent;
+import com.marketplace.shared.api.BookingCreatedEvent;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.EffectivePricePort;
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.security.CurrentUserProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.resilience.annotation.ConcurrencyLimit;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import io.micrometer.observation.annotation.Observed;
+
+import java.time.Instant;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+
+@Service
+@Transactional
+public class BookingService implements BookingSpi {
+
+    private final BookingRepository bookingRepository;
+    private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ListingPriceProvider listingPriceProvider;
+    private final AvailabilityPort availabilityPort;
+    private final EffectivePricePort effectivePricePort;
+
+    public BookingService(BookingRepository bookingRepository,
+                          CurrentUserProvider currentUserProvider,
+                          ApplicationEventPublisher eventPublisher,
+                          ListingPriceProvider listingPriceProvider,
+                          AvailabilityPort availabilityPort,
+<span class="fc" id="L51">                          EffectivePricePort effectivePricePort) {</span>
+<span class="fc" id="L52">        this.bookingRepository = bookingRepository;</span>
+<span class="fc" id="L53">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L54">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L55">        this.listingPriceProvider = listingPriceProvider;</span>
+<span class="fc" id="L56">        this.availabilityPort = availabilityPort;</span>
+<span class="fc" id="L57">        this.effectivePricePort = effectivePricePort;</span>
+<span class="fc" id="L58">    }</span>
+
+    @Transactional(readOnly = true)
+    @Cacheable(&quot;bookings&quot;)
+    public Booking getById(UUID id) {
+<span class="fc" id="L63">        return bookingRepository.findById(id)</span>
+<span class="fc" id="L64">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Booking&quot;, id));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Booking getByIdForUser(UUID id, Authentication authentication) {
+<span class="fc" id="L69">        Booking booking = getById(id);</span>
+<span class="fc" id="L70">        verifyParticipantOwnership(booking, authentication);</span>
+<span class="fc" id="L71">        return booking;</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;Booking&gt; listByConsumer(UUID consumerId, Pageable pageable, Authentication authentication) {
+<span class="fc" id="L76">        verifyUserOrAdmin(consumerId, authentication);</span>
+<span class="fc" id="L77">        return bookingRepository.findByConsumerId(consumerId, pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;Booking&gt; listByProvider(UUID providerId, Pageable pageable, Authentication authentication) {
+<span class="fc" id="L82">        verifyUserOrAdmin(providerId, authentication);</span>
+<span class="fc" id="L83">        return bookingRepository.findByProviderId(providerId, pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;Booking&gt; listByStatus(BookingStatus status, Pageable pageable) {
+<span class="fc" id="L88">        return bookingRepository.findByStatus(status, pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;Booking&gt; listAll(Pageable pageable) {
+<span class="fc" id="L93">        return bookingRepository.findAll(pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;BookingSummary&gt; listAllSummaries(Pageable pageable) {
+<span class="fc" id="L98">        return listAll(pageable).map(this::toBookingSummary);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;BookingSummary&gt; listByStatusSummary(BookingStatus status, Pageable pageable) {
+<span class="fc" id="L103">        return listByStatus(status, pageable).map(this::toBookingSummary);</span>
+    }
+
+    /**
+     * Accepts a status string from the admin API, parses it to BookingStatus,
+     * and returns a page of BookingSummary. Wraps BadRequestException
+     * to prevent leaking internal enum/package details.
+     */
+    @Transactional(readOnly = true)
+    public Page&lt;BookingSummary&gt; listByStatusSummary(String status, Pageable pageable) {
+        try {
+            // Locale.ROOT: enum names are ASCII protocol keys — the
+            // default-locale toUpperCase() turns &quot;confirmed&quot; into
+            // &quot;CONFİRMED&quot; (U+0130) under a Turkish JVM locale and
+            // valueOf rejects it (JDK String.toUpperCase @apiNote
+            // prescribes toUpperCase(Locale.ROOT); same rule as
+            // Currencies.normalize / CurrencyExchangeProperties).
+<span class="fc" id="L120">            BookingStatus bookingStatus = BookingStatus.valueOf(status.toUpperCase(Locale.ROOT));</span>
+<span class="fc" id="L121">            return listByStatusSummary(bookingStatus, pageable);</span>
+<span class="fc" id="L122">        } catch (IllegalArgumentException e) {</span>
+<span class="fc" id="L123">            throw new BadRequestException(&quot;Invalid booking status: &quot; + status);</span>
+        }
+    }
+
+    @Observed(name = &quot;booking.create&quot;)
+    @PreAuthorize(&quot;hasRole('CONSUMER')&quot;)
+    public Booking create(UUID consumerId, UUID listingId, Instant startsAt, Instant endsAt, String notes) {
+<span class="fc" id="L130">        ListingInfo info = listingPriceProvider.getListingInfo(listingId);</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">        if (!availabilityPort.isAvailable(info.providerId(), startsAt, endsAt)) {</span>
+<span class="nc" id="L132">            throw new BadRequestException(&quot;The provider is not available at the requested time&quot;);</span>
+        }
+<span class="fc bfc" id="L134" title="All 2 branches covered.">        if (!availabilityPort.hasExactAvailableSlot(info.providerId(), startsAt, endsAt)) {</span>
+            // codex-review-fixes-plan B4 (Option M): isAvailable() is an overlap
+            // check (search semantics); bookSlot() needs an exact open slot. A
+            // sub-window would pass create and only fail at confirm — reject it
+            // here with an early 400 instead. The gate runs BEFORE the L26
+            // effective-price computation (fail fast — no pricing for a window
+            // confirm could never book).
+<span class="fc" id="L141">            throw new BadRequestException(&quot;The requested time window must match an available slot exactly&quot;);</span>
+        }
+        // L26 (feature-expansion roadmap §5): the booking total is the EFFECTIVE
+        // price of the stay window, derived through the pricing module's
+        // EffectivePricePort (the roadmap's change contract: BookingService
+        // derives the total via the day-sliced [startsAt, endsAt) pricing instead
+        // of the static listing price). For a listing with no calendar rows the
+        // port answers the flat base price — the pre-L26 number, byte-identical
+        // (the roadmap's most important criterion, backward compatibility).
+<span class="fc" id="L150">        long totalCents = effectivePricePort.calculateBookingTotalCents(</span>
+<span class="fc" id="L151">                listingId, info.priceCents(), startsAt, endsAt);</span>
+<span class="fc" id="L152">        Booking booking = Booking.create(consumerId, info.providerId(), listingId, totalCents,</span>
+<span class="fc" id="L153">                info.currency(), startsAt, endsAt, notes);</span>
+<span class="fc" id="L154">        Booking saved = bookingRepository.save(booking);</span>
+<span class="fc" id="L155">        eventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));</span>
+<span class="fc" id="L156">        return saved;</span>
+    }
+
+    @Observed(name = &quot;booking.confirm&quot;)
+    @PreAuthorize(&quot;hasAnyRole('PROVIDER','ADMIN')&quot;)
+    @Retry(name = &quot;booking&quot;)
+    @ConcurrencyLimit(10)
+    public Booking confirm(UUID id, Authentication authentication) {
+<span class="fc" id="L164">        Booking booking = getById(id);</span>
+<span class="fc" id="L165">        verifyProviderOwnership(booking, authentication);</span>
+<span class="fc" id="L166">        booking.confirm();</span>
+<span class="pc bpc" id="L167" title="1 of 4 branches missed.">        if (booking.getStartsAt() != null &amp;&amp; booking.getEndsAt() != null) {</span>
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+<span class="fc" id="L170">            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());</span>
+        }
+<span class="fc" id="L172">        eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));</span>
+<span class="fc" id="L173">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;bookings&quot;), id));</span>
+<span class="fc" id="L174">        return booking;</span>
+    }
+
+    @Observed(name = &quot;booking.complete&quot;)
+    @PreAuthorize(&quot;hasAnyRole('PROVIDER','ADMIN')&quot;)
+    @Retry(name = &quot;booking&quot;)
+    @ConcurrencyLimit(10)
+    public Booking complete(UUID id, Authentication authentication) {
+<span class="fc" id="L182">        Booking booking = getById(id);</span>
+<span class="fc" id="L183">        verifyProviderOwnership(booking, authentication);</span>
+<span class="fc" id="L184">        booking.complete();</span>
+<span class="fc" id="L185">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;bookings&quot;), id));</span>
+<span class="fc" id="L186">        return booking;</span>
+    }
+
+    @Observed(name = &quot;booking.cancel&quot;)
+    @PreAuthorize(&quot;hasAnyRole('CONSUMER','PROVIDER')&quot;)
+    @Retry(name = &quot;booking&quot;)
+    @ConcurrencyLimit(10)
+    public Booking cancel(UUID id, Authentication authentication) {
+<span class="fc" id="L194">        Booking booking = getById(id);</span>
+<span class="fc" id="L195">        verifyParticipantOwnership(booking, authentication);</span>
+<span class="fc" id="L196">        booking.cancel();</span>
+<span class="pc bpc" id="L197" title="1 of 4 branches missed.">        if (booking.getStartsAt() != null &amp;&amp; booking.getEndsAt() != null) {</span>
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window) — and the surviving active
+            // claimant when one exists (review round on the rebased head: a
+            // legacy window can carry older CONFIRMED/COMPLETED claimants
+            // alongside the reconciled owner; the owner's cancel TRANSFERS the
+            // hold to the survivor instead of reopening the window).
+<span class="fc" id="L205">            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(),</span>
+<span class="fc" id="L206">                    booking.getId(), survivingActiveClaimant(booking));</span>
+        }
+<span class="fc" id="L208">        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));</span>
+<span class="fc" id="L209">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;bookings&quot;), id));</span>
+<span class="fc" id="L210">        return booking;</span>
+    }
+
+    @Observed(name = &quot;booking.auto.cancel&quot;)
+    public void autoCancel(UUID id) {
+<span class="fc" id="L215">        Booking booking = getById(id);</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">        if (booking.getStatus() == BookingStatus.CANCELLED) {</span>
+<span class="fc" id="L217">            return;</span>
+        }
+<span class="fc" id="L219">        booking.cancel();</span>
+<span class="pc bpc" id="L220" title="1 of 4 branches missed.">        if (booking.getStartsAt() != null &amp;&amp; booking.getEndsAt() != null) {</span>
+            // R2: the release carries this booking's id — only the hold this
+            // booking placed can be freed (a PENDING sibling's cancel no longer
+            // releases a CONFIRMED booking's window) — and the surviving active
+            // claimant when one exists (the auto-cancel leg of the same
+            // review-round transfer contract).
+<span class="fc" id="L226">            availabilityPort.releaseSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(),</span>
+<span class="fc" id="L227">                    booking.getId(), survivingActiveClaimant(booking));</span>
+        }
+<span class="fc" id="L229">        eventPublisher.publishEvent(new BookingCancelledEvent(booking.getId()));</span>
+<span class="fc" id="L230">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;bookings&quot;), id));</span>
+<span class="fc" id="L231">    }</span>
+
+    /**
+     * R2 review round (the wave's rebased head): the booking module owns the
+     * claimant data, so the release's survivor knowledge is resolved HERE and
+     * carried into the availability port call — the most recent non-deleted
+     * CONFIRMED/COMPLETED booking on the same exact window other than the one
+     * being cancelled, in V73's reconciliation total order (createdAt, id)
+     * newest-first. {@code null} when the cancelled booking was the only
+     * active claimant (the release then reopens the window). PENDING
+     * bookings never claim a window (the claim happens at confirm), so they
+     * are not survivors by contract.
+     */
+    private UUID survivingActiveClaimant(Booking cancelled) {
+<span class="fc" id="L245">        return bookingRepository</span>
+<span class="fc" id="L246">                .findFirstByProviderIdAndStartsAtAndEndsAtAndStatusInAndIdNotOrderByCreatedAtDescIdDesc(</span>
+<span class="fc" id="L247">                        cancelled.getProviderId(), cancelled.getStartsAt(), cancelled.getEndsAt(),</span>
+<span class="fc" id="L248">                        java.util.List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED),</span>
+<span class="fc" id="L249">                        cancelled.getId())</span>
+<span class="fc" id="L250">                .map(Booking::getId)</span>
+<span class="fc" id="L251">                .orElse(null);</span>
+    }
+
+    public void autoConfirm(UUID id) {
+<span class="fc" id="L255">        Booking booking = getById(id);</span>
+<span class="fc bfc" id="L256" title="All 2 branches covered.">        if (booking.getStatus() == BookingStatus.CONFIRMED) {</span>
+<span class="fc" id="L257">            return;</span>
+        }
+<span class="fc" id="L259">        booking.confirm();</span>
+<span class="pc bpc" id="L260" title="1 of 4 branches missed.">        if (booking.getStartsAt() != null &amp;&amp; booking.getEndsAt() != null) {</span>
+            // R2: the booking books the slot in its own name — the ownership
+            // claim that makes a later non-owner release a no-op.
+<span class="fc" id="L263">            availabilityPort.bookSlot(booking.getProviderId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());</span>
+        }
+<span class="fc" id="L265">        eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId()));</span>
+<span class="fc" id="L266">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;bookings&quot;), id));</span>
+<span class="fc" id="L267">    }</span>
+
+    private void verifyProviderOwnership(Booking booking, Authentication authentication) {
+<span class="fc" id="L270">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="pc bpc" id="L271" title="1 of 4 branches missed.">        if (!booking.getProviderId().equals(currentUserId) &amp;&amp; !currentUserProvider.isAdmin(authentication)) {</span>
+<span class="fc" id="L272">            throw new AccessDeniedException(&quot;You are not the provider for this booking&quot;);</span>
+        }
+<span class="fc" id="L274">    }</span>
+
+    private void verifyParticipantOwnership(Booking booking, Authentication authentication) {
+<span class="fc" id="L277">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">        if (!booking.getConsumerId().equals(currentUserId)</span>
+<span class="pc bpc" id="L279" title="1 of 2 branches missed.">                &amp;&amp; !booking.getProviderId().equals(currentUserId)</span>
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">                &amp;&amp; !currentUserProvider.isAdmin(authentication)) {</span>
+<span class="fc" id="L281">            throw new AccessDeniedException(&quot;You are not a participant in this booking&quot;);</span>
+        }
+<span class="fc" id="L283">    }</span>
+
+    private void verifyUserOrAdmin(UUID userId, Authentication authentication) {
+<span class="fc" id="L286">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="pc bpc" id="L287" title="3 of 4 branches missed.">        if (!currentUserId.equals(userId) &amp;&amp; !currentUserProvider.isAdmin(authentication)) {</span>
+<span class="nc" id="L288">            throw new AccessDeniedException(&quot;You can only access your own bookings&quot;);</span>
+        }
+<span class="fc" id="L290">    }</span>
+
+    private BookingSummary toBookingSummary(Booking booking) {
+<span class="fc" id="L293">        return new BookingSummary(</span>
+<span class="fc" id="L294">                booking.getId(),</span>
+<span class="fc" id="L295">                booking.getConsumerId(),</span>
+<span class="fc" id="L296">                booking.getProviderId(),</span>
+<span class="fc" id="L297">                booking.getListingId(),</span>
+<span class="fc" id="L298">                booking.getStatus().name(),</span>
+<span class="fc" id="L299">                booking.getPriceCents(),</span>
+<span class="fc" id="L300">                booking.getCurrency(),</span>
+<span class="fc" id="L301">                booking.getStartsAt(),</span>
+<span class="fc" id="L302">                booking.getEndsAt(),</span>
+<span class="fc" id="L303">                booking.getCreatedAt(),</span>
+<span class="fc" id="L304">                booking.getUpdatedAt()</span>
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

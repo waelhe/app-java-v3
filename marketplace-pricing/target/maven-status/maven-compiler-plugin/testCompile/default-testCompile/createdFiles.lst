@@ -1,0 +1,11 @@
+com/marketplace/pricing/ListingPriceCalendarServiceTest.class
+com/marketplace/pricing/PricingRuleTest.class
+com/marketplace/pricing/SeasonalRateTest.class
+com/marketplace/pricing/PricingRuleMapperTest.class
+com/marketplace/pricing/CurrencyExchangeControllerTest.class
+com/marketplace/pricing/PricingRuleControllerTest.class
+com/marketplace/pricing/PricingServiceConvertTest.class
+com/marketplace/pricing/PricingServiceWindowTest.class
+com/marketplace/pricing/ListingPriceCalendarControllerTest.class
+com/marketplace/pricing/StaticRatesCurrencyExchangeTest.class
+com/marketplace/pricing/PricingServiceTest.class

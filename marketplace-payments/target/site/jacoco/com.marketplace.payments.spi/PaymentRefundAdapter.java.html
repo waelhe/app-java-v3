@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentRefundAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments.spi</a> &gt; <span class="el_source">PaymentRefundAdapter.java</span></div><h1>PaymentRefundAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.payments.spi;
+
+import com.marketplace.payments.Payment;
+import com.marketplace.payments.PaymentIntent;
+import com.marketplace.payments.PaymentIntentRepository;
+import com.marketplace.payments.PaymentIntentStatus;
+import com.marketplace.payments.PaymentRepository;
+import com.marketplace.payments.PaymentStatus;
+import com.marketplace.payments.PaymentsService;
+import com.marketplace.shared.api.PaymentRefundPort;
+import com.marketplace.shared.api.RefundOutcome;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.stereotype.Component;
+
+import java.util.UUID;
+
+/**
+ * L24 (feature-expansion roadmap §5): the payments module's implementation
+ * of the {@link PaymentRefundPort} cross-module contract. The dispute layer
+ * resolves a {@code REFUND_CONSUMER} decision by invoking the EXISTING
+ * refund path here — keyed by the booking both sides already share, no
+ * payment internals leak across the module boundary.
+ *
+ * &lt;p&gt;The execution stays the one production refund path
+ * ({@code PaymentsService.refundPayment}) with everything L19 put in it:
+ * the ADMIN method-security gate (the dispute resolve that reaches here is
+ * already ADMIN-guarded — defense in depth), the PSP idempotency key, the
+ * remote-cumulative-actual sync and the {@code PaymentStateChangedEvent}
+ * the ledger listens to.
+ */
+@Component
+public class PaymentRefundAdapter implements PaymentRefundPort {
+
+    private final PaymentIntentRepository paymentIntentRepository;
+    private final PaymentRepository paymentRepository;
+    private final PaymentsService paymentsService;
+
+    public PaymentRefundAdapter(PaymentIntentRepository paymentIntentRepository,
+                                PaymentRepository paymentRepository,
+<span class="fc" id="L40">                                PaymentsService paymentsService) {</span>
+<span class="fc" id="L41">        this.paymentIntentRepository = paymentIntentRepository;</span>
+<span class="fc" id="L42">        this.paymentRepository = paymentRepository;</span>
+<span class="fc" id="L43">        this.paymentsService = paymentsService;</span>
+<span class="fc" id="L44">    }</span>
+
+    @Override
+    public RefundOutcome refundForBooking(UUID bookingId, Long amountCents) {
+        // R4 (comprehensive-review-ar-fix plan §4/R4 — the deterministic
+        // financial search): the booking's money-carrying intent — latest
+        // by (createdAt, id) among the COLLECTED states (SUCCEEDED /
+        // PARTIALLY_REFUNDED / REFUNDED). The pre-fix unfiltered
+        // findByBookingId returned an arbitrary row once several intents
+        // coexisted for one booking (the R4 defect) and would throw a
+        // non-unique result the moment two rows race; a booking that never
+        // collected answers the same 404 it always did.
+<span class="fc" id="L56">        PaymentIntent intent = paymentIntentRepository</span>
+<span class="fc" id="L57">                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(</span>
+                        bookingId, PaymentIntentStatus.COLLECTED)
+<span class="fc" id="L59">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;No payment intent for booking: &quot; + bookingId));</span>
+<span class="fc" id="L60">        Payment payment = paymentRepository.findByPaymentIntentId(intent.getId())</span>
+<span class="fc" id="L61">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;No payment for booking: &quot; + bookingId));</span>
+        // CodeRabbit round 1 (verified real): the rollback-then-webhook
+        // window. A remote refund can succeed at the PSP inside a resolve
+        // transaction that then rolls back (commit failure); the
+        // charge.refunded webhook syncs the local books afterwards — the
+        // money side fully reconciles (payment REFUNDED + the ledger
+        // debit), but the dispute row is still OPEN, and a retry would
+        // 409 forever on the payment state machine (REFUNDED -&gt; REFUNDED
+        // is not a transition). When the dispute's full-refund decision
+        // meets an already-REFUNDED payment, the decision is ALREADY
+        // satisfied: return the executed outcome so the dispute records
+        // the linkage and resolves. Without the webhook's sync the retry
+        // stays self-healing by design — the same derived idempotency
+        // key returns the same remote refund.
+<span class="pc bpc" id="L75" title="1 of 4 branches missed.">        if (amountCents == null &amp;&amp; payment.getStatus() == PaymentStatus.REFUNDED) {</span>
+<span class="fc" id="L76">            return new RefundOutcome(payment.getId(), payment.getRefundedAmountCents());</span>
+        }
+<span class="fc" id="L78">        PaymentsService.RefundedPayment refunded = paymentsService.refundPayment(payment.getId(), amountCents);</span>
+<span class="fc" id="L79">        return new RefundOutcome(refunded.payment().getId(), refunded.payment().getRefundedAmountCents());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReviewerStats.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ReviewerStats.java</span></div><h1>ReviewerStats.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.UUID;
+
+/**
+ * W4 (yelp-level plan §5 — the reviewer identity wave, G28/G29): the
+ * reviewer-profile statistics a public reviewer page renders — the
+ * origin-split published-review counters and the cumulative helpful-vote
+ * count. The reviews module owns the measurement (the {@code reviews} /
+ * {@code review_votes} tables); the identity module — the page's owner, the
+ * plan's §7 allocation &quot;صفحة المراجع من marketplace-identity&quot; — reads it
+ * through this seam exactly the way the provider public page reads its
+ * reviews block through {@link PublishedReviewsPort}.
+ *
+ * &lt;p&gt;The {@code ReviewStatsPort} pattern (SYSTEM.md §6): port here in
+ * shared-api, adapter in marketplace-reviews — the page's module depends on
+ * {@code shared :: shared-api} only, never on the reviews module's
+ * internals, so the Modulith verification stays the unedited guard.
+ *
+ * &lt;p&gt;&lt;b&gt;Id space (A1, measured):&lt;/b&gt; {@code reviewerId} is the reviews'
+ * {@code reviewer_id} — the {@code users.id} space every cross-module id
+ * column carries. The caller (the identity page, keyed by the same user id)
+ * passes it directly; no profile resolution anywhere.
+ */
+<span class="nc" id="L25">public record ReviewerStats(</span>
+        long verifiedReviewCount,
+        long organicReviewCount,
+        long helpfulVoteCount
+) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

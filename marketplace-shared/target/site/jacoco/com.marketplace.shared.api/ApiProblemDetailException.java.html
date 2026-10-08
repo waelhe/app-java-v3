@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ApiProblemDetailException.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ApiProblemDetailException.java</span></div><h1>ApiProblemDetailException.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.net.URI;
+
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
+import org.springframework.web.ErrorResponse;
+
+/**
+ * Base exception for API errors represented as RFC 7807 ProblemDetail.
+ */
+public abstract class ApiProblemDetailException extends RuntimeException implements ErrorResponse {
+
+    private final ApiErrorTaxonomy taxonomy;
+    private final HttpStatusCode statusCode;
+    private final ProblemDetail body;
+
+    protected ApiProblemDetailException(ApiErrorTaxonomy taxonomy, String detail) {
+<span class="fc" id="L19">        super(detail);</span>
+<span class="fc" id="L20">        this.taxonomy = taxonomy;</span>
+<span class="fc" id="L21">        this.statusCode = taxonomy.statusCode();</span>
+<span class="fc" id="L22">        this.body = ProblemDetail.forStatusAndDetail(statusCode, detail);</span>
+<span class="fc" id="L23">        this.body.setType(URI.create(taxonomy.typeUri()));</span>
+<span class="fc" id="L24">        this.body.setTitle(taxonomy.title());</span>
+<span class="fc" id="L25">        this.body.setProperty(&quot;errorCode&quot;, taxonomy.errorCode());</span>
+<span class="fc" id="L26">        this.body.setProperty(&quot;category&quot;, taxonomy.category());</span>
+<span class="fc" id="L27">    }</span>
+
+    /** Taxonomy this exception was raised under — the i18n message key. */
+    public ApiErrorTaxonomy taxonomy() {
+<span class="fc" id="L31">        return taxonomy;</span>
+    }
+
+    @Override
+    public HttpStatusCode getStatusCode() {
+<span class="fc" id="L36">        return statusCode;</span>
+    }
+
+    @Override
+    public ProblemDetail getBody() {
+<span class="fc" id="L41">        return body;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

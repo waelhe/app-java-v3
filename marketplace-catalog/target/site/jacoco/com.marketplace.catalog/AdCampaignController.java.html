@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdCampaignController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdCampaignController.java</span></div><h1>AdCampaignController.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the campaign's
+ * owner-facing REST surface under {@code /api/v1/providers/me/ads} —
+ * the {@code ProviderLedgerController} route convention (the owner's own
+ * money surfaces live under providers/me). Every write is PROVIDER-gated
+ * and ownership-checked in the service; the public half of the wave (the
+ * click recording) lives in {@link AdClickController}.
+ */
+@RestController
+@RequestMapping(value = ApiConstants.API_V1, version = &quot;1.0&quot;)
+@Tag(name = &quot;Ads&quot;, description = &quot;W5 — the paid promotion engine: campaigns, budgets and the immutable billing history&quot;)
+public class AdCampaignController {
+
+    private final AdCampaignService campaignService;
+
+<span class="nc" id="L34">    public AdCampaignController(AdCampaignService campaignService) {</span>
+<span class="nc" id="L35">        this.campaignService = campaignService;</span>
+<span class="nc" id="L36">    }</span>
+
+    @PostMapping(&quot;/providers/me/ads/campaigns&quot;)
+    @Operation(summary = &quot;Start a paid promotion for my listing&quot;,
+            description = &quot;One campaign promotes ONE listing with ONE budget: both event prices bill &quot;
+                    + &quot;(clicks and impressions), the consumption caps at the remaining budget, and the &quot;
+                    + &quot;campaign ends the moment the budget runs out. Only an ACTIVE listing I own can be &quot;
+                    + &quot;promoted, and only one live campaign per listing exists at a time.&quot;)
+    public ResponseEntity&lt;AdCampaignService.AdCampaignView&gt; create(
+            @Valid @RequestBody AdCampaignService.CreateAdCampaignRequest request,
+            Authentication authentication) {
+<span class="nc" id="L47">        AdCampaignService.AdCampaignView view = campaignService.create(request, authentication);</span>
+<span class="nc" id="L48">        return ResponseEntity.created(java.net.URI.create(</span>
+<span class="nc" id="L49">                        ApiConstants.API_V1 + &quot;/providers/me/ads/campaigns/&quot; + view.id()))</span>
+<span class="nc" id="L50">                .body(view);</span>
+    }
+
+    @GetMapping(&quot;/providers/me/ads/campaigns&quot;)
+    @Operation(summary = &quot;List my campaigns with the frozen money state&quot;,
+            description = &quot;Every campaign I own, newest first: budget, consumed (always exactly the sum &quot;
+                    + &quot;of the frozen charge rows), remaining, status, and the billing marker.&quot;)
+    public List&lt;AdCampaignService.AdCampaignView&gt; listMine(Authentication authentication) {
+<span class="nc" id="L58">        return campaignService.listMine(authentication);</span>
+    }
+
+    @PostMapping(&quot;/providers/me/ads/campaigns/{campaignId}/pause&quot;)
+    @Operation(summary = &quot;Pause my campaign&quot;,
+            description = &quot;The owner's hold: the listing loses the paid boost and nothing accrues — the &quot;
+                    + &quot;paused gap never bills (the resume jumps the billing marker past the dark days).&quot;)
+    public AdCampaignService.AdCampaignView pause(@PathVariable UUID campaignId,
+                                                  Authentication authentication) {
+<span class="nc" id="L67">        return campaignService.pause(campaignId, authentication);</span>
+    }
+
+    @PostMapping(&quot;/providers/me/ads/campaigns/{campaignId}/resume&quot;)
+    @Operation(summary = &quot;Resume my campaign&quot;,
+            description = &quot;The hold lifts: the boost returns and the billing starts from the resume day — &quot;
+                    + &quot;the dark days in between were never billable.&quot;)
+    public AdCampaignService.AdCampaignView resume(@PathVariable UUID campaignId,
+                                                   Authentication authentication) {
+<span class="nc" id="L76">        return campaignService.resume(campaignId, authentication);</span>
+    }
+
+    @GetMapping(&quot;/providers/me/ads/campaigns/{campaignId}/charges&quot;)
+    @Operation(summary = &quot;Read my campaign's immutable billing history&quot;,
+            description = &quot;The frozen charge rows, newest window first: every window's impressions, &quot;
+                    + &quot;clicks and the amount that hit the budget — insert-only records, no surface &quot;
+                    + &quot;anywhere can ever answer anything but the frozen truth.&quot;)
+    public List&lt;AdCampaignService.AdBillingChargeView&gt; charges(@PathVariable UUID campaignId,
+                                                               Authentication authentication) {
+<span class="nc" id="L86">        return campaignService.charges(campaignId, authentication);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

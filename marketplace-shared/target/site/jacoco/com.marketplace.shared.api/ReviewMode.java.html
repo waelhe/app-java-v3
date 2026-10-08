@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReviewMode.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ReviewMode.java</span></div><h1>ReviewMode.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+/**
+ * W1 (yelp-level plan §4.1 — the owner's switch): the review-creation mode,
+ * the closed vocabulary of the {@link SystemSettingKeys#REVIEWS_MODE}
+ * setting.
+ *
+ * &lt;p&gt;&lt;b&gt;Why the vocabulary lives in shared-api:&lt;/b&gt; three modules read the
+ * same setting off the same key — the review-creation gate
+ * ({@code ReviewsService}, the plan's named reader), the provider public
+ * page's dual-count display (§4.4), and the admin write surface's
+ * validation. One enum makes the trio compile-checked against one
+ * vocabulary instead of three string literals that can drift — the exact
+ * silent-drift class {@link SystemSettingKeys} exists to close.
+ *
+ * &lt;p&gt;&lt;b&gt;Fail loud, never fall back:&lt;/b&gt; {@link #parse(String)} answers an
+ * unknown value with {@link SystemSettingTypeException} (HTTP 500 — the W0
+ * contract for &quot;the control plane and the code disagree&quot;), never a silent
+ * default. The admin write surface validates against this same enum, so an
+ * unparseable value cannot even be stored.
+ */
+<span class="nc" id="L22">public enum ReviewMode {</span>
+
+    /** The pre-W1 behaviour, byte for byte: the completed-booking gates alone. */
+<span class="nc" id="L25">    VERIFIED_ONLY,</span>
+
+    /** Organic reviews only, no booking required — behind the §4.5 anti-abuse gates. */
+<span class="nc" id="L28">    OPEN,</span>
+
+    /** Both paths open; the dual counters are displayed separately (§4.4). */
+<span class="nc" id="L31">    HYBRID;</span>
+
+    /**
+     * Parses the stored setting value strictly. {@code null} (no row AND no
+     * caller default) and unknown values both raise
+     * {@link SystemSettingTypeException} — the reader's own default is
+     * applied by the caller through the port's {@code *OrDefault} form, so
+     * the fallback is always visible at the call site.
+     */
+    public static ReviewMode parse(String raw) {
+<span class="nc bnc" id="L41" title="All 2 branches missed.">        if (raw == null) {</span>
+<span class="nc" id="L42">            throw new SystemSettingTypeException(</span>
+                    &quot;system setting &quot; + SystemSettingKeys.REVIEWS_MODE + &quot; carries no value&quot;);
+        }
+        try {
+<span class="nc" id="L46">            return valueOf(raw.trim());</span>
+<span class="nc" id="L47">        } catch (IllegalArgumentException unknown) {</span>
+<span class="nc" id="L48">            throw new SystemSettingTypeException(&quot;system setting &quot;</span>
+                    + SystemSettingKeys.REVIEWS_MODE + &quot; carries an unknown value: '&quot; + raw
+                    + &quot;' — valid values: VERIFIED_ONLY, OPEN, HYBRID&quot;);
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

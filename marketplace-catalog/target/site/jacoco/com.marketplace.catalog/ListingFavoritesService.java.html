@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingFavoritesService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingFavoritesService.java</span></div><h1>ListingFavoritesService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * W3 (yelp-level-plan §5 — G19): the saved-listings surface — the
+ * member's own «حفظ لاحقًا» relation on the catalog's listings.
+ *
+ * &lt;p&gt;&lt;b&gt;One gate order (the market board's own discipline):&lt;/b&gt; the
+ * listing resolves FIRST (the FK's own law — an unknown listing answers
+ * the honest 404 before any write), then the relation's own uniqueness
+ * answers 409 (a live favorite for the same pair — the partial unique
+ * key's read form), and only then the insert. The unsave is the house
+ * soft delete: the row stays (the Envers trail keeps every save and
+ * withdraw), the reads stop returning it — and a re-save is a FRESH row,
+ * never a resurrection.
+ *
+ * &lt;p&gt;&lt;b&gt;The list composes the listing's CURRENT truth&lt;/b&gt; (one batch
+ * read over the page's listing ids — the grouped-read shape): a saved
+ * listing that later expires, pauses or is withdrawn by its provider
+ * stays saved (the relation is the member's data, b-5's retention), and
+ * the view carries the listing's live status so the member sees it.
+ */
+@Service
+public class ListingFavoritesService {
+
+    private final ListingFavoriteRepository favoriteRepository;
+    private final ProviderListingRepository listingRepository;
+
+    public ListingFavoritesService(ListingFavoriteRepository favoriteRepository,
+<span class="fc" id="L43">                                   ProviderListingRepository listingRepository) {</span>
+<span class="fc" id="L44">        this.favoriteRepository = favoriteRepository;</span>
+<span class="fc" id="L45">        this.listingRepository = listingRepository;</span>
+<span class="fc" id="L46">    }</span>
+
+    /**
+     * Saves a listing — the member's «حفظ لاحقًا». Unknown listing ⇒ 404
+     * (before any write); an already-saved live pair ⇒ 409 (the unique
+     * key's read form — the second save teaches the contract).
+     */
+    @Observed(name = &quot;catalog.favorites.save&quot;)
+    @Transactional
+    public ListingFavoriteView save(UUID userId, UUID listingId) {
+<span class="fc" id="L56">        listingRepository.findById(listingId)</span>
+<span class="fc" id="L57">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Listing&quot;, listingId));</span>
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        if (favoriteRepository.existsByUserIdAndListingId(userId, listingId)) {</span>
+<span class="fc" id="L59">            throw new ConflictException(</span>
+                    &quot;Listing already saved — DELETE /api/v1/me/favorites/{listingId} withdraws it&quot;);
+        }
+<span class="fc" id="L62">        ListingFavorite saved = favoriteRepository.save(ListingFavorite.save(userId, listingId));</span>
+<span class="fc" id="L63">        return viewOf(saved, listingRepository.findById(listingId).orElse(null));</span>
+    }
+
+    /**
+     * Withdraws the favorite — the house soft delete. A pair with no live
+     * favorite answers the honest 404 (nothing to withdraw); the row stays
+     * for the audit trail.
+     */
+    @Observed(name = &quot;catalog.favorites.unsave&quot;)
+    @Transactional
+    public void unsave(UUID userId, UUID listingId) {
+<span class="fc" id="L74">        ListingFavorite favorite = favoriteRepository.findByUserIdAndListingId(userId, listingId)</span>
+<span class="fc" id="L75">                .orElseThrow(() -&gt; new ResourceNotFoundException(</span>
+                        &quot;Favorite&quot;, listingId));
+<span class="fc" id="L77">        favoriteRepository.delete(favorite);</span>
+<span class="fc" id="L78">    }</span>
+
+    /**
+     * The member's own list — the live favorites, newest-saved first (the
+     * complete {@code (created_at, id)} key keeps the page boundary
+     * stable), each carrying the listing's CURRENT status (one grouped
+     * read — never per-row queries).
+     */
+    @Transactional(readOnly = true)
+    public Page&lt;ListingFavoriteView&gt; myFavorites(UUID userId, Pageable pageable) {
+<span class="fc" id="L88">        Page&lt;ListingFavorite&gt; page = favoriteRepository.findByUserId(userId, pageable);</span>
+<span class="fc" id="L89">        Map&lt;UUID, ProviderListing&gt; listings = batchResolve(page.getContent());</span>
+<span class="fc" id="L90">        return page.map(favorite -&gt; viewOf(favorite,</span>
+<span class="fc" id="L91">                listings.get(favorite.getListingId())));</span>
+    }
+
+    /** The results-surface flag: is this listing in the caller's live favorites? */
+    @Transactional(readOnly = true)
+    public boolean isFavorite(UUID userId, UUID listingId) {
+<span class="fc" id="L97">        return favoriteRepository.existsByUserIdAndListingId(userId, listingId);</span>
+    }
+
+    private Map&lt;UUID, ProviderListing&gt; batchResolve(List&lt;ListingFavorite&gt; favorites) {
+<span class="fc" id="L101">        List&lt;UUID&gt; ids = favorites.stream()</span>
+<span class="fc" id="L102">                .map(ListingFavorite::getListingId)</span>
+<span class="fc" id="L103">                .toList();</span>
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">        if (ids.isEmpty()) {</span>
+<span class="nc" id="L105">            return Map.of();</span>
+        }
+        // W3 (the review round's root fix): the read INCLUDES soft-deleted
+        // listings — a saved listing its provider later withdrew stays saved
+        // (the relation is the member's own data), and the view's contract
+        // carries the listing's CURRENT truth. Hibernate's @SoftDelete
+        // filter hides those rows from findAllById; the native read is the
+        // channel that sees them (the export adapters' own reasoning).
+<span class="fc" id="L113">        return listingRepository.findAllByIdIncludingDeleted(ids).stream()</span>
+<span class="fc" id="L114">                .collect(Collectors.toMap(ProviderListing::getId, Function.identity()));</span>
+    }
+
+    private ListingFavoriteView viewOf(ListingFavorite favorite, ProviderListing listing) {
+        // The listing's row is structurally present (the FK + the soft-delete
+        // everywhere discipline); a null here would be a defect worth failing
+        // on, so the view renders it as the honest unknown-status floor.
+<span class="fc" id="L121">        return new ListingFavoriteView(</span>
+<span class="fc" id="L122">                favorite.getListingId(),</span>
+<span class="fc" id="L123">                favorite.getSavedAt(),</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">                listing == null ? null : listing.getTitle(),</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">                listing == null ? null : listing.getPriceCents(),</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">                listing == null ? null : listing.getCurrency(),</span>
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">                listing == null ? null : listing.getStatus().name());</span>
+    }
+
+    /** One saved row as the member's list renders it: the relation plus the listing's current truth. */
+<span class="fc" id="L131">    public record ListingFavoriteView(</span>
+            UUID listingId,
+            java.time.Instant savedAt,
+            String title,
+            Long priceCents,
+            String currency,
+            String status
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

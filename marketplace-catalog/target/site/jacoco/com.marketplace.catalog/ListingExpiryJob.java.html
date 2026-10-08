@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingExpiryJob.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingExpiryJob.java</span></div><h1>ListingExpiryJob.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+/**
+ * L33 (realestate systems plan §5): the listing expiry job — the
+ * {@code EventPublicationCleanup} pattern (a framework-scheduled component,
+ * cron + UTC zone). Every ACTIVE listing whose {@code expires_at} has
+ * passed moves to PAUSED with the DURABLE {@code EXPIRED} marker (the
+ * same state machine transition as the provider's pause — D-R7: zero
+ * machine changes), idempotently (the status itself is the guard: a
+ * re-run finds nothing new).
+ *
+ * &lt;p&gt;CodeRabbit PR #299 round 1 (two findings, one root): the transaction
+ * boundary and the page-advance. The orchestrator itself is NOT
+ * transactional — {@link ListingExpiryBatchExecutor} runs each batch in
+ * its own {@code REQUIRES_NEW} transaction and re-queries page ZERO
+ * every time (paused rows leave the {@code status = ACTIVE} match set, so
+ * the remaining expired rows always start at page zero — a batch can
+ * never be skipped). Each batch's commit carries its own cache eviction
+ * through the AFTER_COMMIT relay.
+ *
+ * &lt;p&gt;The boundary case &quot;expires_at exactly now&quot; stays ACTIVE (the predicate
+ * is strictly {@code before now} — a listing expiring this instant still
+ * serves its last request; the next tick catches it).
+ */
+@Component
+public class ListingExpiryJob {
+
+    /** Page size — bounded work per transaction, the house batch discipline. */
+    static final int BATCH_SIZE = 500;
+
+    /** Safety valve: even a pathological backlog ends one run (progress is durable). */
+    static final int MAX_BATCHES_PER_RUN = 1000;
+
+    private final ListingExpiryBatchExecutor batchExecutor;
+
+<span class="fc" id="L39">    public ListingExpiryJob(ListingExpiryBatchExecutor batchExecutor) {</span>
+<span class="fc" id="L40">        this.batchExecutor = batchExecutor;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * Runs every 30 minutes (the plan's cadence — the classifieds' expiry
+     * precision is half an hour, not a second). Each batch commits
+     * independently, so a run interrupted mid-way leaves the completed
+     * batches done and the next tick resumes from the true backlog.
+     */
+    @Scheduled(cron = &quot;0 */30 * * * ?&quot;, zone = &quot;UTC&quot;)
+    public void pauseExpiredListings() {
+<span class="fc" id="L51">        int batches = 0;</span>
+        int paused;
+        do {
+<span class="fc" id="L54">            paused = batchExecutor.pauseOneBatch();</span>
+<span class="fc" id="L55">            batches++;</span>
+<span class="pc bpc" id="L56" title="1 of 4 branches missed.">        } while (paused == BATCH_SIZE &amp;&amp; batches &lt; MAX_BATCHES_PER_RUN);</span>
+<span class="fc" id="L57">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

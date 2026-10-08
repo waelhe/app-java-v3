@@ -1,0 +1,12 @@
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/ApiProblemDetailExceptionTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/BookingInfoTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/ErrorResponseImportConflictTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/GeoNodeTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/GlobalExceptionHandlerTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/IsoCurrencyCodeValidatorTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/PagedResponseTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/PropertyContractTypesTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/RatingDistributionTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/SpringPaginationTest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/StubHttpServletRequest.java
+/workspace/marketplace-shared/src/test/java/com/marketplace/shared/api/UserSummaryTest.java

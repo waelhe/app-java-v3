@@ -1,0 +1,10 @@
+com/marketplace/geo/GeoController.class
+com/marketplace/geo/GeoAdminController.class
+com/marketplace/geo/GeoLevel.class
+com/marketplace/geo/GeoAdminController$UpdateGeoLocationRequest.class
+com/marketplace/geo/package-info.class
+com/marketplace/geo/GeoService.class
+com/marketplace/geo/GeoAdminController$CreateGeoLocationRequest.class
+com/marketplace/geo/GeoLocationRepository.class
+com/marketplace/geo/GeoLocation.class
+com/marketplace/geo/GeoModule.class

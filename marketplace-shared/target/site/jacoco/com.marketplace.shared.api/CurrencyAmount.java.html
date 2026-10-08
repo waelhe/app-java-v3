@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CurrencyAmount.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">CurrencyAmount.java</span></div><h1>CurrencyAmount.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.io.Serializable;
+
+/**
+ * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency): the
+ * per-currency money carrier for cross-module reads. Aggregations that mix
+ * currencies under one number are the R9 defect itself, so every aggregate
+ * surface carries one {@code CurrencyAmount} per ISO 4217 code instead —
+ * the ledger's balance reads and the provider-stats net revenue use it.
+ *
+ * &lt;p&gt;&lt;b&gt;Serializable (the Redis cache value family):&lt;/b&gt; the provider-stats
+ * response caches this record inside its cached value (short TTL) and the
+ * production cache type is Redis — the same serialization seam
+ * {@code ProviderStatsResponse} documents. A non-Serializable carrier would
+ * fail every cold-cache PUT with {@code IllegalStateException} (the
+ * STATS-409 defect class, closed by the same rule).
+ */
+public record CurrencyAmount(String currency, long amountCents) implements Serializable {
+
+    @java.io.Serial
+    private static final long serialVersionUID = 1L;
+
+<span class="nc" id="L24">    public CurrencyAmount {</span>
+<span class="nc" id="L25">        currency = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);</span>
+<span class="nc" id="L26">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

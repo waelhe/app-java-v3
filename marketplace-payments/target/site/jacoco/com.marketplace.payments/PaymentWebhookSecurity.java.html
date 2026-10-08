@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentWebhookSecurity.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentWebhookSecurity.java</span></div><h1>PaymentWebhookSecurity.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Legacy webhook HMAC verification — debt D-009 repaid.
+ *
+ * &lt;p&gt;&lt;b&gt;The signed envelope (D-009):&lt;/b&gt; the MAC now covers EVERY field the
+ * dispatch acts on — {@code provider}, {@code eventId}, {@code eventType},
+ * {@code paymentIntentId}, {@code externalId} — plus a timestamp. The prior
+ * contract signed only {@code eventId + eventType}, leaving the provider
+ * (the dedup key's left half), the intent id (the {@code confirmIntent}
+ * target on the internal path) and the external id unsigned: a captured
+ * valid signature could be replayed against a different provider or a
+ * different payment intent with no MAC to stop it.
+ *
+ * &lt;p&gt;&lt;b&gt;The signature scheme mirrors the official Stripe scheme&lt;/b&gt; — the
+ * vendor implementation this repository already trusts on the sibling
+ * channel, measured from the official artifact {@code stripe-java:33.4.1}
+ * bytecode ({@code com.stripe.net.Webhook$Signature}):
+ * &lt;ul&gt;
+ *   &lt;li&gt;header format {@code t=&lt;epoch-seconds&gt;,v1=&lt;mac&gt;} —
+ *       {@code generateSignatureHeader} formats {@code t=%d,%s=%s} with
+ *       scheme constant {@code v1}; multiple {@code v1} entries are
+ *       collected and ANY match verifies (key-rotation support);&lt;/li&gt;
+ *   &lt;li&gt;signed payload {@code &lt;timestamp&gt;.&lt;payload&gt;} —
+ *       {@code String.format(&quot;%d.%s&quot;, timestamp, payload)};&lt;/li&gt;
+ *   &lt;li&gt;signatures are compared BEFORE the timestamp check, with a
+ *       constant-time compare ({@code StringUtils.secureCompare} there;
+ *       {@link MessageDigest#isEqual} here — the JDK-official constant-time
+ *       comparison, also the house rule for TOTP, RFC 6238 §5.2);&lt;/li&gt;
+ *   &lt;li&gt;replay window: reject only when
+ *       {@code timestamp &lt; timeNow - tolerance} (bytecode offsets 191-204 —
+ *       past-only rejection; a future-dated signature can only be produced
+ *       by the secret holder, and a leading provider clock must not break
+ *       delivery). {@code DEFAULT_TOLERANCE = 300} seconds — the same value
+ *       the sibling Stripe channel verifies with. A signature whose
+ *       timestamp is exactly at the window edge is still valid (the check
+ *       is strict less-than on the past side).&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;House deviation (deliberate):&lt;/b&gt; the MAC is Base64-encoded, not
+ * hex — the encoding this class has always used; the scheme structure is
+ * the official one.
+ *
+ * &lt;p&gt;&lt;b&gt;Canonical envelope:&lt;/b&gt; the five fields are serialized
+ * length-prefixed with explicit presence ({@code &lt;len&gt;:&lt;value&gt;} per present
+ * field — the empty string is {@code 0:} — and the lone marker {@code -}
+ * for an absent field, fixed field order). A bare concatenation is ambiguous —
+ * {@code eventId=&quot;a&quot;, eventType=&quot;bc&quot;} and {@code eventId=&quot;ab&quot;,
+ * eventType=&quot;c&quot;} produce the identical string — so it is not a sound MAC
+ * input; the length prefix with the presence marker makes the
+ * serialization injective (the reader recovers each field boundary
+ * deterministically: the marker {@code -} is null; otherwise digits up to
+ * the first {@code :}, then exactly {@code len} characters), so two
+ * different field tuples — including a null-versus-empty swap (CWE-345) —
+ * can never collide on one MAC input.
+ *
+ * &lt;p&gt;&lt;b&gt;The retired contract is rejected:&lt;/b&gt; a bare Base64 MAC over
+ * {@code eventId + eventType} (the pre-D-009 format — no timestamp, three
+ * unsigned fields) no longer verifies. The channel is latent by design:
+ * {@code marketplace.payments.webhook.shared-secret} is unbound in every
+ * managed environment, and with a blank secret every request is rejected
+ * (see {@link #warnIfSecretNotConfigured()}) — so no live caller exists to
+ * break, and the first deployer to bind the secret binds it against THIS
+ * documented contract.
+ */
+@Component
+public class PaymentWebhookSecurity {
+
+    private static final String HMAC_ALGORITHM = &quot;HmacSHA256&quot;;
+
+    /** The scheme name inside the signature header (official Stripe constant). */
+    static final String SIGNATURE_SCHEME = &quot;v1&quot;;
+
+    /** The timestamp key inside the signature header (official Stripe constant). */
+    static final String TIMESTAMP_KEY = &quot;t&quot;;
+
+    /** Encodes an absent (null) field in the canonical envelope — see {@link #canonicalEnvelope}. */
+    static final String NULL_MARKER = &quot;-&quot;;
+
+    /**
+     * Replay window, seconds — matches the sibling Stripe channel's
+     * DEFAULT_TOLERANCE = 300 (verified from the official artifact's
+     * sources). Past-only rejection, exactly like the official check.
+     */
+    static final long TOLERANCE_SECONDS = 300;
+
+<span class="fc" id="L104">    private static final Logger log = LoggerFactory.getLogger(PaymentWebhookSecurity.class);</span>
+
+    private final String sharedSecret;
+    private final Clock clock;
+
+    public PaymentWebhookSecurity(@Value(&quot;${marketplace.payments.webhook.shared-secret:}&quot;) String sharedSecret,
+<span class="fc" id="L110">                                  Clock clock) {</span>
+<span class="fc" id="L111">        this.sharedSecret = sharedSecret;</span>
+<span class="fc" id="L112">        this.clock = clock;</span>
+<span class="fc" id="L113">    }</span>
+
+    @PostConstruct
+    void warnIfSecretNotConfigured() {
+<span class="nc bnc" id="L117" title="All 4 branches missed.">        if (sharedSecret == null || sharedSecret.isBlank()) {</span>
+<span class="nc" id="L118">            log.warn(&quot;marketplace.payments.webhook.shared-secret is not configured — &quot; +</span>
+                    &quot;webhook requests will be REJECTED. Set this property in production.&quot;);
+        }
+<span class="nc" id="L121">    }</span>
+
+    /**
+     * Verifies the full D-009 envelope: parses the
+     * {@code X-Webhook-Signature: t=&lt;epoch-seconds&gt;,v1=&lt;mac&gt;} header, checks
+     * that the MAC covers every dispatch field, then enforces the replay
+     * window. Throws {@link AccessDeniedException} on every failure mode
+     * (secret unbound, malformed header, no v1 entry, MAC mismatch,
+     * timestamp outside the window) — the caller never learns more than
+     * &quot;rejected&quot;.
+     */
+    public void validateSignature(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId, String signatureHeader) {
+<span class="pc bpc" id="L134" title="1 of 4 branches missed.">        if (sharedSecret == null || sharedSecret.isBlank()) {</span>
+<span class="fc" id="L135">            throw new AccessDeniedException(&quot;Webhook shared-secret not configured&quot;);</span>
+        }
+<span class="fc" id="L137">        long timestamp = extractTimestamp(signatureHeader);</span>
+<span class="fc" id="L138">        List&lt;String&gt; providedSignatures = extractSignatures(signatureHeader);</span>
+<span class="fc" id="L139">        String expected = computeMac(timestamp, provider, eventId, eventType, paymentIntentId, externalId);</span>
+<span class="fc" id="L140">        boolean matched = false;</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        for (String provided : providedSignatures) {</span>
+<span class="pc bpc" id="L142" title="1 of 4 branches missed.">            if (provided != null &amp;&amp; MessageDigest.isEqual(</span>
+<span class="fc" id="L143">                    expected.getBytes(StandardCharsets.UTF_8),</span>
+<span class="fc" id="L144">                    provided.getBytes(StandardCharsets.UTF_8))) {</span>
+<span class="fc" id="L145">                matched = true;</span>
+<span class="fc" id="L146">                break;</span>
+            }
+<span class="fc" id="L148">        }</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">        if (!matched) {</span>
+<span class="fc" id="L150">            throw new AccessDeniedException(&quot;Invalid webhook signature&quot;);</span>
+        }
+<span class="fc" id="L152">        long now = clock.instant().getEpochSecond();</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        if (timestamp &lt; now - TOLERANCE_SECONDS) {</span>
+<span class="fc" id="L154">            throw new AccessDeniedException(&quot;Webhook timestamp outside the tolerance zone&quot;);</span>
+        }
+<span class="fc" id="L156">    }</span>
+
+    /**
+     * Produces the full signature header value for the given envelope and
+     * timestamp — the shape the integration tests use to drive the real
+     * bean through the real dispatch path.
+     */
+    public String computeSignatureHeader(String provider, String eventId, String eventType,
+                                         UUID paymentIntentId, String externalId, long timestampEpochSeconds) {
+<span class="fc" id="L165">        String mac = computeMac(timestampEpochSeconds, provider, eventId, eventType, paymentIntentId, externalId);</span>
+<span class="fc" id="L166">        return TIMESTAMP_KEY + &quot;=&quot; + timestampEpochSeconds + &quot;,&quot; + SIGNATURE_SCHEME + &quot;=&quot; + mac;</span>
+    }
+
+    private String computeMac(long timestamp, String provider, String eventId, String eventType,
+                              UUID paymentIntentId, String externalId) {
+<span class="fc" id="L171">        String signedPayload = timestamp + &quot;.&quot; + canonicalEnvelope(provider, eventId, eventType,</span>
+                paymentIntentId, externalId);
+        try {
+<span class="fc" id="L174">            Mac mac = Mac.getInstance(HMAC_ALGORITHM);</span>
+<span class="fc" id="L175">            SecretKeySpec keySpec = new SecretKeySpec(sharedSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);</span>
+<span class="fc" id="L176">            mac.init(keySpec);</span>
+<span class="fc" id="L177">            byte[] hmac = mac.doFinal(signedPayload.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L178">            return Base64.getEncoder().encodeToString(hmac);</span>
+<span class="nc" id="L179">        } catch (Exception e) {</span>
+<span class="nc" id="L180">            throw new AccessDeniedException(&quot;Failed to compute webhook signature&quot;, e);</span>
+        }
+    }
+
+    /**
+     * Injective length-prefixed serialization of the five dispatch fields
+     * with EXPLICIT presence (CWE-345, CodeRabbit j1): {@code null} encodes
+     * as the lone marker {@code -}, while the empty string encodes as
+     * {@code 0:} and any non-empty value as {@code &lt;len&gt;:&lt;value&gt;} — a
+     * signature made for an absent field never verifies for a present-empty
+     * one (the two were indistinguishable under a plain null-to-empty
+     * normalization). The reader recovers each field boundary
+     * deterministically: the marker {@code -} is null; otherwise digits up
+     * to the first {@code :}, then exactly {@code len} characters — so two
+     * different field tuples can never collide on one MAC input. See the
+     * class javadoc for why bare concatenation is not a sound MAC input.
+     */
+    static String canonicalEnvelope(String provider, String eventId, String eventType,
+                                    UUID paymentIntentId, String externalId) {
+<span class="fc" id="L199">        return field(provider) + field(eventId) + field(eventType)</span>
+<span class="fc bfc" id="L200" title="All 2 branches covered.">                + field(paymentIntentId == null ? null : paymentIntentId.toString())</span>
+<span class="fc" id="L201">                + field(externalId);</span>
+    }
+
+    private static String field(String value) {
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L206">            return NULL_MARKER;</span>
+        }
+<span class="fc" id="L208">        return value.length() + &quot;:&quot; + value;</span>
+    }
+
+    /**
+     * Extracts {@code t=&lt;epoch-seconds&gt;} from the header — the first entry
+     * wins. Missing or non-numeric ⇒ rejection (official error family:
+     * &quot;Unable to extract timestamp and signatures from header&quot;).
+     */
+    private static long extractTimestamp(String signatureHeader) {
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        if (signatureHeader == null) {</span>
+<span class="fc" id="L218">            throw new AccessDeniedException(&quot;Unable to extract timestamp and signatures from header&quot;);</span>
+        }
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        for (String part : signatureHeader.split(&quot;,&quot;)) {</span>
+<span class="fc" id="L221">            int eq = part.indexOf('=');</span>
+<span class="fc bfc" id="L222" title="All 4 branches covered.">            if (eq &gt; 0 &amp;&amp; TIMESTAMP_KEY.equals(part.substring(0, eq))) {</span>
+                try {
+<span class="fc" id="L224">                    return Long.parseLong(part.substring(eq + 1));</span>
+<span class="fc" id="L225">                } catch (NumberFormatException ex) {</span>
+<span class="fc" id="L226">                    break;</span>
+                }
+            }
+        }
+<span class="fc" id="L230">        throw new AccessDeniedException(&quot;Unable to extract timestamp and signatures from header&quot;);</span>
+    }
+
+    /**
+     * Collects every {@code v1=&lt;mac&gt;} entry — at least one required
+     * (official error family: &quot;No signatures found with expected scheme&quot;).
+     */
+    private static List&lt;String&gt; extractSignatures(String signatureHeader) {
+<span class="fc" id="L238">        List&lt;String&gt; signatures = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">        for (String part : signatureHeader.split(&quot;,&quot;)) {</span>
+<span class="fc" id="L240">            int eq = part.indexOf('=');</span>
+<span class="pc bpc" id="L241" title="1 of 4 branches missed.">            if (eq &gt; 0 &amp;&amp; SIGNATURE_SCHEME.equals(part.substring(0, eq))) {</span>
+<span class="fc" id="L242">                signatures.add(part.substring(eq + 1));</span>
+            }
+        }
+<span class="fc bfc" id="L245" title="All 2 branches covered.">        if (signatures.isEmpty()) {</span>
+<span class="fc" id="L246">            throw new AccessDeniedException(&quot;No signatures found with expected scheme&quot;);</span>
+        }
+<span class="fc" id="L248">        return signatures;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

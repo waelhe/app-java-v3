@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EventPublicationCleanup.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.cache</a> &gt; <span class="el_source">EventPublicationCleanup.java</span></div><h1>EventPublicationCleanup.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.cache;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.CompletedEventPublications;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+
+/**
+ * Periodically purges completed event publications from the registry.
+ *
+ * &lt;p&gt;Official source — Spring Modulith 2.1.1 Reference:
+ * &lt;a href=&quot;https://docs.spring.io/spring-modulith/reference/events.html#publication-registry.completion&quot;&gt;
+ * Event Publication Completion&lt;/a&gt;:
+ * &quot;Completed publications will remain in the Event Publication Registry so that
+ * they can be inspected through the {@code CompletedEventPublications} interface.
+ * A consequence of this is that you'll need to put some code in place that will
+ * periodically purge old, completed {@code EventPublication}s. Otherwise, the
+ * persistent abstraction of them, for example a relational database table, will
+ * grow unbounded and the interaction with the store creating and completing new
+ * {@code EventPublication} might slow down.&quot;
+ *
+ * &lt;p&gt;This scheduler uses {@code completion-mode: archive} (configured in
+ * application.yml), which copies completed entries to an archive table.
+ * This task purges archive entries older than 7 days.
+ */
+@Component
+public class EventPublicationCleanup {
+
+<span class="nc" id="L32">    private static final Logger log = LoggerFactory.getLogger(EventPublicationCleanup.class);</span>
+
+    private final CompletedEventPublications completedPublications;
+
+<span class="nc" id="L36">    public EventPublicationCleanup(CompletedEventPublications completedPublications) {</span>
+<span class="nc" id="L37">        this.completedPublications = completedPublications;</span>
+<span class="nc" id="L38">    }</span>
+
+    /**
+     * Deletes completed event publications older than 7 days.
+     * Runs daily at 03:00 UTC (off-peak hours).
+     *
+     * &lt;p&gt;Official source — Spring Modulith 2.1.1 Reference:
+     * {@code CompletedEventPublications.deleteByCompletionDateBefore(Duration)}
+     * &quot;purge all of them from the database or the completed publications older
+     * than a given duration (for example, 1 minute).&quot;
+     */
+    @Scheduled(cron = &quot;0 0 3 * * ?&quot;, zone = &quot;UTC&quot;)
+    void purgeOldPublications() {
+<span class="nc" id="L51">        Duration maxAge = Duration.ofDays(7);</span>
+<span class="nc" id="L52">        completedPublications.deletePublicationsOlderThan(maxAge);</span>
+<span class="nc" id="L53">        log.debug(&quot;Purged completed event publications older than {}&quot;, maxAge);</span>
+<span class="nc" id="L54">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

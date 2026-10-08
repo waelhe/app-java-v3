@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditHistoryPurgeService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">AuditHistoryPurgeService.java</span></div><h1>AuditHistoryPurgeService.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.jpa.AuditColumnScrubAdapter;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+/**
+ * I7 Phase 3 (account-pseudonymization-plan §2 gate b-4 — the audit
+ * history purge, executed on the user's gate-opening word): the identity
+ * module's orchestration. The plan's purge option, verbatim: &quot;حذف صفوف
+ * {@code users_aud} للمستخدم (WHERE id=…) + كنس {@code created_by}/
+ * {@code updated_by} عبر نحو 20 جدولاً — عملية ثقيلة تُشغَّل خارج
+ * المعاملة، تقبل التدرّج&quot;.
+ *
+ * &lt;p&gt;&lt;b&gt;The order is load-bearing (measured, not stylistic):&lt;/b&gt; the
+ * original raw subject — the very string the audit columns carry
+ * (AuditorAwareImpl writes {@code Authentication.getName()}) — survives
+ * pseudonymization ONLY in the {@code users_aud} revisions (the plan's
+ * P6 residual; the users row now holds the derived replacement, and the
+ * structured log line never recorded the original — CWE-532). So the
+ * sequence must be: (1) recover the subject closure from the mirror
+ * history, (2) scrub the audit columns across every discovered table,
+ * (3) delete the {@code users_aud} rows. Deleting first would orphan the
+ * closure and leave the original subject alive in {@code created_by}
+ * forever — a silent debt, the exact shape this purge exists to close.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Deliberately no transaction (the plan's &quot;خارج المعاملة&quot; +
+ * gradualism):&lt;/b&gt; the scrub runs one autocommitted statement per
+ * (table, column) and the deletion is its own statement — a partial
+ * failure leaves the completed statements committed and the re-run
+ * resumes: every predicate is idempotent (NULL matches nothing) and a
+ * user with no mirror history left answers zero. This service carries no
+ * {@code @Transactional}, and the module surface suspends any ambient
+ * transaction ({@code NOT_SUPPORTED} on the delegation).&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The guard:&lt;/b&gt; the same erasure-flow contract as the b-3 purge —
+ * the target must already be pseudonymized (409 otherwise, before any
+ * statement). The raw subject dies with Phase 1's act; this purge cleans
+ * the residuals the plan declared (P5/P6), it never operates on a live
+ * account's audit trail.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;CWE-532 discipline:&lt;/b&gt; the structured log line carries the
+ * target (userId), actor, reason and the two counts — the subject
+ * strings themselves never enter the log store (they are the direct
+ * identifiers being scrubbed).&lt;/p&gt;
+ */
+@Service
+public class AuditHistoryPurgeService {
+
+<span class="fc" id="L59">    private static final Logger log = LoggerFactory.getLogger(AuditHistoryPurgeService.class);</span>
+
+    private final UserRepository userRepository;
+    private final JdbcTemplate jdbcTemplate;
+    private final AuditColumnScrubAdapter auditColumnScrubAdapter;
+
+    public AuditHistoryPurgeService(
+            UserRepository userRepository,
+            JdbcTemplate jdbcTemplate,
+<span class="fc" id="L68">            AuditColumnScrubAdapter auditColumnScrubAdapter) {</span>
+<span class="fc" id="L69">        this.userRepository = userRepository;</span>
+<span class="fc" id="L70">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L71">        this.auditColumnScrubAdapter = auditColumnScrubAdapter;</span>
+<span class="fc" id="L72">    }</span>
+
+    /**
+     * Purges the (already-pseudonymized) subject's audit identity: nulls
+     * every {@code created_by}/{@code updated_by} cell holding one of his
+     * subject strings across every table the live schema reports carrying
+     * the columns, then deletes his {@code users_aud} revisions wholesale.
+     * A re-run answers zero on both counts (NULL matches nothing; the
+     * mirror history is gone).
+     *
+     * @throws ResourceNotFoundException no users row for the id
+     * @throws ConflictException          the account is not pseudonymized
+     *                                    — this purge completes an erasure
+     *                                    flow (pseudonymize first)
+     */
+    @Observed(name = &quot;user.audit.purge&quot;)
+    public com.marketplace.identity.spi.AuditHistoryPurgeResult purge(UUID userId, String reason, String actor) {
+<span class="fc" id="L89">        User user = userRepository.findById(userId)</span>
+<span class="fc" id="L90">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + userId));</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        if (user.getPseudonymizedAt() == null) {</span>
+<span class="fc" id="L92">            throw new ConflictException(</span>
+                    &quot;Audit history purge requires a pseudonymized account — pseudonymize first &quot;
+                            + &quot;(the purge completes an erasure flow; a live account's audit trail &quot;
+                            + &quot;is active history)&quot;);
+        }
+
+        // (1) The subject closure — BEFORE anything destructive consumes it:
+        // the mirror history's distinct subjects (the original raw subject
+        // plus the derived replacement) united with the current row's
+        // subject.
+<span class="fc" id="L102">        Set&lt;String&gt; subjects = new HashSet&lt;&gt;(jdbcTemplate.queryForList(</span>
+                &quot;SELECT DISTINCT subject FROM users_aud WHERE id = ?&quot;, String.class, userId));
+<span class="fc" id="L104">        subjects.add(user.getSubject());</span>
+
+        // (2) The scrub — every discovered table, one autocommitted
+        // statement per (table, column).
+<span class="fc" id="L108">        int scrubbedRows = auditColumnScrubAdapter.scrubAuditColumns(subjects);</span>
+
+        // (3) The mirror dies wholesale (the plan's letter — the deletion
+        // subsumes scrubbing those rows).
+<span class="fc" id="L112">        int usersAudRowsDeleted = jdbcTemplate.update(</span>
+                &quot;DELETE FROM users_aud WHERE id = ?&quot;, userId);
+
+<span class="fc" id="L115">        log.info(&quot;Audit history purge: userId={}, actor={}, reason='{}', scrubbedRows={}, &quot;</span>
+                        + &quot;usersAudRowsDeleted={}&quot;,
+<span class="fc" id="L117">                userId, actor, reason, scrubbedRows, usersAudRowsDeleted);</span>
+<span class="fc" id="L118">        return new com.marketplace.identity.spi.AuditHistoryPurgeResult(scrubbedRows, usersAudRowsDeleted);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

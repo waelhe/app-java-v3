@@ -6,10 +6,17 @@ import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.resilience.InsertRaceRetryConfiguration;
+import com.marketplace.shared.resilience.InsertRaceRetryProperties;
 import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
+import org.aopalliance.intercept.MethodInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -59,9 +66,65 @@ class ListingPriceCalendarServiceTest {
     /** The L22 unit-test convention: a mocked manager lets the REQUIRES_NEW template run callbacks inline. */
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
-    private final ListingPriceCalendarService service = new ListingPriceCalendarService(
+    private final ListingPriceCalendarService target = new ListingPriceCalendarService(
             weekendRuleRepository, seasonalRateRepository, listingPriceProvider,
             currentUserProvider, providerLookupPort, eventPublisher, transactionManager);
+    /**
+     * The L26 unit-test convention: a mocked manager lets the REQUIRES_NEW
+     * template run callbacks inline. G-RETRY-1 adds the REAL retry aspect on
+     * top of the target (the official resilience4j building blocks — the same
+     * RetryConfig bean and RetryInterceptor the starter wires at runtime):
+     * a plain Mockito mock has no proxy, so calling the raw bean would make
+     * {@code @Retry} a silent no-op (Spring Framework reference, Proxying
+     * Modes). Tests that need the UNPROXED behavior use {@link #target}.
+     */
+    private final ListingPriceCalendarService service = insertRaceRetryProxy(target);
+
+    private static ListingPriceCalendarService insertRaceRetryProxy(ListingPriceCalendarService target) {
+        RetryConfig config = new InsertRaceRetryConfiguration()
+                .insertRaceRetryConfig(new InsertRaceRetryProperties(2, java.time.Duration.ofMillis(1), 2.0));
+        Retry retry = Retry.of(InsertRaceRetryConfiguration.INSERT_RACE_RETRY, config);
+        // The official Spring AOP building block for annotation-driven
+        // advice: an advisor carrying a pointcut AND an advice — the same
+        // pairing Boot's auto-proxy creator performs for @Retry in
+        // production.
+        ProxyFactory proxyFactory = new ProxyFactory(target);
+        proxyFactory.addAdvisor(annotationPointcutRetryAdvisor(retry));
+        return (ListingPriceCalendarService) proxyFactory.getProxy();
+    }
+
+    /** {@code @Retry}-annotated methods only, backed by the shared insert-race Retry. */
+    private static org.springframework.aop.Advisor annotationPointcutRetryAdvisor(Retry retry) {
+        // Official Spring AOP building block: DefaultPointcutAdvisor pairs a
+        // pointcut with an advice — the same pairing Boot's auto-proxy creator
+        // performs for @Retry in production. MethodInterceptor.invoke declares
+        // Throwable, so the lambda body must not propagate checked exceptions
+        // from executeCallable directly.
+        return new org.springframework.aop.support.DefaultPointcutAdvisor(
+                new AnnotationMatchingPointcut(null,
+                        io.github.resilience4j.retry.annotation.Retry.class, true),
+                (MethodInterceptor) invocation -> {
+                    // The SAME consumption pattern as the official Resilience4j
+                    // RetryAspect (resilience4j-spring6): decorate the call with
+                    // io.github.resilience4j.retry.function.Retry decoratedSupplier
+                    // and let it rethrow — checked-exception plumbing via
+                    // executeCallable is unnecessary because the annotated seam
+                    // only throws unchecked exceptions.
+                    return io.github.resilience4j.retry.Retry
+                            .decorateSupplier(retry, () -> {
+                                try {
+                                    return invocation.proceed();
+                                } catch (RuntimeException | Error e) {
+                                    throw e;
+                                } catch (Throwable t) {
+                                    // Unreachable for @Retry seams (unchecked-only);
+                                    // kept to satisfy MethodInterceptor's signature.
+                                    throw new IllegalStateException(t);
+                                }
+                            })
+                            .get();
+                });
+    }
 
     private final Authentication authentication = mock(Authentication.class);
 
@@ -160,6 +223,9 @@ class ListingPriceCalendarServiceTest {
         assertEquals(winner.getId(), response.id(), "the retry re-tuned the winner's row");
         assertEquals(new BigDecimal("1.5"), response.multiplier());
         assertEvicted();
+        // The proxy really retried: two save attempts through the aspect.
+        verify(weekendRuleRepository, org.mockito.Mockito.times(2))
+                .save(any(ListingWeekendRule.class));
     }
 
     /**

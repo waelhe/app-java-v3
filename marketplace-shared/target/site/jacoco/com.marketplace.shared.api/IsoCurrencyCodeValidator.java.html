@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IsoCurrencyCodeValidator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">IsoCurrencyCodeValidator.java</span></div><h1>IsoCurrencyCodeValidator.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
+
+import java.util.Currency;
+
+/**
+ * Validator behind {@link IsoCurrencyCode}: delegates validity to the JDK's
+ * ISO 4217 implementation ({@link Currency#getInstance(String)}). Blank
+ * values pass through (composition with optional fields — see the annotation
+ * Javadoc).
+ */
+<span class="fc" id="L14">public class IsoCurrencyCodeValidator implements ConstraintValidator&lt;IsoCurrencyCode, String&gt; {</span>
+
+    @Override
+    public boolean isValid(String value, ConstraintValidatorContext context) {
+<span class="fc bfc" id="L18" title="All 4 branches covered.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L19">            return true;</span>
+        }
+<span class="fc" id="L21">        String candidate = value.strip().toUpperCase(java.util.Locale.ROOT);</span>
+<span class="fc bfc" id="L22" title="All 2 branches covered.">        if (candidate.length() != 3) {</span>
+<span class="fc" id="L23">            return false;</span>
+        }
+        try {
+            // ISO 4217 authority: the JDK's own currency table. Throws
+            // IllegalArgumentException for unknown codes.
+<span class="fc" id="L28">            Currency.getInstance(candidate);</span>
+<span class="fc" id="L29">            return true;</span>
+<span class="fc" id="L30">        } catch (IllegalArgumentException ex) {</span>
+<span class="fc" id="L31">            return false;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

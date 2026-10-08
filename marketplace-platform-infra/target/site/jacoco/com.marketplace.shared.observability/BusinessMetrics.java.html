@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BusinessMetrics.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.observability</a> &gt; <span class="el_source">BusinessMetrics.java</span></div><h1>BusinessMetrics.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.observability;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+/**
+ * Business-level metrics for the marketplace platform.
+ */
+@Component
+public class BusinessMetrics {
+
+    private final Counter bookingsCreatedCounter;
+    private final Counter bookingsCompletedCounter;
+    private final Counter bookingsCancelledCounter;
+    private final Counter paymentsInitiatedCounter;
+    private final Counter paymentsCompletedCounter;
+    private final Counter paymentsFailedCounter;
+    private final Counter listingsCreatedCounter;
+    private final Counter reviewsCreatedCounter;
+
+<span class="fc" id="L22">    public BusinessMetrics(MeterRegistry registry) {</span>
+<span class="fc" id="L23">        this.bookingsCreatedCounter = Counter.builder(&quot;marketplace.bookings.created&quot;)</span>
+<span class="fc" id="L24">                .description(&quot;Number of bookings created&quot;).register(registry);</span>
+<span class="fc" id="L25">        this.bookingsCompletedCounter = Counter.builder(&quot;marketplace.bookings.completed&quot;)</span>
+<span class="fc" id="L26">                .description(&quot;Number of bookings completed&quot;).register(registry);</span>
+<span class="fc" id="L27">        this.bookingsCancelledCounter = Counter.builder(&quot;marketplace.bookings.cancelled&quot;)</span>
+<span class="fc" id="L28">                .description(&quot;Number of bookings cancelled&quot;).register(registry);</span>
+<span class="fc" id="L29">        this.paymentsInitiatedCounter = Counter.builder(&quot;marketplace.payments.initiated&quot;)</span>
+<span class="fc" id="L30">                .description(&quot;Number of payment intents initiated&quot;).register(registry);</span>
+<span class="fc" id="L31">        this.paymentsCompletedCounter = Counter.builder(&quot;marketplace.payments.completed&quot;)</span>
+<span class="fc" id="L32">                .description(&quot;Number of payments completed&quot;).register(registry);</span>
+<span class="fc" id="L33">        this.paymentsFailedCounter = Counter.builder(&quot;marketplace.payments.failed&quot;)</span>
+<span class="fc" id="L34">                .description(&quot;Number of payments failed&quot;).register(registry);</span>
+<span class="fc" id="L35">        this.listingsCreatedCounter = Counter.builder(&quot;marketplace.listings.created&quot;)</span>
+<span class="fc" id="L36">                .description(&quot;Number of provider listings created&quot;).register(registry);</span>
+<span class="fc" id="L37">        this.reviewsCreatedCounter = Counter.builder(&quot;marketplace.reviews.created&quot;)</span>
+<span class="fc" id="L38">                .description(&quot;Number of reviews created&quot;).register(registry);</span>
+<span class="fc" id="L39">    }</span>
+
+<span class="fc" id="L41">    public void bookingCreated() { bookingsCreatedCounter.increment(); }</span>
+<span class="fc" id="L42">    public void bookingCompleted() { bookingsCompletedCounter.increment(); }</span>
+<span class="fc" id="L43">    public void bookingCancelled() { bookingsCancelledCounter.increment(); }</span>
+<span class="fc" id="L44">    public void paymentInitiated() { paymentsInitiatedCounter.increment(); }</span>
+<span class="fc" id="L45">    public void paymentCompleted() { paymentsCompletedCounter.increment(); }</span>
+<span class="fc" id="L46">    public void paymentFailed() { paymentsFailedCounter.increment(); }</span>
+<span class="fc" id="L47">    public void listingCreated() { listingsCreatedCounter.increment(); }</span>
+<span class="fc" id="L48">    public void reviewCreated() { reviewsCreatedCounter.increment(); }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

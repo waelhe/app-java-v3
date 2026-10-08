@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderFollowListingEventListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ProviderFollowListingEventListener.java</span></div><h1>ProviderFollowListingEventListener.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.ListingActivatedEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.stereotype.Component;
+
+/**
+ * W4 (yelp-level plan §5 — G21): the identity module's consumer of the
+ * catalog's activation event — the THIRD declared consumer of the same
+ * publisher (search's {@code SavedSearchEventListener} and the community
+ * bridge proved the pattern; one publisher, many consumers, the Modulith
+ * fan-out the plans document as &quot;ناشر واحد مستهلكان&quot;).
+ *
+ * &lt;p&gt;Same contract as every house listener — after commit, its own
+ * transaction (REQUIRES_NEW), the framework's retry: a failure mid-bridge
+ * never loses the activation (the registry entry stays incomplete until
+ * the whole follow-scan, ledger-insert and publication unit succeeds).
+ *
+ * &lt;p&gt;The bridge logic itself lives on
+ * {@link ProviderFollowService#onListingActivated} — the follow domain's
+ * own read — exactly the way the search side's listener delegates to
+ * {@code SavedSearchService.processListingActivated} and the community
+ * side's to {@code NeighborhoodMembershipService.onListingActivated}.
+ */
+@Component
+public class ProviderFollowListingEventListener {
+
+<span class="nc" id="L30">    private static final Logger log =</span>
+<span class="nc" id="L31">            LoggerFactory.getLogger(ProviderFollowListingEventListener.class);</span>
+
+    private final ProviderFollowService providerFollowService;
+
+<span class="nc" id="L35">    public ProviderFollowListingEventListener(ProviderFollowService providerFollowService) {</span>
+<span class="nc" id="L36">        this.providerFollowService = providerFollowService;</span>
+<span class="nc" id="L37">    }</span>
+
+    @ApplicationModuleListener
+    public void onListingActivated(ListingActivatedEvent event) {
+<span class="nc" id="L41">        int alerted = providerFollowService.onListingActivated(</span>
+<span class="nc" id="L42">                event.listingId(), event.providerId());</span>
+<span class="nc" id="L43">        log.info(&quot;Provider-follow bridge completed for listing {}: {} follower(s) alerted&quot;,</span>
+<span class="nc" id="L44">                event.listingId(), alerted);</span>
+<span class="nc" id="L45">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

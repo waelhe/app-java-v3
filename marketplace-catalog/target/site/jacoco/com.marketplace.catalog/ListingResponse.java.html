@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingResponse.java</span></div><h1>ListingResponse.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.PropertyDetailsPort;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * The public listing detail response. L31 (realestate systems plan): gains
+ * the optional {@code property} block — the real-estate field set when the
+ * listing has one, embedded through the {@code PropertyDetailsPort} (the
+ * {@code ProviderNameResolver} pattern: shared-api interface, realestate
+ * implements, catalog consumes — an application association in the
+ * aggregation, never JPA across module boundaries). The field is additive
+ * and null for every listing without property details.
+ *
+ * &lt;p&gt;L39 (realestate systems plan §5 — SEO and structured data): gains
+ * the optional {@code jsonLd} block — the schema.org
+ * {@code RealEstateListing} structured data composed on the PUBLIC
+ * DETAIL read only (the page a search engine verifies is the detail
+ * page; list surfaces never carry per-item JSON-LD). The field is
+ * additive and null for every listing without a property block (a
+ * service listing is not a RealEstateListing).
+ */
+<span class="fc" id="L25">public record ListingResponse(</span>
+        UUID id,
+        String title,
+        String description,
+        String category,
+        BigDecimal price,
+        String currency,
+        Integer maxGuests,
+        Instant createdAt,
+        Instant updatedAt,
+        PropertyDetailsPort.PropertyView property,
+        Instant expiresAt,
+        String pausedReason,
+        RealEstateListingJsonLd jsonLd
+) {
+    /** The pre-L31 nine-component form — every existing construction site. */
+    public ListingResponse(UUID id, String title, String description, String category,
+                           BigDecimal price, String currency, Integer maxGuests,
+                           Instant createdAt, Instant updatedAt) {
+<span class="fc" id="L44">        this(id, title, description, category, price, currency, maxGuests,</span>
+                createdAt, updatedAt, null, null, null, null);
+<span class="fc" id="L46">    }</span>
+
+    /** The L31 form (property embed) — the L32-era construction sites. */
+    public ListingResponse(UUID id, String title, String description, String category,
+                           BigDecimal price, String currency, Integer maxGuests,
+                           Instant createdAt, Instant updatedAt,
+                           PropertyDetailsPort.PropertyView property) {
+<span class="nc" id="L53">        this(id, title, description, category, price, currency, maxGuests,</span>
+                createdAt, updatedAt, property, null, null, null);
+<span class="nc" id="L55">    }</span>
+
+    /** The L33 form (property embed + expiry window) — the L34-era sites. */
+    public ListingResponse(UUID id, String title, String description, String category,
+                           BigDecimal price, String currency, Integer maxGuests,
+                           Instant createdAt, Instant updatedAt,
+                           PropertyDetailsPort.PropertyView property,
+                           Instant expiresAt, String pausedReason) {
+<span class="nc" id="L63">        this(id, title, description, category, price, currency, maxGuests,</span>
+                createdAt, updatedAt, property, expiresAt, pausedReason, null);
+<span class="nc" id="L65">    }</span>
+
+    /** The embed — the wither of the L31 block. */
+    public ListingResponse withProperty(PropertyDetailsPort.PropertyView propertyView) {
+<span class="fc" id="L69">        return new ListingResponse(id, title, description, category, price, currency,</span>
+                maxGuests, createdAt, updatedAt, propertyView, expiresAt, pausedReason, jsonLd);
+    }
+
+    /** The structured-data wither of the L39 block (the detail read's composition). */
+    public ListingResponse withJsonLd(RealEstateListingJsonLd block) {
+<span class="fc" id="L75">        return new ListingResponse(id, title, description, category, price, currency,</span>
+                maxGuests, createdAt, updatedAt, property, expiresAt, pausedReason, block);
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

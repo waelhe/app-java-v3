@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderFollow.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ProviderFollow.java</span></div><h1>ProviderFollow.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.util.UUID;
+
+/**
+ * W4 (yelp-level plan §5 — the reviewer identity &amp;amp; engagement wave, G21):
+ * one member's follow of one provider — the row behind &quot;تابع هذا المزود&quot;
+ * and the {@code FOLLOWED_PROVIDER_NEW_LISTING} alert when that provider's
+ * listing is announced.
+ *
+ * &lt;p&gt;&lt;b&gt;Module ownership (the plan's §5 W4 allocation — identity + reviews
+ * + notifications):&lt;/b&gt; the follow is MEMBER data (the follower is a users
+ * row and the &quot;my follows&quot; surface is the member's own /me page), so the
+ * table lives in marketplace-identity — the same ownership reasoning that
+ * put the membership rows in marketplace-community for the neighborhood
+ * bridge (the nearest measured twin of this fan-out).
+ *
+ * &lt;p&gt;&lt;b&gt;Cross-module references (the V32/media_assets, V52/listing_leads,
+ * V54/saved_searches discipline):&lt;/b&gt; both columns are plain UUIDs in the
+ * users.id space — no JPA relationship and no FK across module borders.
+ * {@code providerUserId} is the followed provider's USER id (the A1
+ * measured fact: {@code provider_listings.provider_id references
+ * users(id)}), which is exactly the id {@code ListingActivatedEvent}
+ * carries — the activation bridge joins on it directly, no profile
+ * resolution on the hot path. The write path resolves the client-facing
+ * PROFILE id to this user id through {@code ProviderLookupPort} (the W1
+ * {@code createOrganic} seam's own resolution), so the public page's key
+ * never leaks into storage and the bridge never resolves on read.
+ *
+ * &lt;p&gt;&lt;b&gt;Uniqueness (the house two-layer form):&lt;/b&gt; the service's explicit
+ * 409 first, V93's partial unique index
+ * {@code uq_provider_follows_once ON (user_id, provider_user_id) WHERE
+ * is_deleted = FALSE} as the concurrent-insert backstop. The soft delete
+ * (the house withdraw form, b-5) frees the pair — an unfollow then a
+ * re-follow is legal by construction, exactly like the helpful-vote pair.
+ */
+@Entity
+@Table(name = &quot;provider_follows&quot;)
+@Audited
+public class ProviderFollow extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    /** The follower — a users.id (the /me seam resolves it; no JPA relation). */
+    @Column(name = &quot;user_id&quot;, nullable = false)
+    private UUID userId;
+
+    /**
+     * The followed provider's USER id (A1 — the space
+     * {@code ListingActivatedEvent.providerId} carries, so the bridge's
+     * scan is a direct indexed read).
+     */
+    @Column(name = &quot;provider_user_id&quot;, nullable = false)
+    private UUID providerUserId;
+
+<span class="fc" id="L64">    protected ProviderFollow() {</span>
+        // JPA
+<span class="fc" id="L66">    }</span>
+
+    /**
+     * The factory gate: a follow without either party cannot exist. The
+     * self-follow rule (a member never follows his own provider profile)
+     * is the SERVICE's gate — the {@code createOrganic} &quot;not the provider
+     * itself&quot; precedent — because it needs the resolved pair, not the raw
+     * arguments.
+     */
+    static ProviderFollow create(UUID id, UUID userId, UUID providerUserId) {
+<span class="pc bpc" id="L76" title="2 of 4 branches missed.">        if (userId == null || providerUserId == null) {</span>
+<span class="nc" id="L77">            throw new IllegalArgumentException(&quot;userId and providerUserId are required&quot;);</span>
+        }
+<span class="fc" id="L79">        ProviderFollow follow = new ProviderFollow();</span>
+<span class="fc" id="L80">        follow.id = id;</span>
+<span class="fc" id="L81">        follow.userId = userId;</span>
+<span class="fc" id="L82">        follow.providerUserId = providerUserId;</span>
+<span class="fc" id="L83">        return follow;</span>
+    }
+
+<span class="fc" id="L86">    UUID getUserId() { return userId; }</span>
+
+<span class="fc" id="L88">    UUID getProviderUserId() { return providerUserId; }</span>
+
+    @Override
+<span class="fc" id="L91">    public UUID getId() { return id; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

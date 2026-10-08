@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingPromotion.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ListingPromotion.java</span></div><h1>ListingPromotion.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * L37 (realestate systems plan §5 — the featured boost): the boost-window
+ * state of one listing, as set by the administrative shading point. The
+ * record is the PUT /api/v1/admin/listings/{id}/promotion response — the
+ * honest state view after the change (a cleared boost reports
+ * {@code null}, the same nullable-Instant contract the entity's
+ * {@code promoted_until} column carries).
+ *
+ * &lt;p&gt;Deliberately NOT part of any public read surface: the boost is
+ * visible to the public by POSITION (boosted-first ordering), and the
+ * operational state belongs to the admin surface + the Envers revision
+ * trail (the plan's criterion 4) — not to the listing detail contract.
+ *
+ * @param id the listing whose window was set
+ * @param promotedUntil the window's end, or {@code null} when cleared
+ */
+<span class="nc" id="L22">public record ListingPromotion(UUID id, Instant promotedUntil) {</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdClicksDailyService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdClicksDailyService.java</span></div><h1>AdClicksDailyService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.resilience.InsertRaceRetryConfiguration;
+import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the click's +1
+ * transaction — {@code ListingViewsDailyService}'s contract verbatim (the
+ * L21 locked read-modify-write, the insert race's framework-managed retry
+ * in a NEW transaction via {@link InsertRaceRetryConfiguration} —
+ * PostgreSQL aborts the transaction holding the violated insert, so the
+ * retry cannot share it; the loser's violation surfaces only after the
+ * winner committed).
+ */
+@Service
+public class AdClicksDailyService {
+
+    private final AdClickDailyRepository repository;
+
+<span class="nc" id="L28">    public AdClicksDailyService(AdClickDailyRepository repository) {</span>
+<span class="nc" id="L29">        this.repository = repository;</span>
+<span class="nc" id="L30">    }</span>
+
+    /**
+     * Records one deduplicated click of {@code campaignId} on
+     * {@code clickDate} — either a new bucket row (the first click of
+     * that campaign-day) or a locked +1 on the existing one. A lost
+     * insert race is retried by the framework-managed {@code @Retry}
+     * below — in a NEW transaction, which is why {@code REQUIRES_NEW}
+     * carries the per-attempt boundary.
+     */
+    @Retry(name = InsertRaceRetryConfiguration.INSERT_RACE_RETRY)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void addClick(UUID campaignId, LocalDate clickDate) {
+<span class="nc" id="L43">        Optional&lt;AdClickDaily&gt; existing =</span>
+<span class="nc" id="L44">                repository.findByCampaignIdAndClickDateForUpdate(campaignId, clickDate);</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">        if (existing.isPresent()) {</span>
+<span class="nc" id="L46">            existing.get().addClick();</span>
+<span class="nc" id="L47">            return;</span>
+        }
+        // saveAndFlush: the INSERT (and a lost insert race's constraint
+        // violation) surface HERE, inside this transaction, before any
+        // caller could mistake the row for persisted.
+<span class="nc" id="L52">        repository.saveAndFlush(AdClickDaily.firstClick(campaignId, clickDate));</span>
+<span class="nc" id="L53">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

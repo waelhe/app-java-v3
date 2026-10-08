@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountStatusChanged.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">AccountStatusChanged.java</span></div><h1>AccountStatusChanged.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.UUID;
+
+/**
+ * R8 (comprehensive-review-ar fix plan §4, Wave 1): published by the identity
+ * module's account-status command inside its own transaction, the domain fact
+ * that an account's login-side status flipped — {@code auth_users.enabled},
+ * written through the framework-managed {@code UserDetailsManager}.
+ *
+ * &lt;p&gt;The Modulith house pattern ({@code UserRoleChanged} /
+ * {@code CacheInvalidationRequested} precedents): identifiers and stored
+ * values only, published inside the command's transaction so the publication
+ * registry entry commits atomically with the store write — a consumer failing
+ * AFTER_COMMIT leaves the registry entry incomplete for the framework's retry
+ * instead of losing the fact.
+ *
+ * &lt;p&gt;{@code username} carries the login-side principal name (the email
+ * subject) because that is the key the session index is built on: Spring
+ * Session's {@code PrincipalNameIndexResolver} indexes every saved session by
+ * {@code authentication.getName()}, and {@code SpringSessionBackedSessionRegistry
+ * #getAllSessions(Object, boolean)} looks sessions up by that same name. The
+ * event is therefore self-contained for its consumer (the
+ * {@code AccountStatusSessionInvalidator} in platform-infra) — no query back
+ * into the identity module is needed to expire the account's sessions.
+ *
+ * &lt;p&gt;The event is published for BOTH directions (disable and enable) — the
+ * domain fact stays complete for any future consumer (e.g. an enable
+ * notification). The security consumer acts on {@code enabled == false} only:
+ * activation expires nothing (an enabled account's sessions carry no security
+ * liability), the CodeRabbit round-1 adoption on the fix plan itself
+ * (commit {@code e27a94b} on {@code plan/comprehensive-review-ar-fix}).
+ */
+<span class="nc" id="L34">public record AccountStatusChanged(</span>
+        UUID userId,
+        String username,
+        boolean enabled
+) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

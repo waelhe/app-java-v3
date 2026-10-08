@@ -1,0 +1,13 @@
+com/marketplace/disputes/DisputeMapper.class
+com/marketplace/disputes/DisputeResolution.class
+com/marketplace/disputes/DisputeService.class
+com/marketplace/disputes/spi/DisputesContentPurgeAdapter.class
+com/marketplace/disputes/DisputeController.class
+com/marketplace/disputes/DisputeStatus.class
+com/marketplace/disputes/package-info.class
+com/marketplace/disputes/ResolveDisputeRequest.class
+com/marketplace/disputes/Dispute.class
+com/marketplace/disputes/DisputeRepository.class
+com/marketplace/disputes/DisputesModule.class
+com/marketplace/disputes/DisputeMapperImpl.class
+com/marketplace/disputes/DisputeResponse.class

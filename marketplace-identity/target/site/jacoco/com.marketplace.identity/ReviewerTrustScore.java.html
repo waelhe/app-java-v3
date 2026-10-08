@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReviewerTrustScore.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ReviewerTrustScore.java</span></div><h1>ReviewerTrustScore.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.ReviewerStats;
+
+import java.time.Duration;
+
+/**
+ * W5 (yelp-level plan §5 — G26, «درجة ثقة للمراجع»): the reviewer's
+ * graded trust signal — the plan's own words: «مراجع موثوق (حساب
+ * معاملات، تاريخ، أصوات مفيد) مقابل حساب ولد اليوم — لا تمييز». W4's
+ * badges answer the binary questions; the score answers the graded one —
+ * the difference between «has at least one» and «how much».
+ *
+ * &lt;p&gt;&lt;b&gt;DERIVED, never stored&lt;/b&gt; (the W4 {@link ReviewerBadge} rule
+ * verbatim — «مشتق أبدًا لا مخزن»): recomputed from the measured facts on
+ * every page render, so it can never drift from them.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The formula is three transparent components&lt;/b&gt;, each capped, in
+ * the exact order the plan names them («حساب معاملات، تاريخ، أصوات
+ * مفيد» — transactions, history, helpful votes):
+ * &lt;ul&gt;
+ *   &lt;li&gt;&lt;b&gt;Transactions&lt;/b&gt; (max {@value #VERIFIED_COMPONENT_MAX}): each
+ *       published verified review — a rating born from a completed,
+ *       paid booking — contributes {@value #PER_VERIFIED_POINTS} points;
+ *       five transactions max the component. The strongest single trust
+ *       fact the dual-mode design owns.&lt;/li&gt;
+ *   &lt;li&gt;&lt;b&gt;History&lt;/b&gt; (max {@value #AGE_COMPONENT_MAX}): one point per
+ *       {@value #DAYS_PER_AGE_POINT} days of account age — the army of
+ *       day-old accounts the §4.5 anti-abuse gates price in patience;
+ *       {@value #AGE_COMPONENT_MAX}×{@value #DAYS_PER_AGE_POINT} days max
+ *       the component.&lt;/li&gt;
+ *   &lt;li&gt;&lt;b&gt;Helpful votes&lt;/b&gt; (max {@value #HELPFUL_COMPONENT_MAX}): each
+ *       cumulative helpful vote the community gave his reviews
+ *       contributes {@value #PER_HELPFUL_POINT} points — the quality
+ *       signal §4.5 names as the trust score's own feed («إشارة الجودة
+ *       التي تتغذى عليها درجة ثقة المراجع»); ten votes max the
+ *       component.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The tier labels&lt;/b&gt; carry the reading, not the arithmetic: a
+ * day-old account with zero activity is honestly {@link #NEWCOMER} (0);
+ * the mature reviewer with transactions, history and community
+ * endorsement reaches {@link #TRUSTED}. The thresholds are THIS wave's
+ * documented choice — the plan names the three feeds without numbers;
+ * they live here, and only here, as named constants a future owner
+ * decision can move to the {@code system_settings} control layer the W0
+ * wave established.&lt;/p&gt;
+ *
+ * @param score the 0–100 trust score (the three capped components' sum)
+ * @param tier  the score's reading — {@link #NEWCOMER} below
+ *              {@value #ESTABLISHED_FLOOR}, {@link #ESTABLISHED} below
+ *              {@value #TRUSTED_FLOOR}, {@link #TRUSTED} at or above
+ */
+<span class="fc" id="L54">public record ReviewerTrustScore(int score, TrustTier tier) {</span>
+
+    /** The transactions component's ceiling. */
+    static final int VERIFIED_COMPONENT_MAX = 40;
+
+    /** Points per published verified review. */
+    static final int PER_VERIFIED_POINTS = 8;
+
+    /** The history component's ceiling. */
+    static final int AGE_COMPONENT_MAX = 20;
+
+    /** Days of account age per point. */
+    static final int DAYS_PER_AGE_POINT = 9;
+
+    /** The helpful-votes component's ceiling. */
+    static final int HELPFUL_COMPONENT_MAX = 40;
+
+    /** Points per cumulative helpful vote. */
+    static final int PER_HELPFUL_POINT = 4;
+
+    /** The ESTABLISHED tier's floor. */
+    static final int ESTABLISHED_FLOOR = 30;
+
+    /** The TRUSTED tier's floor. */
+    static final int TRUSTED_FLOOR = 70;
+
+    /** The day-old-account reading — the plan's «حساب ولد اليوم». */
+<span class="fc" id="L81">    public enum TrustTier { NEWCOMER, ESTABLISHED, TRUSTED }</span>
+
+    /**
+     * The derivation itself — the three capped components over the
+     * port's measured facts plus the account's age. Null stats (the
+     * not-yet-a-reviewer profile) is the honest zero, never a guess.
+     */
+    static ReviewerTrustScore derive(ReviewerStats stats, Duration accountAge) {
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        long verified = stats == null ? 0 : Math.max(0, stats.verifiedReviewCount());</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        long helpful = stats == null ? 0 : Math.max(0, stats.helpfulVoteCount());</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        long days = accountAge == null ? 0 : Math.max(0, accountAge.toDays());</span>
+
+<span class="fc" id="L93">        int transactions = (int) Math.min(VERIFIED_COMPONENT_MAX, verified * PER_VERIFIED_POINTS);</span>
+<span class="fc" id="L94">        int history = (int) Math.min(AGE_COMPONENT_MAX, days / DAYS_PER_AGE_POINT);</span>
+<span class="fc" id="L95">        int helpfulness = (int) Math.min(HELPFUL_COMPONENT_MAX, helpful * PER_HELPFUL_POINT);</span>
+
+<span class="fc" id="L97">        int score = Math.min(100, transactions + history + helpfulness);</span>
+<span class="fc" id="L98">        return new ReviewerTrustScore(score, tierOf(score));</span>
+    }
+
+    private static TrustTier tierOf(int score) {
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (score &gt;= TRUSTED_FLOOR) {</span>
+<span class="fc" id="L103">            return TrustTier.TRUSTED;</span>
+        }
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        return score &gt;= ESTABLISHED_FLOOR ? TrustTier.ESTABLISHED : TrustTier.NEWCOMER;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

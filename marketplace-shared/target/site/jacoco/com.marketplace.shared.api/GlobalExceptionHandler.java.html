@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GlobalExceptionHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">GlobalExceptionHandler.java</span></div><h1>GlobalExceptionHandler.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.net.URI;
+import java.util.List;
+
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.ProblemDetail;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+/**
+ * Global REST exception handler using RFC 7807 {@link ProblemDetail}.
+ *
+ * &lt;p&gt;i18n layer (roadmap B4 / gap G-PROD-4): when a {@link MessageSource}
+ * is bound, the fixed English literals of this handler resolve through it
+ * at the request's locale (the framework's {@code AcceptHeaderLocaleResolver}
+ * populates {@code LocaleContextHolder}). The machine contract is unchanged
+ * — {@code errorCode}, {@code category}, {@code type} stay authoritative —
+ * while {@code title}, the fixed {@code detail} sentences and the new
+ * {@code userMessage} property carry the localized human text. Domain
+ * exceptions ({@link ApiProblemDetailException}) keep their dynamic
+ * developer-facing detail and gain a localized {@code userMessage} from
+ * the {@code error.&lt;CODE&gt;.user} key of their taxonomy.&lt;/p&gt;
+ *
+ * &lt;p&gt;Without a bound MessageSource — or when a key has no bundle entry —
+ * every message falls back to the exact pre-B4 English literal, so the
+ * default path is byte-identical to the previous behavior.&lt;/p&gt;
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+<span class="fc" id="L47">    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);</span>
+    private static final String CORRELATION_ID_HEADER = &quot;X-Correlation-ID&quot;;
+    private static final String CORRELATION_ID_ATTRIBUTE = &quot;correlationId&quot;;
+
+    private static final String KEY_PREFIX = &quot;error.&quot;;
+
+    private final MessageSource messageSource;
+
+<span class="fc" id="L55">    public GlobalExceptionHandler() {</span>
+<span class="fc" id="L56">        this.messageSource = null;</span>
+<span class="fc" id="L57">    }</span>
+
+    @Autowired
+<span class="nc" id="L60">    public GlobalExceptionHandler(ObjectProvider&lt;MessageSource&gt; messageSource) {</span>
+<span class="nc" id="L61">        this.messageSource = messageSource.getIfAvailable();</span>
+<span class="nc" id="L62">    }</span>
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
+<span class="fc" id="L66">        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, &quot;Validation failed&quot;, request, null, &quot;detail&quot;);</span>
+<span class="fc" id="L67">        List&lt;ApiErrorPayload.FieldError&gt; fieldErrors = ex.getBindingResult().getFieldErrors().stream()</span>
+<span class="fc" id="L68">                .map(fe -&gt; new ApiErrorPayload.FieldError(fe.getField(), fe.getDefaultMessage()))</span>
+<span class="fc" id="L69">                .toList();</span>
+<span class="fc" id="L70">        pd.setProperty(&quot;fieldErrors&quot;, fieldErrors);</span>
+<span class="fc" id="L71">        return pd;</span>
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
+<span class="fc" id="L76">        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, &quot;Constraint violation&quot;, request, null,</span>
+                &quot;constraint-violation-detail&quot;);
+        // §5 contract completeness (platform-readiness audit): the body-
+        // validation path (@Valid @RequestBody → MethodArgumentNotValidException)
+        // already answers fieldErrors; the method-validation path
+        // (@Validated parameters → ConstraintViolationException) answers the
+        // SAME extension, the documented MAY made real on both legs — a client
+        // renders one violations list for every 400, never a bare VAL-001.
+<span class="fc" id="L84">        List&lt;ApiErrorPayload.FieldError&gt; fieldErrors = ex.getConstraintViolations().stream()</span>
+<span class="fc" id="L85">                .map(violation -&gt; new ApiErrorPayload.FieldError(leafName(violation), violation.getMessage()))</span>
+<span class="fc" id="L86">                .toList();</span>
+<span class="fc" id="L87">        pd.setProperty(&quot;fieldErrors&quot;, fieldErrors);</span>
+<span class="fc" id="L88">        return pd;</span>
+    }
+
+    /**
+     * The most specific node of the violation's property path — the
+     * parameter (method validation: {@code open.reason} → {@code reason})
+     * or property (bean validation) the constraint rejected. The plain-name
+     * shape matches the body-validation path's {@code fieldErrors[].field}
+     * exactly, so both legs of the validation contract carry one shape.
+     */
+    private static String leafName(jakarta.validation.ConstraintViolation&lt;?&gt; violation) {
+<span class="fc" id="L99">        String leaf = null;</span>
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        for (jakarta.validation.Path.Node node : violation.getPropertyPath()) {</span>
+<span class="fc" id="L101">            leaf = node.getName();</span>
+<span class="fc" id="L102">        }</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">        return leaf != null ? leaf : violation.getPropertyPath().toString();</span>
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+<span class="fc" id="L108">        return problem(ApiErrorTaxonomy.CONFLICT, &quot;Resource was modified by another transaction. Please retry.&quot;,</span>
+                request, null, &quot;detail&quot;);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+<span class="fc" id="L114">        return problem(ApiErrorTaxonomy.AUTHZ, &quot;Access denied&quot;, request, null, &quot;detail&quot;);</span>
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ProblemDetail handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
+<span class="fc" id="L119">        return problem(ApiErrorTaxonomy.AUTHN, &quot;Authentication required&quot;, request, null, &quot;detail&quot;);</span>
+    }
+
+    @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class, ServiceUnavailableException.class, TooManyRequestsException.class})
+    public ProblemDetail handleApiProblemDetail(ApiProblemDetailException ex, HttpServletRequest request) {
+<span class="fc" id="L124">        ProblemDetail pd = ex.getBody();</span>
+<span class="fc" id="L125">        pd.setInstance(URI.create(request.getRequestURI()));</span>
+<span class="fc" id="L126">        ApiErrorTaxonomy taxonomy = ex.taxonomy();</span>
+<span class="fc" id="L127">        pd.setTitle(resolve(KEY_PREFIX + taxonomy.errorCode() + &quot;.title&quot;, taxonomy.title()));</span>
+<span class="pc bpc" id="L128" title="2 of 4 branches missed.">        if (pd.getProperties() == null || pd.getProperties().get(&quot;userMessage&quot;) == null) {</span>
+<span class="fc" id="L129">            String userMessage = resolve(KEY_PREFIX + taxonomy.errorCode() + &quot;.user&quot;, null);</span>
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">            if (userMessage != null) {</span>
+<span class="nc" id="L131">                pd.setProperty(&quot;userMessage&quot;, userMessage);</span>
+            }
+        }
+<span class="fc" id="L134">        return pd;</span>
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
+<span class="fc" id="L139">        return problem(ApiErrorTaxonomy.NOT_FOUND, &quot;Resource not found&quot;, request, null, &quot;detail&quot;);</span>
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ProblemDetail handleRateLimited(RequestNotPermitted ex, HttpServletRequest request) {
+<span class="fc" id="L144">        return problem(ApiErrorTaxonomy.RATE_LIMIT, &quot;Rate limit exceeded. Please try again later.&quot;,</span>
+                request, null, &quot;detail&quot;);
+    }
+
+    /**
+     * Resilience4j circuit-breaker open → 503 SERVICE_UNAVAILABLE with the
+     * masked problem body (no internal state leaks).
+     */
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ProblemDetail handleCircuitBreakerOpen(CallNotPermittedException ex, HttpServletRequest request) {
+<span class="fc" id="L154">        return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,</span>
+                &quot;Service temporarily unavailable. Please try again later.&quot;, request,
+                &quot;Service currently degraded&quot;, &quot;detail&quot;);
+    }
+
+    /**
+     * Maps an {@link IllegalArgumentException} to the VALIDATION taxonomy
+     * (400, RFC 7807) — A5: an illegal argument is a client-contract
+     * violation, never a 500, mirroring the GraphQL resolver's
+     * VALIDATION_ERROR mapping.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+        // A5: an illegal argument is a client-contract violation (400), matching
+        // the GraphQL resolver's VALIDATION_ERROR mapping — never a 500.
+<span class="fc" id="L169">        return problem(ApiErrorTaxonomy.VALIDATION, ex.getMessage(), request, null, &quot;detail&quot;);</span>
+    }
+
+    /**
+     * Maps an {@link IllegalStateException} to the CONFLICT taxonomy
+     * (409, RFC 7807) — A5: an illegal state raised by a well-formed
+     * request is a domain conflict, mirroring the GraphQL resolver's
+     * DOMAIN_CONFLICT mapping.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
+        // A5: an illegal state in a well-formed request is a domain conflict (409),
+        // matching the GraphQL resolver's DOMAIN_CONFLICT mapping — never a 500.
+<span class="fc" id="L182">        return problem(ApiErrorTaxonomy.CONFLICT, ex.getMessage(), request, null, &quot;detail&quot;);</span>
+    }
+
+    /**
+     * L31 (realestate systems plan): a UNIQUE-constraint race at the
+     * database (official PostgreSQL SQLSTATE 23505 — unique_violation,
+     * Appendix A. Error Codes) is a 409 CONFLICT, never a 500. The service
+     * upsert makes duplicates impossible on the happy path; this is the
+     * backstop for concurrent writers racing between find and insert (the
+     * acceptance criterion &quot;two property blocks for one listing are
+     * impossible — DB constraint + 409&quot;). Every other integrity violation
+     * (NOT NULL, FK, CHECK) is a server-side anomaly and keeps falling to
+     * {@link #handleGeneral}.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleUniqueViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        if (uniqueViolation(ex)) {</span>
+<span class="fc" id="L199">            log.warn(&quot;Unique constraint conflict for {}: {}&quot;, request.getRequestURI(), rootMessage(ex));</span>
+<span class="fc" id="L200">            return problem(ApiErrorTaxonomy.CONFLICT,</span>
+                    &quot;The resource already exists (unique constraint conflict)&quot;, request, null, &quot;detail&quot;);
+        }
+<span class="fc" id="L203">        log.error(&quot;Unhandled integrity violation for {}: {}&quot;, request.getRequestURI(), ex.getMessage(), ex);</span>
+<span class="fc" id="L204">        return problem(ApiErrorTaxonomy.INTERNAL, &quot;An unexpected error occurred&quot;, request, null, &quot;detail&quot;);</span>
+    }
+
+    /**
+     * Official PostgreSQL unique-violation SQLSTATE 23505 — read from
+     * {@link java.sql.SQLException#getSQLState()} of any cause in the
+     * chain (the pgjdbc contract: the state rides the exception, not the
+     * message text), with a message fallback for wrappers that stringify
+     * it instead.
+     */
+    private static boolean uniqueViolation(Throwable ex) {
+<span class="fc" id="L215">        Throwable cause = ex;</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">        while (cause != null) {</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">            if (cause instanceof java.sql.SQLException sql</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">                    &amp;&amp; &quot;23505&quot;.equals(sql.getSQLState())) {</span>
+<span class="fc" id="L219">                return true;</span>
+            }
+<span class="pc bpc" id="L221" title="2 of 4 branches missed.">            if (cause.getMessage() != null &amp;&amp; cause.getMessage().contains(&quot;23505&quot;)) {</span>
+<span class="nc" id="L222">                return true;</span>
+            }
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">            cause = cause.getCause() == cause ? null : cause.getCause();</span>
+        }
+<span class="fc" id="L226">        return false;</span>
+    }
+
+    private static String rootMessage(Throwable ex) {
+<span class="fc" id="L230">        Throwable cause = ex;</span>
+<span class="pc bpc" id="L231" title="1 of 4 branches missed.">        while (cause.getCause() != null &amp;&amp; cause.getCause() != cause) {</span>
+<span class="fc" id="L232">            cause = cause.getCause();</span>
+        }
+<span class="fc" id="L234">        return cause.getMessage();</span>
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleGeneral(Exception ex, HttpServletRequest request) {
+<span class="fc" id="L239">        log.error(&quot;Unhandled exception for {}: {}&quot;, request.getRequestURI(), ex.getMessage(), ex);</span>
+<span class="fc" id="L240">        return problem(ApiErrorTaxonomy.INTERNAL, &quot;An unexpected error occurred&quot;, request, null, &quot;detail&quot;);</span>
+    }
+
+    private ProblemDetail problem(ApiErrorTaxonomy taxonomy, String detail, HttpServletRequest request,
+                                  String userMessage, String detailKeySuffix) {
+<span class="fc" id="L245">        String traceId = request.getHeader(CORRELATION_ID_HEADER);</span>
+<span class="pc bpc" id="L246" title="1 of 4 branches missed.">        if (traceId == null || traceId.isBlank()) {</span>
+<span class="fc" id="L247">            Object correlationIdAttribute = request.getAttribute(CORRELATION_ID_HEADER);</span>
+<span class="pc bpc" id="L248" title="3 of 4 branches missed.">            if (!(correlationIdAttribute instanceof String correlationId) || correlationId.isBlank()) {</span>
+<span class="fc" id="L249">                correlationIdAttribute = request.getAttribute(CORRELATION_ID_ATTRIBUTE);</span>
+            }
+<span class="pc bpc" id="L251" title="1 of 4 branches missed.">            if (correlationIdAttribute instanceof String correlationId &amp;&amp; !correlationId.isBlank()) {</span>
+<span class="fc" id="L252">                traceId = correlationId;</span>
+            }
+        }
+
+<span class="fc" id="L256">        String localizedDetail = resolve(KEY_PREFIX + taxonomy.errorCode() + &quot;.&quot; + detailKeySuffix, detail);</span>
+<span class="fc bfc" id="L257" title="All 2 branches covered.">        String resolvedUserMessage = userMessage != null</span>
+<span class="fc" id="L258">                ? userMessage</span>
+<span class="fc" id="L259">                : resolve(KEY_PREFIX + taxonomy.errorCode() + &quot;.user&quot;, null);</span>
+
+<span class="fc" id="L261">        ProblemDetail pd = ApiProblemDetails.fromTaxonomy(taxonomy, localizedDetail, request.getRequestURI(),</span>
+                resolvedUserMessage, traceId);
+<span class="fc" id="L263">        pd.setTitle(resolve(KEY_PREFIX + taxonomy.errorCode() + &quot;.title&quot;, taxonomy.title()));</span>
+<span class="fc" id="L264">        return pd;</span>
+    }
+
+    /**
+     * Resolves a message at the request locale; returns the exact fallback
+     * literal when no MessageSource is bound or the key has no entry —
+     * the pre-B4 behavior is the floor, not an approximation.
+     */
+    private String resolve(String code, String fallback) {
+<span class="pc bpc" id="L273" title="3 of 4 branches missed.">        if (messageSource == null || code == null) {</span>
+<span class="fc" id="L274">            return fallback;</span>
+        }
+        // LocaleContextHolder carries the framework-resolved request locale
+        // (AcceptHeaderLocaleResolver) and degrades to the JVM default when
+        // no request is in flight — exactly the resolution contract the MVC
+        // stack itself uses.
+<span class="nc" id="L280">        return messageSource.getMessage(code, null, fallback, LocaleContextHolder.getLocale());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

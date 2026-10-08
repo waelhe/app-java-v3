@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentIntentLookupAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments.spi</a> &gt; <span class="el_source">PaymentIntentLookupAdapter.java</span></div><h1>PaymentIntentLookupAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.payments.spi;
+
+import com.marketplace.payments.PaymentIntentRepository;
+import com.marketplace.shared.api.PaymentIntentDetails;
+import com.marketplace.shared.api.PaymentIntentLookupPort;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Component
+@Transactional(readOnly = true)
+public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
+
+    private final PaymentIntentRepository paymentIntentRepository;
+
+<span class="fc" id="L18">    public PaymentIntentLookupAdapter(PaymentIntentRepository paymentIntentRepository) {</span>
+<span class="fc" id="L19">        this.paymentIntentRepository = paymentIntentRepository;</span>
+<span class="fc" id="L20">    }</span>
+
+    @Override
+    public Optional&lt;PaymentIntentDetails&gt; findById(UUID paymentIntentId) {
+<span class="fc" id="L24">        return paymentIntentRepository.findById(paymentIntentId)</span>
+<span class="fc" id="L25">                .map(i -&gt; new PaymentIntentDetails(i.getId(), i.getBookingId(), i.getConsumerId(), i.getAdCampaignId(),</span>
+<span class="fc" id="L26">                        i.getStatus().name(), i.getOrigin(), i.getAmountCents(), i.getCurrency()));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

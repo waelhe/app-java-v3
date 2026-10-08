@@ -1,0 +1,59 @@
+spring:
+  docker:
+    compose:
+      enabled: ${DOCKER_COMPOSE_ENABLED:false}
+      file: ../docker-compose.yml
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/marketplace
+    username: ${DB_USERNAME:marketplace}
+    password: ${DB_PASSWORD:}
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    clean-disabled: false
+
+  cache:
+    type: simple
+
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  modulith:
+    events:
+      completion-mode: delete
+
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    com.marketplace: DEBUG
+
+marketplace:
+  cors:
+    allowed-origins: http://localhost:3000
+  security:
+    jwt:
+      audience: marketplace-api
+      keystore:
+        path: ${JWT_KEYSTORE_PATH:./marketplace-app/local/dev-authserver.jks}
+        password: ${JWT_KEYSTORE_PASSWORD:}
+        alias: ${JWT_KEY_ALIAS:marketplace-auth}
+        key-password: ${JWT_KEY_PASSWORD:}

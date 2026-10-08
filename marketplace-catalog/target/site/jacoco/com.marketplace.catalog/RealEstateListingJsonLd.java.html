@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RealEstateListingJsonLd.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">RealEstateListingJsonLd.java</span></div><h1>RealEstateListingJsonLd.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.marketplace.shared.api.GeoLookupPort.GeoNode;
+import com.marketplace.shared.api.PropertyDetailsPort.PropertyView;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * L39 (realestate systems plan §5 — SEO and structured data): the
+ * schema.org {@code RealEstateListing} JSON-LD block the public listing
+ * detail response gains — the data the frontend embeds verbatim in its
+ * page as {@code &lt;script type=&quot;application/ld+json&quot;&gt;} so search engines
+ * verify the listing's structured facts (&quot;الحقول تخدم الواجهة لتحقّق
+ * محركات البحث — الباك اند يخدم البيانات فقط&quot;).
+ *
+ * &lt;p&gt;&lt;b&gt;Every field is a measured schema.org fact (the comparative
+ * field test of the plan's criterion 3):&lt;/b&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code RealEstateListing} (Thing &amp;gt; CreativeWork &amp;gt; WebPage &amp;gt;
+ *       RealEstateListing — &quot;A RealEstateListing is a listing that
+ *       describes one or more real-estate Offers (whose
+ *       businessFunction is typically to lease out, or to sell)&quot;).&lt;/li&gt;
+ *   &lt;li&gt;{@code name}/{@code description}/{@code url} — Thing properties.&lt;/li&gt;
+ *   &lt;li&gt;{@code dateModified} — CreativeWork property, mapped from the
+ *       entity's {@code updated_at} audit column (exactly the fact that
+ *       column claims). {@code datePosted} — the type's own &quot;Publication
+ *       date of an online listing&quot; — is deliberately OMITTED: the entity
+ *       records no publication instant ({@code activate()} changes the
+ *       status with no timestamp — a listing drafted days before
+ *       activation would carry a fabricated date under {@code createdAt};
+ *       CodeRabbit round 1 verified the schema carries no such column).
+ *       The field returns when a publication timestamp becomes a
+ *       first-class fact — an honest omission, never a guess.&lt;/li&gt;
+ *   &lt;li&gt;{@code offers} with an {@code Offer} carrying {@code price},
+ *       {@code priceCurrency} (ISO 4217) and {@code businessFunction} —
+ *       the type's own documentation directs the transaction kind there;
+ *       the enumeration values are the GoodRelations URIs schema.org
+ *       adopted: {@code http://purl.org/goodrelations/v1#LeaseOut} for
+ *       RENT and {@code http://purl.org/goodrelations/v1#Sell} for SALE
+ *       (measured from schema.org/BusinessFunction).&lt;/li&gt;
+ *   &lt;li&gt;{@code address} as a {@code PostalAddress} — the L30
+ *       administrative chain mapped by level to the standard's three
+ *       place fields: level 0 (country) → {@code addressCountry},
+ *       level 1 (governorate) → {@code addressRegion}, level 2 (city)
+ *       → {@code addressLocality}. The neighborhood level carries no
+ *       PostalAddress field in the standard (its properties are
+ *       streetAddress/postOfficeBoxNumber/addressLocality/
+ *       addressRegion/postalCode/addressCountry) — it is NOT invented
+ *       into the structured block; it stays in the response's property
+ *       block (locationId) and the geo endpoint for the frontend to
+ *       display.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Honesty rules:&lt;/b&gt; the block exists only for listings that HAVE
+ * a real-estate property block (the L31 embed — a service listing is
+ * not a RealEstateListing); {@code url} is present only when the public
+ * site origin is bound (a fabricated URL helps no one); absent
+ * optional fields are omitted ({@code NON_NULL} — the JSON-LD
+ * convention is omission, not null).
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+<span class="fc" id="L66">public record RealEstateListingJsonLd(</span>
+        @JsonProperty(&quot;@context&quot;) String context,
+        @JsonProperty(&quot;@type&quot;) String type,
+        String name,
+        String description,
+        String url,
+        Instant dateModified,
+        Offers offers,
+        Address address
+) {
+
+    public static final String SCHEMA_CONTEXT = &quot;https://schema.org&quot;;
+    public static final String SCHEMA_TYPE = &quot;RealEstateListing&quot;;
+
+    /** RENT → lease out (the GoodRelations enumeration schema.org adopted). */
+    static final String BUSINESS_FUNCTION_LEASE_OUT = &quot;http://purl.org/goodrelations/v1#LeaseOut&quot;;
+    /** SALE → sell (the same enumeration's default member). */
+    static final String BUSINESS_FUNCTION_SELL = &quot;http://purl.org/goodrelations/v1#Sell&quot;;
+
+    /**
+     * The block for one public listing detail: the listing's core facts
+     * plus its real-estate property block plus the resolved location
+     * chain, with the public page URL only when the origin is bound.
+     *
+     * @param listing  the listing detail response (core + property block)
+     * @param chain    the L30 location chain (attached node → root; may
+     *                 be empty when the property block has no location
+     *                 or the node is absent from the tree)
+     * @param pageUrl  the public listing page URL — empty when the SEO
+     *                 capability is off (the url field is omitted)
+     */
+    public static RealEstateListingJsonLd of(ListingResponse listing,
+                                             List&lt;GeoNode&gt; chain,
+                                             Optional&lt;String&gt; pageUrl) {
+<span class="fc" id="L100">        PropertyView property = listing.property();</span>
+<span class="fc" id="L101">        return new RealEstateListingJsonLd(</span>
+                SCHEMA_CONTEXT,
+                SCHEMA_TYPE,
+<span class="fc" id="L104">                listing.title(),</span>
+<span class="fc" id="L105">                listing.description(),</span>
+<span class="fc" id="L106">                pageUrl.orElse(null),</span>
+<span class="fc" id="L107">                listing.updatedAt(),</span>
+<span class="fc" id="L108">                new Offers(listing.price(), listing.currency(),</span>
+<span class="fc" id="L109">                        businessFunctionOf(property.purpose())),</span>
+<span class="fc" id="L110">                addressOf(chain));</span>
+    }
+
+    static String businessFunctionOf(com.marketplace.shared.api.PropertyPurpose purpose) {
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        return purpose == com.marketplace.shared.api.PropertyPurpose.SALE</span>
+<span class="fc" id="L115">                ? BUSINESS_FUNCTION_SELL</span>
+<span class="fc" id="L116">                : BUSINESS_FUNCTION_LEASE_OUT;</span>
+    }
+
+    private static Address addressOf(List&lt;GeoNode&gt; chain) {
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        if (chain.isEmpty()) {</span>
+<span class="fc" id="L121">            return null;</span>
+        }
+<span class="fc" id="L123">        String country = null;</span>
+<span class="fc" id="L124">        String region = null;</span>
+<span class="fc" id="L125">        String locality = null;</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        for (GeoNode node : chain) {</span>
+<span class="fc bfc" id="L127" title="All 4 branches covered.">            switch (node.level()) {</span>
+<span class="fc" id="L128">                case 0 -&gt; country = node.nameAr();</span>
+<span class="fc" id="L129">                case 1 -&gt; region = node.nameAr();</span>
+<span class="fc" id="L130">                case 2 -&gt; locality = node.nameAr();</span>
+                default -&gt; { /* the neighborhood: no PostalAddress field — see the class javadoc */ }
+            }
+<span class="fc" id="L133">        }</span>
+<span class="pc bpc" id="L134" title="5 of 6 branches missed.">        if (country == null &amp;&amp; region == null &amp;&amp; locality == null) {</span>
+<span class="nc" id="L135">            return null;</span>
+        }
+<span class="fc" id="L137">        return new Address(country, region, locality);</span>
+    }
+
+    /**
+     * The listing's Offer — price in major units with its ISO 4217
+     * currency (the response's own price fields) and the transaction
+     * kind as the businessFunction enumeration value.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+<span class="fc" id="L146">    public record Offers(</span>
+            @JsonProperty(&quot;@type&quot;) String type,
+            java.math.BigDecimal price,
+            String priceCurrency,
+            String businessFunction
+    ) {
+        static final String OFFER_TYPE = &quot;Offer&quot;;
+
+        Offers(java.math.BigDecimal price, String priceCurrency, String businessFunction) {
+<span class="fc" id="L155">            this(OFFER_TYPE, price, priceCurrency, businessFunction);</span>
+<span class="fc" id="L156">        }</span>
+    }
+
+    /**
+     * The PostalAddress from the L30 administrative chain (level-mapped
+     * — see the class javadoc for why the neighborhood is not a field).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+<span class="fc" id="L164">    public record Address(</span>
+            @JsonProperty(&quot;@type&quot;) String type,
+            String addressCountry,
+            String addressRegion,
+            String addressLocality
+    ) {
+        static final String ADDRESS_TYPE = &quot;PostalAddress&quot;;
+
+        Address(String addressCountry, String addressRegion, String addressLocality) {
+<span class="fc" id="L173">            this(ADDRESS_TYPE, addressCountry, addressRegion, addressLocality);</span>
+<span class="fc" id="L174">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

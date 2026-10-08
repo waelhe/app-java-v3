@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingParticipantProviderAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking</a> &gt; <span class="el_source">BookingParticipantProviderAdapter.java</span></div><h1>BookingParticipantProviderAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.booking;
+
+import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import org.springframework.stereotype.Component;
+
+import java.util.UUID;
+
+/**
+ * Adapter that implements the {@link BookingParticipantProvider} port
+ * using the booking module's own repository.
+ *
+ * &lt;p&gt;This allows other modules (e.g., reviews) to look up booking
+ * participants without depending on the booking module directly.
+ * The port is a synchronous interface (not an event) because the
+ * caller needs booking details before persisting — see
+ * {@link BookingParticipantProvider} for the design rationale.&lt;/p&gt;
+ */
+@Component
+public class BookingParticipantProviderAdapter implements BookingParticipantProvider {
+
+    private final BookingRepository bookingRepository;
+
+<span class="fc" id="L25">    public BookingParticipantProviderAdapter(BookingRepository bookingRepository) {</span>
+<span class="fc" id="L26">        this.bookingRepository = bookingRepository;</span>
+<span class="fc" id="L27">    }</span>
+
+    @Override
+    public BookingInfo getBookingInfo(UUID bookingId) {
+<span class="fc" id="L31">        return bookingRepository.findById(bookingId)</span>
+<span class="fc" id="L32">                .map(booking -&gt; new BookingInfo(</span>
+<span class="fc" id="L33">                        booking.getProviderId(),</span>
+<span class="fc" id="L34">                        booking.getConsumerId(),</span>
+<span class="fc" id="L35">                        booking.getStatus().name(),</span>
+<span class="fc" id="L36">                        booking.getPriceCents(),</span>
+<span class="fc" id="L37">                        booking.getCurrency(),</span>
+<span class="fc" id="L38">                        booking.getCreatedAt(),</span>
+<span class="fc" id="L39">                        booking.getUpdatedAt()</span>
+                ))
+<span class="fc" id="L41">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Booking&quot;, bookingId));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

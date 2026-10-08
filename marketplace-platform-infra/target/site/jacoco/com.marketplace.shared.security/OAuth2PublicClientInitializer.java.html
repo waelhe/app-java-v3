@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OAuth2PublicClientInitializer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.security</a> &gt; <span class="el_source">OAuth2PublicClientInitializer.java</span></div><h1>OAuth2PublicClientInitializer.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.security;
+
+import com.marketplace.shared.config.MarketplaceProperties;
+import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
+import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+/**
+ * Bootstraps the public (secret-less) registered client — gate B, pattern (3) &quot;native
+ * application&quot; of the client hosting strategy plan (§4: classified by secret location,
+ * not by technology) — from external configuration into {@code oauth2_registered_client}
+ * at startup, through the same single official mutation path as
+ * {@link OAuth2ClientSecretInitializer}: {@link RegisteredClientRepository#save(RegisteredClient)}
+ * (Spring Authorization Server — core-model-components, &quot;RegisteredClientRepository&quot;).
+ *
+ * &lt;p&gt;&lt;b&gt;Public client definition (official constraints):&lt;/b&gt; a public client &quot;cannot
+ * securely store credentials&quot; (SAS how-to how-to-pkce) so this registration carries
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code clientAuthenticationMethod: none} and no client secret (the column is
+ *       nullable in the application's own {@code V13__authorization_security.sql});&lt;/li&gt;
+ *   &lt;li&gt;{@code requireProofKey(true)} — public clients MUST use PKCE (RFC 9700 §2.1.1;
+ *       the SAS how-to: &quot;The requireProofKey setting is important to prevent the PKCE
+ *       Downgrade Attack&quot;);&lt;/li&gt;
+ *   &lt;li&gt;{@code authorization_code} grant only — &quot;Spring Authorization Server will not
+ *       issue refresh tokens for a public client&quot; (SAS how-to how-to-pkce, gh-297), so
+ *       neither the refresh grant nor refresh {@link TokenSettings} are set: the access
+ *       token is the only bearer credential, and re-authentication goes through the
+ *       authorization-server session (short access TTL, honest trade-off documented in
+ *       the plan §4);&lt;/li&gt;
+ *   &lt;li&gt;redirect URIs are &lt;em&gt;environment-driven&lt;/em&gt; ({@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS},
+ *       comma-separated; custom scheme per RFC 8252 or an https app link) — unlike the
+ *       web client's constant, because the redirect belongs to the client application's
+ *       identity and changes per deployment.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Bootstrap (row absent):&lt;/b&gt; created through the official
+ * {@link RegisteredClient.Builder} with a fixed id (see below). When not configured and
+ * the {@code prod} profile is not active, startup is a deliberate no-op — same contract
+ * as the confidential client initializer.
+ *
+ * &lt;p&gt;&lt;b&gt;Converge-on-boot (row present):&lt;/b&gt; the full definition is re-derived from
+ * configuration and code constants and rebuilt with {@code RegisteredClient.withId(existing.getId())}
+ * — the identity-preserving equivalent of the spec's {@code RegisteredClient.from(existing)}
+ * &quot;identity only&quot; prescription (§4.1 تثبيت ب), chosen because this definition is
+ * environment-driven: nothing from the stored row (grants, redirect URIs, settings maps)
+ * is carried over, so an environment change (e.g. a new redirect URI) converges at the
+ * next boot without legacy drift.
+ *
+ * &lt;p&gt;&lt;b&gt;Idempotence guard:&lt;/b&gt; {@code save()} runs only when the derived definition
+ * differs from the stored row — client id, client name, redirect URIs, authentication
+ * methods, grant types, scopes, secret null-ness, or the settings maps. Matching rows are
+ * a no-op, so concurrent instances converge without rewriting identical rows.
+ *
+ * &lt;p&gt;&lt;b&gt;Fail-fast by profile:&lt;/b&gt; {@code application-prod.yml} binds both values from
+ * mandatory environment variables ({@code OAUTH_PUBLIC_CLIENT_ID} /
+ * {@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}); production must not silently run without
+ * the first (public) client. The nested {@code marketplace.security.oauth2.public-client}
+ * section is bound non-null by an empty {@code @DefaultValue}.
+ *
+ * @see &lt;a href=&quot;https://docs.spring.io/spring-authorization-server/reference/guides/how-to-pkce.html&quot;&gt;Spring Authorization Server — How-to: PKCE&lt;/a&gt;
+ * @see &lt;a href=&quot;https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1&quot;&gt;RFC 9700 §2.1.1 — Public clients MUST use PKCE&lt;/a&gt;
+ * @see &lt;a href=&quot;https://datatracker.ietf.org/doc/html/rfc8252&quot;&gt;RFC 8252 — OAuth 2.0 for Native Apps&lt;/a&gt;
+ */
+@Component
+public class OAuth2PublicClientInitializer implements ApplicationRunner {
+
+<span class="fc" id="L82">    private static final Logger log = LoggerFactory.getLogger(OAuth2PublicClientInitializer.class);</span>
+
+<span class="fc" id="L84">    private static final Profiles PROD_PROFILE = Profiles.of(&quot;prod&quot;);</span>
+
+    /**
+     * Stable row identity of the public client. Referenced by
+     * {@code oauth2_authorization.registered_client_id} and
+     * {@code oauth2_authorization_consent.registered_client_id}, so it is invariant —
+     * same deliberate position as the confidential client's constant id (spec §4.1:
+     * turns the worst-case boot race into a loud, retryable failure because
+     * {@code client_id} has no UNIQUE constraint).
+     */
+    private static final String PUBLIC_CLIENT_ID = &quot;10b588c6-4e85-43ec-9ecf-c588676774d7&quot;;
+
+    /** Display name classified by secret location (plan §3), not by client technology. */
+    private static final String CLIENT_NAME = &quot;Marketplace Public Client&quot;;
+
+    private final MarketplaceProperties properties;
+    private final RegisteredClientRepository registeredClientRepository;
+    private final Environment environment;
+
+    public OAuth2PublicClientInitializer(MarketplaceProperties properties,
+                                         RegisteredClientRepository registeredClientRepository,
+<span class="fc" id="L105">                                         Environment environment) {</span>
+<span class="fc" id="L106">        this.properties = properties;</span>
+<span class="fc" id="L107">        this.registeredClientRepository = registeredClientRepository;</span>
+<span class="fc" id="L108">        this.environment = environment;</span>
+<span class="fc" id="L109">    }</span>
+
+    @Override
+    public void run(ApplicationArguments args) {
+<span class="fc" id="L113">        MarketplaceProperties.Security.OAuth2.PublicClient client =</span>
+<span class="fc" id="L114">                properties.security().oauth2().publicClient();</span>
+<span class="fc" id="L115">        String clientId = client.clientId();</span>
+<span class="fc" id="L116">        Set&lt;String&gt; redirectUris = parseRedirectUris(client.redirectUris());</span>
+
+<span class="fc bfc" id="L118" title="All 4 branches covered.">        if (!StringUtils.hasText(clientId) &amp;&amp; redirectUris.isEmpty()) {</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">            if (environment.acceptsProfiles(PROD_PROFILE)) {</span>
+<span class="fc" id="L120">                throw new IllegalStateException(</span>
+                        &quot;marketplace.security.oauth2.public-client.clientId and .redirectUris must be&quot;
+                                + &quot; configured in production (OAUTH_PUBLIC_CLIENT_ID/OAUTH_PUBLIC_CLIENT_REDIRECT_URIS)&quot;);
+            }
+<span class="fc" id="L124">            return;</span>
+        }
+<span class="fc bfc" id="L126" title="All 4 branches covered.">        if (!StringUtils.hasText(clientId) || redirectUris.isEmpty()) {</span>
+<span class="fc" id="L127">            throw new IllegalStateException(</span>
+                    &quot;marketplace.security.oauth2.public-client.clientId and .redirectUris must both be configured&quot;
+                            + &quot; (OAUTH_PUBLIC_CLIENT_ID/OAUTH_PUBLIC_CLIENT_REDIRECT_URIS, comma-separated)&quot;);
+        }
+
+<span class="fc" id="L132">        RegisteredClient existing = registeredClientRepository.findByClientId(clientId);</span>
+<span class="fc" id="L133">        RegisteredClient target = buildTarget(existing, clientId, redirectUris);</span>
+
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (!needsSave(existing, target)) {</span>
+<span class="fc" id="L136">            return;</span>
+        }
+
+<span class="fc" id="L139">        registeredClientRepository.save(target);</span>
+
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (existing == null) {</span>
+<span class="fc" id="L142">            log.info(&quot;Bootstrapped public (secret-less) registered client '{}' from environment configuration&quot;,</span>
+                    clientId);
+        } else {
+<span class="fc" id="L145">            log.info(&quot;Converged public (secret-less) registered client '{}' from environment configuration&quot;,</span>
+                    clientId);
+        }
+<span class="fc" id="L148">    }</span>
+
+    private static RegisteredClient buildTarget(RegisteredClient existing,
+                                                String clientId,
+                                                Set&lt;String&gt; redirectUris) {
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        String id = existing == null ? PUBLIC_CLIENT_ID : existing.getId();</span>
+<span class="fc" id="L154">        RegisteredClient.Builder builder = RegisteredClient.withId(id)</span>
+<span class="fc" id="L155">                .clientId(clientId)</span>
+<span class="fc" id="L156">                .clientName(CLIENT_NAME)</span>
+<span class="fc" id="L157">                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)</span>
+<span class="fc" id="L158">                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE);</span>
+<span class="fc" id="L159">        redirectUris.forEach(builder::redirectUri);</span>
+<span class="fc" id="L160">        return builder</span>
+<span class="fc" id="L161">                .scope(&quot;openid&quot;)</span>
+<span class="fc" id="L162">                .scope(&quot;profile&quot;)</span>
+<span class="fc" id="L163">                .clientSettings(buildClientSettings())</span>
+<span class="fc" id="L164">                .tokenSettings(buildTokenSettings())</span>
+<span class="fc" id="L165">                .build();</span>
+    }
+
+    /**
+     * {@code requireProofKey(true)} is mandatory for a public client (RFC 9700 §2.1.1)
+     * and protects against the PKCE downgrade attack (SAS how-to). Consent is required,
+     * matching the confidential client's explicit setting (INV-2).
+     */
+    private static ClientSettings buildClientSettings() {
+<span class="fc" id="L174">        return ClientSettings.builder()</span>
+<span class="fc" id="L175">                .requireProofKey(true)</span>
+<span class="fc" id="L176">                .requireAuthorizationConsent(true)</span>
+<span class="fc" id="L177">                .build();</span>
+    }
+
+    /**
+     * No refresh-token settings on purpose: the refresh grant is absent and SAS &quot;will not
+     * issue refresh tokens for a public client&quot; (gh-297) — the access token (900s) plus
+     * the authorization-server session is the official pattern for this client class.
+     */
+    private static TokenSettings buildTokenSettings() {
+<span class="fc" id="L186">        return TokenSettings.builder()</span>
+<span class="fc" id="L187">                .accessTokenTimeToLive(Duration.ofSeconds(900))</span>
+<span class="fc" id="L188">                .authorizationCodeTimeToLive(Duration.ofSeconds(300))</span>
+<span class="fc" id="L189">                .build();</span>
+    }
+
+    /**
+     * Full-definition comparison (spec §4.1 idempotence guard, extended to the fields the
+     * environment drives): {@code save} happens if-and-only-if the stored row differs from
+     * the derived definition in identity-relevant fields or the settings maps.
+     */
+    private static boolean needsSave(RegisteredClient existing, RegisteredClient target) {
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        if (existing == null) {</span>
+<span class="fc" id="L199">            return true;</span>
+        }
+<span class="pc bpc" id="L201" title="1 of 2 branches missed.">        return !Objects.equals(existing.getClientId(), target.getClientId())</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">                || !Objects.equals(existing.getClientName(), target.getClientName())</span>
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">                || !Objects.equals(existing.getClientSecret(), target.getClientSecret())</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">                || !Objects.equals(existing.getRedirectUris(), target.getRedirectUris())</span>
+<span class="pc bpc" id="L205" title="1 of 2 branches missed.">                || !Objects.equals(existing.getPostLogoutRedirectUris(), target.getPostLogoutRedirectUris())</span>
+<span class="pc bpc" id="L206" title="1 of 2 branches missed.">                || !Objects.equals(existing.getClientAuthenticationMethods(),</span>
+<span class="fc" id="L207">                        target.getClientAuthenticationMethods())</span>
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">                || !Objects.equals(existing.getAuthorizationGrantTypes(),</span>
+<span class="fc" id="L209">                        target.getAuthorizationGrantTypes())</span>
+<span class="pc bpc" id="L210" title="1 of 2 branches missed.">                || !Objects.equals(existing.getScopes(), target.getScopes())</span>
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">                || !Objects.equals(existing.getClientSettings().getSettings(),</span>
+<span class="fc" id="L212">                        target.getClientSettings().getSettings())</span>
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">                || !Objects.equals(existing.getTokenSettings().getSettings(),</span>
+<span class="fc" id="L214">                        target.getTokenSettings().getSettings());</span>
+    }
+
+    /**
+     * Splits the comma-separated {@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS} value; drops
+     * blank entries, preserves order, keeps the exact registered text (the authorize
+     * endpoint matches redirect URIs textually — spec §4.1).
+     */
+    private static Set&lt;String&gt; parseRedirectUris(String raw) {
+<span class="fc" id="L223">        Set&lt;String&gt; uris = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L224" title="All 2 branches covered.">        if (!StringUtils.hasText(raw)) {</span>
+<span class="fc" id="L225">            return uris;</span>
+        }
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        for (String candidate : raw.split(&quot;,&quot;)) {</span>
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">            if (StringUtils.hasText(candidate)) {</span>
+<span class="fc" id="L229">                uris.add(candidate.trim());</span>
+            }
+        }
+<span class="fc" id="L232">        return uris;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

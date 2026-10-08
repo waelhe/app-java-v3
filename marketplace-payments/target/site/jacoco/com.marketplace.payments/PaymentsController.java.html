@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentsController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentsController.java</span></div><h1>PaymentsController.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.security.CurrentUserProvider;
+import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+
+@RestController
+@RequestMapping(value = ApiConstants.PAYMENTS, version = &quot;1.0&quot;)
+public class PaymentsController {
+
+    private final PaymentsService paymentsService;
+    private final CurrentUserProvider currentUserProvider;
+    private final PaymentMapper paymentMapper;
+    private final PaymentIntentMapper paymentIntentMapper;
+
+    public PaymentsController(PaymentsService paymentsService, CurrentUserProvider currentUserProvider,
+<span class="fc" id="L26">                              PaymentMapper paymentMapper, PaymentIntentMapper paymentIntentMapper) {</span>
+<span class="fc" id="L27">        this.paymentsService = paymentsService;</span>
+<span class="fc" id="L28">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L29">        this.paymentMapper = paymentMapper;</span>
+<span class="fc" id="L30">        this.paymentIntentMapper = paymentIntentMapper;</span>
+<span class="fc" id="L31">    }</span>
+
+    @GetMapping(&quot;/intents/{id}&quot;)
+    @Operation(summary = &quot;Read one's own payment intent&quot;,
+            description = &quot;The caller's payment intent by id — ownership-verified against the &quot;
+                    + &quot;current user (the consumer who created it).&quot;)
+    public ResponseEntity&lt;PaymentIntentResponse&gt; getIntent(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L38">        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.getIntentForUser(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/intents&quot;)
+    @Operation(summary = &quot;Create a payment intent for a booking&quot;,
+            description = &quot;Starts the money loop for a booking: the intent carries the booking's &quot;
+                    + &quot;amount and ISO 4217 currency under the current consumer. The request &quot;
+                    + &quot;body's idempotencyKey field is the caller's deduplication surface &quot;
+                    + &quot;(a replay answers the existing intent). Answers 201.&quot;)
+    public ResponseEntity&lt;PaymentIntentResponse&gt; createIntent(@Valid @RequestBody CreateIntentRequest request,
+                                                              Authentication authentication) {
+<span class="fc" id="L49">        UUID consumerId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc" id="L50">        PaymentIntent intent = paymentsService.createIntent(</span>
+<span class="fc" id="L51">                request.bookingId(), consumerId, request.idempotencyKey());</span>
+<span class="fc" id="L52">        return ResponseEntity.status(HttpStatus.CREATED).body(paymentIntentMapper.toResponse(intent));</span>
+    }
+
+    @PostMapping(&quot;/intents/{id}/process&quot;)
+    @Operation(summary = &quot;Process a payment intent&quot;,
+            description = &quot;Drives the intent through the bound payment channel — with a real PSP &quot;
+                    + &quot;this is the remote charge step (clientSecret in the answer); without &quot;
+                    + &quot;one, the local-only path: the intent still advances to PROCESSING and a &quot;
+                    + &quot;Payment row is written, with no remote charge. Ownership-verified &quot;
+                    + &quot;against the caller.&quot;)
+    public ResponseEntity&lt;PaymentIntentResponse&gt; processIntent(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L63">        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.processIntent(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/intents/{id}/confirm&quot;)
+    @Operation(summary = &quot;Confirm a payment intent (administrative)&quot;,
+            description = &quot;Closes the intent as captured with an external reference — the &quot;
+                    + &quot;administrative completion surface of the money loop (service-level &quot;
+                    + &quot;hasRole('ADMIN') gate); the automatic consumer-side completion rides &quot;
+                    + &quot;the webhook channel instead.&quot;)
+    public ResponseEntity&lt;PaymentIntentResponse&gt; confirmIntent(@PathVariable UUID id,
+                                                               @Valid @RequestBody ConfirmIntentRequest request) {
+<span class="fc" id="L74">        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.confirmIntent(id, request.externalId())));</span>
+    }
+
+    @PostMapping(&quot;/intents/{id}/cancel&quot;)
+    @Operation(summary = &quot;Cancel a payment intent&quot;,
+            description = &quot;Cancels the caller's intent when the state machine still allows it &quot;
+                    + &quot;(a captured intent is not cancellable — refund is that exit). &quot;
+                    + &quot;Ownership-verified against the caller.&quot;)
+    public ResponseEntity&lt;PaymentIntentResponse&gt; cancelIntent(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L83">        return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.cancelIntent(id, authentication)));</span>
+    }
+
+    @PostMapping(&quot;/{paymentId}/refund&quot;)
+    @Operation(summary = &quot;Refund a captured payment&quot;,
+            description = &quot;Full refund of a captured payment through the refund state machine &quot;
+                    + &quot;(service-level hasRole('ADMIN') gate); with a bound channel the remote &quot;
+                    + &quot;refund is created with a derived idempotency key first.&quot;)
+    public ResponseEntity&lt;PaymentResponse&gt; refundPayment(@PathVariable UUID paymentId) {
+<span class="fc" id="L92">        return ResponseEntity.ok(paymentMapper.toResponse(paymentsService.refundPayment(paymentId)));</span>
+    }
+
+    @PostMapping(&quot;/webhooks/{provider}&quot;)
+    @Operation(summary = &quot;Receive a provider webhook notification&quot;,
+            description = &quot;The generic provider webhook channel — anonymous by contract &quot;
+                    + &quot;(permitAll): authenticity comes from the X-Webhook-Signature HMAC, not &quot;
+                    + &quot;a session. Deduplicated by eventId; answers 202 when a new payment &quot;
+                    + &quot;resulted, 200 otherwise.&quot;)
+    public ResponseEntity&lt;Void&gt; webhook(@PathVariable String provider,
+                                        @RequestParam String eventId,
+                                        @RequestParam String eventType,
+                                        @RequestParam(required = false) UUID paymentIntentId,
+                                        @RequestParam(required = false) String externalId,
+                                        @RequestHeader(value = &quot;X-Webhook-Signature&quot;, required = false) String signature) {
+<span class="fc" id="L107">        boolean created = paymentsService.processWebhookEvent(provider, eventId, eventType, signature, paymentIntentId, externalId);</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();</span>
+    }
+
+    /**
+     * Stripe's own webhook channel (roadmap B3): the raw request body plus the
+     * Stripe-Signature header, exactly as the official verification recipe
+     * prescribes (&quot;requestBody: The request body string sent by Stripe,
+     * signature: The Stripe-Signature header&quot;). The body is read as raw bytes
+     * and decoded UTF-8 so the signed payload reaches the verifier
+     * byte-identical — a String converter would apply its own default charset
+     * and could re-encode the body, breaking the signature. The 503 SU-001
+     * answer when the channel is unbound is the house provider-gate
+     * convention — the notification is never partially verified. Registered
+     * by the existing &quot;/api/v1/payments/webhooks/**&quot; permitAll rule —
+     * anonymous by contract: authenticity comes from the signature, not from
+     * a session.
+     */
+    @PostMapping(path = &quot;/webhooks/stripe&quot;, consumes = &quot;application/json&quot;)
+    @Operation(summary = &quot;Receive a Stripe webhook event&quot;,
+            description = &quot;Stripe's own webhook channel (roadmap B3): the raw request body &quot;
+                    + &quot;plus the Stripe-Signature header, byte-identical to what was signed. &quot;
+                    + &quot;Answers 503 SU-001 while the channel is unbound — the notification is &quot;
+                    + &quot;never partially verified. Anonymous by contract (permitAll): &quot;
+                    + &quot;authenticity comes from the signature.&quot;)
+    public ResponseEntity&lt;Void&gt; stripeWebhook(@RequestBody byte[] rawPayload,
+                                              @RequestHeader(&quot;Stripe-Signature&quot;) String signatureHeader) {
+<span class="nc" id="L134">        boolean created = paymentsService.handleStripeWebhook(</span>
+                new String(rawPayload, StandardCharsets.UTF_8), signatureHeader);
+<span class="nc bnc" id="L136" title="All 2 branches missed.">        return created ? ResponseEntity.accepted().build() : ResponseEntity.ok().build();</span>
+    }
+
+<span class="fc" id="L139">    public record CreateIntentRequest(</span>
+            @NotNull UUID bookingId,
+            String idempotencyKey
+    ) {
+    }
+
+<span class="fc" id="L145">    public record ConfirmIntentRequest(String externalId) {</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

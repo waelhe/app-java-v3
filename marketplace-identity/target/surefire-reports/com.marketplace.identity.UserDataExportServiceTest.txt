@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.marketplace.identity.UserDataExportServiceTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.656 s -- in com.marketplace.identity.UserDataExportServiceTest

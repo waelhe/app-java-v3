@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BookingExportAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-booking</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.booking.spi</a> &gt; <span class="el_source">BookingExportAdapter.java</span></div><h1>BookingExportAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.booking.spi;
+
+import com.marketplace.booking.Booking;
+import com.marketplace.booking.BookingRepository;
+import com.marketplace.shared.api.BookingExportEntry;
+import com.marketplace.shared.api.BookingExportPort;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * I7 Phase 2 (account-pseudonymization-plan §5-ج — the Art. 20 export
+ * contract, gate b-5): the booking module's implementation of the
+ * {@link BookingExportPort} cross-module contract (the
+ * {@code BookingStatsAdapter} house pattern). A read-only delegation to
+ * the repository with the plan's provenance mapping: the first-party
+ * bookings (consumer or provider side), the counterparty as an opaque UUID,
+ * and the plan's fixed enumeration (status/dates/amounts) — the free-text
+ * {@code notes} stay out (gate b-3's declared residual).
+ */
+@Component
+@Transactional(readOnly = true)
+public class BookingExportAdapter implements BookingExportPort {
+
+    private final BookingRepository bookingRepository;
+
+<span class="fc" id="L29">    public BookingExportAdapter(BookingRepository bookingRepository) {</span>
+<span class="fc" id="L30">        this.bookingRepository = bookingRepository;</span>
+<span class="fc" id="L31">    }</span>
+
+    @Override
+    public List&lt;BookingExportEntry&gt; exportForParticipant(UUID userId) {
+<span class="fc" id="L35">        return bookingRepository</span>
+<span class="fc" id="L36">                .findAllByConsumerIdOrProviderIdOrderByCreatedAtAscIdAsc(userId, userId)</span>
+<span class="fc" id="L37">                .stream()</span>
+<span class="fc" id="L38">                .map(booking -&gt; toEntry(booking, userId))</span>
+<span class="fc" id="L39">                .toList();</span>
+    }
+
+    private static BookingExportEntry toEntry(Booking booking, UUID userId) {
+<span class="fc" id="L43">        boolean consumerSide = userId.equals(booking.getConsumerId());</span>
+<span class="fc bfc" id="L44" title="All 2 branches covered.">        UUID counterpartyId = consumerSide ? booking.getProviderId() : booking.getConsumerId();</span>
+<span class="fc" id="L45">        return new BookingExportEntry(</span>
+<span class="fc" id="L46">                booking.getId(),</span>
+<span class="fc bfc" id="L47" title="All 2 branches covered.">                consumerSide ? &quot;CONSUMER&quot; : &quot;PROVIDER&quot;,</span>
+                counterpartyId,
+<span class="fc" id="L49">                booking.getListingId(),</span>
+<span class="fc" id="L50">                booking.getStatus().name(),</span>
+<span class="fc" id="L51">                booking.getStartsAt(),</span>
+<span class="fc" id="L52">                booking.getEndsAt(),</span>
+<span class="fc" id="L53">                booking.getPriceCents(),</span>
+<span class="fc" id="L54">                booking.getCurrency(),</span>
+<span class="fc" id="L55">                booking.getCreatedAt(),</span>
+<span class="fc" id="L56">                booking.getUpdatedAt());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

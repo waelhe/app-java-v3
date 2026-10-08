@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.marketplace.payments.StripePspChannelTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.764 s -- in com.marketplace.payments.StripePspChannelTest

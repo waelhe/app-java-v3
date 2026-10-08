@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GeoLookupPort.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">GeoLookupPort.java</span></div><h1>GeoLookupPort.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Read port for the hierarchical administrative geography (realestate systems
+ * plan §5, Layer 30 — implemented by the {@code marketplace-geo} module).
+ *
+ * &lt;p&gt;The model is &lt;em&gt;administrative, not coordinate-based&lt;/em&gt; (plan D-R1):
+ * a self-referencing tree {@code country → governorate → city → neighborhood}
+ * with B-tree joins. Radius search is excluded by a measured platform gate
+ * (PostGIS is unavailable on the standard Railway postgres template — V34
+ * measurement + SYSTEM.md §15), and the local business model (gradual
+ * expansion over named neighborhoods) is hierarchical by nature.
+ *
+ * &lt;p&gt;Cross-module contract: consumers (search, realestate) resolve locations
+ * through this port only — never through a database-level dependency on the
+ * geo module's tables (the same decoupling as {@code ListingPriceProvider}).
+ */
+public interface GeoLookupPort {
+
+    /**
+     * The full tree from the root (level 0) down, nested. One response —
+     * the hierarchy is small by design (hundreds of rows at city scale).
+     */
+    GeoNode getTree();
+
+    /** The direct children of the given location, in stable (slug) order. */
+    List&lt;GeoNode&gt; getChildren(UUID parentId);
+
+    /**
+     * Prefix autocomplete over {@code nameAr}/{@code nameEn}/{@code slug}.
+     * The prefix must be at least 2 characters (trimmed) — a shorter one is
+     * a {@link BadRequestException} (the type-gate philosophy: reject at the
+     * boundary, never run a uselessly-broad query).
+     */
+    List&lt;GeoNode&gt; suggest(String prefix);
+
+    /**
+     * The given location plus every transitive descendant — the qualified
+     * location set for hierarchical filtering (plan L32: &quot;the search does
+     * not fiddle with tree depth&quot;; it receives the resolved set through
+     * this port). An unknown id is a {@link ResourceNotFoundException}.
+     */
+    Set&lt;UUID&gt; findSelfAndDescendants(UUID locationId);
+
+    /**
+     * One location by id — the existence gate used by writers that attach a
+     * location to their own rows (realestate L31). Unknown id is a
+     * {@link ResourceNotFoundException} (never a silently-accepted value).
+     */
+    GeoNode getLocation(UUID id);
+
+    /**
+     * Public read model of one node of the administrative hierarchy. The
+     * {@code level} is the plan's SMALLINT (0=country, 1=governorate,
+     * 2=city, 3=neighborhood) — an int, not an enum, because cross-module
+     * consumers only compare and display it.
+     *
+     * &lt;p&gt;&lt;b&gt;Serializable — the geo-tree cache value (R10, live-measured
+     * defect family):&lt;/b&gt; the full tree is cached under {@code geo-tree}
+     * and the production cache type is Redis
+     * (spring-boot-cache 4.1.1 {@code RedisCacheConfiguration} — the
+     * house-documented default {@code RedisValueSerializer}, which requires
+     * cached types to be {@link java.io.Serializable}). A non-Serializable
+     * value makes every cold-cache PUT throw {@code IllegalStateException(&quot;Cannot
+     * serialize value of type … without a serializer&quot;)}, which the shared
+     * {@code GlobalExceptionHandler} maps to 409 CONFLICT-001 — the exact
+     * live verdict measured deterministically on production and staging
+     * ({@code GET /api/v1/geo/tree} → 409; every geo-linked listing detail
+     * → 409 through {@code addressChain → getTree()}). This closes the same
+     * seam the house closed for {@code Page&lt;ListingSummary&gt;}, seven entities
+     * and {@code PriceBreakdown} (see
+     * {@code ColdCacheRedisSerializationIntegrationTest}) — the two
+     * DTO-record cache values that fix round left uncovered were exactly
+     * this record and {@code ProviderStatsResponse}.
+     *
+     * &lt;p&gt;The {@code serialVersionUID} is fixed so an evolved record (a new
+     * component) degrades to {@code InvalidClassException} on old entries
+     * instead of corrupting reads — the TTL-bounded cache makes that failure
+     * self-healing (the next cold read repopulates).
+     *
+     * @param id       stable identifier (seeded rows keep fixed UUIDs)
+     * @param parentId the parent location, {@code null} for the root only
+     * @param level    depth in the hierarchy (0-3)
+     * @param nameAr   Arabic administrative name (the primary market name)
+     * @param nameEn   Latin name (nullable — not every node has one)
+     * @param slug     stable, URL-safe, unique key
+     */
+    record GeoNode(
+            UUID id,
+            UUID parentId,
+            int level,
+            String nameAr,
+            String nameEn,
+            String slug,
+            List&lt;GeoNode&gt; children
+    ) implements java.io.Serializable {
+
+        @java.io.Serial
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * The tree is cached (geo-tree); a consumer mutating the children
+         * list would corrupt every later cached read until invalidation.
+         * Defensive copy in the canonical constructor (CodeRabbit round 1
+         * adoption) — the record is effectively immutable.
+         */
+<span class="fc" id="L111">        public GeoNode {</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">            children = children == null ? List.of() : List.copyOf(children);</span>
+<span class="fc" id="L113">        }</span>
+
+        /** Flat form (leaf views): no children carried. */
+        public GeoNode(UUID id, UUID parentId, int level,
+                       String nameAr, String nameEn, String slug) {
+<span class="fc" id="L118">            this(id, parentId, level, nameAr, nameEn, slug, List.of());</span>
+<span class="fc" id="L119">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

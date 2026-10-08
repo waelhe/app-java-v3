@@ -1,0 +1,15 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+marketplace-booking,com.marketplace.booking,BookingController.CreateBookingRequest,0,15,0,0,0,1,0,1,0,1
+marketplace-booking,com.marketplace.booking,Booking,0,136,0,0,0,38,0,18,0,18
+marketplace-booking,com.marketplace.booking,BookingStatus,0,65,1,3,0,15,1,3,0,2
+marketplace-booking,com.marketplace.booking,BookingSpecifications,42,18,0,0,0,6,6,6,6,6
+marketplace-booking,com.marketplace.booking,BookingPaymentEventListener,33,19,3,1,10,7,3,3,1,3
+marketplace-booking,com.marketplace.booking,BookingResponse,0,27,0,0,0,1,0,1,0,1
+marketplace-booking,com.marketplace.booking,BookingMapperImpl,2,63,2,2,1,21,2,2,0,2
+marketplace-booking,com.marketplace.booking,BookingService,15,489,11,27,2,109,10,31,0,22
+marketplace-booking,com.marketplace.booking,BookingExpirationService,0,39,0,0,0,11,0,4,0,4
+marketplace-booking,com.marketplace.booking,BookingParticipantProviderAdapter,0,42,0,0,0,13,0,4,0,4
+marketplace-booking,com.marketplace.booking,BookingController,20,90,0,0,2,15,2,6,2,6
+marketplace-booking,com.marketplace.booking.spi,BookingExportAdapter,0,63,0,4,0,21,0,6,0,4
+marketplace-booking,com.marketplace.booking.spi,BookingContentPurgeAdapter,55,0,0,0,8,0,3,0,3,0
+marketplace-booking,com.marketplace.booking.spi,BookingStatsAdapter,14,0,0,0,4,0,2,0,2,0

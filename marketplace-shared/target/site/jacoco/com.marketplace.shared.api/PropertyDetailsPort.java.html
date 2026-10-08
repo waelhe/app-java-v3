@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PropertyDetailsPort.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">PropertyDetailsPort.java</span></div><h1>PropertyDetailsPort.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Read port for a listing's real-estate details (realestate systems plan
+ * L31 — implemented by the {@code marketplace-realestate} module).
+ *
+ * &lt;p&gt;Catalog embeds the property block into its listing detail responses
+ * through this port (the plan's &quot;application association in the
+ * aggregation, not via JPA&quot;) — the exact {@code ProviderNameResolver}
+ * pattern: the interface lives in shared-api, the owner module implements
+ * it, the consumer injects it. No module boundary is crossed in code.
+ */
+public interface PropertyDetailsPort {
+
+    /** The property block of one listing, when it exists. */
+    Optional&lt;PropertyView&gt; findByListingId(UUID listingId);
+
+    /**
+     * Batch form for page aggregation — one query keyed by listing id
+     * (no N+1: pages embed with a single round trip).
+     */
+    Map&lt;UUID, PropertyView&gt; findByListingIds(Set&lt;UUID&gt; listingIds);
+
+    /**
+     * Public read model of the real-estate details (the plan's L31 field
+     * set). Coordinates are ordinary columns for client-side map display
+     * (G-R5) — never for server-side radius search (the PostGIS gate).
+     *
+     * @param listingId    the catalog listing this block belongs to (1:1)
+     * @param purpose      RENT or SALE
+     * @param propertyType APARTMENT/VILLA/LAND/SHOP/OFFICE/GARAGE
+     * @param areaM2       area in square meters (positive)
+     * @param rooms        room count (positive)
+     * @param bathrooms    bathroom count (positive)
+     * @param floorNumber  floor (0 = ground, negatives = basements)
+     * @param totalFloors  the building's floor count
+     * @param buildingYear year of construction (null = undeclared)
+     * @param furnished    furnished flag (null = undeclared)
+     * @param amenities    documented vocabulary of feature names (D-E2)
+     * @param availableFrom move-in / availability date (null = now)
+     * @param locationId   the geo hierarchy node (L30)
+     * @param latitude     optional display coordinate
+     * @param longitude    optional display coordinate
+     */
+<span class="fc" id="L53">    record PropertyView(</span>
+            UUID listingId,
+            PropertyPurpose purpose,
+            PropertyType propertyType,
+            Integer areaM2,
+            Integer rooms,
+            Integer bathrooms,
+            Integer floorNumber,
+            Integer totalFloors,
+            Integer buildingYear,
+            Boolean furnished,
+            List&lt;String&gt; amenities,
+            LocalDate availableFrom,
+            UUID locationId,
+            BigDecimal latitude,
+            BigDecimal longitude
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

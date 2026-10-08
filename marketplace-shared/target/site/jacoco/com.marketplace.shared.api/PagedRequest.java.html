@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PagedRequest.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">PagedRequest.java</span></div><h1>PagedRequest.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.List;
+
+/**
+ * The framework-neutral pagination request the shared ports speak — the
+ * request-side twin of {@link PagedResponse}.
+ *
+ * &lt;p&gt;&lt;b&gt;Why this record exists:&lt;/b&gt; the two paginated shared ports
+ * ({@code CatalogSearchPort}, {@code RealestatePropertyFilterPort}) took
+ * Spring Data's {@code Pageable} and returned its {@code Page} — the two
+ * shared contracts that leaked framework types into the module boundary
+ * (audit 2026-09-25 finding: &quot;framework-neutral ports are unenforced&quot;;
+ * re-measured 2026-09-28: 2 of the 24 ports import
+ * {@code org.springframework.data.domain}). Under Spring Modulith's
+ * boundary model the shared contract module is the last place framework
+ * types should leak: a port that speaks {@code Pageable} drags every
+ * consumer module into Spring Data's type system just to call a sibling
+ * module. The port signatures now speak {@link PagedRequest} and
+ * {@link PagedResponse}; the Spring Data types stay INSIDE the adapters
+ * (the runtime keeps Spring Data pagination intact —
+ * {@link SpringPagination} is the documented interop corner).
+ *
+ * &lt;p&gt;&lt;b&gt;Why &quot;PagedRequest&quot; and not &quot;PageRequest&quot;:&lt;/b&gt; the plan's sketch
+ * named the record {@code PageRequest(int page, int size)} — measured
+ * against the call sites, that name collides with
+ * {@code org.springframework.data.domain.PageRequest} in exactly the
+ * files that must see both types (the catalog and realestate adapters
+ * construct Spring {@code PageRequest}s internally while implementing the
+ * neutral port). Mirroring the existing {@link PagedResponse} keeps the
+ * pair symmetric and the adapters free of qualified-name churn.
+ *
+ * &lt;param name=&quot;page&quot;&gt;the zero-based page index (the {@code Pageable}
+ *                   contract the whole codebase already speaks)&lt;/param&gt;
+ * &lt;param name=&quot;size&quot;&gt;the page size (entries per page)&lt;/param&gt;
+ * &lt;param name=&quot;sort&quot;&gt;the requested ordering as (property, direction)
+ *                   pairs in priority order — carries exactly what the
+ *                   ports measured as sort-bearing: the search surface's
+ *                   mapped {@code priceCents}/{@code createdAt} orders
+ *                   with the {@code id ASC} tiebreak, and the
+ *                   realestate-owned {@code area}/{@code distance}
+ *                   markers; empty means unsorted&lt;/param&gt;
+ */
+<span class="fc" id="L44">public record PagedRequest(int page, int size, List&lt;Order&gt; sort) {</span>
+
+    /** One ordering step: a property name and its direction. */
+<span class="fc" id="L47">    public record Order(String property, boolean descending) {</span>
+    }
+
+    /**
+     * The unsorted request — the plain browse form (every measured
+     * non-search call site: provider pages, existence probes, category
+     * browses).
+     */
+    public static PagedRequest of(int page, int size) {
+<span class="fc" id="L56">        return new PagedRequest(page, size, List.of());</span>
+    }
+
+    /** The sorted request with one or more ordering steps. */
+    public static PagedRequest of(int page, int size, Order... sort) {
+<span class="fc" id="L61">        return new PagedRequest(page, size, List.of(sort));</span>
+    }
+
+    public boolean isSorted() {
+<span class="pc bpc" id="L65" title="1 of 2 branches missed.">        return !sort.isEmpty();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

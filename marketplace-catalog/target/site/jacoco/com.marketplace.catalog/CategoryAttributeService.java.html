@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CategoryAttributeService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CategoryAttributeService.java</span></div><h1>CategoryAttributeService.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * W2 (yelp-level plan §5 — the business page): the category-attribute
+ * registry's service — the administrative write surface and the public
+ * read for the dynamic per-category attributes (G15).
+ *
+ * &lt;p&gt;&lt;b&gt;Reference data (the categories' own lifecycle law, one level
+ * deeper):&lt;/b&gt; the registry evolves by INSERT through the administrative
+ * surface — a new attribute for a category is never a migration
+ * («السمات بيانات», the plan's own principle). The identity pair
+ * (category, code) is immutable once created — a re-keyed attribute is a
+ * new row (the V70 identity rule); labels, type and position replace.
+ *
+ * &lt;p&gt;&lt;b&gt;Position allocation:&lt;/b&gt; {@code max + 1} on create (the W1
+ * max-allocation lesson — count-based allocation re-issues positions
+ * soft deletion still holds). The registry's reads are live reads — the
+ * reference data is small and rarely written; no cache layer to
+ * invalidate (contrast the provider profile's &quot;providers&quot; cache).
+ */
+@Service
+public class CategoryAttributeService {
+
+    private final CategoryAttributeRepository categoryAttributeRepository;
+    private final CategoryRepository categoryRepository;
+
+    public CategoryAttributeService(CategoryAttributeRepository categoryAttributeRepository,
+<span class="fc" id="L38">                                    CategoryRepository categoryRepository) {</span>
+<span class="fc" id="L39">        this.categoryAttributeRepository = categoryAttributeRepository;</span>
+<span class="fc" id="L40">        this.categoryRepository = categoryRepository;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * The registry's own read: one category's attributes in position
+     * order — the public read the category surfaces compose.
+     */
+    @Transactional(readOnly = true)
+    public List&lt;CategoryAttribute&gt; byCategoryId(UUID categoryId) {
+<span class="fc" id="L49">        return categoryAttributeRepository.findByCategoryIdOrderByPositionAsc(categoryId);</span>
+    }
+
+    /**
+     * The registry's read by the stable API-facing category CODE — the
+     * join the public category surface composes (keyed by the code V70
+     * keeps unique over the live rows).
+     */
+    @Transactional(readOnly = true)
+    public List&lt;CategoryAttribute&gt; byCategoryCode(String categoryCode) {
+<span class="fc" id="L59">        return categoryAttributeRepository.findByCategoryCodeOrderByPositionAsc(categoryCode);</span>
+    }
+
+    /**
+     * The administrative registration: one attribute definition on one
+     * category. The category must exist (the FK's own law, surfaced
+     * loudly); the (category, code) identity must be free (the unique
+     * key's read form). Position auto-allocates as max+1 — under the
+     * registry's advisory lock, so concurrent registrations for one
+     * category never read the same maximum (the W1 r9 measured shape).
+     */
+    @Observed(name = &quot;catalog.category-attributes.register&quot;)
+    @Transactional
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    public CategoryAttribute register(UUID categoryId, String code, String labelEn,
+                                       String labelAr, CategoryAttributeType valueType) {
+<span class="fc" id="L75">        Category category = categoryRepository.findById(categoryId)</span>
+<span class="fc" id="L76">                .orElseThrow(() -&gt; new ResourceNotFoundException(</span>
+                        &quot;Category not found: &quot; + categoryId));
+<span class="fc" id="L78">        categoryAttributeRepository.lockRegistryWrites(category.getId().toString());</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (categoryAttributeRepository.findByCategoryIdAndCode(categoryId, code).isPresent()) {</span>
+<span class="fc" id="L80">            throw new org.springframework.dao.DataIntegrityViolationException(</span>
+                    &quot;Attribute code already registered for this category: &quot; + code);
+        }
+<span class="fc" id="L83">        int nextPosition = categoryAttributeRepository.findMaxPositionByCategoryId(categoryId)</span>
+<span class="fc" id="L84">                .orElse(-1) + 1;</span>
+<span class="fc" id="L85">        return categoryAttributeRepository.save(</span>
+<span class="fc" id="L86">                CategoryAttribute.create(categoryId, code, labelEn, labelAr, valueType, nextPosition));</span>
+    }
+
+    /**
+     * The administrative amendment: labels, type and position replace
+     * (PUT semantics); the identity pair (category, code) is immutable —
+     * a re-keyed attribute is a new registration. The requested position
+     * must not collide with another live attribute of the same category
+     * (greptile W2 round, adopted from the root): the registry's reads
+     * sort by position alone, so a duplicate position would leave the
+     * display order undefined — the loud rejection teaches the caller
+     * instead (the addArea duplicate's own exception family).
+     */
+    @Observed(name = &quot;catalog.category-attributes.update&quot;)
+    @Transactional
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    public CategoryAttribute update(UUID attributeId, String labelEn, String labelAr,
+                                     CategoryAttributeType valueType, int position) {
+<span class="fc" id="L104">        CategoryAttribute attribute = owned(attributeId);</span>
+        // The registry's advisory lock FIRST (see register): the collision
+        // check below is only race-free against concurrent same-category
+        // writes when both hold the lock.
+<span class="fc" id="L108">        categoryAttributeRepository.lockRegistryWrites(attribute.getCategoryId().toString());</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (position != attribute.getPosition()</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">                &amp;&amp; categoryAttributeRepository.existsByCategoryIdAndPositionAndIdNot(</span>
+<span class="fc" id="L111">                        attribute.getCategoryId(), position, attribute.getId())) {</span>
+<span class="fc" id="L112">            throw new org.springframework.dao.DataIntegrityViolationException(</span>
+                    &quot;Position already held by another attribute of this category: &quot; + position);
+        }
+<span class="fc" id="L115">        attribute.update(labelEn, labelAr, valueType, position);</span>
+<span class="fc" id="L116">        return categoryAttributeRepository.save(attribute);</span>
+    }
+
+    /** The administrative withdrawal (soft delete — the Envers trail keeps the history). */
+    @Observed(name = &quot;catalog.category-attributes.remove&quot;)
+    @Transactional
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    public void remove(UUID attributeId) {
+<span class="fc" id="L124">        categoryAttributeRepository.delete(owned(attributeId));</span>
+<span class="fc" id="L125">    }</span>
+
+    private CategoryAttribute owned(UUID attributeId) {
+<span class="fc" id="L128">        return categoryAttributeRepository.findById(attributeId)</span>
+<span class="pc" id="L129">                .orElseThrow(() -&gt; new ResourceNotFoundException(</span>
+                        &quot;Category attribute not found: &quot; + attributeId));
+    }
+
+    // -- request shapes -------------------------------------------------------
+
+    /** One registration's shape: the identity pair + the display fields + the value type. */
+<span class="fc" id="L136">    public record RegistrationRequest(String code, String labelEn, String labelAr,</span>
+                                       CategoryAttributeType valueType) {
+    }
+
+    /** One amendment's shape: the replaceable fields (identity immutable). */
+<span class="fc" id="L141">    public record AmendmentRequest(String labelEn, String labelAr,</span>
+                                    CategoryAttributeType valueType, int position) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

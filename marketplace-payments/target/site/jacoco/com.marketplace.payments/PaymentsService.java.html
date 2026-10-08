@@ -1,0 +1,889 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentsService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">PaymentsService.java</span></div><h1>PaymentsService.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.payments.spi.PaymentsSpi;
+import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.PaymentSummary;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
+import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.resilience.annotation.ConcurrencyLimit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+
+import io.micrometer.observation.annotation.Observed;
+
+import java.time.LocalDate;
+import java.util.Set;
+import java.util.UUID;
+
+@Service
+@Transactional
+@Validated
+public class PaymentsService implements PaymentsSpi {
+
+<span class="fc" id="L45">    private static final Logger log = LoggerFactory.getLogger(PaymentsService.class);</span>
+
+    private final PaymentIntentRepository paymentIntentRepository;
+    private final PaymentRepository paymentRepository;
+    private final PaymentWebhookEventRepository webhookEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final CurrentUserProvider currentUserProvider;
+    private final BookingParticipantProvider bookingParticipantProvider;
+    private final PaymentWebhookSecurity paymentWebhookSecurity;
+    private final WebhookEventRecorder webhookEventRecorder;
+    private final PaymentIntentSettlementService paymentIntentSettlementService;
+    private final ObjectProvider&lt;PspChannel&gt; pspChannel;
+
+    public PaymentsService(PaymentIntentRepository paymentIntentRepository,
+                           PaymentRepository paymentRepository,
+                           PaymentWebhookEventRepository webhookEventRepository,
+                           ApplicationEventPublisher eventPublisher,
+                           CurrentUserProvider currentUserProvider,
+                           BookingParticipantProvider bookingParticipantProvider,
+                           PaymentWebhookSecurity paymentWebhookSecurity,
+                           WebhookEventRecorder webhookEventRecorder,
+                           PaymentIntentSettlementService paymentIntentSettlementService,
+<span class="fc" id="L67">                           ObjectProvider&lt;PspChannel&gt; pspChannel) {</span>
+<span class="fc" id="L68">        this.paymentIntentRepository = paymentIntentRepository;</span>
+<span class="fc" id="L69">        this.paymentRepository = paymentRepository;</span>
+<span class="fc" id="L70">        this.webhookEventRepository = webhookEventRepository;</span>
+<span class="fc" id="L71">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L72">        this.currentUserProvider = currentUserProvider;</span>
+<span class="fc" id="L73">        this.bookingParticipantProvider = bookingParticipantProvider;</span>
+<span class="fc" id="L74">        this.paymentWebhookSecurity = paymentWebhookSecurity;</span>
+<span class="fc" id="L75">        this.webhookEventRecorder = webhookEventRecorder;</span>
+<span class="fc" id="L76">        this.paymentIntentSettlementService = paymentIntentSettlementService;</span>
+<span class="fc" id="L77">        this.pspChannel = pspChannel;</span>
+<span class="fc" id="L78">    }</span>
+
+    public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature) {
+<span class="fc" id="L81">        return processWebhookEvent(provider, eventId, eventType, signature, null, null);</span>
+    }
+
+    public boolean processWebhookEvent(String provider, String eventId, String eventType, String signature,
+                                       UUID paymentIntentId, String externalId) {
+        // D-009: every dispatch-relevant field rides inside the MAC — a
+        // captured signature can no longer be re-pointed at another
+        // provider (the dedup key's left half) or another payment intent
+        // (the confirmIntent target on this internal path).
+<span class="fc" id="L90">        paymentWebhookSecurity.validateSignature(provider, eventId, eventType, paymentIntentId, externalId, signature);</span>
+<span class="fc" id="L91">        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId);</span>
+    }
+
+    /**
+     * Provider-verified webhook dispatch: the signature was verified by the
+     * channel itself (Stripe: SDK constructEvent with DEFAULT_TOLERANCE), so
+     * only deduplication and dispatch remain. The event row is inserted and
+     * committed FIRST (in its own transaction, {@link WebhookEventRecorder})
+     * — the unique (provider, event_id) index is the serialization point, so a
+     * concurrent delivery of the same event loses cleanly here and is answered
+     * as already-processed instead of failing later with a 5xx (CodeRabbit
+     * #241, B5 provider-scoped). A dispatch that fails rolls this transaction
+     * back AND removes the committed row, so the provider's retry re-processes
+     * the event instead of hitting the dedup gate forever.
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId) {
+<span class="fc" id="L108">        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, null, null);</span>
+    }
+
+    /**
+     * Full verified dispatch (L19): the Stripe route forwards the refund
+     * snapshot extracted from {@code charge.refunded} payloads; the legacy
+     * HMAC route has no payload and passes none.
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId,
+                                  PspChannel.RefundSnapshot refund) {
+<span class="nc" id="L119">        return handleVerifiedWebhook(provider, eventId, eventType, paymentIntentId, externalId, refund, null);</span>
+    }
+
+    /**
+     * R10 (Wave 2) — the verified dispatch against the durable inbox: the
+     * recorder commits the row (RECEIVED, full re-delivery contract, raw
+     * payload) in its own transaction FIRST, the dispatch runs, and the row's
+     * terminal state follows the dispatch's own transaction discipline — the
+     * settlement events are marked SETTLED inside the settlement transaction
+     * (atomic with the money), the rest are marked by the idempotent backstop
+     * below. The measured defect this closes: a worker stop between the
+     * recorder's commit and the dispatch's completion used to strand the dedup
+     * row forever (the provider's retries answered already-processed against
+     * a tombstone) — the money transition was lost permanently. Now the
+     * stranded row stays RECEIVED and the recovery sweep re-delivers it.
+     *
+     * &lt;p&gt;Failure families keep their documented semantics: a dispatch that
+     * throws while the worker is alive still triggers the compensating delete
+     * (the provider retry re-processes — byte-compatible with the pre-R10
+     * contract); the backstop mark sits OUTSIDE that catch so a mark failure
+     * after a clean settlement can never delete the row of an event whose
+     * settlement already committed (the row would simply stay RECEIVED and be
+     * recovered — re-delivery completes as the settlement's own idempotent
+     * no-op).&lt;/p&gt;
+     */
+    boolean handleVerifiedWebhook(String provider, String eventId, String eventType,
+                                  UUID paymentIntentId, String externalId,
+                                  PspChannel.RefundSnapshot refund, String rawPayload) {
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        if (webhookEventRepository.findByProviderAndEventId(provider, eventId).isPresent()) {</span>
+<span class="fc" id="L148">            return false;</span>
+        }
+        try {
+<span class="fc" id="L151">            webhookEventRecorder.record(provider, eventId, eventType, rawPayload,</span>
+                    paymentIntentId, externalId,
+<span class="fc bfc" id="L153" title="All 2 branches covered.">                    refund != null ? refund.refundedAmountCents() : null);</span>
+<span class="fc" id="L154">        } catch (DataIntegrityViolationException ex) {</span>
+            // Distinguish a lost concurrent-duplicate race from every OTHER
+            // integrity failure (CodeRabbit #242 round 2: e.g. an oversized
+            // provider/eventId/eventType on the legacy route makes the insert
+            // fail on column limits — that is NOT &quot;already processed&quot;, and
+            // acknowledging it with 200 would swallow the event). Only a row
+            // that actually exists under this provider+eventId is the
+            // concurrent duplicate; anything else must surface.
+<span class="fc bfc" id="L162" title="All 2 branches covered.">            if (webhookEventRepository.findByProviderAndEventId(provider, eventId).isEmpty()) {</span>
+<span class="fc" id="L163">                throw ex;</span>
+            }
+<span class="fc" id="L165">            log.info(&quot;Webhook event {} concurrently recorded by another delivery — answering already-processed: {}&quot;,</span>
+<span class="fc" id="L166">                    eventId, ex.getMostSpecificCause().getMessage());</span>
+<span class="fc" id="L167">            return false;</span>
+<span class="fc" id="L168">        }</span>
+        try {
+<span class="fc" id="L170">            dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund,</span>
+                    new WebhookEventRef(provider, eventId));
+<span class="fc" id="L172">        } catch (RuntimeException ex) {</span>
+            // The row is committed but the event was NOT processed: remove it
+            // so the provider retry re-processes instead of being deduplicated
+            // against a tombstone (recorded-and-lost).
+            try {
+<span class="fc" id="L177">                webhookEventRecorder.delete(provider, eventId);</span>
+<span class="fc" id="L178">            } catch (RuntimeException cleanupEx) {</span>
+                // Never mask the ORIGINAL dispatch failure — but the surviving
+                // RECEIVED row is no longer an operator action: the recovery
+                // sweep re-delivers it automatically (R10).
+<span class="fc" id="L182">                log.error(&quot;Webhook event {} dispatch failed AND the compensating delete failed — the inbox row&quot;</span>
+                        + &quot; survives as RECEIVED and the recovery sweep will re-deliver it. Cleanup failure:&quot;,
+                        eventId, cleanupEx);
+<span class="fc" id="L185">            }</span>
+<span class="fc" id="L186">            throw ex;</span>
+<span class="fc" id="L187">        }</span>
+        // R10 backstop — idempotent: the settlement types were already marked
+        // inside the settlement's own transaction; the non-settlement types
+        // (charge.refunded sync, log-only) are marked here in the carrier's
+        // transaction, atomic with their dispatch effects.
+<span class="fc" id="L192">        webhookEventRecorder.markSettled(provider, eventId);</span>
+<span class="fc" id="L193">        return true;</span>
+    }
+
+    /**
+     * Stripe webhook entry point: verifies the notification with the
+     * provider's own signature scheme, resolves the local intent via the
+     * psp_intent_id link (V33) — metadata as the documented cross-check —
+     * and runs the verified dispatch. The 503 SU-001 inert answer mirrors
+     * the MAIL / MEDIA_S3 provider gates when the channel is unbound.
+     */
+    @Observed(name = &quot;payment.psp.webhook&quot;)
+    public boolean handleStripeWebhook(String rawPayload, String signatureHeader) {
+<span class="fc" id="L205">        PspChannel channel = requireChannel();</span>
+<span class="fc" id="L206">        PspChannel.VerifiedWebhook verified = channel.verifyWebhook(rawPayload, signatureHeader);</span>
+<span class="fc" id="L207">        UUID intentId = verified.marketplaceIntentId();</span>
+<span class="pc bpc" id="L208" title="1 of 4 branches missed.">        if (intentId == null &amp;&amp; verified.pspIntentId() != null) {</span>
+<span class="fc" id="L209">            intentId = paymentIntentRepository.findByPspIntentId(verified.pspIntentId())</span>
+<span class="fc" id="L210">                    .map(PaymentIntent::getId)</span>
+<span class="fc" id="L211">                    .orElse(null);</span>
+        }
+<span class="pc bpc" id="L213" title="1 of 4 branches missed.">        if (intentId == null &amp;&amp; &quot;payment_intent.succeeded&quot;.equals(verified.eventType())) {</span>
+            // Reject BEFORE recording: a recorded-but-unresolved event is
+            // deduplicated forever while never having confirmed the intent —
+            // the provider would keep answering 202 for a lost transition
+            // (CodeRabbit #241). A non-2xx answer makes Stripe retry, and by
+            // the next delivery the intent exists and resolves through the
+            // metadata path or the V33 psp_intent_id link.
+<span class="fc" id="L220">            throw new ConflictException(</span>
+<span class="fc" id="L221">                    &quot;payment_intent.succeeded event &quot; + verified.eventId()</span>
+                            + &quot; could not be resolved to a marketplace payment intent —&quot;
+                            + &quot; rejecting so the provider retries it&quot;);
+        }
+<span class="fc" id="L225">        return handleVerifiedWebhook(&quot;stripe&quot;, verified.eventId(), verified.eventType(),</span>
+<span class="fc" id="L226">                intentId, verified.pspIntentId(), verified.refund(), rawPayload);</span>
+    }
+
+    /**
+     * Verified dispatch with the optional refund snapshot extracted from
+     * {@code charge.refunded} notifications (L19).
+     */
+    void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId,
+                              PspChannel.RefundSnapshot refund) {
+<span class="nc" id="L235">        dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund, null);</span>
+<span class="nc" id="L236">    }</span>
+
+    /**
+     * R10 (Wave 2) — the recovery sweep's re-delivery entry point: dispatches
+     * a recorded inbox row through the SAME verified-dispatch contract the
+     * original delivery used (signature verification already happened at
+     * record time — the row exists because the notification was verified,
+     * so the re-delivery must not re-verify anything).
+     *
+     * &lt;p&gt;&lt;b&gt;Why this is public when {@link #dispatchWebhookEvent} stays
+     * package-private:&lt;/b&gt; the recovery component calls it through the Spring
+     * proxy, and the documented proxying rule (Reference › AOP › Proxying
+     * Mechanisms — the N2 lesson this module already carries) is that
+     * non-public methods are not reliably advised; the webhook routes reach
+     * the package-private form through self-invocation inside this class,
+     * the recovery sweep reaches this public form from its own bean. The
+     * caller is always inside the payments module — the module boundary is
+     * Modulith's, not this method's.&lt;/p&gt;
+     */
+    public void redeliverWebhookEvent(String provider, String eventId, String eventType,
+                                      UUID paymentIntentId, String externalId, Long refundAmountCents) {
+        PspChannel.RefundSnapshot refund =
+<span class="nc bnc" id="L258" title="All 2 branches missed.">                refundAmountCents != null ? new PspChannel.RefundSnapshot(refundAmountCents) : null;</span>
+<span class="nc" id="L259">        dispatchWebhookEvent(eventType, paymentIntentId, externalId, refund,</span>
+                new WebhookEventRef(provider, eventId));
+<span class="nc" id="L261">    }</span>
+
+    /**
+     * R10 (Wave 2) — the dispatch carrying its inbox row: the settlement
+     * events hand the row to {@link PaymentIntentSettlementService} so the
+     * SETTLED mark commits atomically with the money; the other event types
+     * leave the marking to the caller's idempotent backstop.
+     */
+    void dispatchWebhookEvent(String eventType, UUID paymentIntentId, String externalId,
+                              PspChannel.RefundSnapshot refund, WebhookEventRef inboxRow) {
+<span class="pc bpc" id="L271" title="1 of 5 branches missed.">        switch (eventType) {</span>
+            case &quot;payment_intent.succeeded&quot; -&gt; {
+<span class="fc bfc" id="L273" title="All 2 branches covered.">                if (paymentIntentId != null) {</span>
+<span class="fc" id="L274">                    log.info(&quot;Webhook dispatch: payment_intent.succeeded for intent {}&quot;, paymentIntentId);</span>
+<span class="fc" id="L275">                    paymentIntentSettlementService.confirm(paymentIntentId, externalId, inboxRow);</span>
+                } else {
+<span class="fc" id="L277">                    log.warn(&quot;Webhook payment_intent.succeeded missing paymentIntentId: eventType={}&quot;, eventType);</span>
+                }
+<span class="fc" id="L279">            }</span>
+            case &quot;payment_intent.processing&quot; -&gt;
+<span class="nc" id="L281">                log.info(&quot;Webhook: payment intent processing confirmed by gateway: eventType={}&quot;, eventType);</span>
+            case &quot;payment_intent.payment_failed&quot; -&gt; {
+                // L19 — the closed loop: a failed payment now flips the local
+                // intent/payment to FAILED (event + cache invalidation) instead
+                // of dying as a log line while the booking stays &quot;paid&quot;.
+<span class="pc bpc" id="L286" title="1 of 2 branches missed.">                if (paymentIntentId != null) {</span>
+<span class="fc" id="L287">                    log.warn(&quot;Webhook dispatch: payment_intent.payment_failed for intent {}&quot;, paymentIntentId);</span>
+<span class="fc" id="L288">                    paymentIntentSettlementService.fail(paymentIntentId, inboxRow);</span>
+                } else {
+<span class="nc" id="L290">                    log.warn(&quot;Webhook payment_intent.payment_failed missing paymentIntentId: eventType={}&quot;, eventType);</span>
+                }
+<span class="nc" id="L292">            }</span>
+            case &quot;charge.refunded&quot; -&gt; {
+                // L19 — the async safety net: refunds completed at the provider
+                // (including dashboard-created ones) sync the local books to
+                // the remote cumulative actual. Best-effort by design (roadmap
+                // debt D4): an unresolvable intent is warned and acknowledged,
+                // never rejected into a retry loop.
+<span class="pc bpc" id="L299" title="2 of 4 branches missed.">                if (refund != null &amp;&amp; paymentIntentId != null) {</span>
+<span class="fc" id="L300">                    log.info(&quot;Webhook dispatch: charge.refunded for intent {} cumulative {} cents&quot;,</span>
+<span class="fc" id="L301">                            paymentIntentId, refund.refundedAmountCents());</span>
+<span class="fc" id="L302">                    syncRemoteRefund(paymentIntentId, refund.refundedAmountCents());</span>
+                } else {
+<span class="nc" id="L304">                    log.warn(&quot;Webhook charge.refunded without refund snapshot or resolvable intent: eventType={}&quot;,</span>
+                            eventType);
+                }
+<span class="nc" id="L307">            }</span>
+            default -&gt;
+<span class="fc" id="L309">                log.debug(&quot;Unhandled webhook event type: {}&quot;, eventType);</span>
+        }
+<span class="fc" id="L311">    }</span>
+
+    @Transactional(readOnly = true)
+    @Cacheable(&quot;paymentIntents&quot;)
+    public PaymentIntent getIntent(UUID id) {
+<span class="fc" id="L316">        return paymentIntentRepository.findById(id)</span>
+<span class="fc" id="L317">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Payment intent not found: &quot; + id));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;PaymentIntent&gt; listIntents(Pageable pageable) {
+<span class="nc" id="L322">        return paymentIntentRepository.findAll(pageable);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public Page&lt;PaymentSummary&gt; listIntentsSummaries(Pageable pageable) {
+<span class="nc" id="L327">        return paymentIntentRepository.findAllSummariesBy(pageable).map(this::toPaymentSummaryFromView);</span>
+    }
+
+    private PaymentSummary toPaymentSummaryFromView(PaymentIntentSummaryView view) {
+<span class="nc" id="L331">        return new PaymentSummary(</span>
+<span class="nc" id="L332">                view.getId(),</span>
+<span class="nc" id="L333">                view.getBookingId(),</span>
+<span class="nc" id="L334">                view.getConsumerId(),</span>
+<span class="nc" id="L335">                view.getAmountCents(),</span>
+<span class="nc" id="L336">                view.getCurrency(),</span>
+<span class="nc" id="L337">                view.getStatus().name(),</span>
+<span class="nc" id="L338">                view.getRefundedAmountCents(),</span>
+<span class="nc" id="L339">                view.getCreatedAt(),</span>
+<span class="nc" id="L340">                view.getUpdatedAt()</span>
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentSummary getIntentSummary(UUID id) {
+<span class="nc" id="L346">        return toPaymentSummary(getIntent(id));</span>
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentIntent getIntentForUser(UUID id, Authentication authentication) {
+<span class="fc" id="L351">        PaymentIntent intent = getIntent(id);</span>
+<span class="fc" id="L352">        verifyConsumerOwnership(intent, authentication);</span>
+<span class="fc" id="L353">        return intent;</span>
+    }
+
+    @PreAuthorize(&quot;hasRole('CONSUMER')&quot;)
+    public PaymentIntent createIntent(UUID bookingId, UUID consumerId, String idempotencyKey) {
+        // Idempotency: return existing intent if same key
+<span class="fc bfc" id="L359" title="All 2 branches covered.">        if (idempotencyKey != null) {</span>
+<span class="fc" id="L360">            var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);</span>
+<span class="fc bfc" id="L361" title="All 2 branches covered.">            if (existing.isPresent()) {</span>
+<span class="pc bpc" id="L362" title="1 of 2 branches missed.">                if (!existing.get().getConsumerId().equals(consumerId)) {</span>
+<span class="nc" id="L363">                    throw new AccessDeniedException(&quot;Idempotency key belongs to another consumer&quot;);</span>
+                }
+<span class="fc" id="L365">                return existing.get();</span>
+            }
+        }
+
+<span class="fc" id="L369">        BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(bookingId);</span>
+<span class="fc" id="L370">        bookingInfo.requireParticipant(consumerId);</span>
+<span class="fc" id="L371">        bookingInfo.requireStatus(&quot;CONFIRMED&quot;, &quot;create payment intent&quot;);</span>
+
+        // R4 (comprehensive-review-ar-fix plan §4/R4 — one collectible
+        // attempt per booking): a fresh intent requires the booking's
+        // previous attempt to have FAILED or been CANCELLED — any other
+        // live row blocks the creation. The pre-fix code's only dedup
+        // surface was the CALLER-SUPPLIED (optional) idempotency key, so
+        // multiple intents per booking were reachable by construction and
+        // processing each charged the booking again. The guard is the
+        // friendly failure; the partial unique index
+        // uq_payment_intents_one_active_attempt (V81) is the concurrency
+        // backstop for the race past it (the V67 house shape).
+<span class="fc" id="L383">        paymentIntentRepository</span>
+<span class="fc" id="L384">                .findFirstByBookingIdAndStatusNotInOrderByCreatedAtDescIdDesc(</span>
+                        bookingId, PaymentIntentStatus.RETRYABLE)
+<span class="fc" id="L386">                .ifPresent(blocking -&gt; {</span>
+<span class="fc" id="L387">                    throw new ConflictException(</span>
+                            &quot;Booking &quot; + bookingId + &quot; already has a payment intent in state &quot;
+<span class="fc" id="L389">                                    + blocking.getStatus() + &quot; (&quot; + blocking.getId()</span>
+                                    + &quot;) — a new attempt requires the previous one to have failed&quot;
+                                    + &quot; or been cancelled&quot;);
+                });
+
+<span class="fc" id="L394">        PaymentIntent intent = PaymentIntent.create(bookingId, consumerId, bookingInfo.priceCents(),</span>
+<span class="fc" id="L395">                bookingInfo.currency(), idempotencyKey);</span>
+<span class="fc" id="L396">        PaymentIntent saved = paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L397">        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), &quot;INITIATED&quot;));</span>
+<span class="fc" id="L398">        return saved;</span>
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the ad bill's
+     * intent — the plan's «وظيفة خصم دورية تُصدر نية دفع». The payer is the
+     * PROVIDER (the campaign's advertiser), the booking coupling is lifted
+     * the W1 way (origin + cross-column CHECK, V103), and idempotency is
+     * the DETERMINISTIC window key {@code ad-debit-{campaignId}-{windowStart}}
+     * — the column's own UNIQUE index rejects the replay of a settled
+     * window, the plan's structural answer to «إعادة المحاولة أو تداخل
+     * الجدولة يستحيلان معًا».
+     *
+     * &lt;p&gt;Replay of an existing key returns the existing intent (the
+     * BOOKING path's own contract); a mismatched payer rejects with
+     * ACCESS_DENIED (the same ownership law). Settlement rides the
+     * existing surfaces — the admin {@code confirmIntent} today, the PSP
+     * webhook when E1 (Stripe) lands — the provider-facing pay flow is
+     * that wave's concern, not this one's.&lt;/p&gt;
+     */
+    public PaymentIntent createAdIntent(UUID providerId, UUID campaignId, LocalDate windowStart,
+                                        long amountCents, String currency, String idempotencyKey) {
+<span class="pc bpc" id="L420" title="1 of 2 branches missed.">        if (idempotencyKey != null) {</span>
+<span class="fc" id="L421">            var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);</span>
+<span class="fc bfc" id="L422" title="All 2 branches covered.">            if (existing.isPresent()) {</span>
+<span class="fc bfc" id="L423" title="All 2 branches covered.">                if (!existing.get().getConsumerId().equals(providerId)) {</span>
+<span class="fc" id="L424">                    throw new AccessDeniedException(&quot;Idempotency key belongs to another payer&quot;);</span>
+                }
+<span class="fc" id="L426">                return existing.get();</span>
+            }
+        }
+<span class="fc bfc" id="L429" title="All 2 branches covered.">        if (amountCents &lt;= 0) {</span>
+            // The billing run never emits zero-window events (no charge row,
+            // no event); the guard keeps the surface honest on its own terms.
+<span class="fc" id="L432">            throw new ConflictException(&quot;An ad bill intent requires a positive amount: &quot; + amountCents + &quot; cents&quot;);</span>
+        }
+<span class="fc" id="L434">        PaymentIntent intent = PaymentIntent.createForAds(providerId, campaignId,</span>
+<span class="fc" id="L435">                amountCents, currency, idempotencyKey);</span>
+<span class="fc" id="L436">        PaymentIntent saved = paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L437">        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), &quot;INITIATED&quot;));</span>
+<span class="fc" id="L438">        return saved;</span>
+    }
+
+    /**
+     * Result of processing a payment intent: the local intent plus the PSP
+     * client secret when the real channel is bound (the calling client needs
+     * it to complete the payment on the provider side). Null clientSecret =
+     * channel inert, existing behavior.
+     */
+<span class="fc" id="L447">    public record ProcessIntentResult(PaymentIntent intent, String clientSecret) {}</span>
+
+    @Observed(name = &quot;payment.process&quot;)
+    @PreAuthorize(&quot;hasRole('CONSUMER')&quot;)
+    @Retry(name = &quot;paymentProcessing&quot;)
+    @CircuitBreaker(name = &quot;paymentProcessing&quot;)
+    @ConcurrencyLimit(5)
+    public ProcessIntentResult processIntent(UUID id, Authentication authentication) {
+<span class="fc" id="L455">        PaymentIntent intent = getIntentForUser(id, authentication);</span>
+<span class="fc" id="L456">        intent.markProcessing();</span>
+        // Real channel (roadmap B3): create the remote intent when the PSP is
+        // bound. The idempotency key is derived from the local intent id, so
+        // retries replay the SAME remote intent (official idempotency-key
+        // contract) instead of double-charging the flow.
+<span class="fc" id="L461">        PspChannel channel = pspChannel.getIfAvailable();</span>
+<span class="fc" id="L462">        String clientSecret = null;</span>
+<span class="fc bfc" id="L463" title="All 2 branches covered.">        if (channel != null) {</span>
+<span class="fc" id="L464">            var remote = channel.createRemoteIntent(</span>
+<span class="fc" id="L465">                    intent.getId(), intent.getAmountCents(), intent.getCurrency(),</span>
+<span class="fc" id="L466">                    &quot;marketplace-intent-&quot; + intent.getId());</span>
+<span class="fc" id="L467">            intent.assignPspIntentId(remote.pspIntentId());</span>
+<span class="fc" id="L468">            clientSecret = remote.clientSecret();</span>
+        }
+<span class="fc" id="L470">        Payment payment = Payment.create(intent.getId(), intent.getAmountCents());</span>
+<span class="fc" id="L471">        paymentRepository.save(payment);</span>
+<span class="fc" id="L472">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), id));</span>
+<span class="fc" id="L473">        return new ProcessIntentResult(intent, clientSecret);</span>
+    }
+
+    /**
+     * Admin command shell (POST /intents/{id}/confirm): the role check
+     * lives HERE — on the command surface — while the domain transition
+     * lives in {@link PaymentIntentSettlementService} (N2: the pre-fix
+     * self-invocation from the webhook dispatch bypassed this proxy, so
+     * the {@code @PreAuthorize} below read as a boundary that one path
+     * silently went around). The webhook reaches the same domain
+     * transition with provider-signature authorization instead.
+     */
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    public PaymentIntent confirmIntent(UUID id, String externalId) {
+<span class="fc" id="L487">        return paymentIntentSettlementService.confirm(id, externalId);</span>
+    }
+
+    @Observed(name = &quot;payment.cancel&quot;)
+    @PreAuthorize(&quot;hasRole('CONSUMER')&quot;)
+    public PaymentIntent cancelIntent(UUID id, Authentication authentication) {
+<span class="fc" id="L493">        PaymentIntent intent = getIntentForUser(id, authentication);</span>
+<span class="fc" id="L494">        intent.cancel();</span>
+<span class="fc" id="L495">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), id));</span>
+<span class="fc" id="L496">        return intent;</span>
+    }
+
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    @Retry(name = &quot;paymentProcessing&quot;)
+    public RefundedPayment refundPayment(UUID paymentId) {
+<span class="fc" id="L502">        return refundPayment(paymentId, null);</span>
+    }
+
+    /**
+     * S7 carrier (the {@link ProcessIntentResult} shape): the refunded
+     * payment together with its intent — the response layer needs the
+     * intent's ISO 4217 currency to answer a complete money shape, and the
+     * refund flow already loads both in one transaction. Domain consumers
+     * (the dispute refund adapter) read {@link #payment()}.
+     */
+<span class="fc" id="L512">    public record RefundedPayment(Payment payment, PaymentIntent intent) {}</span>
+
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    @Retry(name = &quot;paymentProcessing&quot;)
+    public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents) {
+<span class="fc" id="L517">        Payment payment = paymentRepository.findById(paymentId)</span>
+<span class="pc" id="L518">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Payment not found: &quot; + paymentId));</span>
+<span class="fc" id="L519">        PaymentIntent intent = paymentIntentRepository.findById(payment.getPaymentIntentId())</span>
+<span class="pc" id="L520">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;Payment intent not found: &quot; + payment.getPaymentIntentId()));</span>
+
+<span class="fc" id="L522">        long alreadyRefunded = payment.getRefundedAmountCents();</span>
+<span class="fc bfc" id="L523" title="All 2 branches covered.">        if (amountCents != null) {</span>
+<span class="fc bfc" id="L524" title="All 2 branches covered.">            if (alreadyRefunded + amountCents &gt; payment.getAmountCents()) {</span>
+<span class="fc" id="L525">                throw new ConflictException(&quot;Refund amount exceeds payment amount&quot;);</span>
+            }
+<span class="fc bfc" id="L527" title="All 2 branches covered.">            if (intent.getRefundedAmountCents() + amountCents &gt; intent.getAmountCents()) {</span>
+<span class="fc" id="L528">                throw new ConflictException(&quot;Refund amount exceeds intent amount&quot;);</span>
+            }
+        }
+        // L19/R1 — the closed money loop through the ONE refund contract: when
+        // the real channel is bound AND the intent is linked to a remote
+        // intent, the refund is created at the provider with a derived
+        // idempotency key and the local books reflect the remote cumulative
+        // actual. Not linked = the intent never left the house
+        // (internal/test money) — nothing remote to refund; no channel = the
+        // documented inert path. Either way the existing internal flow below
+        // stays byte-compatible. The booking-cancellation listener's full
+        // refund (refundFully) routes through the SAME contract — one
+        // behavior for one financial operation, no dual paths.
+<span class="fc" id="L541">        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, amountCents);</span>
+<span class="fc bfc" id="L542" title="All 3 branches covered.">        switch (outcome) {</span>
+            case PENDING_AT_PROVIDER -&gt; {
+                // Remote refund created but not completed: local books await
+                // the charge.refunded webhook (the async safety net).
+<span class="fc" id="L546">                return new RefundedPayment(payment, intent);</span>
+            }
+            case SYNCED -&gt; {
+<span class="fc" id="L549">                paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L550">                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));</span>
+<span class="fc" id="L551">                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L552">                return new RefundedPayment(payment, intent);</span>
+            }
+            case NO_CHANNEL -&gt; {
+                // fall through to the documented inert local path below
+            }
+        }
+<span class="fc bfc" id="L558" title="All 4 branches covered.">        boolean isFullRefund = (amountCents == null || alreadyRefunded + amountCents == payment.getAmountCents());</span>
+<span class="fc bfc" id="L559" title="All 2 branches covered.">        if (isFullRefund) {</span>
+<span class="fc" id="L560">            payment.markRefunded();</span>
+<span class="fc" id="L561">            intent.markRefunded();</span>
+        } else {
+<span class="fc" id="L563">            payment.markPartiallyRefunded(amountCents);</span>
+<span class="fc" id="L564">            intent.markPartiallyRefunded(amountCents);</span>
+        }
+<span class="fc" id="L566">        paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L567">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));</span>
+<span class="fc" id="L568">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L569">        return new RefundedPayment(payment, intent);</span>
+    }
+
+    /**
+     * Applies the remote cumulative actual to the local rows: full when the
+     * provider says everything is refunded, partial otherwise. The remote
+     * number is authoritative (roadmap L19 acceptance 3) — the local books
+     * follow the money at the PSP even when refunds happened outside this
+     * service.
+     */
+    private void applyRemoteRefund(Payment payment, PaymentIntent intent, long remoteRefundedTotalCents) {
+<span class="fc bfc" id="L580" title="All 2 branches covered.">        if (remoteRefundedTotalCents &gt;= payment.getAmountCents()) {</span>
+<span class="fc" id="L581">            payment.markRefunded();</span>
+<span class="fc" id="L582">            intent.markRefunded();</span>
+        } else {
+<span class="fc" id="L584">            payment.markPartiallyRefundedTotal(remoteRefundedTotalCents);</span>
+<span class="fc" id="L585">            intent.markPartiallyRefundedTotal(remoteRefundedTotalCents);</span>
+        }
+<span class="fc" id="L587">    }</span>
+
+    /**
+     * Deterministic refund replay key, derived from the request as the local
+     * books see it: the payment, the refunded-so-far state, and the requested
+     * amount (or &quot;full&quot;). A retried request (after rollback) re-derives the
+     * SAME key and replays the same remote refund instead of double-charging;
+     * a NEW refund (state advanced) derives a different key and creates a new
+     * remote refund — the official idempotency-key contract.
+     */
+    static String refundIdempotencyKey(UUID paymentId, long alreadyRefundedCents, Long amountCents) {
+<span class="fc bfc" id="L598" title="All 2 branches covered.">        String amount = amountCents == null ? &quot;full&quot; : amountCents.toString();</span>
+<span class="fc" id="L599">        return &quot;marketplace-refund-&quot; + paymentId + &quot;-&quot; + alreadyRefundedCents + &quot;-&quot; + amount;</span>
+    }
+
+    /**
+     * L19 — webhook-side refund sync ({@code charge.refunded}): sets the local
+     * books to the remote cumulative actual. Idempotent: a redelivery that
+     * carries no new state is a debug no-op instead of a state-machine
+     * violation, so the provider's retry loop never traps on a synced event
+     * (the dedup table covers identical event ids; this covers the same
+     * SNAPSHOT arriving under a different event id).
+     */
+    void syncRemoteRefund(UUID paymentIntentId, long remoteRefundedTotalCents) {
+<span class="fc" id="L611">        PaymentIntent intent = getIntent(paymentIntentId);</span>
+<span class="fc" id="L612">        Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);</span>
+<span class="pc bpc" id="L613" title="1 of 2 branches missed.">        if (payment == null) {</span>
+<span class="nc" id="L614">            log.warn(&quot;charge.refunded for intent {} without a local payment row — nothing to sync&quot;,</span>
+                    paymentIntentId);
+<span class="nc" id="L616">            return;</span>
+        }
+        // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
+        // order (official docs), and amount_refunded only grows — a snapshot
+        // BELOW the synced local totals is a stale, out-of-order event and is
+        // ignored instead of regressing the books.
+<span class="fc bfc" id="L622" title="All 2 branches covered.">        if (remoteRefundedTotalCents &lt; payment.getRefundedAmountCents()</span>
+<span class="pc bpc" id="L623" title="1 of 2 branches missed.">                || remoteRefundedTotalCents &lt; intent.getRefundedAmountCents()) {</span>
+<span class="fc" id="L624">            log.info(&quot;charge.refunded for intent {} carries an out-of-order snapshot ({} cents) below&quot;</span>
+                            + &quot; the synced totals (payment {} / intent {}) — ignored&quot;,
+<span class="fc" id="L626">                    paymentIntentId, remoteRefundedTotalCents,</span>
+<span class="fc" id="L627">                    payment.getRefundedAmountCents(), intent.getRefundedAmountCents());</span>
+<span class="fc" id="L628">            return;</span>
+        }
+<span class="pc bpc" id="L630" title="1 of 2 branches missed.">        boolean fullRemote = remoteRefundedTotalCents &gt;= payment.getAmountCents();</span>
+<span class="fc bfc" id="L631" title="All 2 branches covered.">        boolean alreadySynced = payment.getRefundedAmountCents() == remoteRefundedTotalCents</span>
+<span class="pc bpc" id="L632" title="1 of 2 branches missed.">                &amp;&amp; intent.getRefundedAmountCents() == remoteRefundedTotalCents</span>
+<span class="pc bpc" id="L633" title="2 of 4 branches missed.">                &amp;&amp; payment.getStatus() == (fullRemote ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED);</span>
+<span class="fc bfc" id="L634" title="All 2 branches covered.">        if (alreadySynced) {</span>
+<span class="fc" id="L635">            log.debug(&quot;charge.refunded for intent {} carries the already-synced total {} cents&quot;,</span>
+<span class="fc" id="L636">                    paymentIntentId, remoteRefundedTotalCents);</span>
+<span class="fc" id="L637">            return;</span>
+        }
+<span class="fc" id="L639">        applyRemoteRefund(payment, intent, remoteRefundedTotalCents);</span>
+<span class="fc" id="L640">        paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L641">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));</span>
+<span class="fc" id="L642">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L643">        log.info(&quot;Synced remote refund state for intent {}: {} cents refunded (status {})&quot;,</span>
+<span class="fc" id="L644">                paymentIntentId, remoteRefundedTotalCents, payment.getStatus());</span>
+<span class="fc" id="L645">    }</span>
+
+    /**
+     * S12 guard — booking cancellation's money half maps the intent's ACTUAL
+     * state through {@link PaymentIntentStatus#TRANSITIONS} to its legal
+     * outcome instead of assuming SUCCEEDED. Spring Modulith's Event
+     * Publication Registry retries a listener that throws (official
+     * reference: &quot;In case the listener fails, the log entry stays untouched
+     * so that retry mechanisms can be deployed&quot;), so an illegal-transition
+     * throw here (the pre-fix behavior: unconditional {@code markRefunded()})
+     * was resubmitted daily forever with the intent stuck. Every state now
+     * either transitions legally or completes as an idempotent no-op:
+     * &lt;ul&gt;
+     *   &lt;li&gt;SUCCEEDED / PARTIALLY_REFUNDED → REFUNDED — the only states where
+     *       money moved, so the full refund (and its ledger debit event)
+     *       applies;&lt;/li&gt;
+     *   &lt;li&gt;CREATED → CANCELLED — the booking died before any charge
+     *       existed, so nothing is owed back;&lt;/li&gt;
+     *   &lt;li&gt;PROCESSING → FAILED — the in-flight charge is abandoned (the
+     *       local books assume it never settles; a late PSP success hitting
+     *       a terminal intent is the webhook side's declared gap, closed
+     *       separately);&lt;/li&gt;
+     *   &lt;li&gt;FAILED / CANCELLED / REFUNDED → no-op — a redelivery must
+     *       complete the publication instead of re-violating the machine.&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * &lt;p&gt;&lt;b&gt;R4 scoping (comprehensive-review-ar-fix plan §4/R4):&lt;/b&gt; the
+     * intent is resolved through the two STATUS-SCOPED deterministic
+     * searches — the collectible attempt and the money-carrying attempt,
+     * each latest by {@code (createdAt, id)} — never the pre-fix
+     * unfiltered per-booking lookup that returned an arbitrary row once
+     * several intents coexisted for one booking.&lt;/p&gt;
+ *
+     * &lt;p&gt;&lt;b&gt;R1 (Wave 2) — the money-remote half of the SUCCEEDED branch.&lt;/b&gt;
+     * The full refund of a remotely-charged intent now routes through the one
+     * remote-refund contract ({@link #refundThroughChannel}): a PENDING remote
+     * refund completes the listener cleanly (the {@code charge.refunded}
+     * webhook finishes the books), while a CHANNEL FAILURE throws on purpose
+     * — the local books must never say REFUNDED for money the provider has
+     * not returned. That throw is not a state-machine violation (the S12
+     * family above stays legal-or-noop); it is the honest signal that keeps
+     * the publication incomplete, so the framework's own recovery owns the
+     * retry: the {@code @Retry(name = &quot;paymentProcessing&quot;)} wrapper first,
+     * then the Event Publication Registry, then the runtime
+     * {@code EventPublicationResubmission} sweep — the refund stays pending
+     * and retryable until the channel heals, and the intent keeps its true
+     * money state throughout.&lt;/p&gt;     */
+    @Retry(name = &quot;paymentProcessing&quot;)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void autoRefundByBooking(UUID bookingId) {
+        // R4 (comprehensive-review-ar-fix plan §4/R4): the booking's money
+        // half is STATUS-SCOPED, never an unfiltered per-booking search —
+        // the pre-fix findByBookingId returned an arbitrary row once the
+        // defect let several intents coexist. Two scoped deterministic
+        // searches (latest by (createdAt, id)) carry the S12 contract:
+        // the COLLECTIBLE attempt (if any) is aborted where it stands,
+        // and the COLLECTED attempt (if any) is refunded. Under the R4
+        // invariant the two are mutually exclusive per booking; the
+        // scoped searches stay individually idempotent for redeliveries.
+<span class="fc" id="L704">        paymentIntentRepository</span>
+<span class="fc" id="L705">                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(</span>
+                        bookingId, PaymentIntentStatus.COLLECTIBLE)
+<span class="fc" id="L707">                .ifPresent(intent -&gt; {</span>
+<span class="pc bpc" id="L708" title="1 of 3 branches missed.">                    switch (intent.getStatus()) {</span>
+<span class="fc" id="L709">                        case CREATED -&gt; cancelUnpaid(intent);</span>
+<span class="fc" id="L710">                        case PROCESSING -&gt; failInFlight(intent);</span>
+                        default -&gt;
+<span class="nc" id="L712">                                log.info(&quot;Auto-refund for booking {} skipped — collectible intent {}&quot;</span>
+                                                + &quot; already left the collectible states in {}&quot;,
+<span class="nc" id="L714">                                        bookingId, intent.getId(), intent.getStatus());</span>
+                    }
+<span class="fc" id="L716">                });</span>
+<span class="fc" id="L717">        paymentIntentRepository</span>
+<span class="fc" id="L718">                .findFirstByBookingIdAndStatusInOrderByCreatedAtDescIdDesc(</span>
+                        bookingId, PaymentIntentStatus.COLLECTED)
+<span class="fc" id="L720">                .ifPresent(intent -&gt; {</span>
+<span class="pc bpc" id="L721" title="1 of 3 branches missed.">                    switch (intent.getStatus()) {</span>
+<span class="fc" id="L722">                        case SUCCEEDED, PARTIALLY_REFUNDED -&gt; refundFully(intent);</span>
+                        case REFUNDED -&gt;
+<span class="fc" id="L724">                                log.info(&quot;Auto-refund for booking {} skipped — intent {} already&quot;</span>
+                                                + &quot; terminal in REFUNDED&quot;,
+<span class="fc" id="L726">                                        bookingId, intent.getId());</span>
+                        default -&gt;
+<span class="nc" id="L728">                                log.info(&quot;Auto-refund for booking {} skipped — intent {} already terminal in {}&quot;,</span>
+<span class="nc" id="L729">                                        bookingId, intent.getId(), intent.getStatus());</span>
+                    }
+<span class="fc" id="L731">                });</span>
+<span class="fc" id="L732">    }</span>
+
+    /**
+     * R1 (Wave 2) — the ONE remote-refund contract every refund caller routes
+     * through (the admin command and the booking-cancellation listener's full
+     * refund — the measured defect was two behaviors for one financial
+     * operation: the admin path created the remote refund while the listener
+     * marked the local books REFUNDED without the provider ever paying anyone
+     * back). The contract:
+     * &lt;ul&gt;
+     *   &lt;li&gt;intent not linked to a remote intent, or no channel bound ⇒
+     *       {@link RemoteRefundOutcome#NO_CHANNEL} — the documented inert
+     *       local path applies (internal/test money);&lt;/li&gt;
+     *   &lt;li&gt;remote refund created and PENDING ⇒
+     *       {@link RemoteRefundOutcome#PENDING_AT_PROVIDER} — the local books
+     *       await the {@code charge.refunded} webhook (the async safety net);
+     *       a channel exception propagates to the caller's existing
+     *       {@code @Retry(name = &quot;paymentProcessing&quot;)} wrapper and, on the
+     *       listener path, to Spring Modulith's Event Publication Registry —
+     *       the refund stays pending and retryable, never falsely REFUNDED
+     *       (the framework's own retry mechanisms own the recovery, including
+     *       {@code EventPublicationResubmission} at runtime);&lt;/li&gt;
+     *   &lt;li&gt;remote refund SUCCEEDED ⇒
+     *       {@link RemoteRefundOutcome#SYNCED} — the remote cumulative actual
+     *       is applied to both rows (the provider's number is authoritative,
+     *       roadmap L19 acceptance 3) and the caller persists + publishes.&lt;/li&gt;
+     * &lt;/ul&gt;
+     * Anything else from the provider is a loud conflict with no local state
+     * change (CodeRabbit #249 round 1).
+     */
+    private RemoteRefundOutcome refundThroughChannel(Payment payment, PaymentIntent intent, Long amountCents) {
+<span class="fc" id="L763">        PspChannel channel = pspChannel.getIfAvailable();</span>
+<span class="fc bfc" id="L764" title="All 4 branches covered.">        if (channel == null || intent.getPspIntentId() == null) {</span>
+<span class="fc" id="L765">            return RemoteRefundOutcome.NO_CHANNEL;</span>
+        }
+<span class="fc" id="L767">        String idempotencyKey = refundIdempotencyKey(</span>
+<span class="fc" id="L768">                payment.getId(), payment.getRefundedAmountCents(), amountCents);</span>
+<span class="fc" id="L769">        PspChannel.RemoteRefund remote = channel.createRemoteRefund(</span>
+<span class="fc" id="L770">                intent.getPspIntentId(), amountCents, idempotencyKey);</span>
+<span class="fc bfc" id="L771" title="All 2 branches covered.">        if (&quot;pending&quot;.equals(remote.status())) {</span>
+<span class="fc" id="L772">            log.info(&quot;Remote refund {} for payment {} is pending at the provider — local books&quot;</span>
+                            + &quot; await the charge.refunded webhook (nothing refunded yet: {} cents)&quot;,
+<span class="fc" id="L774">                    remote.refundId(), payment.getId(), remote.refundedTotalCents());</span>
+<span class="fc" id="L775">            return RemoteRefundOutcome.PENDING_AT_PROVIDER;</span>
+        }
+<span class="fc bfc" id="L777" title="All 2 branches covered.">        if (!&quot;succeeded&quot;.equals(remote.status())) {</span>
+<span class="fc" id="L778">            throw new ConflictException(&quot;Remote refund &quot; + remote.refundId() + &quot; for payment &quot;</span>
+<span class="fc" id="L779">                    + payment.getId() + &quot; returned status '&quot; + remote.status()</span>
+                    + &quot;' — no local refund state changed&quot;);
+        }
+<span class="fc" id="L782">        applyRemoteRefund(payment, intent, remote.refundedTotalCents());</span>
+<span class="fc" id="L783">        return RemoteRefundOutcome.SYNCED;</span>
+    }
+
+    /** The one contract's outcomes — see {@link #refundThroughChannel}. */
+<span class="fc" id="L787">    private enum RemoteRefundOutcome {</span>
+<span class="fc" id="L788">        NO_CHANNEL,</span>
+<span class="fc" id="L789">        PENDING_AT_PROVIDER,</span>
+<span class="fc" id="L790">        SYNCED</span>
+    }
+
+    private void refundFully(PaymentIntent intent) {
+<span class="fc" id="L794">        Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);</span>
+<span class="fc bfc" id="L795" title="All 2 branches covered.">        if (payment == null) {</span>
+            // Never charged through settlement — nothing remote to coordinate;
+            // the intent-level terminal mark is the honest state.
+<span class="fc" id="L798">            intent.markRefunded();</span>
+<span class="fc" id="L799">            paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L800">            eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;REFUNDED&quot;));</span>
+<span class="fc" id="L801">            eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L802">            log.info(&quot;Auto-refund completed for intent {} (full refund — no payment row to coordinate)&quot;,</span>
+<span class="fc" id="L803">                    intent.getId());</span>
+<span class="fc" id="L804">            return;</span>
+        }
+<span class="fc" id="L806">        RemoteRefundOutcome outcome = refundThroughChannel(payment, intent, null);</span>
+<span class="pc bpc" id="L807" title="1 of 4 branches missed.">        switch (outcome) {</span>
+            case SYNCED -&gt; {
+<span class="fc" id="L809">                paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L810">                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), intent.getStatus().name()));</span>
+<span class="fc" id="L811">                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L812">                log.info(&quot;Auto-refund completed for intent {} — remote cumulative applied&quot;,</span>
+<span class="fc" id="L813">                        intent.getId());</span>
+<span class="fc" id="L814">            }</span>
+<span class="fc" id="L815">            case PENDING_AT_PROVIDER -&gt; log.info(</span>
+                    &quot;Auto-refund for intent {} created a PENDING remote refund — local books await the&quot;
+                            + &quot; charge.refunded webhook (the async safety net); the listener completes cleanly&quot;,
+<span class="fc" id="L818">                    intent.getId());</span>
+            case NO_CHANNEL -&gt; {
+                // The documented inert local path — byte-compatible with the
+                // pre-R1 behavior for money that never left the house.
+<span class="fc" id="L822">                intent.markRefunded();</span>
+<span class="fc" id="L823">                payment.markRefunded();</span>
+<span class="fc" id="L824">                paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L825">                paymentRepository.save(payment);</span>
+<span class="fc" id="L826">                eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;REFUNDED&quot;));</span>
+<span class="fc" id="L827">                eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L828">                log.info(&quot;Auto-refund completed for intent {} (full refund — inert local path)&quot;, intent.getId());</span>
+            }
+        }
+<span class="fc" id="L831">    }</span>
+
+    private void cancelUnpaid(PaymentIntent intent) {
+<span class="fc" id="L834">        intent.cancel();</span>
+<span class="fc" id="L835">        paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L836">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;CANCELLED&quot;));</span>
+<span class="fc" id="L837">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L838">        log.info(&quot;Auto-refund resolved intent {} as CANCELLED — the booking died before any charge existed&quot;,</span>
+<span class="fc" id="L839">                intent.getId());</span>
+<span class="fc" id="L840">    }</span>
+
+    private void failInFlight(PaymentIntent intent) {
+<span class="fc" id="L843">        intent.markFailed();</span>
+<span class="fc" id="L844">        paymentIntentRepository.save(intent);</span>
+<span class="fc" id="L845">        paymentRepository.findByPaymentIntentId(intent.getId()).ifPresent(payment -&gt; {</span>
+<span class="fc" id="L846">            payment.markFailed();</span>
+<span class="fc" id="L847">            paymentRepository.save(payment);</span>
+<span class="fc" id="L848">        });</span>
+<span class="fc" id="L849">        eventPublisher.publishEvent(new PaymentStateChangedEvent(intent.getId(), &quot;FAILED&quot;));</span>
+<span class="fc" id="L850">        eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of(&quot;paymentIntents&quot;), intent.getId()));</span>
+<span class="fc" id="L851">        log.info(&quot;Auto-refund resolved intent {} as FAILED — the in-flight charge was abandoned at cancellation&quot;,</span>
+<span class="fc" id="L852">                intent.getId());</span>
+<span class="fc" id="L853">    }</span>
+
+    private PaymentSummary toPaymentSummary(PaymentIntent paymentIntent) {
+<span class="nc" id="L856">        return new PaymentSummary(</span>
+<span class="nc" id="L857">                paymentIntent.getId(),</span>
+<span class="nc" id="L858">                paymentIntent.getBookingId(),</span>
+<span class="nc" id="L859">                paymentIntent.getConsumerId(),</span>
+<span class="nc" id="L860">                paymentIntent.getAmountCents(),</span>
+<span class="nc" id="L861">                paymentIntent.getCurrency(),</span>
+<span class="nc" id="L862">                paymentIntent.getStatus().name(),</span>
+<span class="nc" id="L863">                paymentIntent.getRefundedAmountCents(),</span>
+<span class="nc" id="L864">                paymentIntent.getCreatedAt(),</span>
+<span class="nc" id="L865">                paymentIntent.getUpdatedAt()</span>
+        );
+    }
+
+    private void verifyConsumerOwnership(PaymentIntent intent, Authentication authentication) {
+<span class="fc bfc" id="L870" title="All 2 branches covered.">        if (currentUserProvider.isAdmin(authentication)) {</span>
+<span class="fc" id="L871">            return;</span>
+        }
+<span class="fc" id="L873">        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="fc bfc" id="L874" title="All 2 branches covered.">        if (!intent.getConsumerId().equals(currentUserId)) {</span>
+<span class="fc" id="L875">            throw new AccessDeniedException(&quot;You do not own this payment intent&quot;);</span>
+        }
+<span class="fc" id="L877">    }</span>
+
+    private PspChannel requireChannel() {
+<span class="fc" id="L880">        PspChannel channel = pspChannel.getIfAvailable();</span>
+<span class="fc bfc" id="L881" title="All 2 branches covered.">        if (channel == null) {</span>
+<span class="fc" id="L882">            throw new ServiceUnavailableException(</span>
+                    &quot;Real payment channel is not configured. Set PAYMENTS_STRIPE_API_KEY and &quot;
+                            + &quot;PAYMENTS_STRIPE_WEBHOOK_SECRET to enable the PSP channel.&quot;);
+        }
+<span class="fc" id="L886">        return channel;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

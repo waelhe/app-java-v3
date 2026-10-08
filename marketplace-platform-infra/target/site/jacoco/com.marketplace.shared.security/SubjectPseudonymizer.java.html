@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SubjectPseudonymizer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.security</a> &gt; <span class="el_source">SubjectPseudonymizer.java</span></div><h1>SubjectPseudonymizer.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.security;
+
+import com.marketplace.shared.api.ServiceUnavailableException;
+import com.marketplace.shared.config.MarketplaceProperties;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.List;
+
+/**
+ * I7 (account-pseudonymization-plan §5-أ / gate b-2(b)): the deterministic
+ * subject-replacement transformation for account pseudonymization —
+ * {@code &quot;anon-&quot; + hex(HMAC-SHA256(K_env, subject))}.
+ *
+ * &lt;p&gt;&lt;b&gt;The official classification:&lt;/b&gt; this is the &quot;cryptographic
+ * algorithms&quot; class of replacement procedures that EDPB Guidelines 01/2025
+ * §87 names (&quot;Two classes of replacement procedures are commonly applied as
+ * pseudonymising transformations: cryptographic algorithms and lookup
+ * tables.&quot;), and the key is the &quot;additional information&quot; GDPR Art. 4(5)
+ * requires to be &quot;kept separately&quot; — delivered through the environment-only
+ * channel (secrets-policy §1, {@code PSEUDONYMIZATION_HMAC_KEY}), never in
+ * the database, never in Git, never logged.
+ *
+ * &lt;p&gt;&lt;b&gt;The exact contract (pinned by the plan, guarded by
+ * {@code SubjectPseudonymizerTest}):&lt;/b&gt;&lt;/p&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;Input — the UTF-8 bytes of the stored subject string, as-is, with no
+ *       case normalization or trimming: subjects are opaque identifiers
+ *       matched literally ({@code IdentityUserProvider} /
+ *       {@code UserRepository.findBySubject}).&lt;/li&gt;
+ *   &lt;li&gt;Output — the FULL 256-bit HMAC-SHA256 fingerprint, hex-encoded (64
+ *       characters; total length 5 + 1 + 64 = 70, within the 200-character
+ *       {@code users.subject} column limit). No truncation, so no collision
+ *       policy is needed (a birthday bound of 2^128 with no practical
+ *       significance; the column's {@code unique} constraint enforces
+ *       distinctness regardless).&lt;/li&gt;
+ *   &lt;li&gt;Deterministic — the same key and the same subject always derive the
+ *       same replacement, which makes the administrative operation
+ *       idempotent and makes the pre-provisioning tombstone probe
+ *       verifiable: a re-issued raw subject derives the same replacement and
+ *       is caught before a new account is created.&lt;/li&gt;
+ *   &lt;li&gt;Key rotation — a different key derives a different replacement. The
+ *       &lt;em&gt;write&lt;/em&gt; path ({@link #derive}) always uses the active key; the
+ *       &lt;em&gt;probe&lt;/em&gt; path ({@link #deriveAll}) derives under the active key
+ *       plus every retained previous key (the keyring, plan §9 rotation row
+ *       resolved option 1 — secrets-policy §3 &quot;dual key / overlap window&quot;),
+ *       so tombstones written before a rotation keep matching the
+ *       re-registration guard for as long as their key stays in the ring.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Lives in {@code shared :: shared-security} so the identity module
+ * (which already declares this named interface as an allowed dependency)
+ * consumes it without any module-boundary change — the plan §5-د constraint:
+ * zero new imports across module boundaries, no {@code package-info} edits.
+ */
+@Component
+public class SubjectPseudonymizer {
+
+    static final String ANON_PREFIX = &quot;anon-&quot;;
+    private static final String HMAC_ALGORITHM = &quot;HmacSHA256&quot;;
+
+    private final MarketplaceProperties properties;
+
+<span class="fc" id="L71">    public SubjectPseudonymizer(MarketplaceProperties properties) {</span>
+<span class="fc" id="L72">        this.properties = properties;</span>
+<span class="fc" id="L73">    }</span>
+
+    /**
+     * Whether the HMAC secret channel is bound. When it is not, the
+     * pseudonymize capability is OFF (not broken) and the re-registration
+     * probe is inert — no tombstone can exist while the key never existed.
+     */
+    public boolean isConfigured() {
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        return !properties.security().pseudonymization().subjectHmacKey().isBlank();</span>
+    }
+
+    /**
+     * Derives the replacement subject for a raw subject string — the &lt;b&gt;write
+     * path&lt;/b&gt;, always under the active key (new tombstones are written in
+     * today's key; a rotation changes the replacements going forward).
+     *
+     * @throws ServiceUnavailableException when the secret channel is not
+     *         bound — the capability answers 503 SU-001, the house pattern
+     *         for an optional channel that has not been configured
+     *         (the PSP/MAIL gates' semantics: OFF, not broken)
+     */
+    public String derive(String rawSubject) {
+<span class="fc" id="L95">        String key = properties.security().pseudonymization().subjectHmacKey();</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (key.isBlank()) {</span>
+<span class="fc" id="L97">            throw new ServiceUnavailableException(</span>
+                    &quot;Account pseudonymization is not configured. &quot;
+                            + &quot;Bind PSEUDONYMIZATION_HMAC_KEY (secrets-policy §1: environment-only) &quot;
+                            + &quot;to enable the administrative surface.&quot;);
+        }
+<span class="fc" id="L102">        return ANON_PREFIX + hmacHex(key, rawSubject);</span>
+    }
+
+    /**
+     * Derives &lt;b&gt;every&lt;/b&gt; replacement subject the system could ever have
+     * written for this raw subject — the &lt;b&gt;probe path&lt;/b&gt; (I7 §9 rotation
+     * row, resolved option 1: the keyring). The active key's derivation
+     * covers fresh tombstones; every retained previous key's derivation
+     * covers the tombstones written before a rotation — so the
+     * re-registration guard in {@code syncFromOidc} keeps matching the
+     * historical stock exactly as it matches new rows (the overlap window
+     * secrets-policy §3 requires, with no service stop).
+     *
+     * &lt;p&gt;Contract details, pinned by {@code SubjectPseudonymizerTest}:&lt;/p&gt;
+     * &lt;ul&gt;
+     *   &lt;li&gt;Order — the active key's derivation first, then the retained
+     *       keys in their configured order (deterministic, readable in
+     *       diagnostics).&lt;/li&gt;
+     *   &lt;li&gt;Blank keys are filtered and duplicate keys collapse to one
+     *       derivation (re-listing the active key in the previous-keys ring
+     *       is a harmless operator slip, not a doubled probe).&lt;/li&gt;
+     *   &lt;li&gt;Empty when no key is bound at all — the probe's inert state
+     *       (no tombstone can exist while no key ever existed). Unlike
+     *       {@link #derive} this never throws: a probe is a read, not a
+     *       capability — a ring of previous keys with a blank active key
+     *       still returns the historical derivations (those tombstones
+     *       exist even though new pseudonymizations are OFF).&lt;/li&gt;
+     *   &lt;li&gt;Dropping a key from the ring while tombstones derived under it
+     *       still exist re-opens the re-registration hole for exactly that
+     *       stock — the operational rule the plan's §9 row states: never
+     *       remove the last copy of a key that ever wrote a tombstone.&lt;/li&gt;
+     * &lt;/ul&gt;
+     */
+    public List&lt;String&gt; deriveAll(String rawSubject) {
+<span class="fc" id="L136">        LinkedHashSet&lt;String&gt; keys = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L137">        MarketplaceProperties.Security.Pseudonymization pseudonymization =</span>
+<span class="fc" id="L138">                properties.security().pseudonymization();</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        if (!pseudonymization.subjectHmacKey().isBlank()) {</span>
+<span class="fc" id="L140">            keys.add(pseudonymization.subjectHmacKey());</span>
+        }
+<span class="fc" id="L142">        List&lt;String&gt; previousKeys = pseudonymization.subjectHmacPreviousKeys();</span>
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">        if (previousKeys != null) {</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">            for (String key : previousKeys) {</span>
+<span class="pc bpc" id="L145" title="1 of 4 branches missed.">                if (key != null &amp;&amp; !key.isBlank()) {</span>
+<span class="fc" id="L146">                    keys.add(key);</span>
+                }
+<span class="fc" id="L148">            }</span>
+        }
+<span class="fc" id="L150">        List&lt;String&gt; derivations = new ArrayList&lt;&gt;(keys.size());</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        for (String key : keys) {</span>
+<span class="fc" id="L152">            derivations.add(ANON_PREFIX + hmacHex(key, rawSubject));</span>
+<span class="fc" id="L153">        }</span>
+<span class="fc" id="L154">        return List.copyOf(derivations);</span>
+    }
+
+    /**
+     * The shared transformation core: the full 256-bit HMAC-SHA256
+     * fingerprint of the raw subject's UTF-8 bytes, hex-encoded — the exact
+     * byte-level contract {@code SubjectPseudonymizerTest} recomputes
+     * independently with the JDK's own {@code javax.crypto}.
+     */
+    private static String hmacHex(String key, String rawSubject) {
+        try {
+<span class="fc" id="L165">            Mac mac = Mac.getInstance(HMAC_ALGORITHM);</span>
+<span class="fc" id="L166">            mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));</span>
+<span class="fc" id="L167">            byte[] fingerprint = mac.doFinal(rawSubject.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L168">            return HexFormat.of().formatHex(fingerprint);</span>
+<span class="nc" id="L169">        } catch (NoSuchAlgorithmException | InvalidKeyException ex) {</span>
+            // HmacSHA256 is mandated by every JDK vendor; reaching here means
+            // a broken runtime, not a configuration problem.
+<span class="nc" id="L172">            throw new IllegalStateException(&quot;HMAC-SHA256 unavailable: &quot; + ex.getMessage(), ex);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

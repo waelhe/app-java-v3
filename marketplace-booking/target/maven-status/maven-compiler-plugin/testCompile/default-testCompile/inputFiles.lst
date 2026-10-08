@@ -1,0 +1,9 @@
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingControllerTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingExpirationServiceTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingMapperTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingParticipantProviderAdapterTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingPaymentEventListenerTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingServiceTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingSpecificationsTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/BookingStatusTest.java
+/workspace/marketplace-booking/src/test/java/com/marketplace/booking/spi/BookingExportAdapterTest.java

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CacheInvalidationRequested.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">CacheInvalidationRequested.java</span></div><h1>CacheInvalidationRequested.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.Set;
+
+/**
+ * Application event published when a cache entry should be evicted
+ * &lt;em&gt;after&lt;/em&gt; the originating transaction commits.
+ *
+ * &lt;p&gt;Replaces direct {@code @CacheEvict} on {@code @Transactional} methods.
+ * {@code @CacheEvict} fires before the transaction commits, so a concurrent
+ * reader can repopulate the cache with the pre-commit value. This event is
+ * consumed by {@code CacheInvalidationRelay} via
+ * {@code @TransactionalEventListener(phase = AFTER_COMMIT)}, which is the
+ * official Spring mechanism for transaction-bound side effects.
+ *
+ * &lt;p&gt;Official source — Spring Framework 7.0 Reference:
+ * &lt;a href=&quot;https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html&quot;&gt;
+ * Transaction-bound Events&lt;/a&gt;:
+ * &quot;The {@code @TransactionalEventListener} annotation exposes a {@code phase}
+ * attribute … The valid phases are {@code BEFORE_COMMIT},
+ * {@code AFTER_COMMIT} (default), {@code AFTER_ROLLBACK}, as well as
+ * {@code AFTER_COMPLETION}.&quot;
+ *
+ * @param cacheNames the cache names to evict
+ * @param key        the cache key to evict, or {@code null} to clear all entries
+ * @param clearAll   if {@code true}, evicts all entries in each named cache
+ *                   (ignores {@code key})
+ */
+<span class="nc" id="L29">public record CacheInvalidationRequested(</span>
+        Set&lt;String&gt; cacheNames,
+        Object key,
+        boolean clearAll) {
+
+    /**
+     * Evicts &lt;em&gt;all entries&lt;/em&gt; in the given caches.
+     */
+    public CacheInvalidationRequested(Set&lt;String&gt; cacheNames) {
+<span class="nc" id="L38">        this(cacheNames, null, true);</span>
+<span class="nc" id="L39">    }</span>
+
+    /**
+     * Evicts a &lt;em&gt;single key&lt;/em&gt; from the given caches.
+     */
+    public CacheInvalidationRequested(Set&lt;String&gt; cacheNames, Object key) {
+<span class="nc" id="L45">        this(cacheNames, key, false);</span>
+<span class="nc" id="L46">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

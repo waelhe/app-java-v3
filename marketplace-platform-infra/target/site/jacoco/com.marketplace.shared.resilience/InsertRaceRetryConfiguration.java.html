@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InsertRaceRetryConfiguration.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.resilience</a> &gt; <span class="el_source">InsertRaceRetryConfiguration.java</span></div><h1>InsertRaceRetryConfiguration.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.resilience;
+
+import io.github.resilience4j.retry.RetryConfig;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataIntegrityViolationException;
+
+/**
+ * The shared Resilience4j {@code Retry} instance for the insert-race recovery
+ * (roadmap gap G-RETRY-1): every &quot;upsert via unique constraint&quot; writer that must
+ * retry its write in a NEW transaction after a lost insert race now declares
+ * {@code @Retry(name = InsertRaceRetryConfiguration.INSERT_RACE_RETRY)} instead
+ * of hand-coding a try/catch re-call.
+ *
+ * &lt;p&gt;&lt;b&gt;Why programmatic and not YAML:&lt;/b&gt; the resilience4j Spring Boot starter's
+ * auto-configured registry only registers instances declared under
+ * {@code resilience4j.retry.instances.*} AND referenced by a supported
+ * annotation/Bean factory — a plain {@code @Retry(name = &quot;...&quot;)} without a
+ * matching YAML instance fails at proxy creation (&quot;Retry 'x' not configured&quot;).
+ * A {@code RetryConfig} bean named {@code &quot;&lt;name&gt;RetryConfig&quot;} is the official
+ * programmatic recipe (resilience4j README, &quot;How to create RetryConfig
+ * programmatically&quot;; the starter's {@code RetryConfigurationBeans} picks up
+ * {@code Map&lt;String, RetryConfig&gt;} from the context), keeping the knobs out of
+ * YAML duplication while binding them through {@link InsertRaceRetryProperties}.
+ *
+ * &lt;p&gt;&lt;b&gt;Why retrying {@link DataIntegrityViolationException} is safe here:&lt;/b&gt;
+ * the callers wrap ONLY their own dedicated {@code REQUIRES_NEW} upsert
+ * transaction with this annotation, so by the time the exception surfaces the
+ * failed transaction has already rolled back (PostgreSQL aborted it at the
+ * constraint violation); the retry therefore always runs against fresh
+ * transaction state — never a poisoned one. The semantics are identical to the
+ * manual catch-and-retry this class replaces: exactly the same exception is the
+ * retry trigger, and any non-insert-race integrity failure simply exhausts the
+ * bounded attempts and propagates (the same loud-failure contract).
+ *
+ * &lt;p&gt;&lt;b&gt;Proxy mechanics (Spring Framework reference, Proxying Modes /
+ * Transactional services):&lt;/b&gt; {@code @Retry} on a {@code private} method would
+ * be a silent no-op (self-invocation bypasses the proxy). Every annotated
+ * method below is therefore PUBLIC and invoked THROUGH the injected bean
+ * reference — never via {@code this}.
+ */
+@Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(InsertRaceRetryProperties.class)
+<span class="nc" id="L45">public class InsertRaceRetryConfiguration {</span>
+
+    /** The single instance name shared by all insert-race writers. */
+    public static final String INSERT_RACE_RETRY = &quot;insertRaceRetry&quot;;
+
+    @Bean(name = INSERT_RACE_RETRY + &quot;RetryConfig&quot;)
+    RetryConfig insertRaceRetryConfig(InsertRaceRetryProperties properties) {
+<span class="nc" id="L52">        return RetryConfig.custom()</span>
+<span class="nc" id="L53">                .maxAttempts(properties.maxAttempts())</span>
+                // Official resilience4j API (verified against the 2.4.0
+                // bytecode): IntervalFunction.ofExponentialBackoff(Duration,
+                // double) is the documented exponential-backoff factory;
+                // Builder.intervalFunction(...) installs it as the wait
+                // strategy. No manual waitDuration + bi-function override —
+                // that combination would silently conflict in the config.
+<span class="nc" id="L60">                .intervalFunction(io.github.resilience4j.core.IntervalFunction</span>
+<span class="nc" id="L61">                        .ofExponentialBackoff(properties.waitDuration(), properties.multiplier()))</span>
+<span class="nc" id="L62">                .retryOnException(DataIntegrityViolationException.class::isInstance)</span>
+<span class="nc" id="L63">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

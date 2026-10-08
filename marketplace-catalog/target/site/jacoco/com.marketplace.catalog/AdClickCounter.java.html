@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdClickCounter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdClickCounter.java</span></div><h1>AdClickCounter.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the recorded
+ * click — the plan's «نقرة مسجلة». The public promoted-result click's
+ * counter: {@link ListingViewCounter}'s contract verbatim (the keyed
+ * HmacSHA256 visitor fingerprint under the SAME
+ * {@code marketplace.catalog.views.ip-hash-key} — one fingerprint key per
+ * module for the same CWE-759 purpose; the Redis {@code SET NX EX}
+ * first-writer-wins marker; the undercount-never-inflate-never-break
+ * degradation policy).
+ *
+ * &lt;p&gt;&lt;b&gt;Why the dedup matters more here than for views:&lt;/b&gt; a click
+ * bills the advertiser's budget — click inflation is the classic
+ * competitor attack on a paid channel (drain the rival's budget with
+ * cheap clicks). The one-click-per-visitor-per-window marker is the
+ * platform's structural first defense, exactly the anti-abuse posture
+ * the plan's §4.5 set for the organic reviews.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;Attribution:&lt;/b&gt; the click resolves the listing's ONE active
+ * campaign (the partial unique index guarantees at most one) — a click
+ * on an unpromoted listing answers the honest 404 no-op at the
+ * controller; a click while the campaign is PAUSED or ENDED is not
+ * recorded (the dark campaign accrues nothing).&lt;/p&gt;
+ */
+@Component
+public class AdClickCounter {
+
+<span class="fc" id="L42">    private static final Logger log = LoggerFactory.getLogger(AdClickCounter.class);</span>
+
+    /** Redis key namespace: catalog's ad-click dedup markers (ephemeral, TTL'd). */
+    static final String DEDUP_KEY_PREFIX = &quot;catalog:ads:click-dedup:&quot;;
+
+    /** One-time warning for the counting-off deployment state (never per-click log spam). */
+<span class="fc" id="L48">    private final AtomicBoolean countingOffWarned = new AtomicBoolean();</span>
+
+    private final StringRedisTemplate redisTemplate;
+    private final AdClicksDailyService clicksService;
+    private final AdCampaignRepository campaignRepository;
+    private final CatalogProperties properties;
+
+    public AdClickCounter(StringRedisTemplate redisTemplate,
+                          AdClicksDailyService clicksService,
+                          AdCampaignRepository campaignRepository,
+<span class="fc" id="L58">                          CatalogProperties properties) {</span>
+<span class="fc" id="L59">        this.redisTemplate = redisTemplate;</span>
+<span class="fc" id="L60">        this.clicksService = clicksService;</span>
+<span class="fc" id="L61">        this.campaignRepository = campaignRepository;</span>
+<span class="fc" id="L62">        this.properties = properties;</span>
+<span class="fc" id="L63">    }</span>
+
+    /**
+     * Records one promoted-result click, total (never throws): resolve the
+     * listing's live campaign OUTSIDE the failure boundary — attribution is
+     * a read, and the class's own contract says a counting failure must
+     * never change the caller's response (CodeRabbit W5 r1, adopted: the
+     * earlier shape returned empty on a Redis/DB hiccup and the controller
+     * 404'd a promoted listing). Then dedup the visitor, then the +1 with
+     * the insert-race retry; any data-access failure in THAT step degrades
+     * the count alone — the campaign is still attributed.
+     *
+     * &lt;p&gt;A campaign whose duration already ended is not clickable even
+     * before the daily run flips it ENDED (the sub-day gap the run's own
+     * cadence leaves — the same endsAt check the boost's EXISTS carries).
+     *
+     * @return the campaign the click was attributed to — empty when the
+     *         listing has no live campaign (the controller's honest 404)
+     */
+    public Optional&lt;UUID&gt; recordClick(UUID listingId, String clientIp) {
+<span class="fc" id="L83">        Optional&lt;AdCampaign&gt; campaign =</span>
+<span class="fc" id="L84">                campaignRepository.findFirstByListingIdAndStatusOrderByIdAsc(listingId, AdCampaignStatus.ACTIVE);</span>
+<span class="pc bpc" id="L85" title="1 of 4 branches missed.">        if (campaign.isEmpty() || !campaign.get().hasRemainingBudget()</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">                || durationEnded(campaign.get())) {</span>
+<span class="fc" id="L87">            return Optional.empty();</span>
+        }
+<span class="fc" id="L89">        UUID campaignId = campaign.get().getId();</span>
+        try {
+<span class="fc" id="L91">            String key = properties.views().ipHashKey();</span>
+<span class="pc bpc" id="L92" title="2 of 4 branches missed.">            if (key == null || key.isBlank()) {</span>
+<span class="nc" id="L93">                warnCountingOffOnce(&quot;no fingerprint key is configured &quot;</span>
+                        + &quot;(marketplace.catalog.views.ip-hash-key)&quot;);
+<span class="nc" id="L95">                return Optional.of(campaignId); // attributed, uncounted (undercount, never inflate)</span>
+            }
+<span class="fc" id="L97">            String fingerprint = ListingViewCounter.hashIp(key, clientIp);</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            if (fingerprint == null) {</span>
+<span class="fc" id="L99">                return Optional.of(campaignId); // no remote address — the same unavailability rule</span>
+            }
+<span class="fc bfc" id="L101" title="All 2 branches covered.">            if (markFirstClick(campaignId, fingerprint)) {</span>
+                // The +1 with the framework-managed insert-race retry:
+                // AdClicksDailyService's @Retry(INSERT_RACE_RETRY) owns the
+                // recovery now (G-RETRY-1 — no hand-coded catch here).
+<span class="fc" id="L105">                clicksService.addClick(campaignId, LocalDate.now(ZoneOffset.UTC));</span>
+            }
+<span class="fc" id="L107">            return Optional.of(campaignId);</span>
+<span class="nc" id="L108">        } catch (DataAccessException countingFailure) {</span>
+<span class="nc" id="L109">            log.warn(&quot;Ad click counting degraded — the caller's response is unaffected &quot;</span>
+<span class="nc" id="L110">                            + &quot;(listingId={}): {}&quot;, listingId, countingFailure.getMessage());</span>
+<span class="nc" id="L111">            return Optional.of(campaignId); // attributed, uncounted — the contract's own rule</span>
+        }
+    }
+
+    /** The duration's own end, at click time — the sub-day gap the daily run cannot close. */
+    private static boolean durationEnded(AdCampaign campaign) {
+<span class="pc bpc" id="L117" title="3 of 4 branches missed.">        return campaign.getEndsAt() != null &amp;&amp; !campaign.getEndsAt().isAfter(java.time.Instant.now());</span>
+    }
+
+    private void warnCountingOffOnce(String cause) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">        if (countingOffWarned.compareAndSet(false, true)) {</span>
+<span class="nc" id="L122">            log.warn(&quot;Ad click counting is OFF — {}; the public surface is unaffected. &quot;</span>
+                    + &quot;Production fails startup on a blank key (CatalogConfig); this &quot;
+                    + &quot;deployment chose to run without ad click analytics.&quot;, cause);
+        }
+<span class="nc" id="L126">    }</span>
+
+    /**
+     * The first-writer-wins marker: SET NX EX. True = this is the first
+     * counted click of this (visitor, campaign) inside the window.
+     */
+    private boolean markFirstClick(UUID campaignId, String fingerprint) {
+<span class="fc" id="L133">        String key = DEDUP_KEY_PREFIX + campaignId + &quot;:&quot; + fingerprint;</span>
+<span class="fc" id="L134">        Duration window = properties.ads().clickDedupWindow();</span>
+<span class="fc" id="L135">        Boolean first = redisTemplate.opsForValue().setIfAbsent(key, &quot;1&quot;, window);</span>
+<span class="fc" id="L136">        return Boolean.TRUE.equals(first);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

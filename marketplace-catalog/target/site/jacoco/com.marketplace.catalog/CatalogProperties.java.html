@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CatalogProperties.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CatalogProperties.java</span></div><h1>CatalogProperties.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * L33 (realestate systems plan §5): the classifieds lifecycle policy —
+ * the MediaProperties pattern (module-owned, type-safe, constructor
+ * binding, primed sections per the AGENTS.md binding rule).
+ *
+ * &lt;p&gt;{@code expiryDays}: NULL by design (no code default) — a deployment
+ * that wants listings to expire MUST declare the policy (yml or
+ * {@code MARKETPLACE_CATALOG_EXPIRY_DAYS}); with the property unset, an
+ * activation without an explicit date answers 409 (&quot;no silently-immortal
+ * listing&quot; — the acceptance criterion). The house yml declares 90 (the
+ * global classifieds convention range).
+ *
+ * &lt;p&gt;{@code renewalCooldownDays}: the anti-recycling floor — at most one
+ * renewal per window per listing (default 1: a same-day second renewal is
+ * refused with 409). Always-on (a safe default), env-tunable.
+ *
+ * &lt;p&gt;L39 (realestate systems plan §5 — SEO and structured data): the
+ * {@code seo} section, the same module-local nested-record realization of
+ * the MarketplaceProperties pattern the expiry section used (catalog is
+ * shared-only under Modulith — the platform-infra class is not on its
+ * allowed dependencies, and the L33 precedent settled the shape).
+ *
+ * &lt;p&gt;L40 (realestate systems plan §5 — view analytics): the {@code views}
+ * section — the visitor-fingerprint key and the dedup window. Same shape,
+ * same rules: the HMAC key is blank by default, REQUIRED under the prod
+ * profile (CatalogConfig fails startup — the MessagingConfig pattern), and
+ * the test profile declares a known key (application-test.yml). The dedup
+ * window defaults to the plan's &quot;Redis TTL يوم&quot; (24h) and stays
+ * env-tunable so the TTL-expiry acceptance criterion can run in
+ * milliseconds instead of a day.
+ */
+@ConfigurationProperties(prefix = &quot;marketplace.catalog&quot;)
+<span class="fc" id="L43">public record CatalogProperties(</span>
+        @DefaultValue Expiry expiry,
+        @DefaultValue Seo seo,
+        @DefaultValue Views views,
+        @DefaultValue Ads ads
+) {
+
+    /**
+     * L40: the view-analytics policy.
+     *
+     * &lt;p&gt;{@code ipHashKey}: the HmacSHA256 key for the visitor fingerprint
+     * (the L34 leads pattern, CWE-759 — the IPv4 space is enumerable, so a
+     * bare digest is reversible by brute force; a keyed HMAC is not). The
+     * fingerprint NEVER leaves the process: it exists solely as part of the
+     * ephemeral Redis dedup key (24h TTL), so no permanent identifier is
+     * stored for the anonymous visitor (the plan's privacy-by-design —
+     * no new b-5). Blank by default; CatalogConfig fails prod startup when
+     * blank; the test profile pins a known value.
+     *
+     * &lt;p&gt;{@code dedupWindow}: how long one (visitor, listing) pair counts
+     * as ONE visit — the plan's &quot;زيارة واحدة لكل (زائر/لوحة/يوم) بمعيار
+     * بصمة الزائر في الذاكرة (Redis TTL يوم)&quot;. Fixed expiry from the FIRST
+     * view (SET .. EX — no sliding renewal), so a visitor is counted at
+     * most once per rolling 24h, not per calendar day: the plan's own
+     * documented choice. Default 24h; tests override to milliseconds to
+     * prove the marker actually disappears (acceptance criterion 3).
+     */
+<span class="fc" id="L70">    public record Views(</span>
+            @DefaultValue(&quot;&quot;) String ipHashKey,
+            @DefaultValue(&quot;24h&quot;) Duration dedupWindow
+    ) {
+    }
+
+    /**
+     * W5 (yelp-level plan §5 — the ads &amp; billing wave): the paid click's
+     * counting policy. The visitor fingerprint is the VIEWS section's own
+     * key ({@code ipHashKey} — one keyed HMAC per module for the same
+     * CWE-759 purpose, so the sections rotate independently as units but
+     * the module owns ONE fingerprint secret); this section owns only the
+     * click marker's window.
+     *
+     * &lt;p&gt;{@code clickDedupWindow}: how long one (visitor, campaign) pair
+     * counts as ONE billable click — the same SET NX EX fixed-expiry
+     * marker the views use (no sliding renewal). A click bills the
+     * advertiser's budget, so the window is the anti-inflation defense's
+     * first wall (click fraud drains budgets; one visitor counts once per
+     * rolling window). Default 24h; tests override to milliseconds to
+     * prove the marker disappears.
+     */
+<span class="fc" id="L92">    public record Ads(</span>
+            @DefaultValue(&quot;24h&quot;) Duration clickDedupWindow
+    ) {
+    }
+
+<span class="fc" id="L97">    public record Expiry(</span>
+            /** Days a listing's publication lasts — null = policy unset. */
+            Integer expiryDays,
+            /** Minimum days between two renewals of one listing. */
+            @DefaultValue(&quot;1&quot;) Integer renewalCooldownDays
+    ) {
+    }
+
+    /**
+     * L39: the public-site contract of the SEO surfaces. The backend
+     * serves the sitemap and the JSON-LD &lt;em&gt;data&lt;/em&gt;; the pages they
+     * describe belong to the frontend origin, so the origin is a
+     * deployment fact, never a code constant.
+     *
+     * &lt;p&gt;{@code publicSiteBaseUrl}: the PUBLIC SITE origin (no trailing
+     * slash — normalized defensively), e.g. {@code https://qudsya.example}.
+     * Blank by design (the same gate model as the PSP/MAIL/pseudonymization
+     * capabilities): {@code GET /sitemap.xml} answers 503 SU-001 (&quot;the
+     * capability is OFF, not broken&quot;), the JSON-LD block omits {@code url},
+     * and robots.txt omits the {@code Sitemap:} line — every one of them
+     * rather than inventing a URL that resolves nowhere. The frontend's
+     * hosting layer (client-hosting strategy plan, gates B/C) owns the
+     * real origin; when it exists, one env variable turns the capability
+     * on with no code change.
+     *
+     * &lt;p&gt;{@code listingPath}: the public site's listing-page path template
+     * containing the {@code {id}} placeholder (default {@code /listings/{id}}
+     * — the natural REST page shape). A template without the placeholder
+     * cannot vary per listing, so the capability gate treats it exactly
+     * like a blank base URL: OFF, not half-working.
+     *
+     * &lt;p&gt;{@code robotsDisallowPaths}: the robots.txt (RFC 9309)
+     * {@code Disallow} path list — each MUST start with {@code /}
+     * (non-conforming entries are skipped defensively, never invented).
+     * Empty by default: the public site allows all crawlers.
+     */
+    public record Seo(
+            @DefaultValue(&quot;&quot;) String publicSiteBaseUrl,
+            @DefaultValue(&quot;/listings/{id}&quot;) String listingPath,
+            @DefaultValue(&quot;/categories/{code}&quot;) String categoryPath,
+            @DefaultValue List&lt;String&gt; robotsDisallowPaths
+    ) {
+
+        /**
+         * Greptile r3 (adopted from the root): a NON-BLANK public-site base
+         * must be an absolute http(s) URI — validated here, at binding time,
+         * because every consumer of the origin (the root landing's redirect,
+         * the sitemap's URL synthesis) would otherwise either throw a raw
+         * {@link IllegalArgumentException} mid-request on the malformed
+         * shape or silently emit fabricated URLs. The house rule this
+         * enforces is the D6 fail-fast posture for configuration: a blank
+         * value is the documented capability-OFF state and stays legal; a
+         * malformed one is an operator error that must stop startup with a
+         * readable message, never reach traffic.
+         */
+<span class="fc" id="L152">        public Seo {</span>
+<span class="pc bpc" id="L153" title="1 of 4 branches missed.">            if (publicSiteBaseUrl != null &amp;&amp; !publicSiteBaseUrl.isBlank()) {</span>
+                java.net.URI bound;
+                try {
+<span class="fc" id="L156">                    bound = java.net.URI.create(publicSiteBaseUrl.trim());</span>
+<span class="fc" id="L157">                } catch (IllegalArgumentException malformed) {</span>
+<span class="fc" id="L158">                    throw new IllegalArgumentException(</span>
+                            &quot;marketplace.catalog.seo.public-site-base-url is not a valid URI: &quot;
+<span class="fc" id="L160">                                    + publicSiteBaseUrl.trim());</span>
+<span class="fc" id="L161">                }</span>
+<span class="pc bpc" id="L162" title="1 of 2 branches missed.">                if (bound.getScheme() == null</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">                        || (!&quot;http&quot;.equalsIgnoreCase(bound.getScheme())</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">                            &amp;&amp; !&quot;https&quot;.equalsIgnoreCase(bound.getScheme()))</span>
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">                        || bound.getHost() == null) {</span>
+<span class="fc" id="L166">                    throw new IllegalArgumentException(</span>
+                            &quot;marketplace.catalog.seo.public-site-base-url must be an absolute http(s) origin, got: &quot;
+<span class="fc" id="L168">                                    + publicSiteBaseUrl.trim());</span>
+                }
+            }
+<span class="fc" id="L171">        }</span>
+
+        /** The normalized origin — blank when the capability is off. */
+        private String normalizedBase() {
+<span class="pc bpc" id="L175" title="1 of 4 branches missed.">            if (publicSiteBaseUrl == null || publicSiteBaseUrl.isBlank()) {</span>
+<span class="fc" id="L176">                return &quot;&quot;;</span>
+            }
+<span class="fc" id="L178">            String trimmed = publicSiteBaseUrl.trim();</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">            return trimmed.endsWith(&quot;/&quot;) ? trimmed.substring(0, trimmed.length() - 1) : trimmed;</span>
+        }
+
+        /**
+         * True when the SEO surfaces cannot honestly serve: no public
+         * origin bound, or a listing path that cannot vary per listing.
+         * The 503-family gate — never a fabricated URL.
+         */
+        public boolean capabilityOff() {
+<span class="pc bpc" id="L188" title="1 of 6 branches missed.">            return normalizedBase().isEmpty() || listingPath == null || !listingPath.contains(&quot;{id}&quot;);</span>
+        }
+
+        /**
+         * W2 (G23 — the public category pages): true when the category
+         * pages' URL synthesis cannot honestly serve — no origin, or a
+         * category path that cannot vary per category code.
+         */
+        public boolean categoryPagesOff() {
+<span class="pc bpc" id="L197" title="2 of 4 branches missed.">            return normalizedBase().isEmpty() || categoryPath == null</span>
+<span class="fc bfc" id="L198" title="All 2 branches covered.">                    || !categoryPath.contains(&quot;{code}&quot;);</span>
+        }
+
+        /**
+         * W2 (G23): the absolute PUBLIC CATEGORY page URL — the
+         * «فئة/سباكة-الرياض» landing page the sitemap now advertises.
+         * Empty when the capability is off (the same honesty rule as
+         * {@link #listingUrl(UUID)}).
+         */
+        public Optional&lt;String&gt; categoryUrl(String categoryCode) {
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">            if (categoryPagesOff()) {</span>
+<span class="nc" id="L209">                return Optional.empty();</span>
+            }
+<span class="fc" id="L211">            String path = categoryPath.replace(&quot;{code}&quot;, categoryCode);</span>
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">            if (!path.startsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L213">                path = &quot;/&quot; + path;</span>
+            }
+<span class="fc" id="L215">            return Optional.of(normalizedBase() + path);</span>
+        }
+
+        /**
+         * The absolute listing page URL for the sitemap and the JSON-LD
+         * {@code url} field — empty when the capability is off.
+         */
+        public Optional&lt;String&gt; listingUrl(UUID listingId) {
+<span class="fc bfc" id="L223" title="All 2 branches covered.">            if (capabilityOff()) {</span>
+<span class="fc" id="L224">                return Optional.empty();</span>
+            }
+<span class="pc bpc" id="L226" title="1 of 2 branches missed.">            String path = listingPath.contains(&quot;{id}&quot;)</span>
+<span class="fc" id="L227">                    ? listingPath.replace(&quot;{id}&quot;, listingId.toString())</span>
+<span class="pc" id="L228">                    : listingPath;</span>
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">            if (!path.startsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L230">                path = &quot;/&quot; + path;</span>
+            }
+<span class="fc" id="L232">            return Optional.of(normalizedBase() + path);</span>
+        }
+
+        /**
+         * The sitemap index child URL of one page sitemap — empty when
+         * the capability is off. The children of a {@code &lt;sitemapindex&gt;}
+         * are absolute URIs exactly like the urlset's {@code &lt;loc&gt;}
+         * entries (the same tLoc shape in the standard's XSDs).
+         */
+        public Optional&lt;String&gt; sitemapIndexChildUrl(int page) {
+<span class="pc bpc" id="L242" title="1 of 2 branches missed.">            if (capabilityOff()) {</span>
+<span class="nc" id="L243">                return Optional.empty();</span>
+            }
+<span class="fc" id="L245">            return Optional.of(normalizedBase() + &quot;/sitemap.xml?page=&quot; + page);</span>
+        }
+
+        /**
+         * The sitemap's own absolute URL — the robots.txt
+         * {@code Sitemap:} line (the sitemaps.org convention). Empty when
+         * the capability is off (the line is omitted, never a guess).
+         */
+        public Optional&lt;String&gt; sitemapUrl() {
+<span class="nc bnc" id="L254" title="All 2 branches missed.">            if (capabilityOff()) {</span>
+<span class="nc" id="L255">                return Optional.empty();</span>
+            }
+<span class="nc" id="L257">            return Optional.of(normalizedBase() + &quot;/sitemap.xml&quot;);</span>
+        }
+
+        /**
+         * The public site's home URL — the service-root landing's redirect
+         * target. Empty when the capability is off: the root then answers
+         * the honest service document, never a fabricated URL (the same
+         * gate rule as every other accessor).
+         */
+        public Optional&lt;String&gt; publicSiteHomeUrl() {
+<span class="fc bfc" id="L267" title="All 2 branches covered.">            if (capabilityOff()) {</span>
+<span class="fc" id="L268">                return Optional.empty();</span>
+            }
+<span class="fc" id="L270">            return Optional.of(normalizedBase() + &quot;/&quot;);</span>
+        }
+
+        /**
+         * The robots.txt {@code Disallow} lines' source — only entries
+         * that start with {@code /} (RFC 9309: a path-pattern starts with
+         * the first octet of the path); a non-conforming entry would
+         * poison the whole file for strict parsers, so it is skipped.
+         */
+        public List&lt;String&gt; conformingDisallowPaths() {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">            if (robotsDisallowPaths == null) {</span>
+<span class="nc" id="L281">                return List.of();</span>
+            }
+<span class="nc" id="L283">            return robotsDisallowPaths.stream()</span>
+<span class="nc bnc" id="L284" title="All 4 branches missed.">                    .filter(path -&gt; path != null &amp;&amp; path.startsWith(&quot;/&quot;))</span>
+<span class="nc" id="L285">                    .toList();</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

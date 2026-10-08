@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingRankingFormula.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingRankingFormula.java</span></div><h1>ListingRankingFormula.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import java.time.Duration;
+import java.time.Instant;
+
+import com.marketplace.shared.api.ReviewStats;
+
+/**
+ * W3 (yelp-level plan §5 — the discovery &amp; ranking wave, G18): the
+ * composite ranking formula — «تقييم × log كمية × اكتمال × حداثة» — as
+ * ONE pure function, the single authority the daily job applies. No
+ * storage, no clock of its own: the caller passes the batch's &quot;now&quot; so
+ * the whole run shares one instant (the L37 one-read-one-now lesson).
+ *
+ * &lt;p&gt;&lt;b&gt;The four factors and why each one is there:&lt;/b&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;&lt;b&gt;rating × log1p(count)&lt;/b&gt; — the verified pair's Wilson-style
+ *       damping: at equal stars, the provider with MORE reviews outranks
+ *       the provider with fewer (a single five-star review must not crown
+ *       a provider above one holding five hundred fours-and-fives). The
+ *       stats are the RECOMPUTED exposed pair (the same law the provider
+ *       page's badge reads); a provider with no verified reviews scores
+ *       {@code 0.0} — the honest floor, never an exception.&lt;/li&gt;
+ *   &lt;li&gt;&lt;b&gt;completeness&lt;/b&gt; — the listing's own L38 score as a fraction:
+ *       the plan's «يفضّل مكتملًا على مكتمل ناقص عند تساوي النجوم» is this
+ *       factor's own acceptance.&lt;/li&gt;
+ *   &lt;li&gt;&lt;b&gt;recency&lt;/b&gt; — a smooth {@code 1/(1 + age/halfLife)} decay over
+ *       the listing's creation instant: a 30-day half-life (day 0 → 1.0,
+ *       day 30 → 0.5, day 90 → 0.25) — bounded {@code (0, 1]}, never a
+ *       cliff, never negative. The half-life is a named constant: the
+ *       plan's calibration point, tuned with real usage data.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;The product is non-negative by construction (every factor is), which
+ * is exactly what V99's CHECK floor declares — the formula cannot produce
+ * a value the schema rejects.
+ */
+final class ListingRankingFormula {
+
+    /** The recency decay's half-life in days — the plan's calibration constant. */
+    static final double RECENCY_HALF_LIFE_DAYS = 30.0;
+
+    private ListingRankingFormula() {
+    }
+
+    /**
+     * The composite score for one listing.
+     *
+     * @param stats              the provider's recomputed verified pair —
+     *                           {@code null} means no verified reviews (the
+     *                           honest 0.0, the floor every ranked listing
+     *                           carries until its provider earns stars)
+     * @param completenessPercent the listing's L38 completeness (0..100)
+     * @param createdAt          the listing's creation instant
+     * @param now                the run's single shared instant
+     */
+    static double score(ReviewStats stats, int completenessPercent, Instant createdAt, Instant now) {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        if (stats == null) {</span>
+<span class="fc" id="L59">            return 0.0;</span>
+        }
+<span class="fc" id="L61">        double ratingFactor = stats.averageRating() * Math.log1p(stats.reviewCount());</span>
+<span class="fc" id="L62">        double completeness = completenessPercent / 100.0;</span>
+<span class="fc" id="L63">        double ageDays = Math.max(0.0, Duration.between(createdAt, now).toMillis() / 86_400_000.0);</span>
+<span class="fc" id="L64">        double recency = 1.0 / (1.0 + ageDays / RECENCY_HALF_LIFE_DAYS);</span>
+<span class="fc" id="L65">        return ratingFactor * completeness * recency;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

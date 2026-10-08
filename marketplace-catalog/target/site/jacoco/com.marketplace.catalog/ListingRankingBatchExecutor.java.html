@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingRankingBatchExecutor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingRankingBatchExecutor.java</span></div><h1>ListingRankingBatchExecutor.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import com.marketplace.shared.api.MediaLookupPort;
+import com.marketplace.shared.api.PropertyDetailsPort;
+import com.marketplace.shared.api.ReviewStats;
+import com.marketplace.shared.api.ReviewStatsPort;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * W3 (yelp-level plan §5 — G18): the daily ranking job's ONE-BATCH
+ * transaction boundary — the {@code ListingExpiryBatchExecutor} pattern
+ * applied to a scan whose match set does NOT shrink (ranking a listing
+ * leaves it ACTIVE), so the pagination is a KEYSET over the id order (the
+ * saved-search scan's own adopted fix: an offset would shift under
+ * concurrent inserts and skip rows; {@code id &gt; :afterId} cannot).
+ *
+ * &lt;p&gt;Each call is {@code REQUIRES_NEW} — one bounded transaction per
+ * batch, its own persistence context — and composes the batch's provider
+ * stats in ONE grouped query (the toSummaryPage batch discipline, never
+ * per-row). The completeness reads stay per-listing: the L38 score's own
+ * ports (media count + property details) are leaf lookups with no batch
+ * form; at the ranking scale (the clean-ACTIVE roster) that is two
+ * bounded queries per listing, the job's own measured cost point.
+ *
+ * &lt;p&gt;The cache eviction rides INSIDE the transaction (the AFTER_COMMIT
+ * relay's own law): every batch's commit evicts the catalog/search cache
+ * names — a re-ranked page must not serve yesterday's order for up to the
+ * 1h TTL when one commit can make it fresh.
+ */
+@Component
+public class ListingRankingBatchExecutor {
+
+    private final ProviderListingRepository listingRepository;
+    private final ReviewStatsPort reviewStatsPort;
+    private final MediaLookupPort mediaLookupPort;
+    private final PropertyDetailsPort propertyDetailsPort;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
+
+    public ListingRankingBatchExecutor(ProviderListingRepository listingRepository,
+                                       ReviewStatsPort reviewStatsPort,
+                                       MediaLookupPort mediaLookupPort,
+                                       PropertyDetailsPort propertyDetailsPort,
+                                       ApplicationEventPublisher eventPublisher,
+<span class="nc" id="L58">                                       Clock clock) {</span>
+<span class="nc" id="L59">        this.listingRepository = listingRepository;</span>
+<span class="nc" id="L60">        this.reviewStatsPort = reviewStatsPort;</span>
+<span class="nc" id="L61">        this.mediaLookupPort = mediaLookupPort;</span>
+<span class="nc" id="L62">        this.propertyDetailsPort = propertyDetailsPort;</span>
+<span class="nc" id="L63">        this.eventPublisher = eventPublisher;</span>
+<span class="nc" id="L64">        this.clock = clock;</span>
+<span class="nc" id="L65">    }</span>
+
+    /**
+     * Ranks ONE keyset batch of clean-ACTIVE listings in its own
+     * transaction.
+     *
+     * @param afterId the keyset cursor (the previous batch's last id;
+     *                {@code null} starts the run)
+     * @param batchSize the bounded work unit (the orchestrator's constant)
+     * @return the batch's LAST id (the next cursor) — {@code null} when the
+     *         batch came back empty (the run is drained)
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public UUID rankOneBatch(UUID afterId, int batchSize) {
+<span class="nc" id="L79">        Instant now = clock.instant();</span>
+<span class="nc" id="L80">        List&lt;ProviderListing&gt; batch = listingRepository.findRankableAfter(</span>
+<span class="nc" id="L81">                afterId, now, PageRequest.of(0, batchSize));</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">        if (batch.isEmpty()) {</span>
+<span class="nc" id="L83">            return null;</span>
+        }
+        // ONE grouped query for the whole batch's distinct providers.
+<span class="nc" id="L86">        Set&lt;UUID&gt; providerIds = batch.stream()</span>
+<span class="nc" id="L87">                .map(ProviderListing::getProviderId)</span>
+<span class="nc" id="L88">                .collect(Collectors.toSet());</span>
+<span class="nc" id="L89">        Map&lt;UUID, ReviewStats&gt; ratings = reviewStatsPort.findStatsByProviderUserIds(providerIds);</span>
+
+<span class="nc" id="L91">        boolean anyChange = false;</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">        for (ProviderListing listing : batch) {</span>
+            // The L38 completeness composition — the controller's own read
+            // shape verbatim (the pure function over the two leaf ports).
+<span class="nc" id="L95">            PropertyDetailsPort.PropertyView property =</span>
+<span class="nc" id="L96">                    propertyDetailsPort.findByListingId(listing.getId()).orElse(null);</span>
+<span class="nc" id="L97">            long uploadedPhotos = mediaLookupPort.countUploadedByListing(listing.getId());</span>
+<span class="nc" id="L98">            int completeness = ListingCompletenessResponse.of(listing, uploadedPhotos, property).percent();</span>
+<span class="nc" id="L99">            double score = ListingRankingFormula.score(</span>
+<span class="nc" id="L100">                    ratings.get(listing.getProviderId()), completeness, listing.getCreatedAt(), now);</span>
+            // Write only what moved: a stable score (no drift within the
+            // double's precision) produces no UPDATE and no audit revision —
+            // the recency decay makes fresh listings move daily by design.
+<span class="nc bnc" id="L104" title="All 4 branches missed.">            if (listing.getRankingScore() == null || Math.abs(listing.getRankingScore() - score) &gt; 1e-9) {</span>
+<span class="nc" id="L105">                listing.applyRankingScore(score);</span>
+<span class="nc" id="L106">                anyChange = true;</span>
+            }
+<span class="nc" id="L108">        }</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        if (anyChange) {</span>
+<span class="nc" id="L110">            listingRepository.saveAll(batch);</span>
+            // AFTER_COMMIT relay: published inside THIS batch's transaction —
+            // every re-ranked batch's commit carries its own eviction.
+<span class="nc" id="L113">            eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));</span>
+        }
+<span class="nc" id="L115">        return batch.get(batch.size() - 1).getId();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

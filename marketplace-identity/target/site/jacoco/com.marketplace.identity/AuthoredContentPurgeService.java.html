@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuthoredContentPurgeService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">AuthoredContentPurgeService.java</span></div><h1>AuthoredContentPurgeService.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import java.util.List;
+import java.util.UUID;
+
+import com.marketplace.shared.api.AuthoredContentPurgePort;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * I7 Phase 3 (account-pseudonymization-plan §2 gate b-3 + §7 Phase 3
+ * row — the extended purges, executed on the user's gate-opening word):
+ * the identity module's orchestration of the free-text purge. Official
+ * basis: the plan's purge option, verbatim — &quot;تطهير نصوص مرسلها
+ * ({@code messages.content}/{@code bookings.notes}…) — UPDATE عبر
+ * الجداول — يُمسّ تاريخ الطرف المقابل؛ يُقيَّد بحقوق الآخرين (Art.
+ * 20(4))&quot;.
+ *
+ * &lt;p&gt;&lt;b&gt;The aggregation shape (the plan's R3 sentence, the Phase 2
+ * precedent):&lt;/b&gt; each module purges its share through its own
+ * {@link AuthoredContentPurgePort} implementation (shared-api contract,
+ * implemented by the owning modules' {@code spi} adapters), and identity
+ * orchestrates through those ports — Spring injects every implementation
+ * as the {@code List} below. No module boundary is crossed: identity sees
+ * only the shared-api type, {@code ModulithVerificationTest} stays the
+ * unedited guard.
+ *
+ * &lt;p&gt;&lt;b&gt;Deliberately NOT one transaction (the plan's §2 b-3 gradualism
+ * shape, the §7 &quot;لكلٍّ PRه المستقل بحرّاسه&quot; gradualism):&lt;/b&gt; each adapter
+ * runs in its own transaction, so a mid-run failure leaves the completed
+ * modules committed and the re-run resumes — the purge is idempotent by
+ * the port contract (already-purged values match nothing). This service
+ * itself carries no {@code @Transactional}: wrapping the whole
+ * orchestration would rebuild the single heavy transaction the plan
+ * explicitly keeps the purge out of.
+ *
+ * &lt;p&gt;&lt;b&gt;The guard:&lt;/b&gt; the purge completes an erasure flow — the target
+ * account must already be pseudonymized (Phase 1). A live account's texts
+ * are the product's active content; purging them with the identity still
+ * alive would damage the counterparties' shared history with no erasure
+ * context. {@code pseudonymized_at == null} answers 409 before any
+ * statement runs — the same defensive ordering as the last-active-ADMIN
+ * guard (the mutation never starts on a rejected target).
+ *
+ * &lt;p&gt;&lt;b&gt;The write-path discipline (the Phase 1 lesson):&lt;/b&gt; the guard
+ * reads the repository directly, never the {@code @Cacheable} read path —
+ * a detached cache copy would bypass dirty checking for any subsequent
+ * entity write; this purge issues no entity writes (native SQL through
+ * the adapters), but the guard keeps the convention's exact shape.
+ *
+ * &lt;p&gt;&lt;b&gt;The audit record:&lt;/b&gt; one structured log line — actor, target
+ * (userId), reason, total purged rows — the payments convention, the
+ * Phase 1 precedent; no text content ever enters the log store
+ * (CWE-532, the same discipline the pseudonymization audit line applies).
+ * The per-module breakdown is each adapter's own log line.
+ */
+@Service
+public class AuthoredContentPurgeService {
+
+<span class="fc" id="L64">    private static final Logger log = LoggerFactory.getLogger(AuthoredContentPurgeService.class);</span>
+
+    private final UserRepository userRepository;
+    private final List&lt;AuthoredContentPurgePort&gt; contentPurgePorts;
+
+    public AuthoredContentPurgeService(UserRepository userRepository,
+<span class="fc" id="L70">                                       List&lt;AuthoredContentPurgePort&gt; contentPurgePorts) {</span>
+<span class="fc" id="L71">        this.userRepository = userRepository;</span>
+<span class="fc" id="L72">        this.contentPurgePorts = List.copyOf(contentPurgePorts);</span>
+<span class="fc" id="L73">    }</span>
+
+    /**
+     * Purges every free text the (already-pseudonymized) subject authored
+     * across the owning modules, and returns the total number of rows
+     * whose text was actually purged (base tables + Envers mirrors). A
+     * re-run on an already-purged subject returns zero — the port
+     * contract's idempotence.
+     *
+     * @throws ResourceNotFoundException no users row for the id
+     * @throws ConflictException          the account is not pseudonymized
+     *                                    — the purge completes an
+     *                                    erasure flow, it never operates
+     *                                    on a live account
+     */
+    @Observed(name = &quot;user.content.purge&quot;)
+    public int purge(UUID userId, String reason, String actor) {
+<span class="fc" id="L90">        User user = userRepository.findById(userId)</span>
+<span class="fc" id="L91">                .orElseThrow(() -&gt; new ResourceNotFoundException(&quot;User not found: &quot; + userId));</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (user.getPseudonymizedAt() == null) {</span>
+<span class="fc" id="L93">            throw new ConflictException(</span>
+                    &quot;Content purge requires a pseudonymized account — pseudonymize first &quot;
+                            + &quot;(the purge completes an erasure flow; a live account's texts are &quot;
+                            + &quot;active content)&quot;);
+        }
+
+<span class="fc" id="L99">        int total = 0;</span>
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        for (AuthoredContentPurgePort port : contentPurgePorts) {</span>
+<span class="fc" id="L101">            total += port.purgeAuthoredTexts(userId);</span>
+<span class="fc" id="L102">        }</span>
+
+<span class="fc" id="L104">        log.info(&quot;Authored content purge: userId={}, actor={}, reason='{}', &quot;</span>
+                        + &quot;modules={}, rowsPurged={} (base + Envers mirrors)&quot;,
+<span class="fc" id="L106">                userId, actor, reason, contentPurgePorts.size(), total);</span>
+<span class="fc" id="L107">        return total;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

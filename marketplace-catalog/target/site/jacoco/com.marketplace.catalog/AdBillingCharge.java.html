@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdBillingCharge.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdBillingCharge.java</span></div><h1>AdBillingCharge.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the immutable
+ * charge record — the plan's «سجل شحن غير قابل للتعديل لكل نافذة يجمد
+ * الاستهلاك المفوتر». One row per (campaign, window): the window is
+ * {@code [windowStart, windowEnd)} in UTC days, the impressions and
+ * clicks are the FROZEN consumption the charge billed (impressions from
+ * the existing {@code listing_views_daily}, clicks from
+ * {@code ad_clicks_daily}), and {@code amountCents} is what hit the
+ * budget — capped at the remaining budget the moment the charge was cut.
+ *
+ * &lt;p&gt;&lt;b&gt;Immutability is structural, not advisory:&lt;/b&gt; the class exposes
+ * NO mutator — the only write is the insert. No service in the codebase
+ * ever issues an UPDATE against the table; the Envers trail therefore
+ * shows ADD-only revisions, the strongest form of the plan's freeze
+ * («يجمد الاستهلاك المفوتر»).&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The deterministic identity:&lt;/b&gt; {@code (campaignId, windowStart)}
+ * is UNIQUE (V103) — a re-run of the debit or two overlapping schedules
+ * for one window can produce at most ONE row («إعادة تشغيل الخصم أو
+ * تداخل جدولتين لنافذة واحدة تنتج قيدًا واحدًا ومفتاح مصدر واحد»);
+ * the losing transaction rolls back entirely, and the ledger's
+ * {@code AD_DEBIT:{campaignId}:{windowStart}} source key keeps the
+ * ledger twin exactly as unique as the charge itself.&lt;/p&gt;
+ */
+@Entity
+@Table(name = &quot;ad_billing_charges&quot;)
+@Audited
+public class AdBillingCharge extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    @Column(name = &quot;campaign_id&quot;, nullable = false)
+    private UUID campaignId;
+
+    /** The window's inclusive first UTC day — the deterministic key's second component. */
+    @Column(name = &quot;window_start&quot;, nullable = false)
+    private LocalDate windowStart;
+
+    /** The window's exclusive end UTC day. */
+    @Column(name = &quot;window_end&quot;, nullable = false)
+    private LocalDate windowEnd;
+
+    /** The frozen impression count the charge billed (from listing_views_daily). */
+    @Column(name = &quot;impressions&quot;, nullable = false)
+    private long impressions;
+
+    /** The frozen click count the charge billed (from ad_clicks_daily). */
+    @Column(name = &quot;clicks&quot;, nullable = false)
+    private long clicks;
+
+    /** The frozen charge amount — what hit the budget (capped at the remaining budget). */
+    @Column(name = &quot;amount_cents&quot;, nullable = false)
+    private long amountCents;
+
+    @Column(name = &quot;currency&quot;, nullable = false, length = 3)
+    private String currency;
+
+<span class="nc" id="L71">    protected AdBillingCharge() {</span>
+        // JPA
+<span class="nc" id="L73">    }</span>
+
+    private AdBillingCharge(UUID id, UUID campaignId, LocalDate windowStart, LocalDate windowEnd,
+<span class="fc" id="L76">                            long impressions, long clicks, long amountCents, String currency) {</span>
+<span class="fc" id="L77">        this.id = id;</span>
+<span class="fc" id="L78">        this.campaignId = campaignId;</span>
+<span class="fc" id="L79">        this.windowStart = windowStart;</span>
+<span class="fc" id="L80">        this.windowEnd = windowEnd;</span>
+<span class="fc" id="L81">        this.impressions = impressions;</span>
+<span class="fc" id="L82">        this.clicks = clicks;</span>
+<span class="fc" id="L83">        this.amountCents = amountCents;</span>
+<span class="fc" id="L84">        this.currency = currency;</span>
+<span class="fc" id="L85">    }</span>
+
+    /**
+     * The freeze itself — the ONLY factory. The caller (the billing
+     * batch executor) has already capped the amount at the remaining
+     * budget and computed the frozen counts; the insert is the whole
+     * transaction's point, atomically paired with the campaign's
+     * {@code consume()} + {@code markBilledThrough()} moves.
+     */
+    static AdBillingCharge freeze(UUID campaignId, LocalDate windowStart, LocalDate windowEnd,
+                                  long impressions, long clicks, long amountCents, String currency) {
+<span class="fc" id="L96">        return new AdBillingCharge(UUID.randomUUID(), campaignId, windowStart, windowEnd,</span>
+                impressions, clicks, amountCents, currency);
+    }
+
+<span class="nc" id="L100">    UUID getCampaignId() { return campaignId; }</span>
+<span class="fc" id="L101">    LocalDate getWindowStart() { return windowStart; }</span>
+<span class="fc" id="L102">    LocalDate getWindowEnd() { return windowEnd; }</span>
+<span class="fc" id="L103">    long getImpressions() { return impressions; }</span>
+<span class="fc" id="L104">    long getClicks() { return clicks; }</span>
+<span class="fc" id="L105">    long getAmountCents() { return amountCents; }</span>
+<span class="nc" id="L106">    String getCurrency() { return currency; }</span>
+
+    @Override
+<span class="nc" id="L109">    public UUID getId() { return id; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

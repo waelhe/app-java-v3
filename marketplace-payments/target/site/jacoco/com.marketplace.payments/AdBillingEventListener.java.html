@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdBillingEventListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-payments</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.payments</a> &gt; <span class="el_source">AdBillingEventListener.java</span></div><h1>AdBillingEventListener.java</h1><pre class="source lang-java linenums">package com.marketplace.payments;
+
+import com.marketplace.shared.api.AdWindowBilledEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.stereotype.Component;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the payments
+ * half of the billing event — the plan's «وظيفة خصم دورية تُصدر نية دفع».
+ *
+ * &lt;p&gt;The catalog's billing run freezes the immutable charge row and
+ * publishes {@link AdWindowBilledEvent} AFTER_COMMIT; this listener issues
+ * the ad bill's payment intent in its own transaction. The idempotency
+ * key is the DETERMINISTIC window key
+ * {@code ad-debit-{campaignId}-{windowStart}} — a redelivery of the same
+ * event (or two overlapping runs producing the same frozen window)
+ * replays into {@link PaymentsService#createAdIntent}'s existing-intent
+ * return: one window, one payable, however many times the event travels.&lt;/p&gt;
+ */
+@Component
+public class AdBillingEventListener {
+
+<span class="fc" id="L25">    private static final Logger log = LoggerFactory.getLogger(AdBillingEventListener.class);</span>
+
+    /** The deterministic key prefix — shared contract with every test that predicts the intent. */
+    static final String AD_INTENT_KEY_PREFIX = &quot;ad-debit-&quot;;
+
+    private final PaymentsService paymentsService;
+
+<span class="fc" id="L32">    public AdBillingEventListener(PaymentsService paymentsService) {</span>
+<span class="fc" id="L33">        this.paymentsService = paymentsService;</span>
+<span class="fc" id="L34">    }</span>
+
+    @ApplicationModuleListener
+    public void onWindowBilled(AdWindowBilledEvent event) {
+<span class="fc" id="L38">        String idempotencyKey = AD_INTENT_KEY_PREFIX + event.campaignId() + &quot;-&quot; + event.windowStart();</span>
+<span class="fc" id="L39">        paymentsService.createAdIntent(event.providerId(), event.campaignId(), event.windowStart(),</span>
+<span class="fc" id="L40">                event.amountCents(), event.currency(), idempotencyKey);</span>
+<span class="fc" id="L41">        log.info(&quot;Ad bill intent issued: provider {} owes {} {} for campaign {} window [{}, {}) — key {}&quot;,</span>
+<span class="fc" id="L42">                event.providerId(), event.amountCents(), event.currency(), event.campaignId(),</span>
+<span class="fc" id="L43">                event.windowStart(), event.windowEnd(), idempotencyKey);</span>
+<span class="fc" id="L44">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

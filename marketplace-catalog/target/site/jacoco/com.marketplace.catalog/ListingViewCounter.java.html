@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingViewCounter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ListingViewCounter.java</span></div><h1>ListingViewCounter.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.HexFormat;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * L40 (realestate systems plan §5 — view analytics): the public-read-point
+ * counter. One call per successful public listing detail read; the
+ * noise-reduction contract is the plan's own wording — &quot;زيارة واحدة لكل
+ * (زائر/لوحة/يوم) بمعيار بصمة الزائر في الذاكرة (Redis TTL يوم)&quot;.
+ *
+ * &lt;p&gt;&lt;b&gt;The fingerprint:&lt;/b&gt; the keyed HmacSHA256 hex of the client IP
+ * under {@code marketplace.catalog.views.ip-hash-key} — the L34 leads
+ * fingerprint discipline (CWE-759: the IPv4 space is enumerable, a bare
+ * digest is reversible by brute force, a keyed HMAC is not). It never
+ * leaves the process: its only use is inside the ephemeral Redis dedup
+ * key, which carries the 24h TTL — no permanent identifier is stored for
+ * the anonymous visitor (the plan's privacy-by-design, no new b-5). In
+ * production the IP is the real client address because
+ * {@code server.forward-headers-strategy: FRAMEWORK} is set
+ * (application-prod.yml — the ForwardedHeaderFilter rewrites
+ * {@code getRemoteAddr()} from X-Forwarded-For behind the TLS-terminating
+ * proxy; the same seam the leads fingerprint rides).
+ *
+ * &lt;p&gt;&lt;b&gt;The unavailability policy (one rule, every cause):&lt;/b&gt; when the
+ * approximation layer is unavailable — Redis down, database down, no
+ * fingerprint key configured, no remote address — the counter
+ * UNDERCOUNTS (skips the view), never inflates (counting without dedup
+ * turns one visitor's burst into N visits), and never breaks the read.
+ * The count is a business signal; a deterministic bias direction is the
+ * honest degradation. Production carries the key by the CatalogConfig
+ * fail-fast; a deployment without it gets analytics OFF with a one-time
+ * warning, not a poisoned count and not a broken public surface.
+ *
+ * &lt;p&gt;&lt;b&gt;The dedup marker:&lt;/b&gt; Redis {@code SET key &quot;1&quot; NX EX &lt;window&gt;} —
+ * {@code StringRedisTemplate.setIfAbsent(key, value, ttl)}, the atomic
+ * first-writer-wins primitive (two concurrent reads of one visitor cannot
+ * both win the marker). This is the codebase's FIRST direct Redis usage
+ * outside the Spring Cache/Session abstractions — deliberate: the cache
+ * abstraction's GET/PUT round-trip is not atomic, so two concurrent
+ * misses would both count, defeating the marker's entire purpose. The
+ * window is fixed from the FIRST view (no sliding renewal), so one
+ * visitor counts at most once per rolling 24h — the plan's documented
+ * &quot;TTL يوم&quot; choice, an honest approximation of the calendar day.
+ *
+ * &lt;p&gt;&lt;b&gt;Never breaks the read (the analytics contract):&lt;/b&gt; counting is
+ * best-effort by design — a Redis or database failure during counting
+ * degrades the count (undercounting: the outage's missed views are
+ * skipped, never inflated), logged as a warning, and the public read the
+ * caller already holds returns untouched. The catch is the narrow Spring
+ * {@link DataAccessException} hierarchy (the official unified data-access
+ * exception family covering both the Redis and JPA paths), never a
+ * blanket {@code Exception} — the house &quot;no catch(Exception)&quot; rule for
+ * listener retries targets framework-managed retry, this is a
+ * read-path-resilience decision with a guard test proving the behavior.
+ */
+@Component
+public class ListingViewCounter {
+
+<span class="fc" id="L72">    private static final Logger log = LoggerFactory.getLogger(ListingViewCounter.class);</span>
+
+    /** Redis key namespace: catalog's view-dedup markers (ephemeral, TTL'd). */
+    static final String DEDUP_KEY_PREFIX = &quot;catalog:views:dedup:&quot;;
+
+    /** One-time warning for the analytics-off deployment state (never per-read log spam). */
+<span class="fc" id="L78">    private final AtomicBoolean analyticsOffWarned = new AtomicBoolean();</span>
+
+    private final StringRedisTemplate redisTemplate;
+    private final ListingViewsDailyService viewsService;
+    private final CatalogProperties properties;
+
+    public ListingViewCounter(StringRedisTemplate redisTemplate,
+                              ListingViewsDailyService viewsService,
+<span class="fc" id="L86">                              CatalogProperties properties) {</span>
+<span class="fc" id="L87">        this.redisTemplate = redisTemplate;</span>
+<span class="fc" id="L88">        this.viewsService = viewsService;</span>
+<span class="fc" id="L89">        this.properties = properties;</span>
+<span class="fc" id="L90">    }</span>
+
+    /**
+     * Records one public-detail view: dedup first, then the +1 with the
+     * insert-race retry. Total — never throws; any data-access failure or
+     an unavailable approximation layer degrades the count, not the read.
+     */
+    public void recordView(UUID listingId, String clientIp) {
+        try {
+<span class="fc" id="L99">            String key = properties.views().ipHashKey();</span>
+<span class="pc bpc" id="L100" title="1 of 4 branches missed.">            if (key == null || key.isBlank()) {</span>
+<span class="fc" id="L101">                warnAnalyticsOffOnce(&quot;no fingerprint key is configured &quot;</span>
+                        + &quot;(marketplace.catalog.views.ip-hash-key)&quot;);
+<span class="fc" id="L103">                return; // undercount, never inflate, never break (the class javadoc)</span>
+            }
+<span class="fc" id="L105">            String fingerprint = hashIp(key, clientIp);</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">            if (fingerprint == null) {</span>
+<span class="fc" id="L107">                return; // no remote address — the same unavailability rule</span>
+            }
+<span class="fc bfc" id="L109" title="All 2 branches covered.">            if (markFirstVisit(listingId, fingerprint)) {</span>
+                // The +1 with the framework-managed insert-race retry:
+                // ListingViewsDailyService's @Retry(INSERT_RACE_RETRY) owns
+                // the recovery now (G-RETRY-1 — no hand-coded catch here).
+<span class="fc" id="L113">                viewsService.addView(listingId, LocalDate.now(ZoneOffset.UTC));</span>
+            }
+<span class="fc" id="L115">        } catch (DataAccessException analyticsFailure) {</span>
+<span class="fc" id="L116">            log.warn(&quot;Listing view counting degraded — the public read is unaffected &quot;</span>
+<span class="fc" id="L117">                            + &quot;(listingId={}): {}&quot;, listingId, analyticsFailure.getMessage());</span>
+<span class="fc" id="L118">        }</span>
+<span class="fc" id="L119">    }</span>
+
+    private void warnAnalyticsOffOnce(String cause) {
+<span class="fc bfc" id="L122" title="All 2 branches covered.">        if (analyticsOffWarned.compareAndSet(false, true)) {</span>
+<span class="fc" id="L123">            log.warn(&quot;Listing view counting is OFF — {}; the public read is unaffected. &quot;</span>
+                    + &quot;Production fails startup on a blank key (CatalogConfig); this &quot;
+                    + &quot;deployment chose to run without analytics.&quot;, cause);
+        }
+<span class="fc" id="L127">    }</span>
+
+    /**
+     * The first-writer-wins marker: SET NX EX. True = this is the first
+     * counted visit of this (visitor, listing) inside the window.
+     */
+    private boolean markFirstVisit(UUID listingId, String fingerprint) {
+<span class="fc" id="L134">        String key = DEDUP_KEY_PREFIX + listingId + &quot;:&quot; + fingerprint;</span>
+<span class="fc" id="L135">        Duration window = properties.views().dedupWindow();</span>
+<span class="fc" id="L136">        Boolean first = redisTemplate.opsForValue().setIfAbsent(key, &quot;1&quot;, window);</span>
+<span class="fc" id="L137">        return Boolean.TRUE.equals(first);</span>
+    }
+
+    /**
+     * The keyed fingerprint: HmacSHA256 hex of the client IP under the
+     * configured key — byte-for-byte the L34 {@code LeadsService.hashIp}
+     * discipline (CWE-759), catalog-owned so the modules' keys rotate
+     * independently. Null when no address is present (the test seam); a
+     * blank CONFIGURED key fails loudly by name — though the prod
+     * fail-fast (CatalogConfig) makes that unreachable in production.
+     */
+    static String hashIp(String key, String clientIp) {
+<span class="fc bfc" id="L149" title="All 4 branches covered.">        if (clientIp == null || clientIp.isBlank()) {</span>
+<span class="fc" id="L150">            return null;</span>
+        }
+<span class="pc bpc" id="L152" title="1 of 4 branches missed.">        if (key == null || key.isBlank()) {</span>
+<span class="fc" id="L153">            throw new IllegalStateException(</span>
+                    &quot;marketplace.catalog.views.ip-hash-key must be configured —&quot;
+                            + &quot; the view visitor fingerprint is a keyed HMAC (CWE-759)&quot;);
+        }
+        try {
+<span class="fc" id="L158">            javax.crypto.Mac mac = javax.crypto.Mac.getInstance(&quot;HmacSHA256&quot;);</span>
+<span class="fc" id="L159">            mac.init(new javax.crypto.spec.SecretKeySpec(</span>
+<span class="fc" id="L160">                    key.getBytes(StandardCharsets.UTF_8), &quot;HmacSHA256&quot;));</span>
+<span class="fc" id="L161">            return HexFormat.of().formatHex(</span>
+<span class="fc" id="L162">                    mac.doFinal(clientIp.trim().getBytes(StandardCharsets.UTF_8)));</span>
+<span class="nc" id="L163">        } catch (GeneralSecurityException e) {</span>
+            // HmacSHA256 is mandated by the Java platform specification — unreachable.
+<span class="nc" id="L165">            throw new IllegalStateException(&quot;HmacSHA256 unavailable&quot;, e);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderListingSpecifications.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">ProviderListingSpecifications.java</span></div><h1>ProviderListingSpecifications.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.query.QueryUtils;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The official Spring Data JPA Specifications over {@code ProviderListing}
+ * — &quot;an extensible set of predicates … removing the need to declare a
+ * query (method) for every needed combination&quot; (the documented foundation
+ * of the L32 faceted path; the house already uses this entry point).
+ *
+ * &lt;p&gt;Every predicate is OPTIONAL (null = absent). Soft-deleted rows are
+ * excluded automatically by the entity's {@code @SoftDelete} filter.
+ */
+public final class ProviderListingSpecifications {
+
+    private ProviderListingSpecifications() {}
+
+    public static Specification&lt;ProviderListing&gt; hasStatus(ListingStatus status) {
+<span class="pc" id="L27">        return (root, query, cb) -&gt; cb.equal(root.get(&quot;status&quot;), status);</span>
+    }
+
+    /**
+     * The optional category predicate — null is ABSENT (the official
+     * Specifications model, the same contract priceBetween and minGuests
+     * implement; CodeRabbit PR #299 round 1: {@code cb.equal} with a null
+     * argument is not portable — a provider may translate it into a null
+     * comparison that matches nothing for a non-null column).
+     */
+    public static Specification&lt;ProviderListing&gt; hasCategory(String category) {
+<span class="nc bnc" id="L38" title="All 2 branches missed.">        return (root, query, cb) -&gt; category == null</span>
+<span class="nc" id="L39">                ? cb.conjunction()</span>
+<span class="nc" id="L40">                : cb.equal(root.get(&quot;category&quot;), category);</span>
+    }
+
+    public static Specification&lt;ProviderListing&gt; priceBetween(Long min, Long max) {
+<span class="nc" id="L44">        return (root, query, cb) -&gt; {</span>
+<span class="nc bnc" id="L45" title="All 4 branches missed.">            if (min == null &amp;&amp; max == null) return cb.conjunction();</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">            if (min == null) return cb.lessThanOrEqualTo(root.get(&quot;priceCents&quot;), max);</span>
+<span class="nc bnc" id="L47" title="All 2 branches missed.">            if (max == null) return cb.greaterThanOrEqualTo(root.get(&quot;priceCents&quot;), min);</span>
+<span class="nc" id="L48">            return cb.between(root.get(&quot;priceCents&quot;), min, max);</span>
+        };
+    }
+
+    /**
+     * I6 semantics as a predicate: a guests criterion matches only
+     * listings with a DECLARED capacity that accommodates it (NULL
+     * capacity never satisfies a requirement).
+     */
+    public static Specification&lt;ProviderListing&gt; minGuests(Integer guests) {
+<span class="nc" id="L58">        return (root, query, cb) -&gt; {</span>
+<span class="nc bnc" id="L59" title="All 2 branches missed.">            if (guests == null) return cb.conjunction();</span>
+<span class="nc" id="L60">            return cb.and(</span>
+<span class="nc" id="L61">                    cb.isNotNull(root.get(&quot;maxGuests&quot;)),</span>
+<span class="nc" id="L62">                    cb.greaterThanOrEqualTo(root.get(&quot;maxGuests&quot;), guests));</span>
+        };
+    }
+
+    /**
+     * L32: the property-facet restriction — the realestate module's
+     * matching-id set composes onto the catalog query as an optional
+     * predicate (null = absent; an empty collection never arrives — the
+     * caller short-circuits to an honest empty page first).
+     */
+    public static Specification&lt;ProviderListing&gt; hasListingIdIn(Collection&lt;java.util.UUID&gt; listingIds) {
+<span class="nc" id="L73">        return (root, query, cb) -&gt; {</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">            if (listingIds == null) return cb.conjunction();</span>
+<span class="nc" id="L75">            return root.get(&quot;id&quot;).in(listingIds);</span>
+        };
+    }
+
+    /**
+     * L36: the public provider page's predicate — the provider whose
+     * listings are browsed (null = absent, the house's optional-predicate
+     * contract). The provider id lives in the users.id space (A1) exactly
+     * as the derived query {@code findByProviderIdAndStatus} it replaces.
+     */
+    public static Specification&lt;ProviderListing&gt; hasProviderId(UUID providerId) {
+<span class="pc bnc" id="L86" title="All 2 branches missed.">        return (root, query, cb) -&gt; providerId == null</span>
+<span class="nc" id="L87">                ? cb.conjunction()</span>
+<span class="nc" id="L88">                : cb.equal(root.get(&quot;providerId&quot;), providerId);</span>
+    }
+
+    /**
+     * W3 (yelp-level plan §5 — G17): the rating-floor set restriction —
+     * the providers the exposed stats port reports as answering the
+     * min-stars floor, composed as the availability whitelist's own
+     * shape (null = absent; an empty set never arrives — the caller
+     * short-circuits to the honest empty page first). The provider ids
+     * live in the users.id space (A1) exactly as {@link #hasProviderId}.
+     */
+    public static Specification&lt;ProviderListing&gt; hasProviderIdIn(Collection&lt;UUID&gt; providerIds) {
+<span class="nc" id="L100">        return (root, query, cb) -&gt; {</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">            if (providerIds == null) return cb.conjunction();</span>
+<span class="nc" id="L102">            return root.get(&quot;providerId&quot;).in(providerIds);</span>
+        };
+    }
+
+    /**
+     * L37 (realestate systems plan §5 — the featured boost): the
+     * boost-first ORDERING specification — &quot;المعزّز أولًا داخل نفس الفرز
+     * الأساسي&quot;، one shape for every ordered public read:
+     *
+     * &lt;pre&gt;ORDER BY CASE WHEN promoted_until &amp;gt; :now THEN 1 ELSE 0 END DESC,
+     *         &amp;lt;the effective whitelisted sort&amp;gt;, id ASC&lt;/pre&gt;
+     *
+     * &lt;p&gt;&lt;b&gt;Why a CASE flag and not the naive {@code promoted_until
+     * DESC}:&lt;/b&gt; PostgreSQL ranks NULLS FIRST on DESC — every unboosted
+     * row would outrank the boosted ones — and a past window would still
+     * outrank NULL. The CASE is TOTAL (1 or 0, never NULL) and
+     * expiry-aware at query time, so it is immune to both traps and an
+     * expired boost is self-correcting on the next read (the plan's
+     * criterion 3 — no cleanup job exists or is needed).
+     *
+     * &lt;p&gt;&lt;b&gt;Why the ordering rides THIS specification and not the
+     * Pageable (the measured framework chain):&lt;/b&gt; Spring Data JPA's
+     * {@code SimpleJpaRepository.getQuery(spec, sort)} runs
+     * {@code toPredicate} (which may call {@code query.orderBy}) and only
+     * THEN applies {@code if (sort.isSorted()) query.orderBy(toOrders(...))}
+     * — and {@code CriteriaQuery.orderBy} REPLACES the whole list (the
+     * JPA contract; the official reference states it: &quot;page(Pageable)
+     * using a sorted Pageable overrides any previous sort order&quot;). So the
+     * caller passes an UNSORTED pageable (page/size only) and this
+     * specification owns the COMPLETE order. The {@code now} value is
+     * captured as a Criteria literal — Hibernate renders it as a JDBC
+     * bind parameter (measured), so the SQL string stays stable for the
+     * plan cache and the value follows the injected Clock per call (the
+     * expiry acceptance test's own seam).
+     *
+     * &lt;p&gt;&lt;b&gt;Why the companion COUNT specification exists:&lt;/b&gt; the same
+     * {@code toPredicate} also runs for the count query, and PostgreSQL
+     * rejects an aggregate with a non-grouped ORDER BY (measured:
+     * &quot;column must appear in the GROUP BY clause or be used in an
+     * aggregate function&quot;). The official escape is the two-specification
+     * overload {@code findAll(spec, countSpec, pageable)} (since 3.5):
+     * this ordering spec composes into the CONTENT spec only, while the
+     * count spec keeps the predicates verbatim — which is precisely the
+     * plan's criterion 2 made structural (the boost reorders, it never
+     * filters: the count queries stay byte-identical to the pre-L37
+     * shapes).
+     *
+     * &lt;p&gt;&lt;b&gt;The total-order discipline (L32) moves here:&lt;/b&gt; the
+     * requested sort rides {@link QueryUtils#toOrders} — the framework's
+     * own Sort-to-Criteria translation, the identical function
+     * {@code SimpleJpaRepository} applies to a sorted Pageable — and the
+     * id ASC tiebreak is appended for every request (unsorted defaults
+     * to plain id ASC, &quot;no deceptive pages&quot;). This also closes the latent
+     * L32 gap on the derived-query surfaces: {@code findByStatus(status,
+     * unsorted-pageable)} paginated in ARBITRARY database order — the
+     * conversion of those surfaces to this specification makes every
+     * ordered public read total.
+     *
+     * &lt;p&gt;&lt;b&gt;Composition order (measured):&lt;/b&gt; {@code Specification.and}
+     * evaluates the LEFT side before the RIGHT
+     * ({@code SpecificationComposition.composed} calls {@code toPredicate(lhs)}
+     * before {@code toPredicate(rhs)}), and {@code CriteriaQuery.orderBy}
+     * replaces — so composing {@code predicates.and(boostFirst(...))}
+     * guarantees this ordering wins even if a future predicate spec ever
+     * sets an order of its own. Compose it LAST.
+     */
+    public static Specification&lt;ProviderListing&gt; boostFirst(Sort sort, Instant now) {
+<span class="fc" id="L169">        return (root, query, cb) -&gt; {</span>
+<span class="nc" id="L170">            List&lt;jakarta.persistence.criteria.Order&gt; orders = new ArrayList&lt;&gt;();</span>
+            // The total boost flag: promoted_until &gt; now (NULL compares
+            // UNKNOWN in SQL, which falls to the ELSE 0 branch — the NULL
+            // rows are unboosted by definition, no isNotNull needed) OR a
+            // live paid campaign with remaining budget (W5, G24 — the
+            // plan's «المُروَّج بلا ميزانية لا يتصدر»: an exhausted or dark
+            // campaign contributes nothing, and the listing with no
+            // campaign keeps its exact pre-W5 order). The campaign state is
+            // DERIVED at query time — never stored on the listing (the
+            // W4 «مشتق أبدًا لا مخزن» rule) — through an EXISTS the partial
+            // index idx_ad_campaigns_listing_live answers per row.
+<span class="nc" id="L181">            jakarta.persistence.criteria.Subquery&lt;Integer&gt; liveCampaign =</span>
+<span class="nc" id="L182">                    query.subquery(Integer.class);</span>
+<span class="nc" id="L183">            jakarta.persistence.criteria.Root&lt;AdCampaign&gt; campaign = liveCampaign.from(AdCampaign.class);</span>
+            // CodeRabbit W5 r1, adopted: the duration's own end counts at
+            // QUERY time too — the status flips to ENDED only at the next
+            // daily run (04:45 UTC), and between ends_at and that run the
+            // listing must not keep the paid tier («المُروَّج بلا ميزانية لا
+            // يتصدر» covers the expired duration exactly as it covers the
+            // exhausted budget).
+<span class="nc" id="L190">            liveCampaign.select(cb.literal(1))</span>
+<span class="nc" id="L191">                    .where(cb.equal(campaign.get(&quot;listingId&quot;), root.get(&quot;id&quot;)),</span>
+<span class="nc" id="L192">                            cb.equal(campaign.get(&quot;status&quot;), AdCampaignStatus.ACTIVE),</span>
+<span class="nc" id="L193">                            cb.lt(campaign.get(&quot;consumedCents&quot;), campaign.get(&quot;budgetCents&quot;)),</span>
+<span class="nc" id="L194">                            cb.or(cb.isNull(campaign.get(&quot;endsAt&quot;)),</span>
+<span class="nc" id="L195">                                    cb.greaterThan(campaign.&lt;Instant&gt;get(&quot;endsAt&quot;), now)));</span>
+<span class="nc" id="L196">            orders.add(cb.desc(cb.&lt;Integer&gt;selectCase()</span>
+<span class="nc" id="L197">                    .when(cb.or(</span>
+<span class="nc" id="L198">                            cb.greaterThan(root.&lt;Instant&gt;get(&quot;promotedUntil&quot;), now),</span>
+<span class="nc" id="L199">                            cb.exists(liveCampaign)), 1)</span>
+<span class="nc" id="L200">                    .otherwise(0)));</span>
+            // W3 (G18): the ranked-first tier for sort=rating — PostgreSQL
+            // ranks NULLS FIRST on DESC, so a bare ranking_score DESC would
+            // crown every not-yet-ranked row. The CASE flag is the boost
+            // tier's own measured answer to the same NULL-ordering trap:
+            // ranked rows tier 1, not-yet-ranked tier 0, and the requested
+            // DESC + id tiebreak do the rest. The tier is conditional — a
+            // price/newest sort keeps its exact pre-W3 ordering.
+<span class="nc bnc" id="L208" title="All 2 branches missed.">            if (sort.stream().anyMatch(order -&gt; &quot;rankingScore&quot;.equals(order.getProperty()))) {</span>
+<span class="nc" id="L209">                orders.add(cb.desc(cb.&lt;Integer&gt;selectCase()</span>
+<span class="nc" id="L210">                        .when(cb.isNotNull(root.get(&quot;rankingScore&quot;)), 1)</span>
+<span class="nc" id="L211">                        .otherwise(0)));</span>
+            }
+            // The effective whitelisted sort — the framework's own
+            // translation (what a sorted Pageable would have applied).
+<span class="nc" id="L215">            orders.addAll(QueryUtils.toOrders(sort, root, cb));</span>
+            // The L32 total-order tiebreak — always.
+<span class="nc" id="L217">            orders.add(cb.asc(root.get(&quot;id&quot;)));</span>
+<span class="nc" id="L218">            query.orderBy(orders);</span>
+            // Ordering-only: contributes no predicate (conjunction is
+            // the Specification null-equivalent that composes cleanly).
+<span class="nc" id="L221">            return cb.conjunction();</span>
+        };
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

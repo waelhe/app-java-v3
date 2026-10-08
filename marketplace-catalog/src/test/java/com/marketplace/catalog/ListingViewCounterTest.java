@@ -142,19 +142,27 @@ class ListingViewCounterTest {
     }
 
     @Test
-    void insertRace_isRetriedExactlyOnce() {
-        // The unique-constraint loser: PostgreSQL aborted that transaction,
-        // the retry rides a NEW one and now finds the winner's row (the
-        // service's own javadoc — one retry suffices by DB semantics).
+    void insertRace_violationIsDegradedByTheCounter_andRetriedByTheFrameworkProxy() {
+        // G-RETRY-1 split of the old hand-coded catch-and-retry:
+        // (1) the COUNTER is total — the framework-managed retry lives on
+        //     ListingViewsDailyService's proxy (@Retry INSERT_RACE_RETRY),
+        //     so even when the violation escapes the proxy (attempts
+        //     exhausted), recordView must only degrade the count (the
+        //     analytics contract), never break the public read;
+        // (2) the actual retry-on-new-transaction behavior is proven where
+        //     it lives: ResilienceAnnotationTest pins the annotation and
+        //     ListingViewsDailyServiceTest pins the propagation. A Mockito
+        //     mock has no proxy, so calling through one cannot demonstrate
+        //     the aspect — asserting times(2) here would test nothing.
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
         org.mockito.Mockito.doThrow(new DataIntegrityViolationException(
                 "uk_listing_views_daily_listing_date"))
-                .doNothing()
                 .when(viewsService).addView(any(), any());
 
-        counter().recordView(LISTING_ID, IP);
+        assertThatCode(() -> counter().recordView(LISTING_ID, IP))
+                .doesNotThrowAnyException();
 
-        verify(viewsService, times(2)).addView(LISTING_ID, LocalDate.now(ZoneOffset.UTC));
+        verify(viewsService, times(1)).addView(LISTING_ID, LocalDate.now(ZoneOffset.UTC));
     }
 
     @Test

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReviewerPublicProfile.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ReviewerPublicProfile.java</span></div><h1>ReviewerPublicProfile.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W4 (yelp-level plan §5 — G28/G29): the public reviewer page's response —
+ * exactly the fields the plan's own list names (&quot;اسم، طابع انضمام، عدّاد
+ * مراجعات موثقة/عاملة، أوسمته&quot;) plus the helpful-vote total the helpful
+ * badge derives from (a measured public fact — the per-review
+ * {@code helpfulCount} is already public on every review row).
+ *
+ * &lt;p&gt;Field discipline (the {@code ProviderPublicPageResponse} whitelist
+ * rule — &quot;the record cannot leak what it does not declare&quot;): no email, no
+ * subject, no role — the profile fields a public reviewer surface renders
+ * and nothing else. The {@code reviewerId} echo is the page's own key (the
+ * caller's path parameter), the click-target the review rows carry.
+ *
+ * &lt;p&gt;The reviewer's ACTIVITY (his published reviews, paged) is NOT embedded:
+ * the existing public {@code GET /api/v1/reviews/reviewer/{reviewerId}}
+ * surface already serves it under the SAME key (users.id — no id-space
+ * seam to close, unlike the provider page whose embedded reviews block
+ * had to translate profile-id to user-id through W1's port). One read
+ * surface per fact, no duplication.
+ *
+ * @param reviewerId          the page's own key (users.id)
+ * @param displayName         the pseudonym-honouring public name
+ * @param joinedAt            when the account was created (BaseEntity's
+ *                            audited {@code created_at})
+ * @param verifiedReviewCount published reviews born from completed bookings
+ * @param organicReviewCount  published general reviews
+ * @param helpfulVoteCount    cumulative helpful votes his reviews received
+ * @param badges              the derived badge labels (G29 — never stored)
+ * @param trustScore          the derived graded trust signal (W5, G26 — the
+ *                            plan's «درجة ثقة المراجع»: transactions, history
+ *                            and helpful votes composed into one 0–100 score
+ *                            with its tier reading; derived, never stored)
+ */
+<span class="fc" id="L40">public record ReviewerPublicProfile(</span>
+        UUID reviewerId,
+        String displayName,
+        Instant joinedAt,
+        long verifiedReviewCount,
+        long organicReviewCount,
+        long helpfulVoteCount,
+        List&lt;ReviewerBadge&gt; badges,
+        ReviewerTrustScore trustScore
+) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

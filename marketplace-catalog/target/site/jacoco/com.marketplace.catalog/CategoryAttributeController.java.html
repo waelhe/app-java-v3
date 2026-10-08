@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CategoryAttributeController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">CategoryAttributeController.java</span></div><h1>CategoryAttributeController.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * W2 (yelp-level plan §5 — the business page): the category-attribute
+ * registry's own HTTP surface — the W1
+ * {@code ReviewModerationAdminController} precedent (the module's own
+ * controller, the {@code /admin} prefix, the {@code ADMIN} role at the
+ * class level) for the administrative half, plus the public read the
+ * category surfaces compose.
+ */
+@RestController
+@RequestMapping(value = ApiConstants.API_V1, version = &quot;1.0&quot;)
+public class CategoryAttributeController {
+
+    private final CategoryAttributeService categoryAttributeService;
+
+<span class="fc" id="L27">    public CategoryAttributeController(CategoryAttributeService categoryAttributeService) {</span>
+<span class="fc" id="L28">        this.categoryAttributeService = categoryAttributeService;</span>
+<span class="fc" id="L29">    }</span>
+
+    // -- the public read -------------------------------------------------------
+
+    /** One registry row's response shape — the same fields the registry declares. */
+<span class="fc" id="L34">    public record CategoryAttributeResponse(</span>
+            UUID id,
+            UUID categoryId,
+            String code,
+            String labelEn,
+            String labelAr,
+            CategoryAttributeType valueType,
+            int position
+    ) {
+        static CategoryAttributeResponse of(CategoryAttribute attribute) {
+<span class="fc" id="L44">            return new CategoryAttributeResponse(attribute.getId(), attribute.getCategoryId(),</span>
+<span class="fc" id="L45">                    attribute.getCode(), attribute.getLabelEn(), attribute.getLabelAr(),</span>
+<span class="fc" id="L46">                    attribute.getValueType(), attribute.getPosition());</span>
+        }
+    }
+
+    @GetMapping(&quot;/categories/{categoryId}/attributes&quot;)
+    @Operation(summary = &quot;A category's declared attributes&quot;,
+            description = &quot;W2 (G15): the dynamic per-category attribute registry's public &quot;
+                    + &quot;read — one category's attribute definitions in position order. The &quot;
+                    + &quot;registry is reference data: what a category's listings carry (wifi, &quot;
+                    + &quot;parking, electronic payment), evolving by administrative INSERT, &quot;
+                    + &quot;never by migration.&quot;)
+    public ResponseEntity&lt;List&lt;CategoryAttributeResponse&gt;&gt; byCategory(
+            @PathVariable UUID categoryId) {
+<span class="fc" id="L59">        return ResponseEntity.ok(categoryAttributeService.byCategoryId(categoryId).stream()</span>
+<span class="fc" id="L60">                .map(CategoryAttributeResponse::of).toList());</span>
+    }
+
+    // -- the administrative surface --------------------------------------------
+
+    @PostMapping(&quot;/admin/categories/{categoryId}/attributes&quot;)
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    @Operation(summary = &quot;Register a category attribute (administrative)&quot;,
+            description = &quot;W2 (G15): registers one attribute definition on the category — &quot;
+                    + &quot;code (the stable API-facing key, unique per category), labels, the &quot;
+                    + &quot;closed value-type vocabulary (TEXT/NUMBER/BOOLEAN). Position &quot;
+                    + &quot;auto-allocates as max+1. The identity pair (category, code) is &quot;
+                    + &quot;immutable once registered.&quot;)
+    public ResponseEntity&lt;CategoryAttributeResponse&gt; register(
+            @PathVariable UUID categoryId,
+            @Valid @RequestBody CategoryAttributeService.RegistrationRequest request) {
+<span class="fc" id="L76">        return ResponseEntity.ok(CategoryAttributeResponse.of(</span>
+<span class="fc" id="L77">                categoryAttributeService.register(categoryId, request.code(), request.labelEn(),</span>
+<span class="fc" id="L78">                        request.labelAr(), request.valueType())));</span>
+    }
+
+    @PutMapping(&quot;/admin/category-attributes/{attributeId}&quot;)
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    @Operation(summary = &quot;Amend a category attribute (administrative)&quot;,
+            description = &quot;W2 (G15): PUT replacement of the replaceable fields — labels, &quot;
+                    + &quot;value type, position. The identity pair (category, code) is immutable: &quot;
+                    + &quot;a re-keyed attribute is a new registration (the V70 identity rule).&quot;)
+    public ResponseEntity&lt;CategoryAttributeResponse&gt; update(
+            @PathVariable UUID attributeId,
+            @Valid @RequestBody CategoryAttributeService.AmendmentRequest request) {
+<span class="fc" id="L90">        return ResponseEntity.ok(CategoryAttributeResponse.of(</span>
+<span class="fc" id="L91">                categoryAttributeService.update(attributeId, request.labelEn(),</span>
+<span class="fc" id="L92">                        request.labelAr(), request.valueType(), request.position())));</span>
+    }
+
+    @DeleteMapping(&quot;/admin/category-attributes/{attributeId}&quot;)
+    @PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+    @Operation(summary = &quot;Withdraw a category attribute (administrative)&quot;,
+            description = &quot;W2 (G15): soft-deletes the definition — the Envers trail keeps &quot;
+                    + &quot;the history; a withdrawn code is free for a future registration &quot;
+                    + &quot;(the V70 partial-unique identity shape).&quot;)
+    public ResponseEntity&lt;Void&gt; remove(@PathVariable UUID attributeId) {
+<span class="fc" id="L102">        categoryAttributeService.remove(attributeId);</span>
+<span class="fc" id="L103">        return ResponseEntity.noContent().build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

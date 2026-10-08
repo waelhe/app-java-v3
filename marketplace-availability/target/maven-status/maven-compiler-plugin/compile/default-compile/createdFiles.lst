@@ -1,0 +1,15 @@
+com/marketplace/availability/AvailabilitySlot.class
+com/marketplace/availability/AvailabilityService.class
+com/marketplace/availability/package-info.class
+com/marketplace/availability/ProviderAvailabilityRuleResponse.class
+com/marketplace/availability/ProviderTimeOff.class
+com/marketplace/availability/ProviderTimeOffResponse.class
+com/marketplace/availability/ProviderAvailabilityRuleRepository.class
+com/marketplace/availability/ProviderAvailabilityRule.class
+com/marketplace/availability/ProviderTimeOffRepository.class
+com/marketplace/availability/AvailabilityLookupAdapter.class
+com/marketplace/availability/AvailabilitySlotResponse.class
+com/marketplace/availability/AvailabilityController.class
+com/marketplace/availability/AvailabilitySlotRepository.class
+com/marketplace/availability/AvailabilitySlotGenerator.class
+com/marketplace/availability/AvailabilityModule.class

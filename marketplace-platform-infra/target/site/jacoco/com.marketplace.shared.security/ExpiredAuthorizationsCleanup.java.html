@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExpiredAuthorizationsCleanup.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-platform-infra</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.security</a> &gt; <span class="el_source">ExpiredAuthorizationsCleanup.java</span></div><h1>ExpiredAuthorizationsCleanup.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.security;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.sql.Timestamp;
+
+import javax.sql.DataSource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+/**
+ * Periodically purges fully-expired rows from {@code oauth2_authorization}.
+ *
+ * &lt;p&gt;&lt;b&gt;Why this component exists (the gap it closes).&lt;/b&gt; Spring Authorization
+ * Server 7.1.1 has &lt;i&gt;no&lt;/i&gt; automatic removal of expired authorizations: the
+ * JDBC service only removes a row on an explicit
+ * {@link org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService#remove(OAuth2Authorization)}
+ * call (token revocation / consumed authorization code) — verified against the
+ * framework sources saved at {@code scripts/verify-aud-claim/sas-all/
+ * org/springframework/security/oauth2/server/authorization/JdbcOAuth2AuthorizationService.java},
+ * which contains no scheduled or expiry-driven {@code DELETE}. Every login and
+ * token flow inserts a row (token endpoint, refresh, device code), so the table
+ * grows unbounded without application-side housekeeping — exactly the class of
+ * problem the Spring Modulith reference describes for completed event
+ * publications (&quot;… the persistent abstraction of them … will grow unbounded and
+ * the interaction with the store … might slow down&quot;); this component applies the
+ * same housekeeping to the authorization store.
+ *
+ * &lt;p&gt;&lt;b&gt;Predicate (conservative).&lt;/b&gt; A row is deleted only when &lt;i&gt;every&lt;/i&gt;
+ * credential the row carries is past {@code cutoff}: each of the six
+ * {@code *_expires_at} columns (V13 — the SAS 7.1.1 schema layout) is either
+ * {@code NULL} (that credential was never issued) or strictly older than the
+ * cutoff. Rows whose columns are all {@code NULL} are left alone — they carry
+ * no expirable lifecycle to evaluate. The cutoff trails {@code now} by a
+ * retention window (7 days, symmetric with {@link com.marketplace.shared.cache
+ * .EventPublicationCleanup}) so recently-expired authorizations stay available
+ * for operational inspection, clock-skew cushioning and in-flight requests.
+ *
+ * &lt;p&gt;&lt;b&gt;Safety.&lt;/b&gt; An authorization whose every credential is expired is dead
+ * to the framework: SAS validates expiry before honoring a refresh or
+ * introspection request, so deleting such rows cannot affect any live flow.
+ * No {@code V} migration is involved — this is row housekeeping on the existing
+ * V13 schema, not a schema change.
+ *
+ * &lt;p&gt;Mirrors the shape of {@code EventPublicationCleanup} (same module,
+ * {@code @EnableScheduling} via {@code CacheConfig}): a single daily cron at
+ * 04:00 UTC — one hour after the event-publications purge so the two
+ * housekeeping sweeps never contend on the scheduler thread.
+ */
+@Component
+public class ExpiredAuthorizationsCleanup {
+
+<span class="nc" id="L57">    private static final Logger log = LoggerFactory.getLogger(ExpiredAuthorizationsCleanup.class);</span>
+
+    /**
+     * Retention of expired-but-unremoved authorizations before this sweep may
+     * delete them. Symmetric with {@code EventPublicationCleanup}'s 7 days.
+     * Public test seam: {@code ExpiredAuthorizationsCleanupIntegrationTest}
+     * (different package) asserts the exact cutoff semantics.
+     */
+<span class="nc" id="L65">    public static final Duration RETENTION = Duration.ofDays(7);</span>
+
+    /**
+     * A row is removable when every carried credential is expired; NULL columns
+     * mean the credential was never issued and are ignored. The trailing clause
+     * requires at least one issued credential, so all-NULL rows are never
+     * deleted. Column names are the V13 / SAS 7.1.1 schema layout.
+     */
+    // @formatter:off
+    static final String DELETE_FULLY_EXPIRED = &quot;&quot;&quot;
+            DELETE FROM oauth2_authorization
+             WHERE (authorization_code_expires_at IS NULL OR authorization_code_expires_at &lt; :cutoff)
+               AND (access_token_expires_at      IS NULL OR access_token_expires_at      &lt; :cutoff)
+               AND (oidc_id_token_expires_at     IS NULL OR oidc_id_token_expires_at     &lt; :cutoff)
+               AND (refresh_token_expires_at     IS NULL OR refresh_token_expires_at     &lt; :cutoff)
+               AND (user_code_expires_at         IS NULL OR user_code_expires_at         &lt; :cutoff)
+               AND (device_code_expires_at       IS NULL OR device_code_expires_at       &lt; :cutoff)
+               AND (  authorization_code_expires_at IS NOT NULL
+                   OR access_token_expires_at      IS NOT NULL
+                   OR oidc_id_token_expires_at     IS NOT NULL
+                   OR refresh_token_expires_at     IS NOT NULL
+                   OR user_code_expires_at         IS NOT NULL
+                   OR device_code_expires_at       IS NOT NULL)
+            &quot;&quot;&quot;;
+    // @formatter:on
+
+    private final NamedParameterJdbcTemplate jdbcTemplate;
+
+<span class="nc" id="L93">    public ExpiredAuthorizationsCleanup(DataSource dataSource) {</span>
+        // NamedParameterJdbcTemplate over the application DataSource — the same
+        // JdbcTemplate infrastructure SecurityConfig's JdbcOAuth2AuthorizationService
+        // uses, so the sweep and the framework service share pool + transaction
+        // semantics without constructing a second pool.
+<span class="nc" id="L98">        this.jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);</span>
+<span class="nc" id="L99">    }</span>
+
+    /**
+     * Deletes authorizations whose every credential expired more than
+     * {@link #RETENTION} ago. Runs daily at 04:00 UTC (off-peak; one hour
+     * offset from the 03:00 event-publications purge).
+     */
+    @Scheduled(cron = &quot;0 0 4 * * ?&quot;, zone = &quot;UTC&quot;)
+    void purgeExpiredAuthorizations() {
+<span class="nc" id="L108">        int deleted = purgeExpiredBefore(Instant.now().minus(RETENTION));</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        if (deleted &gt; 0) {</span>
+<span class="nc" id="L110">            log.info(&quot;Purged {} fully-expired authorizations (older than {})&quot;, deleted, RETENTION);</span>
+        } else {
+<span class="nc" id="L112">            log.debug(&quot;No fully-expired authorizations older than {} to purge&quot;, RETENTION);</span>
+        }
+<span class="nc" id="L114">    }</span>
+
+    /**
+     * The sweep, parameterized on the cutoff — the test seam
+     * {@code ExpiredAuthorizationsCleanupIntegrationTest} (different package)
+     * drives it with a controlled cutoff: deletes rows whose every issued
+     * credential expired strictly before {@code cutoff}.
+     *
+     * @return number of rows deleted
+     */
+    public int purgeExpiredBefore(Instant cutoff) {
+<span class="nc" id="L125">        return jdbcTemplate.update(DELETE_FULLY_EXPIRED,</span>
+<span class="nc" id="L126">                java.util.Map.of(&quot;cutoff&quot;, Timestamp.from(cutoff)));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

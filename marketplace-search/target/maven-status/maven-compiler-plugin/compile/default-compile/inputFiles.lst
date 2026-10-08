@@ -1,0 +1,17 @@
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearch.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchController.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchEventListener.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchMatcher.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchRepository.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchService.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SavedSearchViews.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchConfig.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchController.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchCriteriaCacheKeyGenerator.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchModule.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchProperties.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchService.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/SearchSorts.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/package-info.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/spi/SavedSearchExportAdapter.java
+/workspace/marketplace-search/src/main/java/com/marketplace/search/spi/SearchContentPurgeAdapter.java

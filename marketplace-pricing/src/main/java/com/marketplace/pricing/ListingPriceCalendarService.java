@@ -6,6 +6,8 @@ import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
+import com.marketplace.shared.resilience.InsertRaceRetryConfiguration;
+import io.github.resilience4j.retry.annotation.Retry;
 import io.micrometer.observation.annotation.Observed;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,14 +59,17 @@ import java.util.UUID;
  * and Envers keeps the full revision history (V41 {@code _aud} tables).
  *
  * <p>Weekend-rule upsert concurrency (CodeRabbit round 2, the L22
- * precedent applied): the write runs inside a dedicated
- * {@code TransactionTemplate(REQUIRES_NEW)} — when two concurrent PUTs
- * both find no live rule and both try to INSERT, the V41 partial unique
- * index lets exactly one win; the loser's single bounded retry re-runs in
- * a FRESH transaction (the failed one already rolled back), finds the
- * winner's live row, and re-tunes it — the PUT is idempotent, so the
- * losing request completes as the update it semantically was. A second
- * race within the retry surfaces as the honest final exception.
+ * precedent applied, framework-managed since G-RETRY-1): the write runs
+ * inside {@link #upsertWeekendRuleInNewTransaction} — a dedicated
+ * {@code TransactionTemplate(REQUIRES_NEW)} behind the shared
+ * {@code @Retry(name = INSERT_RACE_RETRY)}
+ * ({@link InsertRaceRetryConfiguration}): when two concurrent PUTs both
+ * find no live rule and both try to INSERT, the V41 partial unique index
+ * lets exactly one win; the loser's bounded retry re-runs in a FRESH
+ * transaction (the failed one already rolled back), finds the winner's
+ * live row, and re-tunes it — the PUT is idempotent, so the losing
+ * request completes as the update it semantically was. A second race
+ * within the retry's attempts surfaces as the honest final exception.
  */
 @Service
 @Transactional
@@ -125,28 +130,37 @@ public class ListingPriceCalendarService {
      * Upsert: the single weekend rule of the listing — created when absent,
      * re-tuned when present (the partial unique index of V41 keeps exactly
      * one LIVE row; a soft-deleted predecessor never blocks re-creation).
-     * The write runs in its own REQUIRES_NEW transaction with one bounded
-     * retry on a lost insert race (the class javadoc's L22 pattern).
+     * The race recovery is framework-managed now (G-RETRY-1): this public
+     * seam carries the shared insert-race {@code @Retry}
+     * ({@link InsertRaceRetryConfiguration}); a lost race re-runs in a
+     * FRESH transaction (the failed inner one already rolled back), finds
+     * the winner's live row, and re-tunes it — the PUT is idempotent, so
+     * the losing request completes as the update it semantically was. A
+     * second race within the bounded attempts surfaces as the honest final
+     * exception. An unrelated integrity violation burns the remaining
+     * attempts but still propagates unchanged (the loud-failure contract
+     * of the shared config's javadoc).
      */
     @Observed(name = "pricing.calendar.weekend.upsert")
     public WeekendRuleResponse upsertWeekendRule(UUID listingId, BigDecimal multiplier,
                                                  Authentication authentication) {
         requireOwnedListing(listingId, authentication);
-        try {
-            return upsertWeekendRuleInNewTransaction(listingId, multiplier);
-        } catch (DataIntegrityViolationException lostInsertRace) {
-            if (!isWeekendRuleInsertRace(lostInsertRace)) {
-                throw lostInsertRace;
-            }
-            // A concurrent PUT inserted the single live rule first: the
-            // partial unique index already rolled this inner transaction
-            // back. Retry ONCE in a fresh transaction — the winner's row now
-            // exists, so the same request takes the re-tune path.
-            return upsertWeekendRuleInNewTransaction(listingId, multiplier);
-        }
+        WeekendRuleResponse response = upsertWeekendRuleInNewTransaction(listingId, multiplier);
+        eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
+        return response;
     }
 
-    private WeekendRuleResponse upsertWeekendRuleInNewTransaction(UUID listingId, BigDecimal multiplier) {
+    /**
+     * The weekend-rule write seam — the {@code @Retry} boundary (G-RETRY-1).
+     * Public and invoked through this bean's Spring proxy so the annotation
+     * is effective (a private method or self-invocation would make it a
+     * silent no-op — Spring Framework reference, Proxying Modes). The retry
+     * re-runs THIS frame only: the ownership check of the caller never
+     * repeats and the cache invalidation fires exactly once after the final
+     * successful attempt.
+     */
+    @Retry(name = InsertRaceRetryConfiguration.INSERT_RACE_RETRY)
+    public WeekendRuleResponse upsertWeekendRuleInNewTransaction(UUID listingId, BigDecimal multiplier) {
         return upsertTransaction.execute(status -> {
             ListingWeekendRule rule = weekendRuleRepository.findByListingId(listingId).orElse(null);
             if (rule == null) {
@@ -158,23 +172,8 @@ public class ListingPriceCalendarService {
             // Force the INSERT (and the unique-index check) INSIDE this
             // frame — a deferred flush would raise the race past the retry.
             weekendRuleRepository.flush();
-            eventPublisher.publishEvent(new CacheInvalidationRequested(PRICING_CACHE_NAMES));
             return toWeekendRuleResponse(saved);
         });
-    }
-
-    /**
-     * The V41 partial unique index's identity — the pair (23505 unique
-     * violation + this index's name in the message); Hibernate 7 leaves
-     * getConstraintName() null (measured live), the SQLState carries the class.
-     */
-    private boolean isWeekendRuleInsertRace(DataIntegrityViolationException ex) {
-        if (ex.getCause() instanceof ConstraintViolationException violation) {
-            return "23505".equals(violation.getSQLState())
-                    && ex.getMessage() != null
-                    && ex.getMessage().contains("uq_listing_weekend_rules_live_listing");
-        }
-        return false;
     }
 
     /**

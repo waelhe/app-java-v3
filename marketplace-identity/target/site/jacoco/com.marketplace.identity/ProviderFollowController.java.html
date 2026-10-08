@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderFollowController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ProviderFollowController.java</span></div><h1>ProviderFollowController.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.PagedResponse;
+import com.marketplace.shared.security.CurrentUserProvider;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
+
+/**
+ * W4 (yelp-level plan §5 — G21): the authenticated /me follows surface —
+ * the {@code SavedSearchController} house shape (the caller's user id IS
+ * the owner key, the plain {@code /me} seam, every endpoint behind the
+ * resource-server chain's {@code anyRequest().authenticated()} — no
+ * security-config change). The HTTP boundary speaks the
+ * {@code ProviderFollowView} record only — the service composes the views
+ * (the {@code controllersMustNotDependOnJpaEntities} gate: the entity
+ * never crosses the wire boundary).
+ */
+@RestController
+@RequestMapping(value = ApiConstants.API_V1, version = &quot;1.0&quot;)
+public class ProviderFollowController {
+
+    private final ProviderFollowService providerFollowService;
+    private final CurrentUserProvider currentUserProvider;
+
+    public ProviderFollowController(ProviderFollowService providerFollowService,
+<span class="nc" id="L43">                                    CurrentUserProvider currentUserProvider) {</span>
+<span class="nc" id="L44">        this.providerFollowService = providerFollowService;</span>
+<span class="nc" id="L45">        this.currentUserProvider = currentUserProvider;</span>
+<span class="nc" id="L46">    }</span>
+
+    /**
+     * The named rate-limiter instance (the savedSearchCreate L29/L35 model:
+     * fail fast, 429 RL-001, conservative until real traffic) — a follow is
+     * a cheap write, and the bridge's per-activation fan-out is bounded by
+     * the stored set this write grows.
+     */
+    @PostMapping(&quot;/me/follows&quot;)
+    @RateLimiter(name = &quot;providerFollowCreate&quot;)
+    @Operation(summary = &quot;Follow a provider&quot;,
+            description = &quot;Stores the caller's follow of a provider (the request's providerId is the &quot;
+                    + &quot;provider public page's own key). When that provider's listing is announced &quot;
+                    + &quot;(activated), the follower receives exactly one FOLLOWED_PROVIDER_NEW_LISTING &quot;
+                    + &quot;alert — in-app row always, WebSocket/email per the standing per-type/channel &quot;
+                    + &quot;preferences. Following your own provider profile answers 400; a live duplicate &quot;
+                    + &quot;answers 409. Unfollowing and re-following is legal.&quot;)
+    public ResponseEntity&lt;ProviderFollowView&gt; create(
+            @Valid @RequestBody FollowProviderRequest request,
+            Authentication authentication) {
+<span class="nc" id="L66">        UUID userId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="nc" id="L67">        return ResponseEntity.status(HttpStatus.CREATED)</span>
+<span class="nc" id="L68">                .body(providerFollowService.create(userId, request.providerId()));</span>
+    }
+
+    @GetMapping(&quot;/me/follows&quot;)
+    @Operation(summary = &quot;List my followed providers&quot;,
+            description = &quot;The caller's follows, newest first (deterministic order), each row composed &quot;
+                    + &quot;with the followed provider's current public identity — ONE batch provider &quot;
+                    + &quot;resolution for the whole page (the W1 findAllByIds N+1 rule), never a lookup &quot;
+                    + &quot;per row.&quot;)
+    public ResponseEntity&lt;PagedResponse&lt;ProviderFollowView&gt;&gt; list(
+            Pageable pageable, Authentication authentication) {
+<span class="nc" id="L79">        UUID userId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="nc" id="L80">        return ResponseEntity.ok(PagedResponse.of(providerFollowService.listFor(userId, pageable)));</span>
+    }
+
+    @DeleteMapping(&quot;/me/follows/{id}&quot;)
+    @Operation(summary = &quot;Unfollow a provider&quot;,
+            description = &quot;Soft-deletes the caller's follow. A foreign id is a 404 — it is not in &quot;
+                    + &quot;your list. The pair is freed, so following the same provider again is legal.&quot;)
+    public ResponseEntity&lt;Void&gt; delete(@PathVariable UUID id, Authentication authentication) {
+<span class="nc" id="L88">        UUID userId = currentUserProvider.getCurrentUserId(authentication);</span>
+<span class="nc" id="L89">        providerFollowService.delete(userId, id);</span>
+<span class="nc" id="L90">        return ResponseEntity.noContent().build();</span>
+    }
+
+    /** The request shape: the provider PROFILE id (the public page's key). */
+<span class="nc" id="L94">    public record FollowProviderRequest(</span>
+            @NotNull
+            @Schema(description = &quot;The provider to follow — the provider public page's own id&quot;,
+                    example = &quot;7c9e6679-7425-40de-944b-e07fc1f90ae7&quot;)
+            UUID providerId
+    ) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

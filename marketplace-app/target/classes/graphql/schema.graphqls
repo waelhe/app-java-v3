@@ -1,0 +1,38 @@
+type Query {
+    service(id: ID!): Service
+    services: [Service!]!
+}
+
+type Mutation {
+    createService(input: ServiceInput!): Service!
+}
+
+type Service {
+    id: ID!
+    name: String!
+    description: String
+    category: String!
+    price: Float!
+    currency: String!
+    status: ServiceStatus!
+}
+
+enum ServiceStatus {
+    ACTIVE
+    INACTIVE
+}
+
+# Input speaks integer cents — the domain money language of every write
+# surface (REST CreateListingRequest.priceCents, V2 price_cents >= 0,
+# BookingInfo). spring-graphql's GraphQlArgumentBinder binds input keys to
+# constructor parameter names BY NAME, so the field name must equal the
+# ServiceInput.priceCents record component. (The read side keeps display
+# units: Service.price — major units via ServiceMapper.) Int is a signed
+# 32-bit scalar per the GraphQL spec — the explicit shared ceiling
+# 2,147,483,647 is declared in ServiceInput via @Max.
+input ServiceInput {
+    name: String!
+    description: String
+    category: String!
+    priceCents: Int!
+}

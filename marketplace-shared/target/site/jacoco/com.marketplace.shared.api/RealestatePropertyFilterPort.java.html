@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RealestatePropertyFilterPort.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">RealestatePropertyFilterPort.java</span></div><h1>RealestatePropertyFilterPort.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.math.BigDecimal;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * The realestate module's contribution to faceted search (realestate
+ * systems plan L32 — implemented by the realestate module). The adopted
+ * CodeRabbit architecture: property predicates live on
+ * {@code property_details} (the realestate module's own table — a
+ * cross-module subquery would break schema ownership under Modulith, so
+ * the module itself answers with the matching LISTING-ID SET), and the
+ * search composes that restriction onto the catalog query in the exact
+ * shape of the existing restricted paths (SYSTEM.md §5 — the restricted
+ * branch of {@code CatalogSearchPort}).
+ *
+ * &lt;p&gt;Contract (the house restricted-path discipline):
+ * &lt;ul&gt;
+ *   &lt;li&gt;the set forms return the listing ids matching ALL present
+ *       criteria; an empty result is an honest empty page (the caller
+ *       short-circuits, no catalog query);&lt;/li&gt;
+ *   &lt;li&gt;{@code providerIds} arrives only in the restricted forms and is
+ *       always non-empty (the availability whitelist — the caller has
+ *       handled the empty case);&lt;/li&gt;
+ *   &lt;li&gt;the paged forms additionally restrict to {@code activeListingIds}
+ *       (the catalog's ACTIVE set — the search resolves it first) and page
+ *       through the realestate-owned ordering ({@code area} sort) — the
+ *       only sort direction the catalog cannot see.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Declared cost (plan debt D-E6): the set-restriction pattern's IN
+ * clause grows with the qualified-results size — sufficient for a
+ * Qudsayya-scale catalog by multiples; the closure threshold is a
+ * measured 10K qualified listings per typical query.
+ *
+ * &lt;p&gt;&lt;b&gt;Neutral pagination:&lt;/b&gt; the paged forms speak {@link PagedRequest}
+ * and answer {@link PagedResponse} — no Spring Data type crosses this
+ * interface (pinned by the {@code sharedPortsAreFrameworkNeutral}
+ * architecture rule); the realestate adapter maps the neutral request
+ * onto Spring Data pagination internally. The {@code area} sort marker
+ * rides the request's ordering steps; the distance forms' ORDER BY is
+ * baked in the native queries and reads only the page and size.
+ */
+public interface RealestatePropertyFilterPort {
+
+    /**
+     * Listing ids whose property details match the criteria (unrestricted
+     * form — no stay window).
+     */
+    Set&lt;UUID&gt; findListingIdsMatching(PropertyCriteria criteria);
+
+    /**
+     * Listing ids matching the criteria AND written by one of the given
+     * providers (the window path: the availability whitelist).
+     */
+    Set&lt;UUID&gt; findListingIdsMatchingRestricted(PropertyCriteria criteria, Set&lt;UUID&gt; providerIds);
+
+    /**
+     * A DB-side paged slice of the matches, ordered per the request's
+     * ordering steps (the {@code area} sort marker maps to the realestate-owned
+     * {@code areaM2} column + id tiebreak). {@code activeListingIds} is
+     * the catalog-resolved ACTIVE set — the realestate table does not know
+     * listing status (and must not), so the caller supplies it.
+     */
+    PagedResponse&lt;PropertyMatch&gt; findMatchingPaged(PropertyCriteria criteria,
+                                                   Set&lt;UUID&gt; activeListingIds, PagedRequest request);
+
+    /** The provider-restricted paged form (window + area sort). */
+    PagedResponse&lt;PropertyMatch&gt; findMatchingPagedRestricted(PropertyCriteria criteria,
+                                                             Set&lt;UUID&gt; activeListingIds,
+                                                             Set&lt;UUID&gt; providerIds, PagedRequest request);
+
+    // ------------------------------------------------------------------
+    // P1 (postgis integration plan §D-P3/D-P4): the radius operations.
+    // The same four-form symmetry the port already documents for the facet
+    // path — set, provider-restricted set, paged, provider-restricted paged
+    // — because a windowed distance-sorted radius search is a legal
+    // surface combination and {@code providerIds} keeps its contract
+    // (arrives only in the restricted forms, always non-empty). The plan's
+    // touch map counted three; the port's own discipline makes four (the
+    // measured correction rides the P1 truth batch).
+    // ------------------------------------------------------------------
+
+    /**
+     * Listing ids whose property coordinates lie within the radius —
+     * ST_DWithin over geography(4326), the official radius predicate (it
+     * uses the spatial index; ST_Distance/ST_Buffer filtering does not).
+     * The radius is in METERS (the geography unit). Rows without
+     * coordinates never match (the partial-index predicate is the query's
+     * predicate); soft-deleted rows never match.
+     *
+     * @param latitude    the search center latitude (already scale-6
+     *                    normalized by the {@code SearchCriteria} gate)
+     * @param longitude   the search center longitude (scale-6)
+     * @param radiusMeters the search radius in whole meters (the criteria
+     *                    gate guarantees whole-meter precision)
+     */
+    Set&lt;UUID&gt; findListingIdsWithinRadius(BigDecimal latitude,
+                                         BigDecimal longitude,
+                                         long radiusMeters);
+
+    /**
+     * The window path's radius form: within the radius AND written by one
+     * of the given providers (the availability whitelist — always
+     * non-empty, the caller handled the empty case).
+     */
+    Set&lt;UUID&gt; findListingIdsWithinRadiusRestricted(BigDecimal latitude,
+                                                   BigDecimal longitude,
+                                                   long radiusMeters,
+                                                   Set&lt;UUID&gt; providerIds);
+
+    /**
+     * The distance-ordered paged form ({@code sort=distance}): a DB-side
+     * slice of the within-radius matches ordered by ST_Distance with the
+     * listing-id ASC tiebreak — the direction follows the requested sort.
+     * {@code activeListingIds} is the catalog-resolved ACTIVE set (the
+     * realestate table does not know listing status by design, so the
+     * caller supplies it — the {@code searchAreaSorted} composition). The
+     * page carries the distance flow's own total (the counts cannot lie).
+     * The distance itself never leaves this module (D-P11: the client
+     * computes display distance from the listing coordinates it already
+     * holds; the server orders by it, that is all).
+     */
+    PagedResponse&lt;UUID&gt; findWithinRadiusPaged(BigDecimal latitude,
+                                            BigDecimal longitude,
+                                            long radiusMeters,
+                                            Set&lt;UUID&gt; activeListingIds, PagedRequest request);
+
+    /** The provider-restricted paged form (window + distance sort). */
+    PagedResponse&lt;UUID&gt; findWithinRadiusPagedRestricted(BigDecimal latitude,
+                                                       BigDecimal longitude,
+                                                       long radiusMeters,
+                                                       Set&lt;UUID&gt; activeListingIds,
+                                                       Set&lt;UUID&gt; providerIds, PagedRequest request);
+
+    /**
+     * One matching listing with the sort-relevant field (the area). The
+     * paged forms return these; the search assembles the catalog
+     * summaries for the page's ids in order.
+     *
+     * @param listingId the matching catalog listing
+     * @param areaM2    the property's area — null means undeclared (sorts
+     *                  last in the area ordering)
+     */
+<span class="nc" id="L146">    record PropertyMatch(UUID listingId, Integer areaM2) {</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

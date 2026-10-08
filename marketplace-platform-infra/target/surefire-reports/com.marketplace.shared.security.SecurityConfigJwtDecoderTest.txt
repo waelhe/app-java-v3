@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.marketplace.shared.security.SecurityConfigJwtDecoderTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.109 s -- in com.marketplace.shared.security.SecurityConfigJwtDecoderTest

@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Category.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">Category.java</span></div><h1>Category.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.jpa.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.envers.Audited;
+
+import java.util.UUID;
+
+/**
+ * S6 (comprehensive repair plan §10/2.3): one row of the listing category
+ * registry — the controlled vocabulary the listing's {@code category} column
+ * references.
+ *
+ * &lt;p&gt;Lifecycle: reference data (the V47 {@code GeoLocation} precedent). The
+ * registry is seeded by the {@code V70} migration with the platform's
+ * code-documented starter value (&quot;stay&quot;); the vocabulary itself is DATA —
+ * the business model document declares the listing-classification vocabulary
+ * an open product gate (&quot;تصنيف نصوص اللوحات&quot;), so it evolves by INSERT, never
+ * by migration. The entity is {@code @Audited} per the AGENTS.md rule, so
+ * every amendment leaves an Envers trail through the {@code categories_aud}
+ * mirror (the seed itself bypasses Envers by nature — the documented geo
+ * D-E11 precedent).
+ *
+ * &lt;p&gt;{@code code} is the stable API-facing key (what create/update carry —
+ * the {@code uq_categories_code_active} partial unique index keeps ACTIVE
+ * rows unique while a soft-deleted row releases its code for reuse, the V47
+ * slug precedent); the DB CHECK pins its shape (lowercase latin/digits/
+ * dashes — no casing drift can ever reach the column).
+ */
+@Entity
+@Table(name = &quot;categories&quot;)
+@Audited
+public class Category extends BaseEntity {
+
+    @Id
+    private UUID id;
+
+    /** The stable API-facing key (lowercase latin/digits/dashes — the V70 CHECK shape). */
+    @Column(name = &quot;code&quot;, nullable = false, length = 50)
+    private String code;
+
+    /** English display name — the storefront's default label. */
+    @Column(name = &quot;name_en&quot;, length = 100)
+    private String nameEn;
+
+    /** Arabic display name — the primary market's label. */
+    @Column(name = &quot;name_ar&quot;, length = 100)
+    private String nameAr;
+
+    /** Display order for the public read (ascending). */
+    @Column(name = &quot;position&quot;, nullable = false)
+    private Integer position;
+
+<span class="nc" id="L57">    protected Category() {</span>
+<span class="nc" id="L58">    }</span>
+
+<span class="fc" id="L60">    private Category(UUID id, String code, String nameEn, String nameAr, Integer position) {</span>
+<span class="fc" id="L61">        this.id = id;</span>
+<span class="fc" id="L62">        this.code = code;</span>
+<span class="fc" id="L63">        this.nameEn = nameEn;</span>
+<span class="fc" id="L64">        this.nameAr = nameAr;</span>
+<span class="fc" id="L65">        this.position = position;</span>
+<span class="fc" id="L66">    }</span>
+
+    /** Factory for tests and future admin surfaces — the registry's write shape. */
+    public static Category create(String code, String nameEn, String nameAr, Integer position) {
+<span class="fc" id="L70">        return new Category(UUID.randomUUID(), code, nameEn, nameAr, position);</span>
+    }
+
+    @Override
+    public UUID getId() {
+<span class="fc" id="L75">        return id;</span>
+    }
+
+    public String getCode() {
+<span class="fc" id="L79">        return code;</span>
+    }
+
+    public String getNameEn() {
+<span class="nc" id="L83">        return nameEn;</span>
+    }
+
+    public String getNameAr() {
+<span class="nc" id="L87">        return nameAr;</span>
+    }
+
+    public Integer getPosition() {
+<span class="nc" id="L91">        return position;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

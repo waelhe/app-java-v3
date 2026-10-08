@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PostLookupPort.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">PostLookupPort.java</span></div><h1>PostLookupPort.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import java.util.UUID;
+
+/**
+ * L48 (the Nextdoor-2026 completeness wave — gap #2, post images): the port
+ * that lets the media module resolve a neighborhood post as an attachment
+ * TARGET without depending on the community module directly — the exact
+ * {@code ListingPriceProvider} house pattern (the interface lives in
+ * shared-api, the data owner implements it, the consumer injects it; no
+ * module boundary is crossed in code), applied to the second target of the
+ * generalized media line (D-C3's documented decision: &quot;PR يعمّم الهدف&quot;).
+ *
+ * &lt;p&gt;&lt;b&gt;Design decision — synchronous interface vs. event:&lt;/b&gt; the caller
+ * ({@code MediaService.requestPostUpload}) needs the post's author
+ * &lt;em&gt;before&lt;/em&gt; signing anything — the presigned object key embeds the
+ * post id and the ownership gate compares the caller to the author, both
+ * atomically within the same operation. An asynchronous event cannot
+ * satisfy that; the Modulith guidance accepts synchronous queries when the
+ * result is needed within the current operation (the
+ * {@code ListingPriceProvider}/{@code BookingParticipantProvider}
+ * precedent verbatim).&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The VISIBLE-only contract:&lt;/b&gt; only a post the feed itself would
+ * return resolves here — unknown, hidden (moderated) or soft-deleted posts
+ * answer the honest 404, exactly the comment gate's {@code visiblePost}
+ * behavior. A hidden post cannot gain photos; attaching to the dead is
+ * nonsense the gate refuses at the seam.&lt;/p&gt;
+ */
+public interface PostLookupPort {
+
+    /**
+     * Resolves one VISIBLE post as a media attachment target.
+     *
+     * @param postId the community module's post id
+     * @return the post's author carrier — {@code authorId} is a plain user
+     *         id in the identity seams' space (never a JPA relation across
+     *         the boundary, the V32/V61 discipline), and
+     *         {@code authorMayWriteCommunity} is the author's CURRENT
+     *         community-write right as the membership domain computes it
+     *         (D-N3: every verification state except REJECTED passes; an
+     *         absent membership fails — a non-member holds no community
+     *         write). The #484 review round added the carrier leg so the
+     *         media line's write paths can honor the SAME gate the post
+     *         service's own publish/comment/react commands honor, without
+     *         the media module ever depending on the community module.
+     * @throws ResourceNotFoundException if the post does not exist, is
+     *         hidden, or is soft-deleted
+     */
+    PostInfo getPostInfo(UUID postId);
+
+    /**
+     * Carrier of the post facts the media attachment flow needs. Immutable
+     * value object — no behaviour.
+     *
+     * @param authorMayWriteCommunity the author's current community-write
+     *        right (D-N3) — {@code false} for a REJECTED membership or no
+     *        active membership; the media write paths refuse with the
+     *        post service's own 403 when it is {@code false}
+     */
+<span class="nc" id="L61">    record PostInfo(UUID postId, UUID authorId, boolean authorMayWriteCommunity) {</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

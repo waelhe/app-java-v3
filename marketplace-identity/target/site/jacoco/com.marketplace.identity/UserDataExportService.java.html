@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UserDataExportService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">UserDataExportService.java</span></div><h1>UserDataExportService.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.BookingExportPort;
+import com.marketplace.shared.api.CommunityExportPort;
+import com.marketplace.shared.api.MediaExportPort;
+import com.marketplace.shared.api.MessagingExportData;
+import com.marketplace.shared.api.MessagingExportPort;
+import com.marketplace.shared.api.NotificationExportPort;
+import com.marketplace.shared.api.SavedSearchExportPort;
+import com.marketplace.shared.api.ReviewExportPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * I7 Phase 2 (account-pseudonymization-plan §5-ج — the Art. 20 export
+ * contract, gate b-5): the identity module's export aggregation. Official
+ * basis: GDPR Art. 20(1) — &quot;the right to receive the personal data
+ * concerning him or her, which he or she has provided to a controller, in
+ * a structured, commonly used and machine-readable format&quot;.
+ *
+ * &lt;p&gt;&lt;b&gt;The aggregation shape (the plan's R3 sentence, verbatim):&lt;/b&gt; &quot;each
+ * module exports its share via its ports, and the aggregation happens in
+ * identity through the SPI&quot; — this service injects the five cross-module
+ * export ports (shared-api contracts, implemented by the owning modules)
+ * and composes their shares with identity's own profile section. No module
+ * boundary is crossed: identity sees only shared-api types, exactly like
+ * the standing {@code UserLookupPort}/{@code ReviewStatsPort} house
+ * pattern, so {@code ModulithVerificationTest} stays the unedited guard.
+ *
+ * &lt;p&gt;&lt;b&gt;Separate from pseudonymization (the plan's §5-ج opening):&lt;/b&gt; the
+ * export is a self-service read performed &lt;em&gt;before&lt;/em&gt; and independently
+ * of any pseudonymization — a live authenticated account. A pseudonymized
+ * account cannot reach this surface (its login identity rows are gone, so
+ * no token can be minted).
+ *
+ * &lt;p&gt;&lt;b&gt;The execution record:&lt;/b&gt; one structured log line (userId + section
+ * sizes — content stays out of logs) accompanies the response's own
+ * boundary notice, the same observability convention the account-status
+ * and pseudonymization actions use.
+ */
+@Service
+@Transactional(readOnly = true)
+public class UserDataExportService {
+
+<span class="fc" id="L51">    private static final Logger log = LoggerFactory.getLogger(UserDataExportService.class);</span>
+
+    private final BookingExportPort bookingExportPort;
+    private final ReviewExportPort reviewExportPort;
+    private final MessagingExportPort messagingExportPort;
+    private final MediaExportPort mediaExportPort;
+    private final NotificationExportPort notificationExportPort;
+    private final SavedSearchExportPort savedSearchExportPort;
+    private final CommunityExportPort communityExportPort;
+    private final com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort;
+    private final JdbcTemplate jdbcTemplate;
+
+    public UserDataExportService(BookingExportPort bookingExportPort,
+                                 ReviewExportPort reviewExportPort,
+                                 MessagingExportPort messagingExportPort,
+                                 MediaExportPort mediaExportPort,
+                                 NotificationExportPort notificationExportPort,
+                                 SavedSearchExportPort savedSearchExportPort,
+                                 CommunityExportPort communityExportPort,
+                                 com.marketplace.shared.api.ListingFavoritesExportPort listingFavoritesExportPort,
+<span class="fc" id="L71">                                 JdbcTemplate jdbcTemplate) {</span>
+<span class="fc" id="L72">        this.bookingExportPort = bookingExportPort;</span>
+<span class="fc" id="L73">        this.reviewExportPort = reviewExportPort;</span>
+<span class="fc" id="L74">        this.messagingExportPort = messagingExportPort;</span>
+<span class="fc" id="L75">        this.mediaExportPort = mediaExportPort;</span>
+<span class="fc" id="L76">        this.notificationExportPort = notificationExportPort;</span>
+<span class="fc" id="L77">        this.savedSearchExportPort = savedSearchExportPort;</span>
+<span class="fc" id="L78">        this.communityExportPort = communityExportPort;</span>
+<span class="fc" id="L79">        this.listingFavoritesExportPort = listingFavoritesExportPort;</span>
+<span class="fc" id="L80">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L81">    }</span>
+
+    /**
+     * Aggregates the data-subject export for a live account — one call per
+     * module share, composed with the profile section and the boundary
+     * notice.
+     *
+     * &lt;p&gt;&lt;b&gt;No {@code @Observed} (the commands-not-reads policy, pinned by
+     * {@code ObservationCoverageFilesTest}):&lt;/b&gt; the export is a pure read —
+     * the observation inventory reserves {@code @Observed} for business
+     * commands. The execution record below is the auditable trace this
+     * surface owes Art. 20, and it is a log line, not a metric.
+     *
+     * @param user the requester's live account row (the caller's
+     *             {@code syncFromOidc} result — the /me bootstrap convention)
+     */
+    public UserDataExportResponse exportFor(User user) {
+<span class="fc" id="L98">        var bookings = bookingExportPort.exportForParticipant(user.getId());</span>
+<span class="fc" id="L99">        var reviews = reviewExportPort.exportForAuthor(user.getId());</span>
+<span class="fc" id="L100">        MessagingExportData messaging = messagingExportPort.exportForParticipant(user.getId());</span>
+<span class="fc" id="L101">        var media = mediaExportPort.exportForOwner(user.getId());</span>
+<span class="fc" id="L102">        var notifications = notificationExportPort.exportForRecipient(user.getId());</span>
+<span class="fc" id="L103">        var savedSearches = savedSearchExportPort.exportForOwner(user.getId());</span>
+<span class="fc" id="L104">        var memberships = communityExportPort.exportForOwner(user.getId());</span>
+<span class="fc" id="L105">        var communityPosts = communityExportPort.exportPostsForOwner(user.getId());</span>
+<span class="fc" id="L106">        var communityComments = communityExportPort.exportCommentsForOwner(user.getId());</span>
+<span class="fc" id="L107">        var communityReactions = communityExportPort.exportReactionsForOwner(user.getId());</span>
+<span class="fc" id="L108">        var communityEvents = communityExportPort.exportEventsForOwner(user.getId());</span>
+<span class="fc" id="L109">        var communityEventSeats = communityExportPort.exportEventSeatsForOwner(user.getId());</span>
+<span class="fc" id="L110">        var communityMarketItems = communityExportPort.exportMarketItemsForOwner(user.getId());</span>
+<span class="fc" id="L111">        var communityGroupMemberships = communityExportPort.exportGroupMembershipsForOwner(user.getId());</span>
+<span class="fc" id="L112">        var providerFollows = exportFollows(user.getId());</span>
+        // W3 (G19, the review round's export leg): the member's saved
+        // listings — the relation is the subject's own declared data.
+<span class="fc" id="L115">        var listingFavorites = listingFavoritesExportPort.exportForOwner(user.getId());</span>
+
+<span class="fc" id="L117">        var response = new UserDataExportResponse(</span>
+                new UserDataExportResponse.ExportMetadata(
+<span class="fc" id="L119">                        Instant.now(), UserDataExportResponse.SCOPE_NOTICE),</span>
+                new UserDataExportResponse.Profile(
+<span class="fc" id="L121">                        user.getId(),</span>
+<span class="fc" id="L122">                        user.getSubject(),</span>
+<span class="fc" id="L123">                        user.getEmail(),</span>
+<span class="fc" id="L124">                        user.getDisplayName(),</span>
+<span class="fc" id="L125">                        user.getRole().name(),</span>
+<span class="fc" id="L126">                        user.getCreatedAt(),</span>
+<span class="fc" id="L127">                        user.getUpdatedAt()),</span>
+                bookings,
+                reviews,
+<span class="fc" id="L130">                messaging.conversations(),</span>
+<span class="fc" id="L131">                messaging.messages(),</span>
+                media,
+                notifications,
+                savedSearches,
+                memberships,
+                communityPosts,
+                communityComments,
+                communityReactions,
+                communityEvents,
+                communityEventSeats,
+                communityMarketItems,
+                communityGroupMemberships,
+                providerFollows,
+                listingFavorites);
+
+        // The execution record — section sizes only; exported content never
+        // enters the log store (the same content-out discipline the
+        // pseudonymization audit line applies against CWE-532).
+<span class="fc" id="L149">        log.info(&quot;Data-subject export: userId={}, bookings={}, reviews={}, conversations={}, &quot;</span>
+                        + &quot;messages={}, media={}, notifications={}, savedSearches={}, memberships={}, &quot;
+                        + &quot;communityPosts={}, communityComments={}, communityReactions={}, &quot;
+                        + &quot;communityEvents={}, communityEventSeats={}, communityMarketItems={}, &quot;
+                        + &quot;communityGroupMemberships={}, providerFollows={}, listingFavorites={}&quot;,
+<span class="fc" id="L154">                user.getId(), bookings.size(), reviews.size(),</span>
+<span class="fc" id="L155">                messaging.conversations().size(), messaging.messages().size(),</span>
+<span class="fc" id="L156">                media.size(), notifications.size(), savedSearches.size(), memberships.size(),</span>
+<span class="fc" id="L157">                communityPosts.size(), communityComments.size(), communityReactions.size(),</span>
+<span class="fc" id="L158">                communityEvents.size(), communityEventSeats.size(), communityMarketItems.size(),</span>
+<span class="fc" id="L159">                communityGroupMemberships.size(), providerFollows.size(), listingFavorites.size());</span>
+<span class="fc" id="L160">        return response;</span>
+    }
+
+    /**
+     * W4 (G21, the b-3 duty): the account's follows — read through native
+     * JDBC (the {@code SavedSearchExportAdapter}'s own reasoning: the
+     * export is a faithful copy of the stored rows, not an entity
+     * projection — soft-deleted follows included, because surface
+     * deletion is a visibility flag, not an erasure). Identity-local data,
+     * so no port: the section composes here like the Profile section.
+     */
+    private List&lt;UserDataExportResponse.ProviderFollowExportEntry&gt; exportFollows(java.util.UUID userId) {
+<span class="fc" id="L172">        return jdbcTemplate.query(</span>
+                &quot;&quot;&quot;
+                SELECT id, provider_user_id, created_at, updated_at, is_deleted
+                FROM provider_follows
+                WHERE user_id = ?
+                ORDER BY created_at, id
+                &quot;&quot;&quot;,
+<span class="nc" id="L179">                (rs, rowNum) -&gt; new UserDataExportResponse.ProviderFollowExportEntry(</span>
+<span class="nc" id="L180">                        java.util.UUID.fromString(rs.getString(&quot;id&quot;)),</span>
+<span class="nc" id="L181">                        java.util.UUID.fromString(rs.getString(&quot;provider_user_id&quot;)),</span>
+<span class="nc" id="L182">                        rs.getTimestamp(&quot;created_at&quot;).toInstant(),</span>
+<span class="nc" id="L183">                        rs.getTimestamp(&quot;updated_at&quot;).toInstant(),</span>
+<span class="nc" id="L184">                        rs.getBoolean(&quot;is_deleted&quot;)),</span>
+                userId);
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

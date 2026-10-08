@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdClickController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdClickController.java</span></div><h1>AdClickController.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.ApiConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the public
+ * click-recording surface — the plan's «نقرة مسجلة». The frontend calls
+ * it when a visitor clicks a promoted result; attribution resolves the
+ * listing's ONE live campaign, so the unpromoted click answers the
+ * honest 404 no-op. {@code permitAll} — the public lead-submission POST
+ * precedent ({@code listings/{*}/leads}, SecurityConfig's anonymous
+ * lane); the visitor dedup is the counter's own structural business,
+ * never the caller's.
+ */
+@RestController
+@RequestMapping(value = ApiConstants.API_V1, version = &quot;1.0&quot;)
+@Tag(name = &quot;Ads&quot;, description = &quot;W5 — the paid promotion engine: the public click recording&quot;)
+public class AdClickController {
+
+    private final AdClickCounter clickCounter;
+
+<span class="nc" id="L32">    public AdClickController(AdClickCounter clickCounter) {</span>
+<span class="nc" id="L33">        this.clickCounter = clickCounter;</span>
+<span class="nc" id="L34">    }</span>
+
+    @PostMapping(&quot;/ads/listings/{listingId}/clicks&quot;)
+    @Operation(summary = &quot;Record a promoted-result click (public)&quot;,
+            description = &quot;Attributes one visitor click to the listing's live campaign — the click the &quot;
+                    + &quot;billing window later freezes into the immutable charge. One visitor counts once &quot;
+                    + &quot;per rolling window (the keyed-fingerprint dedup). A listing with no live campaign &quot;
+                    + &quot;answers 404: the click on an unpromoted listing is nobody's to bill.&quot;)
+    public ResponseEntity&lt;Map&lt;String, UUID&gt;&gt; recordClick(@PathVariable UUID listingId,
+                                                         jakarta.servlet.http.HttpServletRequest request) {
+<span class="nc" id="L44">        return clickCounter.recordClick(listingId, request.getRemoteAddr())</span>
+<span class="nc" id="L45">                .&lt;ResponseEntity&lt;Map&lt;String, UUID&gt;&gt;&gt;map(campaignId -&gt;</span>
+<span class="nc" id="L46">                        ResponseEntity.ok(Map.of(&quot;campaignId&quot;, campaignId)))</span>
+<span class="nc" id="L47">                .orElseGet(() -&gt; ResponseEntity.notFound().build());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

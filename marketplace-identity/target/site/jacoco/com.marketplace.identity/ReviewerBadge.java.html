@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReviewerBadge.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ReviewerBadge.java</span></div><h1>ReviewerBadge.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.ReviewerStats;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * W4 (yelp-level plan §5 — G29, &quot;أوسمة المراجع&quot;): the reviewer's credibility
+ * badges — DERIVED reads over the two measured facts the plan names
+ * («موثّق المعاملات، أصوات مفيد تراكمية»), never stored state: the badge
+ * list is recomputed from {@link ReviewerStats} on every page render, so it
+ * can never drift from the facts (the same recompute-is-truth rule the
+ * provider rating aggregates follow).
+ *
+ * &lt;p&gt;The derivation rules (thresholds are THIS wave's documented choice —
+ * the plan names the two badge families without numbers; they live here,
+ * and only here, as named constants a future owner decision can move to the
+ * {@code system_settings} control layer the W0 wave established):
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@link #VERIFIED_REVIEWER} — at least one PUBLISHED verified
+ *       (BOOKING-origin) review: the reviewer has rated completed
+ *       transactions, the strongest trust signal the dual-mode design
+ *       owns (§4.4: the verified badge rides {@code origin});&lt;/li&gt;
+ *   &lt;li&gt;{@link #HELPFUL_REVIEWER} — at least {@value #HELPFUL_VOTE_THRESHOLD}
+ *       cumulative helpful votes received on his reviews: the community's
+ *       endorsement the W1 vote data measures (§4.5: &quot;إشارة الجودة التي
+ *       تتغذى عليها درجة ثقة المراجع&quot;).&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+<span class="fc" id="L31">public enum ReviewerBadge {</span>
+
+    /** «موثّق المعاملات» — has published reviews born from completed bookings. */
+<span class="fc" id="L34">    VERIFIED_REVIEWER,</span>
+
+    /** «أصوات مفيد تراكمية» — his reviews accumulated community helpful votes. */
+<span class="fc" id="L37">    HELPFUL_REVIEWER;</span>
+
+    /** The verified badge's floor: one published verified review IS the fact. */
+    static final long VERIFIED_REVIEW_THRESHOLD = 1L;
+
+    /** The helpful badge's floor — a named, documented choice (see class javadoc). */
+    static final long HELPFUL_VOTE_THRESHOLD = 10L;
+
+    /**
+     * The derivation itself — the plan's two badge families over the
+     * port's facts, in stable declaration order (a deterministic response
+     * shape, never a set's iteration order).
+     */
+    static List&lt;ReviewerBadge&gt; derive(ReviewerStats stats) {
+<span class="fc" id="L51">        List&lt;ReviewerBadge&gt; badges = new ArrayList&lt;&gt;(2);</span>
+<span class="fc bfc" id="L52" title="All 4 branches covered.">        if (stats != null &amp;&amp; stats.verifiedReviewCount() &gt;= VERIFIED_REVIEW_THRESHOLD) {</span>
+<span class="fc" id="L53">            badges.add(VERIFIED_REVIEWER);</span>
+        }
+<span class="fc bfc" id="L55" title="All 4 branches covered.">        if (stats != null &amp;&amp; stats.helpfulVoteCount() &gt;= HELPFUL_VOTE_THRESHOLD) {</span>
+<span class="fc" id="L56">            badges.add(HELPFUL_REVIEWER);</span>
+        }
+<span class="fc" id="L58">        return List.copyOf(badges);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

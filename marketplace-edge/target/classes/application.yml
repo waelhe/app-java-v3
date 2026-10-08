@@ -1,0 +1,97 @@
+server:
+  # PORT is the injected platform variable (Railway: "Railway will inject a
+  # PORT environment variable that your application should listen on. This
+  # variable's value is also used when performing health checks on your
+  # deployments... Not listening on the PORT variable... can result in your
+  # health check returning a service unavailable error." — docs.railway.com/
+  # deployments/healthchecks, fetched live 2026-09-22; the same
+  # placeholder-with-default pattern as marketplace-app's yml). The edge
+  # service also pins PORT=8081 in .railway/railway.ts (the docs' sanctioned
+  # manual variable) so the listen port and the healthcheck port derive from
+  # the SAME variable by construction — they cannot diverge. Default 8081
+  # preserves the designed local-dev port (spec: edge:8081 in front of
+  # app:8080).
+  port: ${PORT:8081}
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      # PROPERTY PATH EVIDENCE (5.0.3, not the plan's 4.1-era path): the
+      # spring-cloud-gateway-server-webmvc-5.0.3.jar binds ONLY
+      # spring.cloud.gateway.server.webmvc.routes(+routes-map) — verified in
+      # META-INF/spring-configuration-metadata.json; no mvc.routes alias exists
+      # anywhere in main or additional metadata. The plan's
+      # spring.cloud.gateway.mvc.routes would be silently ignored (unknown
+      # property) and NO route would ever register. Current reference:
+      # https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-webmvc/filters/tokenrelay.html
+      # TokenRelay (no clientRegistrationId): forwards the currently
+      # authenticated user's own access token (obtained during oauth2Login) as
+      # a downstream Authorization header. Requires the oauth2-client
+      # properties below (they trigger the OAuth2AuthorizedClientManager bean).
+      server:
+        webmvc:
+          routes:
+            - id: backend-api
+              uri: ${EDGE_BACKEND_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/**
+              filters:
+                - TokenRelay=
+  # Sessions — ADOPTED OFFICIAL DIRECTION (no JDBC fallback): Redis durability
+  # is an infrastructure property, not an application backend choice.
+  # Production Redis is Upstash MANAGED (ARCHITECTURE.md + runbooks: external
+  # store for cache/sessions/rate-limit; REDIS_HOST wired) — persistence and
+  # multi-zone replication are platform properties (CONFIG restricted;
+  # verified live: no user persistence toggles). The redis.io AOF+RDB recipe
+  # ("PostgreSQL-comparable safety") is applied where we own the server: the
+  # repo-owned Redis (docker-compose redisdata:/data). DECIDED (free tier, no
+  # upgrade for backups): Upstash backups are paywalled — no off-site RDB
+  # copies exist; total-loss risk ACCEPTED and documented (rare + silent SSO
+  # re-auth softens it). Eviction stays DISABLED (dashboard) so active
+  # sessions are never silently evicted. JDBC sessions are REJECTED for this purpose: no
+  # official source prescribes JDBC as a Redis-durability fix (Spring Session
+  # presents both backends neutrally), and it would trade managed-volatility
+  # for fate-sharing with the primary DB plus per-request SQL cost — while
+  # breaking the edge's stateless design (new DataSource + pool + migration +
+  # secrets on a stateless gateway). Residual window may require one SSO
+  # re-authorization; a surviving SAS login session may skip the login page
+  # (stored consent likewise) — silent recovery is likely but not
+  # guaranteed. Measured on Boot 4.1.1: no store-type property exists
+  # (SessionProperties = timeout + servlet/* only); Redis engages purely by
+  # this starter's presence (SessionDataRedisAutoConfiguration,
+  # ConditionalOnBean RedisConnectionFactory). Never csrf().disable().
+  # Precision fixes adopted from CodeRabbit r1 (3× Minor).
+  security:
+    oauth2:
+      client:
+        registration:
+          edge:
+            client-id: ${EDGE_CLIENT_ID:edge-local}
+            client-secret: ${EDGE_CLIENT_SECRET:}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/edge"
+            scope: openid,profile
+            client-authentication-method: client_secret_basic
+        provider:
+          edge:
+            issuer-uri: ${AUTH_SERVER_ISSUER:http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # Liveness/readiness groups for the Railway healthcheck path
+      # /actuator/health/liveness (same as marketplace-app): without
+      # probes.enabled, Boot does not create the groups outside Kubernetes
+      # and the path returns 404 — the deployment then fails its healthcheck
+      # even though the container is healthy (edge deployments e9985b9f/
+      # 9438ba0f, 2026-09-21).
+      probes:
+        enabled: true

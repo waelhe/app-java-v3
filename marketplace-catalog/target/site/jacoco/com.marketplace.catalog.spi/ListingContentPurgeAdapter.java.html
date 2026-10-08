@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ListingContentPurgeAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog.spi</a> &gt; <span class="el_source">ListingContentPurgeAdapter.java</span></div><h1>ListingContentPurgeAdapter.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog.spi;
+
+import java.util.UUID;
+
+import com.marketplace.shared.api.AuthoredContentPurgePort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * I7 (account-pseudonymization-plan §9 row &quot;نصوص اللوحات التجارية&quot; — resolved
+ * option 1, the eighth converter): the catalog module's implementation of the
+ * {@link AuthoredContentPurgePort} contract. Purges the listing texts the
+ * subject authored as a provider on {@code provider_listings} — the inventory
+ * row measured in the row itself: {@code provider_id uuid not null references
+ * users(id)} (V2:4), the write path stores the caller's user id
+ * ({@code CatalogController.create} via {@code getCurrentUserId}), so the
+ * titles and descriptions are texts a specific identifiable user authored —
+ * the GDPR personal-data reach the row's gate was opened for.
+ *
+ * &lt;p&gt;&lt;b&gt;Schema facts (measured, V2/V24):&lt;/b&gt; {@code description} is nullable
+ * {@code text} — the purge writes NULL (the Phase 1 storage convention);
+ * {@code title} is {@code varchar(200) NOT NULL} — the purge writes the
+ * shared {@link AuthoredContentPurgePort#PURGED_MARKER} tombstone (the honest
+ * representation the constraint admits). {@code provider_listings_aud}
+ * mirrors {@code provider_id}, {@code title} and {@code description} (V24
+ * §2), so the mirror purges with the same predicates — a purge that left the
+ * mirror intact would be cosmetic (the original texts survive in the audit
+ * trail, a silent debt).
+ *
+ * &lt;p&gt;&lt;b&gt;What stays (the row's own scope, the shared-record basis):&lt;/b&gt; the
+ * listing row itself and its operational columns (category, price, currency,
+ * status, capacity) — reference integrity for the bookings that reference it
+ * and the counterparty's transaction history (Art. 17(3)(b) / 20(4), the
+ * plan's §4 refusal of hard deletes) keep the record alive in purged form.
+ * The search indexes need no separate handling: V29 removed the materialized
+ * view (the never-read copy), and both surviving indexes (V9 FTS / V34 trgm)
+ * are expressions over {@code provider_listings.title/description} itself —
+ * they index the table's own columns, so the purge's UPDATE maintains them
+ * with it (no denormalized text survives anywhere).
+ *
+ * &lt;p&gt;&lt;b&gt;Statement shape (the port's contract, the six adapters' house
+ * pattern):&lt;/b&gt; native JDBC UPDATE, idempotent by the {@code IS NOT NULL} /
+ * {@code &lt;&gt; marker} filters — exact counts, zero matches on re-run; no
+ * Envers revision for the purge itself (the orchestrator's structured log
+ * line is the audit record).
+ */
+@Component
+public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
+
+<span class="nc" id="L53">    private static final Logger log = LoggerFactory.getLogger(ListingContentPurgeAdapter.class);</span>
+
+    private final JdbcTemplate jdbcTemplate;
+
+<span class="nc" id="L57">    public ListingContentPurgeAdapter(JdbcTemplate jdbcTemplate) {</span>
+<span class="nc" id="L58">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="nc" id="L59">    }</span>
+
+    @Override
+    @Transactional
+    public int purgeAuthoredTexts(UUID userId) {
+<span class="nc" id="L64">        int descriptions = jdbcTemplate.update(</span>
+                &quot;UPDATE provider_listings SET description = NULL WHERE provider_id = ? &quot;
+                        + &quot;AND description IS NOT NULL&quot;,
+                userId);
+<span class="nc" id="L68">        int titles = jdbcTemplate.update(</span>
+                &quot;UPDATE provider_listings SET title = ? WHERE provider_id = ? &quot;
+                        + &quot;AND title IS NOT NULL AND title &lt;&gt; ?&quot;,
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+<span class="nc" id="L72">        int descriptionAudits = jdbcTemplate.update(</span>
+                &quot;UPDATE provider_listings_aud SET description = NULL WHERE provider_id = ? &quot;
+                        + &quot;AND description IS NOT NULL&quot;,
+                userId);
+<span class="nc" id="L76">        int titleAudits = jdbcTemplate.update(</span>
+                &quot;UPDATE provider_listings_aud SET title = ? WHERE provider_id = ? &quot;
+                        + &quot;AND title IS NOT NULL AND title &lt;&gt; ?&quot;,
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+<span class="nc" id="L80">        log.info(&quot;Listing content purge: userId={}, titles={}, descriptions={}, &quot;</span>
+                        + &quot;auditRows={}&quot;,
+<span class="nc" id="L82">                userId, titles, descriptions, titleAudits + descriptionAudits);</span>
+<span class="nc" id="L83">        return titles + descriptions + titleAudits + descriptionAudits;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

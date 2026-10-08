@@ -265,4 +265,60 @@ class ResilienceAnnotationTest {
                     "RateLimiter should use the independent savedSearchCreate instance");
         }
     }
+
+    @Nested
+    @DisplayName("Insert-Race Retry Writers (G-RETRY-1)")
+    class InsertRaceRetryWriters {
+
+        // The framework-managed replacement for the hand-coded catch-and-
+        // retry: EVERY upsert-via-unique-constraint writer must carry
+        // @Retry(name = INSERT_RACE_RETRY) on a PUBLIC method invoked
+        // through the bean's Spring proxy (a private/self-invoked
+        // annotation is a silent no-op — Spring Framework reference,
+        // Proxying Modes). This guard pins all four seams so a future
+        // refactor cannot silently drop the automatic management.
+        private static final String INSERT_RACE_RETRY =
+                com.marketplace.shared.resilience.InsertRaceRetryConfiguration.INSERT_RACE_RETRY;
+
+        private void assertInsertRaceRetry(Class<?> type, String methodName,
+                                           Class<?>... parameterTypes) throws NoSuchMethodException {
+            Method method = type.getMethod(methodName, parameterTypes); // public — proxy-effective
+            Retry retry = method.getAnnotation(Retry.class);
+            assertNotNull(retry, type.getSimpleName() + "." + methodName
+                    + " must carry @Retry (framework-managed insert-race recovery)");
+            assertEquals(INSERT_RACE_RETRY, retry.name(),
+                    type.getSimpleName() + "." + methodName
+                            + " must use the shared insertRaceRetry instance");
+        }
+
+        @Test
+        @DisplayName("ListingViewsDailyService.addView has @Retry(insertRaceRetry)")
+        void addView_hasInsertRaceRetry() throws NoSuchMethodException {
+            assertInsertRaceRetry(com.marketplace.catalog.ListingViewsDailyService.class,
+                    "addView", java.util.UUID.class, java.time.LocalDate.class);
+        }
+
+        @Test
+        @DisplayName("AdClicksDailyService.addClick has @Retry(insertRaceRetry)")
+        void addClick_hasInsertRaceRetry() throws NoSuchMethodException {
+            assertInsertRaceRetry(com.marketplace.catalog.AdClicksDailyService.class,
+                    "addClick", java.util.UUID.class, java.time.LocalDate.class);
+        }
+
+        @Test
+        @DisplayName("NotificationPreferenceService.applySwitchesInNewTransaction has @Retry(insertRaceRetry)")
+        void applySwitches_hasInsertRaceRetry() throws NoSuchMethodException {
+            assertInsertRaceRetry(com.marketplace.notifications.NotificationPreferenceService.class,
+                    "applySwitchesInNewTransaction", java.util.UUID.class,
+                    com.marketplace.notifications.NotificationPreferencesUpdateRequest.class);
+        }
+
+        @Test
+        @DisplayName("ListingPriceCalendarService.upsertWeekendRuleInNewTransaction has @Retry(insertRaceRetry)")
+        void upsertWeekendRule_hasInsertRaceRetry() throws NoSuchMethodException {
+            assertInsertRaceRetry(com.marketplace.pricing.ListingPriceCalendarService.class,
+                    "upsertWeekendRuleInNewTransaction", java.util.UUID.class,
+                    java.math.BigDecimal.class);
+        }
+    }
 }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ApiErrorTaxonomy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-shared</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.shared.api</a> &gt; <span class="el_source">ApiErrorTaxonomy.java</span></div><h1>ApiErrorTaxonomy.java</h1><pre class="source lang-java linenums">package com.marketplace.shared.api;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+
+/**
+ * Canonical taxonomy for REST API problem details.
+ */
+<span class="fc" id="L9">public enum ApiErrorTaxonomy {</span>
+<span class="fc" id="L10">    VALIDATION(&quot;VAL-001&quot;, &quot;validation&quot;, HttpStatus.BAD_REQUEST, &quot;Bad Request&quot;, &quot;https://marketplace.com/errors/validation&quot;),</span>
+<span class="fc" id="L11">    AUTHZ(&quot;AUTHZ-001&quot;, &quot;authz&quot;, HttpStatus.FORBIDDEN, &quot;Forbidden&quot;, &quot;https://marketplace.com/errors/access-denied&quot;),</span>
+<span class="fc" id="L12">    AUTHN(&quot;AUTHN-001&quot;, &quot;authz&quot;, HttpStatus.UNAUTHORIZED, &quot;Unauthorized&quot;, &quot;https://marketplace.com/errors/unauthorized&quot;),</span>
+<span class="fc" id="L13">    NOT_FOUND(&quot;NF-001&quot;, &quot;not-found&quot;, HttpStatus.NOT_FOUND, &quot;Not Found&quot;, &quot;https://marketplace.com/errors/not-found&quot;),</span>
+<span class="fc" id="L14">    CONFLICT(&quot;CONFLICT-001&quot;, &quot;conflict&quot;, HttpStatus.CONFLICT, &quot;Conflict&quot;, &quot;https://marketplace.com/errors/conflict&quot;),</span>
+<span class="fc" id="L15">    RATE_LIMIT(&quot;RL-001&quot;, &quot;rate-limit&quot;, HttpStatus.TOO_MANY_REQUESTS, &quot;Too Many Requests&quot;, &quot;https://marketplace.com/errors/rate-limited&quot;),</span>
+<span class="fc" id="L16">    SERVICE_UNAVAILABLE(&quot;SU-001&quot;, &quot;availability&quot;, HttpStatus.SERVICE_UNAVAILABLE, &quot;Service Unavailable&quot;, &quot;https://marketplace.com/errors/service-unavailable&quot;),</span>
+<span class="fc" id="L17">    INTERNAL(&quot;INT-001&quot;, &quot;internal&quot;, HttpStatus.INTERNAL_SERVER_ERROR, &quot;Internal Server Error&quot;, &quot;https://marketplace.com/errors/internal-error&quot;);</span>
+
+    private final String errorCode;
+    private final String category;
+    private final HttpStatusCode statusCode;
+    private final String title;
+    private final String typeUri;
+
+<span class="fc" id="L25">    ApiErrorTaxonomy(String errorCode, String category, HttpStatusCode statusCode, String title, String typeUri) {</span>
+<span class="fc" id="L26">        this.errorCode = errorCode;</span>
+<span class="fc" id="L27">        this.category = category;</span>
+<span class="fc" id="L28">        this.statusCode = statusCode;</span>
+<span class="fc" id="L29">        this.title = title;</span>
+<span class="fc" id="L30">        this.typeUri = typeUri;</span>
+<span class="fc" id="L31">    }</span>
+
+<span class="fc" id="L33">    public String errorCode() { return errorCode; }</span>
+<span class="fc" id="L34">    public String category() { return category; }</span>
+<span class="fc" id="L35">    public HttpStatusCode statusCode() { return statusCode; }</span>
+<span class="fc" id="L36">    public String title() { return title; }</span>
+<span class="fc" id="L37">    public String typeUri() { return typeUri; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

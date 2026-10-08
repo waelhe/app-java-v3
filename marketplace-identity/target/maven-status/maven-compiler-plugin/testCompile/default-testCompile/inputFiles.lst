@@ -1,0 +1,12 @@
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/AuditHistoryPurgeServiceTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/AuthoredContentPurgeServiceTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/IdentityProviderNameResolverTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/IdentityUserProviderTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/ProviderFollowServiceTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/ReviewerBadgeTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/ReviewerPublicProfileServiceTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/ReviewerTrustScoreTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/UserControllerTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/UserDataExportServiceTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/UserMapperTest.java
+/workspace/marketplace-identity/src/test/java/com/marketplace/identity/UserServiceTest.java

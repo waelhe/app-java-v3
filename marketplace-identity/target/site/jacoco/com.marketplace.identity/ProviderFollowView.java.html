@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderFollowView.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-identity</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.identity</a> &gt; <span class="el_source">ProviderFollowView.java</span></div><h1>ProviderFollowView.java</h1><pre class="source lang-java linenums">package com.marketplace.identity;
+
+import com.marketplace.shared.api.ProviderSummary;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * W4 (yelp-level plan §5 — G21): the follow row as the /me surface renders
+ * it — composed with the followed provider's current public identity.
+ *
+ * &lt;p&gt;{@code providerId} is the provider PROFILE id (the public page's own
+ * key — the client's navigation link), resolved back from the stored user
+ * id at read time; the provider's user id never appears (the public-page
+ * id-space discipline). The honest fallback for a provider row the batch
+ * lookup cannot see (a soft-deleted profile) is the null pair — the row
+ * itself stays (the member's own record, b-5), rendered without its link.
+ */
+<span class="fc" id="L19">public record ProviderFollowView(</span>
+        UUID id,
+        UUID providerId,
+        String providerDisplayName,
+        Instant createdAt
+) {
+
+    static ProviderFollowView of(ProviderFollow follow, ProviderSummary provider) {
+<span class="fc" id="L27">        return new ProviderFollowView(</span>
+<span class="fc" id="L28">                follow.getId(),</span>
+<span class="pc bpc" id="L29" title="1 of 2 branches missed.">                provider != null ? provider.id() : null,</span>
+<span class="pc bpc" id="L30" title="1 of 2 branches missed.">                provider != null ? provider.displayName() : null,</span>
+<span class="fc" id="L31">                follow.getCreatedAt());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

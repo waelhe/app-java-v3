@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AdBillingBatchExecutor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">marketplace-catalog</a> &gt; <a href="index.source.html" class="el_package">com.marketplace.catalog</a> &gt; <span class="el_source">AdBillingBatchExecutor.java</span></div><h1>AdBillingBatchExecutor.java</h1><pre class="source lang-java linenums">package com.marketplace.catalog;
+
+import com.marketplace.shared.api.AdWindowBilledEvent;
+import com.marketplace.shared.api.CacheInvalidationRequested;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+/**
+ * W5 (yelp-level plan §5 — the ads &amp; billing wave, G24): the daily
+ * billing run's ONE-CAMPAIGN transaction boundary — the
+ * {@code ListingRankingBatchExecutor} pattern (one bounded
+ * {@code REQUIRES_NEW} transaction per work unit, its own persistence
+ * context) applied to the settle.
+ *
+ * &lt;p&gt;&lt;b&gt;The settle, in order:&lt;/b&gt; re-read the campaign inside THIS
+ * transaction (fresh state — the job's candidate list is advisory);
+ * a PAUSED campaign is skipped (the dark gap never bills); a campaign
+ * past its {@code ends_at} is ended by duration and settles its tail
+ * through the ends date; an exhausted campaign settles nothing; the
+ * open window {@code [billedThrough, horizon)} is frozen — impressions
+ * from the existing {@code listing_views_daily} (the plan's «ظهور من
+ * listing_views_daily القائم»), clicks from {@code ad_clicks_daily} —
+ * the amount CAPPED at the remaining budget («حملة بميزانية تنتهي
+ * بنفادها»), and the immutable charge row, the {@code consumed_cents}
+ * move and the {@code billed_through} advance all commit in THIS one
+ * transaction (the atomicity the plan's window identity demands).&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;b&gt;The deterministic identity:&lt;/b&gt; the charge's
+ * {@code (campaign_id, window_start)} UNIQUE index (V103) makes a
+ * re-run or two overlapping schedules for one window produce at most
+ * ONE row — the loser's {@link org.springframework.dao.DataIntegrityViolationException}
+ * rolls its whole transaction back (the advance rides with it), and the
+ * next run's fresh read finds the winner's advanced marker and skips.
+ * The {@link AdWindowBilledEvent} published here rides the AFTER_COMMIT
+ * listener contract ({@code @ApplicationModuleListener}), so payments
+ * (the intent) and ledger (the AD_DEBIT entry) each land exactly once
+ * per frozen window, each with its own structural idempotency key.&lt;/p&gt;
+ */
+@Component
+public class AdBillingBatchExecutor {
+
+<span class="fc" id="L51">    private static final Logger log = LoggerFactory.getLogger(AdBillingBatchExecutor.class);</span>
+
+    private final AdCampaignRepository campaignRepository;
+    private final AdBillingChargeRepository chargeRepository;
+    private final ListingViewsDailyRepository viewsRepository;
+    private final AdClickDailyRepository clicksRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
+
+    public AdBillingBatchExecutor(AdCampaignRepository campaignRepository,
+                                  AdBillingChargeRepository chargeRepository,
+                                  ListingViewsDailyRepository viewsRepository,
+                                  AdClickDailyRepository clicksRepository,
+                                  ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L65">                                  Clock clock) {</span>
+<span class="fc" id="L66">        this.campaignRepository = campaignRepository;</span>
+<span class="fc" id="L67">        this.chargeRepository = chargeRepository;</span>
+<span class="fc" id="L68">        this.viewsRepository = viewsRepository;</span>
+<span class="fc" id="L69">        this.clicksRepository = clicksRepository;</span>
+<span class="fc" id="L70">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L71">        this.clock = clock;</span>
+<span class="fc" id="L72">    }</span>
+
+    /**
+     * Settles ONE campaign's open window in its own transaction.
+     *
+     * @param campaignId the job's candidate (re-read fresh inside the tx)
+     * @param today      the run's UTC today — the exclusive horizon (the
+     *                   run bills COMPLETE UTC days only)
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void settleOneCampaign(UUID campaignId, LocalDate today) {
+<span class="fc" id="L83">        AdCampaign campaign = campaignRepository.findById(campaignId).orElse(null);</span>
+<span class="fc bfc" id="L84" title="All 4 branches covered.">        if (campaign == null || campaign.getStatus() == AdCampaignStatus.PAUSED) {</span>
+<span class="fc" id="L85">            return; // gone or dark — the dark gap never bills</span>
+        }
+
+        // The duration's own end: a campaign past its ends_at settles its
+        // tail through the ends date and then never bills again (the
+        // advanced marker sits past the horizon forever after).
+<span class="fc" id="L91">        LocalDate horizon = today;</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (campaign.getEndsAt() != null) {</span>
+<span class="fc" id="L93">            LocalDate endsDate = LocalDate.ofInstant(campaign.getEndsAt(), ZoneOffset.UTC);</span>
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">            if (today.isAfter(endsDate)) {</span>
+<span class="fc" id="L95">                campaign.endByDuration();</span>
+            }
+<span class="fc" id="L97">            LocalDate tailEnd = endsDate.plusDays(1);</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">            if (tailEnd.isBefore(horizon)) {</span>
+<span class="fc" id="L99">                horizon = tailEnd;</span>
+            }
+        }
+
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        if (!campaign.hasRemainingBudget()) {</span>
+<span class="fc" id="L104">            return; // exhausted — nothing more can bill</span>
+        }
+<span class="fc" id="L106">        LocalDate windowStart = campaign.getBilledThrough();</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        if (!windowStart.isBefore(horizon)) {</span>
+<span class="fc" id="L108">            return; // no unsettled complete day</span>
+        }
+
+        // The freeze: the consumption the window actually saw.
+<span class="fc" id="L112">        long impressions = viewsRepository.sumViewsForListingBetween(</span>
+<span class="fc" id="L113">                campaign.getListingId(), windowStart, horizon);</span>
+<span class="fc" id="L114">        long clicks = clicksRepository.sumClicksForCampaignBetween(</span>
+<span class="fc" id="L115">                campaign.getId(), windowStart, horizon);</span>
+<span class="fc" id="L116">        long computed = Math.addExact(</span>
+<span class="fc" id="L117">                Math.multiplyExact(impressions, campaign.getImpressionPriceCents()),</span>
+<span class="fc" id="L118">                Math.multiplyExact(clicks, campaign.getClickPriceCents()));</span>
+<span class="fc" id="L119">        long remaining = campaign.getBudgetCents() - campaign.getConsumedCents();</span>
+<span class="fc" id="L120">        long amount = Math.min(computed, remaining);</span>
+
+        // The marker's atomic advance — same transaction as the charge
+        // insert below (and the consume move): a crash or a lost overlap
+        // rolls ALL of it back, so a half-settled window cannot exist.
+<span class="fc" id="L125">        campaign.markBilledThrough(horizon);</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        if (amount &lt;= 0) {</span>
+            // The zero window: no charge row, no event, no ledger entry —
+            // the marker advanced alone (the honest «مجاني» day).
+<span class="fc" id="L129">            log.debug(&quot;Ad window [{}, {}) of campaign {} settled at zero consumption — marker advanced&quot;,</span>
+                    windowStart, horizon, campaignId);
+<span class="fc" id="L131">            return;</span>
+        }
+
+<span class="fc" id="L134">        AdBillingCharge charge = AdBillingCharge.freeze(campaign.getId(), windowStart, horizon,</span>
+<span class="fc" id="L135">                impressions, clicks, amount, campaign.getCurrency());</span>
+        // saveAndFlush: the INSERT (and a lost overlap's constraint
+        // violation) surface HERE, inside this transaction, before the
+        // event could ever be published for a row the loser rolled back.
+<span class="fc" id="L139">        chargeRepository.saveAndFlush(charge);</span>
+<span class="fc" id="L140">        campaign.consume(amount);</span>
+
+        // The AFTER_COMMIT pair — payments (the intent) and ledger (the
+        // AD_DEBIT) each land exactly once for this frozen window, each
+        // by its own structural key: the intent's idempotency key and
+        // the ledger's deterministic source id.
+<span class="fc" id="L146">        eventPublisher.publishEvent(new AdWindowBilledEvent(</span>
+<span class="fc" id="L147">                campaign.getId(), campaign.getProviderId(), windowStart, horizon,</span>
+<span class="fc" id="L148">                impressions, clicks, amount, campaign.getCurrency()));</span>
+
+        // The campaign's own state changed the boost's truth (an ended
+        // campaign's listing loses the paid tier) — the ordered pages
+        // must not serve yesterday's order: the ranking job's own law.
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        if (campaign.getStatus() == AdCampaignStatus.ENDED) {</span>
+<span class="fc" id="L154">            eventPublisher.publishEvent(new CacheInvalidationRequested(CatalogService.CATALOG_CACHE_NAMES));</span>
+        }
+<span class="fc" id="L156">        log.info(&quot;Ad window [{}, {}) of campaign {} frozen: {} impressions x {} + {} clicks x {} &quot;</span>
+                        + &quot;= {} of {} computed, capped at {} remaining — {} {} billed&quot;,
+<span class="fc" id="L158">                windowStart, horizon, campaignId, impressions, campaign.getImpressionPriceCents(),</span>
+<span class="fc" id="L159">                clicks, campaign.getClickPriceCents(), amount, computed, remaining,</span>
+<span class="fc" id="L160">                amount, campaign.getCurrency());</span>
+<span class="fc" id="L161">    }</span>
+
+    /** The run's UTC today — one derivation, the job and its tests share it. */
+    static LocalDate todayUtc(Clock clock) {
+<span class="fc" id="L165">        return LocalDate.now(clock);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
