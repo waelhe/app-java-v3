@@ -2,12 +2,18 @@ package com.marketplace.edge;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration,"
+                + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration")
 class EdgeContextTest {
 
     // Official-docs basis (all three verified 2026-09-20 on the exact versions we run):
@@ -32,6 +38,11 @@ class EdgeContextTest {
     // tokens instead of a live issuer.
     @MockitoBean
     ClientRegistrationRepository clientRegistrationRepository;
+
+    // The persistent (JDBC) authorized-client service needs a database; these
+    // container-free tests replace it with the official @MockitoBean override.
+    @MockitoBean
+    OAuth2AuthorizedClientService authorizedClientService;
 
     @Test
     void contextLoads() {
