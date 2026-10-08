@@ -5,6 +5,7 @@ import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.SearchCriteria;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,10 @@ public final class MarketplaceSearchTools {
             @ToolParam(description = "Maximum price in the listing currency, when explicitly requested.", required = false)
             BigDecimal maxPrice,
             @ToolParam(description = "Minimum guest capacity, when explicitly requested.", required = false)
-            Integer guests) {
+            Integer guests,
+            ToolContext toolContext) {
+
+        requireUserContext(toolContext);
 
         String normalizedQuery = query == null ? null : query.trim();
         String normalizedCategory = category == null ? null : category.trim();
@@ -57,5 +61,14 @@ public final class MarketplaceSearchTools {
         return new MarketplaceSearchResult(page.content(), page.totalElements());
     }
 
+    private static void requireUserContext(ToolContext toolContext) {
+        Objects.requireNonNull(toolContext, "toolContext must not be null");
+        Object userId = toolContext.getContext().get("userId");
+        if (userId == null || userId.toString().isBlank()) {
+            throw new IllegalArgumentException("toolContext userId must be present");
+        }
+    }
+
     public record MarketplaceSearchResult(List<ListingSummary> listings, long totalMatches) {}
 }
+
