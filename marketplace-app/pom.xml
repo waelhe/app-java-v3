@@ -295,15 +295,6 @@
             <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- D.3: spring-kafka at TEST scope — the IT's consumption half (the
-         * plain KafkaConsumer that reads the externalized message back). The
-         * runtime half arrives transitively via spring-modulith-events-kafka
-         * (runtime scope above); version from the Boot BOM. -->
-        <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
-            <scope>test</scope>
-        </dependency>
         <!-- A-04: GreenMail — the in-JVM SMTP receiver the account-mail journey ITs
              read the real outbound mails from (version: root exception #18). The
              JUnit 5 extension starts the server on GreenMail's default port 3025,
