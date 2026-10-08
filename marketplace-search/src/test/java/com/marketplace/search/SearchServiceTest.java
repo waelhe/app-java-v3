@@ -188,23 +188,10 @@ class SearchServiceTest {
         verify(port).listActive(PagedRequest.of(0, 10));
     }
 
-    @Test
-    void searchByCategory_delegates() {
-        when(port.listByCategory(anyString(), any())).thenReturn(emptyPage());
-
-        service.searchByCategory("books", PageRequest.of(0, 5));
-
-        verify(port).listByCategory("books", PagedRequest.of(0, 5));
-    }
-
-    @Test
-    void searchAll_delegates() {
-        when(port.listActive(any())).thenReturn(emptyPage());
-
-        service.searchAll(PageRequest.of(0, 20));
-
-        verify(port).listActive(PagedRequest.of(0, 20));
-    }
+    // W6 (search-unit compliance pass): the searchByCategory/searchAll
+    // delegation overloads were REMOVED — the /category endpoint delegates
+    // to the ONE criteria search (the controller test pins the delegation;
+    // the legacy category/browse branches are pinned by the tests above).
 
     // ---- L32: the property-facet flow -----------------------------------------
 
@@ -452,19 +439,51 @@ class SearchServiceTest {
     }
 
     @Test
-    void priceSort_onWindowedSearch_keepsTheLegacyDeterministicOrder() {
+    void priceSort_onWindowedSearch_ridesTheRestrictedCriteriaQuery() {
         UUID available = UUID.randomUUID();
         when(availabilityPort.findAvailableProviderIds(CHECK_IN, CHECK_OUT)).thenReturn(Set.of(available));
         when(port.searchByCriteriaRestricted(any(), any(), any())).thenReturn(emptyPage());
 
+        // the controller-normalized form (price -> priceCents + the id ASC
+        // tiebreak) is what the service consumes — the same representation
+        // the sibling sort tests feed.
         service.search(
                 new SearchCriteria(null, null, null, null, CHECK_IN, CHECK_OUT, null),
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "price")));
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
 
-        // documented scope boundary: windowed searches keep the L27
-        // restricted path (id order); the sort is ignored
-        verify(port).searchByCriteriaRestricted(any(), any(), any());
+        // W6 (search-unit compliance pass): the windowed filter search
+        // HONORS the mapped sort now — the restricted criteria query is
+        // Specification-backed and sort-aware (the retired native twin's
+        // baked ORDER BY was the reason the sort used to be a scope
+        // boundary; a sorted request on it was invalid SQL, not an
+        // ignored sort). The mapped form (priceCents + id) rides the
+        // port's request verbatim.
+        verify(port).searchByCriteriaRestricted(any(), eq(Set.of(available)),
+                argThat((com.marketplace.shared.api.PagedRequest request) ->
+                        request.sort().equals(java.util.List.of(
+                                new com.marketplace.shared.api.PagedRequest.Order("priceCents", true),
+                                new com.marketplace.shared.api.PagedRequest.Order("id", false)))));
         verify(port, never()).searchByCriteriaFaceted(any(), any());
+    }
+
+    @Test
+    void textQuery_withSort_passesTheRequestThrough_theCatalogAdapterOwnsTheRelevanceRanking() {
+        when(port.searchFullText(any(), any())).thenReturn(emptyPage());
+
+        // W6: "text searches rank by relevance — the sort is ignored" is
+        // enforced at the CATALOG adapter (the adapter strips the sort to
+        // the page/size its native FTS queries consume — the sort would
+        // otherwise reach the baked ORDER BY as a second "order by"
+        // clause: invalid SQL). The search service passes the request
+        // through; the adapter's strip is pinned by CatalogServiceTest.
+        service.search(
+                new SearchCriteria("sea view", null, null, null),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "priceCents")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
+
+        verify(port).searchFullText(
+                argThat(c -> "sea view".equals(c.query())), any());
     }
 
     private static ListingSummary summaryOf(UUID id) {

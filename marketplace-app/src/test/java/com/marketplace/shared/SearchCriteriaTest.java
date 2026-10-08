@@ -206,6 +206,71 @@ class SearchCriteriaTest {
                 null, null, null, null, null, null, null, null, null, null).hasRadius()).isFalse();
     }
 
+    // ---- W6 (search-unit compliance pass): the price-bound gates ----------
+
+    @Test
+    void negativePriceBound_isRejectedBeforeAnyQuery() {
+        // The record's own gate law applied to the one numeric criterion
+        // pair that lacked it: a negative bound is a 400 at construction,
+        // never the silently-empty page the raw SQL range would answer.
+        assertThatThrownBy(() -> new SearchCriteria(null, null,
+                new BigDecimal("-0.01"), null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minPrice must be non-negative");
+        assertThatThrownBy(() -> new SearchCriteria(null, null,
+                null, new BigDecimal("-1")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("maxPrice must be non-negative");
+    }
+
+    @Test
+    void invertedPriceRange_isRejectedBeforeAnyQuery() {
+        // The dominant real-world shape: the user swaps the two bounds
+        // (min 800, max 150) — a 400 before any query, never the
+        // silently-empty page the inverted SQL range would answer.
+        assertThatThrownBy(() -> new SearchCriteria(null, null,
+                new BigDecimal("800"), new BigDecimal("150")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minPrice must be less than or equal to maxPrice");
+    }
+
+    @Test
+    void invertedPriceRange_isRejectedOnTheCanonicalForm_too() {
+        // The seventeen-component canonical form is the one the search
+        // controller binds and the saved-search matcher materializes —
+        // the gate must hold there exactly as it holds on the
+        // convenience forms.
+        assertThatThrownBy(() -> new SearchCriteria("شقة", null,
+                BigDecimal.TEN, BigDecimal.ONE,
+                CHECK_IN, CHECK_OUT, 4, null, null, null,
+                2, 1, 80, null, null, null, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("minPrice must be less than or equal to maxPrice");
+    }
+
+    @Test
+    void zeroPriceBounds_areValid_theFreeFloorFilter() {
+        // Zero is deliberately NOT rejected: [0, max] is the free-floor
+        // filter and [0, 0] matches a zero-priced (free) listing — the
+        // column's own domain (price_cents >= 0 on the write side's
+        // @Positive contract, mirrored here on the read side's criteria).
+        SearchCriteria floor = new SearchCriteria(null, null,
+                BigDecimal.ZERO, new BigDecimal("800"));
+        SearchCriteria exactFree = new SearchCriteria(null, null,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThat(floor.hasCatalogCriteria()).isTrue();
+        assertThat(exactFree.hasCatalogCriteria()).isTrue();
+    }
+
+    @Test
+    void equalPriceBounds_areValid_theExactPriceFilter() {
+        SearchCriteria exact = new SearchCriteria(null, null,
+                new BigDecimal("150"), new BigDecimal("150"));
+
+        assertThat(exact.hasCatalogCriteria()).isTrue();
+    }
+
     // ---- P1 (postgis plan §D-P6): the radius triple gates ----------------
 
     private static final BigDecimal LAT = new BigDecimal("33.558889");

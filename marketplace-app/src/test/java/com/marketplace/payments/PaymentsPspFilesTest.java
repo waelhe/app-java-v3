@@ -90,7 +90,7 @@ class PaymentsPspFilesTest {
                 .as("Exception #11 must stay documented next to the managed entry")
                 .contains("Exception #11: Stripe Java SDK")
                 .contains("<artifactId>stripe-java</artifactId>")
-                .contains("<stripe.version>33.4.1</stripe.version>");
+                .contains("<stripe.version>33.4.2</stripe.version>");
     }
 
     @Test
