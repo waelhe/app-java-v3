@@ -131,8 +131,8 @@ class PlatformReleaseJourneyIntegrationTest {
     void cleanProbeRows() {
         jdbc.update("DELETE FROM event_publication WHERE serialized_event LIKE '%PlatformReleasePublishedEvent%'");
         jdbc.update("DELETE FROM event_publication_archive WHERE serialized_event LIKE '%PlatformReleasePublishedEvent%'");
-        jdbc.update("DELETE FROM platform_releases WHERE version = ?", VERSION);
-        jdbc.update("DELETE FROM platform_releases_aud WHERE version = ?", VERSION);
+        jdbc.update("DELETE FROM platform_releases WHERE release_version = ?", VERSION);
+        jdbc.update("DELETE FROM platform_releases_aud WHERE release_version = ?", VERSION);
     }
 
     @Test

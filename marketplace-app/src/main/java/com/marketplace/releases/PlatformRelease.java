@@ -53,10 +53,12 @@ public class PlatformRelease extends BaseEntity {
     @Column(name = "channel", nullable = false, updatable = false, length = 10)
     private PlatformReleaseChannel channel;
 
-    // Named releaseVersion on the Java side (the BaseEntity optimistic-lock
-    // field owns the plain `version` name); the COLUMN stays "version" — the
-    // wire/DB contract is unaffected by the Java-side rename.
-    @Column(name = "version", nullable = false, updatable = false, length = 32)
+    // Named releaseVersion on BOTH sides: the Java side because the BaseEntity
+    // optimistic-lock field owns the plain `version` name; the COLUMN because
+    // PostgreSQL rejects a duplicated column name in the table (the CI-measured
+    // V117 failure — the local gates never ran Flyway, docker-gated). The WIRE
+    // field stays "version" (the view record's own shape).
+    @Column(name = "release_version", nullable = false, updatable = false, length = 32)
     private String releaseVersion;
 
     @Column(name = "changelog", nullable = false, updatable = false, columnDefinition = "text")

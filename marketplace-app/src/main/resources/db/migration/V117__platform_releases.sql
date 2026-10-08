@@ -8,7 +8,11 @@
 --    · version (semver shape, CHECK-pinned) · changelog · min_version (the
 --    floor below which the client must force-update) · mandatory ·
 --    grace_hours («نافذة التوفير» — how long the user may defer) ·
---    published_at (the domain fact, distinct from the audit createdAt).
+--    published_at (the domain fact, distinct from the audit createdAt). The
+--    semver column is named release_version — the plain `version` name is
+--    BaseEntity's optimistic-lock column (BIGINT), and PostgreSQL rejects a
+--    duplicated column name; the wire/JSON field stays "version" (the view's
+--    own shape) while the STORAGE column disambiguates.
 --    Every BaseEntity column lands from day one (the V70 stance), and the
 --    (channel, version) identity is unique WITHOUT a soft-delete predicate:
 --    a release is a historical fact — its identity is never recycled, and no
@@ -26,7 +30,7 @@
 CREATE TABLE platform_releases (
     id           UUID PRIMARY KEY,
     channel      VARCHAR(10) NOT NULL,
-    version      VARCHAR(32) NOT NULL,
+    release_version VARCHAR(32) NOT NULL,
     changelog    TEXT NOT NULL,
     min_version  VARCHAR(32) NOT NULL,
     mandatory    BOOLEAN NOT NULL,
@@ -41,7 +45,7 @@ CREATE TABLE platform_releases (
     CONSTRAINT chk_platform_releases_channel
         CHECK (channel IN ('ANDROID', 'IOS', 'WEB')) NOT VALID,
     CONSTRAINT chk_platform_releases_version_shape
-        CHECK (version ~ '^[0-9]+\.[0-9]+\.[0-9]+$') NOT VALID,
+        CHECK (release_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$') NOT VALID,
     CONSTRAINT chk_platform_releases_min_version_shape
         CHECK (min_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$') NOT VALID,
     CONSTRAINT chk_platform_releases_grace_nonnegative
@@ -52,7 +56,7 @@ CREATE TABLE platform_releases (
 -- predicate — the V70 identity stance verbatim (an identity value is never
 -- released by deletion; a re-published version is a conflict, not a reuse).
 CREATE UNIQUE INDEX uq_platform_releases_channel_version
-    ON platform_releases (channel, version);
+    ON platform_releases (channel, release_version);
 
 -- The public boot path's read: the latest published row per channel.
 CREATE INDEX idx_platform_releases_channel_latest
@@ -69,7 +73,7 @@ CREATE TABLE platform_releases_aud (
     rev          INTEGER NOT NULL,
     revtype      SMALLINT,
     channel      VARCHAR(10),
-    version      VARCHAR(32),
+    release_version VARCHAR(32),
     changelog    TEXT,
     min_version  VARCHAR(32),
     mandatory    BOOLEAN,
