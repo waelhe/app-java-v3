@@ -11,8 +11,13 @@ spring:
       enabled: false
 
   ai:
-    # Spring AI owns provider/model auto-configuration; this module only composes
-    # the official ChatClient, memory, tools and optional RAG extension points.
+    # Spring AI owns provider/model auto-configuration and the ToolCallingAdvisor.
+    tools:
+      limits:
+        max-calls-per-tool-default: ${SPRING_AI_TOOLS_MAX_CALLS_PER_TOOL_DEFAULT:10}
+        max-total-tool-calls: ${SPRING_AI_TOOLS_MAX_TOTAL_TOOL_CALLS:30}
+        on-limit-exceeded: ${SPRING_AI_TOOLS_ON_LIMIT_EXCEEDED:RETURN_ERROR_RESPONSE}
+    # The application composes only official Spring AI extension points.
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
       embedding:
