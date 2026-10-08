@@ -669,7 +669,19 @@
                       SDK String.format HMAC input) diverge from CI. The
                       @{argLine} late-replacement preserves JaCoCo's
                       prepare-agent (official JaCoCo+Surefire pattern). -->
-                    <argLine>-Duser.language=en -Duser.country=US @{argLine}</argLine>
+                    <!-- spring.test.context.cache.maxSize: the TestContext
+                      framework's own documented knob (Spring Framework
+                      reference, Context Caching): the default cache of 32
+                      live ApplicationContexts measured ~10GB across this
+                      reactor's 122 integration classes on the 16GB CI
+                      runner — the kernel's OOM killer then takes dockerd
+                      and every Testcontainer dies mid-run (the measured
+                      cascade: Redis event loops terminate, PostgreSQL
+                      refuses 3800+ connections, Kafka cannot start). The
+                      cap bounds the cached-context memory; LRU closes the
+                      least recently used context beyond it. -->
+                    <argLine>-Duser.language=en -Duser.country=US
+                        -Dspring.test.context.cache.maxSize=12 @{argLine}</argLine>
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
@@ -686,7 +698,11 @@
                     <!-- Same JVM locale pin as surefire above: integration
                       tests fork their own JVMs (Stripe webhook signature
                       tests verify HMAC over SDK-formatted bytes). -->
-                    <argLine>-Duser.language=en -Duser.country=US @{argLine}</argLine>
+                    <!-- Same context-cache cap as surefire above — the
+                      Integration workflow forks the same heavy contexts
+                      (the measured dockerd cascade hit BOTH workflows). -->
+                    <argLine>-Duser.language=en -Duser.country=US
+                        -Dspring.test.context.cache.maxSize=12 @{argLine}</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                         <include>**/*IntegrationTest.java</include>
