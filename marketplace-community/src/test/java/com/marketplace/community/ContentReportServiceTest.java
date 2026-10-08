@@ -261,13 +261,16 @@ class ContentReportServiceTest {
         // Two publications ride the one command: the AUTHOR's hide alert and
         // the REPORTER's adjudication fact (the CodeRabbit round-1 adoption —
         // the human path now fires the reporter's event exactly as the
-        // engine's automatic path does).
+        // engine's automatic path does). Each captor matches its OWN event
+        // type (Mockito's type-aware capture — measured both directions:
+        // an untyped times(2) wanted two moderated events and failed with
+        // "was 1"), so each verify pins exactly one publication of its kind.
         ArgumentCaptor<ContentModeratedEvent> event =
                 ArgumentCaptor.forClass(ContentModeratedEvent.class);
         ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
                 ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
-        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(event.capture());
-        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(reporterFact.capture());
+        verify(eventPublisher).publishEvent(event.capture());
+        verify(eventPublisher).publishEvent(reporterFact.capture());
         assertThat(event.getAllValues().get(0).recipientId()).isEqualTo(authorId);
         assertThat(event.getAllValues().get(0).targetType()).isEqualTo("POST");
         // the event rides the resolved post's OWN id — the honest fact the
@@ -296,13 +299,14 @@ class ContentReportServiceTest {
         verify(commentRepository).delete(comment);
         // Two publications ride the one command (the POST twin above for
         // the full reasoning): the author's hide alert + the reporter's
-        // adjudication fact.
+        // adjudication fact — one of EACH kind, pinned by its own
+        // type-aware captor (see the POST twin for the measured basis).
         ArgumentCaptor<ContentModeratedEvent> event =
                 ArgumentCaptor.forClass(ContentModeratedEvent.class);
         ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
                 ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
-        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(event.capture());
-        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(reporterFact.capture());
+        verify(eventPublisher).publishEvent(event.capture());
+        verify(eventPublisher).publishEvent(reporterFact.capture());
         assertThat(event.getAllValues().get(0).recipientId()).isEqualTo(authorId);
         assertThat(event.getAllValues().get(0).targetType()).isEqualTo("COMMENT");
         // the event rides the resolved comment's OWN id (see the POST twin
