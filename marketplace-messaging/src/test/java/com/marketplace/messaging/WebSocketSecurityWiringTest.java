@@ -151,7 +151,7 @@ class WebSocketSecurityWiringTest {
                             new MarketplaceProperties.Security.Pseudonymization("", List.of()),
                             null),
                     // the empty deprecations map — no version deprecated in the wiring test
-                    new MarketplaceProperties.ApiVersioning(java.util.Map.of())));
+                    new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
         }
     }
 }
