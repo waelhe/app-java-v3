@@ -61,9 +61,16 @@
         <jacoco.version>0.8.15</jacoco.version>
         <jacoco.coverage.threshold>0.70</jacoco.coverage.threshold>
         <enforcer.fail>true</enforcer.fail>
+        <!-- springdoc stays 3.1.0: 3.1.1 (measured 2026-10-07 on
+             chore/safe-version-bumps) changes generated-spec rendering —
+             Pageable query parameters newly documented on 7 endpoints and
+             response-documentation deltas — which the fail-closed OpenAPI
+             compatibility gate cannot express as allowlist entries (its
+             documented resolution: revert the add). Needs a dedicated PR
+             with the gate report-format decision; keep on 3.1.0 until then. -->
         <springdoc.version>3.1.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <instancio.version>6.0.0</instancio.version>
+        <instancio.version>6.0.1</instancio.version>
         <spring-ai.version>2.0.1</spring-ai.version>
         <!-- Cloud train for the edge BFF (exception #14): single property,
              per-artifact versions stay managed by the BOM below. -->
@@ -91,15 +98,23 @@
              11.0.25 ("2026-08-18 Fixed in Apache Tomcat 11.0.25", official
              security-11.html — saved copy: scripts/cve-gate-docs/
              tomcat-security-changelog.html), and 11.0.25 exists on Maven Central.
-             No Boot 4.1.x stable manages 11.0.25 yet (latest stable = 4.1.1), so the
-             official version-property override is the only path; tomcat.version
-             governs the whole Tomcat family (embed-core/el/websocket,
-             annotations-api — spring-boot-dependencies 4.1.1 BOM), keeping
-             dependencyConvergence green. Remove this override when the Boot parent
-             manages >= 11.0.25 (the weekly Dependabot BOM PR will surface it). -->
-        <tomcat.version>11.0.25</tomcat.version>
-        <awssdk.version>2.54.13</awssdk.version>
-        <stripe.version>33.4.1</stripe.version>
+             11.0.25 → 11.0.26 (same-line patch, measured on Maven Central 2026-10-07):
+             three IMPORTANT CVEs fixed in 11.0.26 affect the 11.0.25 pin —
+             CVE-2026-86350 (HTTP/2 request header mix-up via regression in the
+             CVE-2026-41293 fix, affects 11.0.22-11.0.25), CVE-2026-78383 (AJP DoS
+             via missing request body, pins an AJP thread), CVE-2026-77791 (DoS via
+             busy wait during WebSocket close — this platform runs WebSocket), plus
+             moderate/low fixes (87022, 86248, 79677, 78437) from the same official
+             page. No Boot 4.1.x stable manages 11.0.26 yet (latest stable = 4.1.1),
+             so the official version-property override is the only path;
+             tomcat.version governs the whole Tomcat family
+             (embed-core/el/websocket, annotations-api — spring-boot-dependencies
+             4.1.1 BOM), keeping dependencyConvergence green. Remove this override
+             when the Boot parent manages >= 11.0.26 (the weekly Dependabot BOM PR
+             will surface it). -->
+        <tomcat.version>11.0.26</tomcat.version>
+        <awssdk.version>2.54.20</awssdk.version>
+        <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
     </properties>
 
@@ -210,14 +225,15 @@
                  (google-http-client 30.1.1-android, opencensus 29.0-android,
                  google-auth 33.4.0-android, api-common 33.4.0-jre):
                  DependencyConvergence + RequireUpperBoundDeps fail without a
-                 single pin (measured 2026-09-17). 33.4.0-jre is the upper
-                 bound (above every -android requirement) and the -jre flavor
-                 is the correct one for a server JVM (the -android flavor
-                 strips server-side implementation). -->
+                 single pin (measured 2026-09-17). The 33.4.x-jre line is the
+                 upper bound (above every -android requirement) and the -jre
+                 flavor is the correct one for a server JVM (the -android
+                 flavor strips server-side implementation); 33.4.0-jre →
+                 33.4.8-jre is the same-line patch (Maven Central, 2026-10-07). -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.4.0-jre</version>
+                <version>33.4.8-jre</version>
             </dependency>
             <!-- Override: error_prone_annotations — annotations-only artifact;
                  gson 2.13.2 (managed) requires 2.41.0 while the rest of the
@@ -229,7 +245,7 @@
                 <version>2.41.0</version>
             </dependency>
             <!-- Override: checker-qual — annotations-only artifact; postgresql
-                 42.7.13 requires 3.55.1 while guava 33.4.0-jre (override
+                 42.7.13 requires 3.55.1 while guava 33.4.x-jre (override
                  above, exception #13) requires 3.43.0 (DependencyConvergence,
                  measured 2026-09-17). Pin the max; zero behavioral surface. -->
             <dependency>
@@ -297,7 +313,9 @@
                  contract (feature-expansion roadmap §5 L29-ب). Annotations-only
                  artifact with zero transitive dependencies; version pinned to the
                  exact swagger-core-jakarta chain springdoc 3.1.0 resolves
-                 (verified via dependency:tree on marketplace-app). Runtime
+                 (swagger-api.version=2.2.52 in springdoc-openapi-3.1.0.pom,
+                 verified via dependency:tree on marketplace-app; 3.1.1 was
+                 measured and reverted with the springdoc property note above). Runtime
                  consumption of the annotations stays in marketplace-app (the
                  springdoc starter reads them from the application context). -->
             <dependency>
@@ -336,7 +354,7 @@
                  SDK. Consumed only by marketplace-payments (the real payment
                  channel, roadmap B3 / gap G-PROD-3). Official evidence cached
                  under scripts/psp-doc-verify/: Maven Central metadata (latest
-                 STABLE release 33.4.1), the official webhook-signature doc
+                 STABLE release 33.4.2), the official webhook-signature doc
                  (constructEvent recipe + DEFAULT_TOLERANCE=300s verified from
                  the sources jar), and bytecode-verified API surface
                  (PaymentIntent.create + RequestOptions.setIdempotencyKey,
