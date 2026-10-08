@@ -2,7 +2,7 @@
 useDefault = true
 
 [allowlist]
-description = "Test/demo fixtures that are non-production"
+description = "Test/demo fixtures that are non-production + machine-generated build-log lines"
 paths = [
   # Anchored to the exact committed fixture files (CWE-693, CodeRabbit #241):
   # a directory-scope pattern would silently allowlist ANY future file placed
@@ -10,4 +10,22 @@ paths = [
   '''^marketplace-platform-infra/src/test/resources/keys/test-jwt\.jks$''',
   '''^marketplace-app/src/test/resources/keys/dev-rsa-private\.pem$''',
   '''^marketplace-app/src/main/resources/keys/dev-rsa\.pub$'''
+]
+# CI incident fix (measured 2026-10-07): the default sourcegraph-access-token
+# rule's third regex alternative is a BARE 40-hex run ([a-fA-F0-9]{40}) — legacy
+# Sourcegraph tokens had exactly that shape — so every FULL GIT COMMIT SHA printed
+# as a bare value fires the rule at entropy>=3. The maven-git-commit-id plugin
+# prints "Collected git.commit.id with value <40-hex-sha>" into EVERY reactor
+# build log by construction, and the owner-ordered evidence logs persisted to
+# GitHub (docs/track-b/evidence/*.log) carry that line — which poisoned the
+# shared scan surface for EVERY branch (fetch-depth:0 + scan-all-refs) and turned
+# every new CI run red at the gitleaks gate. The allow below is LINE-shaped, not
+# path-shaped: it whitelists ONLY the plugin's machine-generated id-output line,
+# in any file, and nothing else — a public commit SHA is not a secret, and this
+# sentence shape cannot carry one. (The pseudonymization audit lines with their
+# 64-hex anon ids were measured NOT to fire the rule — keyword prefiltering —
+# and stay fully scanned.)
+regexTarget = "line"
+regexes = [
+  '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$'''
 ]
