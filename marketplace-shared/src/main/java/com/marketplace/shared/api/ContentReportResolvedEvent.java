@@ -1,4 +1,4 @@
-package com.marketplace.community;
+package com.marketplace.shared.api;
 
 import java.util.UUID;
 
@@ -9,8 +9,8 @@ import java.util.UUID;
  * transition out of OPEN — on the module's exposed {@code community}
  * NamedInterface, the additive-only registration the contracts ledger
  * carries (a NEW event; the record's placement in {@code shared/api}
- * and the publisher wiring ride CR-10, the designed crossing for this
- * unit).
+ * and the publisher wiring rode CR-10 — the placement and both wiring
+ * halves executed together).
  *
  * <p><b>Distinct from {@code ContentModeratedEvent} (the measured
  * boundary between the two):</b> the moderated event is the AUTHOR's

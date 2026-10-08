@@ -154,7 +154,7 @@ public class ModerationRuleAdminController {
             @Schema(description = "How many distinct live OPEN reporters on the same target "
                     + "fire the automatic action (at least 1 — a rule that fires on zero "
                     + "reports is not a rule).", example = "3")
-            int threshold
+            Integer threshold
     ) {
     }
 
@@ -162,7 +162,7 @@ public class ModerationRuleAdminController {
     public record ThresholdRevisionRequest(
             @NotNull @Min(1) @Max(1_000_000)
             @Schema(description = "The revised distinct-reporter threshold.", example = "5")
-            int threshold
+            Integer threshold
     ) {
     }
 
@@ -171,7 +171,7 @@ public class ModerationRuleAdminController {
             @NotNull
             @Schema(description = "The rule's lifecycle state — false pauses the evaluation "
                     + "lookup without losing the row.", example = "false")
-            boolean enabled
+            Boolean enabled
     ) {
     }
 }

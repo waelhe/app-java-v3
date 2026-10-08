@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewLookupPort;
 import io.micrometer.observation.annotation.Observed;
@@ -138,7 +139,18 @@ public class ContentReportService {
                 report.resolve(ReportStatus.RESOLVED, note, adminId, clock);
             }
         }
-        return ContentReportView.of(reportRepository.save(report));
+        ContentReport saved = reportRepository.save(report);
+        // The reporter's adjudication fact (the B-17 record — the manual
+        // resolve command's OWN publication, the ModerationRuleEngine's
+        // twin): every resolve outcome fires it, whichever way the verdict
+        // went — the reporter's journey is "my report left the queue".
+        // Same transaction as the close (the registry entry commits
+        // atomically with the report's new state).
+        eventPublisher.publishEvent(new ContentReportResolvedEvent(
+                saved.getId(), saved.getReporterId(),
+                saved.getTargetType().name(), saved.getTargetId(),
+                saved.getStatus().name()));
+        return ContentReportView.of(saved);
     }
 
     /**

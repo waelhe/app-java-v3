@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -212,7 +213,19 @@ public class NeighborhoodMembershipService {
         } catch (IllegalStateException invalidTransition) {
             throw new ConflictException(invalidTransition.getMessage());
         }
-        return NeighborhoodMembershipView.of(repository.save(membership));
+        NeighborhoodMembership saved = repository.save(membership);
+        // The grant's OWN fact (the B-17 record, this reviewer's only
+        // publication): both PENDING→VERIFIED and REJECTED→VERIFIED are
+        // grants of the same trust signal — the event fires on the approve
+        // direction alone, inside the reviewer's transaction (the registry
+        // entry commits atomically with the verdict). The notifications
+        // sidecar's listener delivers the member's VERIFIED notification
+        // AFTER_COMMIT in its own unit.
+        if (saved.getVerificationState() == MembershipVerificationState.VERIFIED) {
+            eventPublisher.publishEvent(new MembershipVerificationGrantedEvent(
+                    saved.getId(), saved.getUserId(), saved.getLocationId()));
+        }
+        return NeighborhoodMembershipView.of(saved);
     }
 
     /**

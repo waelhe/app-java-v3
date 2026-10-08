@@ -2,8 +2,10 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
 import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -207,5 +209,38 @@ public class NotificationEventListener {
         notificationService.onMessageReceived(event.conversationId(), event.recipientId());
         log.info("Notification sent for message received: messageId={}, conversationId={}",
                 event.messageId(), event.conversationId());
+    }
+
+    /**
+     * B-17 (compliance plan C.9 — the trust &amp; verification sidecar, the
+     * CR-10 wiring): the member's VERIFIED notification — the grant
+     * verdict's arrival point. The event record lives in shared/api (the
+     * house convention, the B-08/CR-4 flow verbatim — the notifications pom
+     * carries no community dependency). Same contract as the listeners
+     * above — after commit, its own transaction, the framework's retry: a
+     * failed delivery never loses the member's verified notification.
+     */
+    @ApplicationModuleListener
+    public void onMembershipVerificationGranted(MembershipVerificationGrantedEvent event) {
+        notificationService.onVerificationGranted(event.userId(), event.locationId());
+        log.info("Notification sent for membership verification grant: membership={}, member={}",
+                event.membershipId(), event.userId());
+    }
+
+    /**
+     * B-17 (compliance plan C.9 — the trust &amp; verification sidecar, the
+     * CR-10 wiring): the reporter's REPORT_RESOLVED notification — the
+     * adjudication fact's arrival point (both the manual resolve command
+     * and the automatic rule engine fire the same record). Same contract
+     * as the listeners above — after commit, its own transaction, the
+     * framework's retry: a failed delivery never loses the reporter's
+     * adjudication notification.
+     */
+    @ApplicationModuleListener
+    public void onContentReportResolved(ContentReportResolvedEvent event) {
+        notificationService.onReportResolved(
+                event.reporterId(), event.targetType(), event.targetId(), event.outcome());
+        log.info("Notification sent for content report resolved: report={}, reporter={}, outcome={}",
+                event.reportId(), event.reporterId(), event.outcome());
     }
 }

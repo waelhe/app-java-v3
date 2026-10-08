@@ -1,6 +1,7 @@
 package com.marketplace.community;
 
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.ReviewLookupPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -127,6 +127,16 @@ public class KnowledgeService {
         KnowledgeEntry entry = repository.findById(entryId)
                 .filter(e -> e.getAuthorId().equals(authorId))
                 .orElseThrow(() -> new ResourceNotFoundException("Knowledge entry not found: " + entryId));
+        // The revision contract (the same 400-on-mismatch guard the console's
+        // revise carries): the entry's geo anchor is born with the entry and
+        // never moves — a different locationId in the body names a DIFFERENT
+        // entry's anchor, so the request is rejected loudly instead of being
+        // silently ignored while the entry keeps its original neighborhood.
+        if (!entry.getLocationId().equals(request.locationId())) {
+            throw new BadRequestException(
+                    "locationId cannot change on revision — the entry is anchored to "
+                            + entry.getLocationId() + " but the request names " + request.locationId());
+        }
         entry.revise(request.category(), request.title(), request.body());
         eventPublisher.publishEvent(new KnowledgeEntryPublishedEvent(
                 entry.getId(), entry.getLocationId(), entry.getCategory(),

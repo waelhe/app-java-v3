@@ -1,4 +1,4 @@
-package com.marketplace.community;
+package com.marketplace.shared.api;
 
 import java.util.UUID;
 
@@ -11,7 +11,8 @@ import java.util.UUID;
  * carries (a NEW event, never a rename/move of an existing one — the
  * {@code DisputeOpenedEvent}/{@code MessageReceivedEvent} B-06/B-08
  * precedent; the record's placement in {@code shared/api} and the
- * publisher wiring ride CR-10, the designed crossing for this unit).
+ * publisher wiring rode CR-10 — the placement and both wiring halves
+ * executed together).
  *
  * <p><b>The complete-fact discipline (the {@code DisputeResolvedEvent}
  * lesson — no consumer ever re-derives):</b> the payload carries the

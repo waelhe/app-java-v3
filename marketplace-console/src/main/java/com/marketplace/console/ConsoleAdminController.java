@@ -1,6 +1,7 @@
 package com.marketplace.console;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.BadRequestException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -91,9 +92,16 @@ public class ConsoleAdminController {
 
     @PatchMapping("/console/config/{key}")
     @Operation(summary = "Revise a remote config value",
-            description = "The operator's revision — the auditing fields record who and when. Unknown key 404.")
+            description = "The operator's revision — the auditing fields record who and when. Unknown key 404. "
+                    + "A body key different from the path key answers 400 (the path is the resource; "
+                    + "a silent mismatch would revise one key while naming another).")
     public ResponseEntity<RemoteConfigResponse> revise(
             @PathVariable String key, @Valid @RequestBody ConfigRequest request) {
+        if (!key.equals(request.key())) {
+            throw new BadRequestException(
+                    "Config key mismatch — the path names " + key
+                            + " but the body names " + request.key());
+        }
         return ResponseEntity.ok(RemoteConfigResponse.from(
                 consoleService.reviseConfig(key, request.value(), request.description())));
     }
@@ -171,7 +179,7 @@ public class ConsoleAdminController {
             String description,
             @NotNull
             @Schema(description = "The flag's initial state.")
-            boolean enabled
+            Boolean enabled
     ) {
     }
 
@@ -179,7 +187,7 @@ public class ConsoleAdminController {
     public record FlagFlipRequest(
             @NotNull
             @Schema(description = "The flag's new state.")
-            boolean enabled
+            Boolean enabled
     ) {
     }
 
@@ -209,7 +217,7 @@ public class ConsoleAdminController {
             UUID locationId,
             @NotNull
             @Schema(description = "The feature-gate value at this scope.")
-            boolean enabled
+            Boolean enabled
     ) {
     }
 
