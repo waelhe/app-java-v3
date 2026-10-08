@@ -44,6 +44,23 @@ spring:
     host: localhost
     port: 3025
     test-connection: false
+    # The test posture against GreenMail's plain SMTP server (the JUnit 5
+    # extension on port 3025). The MAIN profile's production posture —
+    # mail.smtp.auth: true + starttls — MUST NOT leak into the test
+    # profile (Boot's documented precedence: profile-specific files win,
+    # but only for keys they themselves carry): with the inherited auth
+    # flag and the main profile's empty-string credentials the sender
+    # issues SMTP AUTH, GreenMail rejects it (MailAuthenticationException
+    # — the measured 19-hour red streak's single root), and the failure
+    # cascades far beyond the mail journeys: every notification listener
+    # that reaches an email leg throws inside its AFTER_COMMIT
+    # transaction, rolling back the in-app notification row saved in the
+    # same unit — "LEAD_RECEIVED never landed" was this same auth root
+    # one transaction away. Both flags off: no AUTH attempt, no STARTTLS
+    # negotiation on a server that never advertises it.
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
   security:
     oauth2:
       authorizationserver:
