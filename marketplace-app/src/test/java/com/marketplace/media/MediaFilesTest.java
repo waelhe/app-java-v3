@@ -92,7 +92,7 @@ class MediaFilesTest {
         assertThat(pom)
                 .as("awssdk BOM import (Exception #10) keeps every AWS artifact on one version")
                 .contains("<artifactId>bom</artifactId>")
-                .contains("<awssdk.version>2.54.13</awssdk.version>");
+                .contains("<awssdk.version>2.54.20</awssdk.version>");
         assertThat(pom)
                 .as("internal module must be managed like every other module")
                 .contains("<artifactId>marketplace-media</artifactId>");
