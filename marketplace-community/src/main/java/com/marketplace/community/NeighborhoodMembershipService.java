@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PropertyDetailsPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -212,7 +213,21 @@ public class NeighborhoodMembershipService {
         } catch (IllegalStateException invalidTransition) {
             throw new ConflictException(invalidTransition.getMessage());
         }
-        return NeighborhoodMembershipView.of(repository.save(membership));
+        NeighborhoodMembership saved = repository.save(membership);
+        if (approve) {
+            // B-17 (C.9 — the CodeRabbit round-1 adoption closing the wiring
+            // gap the review measured: the grant verdict is a PUBLISHED fact,
+            // never a method call the consumer must know about. Both grant
+            // paths (PENDING -> VERIFIED and REJECTED -> VERIFIED) fire it —
+            // approveVerification() guards the transition itself. Published
+            // inside the reviewer's own transaction (Modulith
+            // reference/events.html): the registry entry commits atomically
+            // with the verdict, and the notifications listener delivers
+            // AFTER_COMMIT in its own unit.
+            eventPublisher.publishEvent(new MembershipVerificationGrantedEvent(
+                    saved.getId(), saved.getUserId(), saved.getLocationId()));
+        }
+        return NeighborhoodMembershipView.of(saved);
     }
 
     /**

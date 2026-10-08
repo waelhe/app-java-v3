@@ -5,7 +5,15 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    # Parallel plan §4.1: the four gates run on pull_request for the wave's
+    # integrative PRs. The official GitHub docs are explicit that the
+    # pull_request branches filter matches the PR's BASE branch ("only run on
+    # pull requests that target specific branches" — Events that trigger
+    # workflows), so the stacked base must be listed here for PR-B's pushes
+    # (base feat/track-b-part1) to be gated during the flow, before the
+    # ladder retargets it to main. Additive only: PRs targeting main and
+    # push events are unaffected; the entry goes inert once the wave merges.
+    branches: [ main, feat/track-b-part1 ]
 
 permissions:
   contents: read
