@@ -10,6 +10,10 @@ import org.springframework.security.oauth2.client.JdbcOAuth2AuthorizedClientServ
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
@@ -25,6 +29,17 @@ import static org.springframework.security.config.Customizer.withDefaults;
  * {@code GET /actuator/health/**} idiom the main app's own SecurityConfig and
  * the CodeRabbit r1 adoption both use, covering the liveness/readiness
  * subpaths the orchestrator probes).</li>
+ * <li>PKCE: the issuer's production client contract is
+ * {@code requireProofKey(true)} (the locked RFC 9700 §2.1.1 posture — the
+ * marketplace-bff registration, OAuth2ClientSecretInitializer), and Spring
+ * Security does not send {@code code_challenge} for confidential clients by
+ * default, so the login request resolver is the official
+ * {@link OAuth2AuthorizationRequestCustomizers#withPkce()} customizer on the
+ * standard {@link DefaultOAuth2AuthorizationRequestResolver} (javadoc: "adds
+ * the {@code code_challenge} and, usually, {@code code_challenge_method}
+ * parameters to the OAuth 2.0 Authorization Request"). Without it the edge's
+ * first real login is rejected by the issuer's PKCE enforcement — the gap
+ * measured while activating the edge service on v4 (2026-10-09).</li>
  * <li>CSRF: {@code csrf.spa()} (Spring Security reference, CSRF for SPAs —
  * the official recipe in place of the removed custom {@code EdgeCsrfConfig}
  * Customizer).</li>
@@ -62,8 +77,10 @@ class EdgeSecurityConfig {
 
     @Bean
     SecurityFilterChain edgeSecurityFilterChain(HttpSecurity http,
-            ClientRegistrationRepository clientRegistrationRepository) throws Exception {
-        http.oauth2Login(withDefaults());
+            ClientRegistrationRepository clientRegistrationRepository,
+            OAuth2AuthorizationRequestResolver authorizationRequestResolver) throws Exception {
+        http.oauth2Login(login -> login.authorizationEndpoint(endpoint -> endpoint
+                .authorizationRequestResolver(authorizationRequestResolver)));
         http.oauth2Client(withDefaults());
         // C-7 (the Spring Security 7.1.1 compliance wave) — the documented
         // RP-initiated logout wiring through the reference's own handler
@@ -80,6 +97,31 @@ class EdgeSecurityConfig {
                 .anyRequest().authenticated());
         http.csrf((csrf) -> csrf.spa());
         return http.build();
+    }
+
+    /**
+     * The standard login-request resolver with the official PKCE customizer —
+     * the same {@link DefaultOAuth2AuthorizationRequestResolver} the defaults
+     * install, customized exactly as its javadoc's See-Also points:
+     * {@code setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce())}.
+     * The base URI is the framework's own default authorization-request base
+     * (the chain below does NOT relocate the endpoint, so the resolver must
+     * extract the registration id from the default
+     * {@code /oauth2/authorization/{registrationId}} pattern — measured: a
+     * mismatched base leaves the request unresolved and the entry point loops
+     * back onto itself).
+     *
+     * @param clientRegistrationRepository Boot's property-built registration repository
+     * @return the PKCE-carrying authorization request resolver
+     */
+    @Bean
+    OAuth2AuthorizationRequestResolver pkceAuthorizationRequestResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        DefaultOAuth2AuthorizationRequestResolver resolver =
+                new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository,
+                        OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI);
+        resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
+        return resolver;
     }
 
     /**

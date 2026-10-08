@@ -145,9 +145,19 @@ class EdgeSessionIT {
         // Real login flow, no mocks: the authorization redirect stores the
         // OAuth2 authorization request in the HTTP session, so the 302 must
         // carry a SESSION cookie — proof the session mechanism is live.
+        // PKCE (2026-10-09, edge v4 activation): the issuer's production
+        // client contract is requireProofKey(true) (marketplace-bff,
+        // OAuth2ClientSecretInitializer), so the redirect MUST carry
+        // code_challenge + code_challenge_method=S256 — the official
+        // OAuth2AuthorizationRequestCustomizers.withPkce() contract. A
+        // non-PKCE confidential client login is rejected by the issuer
+        // (RFC 9700 §2.1.1 downgrade protection) — this is the edge-side
+        // half of that locked posture.
         mockMvc.perform(get("/oauth2/authorization/edge"))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", containsString("/oauth2/authorize")))
+                .andExpect(header().string("Location", containsString("code_challenge=")))
+                .andExpect(header().string("Location", containsString("code_challenge_method=S256")))
                 .andExpect(cookie().exists("SESSION"));
     }
 
