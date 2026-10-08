@@ -39,6 +39,8 @@
         <module>marketplace-realestate</module>
         <module>marketplace-community</module>
         <module>marketplace-jobs</module>
+        <module>marketplace-knowledge</module>
+        <module>marketplace-console</module>
         <module>marketplace-ai</module>
         <module>marketplace-app</module>
         <module>marketplace-edge</module>
@@ -522,6 +524,18 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-jobs</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-15 wiring (CR): the knowledge module's managed version entry -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-knowledge</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-16 wiring (CR): the console module's managed version entry -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-console</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

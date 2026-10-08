@@ -391,6 +391,78 @@ public class NotificationService {
         sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
     }
 
+    /**
+     * B-17 (compliance plan C.9 — the trust &amp; verification sidecar):
+     * the member's VERIFIED notification — the grant verdict's own
+     * journey's arrival point (the platform identity §0.1 rule: a
+     * notification for every event; an event without a listener is a
+     * measured defect). The same delivery shape as the event points
+     * above (in-app row always lands; WebSocket and email ride their L22
+     * per-type/channel preferences). The recipient arrives resolved at
+     * the source ({@code MembershipVerificationGrantedEvent} carries the
+     * complete trust fact — member, neighborhood, membership row) — this
+     * method delivers unconditionally, keeping the delivery contract one
+     * shape for every caller (the onMessageReceived B-08 precedent). The
+     * event-to-listener wiring LANDED (the CodeRabbit round-1 adoption):
+     * the record lives in shared/api (the CR-4 placement) and
+     * NotificationEventListener's onMembershipVerificationGranted delivers
+     * on every grant publication.
+     */
+    public void onVerificationGranted(UUID userId, UUID locationId) {
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.MEMBERSHIP_VERIFIED", platform, locationId);
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(userId,
+                NotificationType.MEMBERSHIP_VERIFIED.name(), message));
+        if (preferences.isChannelEnabled(userId,
+                NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(userId,
+                    text.compose("email.MEMBERSHIP_VERIFIED.subject", platform),
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
+    }
+
+    /**
+     * B-17 (compliance plan C.9): the REPORTER's adjudication
+     * notification — every resolve outcome is the reporter's journey's
+     * arrival ({@code RESOLVED} behind {@code HIDE_CONTENT} and
+     * {@code DISMISSED} behind {@code DISMISS} alike; distinct from the
+     * author's CONTENT_MODERATED alert, which is the hide fact alone).
+     * The same delivery shape as the event points above. The event
+     * carries the stored vocabulary as names ({@code targetType} /
+     * {@code outcome} — the ContentModeratedEvent String precedent), and
+     * the composed text renders each through the bundle's vocabulary
+     * channel ({@code targettype.*} / {@code reportoutcome.*}) with the
+     * honest raw ride-through for unknown names. The event-to-listener
+     * wiring LANDED (the CodeRabbit round-1 adoption): the record lives
+     * in shared/api (the CR-4 placement) and
+     * NotificationEventListener's onContentReportResolved delivers on
+     * every adjudication publication — the human resolve path and the
+     * engine's automatic path alike.
+     */
+    public void onReportResolved(UUID reporterId, String targetType, UUID targetId, String outcome) {
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String targetWord = text.targetTypeWord(targetType, platform);
+        String outcomeWord = text.reportOutcomeWord(outcome, platform);
+        String message = text.compose("notification.REPORT_RESOLVED", platform,
+                targetWord, outcomeWord, targetId);
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(reporterId,
+                NotificationType.REPORT_RESOLVED.name(), message));
+        if (preferences.isChannelEnabled(reporterId,
+                NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(reporterId,
+                    text.compose("email.REPORT_RESOLVED.subject", platform),
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(reporterId, NotificationType.REPORT_RESOLVED, message);
+    }
+
     @Transactional(readOnly = true)
     public Page<NotificationResponse> getMyNotifications(Authentication authentication, Pageable pageable) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);

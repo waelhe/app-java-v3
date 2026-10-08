@@ -69,6 +69,24 @@ package com.marketplace.notifications;
  * fact complete) — this listener never re-derives party facts; one event
  * is one notification, and the delivery rides the standing L22
  * per-type/channel preference matrix from day one, no new mechanism.
+ *
+ * <p>B-17 (compliance plan C.9 — the trust &amp; verification sidecar):
+ * {@code MEMBERSHIP_VERIFIED} joins as the eleventh type and {@code
+ * REPORT_RESOLVED} as the twelfth — the same point additions (the V158
+ * CHECK widens the DB-side membership guard to match, V159 validates it
+ * under SHARE UPDATE EXCLUSIVE alone). The recipients are the measured
+ * journeys' own parties: the VERIFIED member (the grant event fires on
+ * both {@code PENDING -> VERIFIED} and {@code REJECTED -> VERIFIED} —
+ * the re-admission is a grant of the same signal) and the report's
+ * REPORTER (the adjudication event fires on every outcome — {@code
+ * RESOLVED} behind {@code HIDE_CONTENT} and {@code DISMISSED} behind
+ * {@code DISMISS}; distinct from the author's {@code CONTENT_MODERATED}
+ * alert, which is the hide fact alone). The event records live in
+ * {@code shared/api} and the listener wiring LANDED (the CodeRabbit
+ * round-1 adoption closing the CR-10 crossing: the B-08/
+ * {@code MessageReceivedEvent} precedent — the record's shared/api
+ * placement, no pom change anywhere, and
+ * {@code NotificationEventListener} delivers on every publication).
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -80,5 +98,7 @@ public enum NotificationType {
     CONTENT_MODERATED,
     POST_REACTED,
     FOLLOWED_PROVIDER_NEW_LISTING,
-    MESSAGE_RECEIVED
+    MESSAGE_RECEIVED,
+    MEMBERSHIP_VERIFIED,
+    REPORT_RESOLVED
 }
