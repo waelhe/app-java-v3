@@ -108,6 +108,20 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-jobs</artifactId>
         </dependency>
+        <!-- B-15 wiring (CR): the knowledge module joins the aggregation the
+             same way — without this dependency the module's beans never load
+             and its endpoints answer 404 (the measured dead-module gap: the
+             sources were present but never in the reactor or the app). -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-knowledge</artifactId>
+        </dependency>
+        <!-- B-16 wiring (CR): the console module joins the aggregation the
+             same way — the app is the assembly point. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-console</artifactId>
+        </dependency>
         <!-- AI foundation: the marketplace-ai capability module joins the
              aggregation exactly like community — the app is the assembly
              root where every domain module meets Spring's component
