@@ -9,9 +9,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.config.annotation.web.http.EnableSpringHttpSession;
@@ -24,6 +34,9 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+
+import java.time.Instant;
+import java.util.Map;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -72,11 +85,12 @@ class EdgeSessionIT {
                           "token_endpoint": "%s/oauth2/token",
                           "jwks_uri": "%s/oauth2/jwks",
                           "userinfo_endpoint": "%s/userinfo",
+                          "end_session_endpoint": "%s/connect/logout",
                           "response_types_supported": ["code"],
                           "subject_types_supported": ["public"],
                           "id_token_signing_alg_values_supported": ["RS256"]
                         }
-                        """.formatted(base, base, base, base, base))));
+                        """.formatted(base, base, base, base, base, base))));
     }
 
     @DynamicPropertySource
@@ -104,6 +118,12 @@ class EdgeSessionIT {
     // container-free tests replace it with the official @MockitoBean override.
     @MockitoBean
     OAuth2AuthorizedClientService authorizedClientService;
+
+    // The REAL, property-built registration repository (its discovery
+    // metadata is served by the WireMock stub above, including the
+    // end_session_endpoint the C-7 logout handler reads).
+    @Autowired
+    ClientRegistrationRepository clientRegistrationRepository;
 
     // Explicit in-memory Spring Session backend for HTTP tests (see class
     // comment): Boot 4.1 has no session store-type property and no in-memory
@@ -171,6 +191,48 @@ class EdgeSessionIT {
                         .header("X-XSRF-TOKEN", xsrf))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", containsString("/oauth2/authorization/edge")));
+    }
+
+    @Test
+    void oidcLogoutBuildsTheDocumentedRpInitiatedLogoutRedirect() throws Exception {
+        // C-7 (the Spring Security 7.1.1 compliance wave): the reference says
+        // an OIDC client "should configure OidcClientInitiatedLogoutSuccessHandler,
+        // which implements RP-Initiated Logout". The handler is built by the
+        // production factory against the REAL client registration repository
+        // (Boot's property-built one, its discovery metadata served by the
+        // stub above with end_session_endpoint) and driven through its public
+        // onLogoutSuccess contract with an OIDC-authenticated principal: the
+        // redirect must target the provider's end-session endpoint carrying
+        // the id_token_hint and the {baseUrl}-expanded post_logout_redirect_uri
+        // — the documented RP-initiated logout request shape.
+        LogoutSuccessHandler handler =
+                new EdgeSecurityConfig().oidcLogoutSuccessHandler(clientRegistrationRepository);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/logout");
+        request.setScheme("http");
+        request.setServerName("localhost");
+        request.setServerPort(8081);
+
+        OidcIdToken idToken = new OidcIdToken(
+                "test-id-token-value",
+                Instant.now().minusSeconds(60),
+                Instant.now().plusSeconds(300),
+                Map.of(IdTokenClaimNames.SUB, "it-logout-user"));
+        OidcUser principal = new DefaultOidcUser(
+                AuthorityUtils.createAuthorityList("SCOPE_openid"), idToken);
+        Authentication authentication = new OAuth2AuthenticationToken(
+                principal, AuthorityUtils.createAuthorityList("SCOPE_openid"), "edge");
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        handler.onLogoutSuccess(request, response, authentication);
+
+        String redirect = response.getRedirectedUrl();
+        assertThat(redirect).as("the redirect targets the discovered end-session endpoint")
+                .startsWith(backend.baseUrl() + "/connect/logout");
+        assertThat(redirect).as("the id_token_hint carries the logged-in user's ID token")
+                .contains("id_token_hint=test-id-token-value");
+        assertThat(redirect).as("the post-logout landing is the {baseUrl}-expanded value")
+                .contains("post_logout_redirect_uri=http://localhost:8081");
     }
 
     private static String cookieValue(MvcResult result, String name) {
