@@ -4,6 +4,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.memory.ChatMemory;
 
+import reactor.core.publisher.Flux;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -15,6 +17,19 @@ public final class AiChatGateway {
 
     public AiChatGateway(ChatClient chatClient) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
+    }
+
+    public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        String scopedConversationId = scopeConversation(userId, conversationId);
+
+        return chatClient.prompt()
+                .advisors(advisors -> advisors.param(
+                        ChatMemory.CONVERSATION_ID, scopedConversationId))
+                .toolContext(Map.of("userId", userId.toString()))
+                .user(Objects.requireNonNull(userText, "userText must not be null"))
+                .stream()
+                .chatClientResponse();
     }
 
     public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
