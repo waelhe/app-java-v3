@@ -64,6 +64,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * same one.</p>
  */
 @SpringBootTest(properties = {
+        // The channel DOWN for THIS context alone: the shared test GreenMail
+        // (GreenMailTestAutoConfiguration) holds 3025 for every other
+        // context; this breaker simulation points its own sender at a dead
+        // port — connection refused, the exact outage posture the test was
+        // measured for, without fighting the shared server.
+        "spring.mail.port=3999",
         // The compressed mailSend circuit: 4-call window, 50% threshold.
         "resilience4j.circuitbreaker.instances.mailSend.sliding-window-size=4",
         "resilience4j.circuitbreaker.instances.mailSend.minimum-number-of-calls=4",

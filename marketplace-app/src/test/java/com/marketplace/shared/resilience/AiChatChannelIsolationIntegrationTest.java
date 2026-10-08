@@ -7,9 +7,9 @@ import java.util.UUID;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -27,7 +27,10 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import org.springframework.context.annotation.Bean;
+
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 /**
  * D.4 (compliance plan wave D) — the AI provider channel's
@@ -75,8 +78,8 @@ class AiChatChannelIsolationIntegrationTest {
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers extension; raw type matches the established container pattern.
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
-    /** The bound provider seam — the outage itself (every call refused). */
-    @MockitoBean
+    /** The bound provider seam — the early-registered mock (see ProviderSeamConfig below). */
+    @Autowired
     private ChatModel chatModel;
 
     @Autowired
@@ -84,6 +87,24 @@ class AiChatChannelIsolationIntegrationTest {
 
     @Autowired
     private CircuitBreakerRegistry circuitBreakers;
+
+    /**
+     * The provider seam as an EARLY bean definition: a user {@code @TestConfiguration}
+     * is processed before the auto-configurations, so its {@code ChatModel} is
+     * visible to {@code AiAutoConfiguration}'s
+     * {@code @ConditionalOnBean({ChatModel, ChatMemory, ChatClient.Builder})} —
+     * the {@code @MockitoBean} override this test used before registers too
+     * late for the condition (the measured wiring failure on e8a705ac: the
+     * gateway bean silently never existed and the autowire failed).
+     */
+    @TestConfiguration
+    static class ProviderSeamConfig {
+
+        @Bean
+        ChatModel chatModel() {
+            return mock(ChatModel.class);
+        }
+    }
 
     @Test
     void sustainedProviderOutageIsIsolatedByTheCircuit() {

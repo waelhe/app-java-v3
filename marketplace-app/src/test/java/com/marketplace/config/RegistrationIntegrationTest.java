@@ -1,13 +1,11 @@
 package com.marketplace.config;
 
-import com.icegreen.greenmail.junit5.GreenMailExtension;
-import com.icegreen.greenmail.util.ServerSetupTest;
+import com.icegreen.greenmail.util.GreenMail;
 import jakarta.mail.internet.MimeMessage;
 import test.config.IntegrationContainers;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -81,9 +79,18 @@ class RegistrationIntegrationTest {
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
     static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
-    /** GreenMail's SMTP test setup — port 3025, the test profile's own mail binding. */
-    @RegisterExtension
-    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.SMTP);
+    /**
+     * The shared GreenMail (test.config.GreenMailTestAutoConfiguration) —
+     * the JVM-wide server on the test profile's own port 3025 binding. The
+     * per-class extension retired with the deterministic EmailService
+     * registration: every notification-flow context now has a real mail
+     * channel, and this test verifies the real stack against the same
+     * shared server (per-test isolation via
+     * {@link GreenMail#purgeEmailFromAllMailboxes()} at setup, the
+     * established idiom).
+     */
+    @Autowired
+    private GreenMail greenMail;
 
     @Autowired
     private ObjectMapper objectMapper;
