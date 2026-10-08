@@ -98,7 +98,6 @@ export default defineRailway(() => {
     healthcheckTimeout: 300,
     env: {
       AUTH_SERVER_ISSUER: preserve(),
-      EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT: preserve(),
       EDGE_BACKEND_URL: preserve(),
       EDGE_CLIENT_ID: preserve(),
       EDGE_CLIENT_SECRET: preserve(),
@@ -113,6 +112,9 @@ export default defineRailway(() => {
       REDIS_PORT: preserve(),
       SPRING_DATA_REDIS_PASSWORD: preserve(),
       SPRING_DATA_REDIS_SSL_ENABLED: preserve(),
+      SPRING_DATASOURCE_PASSWORD: preserve(),
+      SPRING_DATASOURCE_URL: preserve(),
+      SPRING_DATASOURCE_USERNAME: preserve(),
       SPRING_PROFILES_ACTIVE: preserve(),
     },
   });
