@@ -1,6 +1,7 @@
 package com.marketplace.edge;
 
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcOperations;
@@ -23,6 +24,11 @@ import static org.springframework.security.config.Customizer.withDefaults;
  * <li>CSRF: {@code csrf.spa()} (Spring Security reference, CSRF for SPAs).</li>
  * <li>Logout: {@link OidcClientInitiatedLogoutSuccessHandler} (Spring Security
  * reference, OIDC Logout).</li>
+ * <li>Backend transport: {@link EdgeBackendProperties} guards the TokenRelay
+ * connection at binding time — https, loopback, or the explicit
+ * {@code allow-insecure-transport} opt-in (the official fail-fast mechanism
+ * that replaced the removed manual runner; Boot reference, Third-party
+ * Configuration).</li>
  * <li>Authorized clients: the Token Relay default is an in-memory store, and the
  * Spring Cloud Gateway reference says to provide an own
  * {@link OAuth2AuthorizedClientService} for anything more robust; Spring
@@ -32,6 +38,7 @@ import static org.springframework.security.config.Customizer.withDefaults;
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(EdgeBackendProperties.class)
 class EdgeSecurityConfig {
 
     @Bean

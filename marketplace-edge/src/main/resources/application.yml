@@ -13,6 +13,11 @@ spring:
         webmvc:
           routes:
             - id: backend-api
+              # The exact env-style name resolves from BOTH the real environment
+              # and the tests' DynamicPropertySource; the typed
+              # EdgeBackendProperties record binds the same value through
+              # relaxed binding (EDGE_BACKEND_URL -> edge.backend.url) and
+              # enforces the transport gate at boot.
               uri: ${EDGE_BACKEND_URL:http://localhost:8080}
               predicates:
                 - Path=/api/**
