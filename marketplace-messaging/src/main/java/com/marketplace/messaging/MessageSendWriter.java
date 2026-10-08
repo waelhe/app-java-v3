@@ -4,6 +4,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 /**
  * B-04 (compliance plan 0.4 — CodeRabbit round-1 root adoption): the
  * send's write unit, in its own REQUIRES_NEW transaction.
