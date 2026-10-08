@@ -46,7 +46,8 @@ class AiChatGatewayTest {
         when(responseSpec.chatClientResponse()).thenReturn(Flux.just(response));
 
         AiChatGateway gateway = new AiChatGateway(chatClient);
-        assertThat(gateway.stream(UUID.randomUUID(), "conversation-1", "hello"))
+        assertThat(gateway.stream(UUID.randomUUID(), "conversation-1", "hello")
+                .collectList().block())
                 .containsExactly(response);
     }
 
