@@ -27,9 +27,6 @@ spring:
         api-key: ${GOOGLE_GENAI_API_KEY:}
         chat:
           model: ${GOOGLE_GENAI_CHAT_MODEL:gemini-2.5-flash}
-        embedding:
-          text:
-            model: ${GOOGLE_GENAI_EMBEDDING_MODEL:text-embedding-004}
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}
       chat:
@@ -45,16 +42,11 @@ spring:
       # matchIfMissing=true) on PgVectorStoreAutoConfiguration, v2.0.1 measured).
       # Same documented disable pattern as spring.ai.model.chat / .model.embedding.text
       # (=none, reference: api/embeddings/google-genai-embeddings-text.adoc NOTE).
-      # Default none keeps the vector store OFF — PgVectorStoreAutoConfiguration's
-      # vectorStore bean requires an EmbeddingModel parameter (measured: boot fails
-      # without one), so the store is a deployment decision made together with
-      # SPRING_AI_MODEL_EMBEDDING_TEXT when AI is activated by an operator.
+      # Default none keeps the vector store OFF until the operator-activation wave:
+      # the store's starter joins the classpath together with the credentials, then
+      # the official chain boots end to end (connection from api-key, model from
+      # spring.ai.model.embedding.text=google-genai, store from type=pgvector).
       type: ${SPRING_AI_VECTORSTORE_TYPE:none}
-      pgvector:
-        initialize-schema: ${SPRING_AI_PGVECTOR_INITIALIZE_SCHEMA:false}
-        index-type: HNSW
-        distance-type: COSINE_DISTANCE
-        max-document-batch-size: 10000
   datasource:
     # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
     # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
