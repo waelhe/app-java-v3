@@ -11,15 +11,20 @@ spring:
       enabled: false
 
   ai:
-    # Spring AI official auto-configuration:
-    # spring.ai.model.chat selects the active chat provider.
+    # Spring AI owns provider/model auto-configuration; this module only composes
+    # the official ChatClient, memory, tools and optional RAG extension points.
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:none}
     google:
       genai:
         api-key: ${GOOGLE_GENAI_API_KEY:}
         chat:
           model: ${GOOGLE_GENAI_CHAT_MODEL:gemini-2.5-flash}
+        embedding:
+          text:
+            model: ${GOOGLE_GENAI_EMBEDDING_MODEL:text-embedding-004}
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}
       chat:
@@ -29,6 +34,12 @@ spring:
         repository:
           jdbc:
             initialize-schema: never
+    vectorstore:
+      pgvector:
+        initialize-schema: ${SPRING_AI_PGVECTOR_INITIALIZE_SCHEMA:false}
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        max-document-batch-size: 10000
   datasource:
     # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
     # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
