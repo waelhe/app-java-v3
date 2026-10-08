@@ -114,6 +114,13 @@ public class AuthActionTokenService {
                 return Optional.empty();
             }
             outstanding.consume(now);
+            // CodeRabbit #4209499475 (adopted from the root): flush the
+            // consumption BEFORE the replacement INSERTs. Hibernate does not
+            // guarantee UPDATE-before-INSERT ordering at flush; if the INSERT
+            // ran first, the V112 partial unique index ix_auth_action_tokens_live
+            // would still see the old row as live and reject the new one — a
+            // re-request would surface as a 500. saveAndFlush pins the order.
+            repository.saveAndFlush(outstanding);
         }
         byte[] secret = new byte[32];
         SECURE_RANDOM.nextBytes(secret);
@@ -151,7 +158,13 @@ public class AuthActionTokenService {
         }
         token.consume(now);
         try {
-            repository.save(token);
+            // CodeRabbit #4209499485 (adopted from the root): flush INSIDE the
+            // try block so the optimistic-lock version check surfaces here,
+            // not at commit after the method has returned. A plain save() on a
+            // managed entity defers the UPDATE — the catch below was dead code
+            // and the second concurrent redemption would have answered a 500
+            // instead of the documented 400.
+            repository.saveAndFlush(token);
         } catch (OptimisticLockingFailureException ex) {
             // The second of two concurrent redemptions lands here — the
             // version wall answered exactly-once at the persistence layer.

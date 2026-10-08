@@ -128,7 +128,11 @@ class AuthActionTokenServiceTest {
         assertThat(redeemed).isSameAs(token);
         assertThat(token.getConsumedAt()).as("single use: the redemption stamps consumption")
                 .isEqualTo(NOW);
-        verify(repository).save(token);
+        // CodeRabbit #4209499485 adoption: the redemption flushes INSIDE the
+        // method (saveAndFlush) so the optimistic-lock version check surfaces
+        // in the documented catch — the test follows the strengthened
+        // persistence contract.
+        verify(repository).saveAndFlush(token);
     }
 
     @Test

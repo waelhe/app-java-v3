@@ -201,7 +201,12 @@ public class BookingService implements BookingSpi {
     }
 
     @Observed(name = "booking.cancel")
-    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
+    // CodeRabbit #4209499463 (adopted from the root): ADMIN joins the role
+    // gate — the controller's published contract promises "participant (or
+    // ADMIN) may cancel", and the participant gate below already admits an
+    // admin; an ADMIN-only token was rejected at THIS role gate before ever
+    // reaching it.
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
     public Booking cancel(UUID id, Authentication authentication) {

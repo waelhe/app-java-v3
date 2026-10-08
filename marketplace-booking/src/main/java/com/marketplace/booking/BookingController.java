@@ -77,7 +77,8 @@ public class BookingController {
 
     @PostMapping("/{id}/confirm")
     @Operation(summary = "Confirm a booking (provider)", description = "Accepts a PENDING booking; "
-            + "frees the slot window and starts the payment intent flow. PROVIDER or ADMIN role "
+            + "books the slot window in the booking's own name (the R2 ownership claim — a later "
+            + "non-owner release becomes a no-op) and starts the payment intent flow. PROVIDER or ADMIN role "
             + "required; a provider who does not own the booking gets 403 (the ownership gate "
             + "— the operation is a documented write, not an existence probe).")
     public ResponseEntity<BookingResponse> confirm(@PathVariable UUID id, Authentication authentication) {

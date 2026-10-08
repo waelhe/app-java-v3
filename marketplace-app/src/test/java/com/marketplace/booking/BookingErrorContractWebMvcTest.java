@@ -204,6 +204,15 @@ class BookingErrorContractWebMvcTest {
         mockMvc.perform(post("/api/v1/bookings/{id}", UUID.randomUUID()))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(405));
+                .andExpect(jsonPath("$.status").value(405))
+                // CodeRabbit #4209499432 (resolved by documentation, the
+                // documented-exception option): the framework-level statuses
+                // ride the official automatic body WITHOUT the house
+                // errorCode/category extensions — the contract's own
+                // "documented exception" section (error-codes.md) — and the
+                // pin asserts exactly that shape, not a silent absence of
+                // assertions.
+                .andExpect(jsonPath("$.errorCode").doesNotExist())
+                .andExpect(jsonPath("$.category").doesNotExist());
     }
 }

@@ -70,6 +70,19 @@ class BookingModuleIntegrationTest {
     @Autowired
     private BookingRepository bookingRepository;
 
+    /**
+     * CodeRabbit #4209499442 (adopted from the root): the class's own rows
+     * leave with each test. The empty-page contracts (listAllSummaries /
+     * listByStatus) must hold for EVERY execution order, not only when the
+     * row-creating autoConfirm test happens to run after them — the class
+     * owns its container (the per-class isolation rule), so sweeping the
+     * booking rows it created is safe and order-proof.
+     */
+    @org.junit.jupiter.api.AfterEach
+    void sweepBookingRows() {
+        bookingRepository.deleteAll();
+    }
+
     @Test
     void contextLoads() {
     }
