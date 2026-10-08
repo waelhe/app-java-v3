@@ -29,6 +29,8 @@ public class SearchController {
     @RateLimiter(name = "search")
     @Operation(summary = "Search listings",
             description = "Full-text search with typo tolerance (pg_trgm) and optional filters. "
+                    + "The price bounds are non-negative and ordered (min <= max when both "
+                    + "are present) — an inverted or negative range is a 400 before any query. "
                     + "When both stay-window dates are present, the window must be a valid "
                     + "half-open interval [checkIn, checkOut) and results are restricted to "
                     + "providers with an available slot overlapping it. A guests value, when "
@@ -45,7 +47,9 @@ public class SearchController {
                     + "composing WITH the geo hierarchy and the facets; listings without "
                     + "coordinates never match. "
                     + "Sorting: price/newest "
-                    + "apply to filter searches, area orders by the declared square meters "
+                    + "apply to filter searches (windowed searches included — the restricted "
+                    + "query honors the mapped sort with the id tiebreak), area orders by the "
+                    + "declared square meters "
                     + "(listings with an undeclared area are excluded from the area view); "
                     + "text searches always rank by relevance — the sort whitelist is ignored "
                     + "for them. sort=distance (nearest-first, requires the radius triple) "
@@ -60,9 +64,10 @@ public class SearchController {
             @RequestParam(required = false) String q,
             @Parameter(description = "Exact category filter", example = "stay")
             @RequestParam(required = false) String category,
-            @Parameter(description = "Minimum price filter (major units)", example = "150")
+            @Parameter(description = "Minimum price filter (major units; non-negative)", example = "150")
             @RequestParam(required = false) java.math.BigDecimal minPrice,
-            @Parameter(description = "Maximum price filter (major units)", example = "800")
+            @Parameter(description = "Maximum price filter (major units; non-negative, at least minPrice "
+                    + "when both bounds are present)", example = "800")
             @RequestParam(required = false) java.math.BigDecimal maxPrice,
             // L27: the stay window [checkIn, checkOut) — exclusive end. The
             // SearchCriteria record is the gate: an incomplete (one date
@@ -133,10 +138,23 @@ public class SearchController {
     @GetMapping("/category/{category}")
     @RateLimiter(name = "search")
     @Operation(summary = "Search listings by category",
-            description = "Category-restricted search with the same typo tolerance as the main "
-                    + "search surface.")
+            description = "Category browse — the convenience form of the main search surface "
+                    + "with the category bound from the path. W6 (search-unit compliance pass): "
+                    + "the endpoint delegates to the ONE criteria search — the same dispatch, "
+                    + "the same sort whitelist and the same cache the main surface applies: "
+                    + "price/newest/rating order the category's filter results, area orders by "
+                    + "the declared square meters, and an unsupported sort property answers 400 "
+                    + "(previously this endpoint bypassed the normalize() gate entirely — any "
+                    + "sort parameter failed deep inside the query path as a server error).")
     public ResponseEntity<PagedResponse<ListingSummary>> searchByCategory(
             @PathVariable String category, Pageable pageable) {
-        return ResponseEntity.ok(PagedResponse.of(searchService.searchByCategory(category, pageable)));
+        // W6: the SINGLE dispatch — the category rides the criteria record
+        // (its criterion-less form routes byte-identically to the legacy
+        // category read), and the sort passes the SAME normalize() gate the
+        // main surface applies (the single normalization point; the mapped
+        // names + the id tiebreak are what the Specification paths consume).
+        SearchCriteria criteria = new SearchCriteria(null, category, null, null);
+        Pageable effective = SearchSorts.normalize(pageable);
+        return ResponseEntity.ok(PagedResponse.of(searchService.search(criteria, effective)));
     }
 }

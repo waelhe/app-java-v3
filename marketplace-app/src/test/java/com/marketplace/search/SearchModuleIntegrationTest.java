@@ -102,7 +102,12 @@ class SearchModuleIntegrationTest {
     @Test
     void searchAll_returnsEmptyPage() {
         when(catalogSearchPort.listActive(any())).thenReturn(PagedResponse.of(Page.empty()));
-        var page = searchService.searchAll(Pageable.ofSize(10));
+        // W6: the browse-all form rides the ONE criteria search (the
+        // searchAll delegation overload was removed — the empty criteria
+        // routes byte-identically to the legacy listActive read).
+        var page = searchService.search(
+                new com.marketplace.shared.api.SearchCriteria(null, null, null, null),
+                Pageable.ofSize(10));
         assertThat(page).isEmpty();
     }
 

@@ -73,11 +73,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       closes every fixable alpine finding at build time (the version-bump
  *       response the gate policy prescribes), so an entry exists only while
  *       a fix is not yet published for the v3.24 branch. The root pom carries
- *       the {@code <tomcat.version>11.0.25</tomcat.version>} override that
+ *       the {@code <tomcat.version>11.0.26</tomcat.version>} override that
  *       closed the three CRITICAL Tomcat 11.0.24 auth bypasses this layer
- *       caught; the pin forces the override's removal to be a deliberate,
- *       visible act (it becomes stale the moment the Boot parent manages
- *       {@literal >=} 11.0.25). The Dockerfile pin is the same contract for
+ *       caught, then followed the same-line patches to 11.0.25 and 11.0.26
+ *       (three IMPORTANT CVEs in 11.0.25: HTTP/2 header mix-up, AJP DoS,
+ *       WebSocket close busy-wait); the pin forces the override's removal to
+ *       be a deliberate, visible act (it becomes stale the moment the Boot
+ *       parent manages {@literal >=} 11.0.26). The Dockerfile pin is the same contract for
  *       the OS layer: silently dropping the upgrade line returns the shipped
  *       image to stale alpine packages until the weekly scan catches it.</li>
  * </ul>
@@ -361,17 +363,25 @@ class PlatformGovernanceFilesTest {
         // "can be used to override the versions managed by Spring Boot")
         // closing the three CRITICAL Tomcat 11.0.24 auth bypasses
         // (CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 — fixed upstream
-        // in 11.0.25). The pin makes removal deliberate: when the Boot parent
-        // manages >= 11.0.25, deleting the override must also update this
-        // test in the same PR (the Dependabot BOM PR will surface the bump).
-        assertThat(pom).as("tomcat override to the CVE-fixed 11.0.25")
-                .contains("<tomcat.version>11.0.25</tomcat.version>");
+        // in 11.0.25), then following the same-line patch to 11.0.26, which
+        // closes three IMPORTANT CVEs that affect 11.0.25 (CVE-2026-86350
+        // HTTP/2 request header mix-up / CVE-2026-78383 AJP DoS via missing
+        // request body / CVE-2026-77791 WebSocket close busy-wait DoS — this
+        // platform runs WebSocket). The pin makes removal deliberate: when
+        // the Boot parent manages >= 11.0.26, deleting the override must also
+        // update this test in the same PR (the Dependabot BOM PR will surface
+        // the bump).
+        assertThat(pom).as("tomcat override to the CVE-fixed 11.0.26")
+                .contains("<tomcat.version>11.0.26</tomcat.version>");
         // The justification comment travels with the property — a future
         // reader must find the CVE trail without git archaeology.
         assertThat(pom).as("the override cites its CVE evidence")
                 .contains("CVE-2026-65182")
                 .contains("CVE-2026-65905")
-                .contains("CVE-2026-68525");
+                .contains("CVE-2026-68525")
+                .contains("CVE-2026-86350")
+                .contains("CVE-2026-78383")
+                .contains("CVE-2026-77791");
     }
 
     @Test
