@@ -373,6 +373,26 @@ resilience4j:
     instances:
       paymentProcessing:
         base-config: default
+      # D.4 (compliance plan wave D — channel resilience): the three channels
+      # that cross the process boundary beyond the PSP. mailSend guards the
+      # SMTP crossing (EmailService.send — the async AFTER_COMMIT mail leg);
+      # aiChat guards the AI provider crossing (AiChatGateway.chat) and must
+      # NEVER open on the OFF state: ServiceUnavailableException (the honest
+      # 503 SU-001 "capability is OFF, not broken") is a state, not a channel
+      # failure — the official ignore-exceptions mechanism keeps the circuit
+      # honest about the provider's real health only. mediaStorage guards the
+      # S3-compatible object storage's four network operations (HeadObject
+      # verify, GetObject/PutObject thumbnail pipeline, DeleteObject) via the
+      # programmatic decorator in S3MediaStorage — yml configures it exactly
+      # like the annotation instances.
+      mailSend:
+        base-config: default
+      aiChat:
+        base-config: default
+        ignore-exceptions:
+          - com.marketplace.shared.api.ServiceUnavailableException
+      mediaStorage:
+        base-config: default
   retry:
     configs:
       default:
@@ -387,6 +407,17 @@ resilience4j:
       booking:
         base-config: default
         max-attempts: 2
+      # D.4: transient-blip absorption for the two annotation-style channels
+      # (the programmatic mediaStorage breaker needs no retry wrapper — the
+      # S3 SDK's own retry policy owns transport-level blips; the breaker
+      # here owns the outage decision). aiChat ignores the OFF state for the
+      # same reason its circuitbreaker instance does.
+      mailSend:
+        base-config: default
+      aiChat:
+        base-config: default
+        ignore-exceptions:
+          - com.marketplace.shared.api.ServiceUnavailableException
   ratelimiter:
     configs:
       default:

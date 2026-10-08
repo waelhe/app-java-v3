@@ -1,5 +1,7 @@
 package com.marketplace.media;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -19,7 +21,8 @@ class MediaConfig {
 
     @Bean(destroyMethod = "close")
     @Conditional(MediaStorageConfiguredCondition.class)
-    S3MediaStorage s3MediaStorage(MediaProperties properties, Environment environment) {
+    S3MediaStorage s3MediaStorage(MediaProperties properties, Environment environment,
+                                   CircuitBreakerRegistry circuitBreakerRegistry) {
         // House fail-fast-in-prod pattern (JwkSourceProdHardening,
         // OAuth2ClientSecretInitializer — CodeRabbit #242 round 2): the
         // cleartext-endpoint escape hatch exists for local emulators only and
@@ -32,9 +35,17 @@ class MediaConfig {
                             + " prod profile — cleartext storage endpoints leak SigV4 credentials"
                             + " (CWE-319)");
         }
+        // D.4 (compliance plan wave D — channel resilience): the storage's
+        // isolation seam rides the auto-configured registry, so the
+        // `mediaStorage` instance follows application.yml exactly like every
+        // annotation-style instance (paymentProcessing et al.) — the programmatic
+        // vs annotation difference is only WHERE the decorator is applied, not
+        // how it is configured.
+        CircuitBreaker mediaStorage = circuitBreakerRegistry.circuitBreaker("mediaStorage");
         return new S3MediaStorage(
                 properties.storage(),
-                properties.limits().presignTtl()
+                properties.limits().presignTtl(),
+                mediaStorage
         );
     }
 }

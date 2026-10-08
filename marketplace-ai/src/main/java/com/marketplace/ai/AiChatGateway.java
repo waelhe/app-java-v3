@@ -1,6 +1,8 @@
 package com.marketplace.ai;
 
 import com.marketplace.shared.api.ServiceUnavailableException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,6 +51,20 @@ import org.springframework.stereotype.Service;
  * so the message must never assume {@code none}); selecting a provider
  * without its key is a broken selection, not an off state, and fails at the
  * provider's own startup assertion.
+ *
+ * <p><b>D.4 (compliance plan wave D — channel resilience):</b> when a
+ * provider IS bound, {@link #chat} is the AI channel's single external
+ * crossing, so it carries the same official Resilience4j guards the payments
+ * PSP channel wears (the {@code paymentProcessing} house pattern):
+ * {@code @Retry(name = "aiChat")} absorbs transient provider blips (the call
+ * is an idempotent completion — no side effects to double-apply), and
+ * {@code @CircuitBreaker(name = "aiChat")} isolates a provider outage: calls
+ * fail FAST with {@code CallNotPermittedException} → the existing 503
+ * handler (the same SERVICE_UNAVAILABLE taxonomy the OFF contract answers),
+ * never a hung request thread. The breaker's OFF-state honesty is pinned in
+ * application.yml: {@code ServiceUnavailableException} is ignored by both
+ * instances — "capability OFF" is a state, not a channel failure, and must
+ * never open the circuit.
  */
 @Service
 public class AiChatGateway {
@@ -84,6 +100,8 @@ public class AiChatGateway {
      *         selector property with its actually configured value (or that
      *         it is unset), never an assumed one.
      */
+    @Retry(name = "aiChat")
+    @CircuitBreaker(name = "aiChat")
     public String chat(String userText) {
         ChatModel model = models.getIfAvailable();
         if (model == null) {

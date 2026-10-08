@@ -18,6 +18,17 @@
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
         <dependency><groupId>org.springframework.modulith</groupId><artifactId>spring-modulith-api</artifactId></dependency>
+        <!-- D.4 (compliance plan wave D — channel resilience): the annotation
+             artifact carrying @CircuitBreaker + @Retry (the exact artifact the
+             Resilience4j reference's annotation module documents; version from
+             the resilience4j-bom, root pom exception #3). Every other module
+             resolves it transitively through platform-infra's
+             resilience4j-spring-boot4 -> spring6 chain; this module rides
+             marketplace-shared only, so the annotations artifact joins here
+             explicitly. The runtime registries + aspects stay the app
+             classpath's (platform-infra) — this is a compile-symbols
+             declaration only. -->
+        <dependency><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-annotations</artifactId></dependency>
         <!-- Spring AI provider starters (versions from the spring-ai-bom,
              exception #13 in the root pom). Both stay on the classpath and
              exactly one provider autoconfigures, selected by
