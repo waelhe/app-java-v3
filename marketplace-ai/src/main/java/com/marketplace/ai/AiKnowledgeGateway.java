@@ -1,6 +1,7 @@
 package com.marketplace.ai;
 
 import org.springframework.ai.document.Document;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 
@@ -11,9 +12,11 @@ import java.util.Objects;
 public final class AiKnowledgeGateway {
 
     private final VectorStore vectorStore;
+    private final TokenTextSplitter splitter;
 
     public AiKnowledgeGateway(VectorStore vectorStore) {
         this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore must not be null");
+        this.splitter = TokenTextSplitter.builder().build();
     }
 
     public void replacePublicSource(AiKnowledgeSource source) {
@@ -25,14 +28,14 @@ public final class AiKnowledgeGateway {
                 filters.eq("sourceId", source.sourceId())
         ).build());
 
-        vectorStore.add(List.of(new Document(
+        Document sourceDocument = new Document(
                 source.content(),
                 Map.of(
                         "visibility", "PUBLIC",
                         "sourceId", source.sourceId(),
                         "sourceType", source.sourceType()
-                )
-        )));
+                ));
+        vectorStore.add(splitter.apply(List.of(sourceDocument)));
     }
 
     public void deletePublicSource(String sourceId) {
