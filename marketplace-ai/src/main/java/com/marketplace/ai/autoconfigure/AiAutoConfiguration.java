@@ -28,7 +28,7 @@ import org.springframework.context.annotation.Bean;
 public class AiAutoConfiguration {
 
     @Bean
-    @ConditionalOnBean({ChatModel.class, ChatMemory.class})
+    @ConditionalOnBean({ChatModel.class, ChatMemory.class, ChatClient.Builder.class})
     @ConditionalOnMissingBean
     AiChatGateway aiChatGateway(
             ChatClient.Builder builder,
@@ -54,7 +54,7 @@ public class AiAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(ChatModel.class)
+    @ConditionalOnBean({ChatModel.class, ChatClient.Builder.class})
     @ConditionalOnMissingBean
     AiQueryUnderstanding aiQueryUnderstanding(ChatClient.Builder builder) {
         return new AiQueryUnderstanding(builder);
