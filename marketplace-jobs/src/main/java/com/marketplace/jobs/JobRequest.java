@@ -3,6 +3,7 @@ package com.marketplace.jobs;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
@@ -31,8 +32,10 @@ public record JobRequest(
         @Size(max = 100)
         @Schema(description = "The optional district inside the city.")
         String district,
+        @PositiveOrZero
         @Schema(description = "The optional salary floor in cents — present only as the all-or-nothing block.")
         Long salaryMinCents,
+        @PositiveOrZero
         @Schema(description = "The optional salary ceiling in cents — present only as the all-or-nothing block.")
         Long salaryMaxCents,
         @Size(min = 3, max = 3)

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -143,6 +144,11 @@ public class MessagingController {
     public record SendMessageRequest(
             @Schema(description = "Message body (plain text)", example = "Hi! Is early check-in possible?")
             @NotBlank String content,
+            // The size contract matches the V150 column exactly (VARCHAR(64)):
+            // a longer key used to ride to the INSERT and surface as a 500-
+            // flavored length violation; a blank one used to be stored as a
+            // real key. Null stays valid — the key is optional.
+            @Size(min = 1, max = 64)
             @Schema(description = "Optional replay key — the caller's deduplication surface: a "
                     + "retried submission with the same key returns the original message instead "
                     + "of a duplicate (mirrors payment_intents' idempotencyKey)",

@@ -35,11 +35,16 @@ public interface MessageRepository extends JpaRepository<Message, UUID>, Revisio
 
     /**
      * B-04 (compliance plan 0.4): the send's replay lookup — the caller's
-     * deduplication surface (the payment_intents contract mirrored: the
-     * UNIQUE index from V150 is the in-flight race backstop, this lookup
-     * answers the sequential retry).
+     * deduplication surface, ONE KEY SPACE PER SENDER (the CodeRabbit
+     * round-1 root adoption: a client-chosen key is realistic to collide
+     * across senders, so the scoping and the V150
+     * uq_messages_sender_idempotency_key constraint share the same
+     * (sender_id, idempotency_key) shape — the constraint's own index
+     * serves this lookup). The sequential retry is answered here; the
+     * in-flight race is answered by the service's catch-and-replay over
+     * the same lookup in a fresh transaction.
      */
-    Optional<Message> findByIdempotencyKey(String idempotencyKey);
+    Optional<Message> findBySenderIdAndIdempotencyKey(UUID senderId, String idempotencyKey);
 
     /**
      * Bulk mark unread messages as read for a specific conversation (excluding sender's own messages).

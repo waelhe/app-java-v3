@@ -19,15 +19,25 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
     /** The one-live-application pre-check — (job, seeker) over the live rows. */
     Optional<JobApplication> findByJobIdAndSeekerId(UUID jobId, UUID seekerId);
 
-    /** The employer's inbox for one job — the service passes the stable sort. */
-    Page<JobApplication> findByJobId(UUID jobId, Pageable pageable);
+    // The four inbox/seeker reads below carry the stable
+    // (created_at DESC, id DESC) order in their derived names (the
+    // idx_job_applications_job / idx_job_applications_seeker index
+    // shapes, V153) — the CodeRabbit round-1 root adoption: the derived
+    // name IS the house's documented way to pin the order (the
+    // findByEmployerIdOrderByCreatedAtDescIdDesc precedent), so the
+    // client Pageable can never leave the query without an ORDER BY
+    // (rows could repeat or vanish across pages) nor inject arbitrary
+    // sort properties.
 
-    /** The inbox filtered by status (the NEW queue, the decided history). */
-    Page<JobApplication> findByJobIdAndStatus(UUID jobId, ApplicationStatus status, Pageable pageable);
+    /** The employer's inbox for one job — newest first with the id tiebreaker. */
+    Page<JobApplication> findByJobIdOrderByCreatedAtDescIdDesc(UUID jobId, Pageable pageable);
 
-    /** The seeker's own applications — every job they applied to, newest first. */
-    Page<JobApplication> findBySeekerId(UUID seekerId, Pageable pageable);
+    /** The inbox filtered by status (the NEW queue, the decided history) — newest first with the id tiebreaker. */
+    Page<JobApplication> findByJobIdAndStatusOrderByCreatedAtDescIdDesc(UUID jobId, ApplicationStatus status, Pageable pageable);
 
-    /** The seeker's own filtered by status. */
-    Page<JobApplication> findBySeekerIdAndStatus(UUID seekerId, ApplicationStatus status, Pageable pageable);
+    /** The seeker's own applications — every job they applied to, newest first with the id tiebreaker. */
+    Page<JobApplication> findBySeekerIdOrderByCreatedAtDescIdDesc(UUID seekerId, Pageable pageable);
+
+    /** The seeker's own filtered by status — newest first with the id tiebreaker. */
+    Page<JobApplication> findBySeekerIdAndStatusOrderByCreatedAtDescIdDesc(UUID seekerId, ApplicationStatus status, Pageable pageable);
 }

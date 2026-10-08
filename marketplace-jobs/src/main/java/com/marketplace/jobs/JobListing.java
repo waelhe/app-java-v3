@@ -129,6 +129,14 @@ public class JobListing extends BaseEntity {
         if (hasAll && salaryMinCents > salaryMaxCents) {
             throw new IllegalArgumentException("The salary floor cannot exceed the salary ceiling");
         }
+        // The negative floor is the factory's own loud 400 (the CodeRabbit
+        // round-1 root adoption): without this guard a negative value
+        // rode all the way to the V153 chk_jobs_salary_block CHECK and
+        // surfaced as a 500-flavored constraint violation instead of the
+        // honest client error — the shape guard lives with the shape.
+        if (hasAll && salaryMinCents < 0) {
+            throw new IllegalArgumentException("The salary floor cannot be negative");
+        }
         return new JobListing(UUID.randomUUID(), employerId, title, description, employmentType,
                 workplaceType, city, district, salaryMinCents, salaryMaxCents,
                 salaryCurrency, applicationDeadline);

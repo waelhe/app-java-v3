@@ -32,6 +32,7 @@ public interface JobListingRepository extends JpaRepository<JobListing, UUID> {
               and (:city is null or j.city = :city)
               and (:employmentType is null or j.employmentType = :employmentType)
               and (:workplaceType is null or j.workplaceType = :workplaceType)
+            order by j.createdAt desc, j.id desc
             """)
     Page<JobListing> searchBoard(@Param("status") JobStatus status,
                                  @Param("city") String city,

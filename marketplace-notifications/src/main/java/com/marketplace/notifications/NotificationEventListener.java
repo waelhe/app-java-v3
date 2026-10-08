@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
@@ -190,4 +191,21 @@ public class NotificationEventListener {
                 event.recipientId(), event.listingId());
     }
 
+
+    /**
+     * B-08 (compliance plan 0.10 — the CR-4 wiring, completing the arrival
+     * chain end to end): the recipient's MESSAGE_RECEIVED alert. The event
+     * record lives in shared/api (the house convention for cross-boundary
+     * events, measured on every record this listener already consumes) —
+     * the notifications pom carries no messaging dependency, so the shared
+     * placement needs no pom change anywhere. Same contract as the
+     * listeners above — after commit, its own transaction, the framework's
+     * retry: a failed delivery never loses the arrival notification.
+     */
+    @ApplicationModuleListener
+    public void onMessageReceived(MessageReceivedEvent event) {
+        notificationService.onMessageReceived(event.conversationId(), event.recipientId());
+        log.info("Notification sent for message received: messageId={}, conversationId={}",
+                event.messageId(), event.conversationId());
+    }
 }

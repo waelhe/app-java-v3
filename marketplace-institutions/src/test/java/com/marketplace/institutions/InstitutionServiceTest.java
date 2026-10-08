@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 
 import java.time.Clock;
@@ -254,9 +255,14 @@ class InstitutionServiceTest {
         Institution institution = service.register(request(), authentication);
         assertThat(institution.getVerificationState()).isEqualTo(InstitutionVerificationState.UNVERIFIED);
 
-        // 2. The board returns it (the honest registry — every state).
-        when(repository.searchBoard(null, null, PageRequest.of(0, 20)))
-                .thenReturn(new PageImpl<>(List.of(institution), PageRequest.of(0, 20), 1));
+        // 2. The board returns it (the honest registry — every state) —
+        // through the service's own stable (createdAt DESC, id DESC) sort:
+        // the unsorted client Pageable is rebuilt, so the page boundary is
+        // deterministic exactly as the javadoc promises (the V154
+        // idx_institutions_board index shape).
+        Sort boardSort = Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"));
+        when(repository.searchBoard(null, null, PageRequest.of(0, 20, boardSort)))
+                .thenReturn(new PageImpl<>(List.of(institution), PageRequest.of(0, 20, boardSort), 1));
         assertThat(service.searchBoard(null, null, PageRequest.of(0, 20))).hasSize(1);
 
         // 3. The representative asks for the review.

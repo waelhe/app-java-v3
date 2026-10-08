@@ -92,7 +92,8 @@ public class InstitutionService {
     public Page<Institution> searchBoard(InstitutionType type,
                                          InstitutionVerificationState state,
                                          Pageable pageable) {
-        return repository.searchBoard(type, state, pageable);
+        return repository.searchBoard(type, state,
+                PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), BOARD_SORT));
     }
 
     /** The detail read: any live registry entry by id — the state honest, unknown 404. */
@@ -106,7 +107,8 @@ public class InstitutionService {
     @Transactional(readOnly = true)
     public Page<Institution> myInstitutions(Authentication authentication, Pageable pageable) {
         UUID representativeId = currentUserProvider.getCurrentUserId(authentication);
-        return repository.findByRepresentativeId(representativeId, pageable);
+        return repository.findByRepresentativeId(representativeId,
+                PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), MINE_SORT));
     }
 
     /**
@@ -135,6 +137,21 @@ public class InstitutionService {
      */
     private static final Sort VERIFICATION_QUEUE_SORT =
             Sort.by(Sort.Direction.ASC, "updatedAt").and(Sort.by(Sort.Direction.ASC, "id"));
+
+    // The board's stable page boundary: newest-registered first with the
+    // complete (created_at, id) key — the idx_institutions_board index
+    // shape (V154). The service owns the sort exactly as its javadoc
+    // promises (the CodeRabbit round-1 root adoption: the client Pageable
+    // used to pass through unchanged, so an unsorted request produced no
+    // ORDER BY at all — rows could repeat or vanish across pages — and a
+    // client-supplied sort could request arbitrary properties).
+    private static final Sort BOARD_SORT =
+            Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"));
+
+    // The representative's own list: newest-registered first with the id
+    // tiebreaker — the idx_institutions_representative index shape (V154).
+    private static final Sort MINE_SORT =
+            Sort.by(Sort.Direction.DESC, "registeredAt").and(Sort.by(Sort.Direction.DESC, "id"));
 
     @Transactional(readOnly = true)
     public Page<Institution> reviewQueue(InstitutionVerificationState state, Pageable pageable) {
