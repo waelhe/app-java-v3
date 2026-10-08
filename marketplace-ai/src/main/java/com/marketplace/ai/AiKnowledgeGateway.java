@@ -22,14 +22,6 @@ public final class AiKnowledgeGateway {
     public void replacePublicSource(AiKnowledgeSource source) {
         Objects.requireNonNull(source, "source must not be null");
 
-        // Prepare the replacement documents BEFORE deleting the current
-        // ones (the CodeRabbit-measured loss window): a splitter failure
-        // now leaves the existing source untouched instead of deleted-
-        // with-no-replacement. The official VectorStore contract exposes
-        // delete and add as two separate operations with no atomic
-        // replace — the residual add-after-delete failure leaves the
-        // source absent until the next replace re-lands it (the caller's
-        // own retry re-runs this whole method; a re-run is idempotent).
         Document sourceDocument = new Document(
                 source.content(),
                 Map.of(
