@@ -30,6 +30,12 @@ public final class ApiConstants {
     public static final String CART = API_V1 + "/me/cart";
     public static final String SEARCH = API_V1 + "/search";
     public static final String ADMIN = API_V1 + "/admin";
+    /**
+     * A-18 (compliance plan C.12): the public platform-release path — the
+     * client's boot-time read (the §7/2 first-screen moment), a permitAll
+     * GET family.
+     */
+    public static final String RELEASES = API_V1 + "/releases";
 
     private ApiConstants() {
     }

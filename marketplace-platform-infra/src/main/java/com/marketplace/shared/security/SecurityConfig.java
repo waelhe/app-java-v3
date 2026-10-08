@@ -278,6 +278,14 @@ public class SecurityConfig {
                         // only the anonymous read the click-from-a-review
                         // needs is public.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*/public").permitAll()
+                        // A-18 (compliance plan C.12 — the §7/2 moment): the
+                        // public platform-release read, the FIRST-SCREEN /
+                        // bootstrap-settings family. The client calls it at
+                        // boot by definition BEFORE any authenticated session
+                        // exists (the sitemap/robots and public-catalog
+                        // precedent family) — one precise GET line, the
+                        // admin publication surface keeps its own chain rule.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/releases/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()
