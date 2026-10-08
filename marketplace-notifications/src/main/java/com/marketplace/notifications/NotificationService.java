@@ -403,8 +403,10 @@ public class NotificationService {
      * complete trust fact — member, neighborhood, membership row) — this
      * method delivers unconditionally, keeping the delivery contract one
      * shape for every caller (the onMessageReceived B-08 precedent). The
-     * event-to-listener wiring rides CR-10 (the record's cross-module
-     * placement — the B-08/CR-4 flow verbatim).
+     * event-to-listener wiring LANDED (the CodeRabbit round-1 adoption):
+     * the record lives in shared/api (the CR-4 placement) and
+     * NotificationEventListener's onMembershipVerificationGranted delivers
+     * on every grant publication.
      */
     public void onVerificationGranted(UUID userId, UUID locationId) {
         // B-11: the composed text rides the module's MessageSource channel
@@ -435,7 +437,11 @@ public class NotificationService {
      * the composed text renders each through the bundle's vocabulary
      * channel ({@code targettype.*} / {@code reportoutcome.*}) with the
      * honest raw ride-through for unknown names. The event-to-listener
-     * wiring rides CR-10 (the B-08/CR-4 flow verbatim).
+     * wiring LANDED (the CodeRabbit round-1 adoption): the record lives
+     * in shared/api (the CR-4 placement) and
+     * NotificationEventListener's onContentReportResolved delivers on
+     * every adjudication publication — the human resolve path and the
+     * engine's automatic path alike.
      */
     public void onReportResolved(UUID reporterId, String targetType, UUID targetId, String outcome) {
         // B-11: the composed text rides the module's MessageSource channel

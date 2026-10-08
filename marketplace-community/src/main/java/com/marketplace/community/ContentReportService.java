@@ -139,18 +139,19 @@ public class ContentReportService {
                 report.resolve(ReportStatus.RESOLVED, note, adminId, clock);
             }
         }
-        ContentReport saved = reportRepository.save(report);
-        // The reporter's adjudication fact (the B-17 record — the manual
-        // resolve command's OWN publication, the ModerationRuleEngine's
-        // twin): every resolve outcome fires it, whichever way the verdict
-        // went — the reporter's journey is "my report left the queue".
-        // Same transaction as the close (the registry entry commits
-        // atomically with the report's new state).
+        // B-17 (C.9 — the CodeRabbit round-1 adoption closing the wiring gap
+        // the review measured): the REPORTER's adjudication fact publishes on
+        // the HUMAN path exactly as the engine's automatic path already does
+        // — every outcome fires it (RESOLVED behind HIDE_CONTENT, DISMISSED
+        // behind DISMISS), because the reporter's journey is «my report left
+        // the queue», whichever way the verdict went. Published inside the
+        // resolver's own transaction (Modulith reference/events.html): the
+        // registry entry commits atomically with the report's close.
         eventPublisher.publishEvent(new ContentReportResolvedEvent(
-                saved.getId(), saved.getReporterId(),
-                saved.getTargetType().name(), saved.getTargetId(),
-                saved.getStatus().name()));
-        return ContentReportView.of(saved);
+                report.getId(), report.getReporterId(),
+                report.getTargetType().name(), report.getTargetId(),
+                report.getStatus().name()));
+        return ContentReportView.of(reportRepository.save(report));
     }
 
     /**

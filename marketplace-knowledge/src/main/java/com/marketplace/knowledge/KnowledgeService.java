@@ -116,7 +116,10 @@ public class KnowledgeService {
 
     /**
      * The author's revision: the foreign entry answers 404 (the caller's
-     * own resource or nothing — the inbox discipline). The revision
+     * own resource or nothing — the inbox discipline). The location is
+     * IMMUTABLE on revision — a body locationId that disagrees with the
+     * entry's own answers 400 (the routing-mismatch surface: the API
+     * never silently accepts a change it will not apply). The revision
      * republishes the indexing fact (the upsert signal — the consumer's
      * index reflects the revised text, never the stale one).
      */
@@ -127,15 +130,9 @@ public class KnowledgeService {
         KnowledgeEntry entry = repository.findById(entryId)
                 .filter(e -> e.getAuthorId().equals(authorId))
                 .orElseThrow(() -> new ResourceNotFoundException("Knowledge entry not found: " + entryId));
-        // The revision contract (the same 400-on-mismatch guard the console's
-        // revise carries): the entry's geo anchor is born with the entry and
-        // never moves — a different locationId in the body names a DIFFERENT
-        // entry's anchor, so the request is rejected loudly instead of being
-        // silently ignored while the entry keeps its original neighborhood.
         if (!entry.getLocationId().equals(request.locationId())) {
-            throw new BadRequestException(
-                    "locationId cannot change on revision — the entry is anchored to "
-                            + entry.getLocationId() + " but the request names " + request.locationId());
+            throw new BadRequestException("locationId cannot change on revision: entry is anchored to "
+                    + entry.getLocationId() + " but the request carries " + request.locationId());
         }
         entry.revise(request.category(), request.title(), request.body());
         eventPublisher.publishEvent(new KnowledgeEntryPublishedEvent(

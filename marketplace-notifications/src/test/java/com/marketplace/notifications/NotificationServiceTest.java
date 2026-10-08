@@ -814,7 +814,7 @@ class NotificationServiceTest {
      * (the neighborhood id in the message body, the Arabic composition
      * riding the B-11 channel), the push channels ride the L22 matrix
      * with the defaults on. The handler itself is wired to the
-     * MembershipVerificationGrantedEvent listener via CR-10 (the event
+     * MembershipVerificationGrantedEvent listener (LANDED — the event
      * type's cross-module placement — the B-08/CR-4 flow verbatim).
      */
     @Test
@@ -882,7 +882,7 @@ class NotificationServiceTest {
      * rendered through the bundle's vocabulary channel, the target id
      * carried as the fact), the push channels ride the L22 matrix with
      * the defaults on. The handler itself is wired to the
-     * ContentReportResolvedEvent listener via CR-10 (the B-08/CR-4 flow
+     * ContentReportResolvedEvent listener (LANDED — the B-08/CR-4 flow
      * verbatim).
      */
     @Test
