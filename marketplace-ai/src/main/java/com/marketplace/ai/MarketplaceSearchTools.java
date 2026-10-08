@@ -9,6 +9,7 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
+import org.springframework.util.Assert;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -62,7 +63,12 @@ public final class MarketplaceSearchTools {
     }
 
     private static void requireUserContext(ToolContext toolContext) {
-        Objects.requireNonNull(toolContext, "toolContext must not be null");
+        // Spring AI's own convention (MethodToolCallback, v2.0.1 measured):
+        // org.springframework.util.Assert throws IllegalArgumentException for
+        // argument validation — the same exception the framework's
+        // validateToolContextSupport throws when a tool method requires a
+        // ToolContext and none is provided.
+        Assert.notNull(toolContext, "toolContext must not be null");
         Object userId = toolContext.getContext().get("userId");
         if (userId == null || userId.toString().isBlank()) {
             throw new IllegalArgumentException("toolContext userId must be present");
