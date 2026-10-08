@@ -6,6 +6,7 @@ import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.SearchCriteria;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.model.ToolContext;
 
 import java.util.List;
 
