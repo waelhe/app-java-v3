@@ -2,58 +2,64 @@ package com.marketplace.ai;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.client.ChatClientResponse;
 
-import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AiChatGatewayTest {
-
     @Test
-    void delegatesToTheAutoConfiguredChatClientAndReturnsFullResponse() {
-        ChatClient client = mock(ChatClient.class);
+    void delegatesToSpringAiAndScopesConversationByUser() {
+        ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
-
-        ChatResponse response = new ChatResponse(
-                List.of(new Generation(new AssistantMessage("hi"))));
-
-        when(client.prompt()).thenReturn(request);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        ChatClientResponse response = mock(ChatClientResponse.class);
+        when(chatClient.prompt()).thenReturn(request);
         when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
-        when(request.user("hi")).thenReturn(request);
-        when(request.call()).thenReturn(call);
-        when(call.chatResponse()).thenReturn(response);
-
-        AiChatGateway gateway = new AiChatGateway(client);
-
-        assertThat(gateway.chat("conversation-1", "hi")).isSameAs(response);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(response);
+        when(response.chatResponse()).thenReturn(mock(org.springframework.ai.chat.model.ChatResponse.class));
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThat(gateway.chat(UUID.randomUUID(), "conversation-1", "hello")).isSameAs(response);
     }
 
     @Test
-    void rejectsEmptySpringAiResponse() {
-        ChatClient client = mock(ChatClient.class);
+    void rejectsBlankConversationId() {
+        AiChatGateway gateway = new AiChatGateway(mock(ChatClient.class));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), " ", "hello"))
+                .withMessage("conversationId must not be blank");
+    }
+
+    @Test
+    void rejectsNullChatResponse() {
+        ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(null);
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThatIllegalStateException()
+                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), "conversation-1", "hello"))
+                .withMessage("Spring AI returned an empty chat response");
+    }
 
-        when(client.prompt()).thenReturn(request);
-        when(request.advisors(
-                org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any()))
-                .thenReturn(request);
-        when(request.user("hi")).thenReturn(request);
-        when(request.call()).thenReturn(call);
-        when(call.chatResponse()).thenReturn(null);
-
-        AiChatGateway gateway = new AiChatGateway(client);
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> gateway.chat("conversation-1", "hi"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Spring AI returned an empty chat response");
+    @Test
+    void scopesConversationDeterministically() {
+        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        assertThat(AiChatGateway.scopeConversation(userId, " abc "))
+                .isEqualTo("ai:11111111-1111-1111-1111-111111111111:abc");
     }
 }

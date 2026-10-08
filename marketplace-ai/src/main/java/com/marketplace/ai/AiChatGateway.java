@@ -1,33 +1,45 @@
 package com.marketplace.ai;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.model.ChatResponse;
 
-/**
- * Provider-neutral application entry point for AI chat.
- *
- * <p>The active provider, ChatClient builder, observability and built-in tool-calling
- * support are supplied by Spring AI auto-configuration. This class contains no provider
- * lookup, selector inspection or manual provider lifecycle logic.
- */
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+
 public final class AiChatGateway {
 
+    private static final String CONVERSATION_PREFIX = "ai:";
     private final ChatClient chatClient;
 
     public AiChatGateway(ChatClient chatClient) {
-        this.chatClient = chatClient;
+        this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
     }
 
-    public ChatResponse chat(String conversationId, String userText) {
-        ChatResponse response = chatClient.prompt()
-                .advisors(advisors -> advisors.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .user(userText)
+    public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        String scopedConversationId = scopeConversation(userId, conversationId);
+
+        ChatClientResponse response = chatClient.prompt()
+                .advisors(advisors -> advisors.param(
+                        ChatMemory.CONVERSATION_ID, scopedConversationId))
+                .toolContext(Map.of("userId", userId.toString()))
+                .user(Objects.requireNonNull(userText, "userText must not be null"))
                 .call()
-                .chatResponse();
-        if (response == null) {
+                .chatClientResponse();
+
+        if (response == null || response.chatResponse() == null) {
             throw new IllegalStateException("Spring AI returned an empty chat response");
         }
         return response;
+    }
+
+    static String scopeConversation(UUID userId, String conversationId) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("conversationId must not be blank");
+        }
+        return CONVERSATION_PREFIX + userId + ":" + conversationId.trim();
     }
 }
