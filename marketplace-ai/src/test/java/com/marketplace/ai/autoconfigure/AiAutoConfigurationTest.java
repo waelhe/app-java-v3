@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
+import org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -19,6 +21,31 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 class AiAutoConfigurationTest {
+
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(
+                    ChatClientAutoConfiguration.class,
+                    ChatMemoryAutoConfiguration.class,
+                    AiAutoConfiguration.class));
+
+    @Test
+    void backsOffWhenNoChatModelIsAvailable() {
+        contextRunner
+                .withPropertyValues("spring.ai.model.chat=none")
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(AiChatGateway.class)
+                        .doesNotHaveBean(AiQueryUnderstanding.class));
+    }
+
+    @Test
+    void activatesWhenSpringAiProvidesChatModel() {
+        contextRunner
+                .withBean(ChatModel.class, () -> mock(ChatModel.class))
+                .run(context -> assertThat(context)
+                        .hasSingleBean(AiChatGateway.class)
+                        .hasSingleBean(AiQueryUnderstanding.class));
+    }
+
 
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
