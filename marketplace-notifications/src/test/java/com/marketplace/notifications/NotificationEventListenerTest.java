@@ -2,8 +2,11 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
+import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
+import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.PostReactedEvent;
@@ -374,6 +377,121 @@ class NotificationEventListenerTest {
     void onFollowedProviderNewListing_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
         var method = NotificationEventListener.class.getMethod(
                 "onFollowedProviderNewListing", FollowedProviderNewListingEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    // B-08/CR-4 (the message arrival listener — its trio was missing with
+    // the wiring itself; the service method had tests, the listener none):
+    // the same three pins every listener above carries.
+
+    @Test
+    void onMessageReceived_callsNotificationService() {
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        MessageReceivedEvent event =
+                new MessageReceivedEvent(messageId, conversationId, senderId, recipientId);
+
+        listener.onMessageReceived(event);
+
+        verify(notificationService).onMessageReceived(conversationId, recipientId);
+    }
+
+    @Test
+    void onMessageReceived_propagatesException() {
+        MessageReceivedEvent event = new MessageReceivedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onMessageReceived(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onMessageReceived(event));
+    }
+
+    @Test
+    void onMessageReceived_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onMessageReceived", MessageReceivedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    // B-17/CR-10 (the trust &amp; verification sidecar wiring): the grant
+    // verdict's arrival point.
+
+    @Test
+    void onMembershipVerificationGranted_callsNotificationService() {
+        UUID membershipId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID locationId = UUID.randomUUID();
+        MembershipVerificationGrantedEvent event =
+                new MembershipVerificationGrantedEvent(membershipId, userId, locationId);
+
+        listener.onMembershipVerificationGranted(event);
+
+        verify(notificationService).onVerificationGranted(userId, locationId);
+    }
+
+    @Test
+    void onMembershipVerificationGranted_propagatesException() {
+        // A delivery failure must propagate so the grant's publication
+        // stays incomplete in the registry and the framework's retry
+        // re-delivers it — a swallowed exception would silently lose the
+        // member's verified notification while the verdict itself already
+        // committed.
+        MembershipVerificationGrantedEvent event = new MembershipVerificationGrantedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onVerificationGranted(any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onMembershipVerificationGranted(event));
+    }
+
+    @Test
+    void onMembershipVerificationGranted_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onMembershipVerificationGranted", MembershipVerificationGrantedEvent.class);
+        ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
+        assertNotNull(ann);
+    }
+
+    // B-17/CR-10: the reporter's adjudication fact's arrival point (both
+    // the manual resolve command and the automatic rule engine fire it).
+
+    @Test
+    void onContentReportResolved_callsNotificationService() {
+        UUID reportId = UUID.randomUUID();
+        UUID reporterId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        ContentReportResolvedEvent event = new ContentReportResolvedEvent(
+                reportId, reporterId, "POST", targetId, "RESOLVED");
+
+        listener.onContentReportResolved(event);
+
+        verify(notificationService).onReportResolved(reporterId, "POST", targetId, "RESOLVED");
+    }
+
+    @Test
+    void onContentReportResolved_propagatesException() {
+        ContentReportResolvedEvent event = new ContentReportResolvedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "COMMENT", UUID.randomUUID(), "DISMISSED");
+
+        doThrow(new RuntimeException("Notification error"))
+                .when(notificationService).onReportResolved(any(), any(), any(), any());
+
+        assertThrows(RuntimeException.class,
+                () -> listener.onContentReportResolved(event));
+    }
+
+    @Test
+    void onContentReportResolved_usesApplicationModuleListenerAnnotation() throws NoSuchMethodException {
+        var method = NotificationEventListener.class.getMethod(
+                "onContentReportResolved", ContentReportResolvedEvent.class);
         ApplicationModuleListener ann = method.getAnnotation(ApplicationModuleListener.class);
         assertNotNull(ann);
     }
