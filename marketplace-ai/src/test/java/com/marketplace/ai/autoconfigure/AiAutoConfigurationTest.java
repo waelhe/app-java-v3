@@ -5,6 +5,8 @@ import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
