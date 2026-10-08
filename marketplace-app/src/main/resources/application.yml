@@ -75,7 +75,20 @@ spring:
     enabled: true
     locations: classpath:db/migration
     validate-on-migrate: true
-    out-of-order: false
+    # The parallel-range reality (the contracts ledger's §2 table): Track B
+    # owns V150-V189 and already consumed V150-V152 on its branch while
+    # Track A's V110-V149 range is still filling (V110-V117 today). Once a
+    # deployment applies V152, Flyway's officially documented behavior with
+    # outOfOrder=false IGNORES any newly found lower version — Track A's
+    # next V118 would be silently skipped, its tables never created, and
+    # the E2E surface broken at the first use of the feature. Flyway's own
+    # docs prescribe outOfOrder=true for exactly this shape: "If you
+    # already have versions 1 and 3 applied, and now a version 2 is found,
+    # it will be applied too instead of being ignored" — the documented
+    # multiple-branches setting. The other half of the contract stays
+    # guarded by MigrationChecksumGuardTest: applied migrations are never
+    # modified (validate-on-migrate keeps checking them at every boot).
+    out-of-order: true
     clean-disabled: true
     # V51 (postgis plan §5 D-I1) runs DROP/CREATE INDEX CONCURRENTLY —
     # PostgreSQL statements that cannot execute inside a transaction
