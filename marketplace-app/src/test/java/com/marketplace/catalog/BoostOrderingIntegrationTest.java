@@ -437,13 +437,16 @@ class BoostOrderingIntegrationTest {
         assertThat(page.getTotalElements()).isEqualTo(3L);
     }
 
-    // ---- The window-restricted native path carries the same ordering ----
+    // ---- The window-restricted path carries the same ordering ------------
 
     @Test
-    void theWindowRestrictedNativePathCarriesTheBoostFlag() {
+    void theWindowRestrictedPathCarriesTheBoostFlag() {
         seedThreeHomeListings();
         catalogService.setListingPromotion(ID_03, T0.plus(Duration.ofDays(7)));
 
+        // W6: the restricted criteria search rides the Specification-backed
+        // boost-first read now (the retired native twin carried the same
+        // promoted-window flag) — the ordering contract is unchanged.
         var page = catalogService.searchByCriteriaRestricted(
                 new SearchCriteria(null, "home", null, null),
                 java.util.Set.of(PROVIDER_USER_ID),

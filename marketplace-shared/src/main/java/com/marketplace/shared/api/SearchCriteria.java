@@ -49,6 +49,18 @@ import java.util.UUID;
  * A criteria object with none of the six present is the legacy form —
  * every pre-L32 call site compiles and behaves byte-identically.
  *
+ * <p>W6 (search-unit compliance pass): the price bounds carry the same
+ * type gates as every other numeric criterion — {@code minPrice} and
+ * {@code maxPrice} are non-negative or absent, and when both are
+ * present {@code minPrice <= maxPrice} (a negative or inverted range
+ * is a 400 at construction, before any query — never the silently
+ * empty page a meaningless SQL range would answer). Zero is VALID on
+ * both bounds: the range {@code [0, max]} is the "free floor" filter
+ * and {@code [0, 0]} matches a zero-priced (free) listing — the gate
+ * mirrors the column's own domain ({@code price_cents >= 0} on the
+ * write side's Bean Validation {@code @Positive} contract, mirrored
+ * again here on the read side's criteria).
+ *
  * <p>P1 (postgis integration plan §D-P6) adds the radius triple —
  * {@code latitude}/{@code longitude}/{@code radiusKm}, the same
  * type-gate philosophy as the stay window: the three components are
@@ -128,6 +140,21 @@ public record SearchCriteria(
         }
         if (minAreaM2 != null && minAreaM2 <= 0) {
             throw new BadRequestException("minAreaM2 must be positive");
+        }
+        // W6 (search-unit compliance pass): the price-bound invariants —
+        // the record's own gate law applied to the one numeric criterion
+        // pair that lacked it. A negative bound or an inverted range is a
+        // 400 at construction (before any query), never the silently
+        // empty page the raw SQL range would answer. Zero is valid (the
+        // free-floor filter and the exact free-listing match).
+        if (minPrice != null && minPrice.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("minPrice must be non-negative");
+        }
+        if (maxPrice != null && maxPrice.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("maxPrice must be non-negative");
+        }
+        if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
+            throw new BadRequestException("minPrice must be less than or equal to maxPrice");
         }
         // P1 (postgis plan §D-P6): the radius triple — all three together
         // or none (the stay window's lesson: an incomplete group cannot

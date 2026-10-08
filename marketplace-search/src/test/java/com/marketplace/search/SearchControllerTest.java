@@ -69,13 +69,61 @@ class SearchControllerTest {
     }
 
     @Test
-    void searchByCategory_returnsPagedResponse() {
+    void searchByCategory_delegatesToTheSingleCriteriaSearch() {
         PageRequest pageable = PageRequest.of(0, 10);
         Page<ListingSummary> page = new PageImpl<>(List.of());
-        when(searchService.searchByCategory("tech", pageable)).thenReturn(page);
+        when(searchService.search(any(SearchCriteria.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(page);
 
         ResponseEntity<PagedResponse<ListingSummary>> result = controller.searchByCategory("tech", pageable);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
+        // W6: the category rides the criteria record through the ONE
+        // dispatch — the same search(), the same sort gate, the same cache
+        // as the main surface (the retired delegation overload bypassed
+        // the normalize() gate: any sort parameter failed deep inside the
+        // query path as a server error).
+        org.mockito.ArgumentCaptor<SearchCriteria> criteria =
+                org.mockito.ArgumentCaptor.forClass(SearchCriteria.class);
+        verify(searchService).search(criteria.capture(), any(org.springframework.data.domain.Pageable.class));
+        assertEquals("tech", criteria.getValue().category());
+        assertNull(criteria.getValue().query());
+    }
+
+    @Test
+    void searchByCategory_normalizesTheSort_theSingleNormalizationPoint() {
+        when(searchService.search(any(SearchCriteria.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        controller.searchByCategory("tech",
+                PageRequest.of(0, 10, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "price")));
+
+        // the controller maps price -> priceCents and appends the id ASC
+        // tiebreak BEFORE the service (the same gate the main surface
+        // applies — a sorted category browse is now an honored request,
+        // never an attribute-lookup 500).
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> pageable =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        verify(searchService).search(any(SearchCriteria.class), pageable.capture());
+        assertEquals(
+                org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "priceCents")
+                        .and(org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.ASC, "id")),
+                pageable.getValue().getSort());
+    }
+
+    @Test
+    void searchByCategory_rejectsAnUnsupportedSortLoudly() {
+        PageRequest sorted = PageRequest.of(0, 10,
+                org.springframework.data.domain.Sort.by("bogus"));
+
+        // the single gate: an unsupported sort property answers 400 (the
+        // retired overload let it reach the query path and fail as a
+        // server error).
+        assertThrows(com.marketplace.shared.api.BadRequestException.class,
+                () -> controller.searchByCategory("tech", sorted));
+        verify(searchService, never()).search(any(), any());
     }
 }
