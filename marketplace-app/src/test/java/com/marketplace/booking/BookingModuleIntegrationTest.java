@@ -8,7 +8,10 @@ import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
@@ -32,6 +35,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 @Import(ModuleTestConfig.class)
 @WithMockUser
+// The class mixes empty-page contract tests with a row-creating test —
+// an inter-test dependency, and JUnit's official answer to exactly this
+// shape is a pinned method order (@TestMethodOrder's own javadoc: the
+// default order is "deterministic but not predictable"). The empty-page
+// contracts run FIRST by construction; the sweep stays as belt-and-braces
+// for any future row-creating addition.
+@TestMethodOrder(OrderAnnotation.class)
 class BookingModuleIntegrationTest {
 
     @Container
@@ -84,16 +94,19 @@ class BookingModuleIntegrationTest {
     }
 
     @Test
+    @Order(1)
     void contextLoads() {
     }
 
     @Test
+    @Order(2)
     void listAllSummaries_returnsEmptyPage() {
         var page = bookingService.listAllSummaries(Pageable.ofSize(10));
         assertThat(page).isEmpty();
     }
 
     @Test
+    @Order(3)
     void listByStatus_returnsEmptyPage() {
         var page = bookingService.listByStatus(BookingStatus.PENDING, Pageable.ofSize(10));
         assertThat(page).isEmpty();
@@ -117,6 +130,7 @@ class BookingModuleIntegrationTest {
      * (CI judges, disabledWithoutDocker here).
      */
     @Test
+    @Order(4)
     void autoConfirmPublishesBookingConfirmedEvent_a03(PublishedEvents events) {
         UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();

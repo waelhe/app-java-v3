@@ -6,11 +6,9 @@ import jakarta.mail.internet.MimeMessage;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.resilience.annotation.ConcurrencyLimit;
-import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -28,7 +26,14 @@ import java.util.Map;
  * </ul>
  *
  * <p>Conditionally activated only when a {@link JavaMailSender} bean exists
- * (i.e., when {@code spring.mail.host} is configured).
+ * (i.e., when {@code spring.mail.host} is configured) — the condition lives
+ * on {@link EmailServiceAutoConfiguration}, the officially documented place
+ * for {@code @ConditionalOnBean} (the Boot reference's own warning: a
+ * condition on a component-scanned class races the auto-configuration order
+ * and is therefore not guaranteed — measured on the MailChannelIsolation
+ * context, where the scanned condition evaluated before
+ * {@code MailSenderAutoConfiguration} registered the sender and the service
+ * silently vanished from the context).
  *
  * <p><b>D.4 (compliance plan wave D — channel resilience):</b> the send is
  * the SMTP channel's single crossing, so it carries the same official
@@ -44,8 +49,6 @@ import java.util.Map;
  * serving. No fallback method — the house rule (the payments precedent):
  * honest degradation, never a silent one.
  */
-@Service
-@ConditionalOnBean(JavaMailSender.class)
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
