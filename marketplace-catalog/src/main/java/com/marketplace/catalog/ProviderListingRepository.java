@@ -44,6 +44,35 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Set<UUID> findIdsByStatus(ListingStatus status);
 
     /**
+     * W6 (search-unit compliance pass): the criteria-eligible ACTIVE id
+     * set as an ID-ONLY JPQL projection — the official projections
+     * discipline ("you're usually better off using a projection that only
+     * exposes the subset", Spring Data JPA reference › Projections): the
+     * former {@code findAll(spec)} composition materialized FULL entities
+     * (title + description + every column) only to discard all but the id.
+     * The optional predicates are the NULL-guarded blocks the native
+     * criteria queries already speak; a NULL input parameter in an
+     * {@code IS NULL} comparison is standard JPQL (Jakarta Persistence
+     * BNF: {@code null_comparison_expression ::= {state_field_path_expression
+     * | input_parameter} IS [NOT] NULL}), and every parameter also rides
+     * a typed comparison so binding inference is unambiguous. Soft-deleted
+     * rows are excluded automatically through the entity's @SoftDelete.
+     */
+    @Query("""
+            select l.id from ProviderListing l
+            where l.status = :status
+              and (:category is null or l.category = :category)
+              and (:minPrice is null or l.priceCents >= :minPrice)
+              and (:maxPrice is null or l.priceCents <= :maxPrice)
+              and (:guests is null or (l.maxGuests is not null and l.maxGuests >= :guests))
+            """)
+    Set<UUID> findIdsMatchingCriteria(@Param("status") ListingStatus status,
+                                      @Param("category") String category,
+                                      @Param("minPrice") Long minPrice,
+                                      @Param("maxPrice") Long maxPrice,
+                                      @Param("guests") Integer guests);
+
+    /**
      * W3 (yelp-level plan §5 — G17): the rating-floor flow's eligible id
      * set — the ACTIVE listings owned by the floor-answering providers
      * (soft-deleted rows excluded through the entity's @SoftDelete). The
@@ -120,7 +149,8 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     /**
      * Full-text search using PostgreSQL tsvector with GIN index.
      * Searches title and description columns.
-     * Matches the GIN index defined in V9__search_index.sql.
+     * Matches the GIN index defined in V9__search_index.sql (rebuilt with
+     * the 'arabic' configuration by V106__search_fts_arabic_config.sql).
      *
      * <p>Uses the official {@code websearch_to_tsquery} — the PostgreSQL function
      * designed for raw user input: "simple unformatted text is a valid query"
@@ -133,16 +163,42 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * the officially supported web-search operators: {@code "quoted phrase"},
      * {@code OR}, and {@code -exclusion}.
      *
+     * <p><b>W6 (search-unit compliance pass) — the 'arabic' text search
+     * configuration:</b> the tsvector/tsquery configuration moves from
+     * 'simple' to the officially generated {@code arabic} configuration
+     * (initdb creates it on every standard PostgreSQL install — the
+     * snowball {@code arabic_stem} dictionary). Official basis: the
+     * 'simple' template performs "no more than lower-casing" (docs 18
+     * §12.6.2), leaving the Arabic definite article, tashkeel and affix
+     * agglutination inside the lexeme — a 'شقة' query could not match
+     * 'الشقة' or 'شَقَّة'; the Snowball dictionaries exist precisely
+     * because "each algorithm understands how to reduce common variant
+     * forms of words to a base, or stem, spelling within its language"
+     * (docs 18 §12.6.6). The Arabic stemmer's rules operate on Arabic
+     * script only, so Latin-script tokens pass through lowercased and
+     * unchanged — mixed-language titles keep their exact 'simple'-era
+     * behavior for Latin words. The GIN index (V106) carries the
+     * IDENTICAL tsvector expression, as the official indexing contract
+     * requires (the index must match the query's expression; GIN is "the
+     * preferred text search index type" — docs 18 §12.9).</p>
+     *
      * <p><b>L37 (realestate systems plan §5 — the featured boost):</b> the baked
      * ORDER BY gains the boost flag FIRST — "المعزّز أولًا داخل نفس الفرز
      * الأساسي": boosted matches outrank organic ones, relevance ranks WITHIN
      * each group (Q1 resolved by the plan's own uniform rule — the alternative,
      * a relevance-multiplying auction, is the system the plan explicitly
-     * excludes). The flag is the TOTAL boolean
-     * {@code (promoted_until IS NOT NULL AND promoted_until > :now)} — never
-     * NULL (a false AND anything is false), so PostgreSQL's NULLS-FIRST-on-DESC
-     * trap cannot rank unboosted rows first, and an expired window evaluates
-     * false at query time (self-correcting — no cleanup job). {@code :now} is
+     * excludes). W6 (search-unit compliance pass) unifies the flag's
+     * definition with the ONE boost specification every ordered surface
+     * composes ({@code ProviderListingSpecifications#boostFirst}): promoted
+     * window OR a live paid campaign with remaining budget (the W5 G24 law
+     * «المُروَّج بلا ميزانية لا يتصدر») — the flag is the TOTAL boolean
+     * {@code (promoted_until IS NOT NULL AND promoted_until > :now) OR EXISTS
+     * (...)} — never NULL (a false AND anything is false, a non-match EXISTS
+     * is false), so PostgreSQL's NULLS-FIRST-on-DESC trap cannot rank
+     * unboosted rows first, and an expired window or exhausted budget
+     * evaluates false at query time (self-correcting — no cleanup job). The
+     * campaign EXISTS is answered per row by the partial index
+     * {@code idx_ad_campaigns_listing_live} (V103). {@code :now} is
      * bound from the service's injected Clock (the expiry test's seam); it
      * rides the CONTENT query only — the count query never references it,
      * which Spring Data's count binding officially tolerates (LENIENT error
@@ -150,39 +206,47 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
      * measured in the 4.1.1 sources). The id tiebreak is appended (the L32
      * total-order rule — equal {@code ts_rank} values must not wobble across
      * pages; this closes the latent gap where the unrestricted text path
-     * ordered by rank alone).
+     * ordered by rank alone).</p>
      *
      * <p><b>R6 (comprehensive-review-ar fix plan §4, Wave 5 — the composed
      * text+filter search):</b> the optional catalog predicates (category /
      * price bounds / guests) join the text predicate in BOTH the content and
-     * the count query — the exact optional-predicate blocks
-     * {@link #searchByCriteria} has carried since I6 (a NULL parameter
-     * deactivates its block; the guests block honors the undeclared-capacity
-     * contract {@code max_guests IS NOT NULL AND max_guests >= :guests}).
+     * the count query — the exact optional-predicate blocks the criteria
+     * surfaces have carried since I6 (a NULL parameter deactivates its
+     * block; the guests block honors the undeclared-capacity contract
+     * {@code max_guests IS NOT NULL AND max_guests >= :guests} — the same
+     * blocks {@link #findIdsMatchingCriteria} speaks in JPQL now that the
+     * native criteria twin is retired).
      * A text query no longer drops the filters that ride it — the review's
      * R6 finding; the composition happens BEFORE the count and the
-     * pagination, so the page totals describe the filtered set.
+     * pagination, so the page totals describe the filtered set.</p>
      */
     @Query(value = """
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
@@ -224,7 +288,13 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
@@ -245,71 +315,32 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
                                         @Param("now") java.time.Instant now,
                                         Pageable pageable);
 
-    @Query(value = """
-            SELECT * FROM provider_listings
-            WHERE is_deleted = false
-              AND status = 'ACTIVE'
-              AND (:category IS NULL OR category = :category)
-              AND (:minPrice IS NULL OR price_cents >= :minPrice)
-              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
-              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC, id
-            """,
-            countQuery = """
-                    SELECT COUNT(*) FROM provider_listings
-                    WHERE is_deleted = false
-                      AND status = 'ACTIVE'
-                      AND (:category IS NULL OR category = :category)
-                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
-                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
-                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-                    """,
-            nativeQuery = true)
-    Page<ProviderListing> searchByCriteria(@Param("category") String category,
-                                           @Param("minPrice") Long minPrice,
-                                           @Param("maxPrice") Long maxPrice,
-                                           @Param("guests") Integer guests,
-                                           @Param("now") java.time.Instant now,
-                                           Pageable pageable);
-
-    // L27 (feature-expansion roadmap §5) — window-restricted variants. The
-    // provider-id whitelist is the server-derived availability answer (see
-    // AvailabilityLookupPort); the caller guarantees a NON-EMPTY collection —
-    // an empty whitelist short-circuits to an honest empty page before any
-    // query. ORDER BY id is the deterministic total order offset pagination
-    // requires (without it, page boundaries can repeat or skip rows —
-    // "no deceptive pages"); the ranked variants keep their ranking first
-    // with id as the tiebreaker for the same reason.
-
-    @Query(value = """
-            SELECT * FROM provider_listings
-            WHERE is_deleted = false
-              AND status = 'ACTIVE'
-              AND provider_id IN (:providerIds)
-              AND (:category IS NULL OR category = :category)
-              AND (:minPrice IS NULL OR price_cents >= :minPrice)
-              AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
-              AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC, id
-            """,
-            countQuery = """
-                    SELECT COUNT(*) FROM provider_listings
-                    WHERE is_deleted = false
-                      AND status = 'ACTIVE'
-                      AND provider_id IN (:providerIds)
-                      AND (:category IS NULL OR category = :category)
-                      AND (:minPrice IS NULL OR price_cents >= :minPrice)
-                      AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
-                      AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-                    """,
-            nativeQuery = true)
-    Page<ProviderListing> searchByCriteriaRestricted(@Param("category") String category,
-                                                     @Param("minPrice") Long minPrice,
-                                                     @Param("maxPrice") Long maxPrice,
-                                                     @Param("guests") Integer guests,
-                                                     @Param("providerIds") java.util.Collection<UUID> providerIds,
-                                                     @Param("now") java.time.Instant now,
-                                                     Pageable pageable);
+    // W6 (search-unit compliance pass): the two NATIVE criteria queries
+    // (searchByCriteria / searchByCriteriaRestricted) were RETIRED — the
+    // criteria paths ride the official Specifications composition
+    // (CatalogService.findBoostFirst + ProviderListingSpecifications) now,
+    // the same shape every other ordered filter surface already uses.
+    // Root causes measured against the official Spring Data JPA reference
+    // (JPA Query Methods › Query Introspection and Rewriting) and the
+    // 4.1.1 framework sources (AbstractStringBasedJpaQuery.getSortedQuery →
+    // DefaultQueryEnhancer → QueryUtils.applySorting):
+    //   1. a SORTED Pageable on a string-based @Query method gets its sort
+    //      APPENDED to the baked ORDER BY — for these queries the regex
+    //      detector misreads the parenthesized WHERE + ORDER BY as a
+    //      window/subselect occurrence, so a SECOND "order by" clause is
+    //      appended: invalid SQL, a syntax error, an HTTP 500 for every
+    //      windowed+sorted or text+sorted request. The Specification path
+    //      is sort-aware by construction (QueryUtils.toOrders over entity
+    //      attributes) — the port contract's documented sort-bearing
+    //      requests (PagedRequest) finally resolve.
+    //   2. the native ORDER BY baked its own boost flag — the criteria
+    //      surfaces now share the ONE boost specification every other
+    //      surface composes (promoted window OR live campaign — the W5
+    //      G24 law «المُروَّج بلا ميزانية لا يتصدر»), instead of a second,
+    //      drifting definition.
+    // The provider-set restriction composes as hasProviderIdIn — the
+    // database's predicate AND owns the intersection of the availability
+    // whitelist and the stars floor (no Java-side set algebra).
 
     /**
      * L27: the window-restricted full-text search — mirrors
@@ -333,24 +364,30 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND provider_id IN (:providerIds)
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND provider_id IN (:providerIds)
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
@@ -383,7 +420,13 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
@@ -424,24 +467,30 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
             SELECT * FROM provider_listings
             WHERE is_deleted = false AND status = 'ACTIVE'
               AND id IN (:listingIds)
-              AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                  @@ websearch_to_tsquery('simple', :query)
+              AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                  @@ websearch_to_tsquery('arabic', :query)
               AND (:category IS NULL OR category = :category)
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 ts_rank(
-                    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,'')),
-                    websearch_to_tsquery('simple', :query)
+                    to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,'')),
+                    websearch_to_tsquery('arabic', :query)
                 ) DESC, id
             """,
             countQuery = """
                     SELECT COUNT(*) FROM provider_listings
                     WHERE is_deleted = false AND status = 'ACTIVE'
                       AND id IN (:listingIds)
-                      AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(description,''))
-                          @@ websearch_to_tsquery('simple', :query)
+                      AND to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(description,''))
+                          @@ websearch_to_tsquery('arabic', :query)
                       AND (:category IS NULL OR category = :category)
                       AND (:minPrice IS NULL OR price_cents >= :minPrice)
                       AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
@@ -474,7 +523,13 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
               AND (:minPrice IS NULL OR price_cents >= :minPrice)
               AND (:maxPrice IS NULL OR price_cents <= :maxPrice)
               AND (:guests IS NULL OR (max_guests IS NOT NULL AND max_guests >= :guests))
-            ORDER BY (promoted_until IS NOT NULL AND promoted_until > :now) DESC,
+            ORDER BY ((promoted_until IS NOT NULL AND promoted_until > :now)
+              OR EXISTS (SELECT 1 FROM ad_campaigns campaign
+                         WHERE campaign.listing_id = provider_listings.id
+                           AND campaign.is_deleted = false
+                           AND campaign.status = 'ACTIVE'
+                           AND campaign.consumed_cents < campaign.budget_cents
+                           AND (campaign.ends_at IS NULL OR campaign.ends_at > :now))) DESC,
                 word_similarity(:query, coalesce(title,'') || ' ' || coalesce(description,'')) DESC, id
             """,
             countQuery = """
