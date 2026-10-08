@@ -67,6 +67,9 @@ class ContentReportServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private ModerationRuleEngine moderationRuleEngine;
+
     private final Clock clock = Clock.fixed(FIXED, ZoneOffset.UTC);
 
     private ContentReportService service;
@@ -81,7 +84,8 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         service = new ContentReportService(reportRepository, postRepository,
-                commentRepository, reviewLookupPort, eventPublisher, clock);
+                commentRepository, reviewLookupPort, eventPublisher, clock,
+                moderationRuleEngine);
     }
 
     private NeighborhoodPost visiblePost(UUID author) {
@@ -183,6 +187,12 @@ class ContentReportServiceTest {
         assertThat(view.targetId()).isEqualTo(postId);
         assertThat(view.targetType()).isEqualTo("POST");
         assertThat(view.reason()).isEqualTo("SPAM");
+        // B-19 wiring (the CodeRabbit-measured gap): the saved report rides
+        // straight into the rule engine's evaluation — the automatic
+        // moderation machine runs on every real creation, inside the same
+        // command. A no-rule situation is the engine's own measured no-op
+        // (its unit test pins that branch); this pin is the CALL itself.
+        verify(moderationRuleEngine).evaluate(any(ContentReport.class));
     }
 
     // ---------- resolveReport ----------
