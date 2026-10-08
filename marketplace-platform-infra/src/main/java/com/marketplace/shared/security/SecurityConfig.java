@@ -275,6 +275,35 @@ public class SecurityConfig {
                         // only the anonymous read the click-from-a-review
                         // needs is public.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*/public").permitAll()
+                        // B-12 (compliance plan C.2 — CodeRabbit round-1
+                        // root adoption): the jobs board and detail are the
+                        // documented PUBLIC surfaces ("The public jobs
+                        // board", "Any live job by id") — without these
+                        // lines the blanket anyRequest().authenticated()
+                        // answered 401 to the anonymous browse the contract
+                        // promises. The mirror-image carve-outs ride the
+                        // listings completeness pattern directly above
+                        // (first match wins in declaration order): the
+                        // /jobs/me/** owner surfaces and the
+                        // /jobs/*/applications/** inbox stay authenticated
+                        // BEFORE the one-segment wildcard opens the public
+                        // reads.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs/me", "/api/v1/jobs/me/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs/*/applications/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs/**").permitAll()
+                        // B-13 (compliance plan C.3 — the SAME gap shape,
+                        // closed in the same adoption): the institution
+                        // registry board and the public page are the
+                        // documented PUBLIC reads ("The public institution
+                        // registry board", "Read one registry entry (the
+                        // public page)") — the jobs lines' exact mirror,
+                        // with the /institutions/me owner surface carved
+                        // out first (the listings completeness pattern).
+                        // The admin queue rides the /api/v1/admin matcher
+                        // above; the POST surfaces fall to
+                        // anyRequest().authenticated().
+                        .requestMatchers(HttpMethod.GET, "/api/v1/institutions/me", "/api/v1/institutions/me/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/institutions/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()

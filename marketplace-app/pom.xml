@@ -102,6 +102,12 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-community</artifactId>
         </dependency>
+        <!-- B-12 wiring (CR): the jobs employment vertical joins the aggregation
+             exactly like community — the app is the assembly point. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-jobs</artifactId>
+        </dependency>
         <!-- AI foundation: the marketplace-ai capability module joins the
              aggregation exactly like community — the app is the assembly
              root where every domain module meets Spring's component

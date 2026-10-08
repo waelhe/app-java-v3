@@ -49,8 +49,14 @@ class NotificationServiceTest {
                                               Optional<com.marketplace.shared.email.EmailService> emailService,
                                               NotificationPreferenceService preferences) {
         EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
+        // B-11: the REAL text source — the production bundles resolve on
+        // this module's own classpath, so the delivery tests pin the
+        // platform-locale (Arabic) composition exactly as production
+        // composes it (the locale pair itself is proven in
+        // NotificationTextSourceTest).
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
-                currentUserProvider, emailNotificationService, messagingTemplate, preferences);
+                currentUserProvider, emailNotificationService, messagingTemplate, preferences,
+                new NotificationTextSource());
     }
 
     /**
@@ -94,6 +100,43 @@ class NotificationServiceTest {
         service.onBookingCreated(bookingId);
 
         verify(repository, times(2)).save(any(Notification.class));
+    }
+
+    /**
+     * B-11 (compliance plan B.6): the delivery journey composes at the
+     * platform locale — the in-app row, the email subject/body, and the WS
+     * payload all carry the ARABIC rendering of the same fact, with the
+     * booking id riding the MessageFormat argument (the machine facts
+     * unchanged: type enum, template name, topic destination).
+     */
+    @Test
+    void onBookingCreatedComposesAtThePlatformLocale() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingCreated(bookingId);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getMessage())
+                .isEqualTo("تم إنشاء الحجز: " + bookingId);
+        assertThat(saved.getAllValues().get(1).getMessage())
+                .isEqualTo("طلب حجز جديد: " + bookingId);
+        verify(emailService).send(eq(CONSUMER_EMAIL), eq("تم إنشاء الحجز"),
+                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")));
+        verify(emailService).send(eq(PROVIDER_EMAIL), eq("طلب حجز جديد"),
+                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")));
     }
 
     @Test
@@ -512,7 +555,11 @@ class NotificationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
         verify(repository, times(1)).save(saved.capture());
         assertThat(saved.getValue().getType()).isEqualTo("CONTENT_MODERATED");
-        assertThat(saved.getValue().getMessage()).contains("post").contains(targetId.toString());
+        // B-11: the community vocabulary word renders in Arabic at the
+        // platform locale — the pre-B-11 English literal is the default
+        // bundle's own entry (proven in NotificationTextSourceTest).
+        assertThat(saved.getValue().getMessage())
+                .isEqualTo("تمت مراجعة منشور الخاص بك: " + targetId);
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
@@ -606,6 +653,155 @@ class NotificationServiceTest {
                 preferences);
 
         service.onFollowedProviderNewListing(CONSUMER_ID, create(UUID.class));
+
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+    }
+
+    /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): delete one
+     * notification — the owner's own row leaves the feed (the soft delete
+     * on the BaseEntity, so the audit trace survives).
+     */
+    @Test
+    void deleteRemovesTheOwnersNotification() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID userId = create(UUID.class);
+        Notification notification = of(Notification.class)
+                .set(field(Notification::getRecipientId), userId)
+                .set(field(Notification::getType), "BOOKING_CREATED")
+                .set(field(Notification::getMessage), "msg")
+                .create();
+        when(repository.findById(notification.getId())).thenReturn(Optional.of(notification));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+
+        service.delete(notification.getId(), authentication);
+
+        verify(repository).delete(notification);
+    }
+
+    /**
+     * B-07 (0.8): the delete ownership discipline is markRead's — someone
+     * else's notification is a 403, and no delete happens.
+     */
+    @Test
+    void deleteThrowsAccessDeniedForNonOwnerNonAdmin() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID ownerId = UUID.randomUUID();
+        UUID differentUserId = UUID.randomUUID();
+        Notification notification = mock(Notification.class);
+        when(notification.getRecipientId()).thenReturn(ownerId);
+        when(repository.findById(any())).thenReturn(Optional.of(notification));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(differentUserId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.delete(UUID.randomUUID(), authentication)
+        );
+        verify(repository, never()).delete(any(Notification.class));
+    }
+
+    /**
+     * B-07 (0.8): the clear-all — one bulk UPDATE over the CALLER's unread
+     * rows; the count comes back for the badge's immediate reconciliation.
+     */
+    @Test
+    void markAllAsReadBulkUpdatesTheCallersRows() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mock(UserLookupPort.class);
+        Authentication authentication = mock(Authentication.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID userId = create(UUID.class);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(repository.markAllAsReadByRecipientId(userId)).thenReturn(7);
+
+        int marked = service.markAllAsRead(authentication);
+
+        assertThat(marked).isEqualTo(7);
+        verify(repository).markAllAsReadByRecipientId(userId);
+    }
+
+    /**
+     * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
+     * notification — the in-app row always lands (the conversation id in
+     * the message body), the push channels ride the L22 matrix with the
+     * defaults on. The handler itself is wired to the MessageReceivedEvent
+     * listener via CR-4 (the event type's cross-module placement).
+     */
+    @Test
+    void onMessageReceivedDeliversTheArrivalNotification() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID conversationId = create(UUID.class);
+
+        service.onMessageReceived(conversationId, CONSUMER_ID);
+
+        org.mockito.ArgumentCaptor<Notification> saved =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        verify(repository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getType()).isEqualTo("MESSAGE_RECEIVED");
+        assertThat(saved.getValue().getMessage()).contains(conversationId.toString());
+        verify(messagingTemplate, times(1)).convertAndSend(
+                eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+    }
+
+    /**
+     * B-08 (0.10): the recipient's preference opt-out — the L22 matrix
+     * gates the push channels per (recipient, MESSAGE_RECEIVED, channel);
+     * the in-app row always lands ("inside the app always").
+     */
+    @Test
+    void onMessageReceivedHonorsTheRecipientPreferenceOptOut() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
+        when(preferences.isChannelEnabled(any(), any(), any())).thenReturn(true);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
+                eq(NotificationChannel.EMAIL))).thenReturn(false);
+        when(preferences.isChannelEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
+                eq(NotificationChannel.WS))).thenReturn(false);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        service.onMessageReceived(create(UUID.class), CONSUMER_ID);
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));

@@ -1,6 +1,7 @@
 package com.marketplace.messaging;
 
 import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CacheInvalidationRequested;
@@ -15,11 +16,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.modulith.NamedInterface;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.observation.annotation.Observed;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +41,7 @@ public class MessagingService {
     private final MessageMapper messageMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final NeighborhoodTrustLookupPort neighborhoodTrustLookupPort;
+    private final MessageSendWriter messageSendWriter;
 
     @Autowired
     public MessagingService(ConversationRepository conversationRepository,
@@ -47,7 +51,8 @@ public class MessagingService {
                             SimpMessagingTemplate messagingTemplate,
                             MessageMapper messageMapper,
                             ApplicationEventPublisher eventPublisher,
-                            NeighborhoodTrustLookupPort neighborhoodTrustLookupPort) {
+                            NeighborhoodTrustLookupPort neighborhoodTrustLookupPort,
+                            MessageSendWriter messageSendWriter) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.bookingParticipantProvider = bookingParticipantProvider;
@@ -56,6 +61,7 @@ public class MessagingService {
         this.messageMapper = messageMapper;
         this.eventPublisher = eventPublisher;
         this.neighborhoodTrustLookupPort = neighborhoodTrustLookupPort;
+        this.messageSendWriter = messageSendWriter;
     }
 
     /** Compatibility constructor retained for focused unit tests of booking chat. */
@@ -68,7 +74,8 @@ public class MessagingService {
                             ApplicationEventPublisher eventPublisher) {
         this(conversationRepository, messageRepository, bookingParticipantProvider, userLookupPort,
                 messagingTemplate, messageMapper, eventPublisher,
-                ignored -> NeighborhoodTrustLookupPort.TrustState.UNVERIFIED);
+                ignored -> NeighborhoodTrustLookupPort.TrustState.UNVERIFIED,
+                new MessageSendWriter(messageRepository));
     }
 
     @Transactional(readOnly = true)
@@ -89,7 +96,11 @@ public class MessagingService {
     @Transactional(readOnly = true)
     public long getUnreadCount(UUID conversationId, UUID userId) {
         getConversation(conversationId, userId);
-        return messageRepository.countByConversationIdAndReadFalse(conversationId);
+        // B-03 (0.3): the badge is what the CALLER still owes a read — her
+        // own sent messages never count toward it (the sender-exclusion the
+        // bulk mark-read below has carried all along; the counter was the
+        // drifted half of the pair).
+        return messageRepository.countByConversationIdAndSenderIdNotAndReadFalse(conversationId, userId);
     }
 
     public Conversation createConversation(UUID participantA, UUID bookingId) {
@@ -197,13 +208,87 @@ public class MessagingService {
     public record DirectConversationOutcome(Conversation conversation, boolean newlyCreated) {
     }
 
-    @Observed(name = "messaging.send")
+    /**
+     * The WebSocket path's send (interactive — no replay key on the socket;
+     * the REST path carries the caller's deduplication surface).
+     */
     public MessageResponse sendMessage(UUID conversationId, UUID senderId, String content) {
-        getConversation(conversationId, senderId);
-        Message saved = messageRepository.save(Message.create(conversationId, senderId, content));
+        return sendMessage(conversationId, senderId, content, null).message();
+    }
+
+    /**
+     * B-04 (compliance plan 0.4 — Data JPA jpa/locking.html): the send is
+     * idempotent on the caller's replay key — a retried submission returns
+     * the ORIGINAL message instead of a duplicate row, with ONE KEY SPACE
+     * PER SENDER (the CodeRabbit round-1 root adoption: a client-chosen
+     * key such as "msg-2026-10-07-001" is realistic to collide ACROSS
+     * senders — the per-sender scoping keeps every sender's key space
+     * independent, and the V150 uq_messages_sender_idempotency_key
+     * constraint carries the same shape). The sequential retry is
+     * answered by the replay lookup below; the in-flight race — two
+     * concurrent same-key requests that both miss the lookup — is
+     * answered by the INSERT's own REQUIRES_NEW unit in
+     * {@link MessageSendWriter}: the loser catches the unique violation
+     * and re-reads the winner's committed row, so even the race's loser
+     * gets the 200 replay the contract promises, never a
+     * duplicate row nor a 409/500-flavored error. The @Version
+     * optimistic lock (BaseEntity, on every message row) guards row
+     * updates per the Data JPA optimistic-locking contract.
+     */
+    @Observed(name = "messaging.send")
+    public SendMessageOutcome sendMessage(UUID conversationId, UUID senderId, String content, String idempotencyKey) {
+        Conversation conversation = getConversation(conversationId, senderId);
+        if (idempotencyKey != null) {
+            Optional<Message> existing = messageRepository
+                    .findBySenderIdAndIdempotencyKey(senderId, idempotencyKey);
+            if (existing.isPresent()) {
+                // Replay: the original WebSocket push already reached the
+                // topic — a second broadcast would duplicate it for every
+                // other subscriber, and the arrival notification was
+                // already delivered by the original send.
+                return new SendMessageOutcome(messageMapper.toResponse(existing.get()), false);
+            }
+        }
+        Message saved;
+        try {
+            saved = messageSendWriter.persist(conversationId, senderId, content, idempotencyKey);
+        } catch (DataIntegrityViolationException raceLost) {
+            // The in-flight race's loser — the winner's committed row IS
+            // this caller's replay answer. A null key never reaches here
+            // on the idempotency constraint's account (the guard below
+            // rethrows); a still-missing row after the re-read means the
+            // violation belonged to a different constraint — the honest
+            // rethrow, never a masked failure.
+            if (idempotencyKey == null) {
+                throw raceLost;
+            }
+            Message winner = messageSendWriter.replay(senderId, idempotencyKey);
+            if (winner == null) {
+                throw raceLost;
+            }
+            return new SendMessageOutcome(messageMapper.toResponse(winner), false);
+        }
         MessageResponse response = messageMapper.toResponse(saved);
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, response);
-        return response;
+        // B-08 (compliance plan 0.10): the arrival fact for the OTHER
+        // participant — the recipient resolved at the source (the
+        // conversation is already loaded here), so the notifications
+        // listener never re-derives party facts. A replay never
+        // re-publishes (the original send already notified).
+        UUID recipientId = conversation.getParticipantA().equals(senderId)
+                ? conversation.getParticipantB()
+                : conversation.getParticipantA();
+        eventPublisher.publishEvent(new MessageReceivedEvent(saved.getId(), conversationId, senderId, recipientId));
+        return new SendMessageOutcome(response, true);
+    }
+
+    /**
+     * The send's 201/200 outcome — {@code newlyCreated} carries the same
+     * distinction {@link DirectConversationOutcome} made explicit for the
+     * L44 direct-open surface (201 the first time, 200 the idempotent
+     * replay).
+     */
+    public record SendMessageOutcome(MessageResponse message, boolean newlyCreated) {
     }
 
     public void markAsRead(UUID conversationId, UUID userId) {

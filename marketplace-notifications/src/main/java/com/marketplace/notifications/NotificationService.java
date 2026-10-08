@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +34,7 @@ public class NotificationService {
     private final EmailNotificationService emailNotificationService;
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final NotificationPreferenceService preferences;
+    private final NotificationTextSource text;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -40,7 +42,8 @@ public class NotificationService {
                                CurrentUserProvider currentUserProvider,
                                EmailNotificationService emailNotificationService,
                                Optional<SimpMessagingTemplate> messagingTemplate,
-                               NotificationPreferenceService preferences) {
+                               NotificationPreferenceService preferences,
+                               NotificationTextSource text) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -48,27 +51,46 @@ public class NotificationService {
         this.emailNotificationService = emailNotificationService;
         this.messagingTemplate = messagingTemplate;
         this.preferences = preferences;
+        this.text = text;
     }
 
     public void onBookingCreated(UUID bookingId) {
         BookingInfo info = bookingParticipantProvider.getBookingInfo(bookingId);
+        // B-11 (compliance plan B.6): every composed text rides the
+        // module's MessageSource channel at the platform's standard
+        // locale — the byte-identical English floor stays the default
+        // bundle's own literals. The L22 channel discipline is unchanged.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String consumerMessage = text.compose("notification.BOOKING_CREATED.consumer", platform, bookingId);
+        String providerMessage = text.compose("notification.BOOKING_CREATED.provider", platform, bookingId);
         // L22: the in-app channel is always on — the row lands for both
         // participants regardless of preferences (roadmap: "inside the app
         // always").
-        repository.save(Notification.create(info.consumerId(), NotificationType.BOOKING_CREATED.name(), "Booking created: " + bookingId));
-        repository.save(Notification.create(info.providerId(), NotificationType.BOOKING_CREATED.name(), "New booking request: " + bookingId));
+        repository.save(Notification.create(info.consumerId(), NotificationType.BOOKING_CREATED.name(), consumerMessage));
+        repository.save(Notification.create(info.providerId(), NotificationType.BOOKING_CREATED.name(), providerMessage));
         if (preferences.isChannelEnabled(info.consumerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(info.consumerId(), "Booking Created", "email/notification", Map.of("message", "Your booking " + bookingId + " has been created."));
+            emailNotificationService.sendEmail(info.consumerId(),
+                    text.compose("email.BOOKING_CREATED.consumer.subject", platform),
+                    "email/notification",
+                    Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)));
         }
         if (preferences.isChannelEnabled(info.providerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(info.providerId(), "New Booking Request", "email/notification", Map.of("message", "New booking request " + bookingId + " for your service."));
+            emailNotificationService.sendEmail(info.providerId(),
+                    text.compose("email.BOOKING_CREATED.provider.subject", platform),
+                    "email/notification",
+                    Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)));
         }
-        sendWebSocket(info.consumerId(), NotificationType.BOOKING_CREATED, "Booking created: " + bookingId);
-        sendWebSocket(info.providerId(), NotificationType.BOOKING_CREATED, "New booking request: " + bookingId);
+        sendWebSocket(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
+        sendWebSocket(info.providerId(), NotificationType.BOOKING_CREATED, providerMessage);
     }
 
     public void onPaymentStateChanged(UUID paymentIntentId, String state) {
         paymentIntentLookupPort.findById(paymentIntentId).ifPresent(intent -> {
+            // B-11: the state name renders through the payments vocabulary
+            // (unknown states ride through raw — the honest degradation of
+            // the pre-B-11 concatenation).
+            Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+            String stateWord = text.paymentStateWord(state, platform);
             // W5 (yelp-level plan §5 — G24): the ad bill's own shape — the
             // payer is the provider ALONE (no booking, no second party): one
             // notification, the campaign names the bill (the booking path's
@@ -77,27 +99,32 @@ public class NotificationService {
             // change either way (no new enum value, no preferences-CHECK
             // widening pair).
             if (intent.isAdOrigin()) {
-                String adMessage = "Payment " + state + " for ad campaign " + intent.adCampaignId();
+                String adMessage = text.compose("notification.PAYMENT_STATE.ad", platform, stateWord, intent.adCampaignId());
                 repository.save(Notification.create(intent.consumerId(),
                         NotificationType.PAYMENT_STATE.name(), adMessage));
                 if (preferences.isChannelEnabled(intent.consumerId(),
                         NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
-                    emailNotificationService.sendEmail(intent.consumerId(), "Payment " + state,
+                    emailNotificationService.sendEmail(intent.consumerId(),
+                            text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                             "email/notification", Map.of("message", adMessage));
                 }
                 sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, adMessage);
                 return;
             }
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
+            String message = text.compose("notification.PAYMENT_STATE.booking", platform, stateWord, intent.bookingId());
             // L22: the in-app channel is always on (see onBookingCreated).
-            repository.save(Notification.create(intent.consumerId(), NotificationType.PAYMENT_STATE.name(), "Payment " + state + " for booking " + intent.bookingId()));
-            repository.save(Notification.create(bookingInfo.providerId(), NotificationType.PAYMENT_STATE.name(), "Payment " + state + " for booking " + intent.bookingId()));
-            String message = "Payment " + state + " for booking " + intent.bookingId();
+            repository.save(Notification.create(intent.consumerId(), NotificationType.PAYMENT_STATE.name(), message));
+            repository.save(Notification.create(bookingInfo.providerId(), NotificationType.PAYMENT_STATE.name(), message));
             if (preferences.isChannelEnabled(intent.consumerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
-                emailNotificationService.sendEmail(intent.consumerId(), "Payment " + state, "email/notification", Map.of("message", message));
+                emailNotificationService.sendEmail(intent.consumerId(),
+                        text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
+                        "email/notification", Map.of("message", message));
             }
             if (preferences.isChannelEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
-                emailNotificationService.sendEmail(bookingInfo.providerId(), "Payment " + state, "email/notification", Map.of("message", message));
+                emailNotificationService.sendEmail(bookingInfo.providerId(),
+                        text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
+                        "email/notification", Map.of("message", message));
             }
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendWebSocket(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, message);
@@ -118,13 +145,18 @@ public class NotificationService {
      * unlinked-profile edge to skip.
      */
     public void onLeadReceived(UUID leadId, UUID listingId, UUID providerUserId) {
-        String message = "New lead for your listing: " + listingId;
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale (the pre-B-11 English literal is the
+        // default bundle's own entry).
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.LEAD_RECEIVED", platform, listingId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(providerUserId,
                 NotificationType.LEAD_RECEIVED.name(), message));
         if (preferences.isChannelEnabled(providerUserId,
                 NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(providerUserId, "New Lead",
+            emailNotificationService.sendEmail(providerUserId,
+                    text.compose("email.LEAD_RECEIVED.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
@@ -140,15 +172,20 @@ public class NotificationService {
      * searches" without any de-duplication here.
      */
     public void onSavedSearchMatch(UUID userId, UUID listingId, int savedSearchCount) {
+        // B-11: the singular/plural pair rides the bundle — the count names
+        // the searches the same way the pre-B-11 branch did, at the platform
+        // locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
         String message = savedSearchCount == 1
-                ? "New listing matching your saved search: " + listingId
-                : "New listing matching " + savedSearchCount + " of your saved searches: " + listingId;
+                ? text.compose("notification.SAVED_SEARCH_MATCH.singular", platform, listingId)
+                : text.compose("notification.SAVED_SEARCH_MATCH.plural", platform, savedSearchCount, listingId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(userId,
                 NotificationType.SAVED_SEARCH_MATCH.name(), message));
         if (preferences.isChannelEnabled(userId,
                 NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(userId, "Saved Search Match",
+            emailNotificationService.sendEmail(userId,
+                    text.compose("email.SAVED_SEARCH_MATCH.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
@@ -169,13 +206,17 @@ public class NotificationService {
      * every caller.
      */
     public void onPostCommented(UUID postId, UUID postAuthorId) {
-        String message = "New comment on your post: " + postId;
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.POST_COMMENTED", platform, postId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(postAuthorId,
                 NotificationType.POST_COMMENTED.name(), message));
         if (preferences.isChannelEnabled(postAuthorId,
                 NotificationType.POST_COMMENTED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(postAuthorId, "New Comment",
+            emailNotificationService.sendEmail(postAuthorId,
+                    text.compose("email.POST_COMMENTED.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
@@ -196,13 +237,17 @@ public class NotificationService {
      * every caller.
      */
     public void onNewListingInNeighborhood(UUID recipientId, UUID listingId) {
-        String message = "New listing in your neighborhood: " + listingId;
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.NEW_LISTING_IN_NEIGHBORHOOD", platform, listingId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD.name(), message));
         if (preferences.isChannelEnabled(recipientId,
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(recipientId, "New Listing in Your Neighborhood",
+            emailNotificationService.sendEmail(recipientId,
+                    text.compose("email.NEW_LISTING_IN_NEIGHBORHOOD.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
@@ -225,13 +270,19 @@ public class NotificationService {
      * for every caller.
      */
     public void onContentModerated(UUID recipientId, String targetType, UUID targetId) {
-        String message = "Your " + targetType.toLowerCase() + " was moderated: " + targetId;
+        // B-11: the community vocabulary word renders at the platform
+        // locale (unknown names ride through raw); the pre-B-11
+        // lowercased-English rendering is the default bundle's own entry.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.CONTENT_MODERATED", platform,
+                text.targetTypeWord(targetType, platform), targetId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.CONTENT_MODERATED.name(), message));
         if (preferences.isChannelEnabled(recipientId,
                 NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(recipientId, "Your Content Was Moderated",
+            emailNotificationService.sendEmail(recipientId,
+                    text.compose("email.CONTENT_MODERATED.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
@@ -252,13 +303,17 @@ public class NotificationService {
      * for every caller.
      */
     public void onPostReacted(UUID postId, UUID postAuthorId) {
-        String message = "New thank on your post: " + postId;
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.POST_REACTED", platform, postId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(postAuthorId,
                 NotificationType.POST_REACTED.name(), message));
         if (preferences.isChannelEnabled(postAuthorId,
                 NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(postAuthorId, "New Thank",
+            emailNotificationService.sendEmail(postAuthorId,
+                    text.compose("email.POST_REACTED.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
@@ -281,13 +336,17 @@ public class NotificationService {
      * labor).
      */
     public void onFollowedProviderNewListing(UUID recipientId, UUID listingId) {
-        String message = "New listing from a provider you follow: " + listingId;
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.FOLLOWED_PROVIDER_NEW_LISTING", platform, listingId);
         // L22: the in-app channel is always on (see onBookingCreated).
         repository.save(Notification.create(recipientId,
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING.name(), message));
         if (preferences.isChannelEnabled(recipientId,
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(recipientId, "New Listing From a Provider You Follow",
+            emailNotificationService.sendEmail(recipientId,
+                    text.compose("email.FOLLOWED_PROVIDER_NEW_LISTING.subject", platform),
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
@@ -303,6 +362,33 @@ public class NotificationService {
             template.convertAndSend("/topic/notifications/" + userId,
                     new WebSocketNotification(type.name(), message))
         );
+    }
+
+    /**
+     * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
+     * notification for the conversation's OTHER participant — the same
+     * delivery shape as the event points above (in-app row always lands;
+     * WebSocket and email ride their L22 per-type/channel preferences).
+     * The recipient arrives resolved at the source (the messaging
+     * publisher holds the conversation) — this method delivers
+     * unconditionally, so the delivery contract stays one shape for every
+     * caller (the onPostCommented criterion-4 precedent).
+     */
+    public void onMessageReceived(UUID conversationId, UUID recipientId) {
+        // B-11: the composed text rides the module's MessageSource channel
+        // at the platform locale.
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String message = text.compose("notification.MESSAGE_RECEIVED", platform, conversationId);
+        // L22: the in-app channel is always on (see onBookingCreated).
+        repository.save(Notification.create(recipientId,
+                NotificationType.MESSAGE_RECEIVED.name(), message));
+        if (preferences.isChannelEnabled(recipientId,
+                NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(recipientId,
+                    text.compose("email.MESSAGE_RECEIVED.subject", platform),
+                    "email/notification", Map.of("message", message));
+        }
+        sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
     }
 
     @Transactional(readOnly = true)
@@ -339,5 +425,35 @@ public class NotificationService {
         // the repository's own transaction (SimpleJpaRepository pattern).
         repository.saveAndFlush(notification);
         return NotificationResponse.from(notification);
+    }
+
+    /**
+     * B-07 (compliance plan 0.8 — the measured defect §3.4-6): delete one
+     * notification — the caller's own only (the same ownership discipline
+     * {@link #markAsRead} carries: the recipient or an admin). The delete
+     * is the BaseEntity soft delete ({@code @SoftDelete} — {@code is_deleted}),
+     * so the Envers trace and the audit row survive.
+     */
+    @Observed(name = "notification.delete")
+    public void delete(UUID id, Authentication authentication) {
+        Notification notification = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found: " + id));
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        if (!notification.getRecipientId().equals(userId) && !currentUserProvider.isAdmin(authentication)) {
+            throw new AccessDeniedException("Not allowed to access this notification");
+        }
+        repository.delete(notification);
+    }
+
+    /**
+     * B-07 (0.8): mark ALL the caller's unread notifications as read — the
+     * feed's clear-all (one bulk UPDATE, the count returned for the badge's
+     * immediate reconciliation). Only the CALLER's rows: an admin clearing
+     * their own feed, never anyone else's.
+     */
+    @Observed(name = "notification.mark.all.read")
+    public int markAllAsRead(Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        return repository.markAllAsReadByRecipientId(userId);
     }
 }
