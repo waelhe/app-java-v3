@@ -171,7 +171,7 @@ public class ModerationRuleAdminController {
             @NotNull
             @Schema(description = "The rule's lifecycle state — false pauses the evaluation "
                     + "lookup without losing the row.", example = "false")
-            boolean enabled
+            Boolean enabled
     ) {
     }
 }

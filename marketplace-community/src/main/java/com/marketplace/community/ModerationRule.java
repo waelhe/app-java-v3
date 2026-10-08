@@ -3,6 +3,8 @@ package com.marketplace.community;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
@@ -52,10 +54,12 @@ public class ModerationRule extends BaseEntity {
     private UUID id;
 
     /** The report axis the rule watches — POST, COMMENT or REVIEW (the machine's own vocabulary). */
+    @Enumerated(EnumType.STRING)
     @Column(name = "target_type", nullable = false, length = 20)
     private ReportTargetType targetType;
 
     /** The report axis the rule watches — SPAM, HARASSMENT, INAPPROPRIATE or OTHER. */
+    @Enumerated(EnumType.STRING)
     @Column(name = "reason", nullable = false, length = 30)
     private ReportReason reason;
 

@@ -2,6 +2,7 @@ package com.marketplace.community;
 
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ContentModeratedEvent;
+import com.marketplace.shared.api.ContentReportResolvedEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -226,7 +227,19 @@ class ContentReportServiceTest {
         verify(postRepository, never()).findById(any());
         verify(postRepository, never()).save(any());
         verify(commentRepository, never()).delete(any());
-        verify(eventPublisher, never()).publishEvent(any());
+        // The dismiss never touches the content (no author alert) — but the
+        // REPORTER's adjudication fact still publishes (the CodeRabbit round-1
+        // adoption: every outcome fires it — «my report left the queue»,
+        // whichever way the verdict went).
+        ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
+                ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
+        verify(eventPublisher).publishEvent(reporterFact.capture());
+        verify(eventPublisher, never())
+                .publishEvent(org.mockito.ArgumentMatchers.any(ContentModeratedEvent.class));
+        assertThat(reporterFact.getValue().reporterId()).isEqualTo(reporterId);
+        assertThat(reporterFact.getValue().targetType()).isEqualTo("POST");
+        assertThat(reporterFact.getValue().targetId()).isEqualTo(postId);
+        assertThat(reporterFact.getValue().outcome()).isEqualTo("DISMISSED");
     }
 
     @Test
@@ -245,15 +258,25 @@ class ContentReportServiceTest {
         assertThat(post.getStatus()).isEqualTo(PostStatus.HIDDEN_BY_MODERATOR);
         assertThat(view.status()).isEqualTo("RESOLVED");
         assertThat(view.resolvedBy()).isEqualTo(adminId);
+        // Two publications ride the one command: the AUTHOR's hide alert and
+        // the REPORTER's adjudication fact (the CodeRabbit round-1 adoption —
+        // the human path now fires the reporter's event exactly as the
+        // engine's automatic path does).
         ArgumentCaptor<ContentModeratedEvent> event =
                 ArgumentCaptor.forClass(ContentModeratedEvent.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue().recipientId()).isEqualTo(authorId);
-        assertThat(event.getValue().targetType()).isEqualTo("POST");
+        ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
+                ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
+        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(event.capture());
+        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(reporterFact.capture());
+        assertThat(event.getAllValues().get(0).recipientId()).isEqualTo(authorId);
+        assertThat(event.getAllValues().get(0).targetType()).isEqualTo("POST");
         // the event rides the resolved post's OWN id — the honest fact the
         // notification message prints (in reality identical to the
         // report's targetId: findById can only return that row).
-        assertThat(event.getValue().targetId()).isEqualTo(post.getId());
+        assertThat(event.getAllValues().get(0).targetId()).isEqualTo(post.getId());
+        assertThat(reporterFact.getValue().reporterId()).isEqualTo(reporterId);
+        assertThat(reporterFact.getValue().outcome()).isEqualTo("RESOLVED");
+        assertThat(reporterFact.getValue().targetId()).isEqualTo(postId);
     }
 
     @Test
@@ -271,14 +294,22 @@ class ContentReportServiceTest {
 
         assertThat(view.status()).isEqualTo("RESOLVED");
         verify(commentRepository).delete(comment);
+        // Two publications ride the one command (the POST twin above for
+        // the full reasoning): the author's hide alert + the reporter's
+        // adjudication fact.
         ArgumentCaptor<ContentModeratedEvent> event =
                 ArgumentCaptor.forClass(ContentModeratedEvent.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue().recipientId()).isEqualTo(authorId);
-        assertThat(event.getValue().targetType()).isEqualTo("COMMENT");
+        ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
+                ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
+        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(event.capture());
+        verify(eventPublisher, org.mockito.Mockito.times(2)).publishEvent(reporterFact.capture());
+        assertThat(event.getAllValues().get(0).recipientId()).isEqualTo(authorId);
+        assertThat(event.getAllValues().get(0).targetType()).isEqualTo("COMMENT");
         // the event rides the resolved comment's OWN id (see the POST twin
         // above for the same reasoning).
-        assertThat(event.getValue().targetId()).isEqualTo(comment.getId());
+        assertThat(event.getAllValues().get(0).targetId()).isEqualTo(comment.getId());
+        assertThat(reporterFact.getValue().outcome()).isEqualTo("RESOLVED");
+        assertThat(reporterFact.getValue().reporterId()).isEqualTo(reporterId);
     }
 
     @Test
@@ -296,9 +327,17 @@ class ContentReportServiceTest {
 
         // the report still drains honestly ...
         assertThat(view.status()).isEqualTo("RESOLVED");
-        // ... but no second write and no duplicate author alert
+        // ... but no second write and no duplicate author alert — the only
+        // publication is the REPORTER's adjudication fact (the report did
+        // leave the queue; the already-hidden target carries no new fact
+        // for the author).
         verify(postRepository, never()).save(any());
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(eventPublisher, never())
+                .publishEvent(org.mockito.ArgumentMatchers.any(ContentModeratedEvent.class));
+        ArgumentCaptor<ContentReportResolvedEvent> reporterFact =
+                ArgumentCaptor.forClass(ContentReportResolvedEvent.class);
+        verify(eventPublisher).publishEvent(reporterFact.capture());
+        assertThat(reporterFact.getValue().outcome()).isEqualTo("RESOLVED");
     }
 
     @Test
@@ -314,7 +353,13 @@ class ContentReportServiceTest {
 
         assertThat(view.status()).isEqualTo("RESOLVED");
         verify(postRepository, never()).save(any());
-        verify(eventPublisher, never()).publishEvent(any());
+        // no author alert (the deleted target carries no alertable fact) —
+        // the REPORTER's adjudication fact still publishes (the report
+        // left the queue).
+        verify(eventPublisher, never())
+                .publishEvent(org.mockito.ArgumentMatchers.any(ContentModeratedEvent.class));
+        verify(eventPublisher, org.mockito.Mockito.times(1)).publishEvent(
+                org.mockito.ArgumentMatchers.any(ContentReportResolvedEvent.class));
     }
 
     // ---------- getReports ----------

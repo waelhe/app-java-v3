@@ -157,6 +157,51 @@ class NeighborhoodMembershipServiceTest {
     }
 
     @Test
+    void reviewVerification_approvePublishesTheGrantFact_bothGrantPathsAlike() {
+        // The CodeRabbit round-1 adoption contract: BOTH grant paths
+        // (PENDING -> VERIFIED and REJECTED -> VERIFIED) publish the
+        // member's trust fact — the notifications listener consumes it
+        // AFTER_COMMIT into the member's MEMBERSHIP_VERIFIED arrival. The
+        // complete-fact discipline: the event carries the membership row,
+        // the member, and the neighborhood — no consumer ever re-derives.
+        for (boolean viaRejected : new boolean[] {false, true}) {
+            NeighborhoodMembership membership = storedMembership(locationId);
+            membership.requestVerification();
+            if (viaRejected) {
+                membership.rejectVerification();
+            }
+            when(repository.findById(membership.getId())).thenReturn(Optional.of(membership));
+            when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            org.mockito.Mockito.clearInvocations(eventPublisher);
+
+            service.reviewVerification(membership.getId(), true);
+
+            org.mockito.ArgumentCaptor<com.marketplace.shared.api.MembershipVerificationGrantedEvent> granted =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.marketplace.shared.api.MembershipVerificationGrantedEvent.class);
+            verify(eventPublisher).publishEvent(granted.capture());
+            assertThat(granted.getValue().membershipId()).isEqualTo(membership.getId());
+            assertThat(granted.getValue().userId()).isEqualTo(userId);
+            assertThat(granted.getValue().locationId()).isEqualTo(locationId);
+            assertThat(membership.getVerificationState().name()).isEqualTo("VERIFIED");
+        }
+    }
+
+    @Test
+    void reviewVerification_rejectNeverPublishesTheGrantFact() {
+        NeighborhoodMembership pending = storedMembership(locationId);
+        pending.requestVerification();
+        when(repository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.reviewVerification(pending.getId(), false);
+
+        verify(eventPublisher, never()).publishEvent(
+                org.mockito.ArgumentMatchers.any(
+                        com.marketplace.shared.api.MembershipVerificationGrantedEvent.class));
+    }
+
+    @Test
     void join_unknownLocation_isThePortsOwn404() {
         when(geoLookupPort.getLocation(locationId))
                 .thenThrow(new ResourceNotFoundException("Location", locationId));

@@ -81,11 +81,12 @@ package com.marketplace.notifications;
  * REPORTER (the adjudication event fires on every outcome — {@code
  * RESOLVED} behind {@code HIDE_CONTENT} and {@code DISMISSED} behind
  * {@code DISMISS}; distinct from the author's {@code CONTENT_MODERATED}
- * alert, which is the hide fact alone). The event records sit module-local
- * in community pending CR-10 (the B-08/{@code MessageReceivedEvent}
- * precedent: the listener's import needs the record in {@code shared/api}
- * — the house convention, no pom change anywhere), so the listener wiring
- * rides that CR while these delivery handlers land now.
+ * alert, which is the hide fact alone). The event records live in
+ * {@code shared/api} and the listener wiring LANDED (the CodeRabbit
+ * round-1 adoption closing the CR-10 crossing: the B-08/
+ * {@code MessageReceivedEvent} precedent — the record's shared/api
+ * placement, no pom change anywhere, and
+ * {@code NotificationEventListener} delivers on every publication).
  */
 public enum NotificationType {
     BOOKING_CREATED,

@@ -1,4 +1,4 @@
-package com.marketplace.community;
+package com.marketplace.shared.api;
 
 import java.util.UUID;
 
@@ -10,8 +10,17 @@ import java.util.UUID;
  * NamedInterface, the additive-only registration the contracts ledger
  * carries (a NEW event, never a rename/move of an existing one — the
  * {@code DisputeOpenedEvent}/{@code MessageReceivedEvent} B-06/B-08
- * precedent; the record's placement in {@code shared/api} and the
- * publisher wiring ride CR-10, the designed crossing for this unit).
+ * precedent).
+ *
+ * <p><b>Placement ruling (the CR-4 crossing, landed by the CodeRabbit
+ * round-1 adoption — the contracts ledger §1.1 house convention
+ * measured on every cross-boundary record the notifications listener
+ * consumes):</b> this event crosses module boundaries, so its record
+ * lives in {@code shared/api}. The consumer-side import needs NO new
+ * module dependency this way: notifications already depends on shared,
+ * and no pom anywhere changes. The record was moved byte-equivalent
+ * from the community module (package declaration only — the
+ * {@code MessageReceivedEvent} CR-4 flow verbatim).
  *
  * <p><b>The complete-fact discipline (the {@code DisputeResolvedEvent}
  * lesson — no consumer ever re-derives):</b> the payload carries the
