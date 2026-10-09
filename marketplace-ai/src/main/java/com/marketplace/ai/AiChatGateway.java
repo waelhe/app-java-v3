@@ -2,6 +2,7 @@ package com.marketplace.ai;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,14 +28,19 @@ public final class AiChatGateway {
 
     private final ChatClient chatClient;
     private final @Nullable JevModelRouter modelRouter;
+    private final @Nullable JevGuardrailAdvisor guardrailAdvisor;
 
     public AiChatGateway(ChatClient chatClient) {
-        this(chatClient, null);
+        this(chatClient, null, null);
     }
 
-    public AiChatGateway(ChatClient chatClient, @Nullable JevModelRouter modelRouter) {
+    public AiChatGateway(
+            ChatClient chatClient,
+            @Nullable JevModelRouter modelRouter,
+            @Nullable JevGuardrailAdvisor guardrailAdvisor) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
         this.modelRouter = modelRouter;
+        this.guardrailAdvisor = guardrailAdvisor;
     }
 
     public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
@@ -54,7 +60,7 @@ public final class AiChatGateway {
     }
 
     public String answer(UUID userId, String conversationId, String userText) {
-        String content = prompt(userId, conversationId, userText).call().content();
+        String content = prompt(userId, conversationId, userText, true).call().content();
         if (content == null || content.isBlank()) {
             throw new IllegalStateException("Spring AI returned an empty chat answer");
         }
@@ -62,7 +68,7 @@ public final class AiChatGateway {
     }
 
     public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
-        ChatClientResponse response = prompt(userId, conversationId, userText)
+        ChatClientResponse response = prompt(userId, conversationId, userText, true)
                 .call()
                 .chatClientResponse();
         if (response == null || response.chatResponse() == null) {
@@ -73,12 +79,12 @@ public final class AiChatGateway {
 
     private Mono<ChatClient.ChatClientRequestSpec> streamPrompt(
             UUID userId, String conversationId, String userText) {
-        return Mono.fromCallable(() -> prompt(userId, conversationId, userText))
+        return Mono.fromCallable(() -> prompt(userId, conversationId, userText, false))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private ChatClient.ChatClientRequestSpec prompt(
-            UUID userId, String conversationId, String userText) {
+            UUID userId, String conversationId, String userText, boolean applyCallGuardrails) {
         Objects.requireNonNull(userId, "userId must not be null");
         if (conversationId == null || conversationId.isBlank()) {
             throw new IllegalArgumentException("conversationId must not be blank");
@@ -91,6 +97,11 @@ public final class AiChatGateway {
                         .param(SessionMemoryAdvisor.USER_ID_CONTEXT_KEY, userId.toString()))
                 .toolContext(Map.of("userId", userId.toString()))
                 .user(message);
+
+        if (applyCallGuardrails && this.guardrailAdvisor != null) {
+            // JevGuardrailAdvisor must inspect the complete answer and explicitly rejects streaming.
+            request = request.advisors(this.guardrailAdvisor);
+        }
 
         if (this.modelRouter != null) {
             JevModelRouter.RouteDecision route = this.modelRouter.route(message);

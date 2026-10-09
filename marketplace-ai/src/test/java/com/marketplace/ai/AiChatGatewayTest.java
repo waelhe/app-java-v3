@@ -3,6 +3,7 @@ package com.marketplace.ai;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.response.Answer;
 import org.springaicommunity.typesafe.response.ChoiceAnswer;
@@ -102,6 +103,25 @@ class AiChatGatewayTest {
         AiChatGateway gateway = new AiChatGateway(chatClient);
         assertThat(gateway.streamAnswer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")
                 .collectList().block()).containsExactly("Hello", " world");
+    }
+
+    @Test
+    void appliesOfficialJevGuardrailsToCompleteCalls() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        JevGuardrailAdvisor guardrail = mock(JevGuardrailAdvisor.class);
+        when(chatClient.prompt()).thenReturn(request);
+        stubRequest(request);
+        when(request.advisors(guardrail)).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("safe answer");
+
+        AiChatGateway gateway = new AiChatGateway(chatClient, null, guardrail);
+        assertThat(gateway.answer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello"))
+                .isEqualTo("safe answer");
+
+        verify(request).advisors(guardrail);
     }
 
     @Test

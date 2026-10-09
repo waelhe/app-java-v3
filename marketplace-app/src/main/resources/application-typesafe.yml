@@ -11,6 +11,10 @@ spring:
 marketplace:
   ai:
     typesafe:
+      guardrails:
+        # Official Jev guardrail screens user input and final answer on sync/JSON calls.
+        # The official advisor rejects stream calls, so SSE intentionally omits it.
+        enabled: true
       rag:
         enabled: true
       # Jev chooses a model tier through the official TypeSafe Choice API.

@@ -7,6 +7,7 @@ import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.springaicommunity.typesafe.TypeSafeClient;
+import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
 import org.springaicommunity.typesafe.rag.JevDocumentReranker;
@@ -61,6 +62,7 @@ public class AiAutoConfiguration {
             SessionService sessionService,
             ObjectProvider<MarketplaceSearchTools> searchTools,
             ObjectProvider<JevModelRouter> modelRouters,
+            ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
             ObjectProvider<VectorStore> vectorStores) {
 
@@ -88,7 +90,8 @@ public class AiAutoConfiguration {
                             .build()));
         }
 
-        return new AiChatGateway(configured.build(), modelRouters.getIfAvailable());
+        return new AiChatGateway(
+                configured.build(), modelRouters.getIfAvailable(), guardrailAdvisors.getIfAvailable());
     }
 
     /**
@@ -124,6 +127,19 @@ public class AiAutoConfiguration {
         }
         throw new IllegalStateException("Jev model routing is enabled, but the active Spring AI ChatModel "
                 + "provider is not a configured Google GenAI or DeepSeek model.");
+    }
+
+    /**
+     * Optional TypeSafe input/output guardrails for complete (non-streaming) calls.
+     * JevGuardrailAdvisor explicitly rejects streaming because it must inspect the full answer.
+     */
+    @Bean
+    @ConditionalOnBean(TypeSafeClient.class)
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.guardrails", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    JevGuardrailAdvisor jevGuardrailAdvisor(TypeSafeClient typeSafeClient) {
+        return JevGuardrailAdvisor.builder(typeSafeClient).build();
     }
 
     /**

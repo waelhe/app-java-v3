@@ -71,7 +71,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(DeepSeekChatModel.class),
-                "deepseek-flash", "deepseek-v4-pro", 0.65d);
+                "deepseek-v4-flash", "deepseek-v4-pro", 0.65d);
 
         JevModelRouter.RouteDecision decision = router.route("Explain the account statement");
 
