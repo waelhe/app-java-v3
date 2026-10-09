@@ -1,7 +1,9 @@
 package com.marketplace.ai.autoconfigure;
 
 import com.marketplace.ai.AiChatGateway;
+import com.marketplace.ai.AiKnowledgeGateway;
 import com.marketplace.ai.AiQueryUnderstanding;
+import com.marketplace.ai.AiWithdrawnSourceStore;
 import com.marketplace.ai.MarketplaceSearchTools;
 import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.ai.JevModelRouter;
@@ -18,6 +20,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -134,5 +137,26 @@ class AiAutoConfigurationTest {
                 new AiAutoConfiguration().aiQueryUnderstanding(builder);
 
         assertThat(understanding).isNotNull();
+    }
+
+    @Test
+    void knowledgeGatewayNeedsTheExactRecordStoreSoNeverDependsOnVectorRecall() {
+        // VectorStore alone is no longer enough: the withdrawal decision is
+        // the exact keyed record, so the gateway composes only when the JDBC
+        // infrastructure for that record is present.
+        contextRunner
+                .withPropertyValues("spring.ai.model.chat=none", "spring.ai.chat.client.enabled=false")
+                .withBean(VectorStore.class, () -> mock(VectorStore.class))
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(AiWithdrawnSourceStore.class)
+                        .doesNotHaveBean(AiKnowledgeGateway.class));
+
+        contextRunner
+                .withPropertyValues("spring.ai.model.chat=none", "spring.ai.chat.client.enabled=false")
+                .withBean(VectorStore.class, () -> mock(VectorStore.class))
+                .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
+                .run(context -> assertThat(context)
+                        .hasSingleBean(AiWithdrawnSourceStore.class)
+                        .hasSingleBean(AiKnowledgeGateway.class));
     }
 }

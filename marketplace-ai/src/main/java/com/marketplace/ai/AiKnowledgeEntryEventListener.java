@@ -41,9 +41,9 @@ public class AiKnowledgeEntryEventListener {
 
     @ApplicationModuleListener
     public void onKnowledgeEntryWithdrawn(KnowledgeEntryWithdrawnEvent event) {
-        // The tombstone (not a bare delete): the durable withdrawal fact that
-        // also blocks a late retried/replayed publication of the same entry
-        // from re-exposing it in the public index.
+        // The durable withdrawal record (not a bare delete): the exact-keyed
+        // fact that also blocks a late retried/replayed publication of the
+        // same entry from re-exposing it in the public index.
         knowledgeGateway.markWithdrawn(event.entryId().toString());
     }
 }

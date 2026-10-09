@@ -110,5 +110,35 @@ class AiModuleIntegrationTest {
                 Integer.class, session.id())).isZero();
     }
 
+    @Test
+    void withdrawnSourceRecordsAreExactKeyedAndIdempotentUnderReplays() {
+        // V162 exists in the same Flyway-managed database as the vector store
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.tables where table_name = 'ai_withdrawn_sources'",
+                Integer.class)).isEqualTo(1);
+
+        AiWithdrawnSourceStore withdrawnSources = context.getBean(AiWithdrawnSourceStore.class);
+        String sourceId = UUID.randomUUID().toString();
+
+        // the exact record: absent before, present after — a B-tree point
+        // lookup with no recall semantics (never approximate vector recall)
+        assertThat(withdrawnSources.exists(sourceId)).isFalse();
+        withdrawnSources.record(sourceId);
+        assertThat(withdrawnSources.exists(sourceId)).isTrue();
+
+        // registry replays re-record the same identity without error — the
+        // idempotence boundary is the SQL itself (ON CONFLICT DO NOTHING)
+        withdrawnSources.record(sourceId);
+        assertThat(withdrawnSources.exists(sourceId)).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from ai_withdrawn_sources where source_id = ?",
+                Integer.class, sourceId)).isEqualTo(1);
+
+        // one withdrawn source never shadows another identity's decision
+        assertThat(withdrawnSources.exists(UUID.randomUUID().toString())).isFalse();
+
+        jdbcTemplate.update("delete from ai_withdrawn_sources where source_id = ?", sourceId);
+    }
+
 
 }

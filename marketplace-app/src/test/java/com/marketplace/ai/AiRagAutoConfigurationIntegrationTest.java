@@ -37,6 +37,7 @@ class AiRagAutoConfigurationIntegrationTest {
     void officialEmbeddingAndPgVectorAutoConfigurationComposeTheKnowledgeGateway() {
         assertThat(context.getBeansOfType(EmbeddingModel.class)).hasSize(1);
         assertThat(context.getBeansOfType(VectorStore.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiWithdrawnSourceStore.class)).hasSize(1);
         assertThat(context.getBeansOfType(AiKnowledgeGateway.class)).hasSize(1);
         assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).hasSize(1);
         assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();

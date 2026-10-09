@@ -7,11 +7,10 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
-import static org.mockito.ArgumentMatchers.any;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -23,9 +22,10 @@ class AiKnowledgeGatewayTest {
     @Test
     void replacesPublicSourceWithOfficialTokenChunks() {
         VectorStore vectorStore = mock(VectorStore.class);
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        when(withdrawnSources.exists("faq-1")).thenReturn(false);
 
-        new AiKnowledgeGateway(vectorStore).replacePublicSource(
+        new AiKnowledgeGateway(vectorStore, withdrawnSources).replacePublicSource(
                 new AiKnowledgeGateway.AiKnowledgeSource(
                         "faq-1", "faq",
                         "Public marketplace FAQ. ".repeat(400)));
@@ -36,65 +36,79 @@ class AiKnowledgeGatewayTest {
                         "PUBLIC".equals(document.getMetadata().get("visibility"))
                                 && "faq-1".equals(document.getMetadata().get("sourceId"))
                                 && "faq".equals(document.getMetadata().get("sourceType")))));
+        // The publication decision is the exact record — the path never
+        // consults approximate nearest-neighbor recall at all.
+        verify(vectorStore, never()).similaritySearch(any(SearchRequest.class));
     }
 
     @Test
     void rejectsBlankKnowledgeSource() {
+        VectorStore vectorStore = mock(VectorStore.class);
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+
         assertThatIllegalArgumentException().isThrownBy(
                 () -> new AiKnowledgeGateway.AiKnowledgeSource("", "faq", "content"));
     }
 
     /**
-     * The CodeRabbit-adopted reversed-order contract: when the withdrawal
-     * executed first, a delayed (retried or registry-replayed) publication
-     * for the same source must NOT re-expose it — the durable tombstone
-     * blocks the late write.
+     * The CodeRabbit-adopted reversed-order contract (2026-10-09, the exact
+     * hazard as stated): pgvector applies metadata filters after the
+     * approximate HNSW/IVFFlat index scan, so a filtered topK(1) similarity
+     * probe can return <em>no row even though the withdrawn record exists</em>.
+     * The withdrawal decision is therefore the exact keyed record — with the
+     * approximate recall simulated to miss, a delayed (retried or
+     * registry-replayed) publication is still refused.
      */
     @Test
-    void aDelayedPublicationAfterWithdrawalIsRefusedByTheTombstone() {
+    void aDelayedPublicationAfterWithdrawalIsRefusedEvenWhenApproximateRecallMissesTheRecord() {
         VectorStore vectorStore = mock(VectorStore.class);
-        Document tombstone = new Document(
-                "Withdrawn source faq-1",
-                Map.of("visibility", "WITHDRAWN", "sourceId", "faq-1"));
-        // the withdrawal ran first: the tombstone is the source's only document
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(tombstone));
+        // the pgvector hazard made explicit: the approximate probe would
+        // find nothing — ANN recall must not be the existence oracle
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        // the exact record says withdrawn
+        when(withdrawnSources.exists("faq-1")).thenReturn(true);
 
-        AiKnowledgeGateway gateway = new AiKnowledgeGateway(vectorStore);
+        AiKnowledgeGateway gateway = new AiKnowledgeGateway(vectorStore, withdrawnSources);
         gateway.markWithdrawn("faq-1");
         gateway.replacePublicSource(new AiKnowledgeGateway.AiKnowledgeSource(
                 "faq-1", "faq", "Late retried publication of withdrawn content"));
 
         // the late publication never reaches the index
-        verify(vectorStore, never()).add(argThat(documents ->
-                documents.stream().anyMatch(document ->
-                        "PUBLIC".equals(document.getMetadata().get("visibility")))));
+        verify(vectorStore, never()).add(any());
     }
 
     @Test
-    void withdrawalWritesTheDurableTombstoneThroughTheOfficialFilterDelete() {
+    void withdrawalRecordsTheExactDurableFactAndDeletesTheVectors() {
         VectorStore vectorStore = mock(VectorStore.class);
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
 
-        new AiKnowledgeGateway(vectorStore).markWithdrawn("faq-1");
+        new AiKnowledgeGateway(vectorStore, withdrawnSources).markWithdrawn("faq-1");
 
+        // the exact record is the durable withdrawal fact (idempotent at the
+        // SQL boundary), and the source's vectors are removed
+        verify(withdrawnSources).record("faq-1");
         verify(vectorStore).delete(any(Filter.Expression.class));
-        verify(vectorStore).add(argThat(documents ->
-                documents.size() == 1
-                        && "WITHDRAWN".equals(documents.get(0).getMetadata().get("visibility"))
-                        && "faq-1".equals(documents.get(0).getMetadata().get("sourceId"))));
+        // no tombstone document is written into the vector store anymore —
+        // the relational record is the single source of the withdrawal fact
+        verify(vectorStore, never()).add(any());
+        verify(vectorStore, never()).similaritySearch(any(SearchRequest.class));
     }
 
     @Test
-    void theTombstoneProbeFiltersByWithdrawnVisibilityAndSourceId() {
+    void thePublicationGuardReadsTheExactRecordNeverApproximateRecall() {
         VectorStore vectorStore = mock(VectorStore.class);
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        AiWithdrawnSourceStore withdrawnSources = mock(AiWithdrawnSourceStore.class);
+        when(withdrawnSources.exists("faq-1")).thenReturn(true);
 
-        new AiKnowledgeGateway(vectorStore).replacePublicSource(
+        new AiKnowledgeGateway(vectorStore, withdrawnSources).replacePublicSource(
                 new AiKnowledgeGateway.AiKnowledgeSource("faq-1", "faq", "content"));
 
-        verify(vectorStore).similaritySearch(argThat((SearchRequest request) ->
-                request.getFilterExpression() != null
-                        && request.getFilterExpression().toString().contains("WITHDRAWN")
-                        && request.getFilterExpression().toString().contains("faq-1")));
+        // the guard consulted the exact record and refused — and the
+        // decision path never touched the vector store at all
+        verify(withdrawnSources).exists("faq-1");
+        verify(vectorStore, never()).delete(any(Filter.Expression.class));
+        verify(vectorStore, never()).add(any());
+        verify(vectorStore, never()).similaritySearch(any(SearchRequest.class));
     }
 }

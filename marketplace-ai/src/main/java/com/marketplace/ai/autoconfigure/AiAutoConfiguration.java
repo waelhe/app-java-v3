@@ -2,6 +2,7 @@ package com.marketplace.ai.autoconfigure;
 
 import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiKnowledgeGateway;
+import com.marketplace.ai.AiWithdrawnSourceStore;
 import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
@@ -42,6 +43,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +59,12 @@ import java.util.stream.Collectors;
                 "org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration",
                 "org.springaicommunity.session.jdbc.autoconfigure.JdbcSessionRepositoryAutoConfiguration",
                 "org.springaicommunity.session.autoconfigure.SessionServiceAutoConfiguration",
-                "org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration"
+                "org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration",
+                // Boot's own JdbcTemplate auto-configuration must be processed
+                // first so @ConditionalOnBean(JdbcTemplate.class) below sees the
+                // bean it defines (the documented @ConditionalOnBean ordering
+                // contract — conditions only see beans registered so far).
+                "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration"
         })
 @EnableConfigurationProperties({TypeSafeModelRoutingProperties.class, TypeSafeSelfRefineProperties.class})
 @ConditionalOnClass(ChatClient.class)
@@ -314,10 +321,26 @@ public class AiAutoConfiguration {
         return new AiQueryUnderstanding(builder);
     }
 
+    /**
+     * The AI module's exact withdrawal records (V162). The knowledge gateway's
+     * withdrawal decision reads this by primary-key lookup — never by
+     * approximate vector recall: Spring AI's {@code VectorStore} interface
+     * offers {@code similaritySearch} as its only read path, and pgvector
+     * applies metadata filters after the approximate HNSW/IVFFlat index scan,
+     * so a filtered {@code topK(1)} probe can return no row even though the
+     * withdrawn record exists.
+     */
     @Bean
-    @ConditionalOnBean(VectorStore.class)
+    @ConditionalOnBean(JdbcTemplate.class)
     @ConditionalOnMissingBean
-    AiKnowledgeGateway aiKnowledgeGateway(VectorStore vectorStore) {
-        return new AiKnowledgeGateway(vectorStore);
+    AiWithdrawnSourceStore aiWithdrawnSourceStore(JdbcTemplate jdbcTemplate) {
+        return new AiWithdrawnSourceStore(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnBean({VectorStore.class, JdbcTemplate.class})
+    @ConditionalOnMissingBean
+    AiKnowledgeGateway aiKnowledgeGateway(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
+        return new AiKnowledgeGateway(vectorStore, withdrawnSources);
     }
 }

@@ -2,7 +2,6 @@ package com.marketplace.ai;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 
@@ -16,7 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * The AI knowledge index over the public vector store, with the publish /
  * withdraw ordering hazards of Spring Modulith's asynchronous
  * {@code @ApplicationModuleListener} delivery closed at the root (the
- * CodeRabbit finding adopted with a carrying test).
+ * CodeRabbit findings adopted with carrying tests).
  *
  * <p><b>The hazard:</b> a withdrawal that executes before a delayed
  * publication for the same entry (the async listener's retry/replay path —
@@ -29,31 +28,45 @@ import java.util.concurrent.locks.ReentrantLock;
  * surfaces again (Hibernate {@code @SoftDelete} filters every read), every
  * new contribution is a new identity, and the module's service offers no
  * un-withdraw — so after a withdrawal, <em>no</em> legitimate publication
- * for the same {@code sourceId} can ever exist. A durable tombstone
+ * for the same {@code sourceId} can ever exist. A durable withdrawal record
  * therefore never needs to be overridden, and no version/revision
  * stamping of the events is required.</p>
  *
- * <p><b>The mechanism:</b> {@link #markWithdrawn(String)} replaces the
- * source's documents with a tombstone document carrying
- * {@code visibility=WITHDRAWN} — durable in the vector store itself, so it
- * survives restarts and blocks registry replays. {@link #replacePublicSource}
- * refuses to index a source whose tombstone exists. Every public source
- * operation runs under a striped per-source lock, so a concurrent
- * publish/withdraw pair for one entry serializes in submission order
- * within this JVM. Both public documents and tombstones are written with
- * the same {@code sourceId} metadata key; retrieval paths filter
- * {@code visibility == 'PUBLIC'}, so tombstones are never served.</p>
+ * <p><b>The mechanism:</b> {@link #markWithdrawn(String)} records the
+ * terminal withdrawal fact in {@link AiWithdrawnSourceStore} — an exact
+ * keyed relational record (V162) in the same Flyway-managed database, so
+ * it survives restarts and blocks registry replays — and removes the
+ * source's documents from the index. The record is written before the
+ * vectors are deleted, so a crash between the two steps can only leave a
+ * withdrawn source briefly stale in the index (cleared by the listener's
+ * replay), never a withdrawn source re-exposable by a late publication.
+ * {@link #replacePublicSource} refuses to index a source whose withdrawal
+ * record exists. Every public source operation runs under a striped
+ * per-source lock, so a concurrent publish/withdraw pair for one entry
+ * serializes in submission order within this JVM. Public documents carry
+ * the {@code sourceId} metadata key; retrieval paths filter
+ * {@code visibility == 'PUBLIC'}.</p>
+ *
+ * <p><b>Why the withdrawal decision is not a vector search:</b> Spring
+ * AI's {@code VectorStore} interface offers {@code similaritySearch} as
+ * its only read path, and pgvector applies metadata filters after the
+ * approximate HNSW/IVFFlat index scan, so a filtered {@code topK(1)}
+ * probe can return no row even though the withdrawn record exists —
+ * approximate nearest-neighbor recall must never serve as an existence
+ * oracle (the CodeRabbit-adopted root fix, 2026-10-09).</p>
  */
 public final class AiKnowledgeGateway {
 
     private static final int SOURCE_LOCK_STRIPES = 64;
 
     private final VectorStore vectorStore;
+    private final AiWithdrawnSourceStore withdrawnSources;
     private final TokenTextSplitter splitter;
     private final Lock[] sourceLocks;
 
-    public AiKnowledgeGateway(VectorStore vectorStore) {
+    public AiKnowledgeGateway(VectorStore vectorStore, AiWithdrawnSourceStore withdrawnSources) {
         this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore must not be null");
+        this.withdrawnSources = Objects.requireNonNull(withdrawnSources, "withdrawnSources must not be null");
         this.splitter = TokenTextSplitter.builder().build();
         this.sourceLocks = new Lock[SOURCE_LOCK_STRIPES];
         for (int i = 0; i < SOURCE_LOCK_STRIPES; i++) {
@@ -86,37 +99,27 @@ public final class AiKnowledgeGateway {
     }
 
     /**
-     * Withdraws a source: removes every document it owns and writes the
-     * durable tombstone that blocks any late (retried or replayed)
-     * publication of the same identity from re-exposing it.
+     * Withdraws a source: records the durable, exact-keyed withdrawal fact
+     * that blocks any late (retried or replayed) publication of the same
+     * identity from re-exposing it, then removes every document the source
+     * owns from the index. The record is idempotent under replays
+     * ({@code ON CONFLICT DO NOTHING} at the SQL boundary).
      */
     public void markWithdrawn(String sourceId) {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         runSerialized(sourceId, () -> {
+            withdrawnSources.record(sourceId);
             vectorStore.delete(sourceFilter(sourceId).build());
-            vectorStore.add(List.of(new Document(
-                    "Withdrawn source " + sourceId,
-                    Map.of(
-                            "visibility", "WITHDRAWN",
-                            "sourceId", sourceId
-                    ))));
         });
     }
 
     /**
-     * Whether the durable withdrawal tombstone exists for the source —
-     * the authoritative "this identity is gone" fact inside the store.
+     * Whether the durable withdrawal record exists for the source — the
+     * authoritative "this identity is gone" fact, read by exact primary-key
+     * lookup (never by approximate vector recall; see the class javadoc).
      */
     private boolean isWithdrawn(String sourceId) {
-        FilterExpressionBuilder filters = new FilterExpressionBuilder();
-        return !vectorStore.similaritySearch(SearchRequest.builder()
-                        .query(sourceId)
-                        .topK(1)
-                        .filterExpression(filters.and(
-                                filters.eq("visibility", "WITHDRAWN"),
-                                filters.eq("sourceId", sourceId)).build())
-                        .build())
-                .isEmpty();
+        return withdrawnSources.exists(sourceId);
     }
 
     private FilterExpressionBuilder.Op sourceFilter(String sourceId) {
