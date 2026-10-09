@@ -88,7 +88,13 @@ class ProductMediaJourneyIntegrationTest {
                 UUID.randomUUID(), "journey-appliances", "Home appliances", "أجهزة منزلية", 0);
         when(currentUserProvider.getCurrentUserId(any(Authentication.class))).thenReturn(ownerId);
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
-        when(providerLookupPort.findByUserId(providerId))
+        // The lookup key is the CALLER's user id — the same ownerId the
+        // getCurrentUserId stub answers with (the measured CI lesson of
+        // 2026-10-09: a stub keyed on providerId alone left
+        // findByUserId(ownerId) unanswered, so the media upload's verified-
+        // provider gate rejected the caller with 403 and the signed-images
+        // journey died at its second step).
+        when(providerLookupPort.findByUserId(ownerId))
                 .thenReturn(Optional.of(new ProviderSummary(providerId, "P", "VERIFIED", ownerId)));
         when(storage.verifyUploaded(anyString(), anyString(), eq(1024L))).thenReturn(true);
         when(storage.presignUpload(anyString(), anyString())).thenReturn("https://signed-put");
@@ -145,8 +151,12 @@ class ProductMediaJourneyIntegrationTest {
     void theStrangersProductReadAnswersTheHonest404() throws Exception {
         // A stranger (a different mocked user) reads a product they do not
         // own — existence itself is private (the R5 posture).
+        // thenAnswer, not thenReturn: a CONSTANT random id would make the
+        // stranger the product's own creator (the measured 200-instead-of-404:
+        // Mockito computed the single UUID once, so creator and reader were
+        // the same user); a fresh id per resolution is the actual stranger.
         when(currentUserProvider.getCurrentUserId(any(Authentication.class)))
-                .thenReturn(UUID.randomUUID());
+                .thenAnswer(invocation -> UUID.randomUUID());
         String productBody = mockMvc.perform(post("/api/v1/store/products")
                         .with(jwt().authorities(() -> "ROLE_PROVIDER"))
                         .contentType("application/json")

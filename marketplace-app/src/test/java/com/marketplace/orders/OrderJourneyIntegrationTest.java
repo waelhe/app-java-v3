@@ -204,6 +204,13 @@ class OrderJourneyIntegrationTest {
         String stranger = "it-order-stranger-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(stranger);
         GateResult strangerGate = loginGate(stranger, PASSWORD);
+        // The stranger's own /me provisioning sync — the same strict-provider
+        // step the journey's opening documents (the measured 400-instead-of-404:
+        // the stranger's projection row did not exist, so the orders read
+        // died at the caller resolution before the ownership gate could
+        // answer the honest 404).
+        assertThat(getWithBearer("/api/v1/users/me", strangerGate.accessToken()).statusCode())
+                .as("the stranger's /me provisioning sync").isEqualTo(200);
         HttpResponse<String> strangerRead = getWithBearer(
                 "/api/v1/orders/" + orderId, strangerGate.accessToken());
         assertThat(strangerRead.statusCode())
