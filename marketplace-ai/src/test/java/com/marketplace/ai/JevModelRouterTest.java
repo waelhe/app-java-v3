@@ -46,7 +46,7 @@ class JevModelRouterTest {
     }
 
     @Test
-    void fallsBackToTheCapableModelWhenJevConfidenceIsBelowTheConfiguredFloor() {
+    void fallsBackToTheCapableModelWhenJevConfidenceIsBelowTheOfficialFloor() {
         TypeSafeClient client = mock(TypeSafeClient.class);
         when(client.systemOne(anyString(), anyMap())).thenReturn(response(
                 new ChoiceAnswer("FAST", Map.of("FAST", 0.56d, "CAPABLE", 0.44d), 0.56d)));
