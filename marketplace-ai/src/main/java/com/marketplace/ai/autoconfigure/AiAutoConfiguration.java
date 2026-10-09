@@ -112,7 +112,7 @@ public class AiAutoConfiguration {
         guardrailAdvisors.ifAvailable(completeCallPolicies::add);
 
         // Jev self-refinement and guardrails need the whole answer. The gateway therefore
-        // uses this policy client for JSON and buffers the SSE endpoint to one accepted result.
+        // uses this policy client for JSON and buffers the SSE endpoint to one policy-processed result.
         ChatClient policyChatClient = completeCallPolicies.isEmpty()
                 ? chatClient
                 : configured.clone().defaultAdvisors(completeCallPolicies.toArray(Advisor[]::new)).build();

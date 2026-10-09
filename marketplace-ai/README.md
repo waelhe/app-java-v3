@@ -21,7 +21,7 @@ The profile enables the following integrations. The `judge.enabled` switch regis
 
 ## Streaming and failure behavior
 
-Jev makes structured judgments; it does not generate prose or stream tokens. Both self-refinement and guardrails therefore need a completed answer. When either complete-answer policy is enabled, the gateway uses the official `call()` path and emits the accepted answer as one SSE token after evaluation. Without those policies, Spring AI's incremental streaming path remains in use.
+Jev makes structured judgments; it does not generate prose or stream tokens. Both self-refinement and guardrails therefore need a completed answer. When either complete-answer policy is enabled, the gateway uses the official `call()` path and emits the evaluated answer as one SSE token after policy execution. The official self-refine advisor retains its documented best-effort response if retries are exhausted, unless `TYPESAFE_SELF_REFINE_FAIL_ON_EXHAUSTED_ATTEMPTS` is set to `true`. Without those policies, Spring AI's incremental streaming path remains in use.
 
 TypeSafe's official document filter may leave a passage unclassified when it cannot screen it. These passages are explicitly labelled `UNSCREENED` in the augmented context rather than silently treated as supporting evidence. Tool Calling, tool-call limits, provider selection, and tool callback execution remain managed by Spring AI.
 
