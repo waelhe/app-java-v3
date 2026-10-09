@@ -2,6 +2,7 @@ package com.marketplace.shared.resilience;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.session.SessionService;
 
 import java.util.UUID;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -103,6 +104,19 @@ class AiChatChannelIsolationIntegrationTest {
         @Bean
         ChatModel chatModel() {
             return mock(ChatModel.class);
+        }
+
+        // The union's second condition (2026-10-09, the af68f05b wiring
+        // failure): AiAutoConfiguration's gateway bean now requires
+        // SessionService alongside ChatClient.Builder — the session-owning
+        // conversational contract. The early-registered seam satisfies the
+        // condition exactly the way it satisfies the ChatModel one; the
+        // gateway itself never calls the service (the HTTP layer owns the
+        // sessions — AiChatController resolves them), so the bare mock is
+        // the whole seam.
+        @Bean
+        SessionService sessionService() {
+            return mock(SessionService.class);
         }
     }
 
