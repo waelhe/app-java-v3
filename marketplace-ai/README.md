@@ -15,11 +15,11 @@ The profile enables two independent capabilities:
 - **Jev model routing**: one TypeSafe `Choice` call classifies a request as `FAST` or `CAPABLE`. The selected model ID is passed through the active provider's Spring AI options builder. If Jev fails, returns an unknown choice, or confidence is below `marketplace.ai.typesafe.model-routing.minimum-confidence` (default `0.65`), the router falls back to the configured `CAPABLE` model.
 - **Jev-enhanced RAG**: Spring AI's official `RetrievalAugmentationAdvisor` retrieves up to five public vector-store passages, then TypeSafe's official community `JevDocumentFilter` screens them and `JevDocumentReranker` reorders surviving passages before the prompt is augmented. The context formatter separates supporting passages, contradictions and passages that could not be screened.
 
-Model routing does not switch provider or credentials. Spring AI's existing `spring.ai.model.chat` selector continues to choose the active provider. The profile's Google defaults use the lower-cost `gemini-3.5-flash-lite` for FAST and the newer `gemini-3.6-flash` for CAPABLE, matching Google's current stable model catalogue and pricing. The profile's defaults are:
+Model routing does not switch provider or credentials. Spring AI's existing `spring.ai.model.chat` selector continues to choose the active provider. The profile's Google defaults use the lower-cost `gemini-3.5-flash-lite` for FAST and the currently documented stable `gemini-3.8-flash` for CAPABLE, matching Google's current stable model catalogue and pricing. The profile's defaults are:
 
 | Active provider | FAST | CAPABLE |
 |---|---|---|
-| Google GenAI | `gemini-3.5-flash-lite` | `gemini-3.6-flash` |
+| Google GenAI | `gemini-3.5-flash-lite` | `gemini-3.8-flash` |
 | DeepSeek | `deepseek-flash` | `deepseek-v4-pro` |
 
 Override these using `SPRING_AI_ROUTING_GOOGLE_FAST_MODEL`, `SPRING_AI_ROUTING_GOOGLE_CAPABLE_MODEL`, `SPRING_AI_ROUTING_DEEPSEEK_FAST_MODEL`, or `SPRING_AI_ROUTING_DEEPSEEK_CAPABLE_MODEL`. Override the confidence floor with `TYPESAFE_ROUTING_MIN_CONFIDENCE`.
