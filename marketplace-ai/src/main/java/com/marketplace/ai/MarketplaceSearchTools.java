@@ -8,14 +8,12 @@ import com.marketplace.shared.api.SearchCriteria;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 
-@Component
 public final class MarketplaceSearchTools {
 
     private static final int TOOL_PAGE_SIZE = 5;

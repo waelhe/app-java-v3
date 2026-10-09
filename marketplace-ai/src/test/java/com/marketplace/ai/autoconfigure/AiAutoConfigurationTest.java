@@ -3,6 +3,7 @@ package com.marketplace.ai.autoconfigure;
 import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.MarketplaceSearchTools;
+import com.marketplace.shared.api.CatalogSearchPort;
 import com.marketplace.ai.JevModelRouter;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,17 @@ class AiAutoConfigurationTest {
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());
         verify(vectorStores).ifAvailable(any());
+    }
+
+    @Test
+    void registersMarketplaceSearchToolsOnlyWhenCatalogSearchPortIsAvailable() {
+        contextRunner.run(context -> assertThat(context)
+                .doesNotHaveBean(MarketplaceSearchTools.class));
+
+        contextRunner
+                .withBean(CatalogSearchPort.class, () -> mock(CatalogSearchPort.class))
+                .run(context -> assertThat(context)
+                        .hasSingleBean(MarketplaceSearchTools.class));
     }
 
     @Test

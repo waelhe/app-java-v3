@@ -6,6 +6,7 @@ import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
+import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
@@ -228,6 +229,13 @@ public class AiAutoConfiguration {
         return passages.stream()
                 .map(text -> "- " + text)
                 .collect(Collectors.joining("\n", "", "\n"));
+    }
+
+    @Bean
+    @ConditionalOnBean(CatalogSearchPort.class)
+    @ConditionalOnMissingBean
+    MarketplaceSearchTools marketplaceSearchTools(CatalogSearchPort catalogSearchPort) {
+        return new MarketplaceSearchTools(catalogSearchPort);
     }
 
     @Bean
