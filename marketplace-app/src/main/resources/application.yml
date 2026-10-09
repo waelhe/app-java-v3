@@ -410,6 +410,12 @@ resilience4j:
       search:
         base-config: default
         limit-for-period: 30
+      # LLM calls incur provider cost; reject bursts instead of queuing them.
+      aiChat:
+        base-config: default
+        limit-for-period: 10
+        limit-refresh-period: 1m
+        timeout-duration: 0
       # L29 (feature-expansion roadmap §5, Week 4): coverage for the
       # high-impact PUBLIC WRITE endpoints — booking creation, review
       # creation, media upload requests. Official Resilience4j Spring Boot

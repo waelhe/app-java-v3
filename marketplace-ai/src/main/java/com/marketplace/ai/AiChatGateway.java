@@ -32,15 +32,21 @@ public final class AiChatGateway {
                 .chatClientResponse();
     }
 
-    public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
-        Objects.requireNonNull(userId, "userId must not be null");
-        String scopedConversationId = scopeConversation(userId, conversationId);
+    /**
+     * Returns the model's textual answer using Spring AI's documented
+     * ChatClient call/content API. The HTTP layer depends on this application
+     * capability rather than Spring AI's internal response envelope.
+     */
+    public String answer(UUID userId, String conversationId, String userText) {
+        String content = prompt(userId, conversationId, userText).call().content();
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("Spring AI returned an empty chat answer");
+        }
+        return content;
+    }
 
-        ChatClientResponse response = chatClient.prompt()
-                .advisors(advisors -> advisors.param(
-                        ChatMemory.CONVERSATION_ID, scopedConversationId))
-                .toolContext(Map.of("userId", userId.toString()))
-                .user(Objects.requireNonNull(userText, "userText must not be null"))
+    public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
+        ChatClientResponse response = prompt(userId, conversationId, userText)
                 .call()
                 .chatClientResponse();
 
@@ -48,6 +54,18 @@ public final class AiChatGateway {
             throw new IllegalStateException("Spring AI returned an empty chat response");
         }
         return response;
+    }
+
+    private ChatClient.ChatClientRequestSpec prompt(
+            UUID userId, String conversationId, String userText) {
+        Objects.requireNonNull(userId, "userId must not be null");
+        String scopedConversationId = scopeConversation(userId, conversationId);
+
+        return chatClient.prompt()
+                .advisors(advisors -> advisors.param(
+                        ChatMemory.CONVERSATION_ID, scopedConversationId))
+                .toolContext(Map.of("userId", userId.toString()))
+                .user(Objects.requireNonNull(userText, "userText must not be null"));
     }
 
     static String scopeConversation(UUID userId, String conversationId) {
