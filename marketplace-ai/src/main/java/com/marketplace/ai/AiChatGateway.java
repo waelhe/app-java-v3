@@ -28,6 +28,7 @@ public final class AiChatGateway {
     private final ChatClient chatClient;
     private final ChatClient guardedChatClient;
     private final @Nullable JevModelRouter modelRouter;
+    private final boolean guardrailsEnabled;
 
     public AiChatGateway(ChatClient chatClient) {
         this(chatClient, chatClient, null);
@@ -38,8 +39,10 @@ public final class AiChatGateway {
     }
 
     /**
-     * Keeps the streaming client free of call-only advisors and selects the guarded client for
-     * complete calls. Both clients are built from the same official builder configuration.
+     * Keeps the unguarded streaming client separate from call-only advisors. When official
+     * call-only guardrails are configured, SSE-shaped methods execute a guarded complete call
+     * and emit its verified result only after the advisor returns. This avoids sending
+     * unverified answer fragments while respecting JevGuardrailAdvisor's unsupported stream API.
      */
     public AiChatGateway(
             ChatClient chatClient,
@@ -47,10 +50,18 @@ public final class AiChatGateway {
             @Nullable JevModelRouter modelRouter) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
         this.guardedChatClient = Objects.requireNonNull(guardedChatClient, "guardedChatClient must not be null");
+        this.guardrailsEnabled = guardedChatClient != chatClient;
         this.modelRouter = modelRouter;
     }
 
     public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
+        if (this.guardrailsEnabled) {
+            // JevGuardrailAdvisor's official call path screens the complete answer. Buffer the
+            // result before publishing it rather than leaking unchecked fragments via stream().
+            return Mono.fromCallable(() -> chat(userId, conversationId, userText))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flux();
+        }
         return streamPrompt(userId, conversationId, userText)
                 .flatMapMany(request -> request.stream().chatClientResponse());
     }
@@ -60,8 +71,16 @@ public final class AiChatGateway {
      * SessionMemoryAdvisor persists the complete tool-call-aware turn.
      */
     public Flux<String> streamAnswer(UUID userId, String conversationId, String userText) {
-        // Jev is a decision API, not a streaming chat model. Do its route off the
-        // request thread, then hand the selected model options to Spring AI's stream API.
+        if (this.guardrailsEnabled) {
+            // The official advisor explicitly rejects streaming because it must screen the whole
+            // answer. Use its guarded call path and expose the verified answer as one SSE token;
+            // true token-by-token streaming remains available when guardrails are disabled.
+            return Mono.fromCallable(() -> answer(userId, conversationId, userText))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flux();
+        }
+        // Jev is a decision API, not a streaming chat model. Route off the request thread, then
+        // hand the selected model options to Spring AI's public stream API.
         return streamPrompt(userId, conversationId, userText)
                 .flatMapMany(request -> request.stream().content());
     }

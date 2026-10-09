@@ -125,6 +125,52 @@ class AiChatGatewayTest {
     }
 
     @Test
+    void buffersSseOutputThroughTheGuardedCallWhenJevGuardrailsAreConfigured() {
+        ChatClient streamingClient = mock(ChatClient.class);
+        ChatClient guardedClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(guardedClient.prompt()).thenReturn(request);
+        stubRequest(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("verified answer");
+
+        AiChatGateway gateway = new AiChatGateway(streamingClient, guardedClient, null);
+
+        assertThat(gateway.streamAnswer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")
+                .collectList().block()).containsExactly("verified answer");
+
+        verify(guardedClient).prompt();
+        verify(request).call();
+        verify(request, never()).stream();
+        verify(streamingClient, never()).prompt();
+    }
+
+    @Test
+    void buffersRawSseResponsesThroughTheGuardedCallWhenJevGuardrailsAreConfigured() {
+        ChatClient streamingClient = mock(ChatClient.class);
+        ChatClient guardedClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        ChatClientResponse response = mock(ChatClientResponse.class);
+        when(guardedClient.prompt()).thenReturn(request);
+        stubRequest(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.chatClientResponse()).thenReturn(response);
+        when(response.chatResponse()).thenReturn(mock(org.springframework.ai.chat.model.ChatResponse.class));
+
+        AiChatGateway gateway = new AiChatGateway(streamingClient, guardedClient, null);
+
+        assertThat(gateway.stream(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")
+                .collectList().block()).containsExactly(response);
+
+        verify(guardedClient).prompt();
+        verify(request).call();
+        verify(request, never()).stream();
+        verify(streamingClient, never()).prompt();
+    }
+
+    @Test
     void rejectsBlankSessionId() {
         AiChatGateway gateway = new AiChatGateway(mock(ChatClient.class));
         assertThatIllegalArgumentException()

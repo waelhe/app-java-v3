@@ -12,8 +12,9 @@ marketplace:
   ai:
     typesafe:
       guardrails:
-        # Official Jev guardrail screens user input and final answer on sync/JSON calls.
-        # The official advisor rejects stream calls, so SSE intentionally omits it.
+        # The official Jev guardrail screens input and final answer. Since the advisor rejects
+        # stream calls, the gateway buffers guarded calls and emits verified SSE output only after
+        # screening; token-by-token streaming remains enabled when guardrails are off.
         enabled: true
       rag:
         enabled: true
