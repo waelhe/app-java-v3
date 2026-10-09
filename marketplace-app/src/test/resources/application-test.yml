@@ -6,6 +6,15 @@ spring:
   ai:
     model:
       chat: none
+      embedding:
+        text: none
+    google:
+      genai:
+        # A non-secret placeholder lets the official embedding connection
+        # auto-configuration initialize in tests. The model selector remains
+        # disabled, so tests never contact Google.
+        embedding:
+          api-key: test-key
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}
