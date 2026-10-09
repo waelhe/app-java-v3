@@ -122,6 +122,27 @@
              gate fails on HIGH/CRITICAL *fixed* findings — the same
              trivy-gate measurement class as the Jackson bump above). -->
         <lz4-java.version>1.11.4</lz4-java.version>
+        <!-- kafka-clients 4.2.1 (Boot 4.1.1 BOM) managed deps lag behind the
+             measured native-codec CVEs — the same measurement class as the
+             lz4-java override above, both entered the tree with A-14 (the
+             spring-modulith-events-kafka runtime; the Snyk PR gate flagged
+             "1 test has failed" from commit acc7744bf0 onward):
+             - snappy-java 1.1.10.7 → 1.1.10.11: CVE-2026-90559 (OOB write,
+               Snappy.uncompress(ByteBuffer, ByteBuffer)), CVE-2026-93452
+               (buffer overflow, Snappy.compress(ByteBuffer,...)), and
+               CVE-2026-93451 (buffer overflow, typed Snappy.uncompress*Array
+               methods) — all three affect "through 1.1.10.8"; fixed in
+               1.1.10.9 (same-line patch bump to the latest same-line release).
+             - zstd-jni 1.5.6-10 → 1.5.7-22: CVE-2026-89045 (negative length
+               not validated in ZstdInputStreamNoFinalizer, "1.4.8-4 through
+               1.5.7-13"), CVE-2026-87825 (use-after-free, silent corruption/
+               JVM crash), CVE-2026-90560 (buffer overflow, OOB read), and
+               CVE-2026-90852 (ZstdCompressCtx) — fixed in 1.5.7-14+ (same
+               1.5.x line, same native ABI; latest same-line release pinned).
+             Both artifacts are compress-only codecs behind Kafka's producer
+             config — zero API surface reached by application code. -->
+        <snappy-java.version>1.1.10.11</snappy-java.version>
+        <zstd-jni.version>1.5.7-22</zstd-jni.version>
         <prometheus-client.version>1.8.0</prometheus-client.version>
         <!-- Override: commons-logging — spring-session-core 4.1.1 (Boot 4.1.1) requires 1.4.0, Boot 4.1.1 BOM manages 1.3.6 (RequireUpperBoundDeps) -->
         <commons-logging.version>1.4.0</commons-logging.version>
@@ -341,6 +362,24 @@
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
                 <version>${lz4-java.version}</version>
+            </dependency>
+            <!-- Override: snappy-java — kafka-clients 4.2.1 manages 1.1.10.7;
+                 three measured CVEs affect "through 1.1.10.8" (fixed in
+                 1.1.10.9): see the properties block above for the full CVE
+                 register and the A-14/Snyk provenance. Same-line patch bump. -->
+            <dependency>
+                <groupId>org.xerial.snappy</groupId>
+                <artifactId>snappy-java</artifactId>
+                <version>${snappy-java.version}</version>
+            </dependency>
+            <!-- Override: zstd-jni — kafka-clients 4.2.1 manages 1.5.6-10;
+                 four measured CVEs affect "1.4.8-4 through 1.5.7-13" (fixed
+                 in 1.5.7-14): see the properties block above for the full
+                 CVE register and the A-14/Snyk provenance. Same-line bump. -->
+            <dependency>
+                <groupId>com.github.luben</groupId>
+                <artifactId>zstd-jni</artifactId>
+                <version>${zstd-jni.version}</version>
             </dependency>
             <!-- Override: error_prone_annotations — annotations-only artifact;
                  gson 2.13.2 (managed) requires 2.41.0 while the rest of the
