@@ -162,6 +162,18 @@ class PlatformJourneyIntegrationTest {
         GateResult gate = loginGate(username, PASSWORD);
         assertThat(gate.accessToken()).isNotBlank();
 
+        // The /me family's provisioning step (the measured CI lesson,
+        // 2026-10-09): the user PROJECTION row is created by syncFromOidc on
+        // the first /users/me call — every /me/** surface resolves the
+        // caller through the strict CurrentUserProvider, which answers
+        // "User not found for subject" (VAL-001 by the IllegalArgumentException
+        // advice, its message swapped by the i18n detail key) until that
+        // first call lands. The journey's cart adds were 400-ing exactly
+        // here; the /me sync first is the established pattern
+        // (AccountSelfDeletion's own syncProjectionIdViaMe).
+        HttpResponse<String> me = getWithBearer("/api/v1/users/me", gate.accessToken());
+        assertThat(me.statusCode()).as("the /me provisioning sync: %s", body(me)).isEqualTo(200);
+
         // ---- FACET: عربية/i18n — the localized error contract: the invalid
         // cart line (quantity 0 → the bean-validation VAL-001) answered at the
         // Arabic locale carries the real messages_ar.properties title.
@@ -427,7 +439,20 @@ class PlatformJourneyIntegrationTest {
         return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    private HttpResponse<String> getWithBearer(String path, String accessToken) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl() + path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization", "Bearer " + accessToken)
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private String body(HttpResponse<String> response) {
-        return response.body() == null ? "" : response.body().substring(0, Math.min(300, response.body().length()));
+        // 2000 (was 300): a ProblemDetail's fieldErrors — the piece that
+        // names the violated constraint — live past the traceId; the 300-char
+        // window cut them off in the measured CI failures of 2026-10-09,
+        // leaving a "Validation failed" with no subject.
+        return response.body() == null ? "" : response.body().substring(0, Math.min(2000, response.body().length()));
     }
 }

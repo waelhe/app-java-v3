@@ -186,8 +186,8 @@ class AccountMailJourneyIntegrationTest {
                 """.formatted(email));
         assertThat(resent.statusCode()).as("resend: %s", body(resent)).isEqualTo(202);
 
-        String freshToken = tokenFromLatestMail(
-                "Welcome to Marketplace — verify your email", email);
+        String freshToken = tokenFromNthMail(
+                "Welcome to Marketplace — verify your email", email, 2);
         assertThat(freshToken)
                 .as("the resent mail carries a FRESH one-time token (the V112 single-flight)")
                 .isNotBlank()
@@ -336,7 +336,19 @@ class AccountMailJourneyIntegrationTest {
      * carries the setup mails too.</p>
      */
     private String tokenFromLatestMail(String subject, String recipient) {
-        MimeMessage latest = awaitMail(subject, recipient, Duration.ofSeconds(10));
+        return tokenFromNthMail(subject, recipient, 1);
+    }
+
+    /**
+     * The RESEND-aware wait: the resent mail shares the original's (subject,
+     * recipient), so "the latest matching mail" is only the FRESH one after
+     * the SECOND match lands — polling for at least {@code atLeast} matches
+     * (the measured resend race: the poll returned the ORIGINAL token while
+     * the resent mail was still on the async leg, failing the V112
+     * single-flight's fresh-token assertion with identical strings).
+     */
+    private String tokenFromNthMail(String subject, String recipient, int atLeast) {
+        MimeMessage latest = awaitMail(subject, recipient, atLeast, Duration.ofSeconds(10));
         assertThat(latest).as("a mail with subject '%s' for %s", subject, recipient).isNotNull();
         try {
             String content = latest.getContent().toString();
@@ -351,38 +363,38 @@ class AccountMailJourneyIntegrationTest {
     /**
      * The house polling pattern applied to GreenMail's mailbox: the
      * assertion's own predicate, polled at the established 200ms cadence
-     * until it matches or the deadline — a final probe past the deadline
-     * closes the last race window.
+     * until {@code atLeast} matches exist or the deadline — a final probe
+     * past the deadline closes the last race window.
      */
-    private MimeMessage awaitMail(String subject, String recipient, Duration timeout) {
+    private MimeMessage awaitMail(String subject, String recipient, int atLeast, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
-        MimeMessage latest = latestMailMatching(subject, recipient);
-        while (latest == null && System.nanoTime() < deadline) {
+        java.util.List<MimeMessage> matches = matchingMails(subject, recipient);
+        while (matches.size() < atLeast && System.nanoTime() < deadline) {
             try {
                 Thread.sleep(200);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 break;
             }
-            latest = latestMailMatching(subject, recipient);
+            matches = matchingMails(subject, recipient);
         }
-        return latest;
+        return matches.isEmpty() ? null : matches.get(matches.size() - 1);
     }
 
-    private MimeMessage latestMailMatching(String subject, String recipient) {
-        MimeMessage latest = null;
+    private java.util.List<MimeMessage> matchingMails(String subject, String recipient) {
+        java.util.List<MimeMessage> matches = new java.util.ArrayList<>();
         for (MimeMessage message : greenMail.getReceivedMessages()) {
             try {
                 boolean toRecipient = jakarta.mail.internet.InternetAddress.toString(
                         message.getRecipients(jakarta.mail.Message.RecipientType.TO)).contains(recipient);
                 if (toRecipient && message.getSubject().equals(subject)) {
-                    latest = message;
+                    matches.add(message);
                 }
             } catch (Exception ex) {
                 throw new IllegalStateException("mail introspection failed", ex);
             }
         }
-        return latest;
+        return matches;
     }
 
     /**

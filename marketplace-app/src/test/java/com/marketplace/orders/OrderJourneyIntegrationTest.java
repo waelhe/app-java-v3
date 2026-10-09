@@ -116,6 +116,18 @@ class OrderJourneyIntegrationTest {
         GateResult gate = loginGate(username, PASSWORD);
         assertThat(gate.accessToken()).isNotBlank();
 
+        // The /me family's provisioning step (the measured CI lesson,
+        // 2026-10-09): the user PROJECTION row is created by syncFromOidc on
+        // the first /users/me call — the strict CurrentUserProvider that
+        // every /me/** surface resolves through answers
+        // "User not found for subject" (mapped to VAL-001 by the
+        // IllegalArgumentException advice) until that first call lands.
+        // The journey's cart adds were 400-ing exactly here; the /me sync
+        // first is the established pattern (AccountSelfDeletion's own
+        // syncProjectionIdViaMe).
+        HttpResponse<String> me = getWithBearer("/api/v1/users/me", gate.accessToken());
+        assertThat(me.statusCode()).as("the /me provisioning sync: %s", body(me)).isEqualTo(200);
+
         // (1) The cart fills over HTTP — two lines, the union semantics on
         // the third add (the duplicate product raises the quantity).
         UUID product = UUID.randomUUID();
@@ -203,6 +215,12 @@ class OrderJourneyIntegrationTest {
         String username = "it-order-cancel-" + UUID.randomUUID().toString().substring(0, 8);
         registerUser(username);
         GateResult gate = loginGate(username, PASSWORD);
+
+        // The /me provisioning sync first — the same strict-provider step the
+        // full journey documents (the projection row must exist before any
+        // /me/** write).
+        assertThat(getWithBearer("/api/v1/users/me", gate.accessToken()).statusCode())
+                .as("the /me provisioning sync").isEqualTo(200);
 
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":1,"unitAmountMinor":4200,"currency":"SAR"}"""
