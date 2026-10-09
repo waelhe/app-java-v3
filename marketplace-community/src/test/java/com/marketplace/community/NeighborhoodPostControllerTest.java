@@ -96,6 +96,36 @@ class NeighborhoodPostControllerTest {
     }
 
     @Test
+    void search_accepts200UnicodeCodePointsEvenWhenUtf16LengthIs400() {
+        String query = "🙂".repeat(200);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
+        when(postService.searchFeed(
+                org.mockito.ArgumentMatchers.eq(authorId),
+                org.mockito.ArgumentMatchers.eq(query),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        controller.search(query, null, Pageable.unpaged(), authentication);
+
+        verify(postService).searchFeed(
+                org.mockito.ArgumentMatchers.eq(authorId),
+                org.mockito.ArgumentMatchers.eq(query),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.any(Pageable.class));
+    }
+
+    @Test
+    void search_queryOver200UnicodeCodePoints_is400BeforeAnyServiceCall() {
+        String query = "🙂".repeat(201);
+
+        assertThatThrownBy(() -> controller.search(query, null, Pageable.unpaged(), authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessage("q must not exceed 200 Unicode code points");
+        org.mockito.Mockito.verifyNoInteractions(postService, currentUserProvider);
+    }
+
+    @Test
     void feed_absentCategory_delegatesWithNull() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
         when(postService.getFeed(org.mockito.ArgumentMatchers.eq(authorId),
