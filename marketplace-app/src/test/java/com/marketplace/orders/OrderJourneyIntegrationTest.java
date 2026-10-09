@@ -440,6 +440,10 @@ class OrderJourneyIntegrationTest {
     }
 
     private String body(HttpResponse<String> response) {
-        return response.body() == null ? "" : response.body().substring(0, Math.min(300, response.body().length()));
+        // 2000 (was 300): a ProblemDetail's fieldErrors — the piece that
+        // names the violated constraint — live past the traceId; the 300-char
+        // window cut them off in the measured CI failures of 2026-10-09,
+        // leaving a "Validation failed" with no subject.
+        return response.body() == null ? "" : response.body().substring(0, Math.min(2000, response.body().length()));
     }
 }

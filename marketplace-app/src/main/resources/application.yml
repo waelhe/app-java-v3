@@ -335,7 +335,15 @@ management:
         enabled: true
       group:
         readiness:
-          include: db,diskSpace
+          # The documented membership (A-15's smoke, the watchdog's probe
+          # contract, MultiReplicaReadiness's replica story — all three name
+          # the same trio): db, redis, diskSpace. Redis carries the login
+          # sessions themselves (spring-session-data-redis, the indexed
+          # repository) and the named caches — a Redis outage leaves the
+          # login gate down, which is exactly a not-ready state, the same
+          # core-vs-auxiliary line S10 drew when mail (notifications only,
+          # best-effort) was kept OUT of platform health.
+          include: db,redis,diskSpace
         liveness:
           include: ping
   observations:

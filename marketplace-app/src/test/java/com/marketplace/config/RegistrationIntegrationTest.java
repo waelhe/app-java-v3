@@ -139,7 +139,11 @@ class RegistrationIntegrationTest {
         // birth mail arrives through the REAL stack (GreenMail on the test
         // profile's own 3025 binding) and carries the one-time link; the
         // redemption lifts the hold — only then is the account loginable.
-        assertThat(greenMail.waitForIncomingEmail(10_000, 1)).isTrue();
+        // (The wait rides the helper itself: GreenMail's
+        // waitForIncomingEmail counts the server's WHOLE mailbox — on the
+        // shared server any resident mail satisfies it instantly, so the
+        // deterministic wait is the helper's own poll for THIS recipient's
+        // mail, the measured CI lesson of 2026-10-09.)
         String verificationToken = verificationTokenFromLatestMail(email);
         assertThat(verificationToken).as("the welcome mail's one-time link").isNotBlank();
         HttpResponse<String> verified = postJson("/api/v1/auth/email-verification/complete", """
@@ -161,20 +165,51 @@ class RegistrationIntegrationTest {
         assertThat(meProfile.path("displayName").asString()).isEqualTo("S1 Member");
     }
 
-    /** Extracts the one-time token from the LATEST welcome mail for the recipient. */
+    /**
+     * Extracts the one-time token from the LATEST welcome mail for the
+     * recipient — waiting for THAT mail (the house 200ms polling cadence
+     * up to 10s: the async AFTER_COMMIT send leg lands the mail ~65ms
+     * after the registration response, so a zero-wait filter races it on
+     * the shared server — the measured "the welcome mail for … Expecting
+     * actual not to be null" CI failure this poll retires).
+     */
     private String verificationTokenFromLatestMail(String recipient) throws Exception {
-        MimeMessage latest = null;
-        for (MimeMessage message : greenMail.getReceivedMessages()) {
-            if (jakarta.mail.internet.InternetAddress.toString(
-                    message.getRecipients(jakarta.mail.Message.RecipientType.TO)).contains(recipient)) {
-                latest = message;
-            }
-        }
+        MimeMessage latest = awaitMailFor(recipient, Duration.ofSeconds(10));
         assertThat(latest).as("the welcome mail for %s", recipient).isNotNull();
         Matcher matcher = Pattern.compile("token=([A-Za-z0-9_-]+)")
                 .matcher(latest.getContent().toString());
         assertThat(matcher.find()).as("the welcome mail carries the verification deep link").isTrue();
         return matcher.group(1);
+    }
+
+    private MimeMessage awaitMailFor(String recipient, Duration timeout) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        MimeMessage latest = latestMailFor(recipient);
+        while (latest == null && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            latest = latestMailFor(recipient);
+        }
+        return latest;
+    }
+
+    private MimeMessage latestMailFor(String recipient) {
+        MimeMessage latest = null;
+        for (MimeMessage message : greenMail.getReceivedMessages()) {
+            try {
+                if (jakarta.mail.internet.InternetAddress.toString(
+                        message.getRecipients(jakarta.mail.Message.RecipientType.TO)).contains(recipient)) {
+                    latest = message;
+                }
+            } catch (Exception ex) {
+                throw new IllegalStateException("mail introspection failed", ex);
+            }
+        }
+        return latest;
     }
 
     @Test

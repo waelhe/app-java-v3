@@ -317,10 +317,59 @@ class AccountMailJourneyIntegrationTest {
                 .isEqualTo(204);
     }
 
-    /** Extracts the one-time token from the LATEST mail with the given subject. */
+    /**
+     * Extracts the one-time token from the LATEST mail with the given
+     * subject — waiting for THAT mail, not for "any mail".
+     *
+     * <p><b>The wait contract (the measured CI lesson, 2026-10-09):</b>
+     * GreenMail's {@code waitForIncomingEmail(10_000, 1)} counts the
+     * server's WHOLE mailbox, so the setup phase's welcome mail already
+     * satisfies it and the wait proves nothing about the mail this
+     * assertion names — the target mail arrives ~65ms later through the
+     * async AFTER_COMMIT send leg, and a zero-wait filter then finds only
+     * the welcome mail (the measured "a mail with subject 'Reset Your
+     * Password' … Expecting actual not to be null" cluster). The house
+     * polling pattern instead (the registry guard's own 30s/200ms idiom):
+     * poll {@link GreenMail#getReceivedMessages()} with the assertion's own
+     * (subject, recipient) predicate until it matches or the deadline —
+     * the deterministic answer for a shared server whose mailbox always
+     * carries the setup mails too.</p>
+     */
     private String tokenFromLatestMail(String subject, String recipient) {
-        assertThat(greenMail.waitForIncomingEmail(10_000, 1))
-                .as("the mail must arrive through the real stack").isTrue();
+        MimeMessage latest = awaitMail(subject, recipient, Duration.ofSeconds(10));
+        assertThat(latest).as("a mail with subject '%s' for %s", subject, recipient).isNotNull();
+        try {
+            String content = latest.getContent().toString();
+            Matcher matcher = TOKEN_IN_LINK.matcher(content);
+            assertThat(matcher.find()).as("the mail body carries the deep link").isTrue();
+            return matcher.group(1);
+        } catch (Exception ex) {
+            throw new IllegalStateException("mail body read failed", ex);
+        }
+    }
+
+    /**
+     * The house polling pattern applied to GreenMail's mailbox: the
+     * assertion's own predicate, polled at the established 200ms cadence
+     * until it matches or the deadline — a final probe past the deadline
+     * closes the last race window.
+     */
+    private MimeMessage awaitMail(String subject, String recipient, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        MimeMessage latest = latestMailMatching(subject, recipient);
+        while (latest == null && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            latest = latestMailMatching(subject, recipient);
+        }
+        return latest;
+    }
+
+    private MimeMessage latestMailMatching(String subject, String recipient) {
         MimeMessage latest = null;
         for (MimeMessage message : greenMail.getReceivedMessages()) {
             try {
@@ -333,15 +382,7 @@ class AccountMailJourneyIntegrationTest {
                 throw new IllegalStateException("mail introspection failed", ex);
             }
         }
-        assertThat(latest).as("a mail with subject '%s' for %s", subject, recipient).isNotNull();
-        try {
-            String content = latest.getContent().toString();
-            Matcher matcher = TOKEN_IN_LINK.matcher(content);
-            assertThat(matcher.find()).as("the mail body carries the deep link").isTrue();
-            return matcher.group(1);
-        } catch (Exception ex) {
-            throw new IllegalStateException("mail body read failed", ex);
-        }
+        return latest;
     }
 
     /**

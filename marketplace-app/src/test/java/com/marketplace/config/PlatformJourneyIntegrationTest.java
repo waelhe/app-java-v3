@@ -313,7 +313,12 @@ class PlatformJourneyIntegrationTest {
     }
 
     private HttpResponse<String> get(String url, String sessionCookie) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+        // Journey paths arrive relative ("/actuator/…") — the JDK HttpClient
+        // rejects a scheme-less URI ("URI with undefined scheme", the measured
+        // first-facet failure of 2026-10-09), so the absolute form is built
+        // here exactly like postJson does for its paths.
+        URI target = URI.create(url.startsWith("http") ? url : baseUrl() + url);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(target)
                 .timeout(Duration.ofSeconds(30)).GET();
         if (sessionCookie != null) {
             builder.header("Cookie", sessionCookie);
