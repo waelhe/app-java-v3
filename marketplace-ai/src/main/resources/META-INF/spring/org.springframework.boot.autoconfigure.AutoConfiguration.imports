@@ -1,1 +1,2 @@
 com.marketplace.ai.autoconfigure.AiAutoConfiguration
+com.marketplace.ai.autoconfigure.AiKnowledgeEventListenerAutoConfiguration
