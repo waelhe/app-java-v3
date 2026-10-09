@@ -17,7 +17,8 @@ class TypeSafeSelfRefineAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
                     TypeSafeAutoConfiguration.class,
-                    AiAutoConfiguration.class));
+                    AiAutoConfiguration.class,
+                    TypeSafeJudgeAdaptersAutoConfiguration.class));
 
     @Test
     void judgeAndSelfRefinementStayOptInOutsideTheTypesafeProfile() {

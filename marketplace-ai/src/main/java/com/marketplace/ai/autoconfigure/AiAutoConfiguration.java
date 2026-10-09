@@ -10,10 +10,7 @@ import com.marketplace.ai.MarketplaceSearchTools;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
-import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
 import org.springaicommunity.typesafe.judge.JevJudge;
-import org.springaicommunity.typesafe.judge.JevEvaluator;
-import org.springframework.ai.evaluation.Evaluator;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
@@ -67,7 +64,7 @@ import java.util.stream.Collectors;
                 // contract — conditions only see beans registered so far).
                 "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration"
         })
-@EnableConfigurationProperties({TypeSafeModelRoutingProperties.class, TypeSafeSelfRefineProperties.class})
+@EnableConfigurationProperties(TypeSafeModelRoutingProperties.class)
 @ConditionalOnClass(ChatClient.class)
 public class AiAutoConfiguration {
 
@@ -185,39 +182,6 @@ public class AiAutoConfiguration {
         return JevJudge.builder(typeSafeClient)
                 .score("helpfulness", helpfulness, 2.0d)
                 .noul("is_grounded", grounded, 0.7d)
-                .build();
-    }
-
-    /**
-     * Official Spring AI Evaluator SPI backed by TypeSafe's JevEvaluator.
-     * It shares the configured JevJudge but is usable independently of chat retries.
-     */
-    @Bean
-    @ConditionalOnBean(JevJudge.class)
-    @ConditionalOnProperty(
-            prefix = "marketplace.ai.typesafe.judge", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean(Evaluator.class)
-    Evaluator jevEvaluator(JevJudge judge) {
-        return new JevEvaluator(judge);
-    }
-
-    /**
-     * Official Spring AI CallAdvisor adapter for judging and bounded self-refinement.
-     * The TypeSafe profile opts in; ordinary chat keeps its incremental streaming path.
-     */
-    @Bean
-    @ConditionalOnBean(TypeSafeClient.class)
-    @ConditionalOnProperty(
-            prefix = "marketplace.ai.typesafe.judge", name = "enabled", havingValue = "true")
-    @ConditionalOnProperty(
-            prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean
-    JevSelfRefineAdvisor jevSelfRefineAdvisor(
-            JevJudge judge, TypeSafeSelfRefineProperties properties) {
-        return JevSelfRefineAdvisor.builder()
-                .judge(judge)
-                .maxRepeatAttempts(properties.getMaxRepeatAttempts())
-                .failOnExhaustedAttempts(properties.isFailOnExhaustedAttempts())
                 .build();
     }
 
