@@ -8,11 +8,10 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
-import org.springframework.ai.model.chat.memory.autoconfigure.ChatMemoryAutoConfiguration;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.function.Consumer;
@@ -29,7 +28,6 @@ class AiAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
                     ChatClientAutoConfiguration.class,
-                    ChatMemoryAutoConfiguration.class,
                     AiAutoConfiguration.class));
 
     @Test
@@ -47,6 +45,7 @@ class AiAutoConfigurationTest {
     void activatesWhenSpringAiProvidesChatModel() {
         contextRunner
                 .withBean(ChatModel.class, () -> mock(ChatModel.class))
+                .withBean(SessionService.class, () -> mock(SessionService.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(AiChatGateway.class)
                         .hasSingleBean(AiQueryUnderstanding.class));
@@ -60,6 +59,7 @@ class AiAutoConfigurationTest {
 
         contextRunner
                 .withBean(ChatClient.Builder.class, () -> builder)
+                .withBean(SessionService.class, () -> mock(SessionService.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(AiChatGateway.class)
                         .hasSingleBean(AiQueryUnderstanding.class));
@@ -69,7 +69,7 @@ class AiAutoConfigurationTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void composesOptionalOfficialExtensionsWhenPresent() {
         ChatModel chatModel = mock(ChatModel.class);
-        ChatMemory chatMemory = mock(ChatMemory.class);
+        SessionService sessionService = mock(SessionService.class);
         ChatClient.Builder builder = ChatClient.builder(chatModel);
         MarketplaceSearchTools searchTool = mock(MarketplaceSearchTools.class);
         VectorStore vectorStore = mock(VectorStore.class);
@@ -87,7 +87,7 @@ class AiAutoConfigurationTest {
         }).when(vectorStores).ifAvailable(any());
 
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, chatMemory, searchTools, vectorStores);
+                .aiChatGateway(builder, sessionService, searchTools, vectorStores);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());

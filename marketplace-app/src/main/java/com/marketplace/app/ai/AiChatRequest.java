@@ -7,11 +7,11 @@ import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
 /**
- * Stable HTTP request contract for one AI-chat turn.
+ * Stable HTTP request contract for one authenticated AI-chat turn.
  *
  * @param message the user's non-blank message (maximum 4,000 characters)
- * @param conversationId omitted or null to start a new conversation; reuse the
- *                       returned ID to continue that conversation
+ * @param conversationId existing caller-owned conversation to continue; omit
+ *                       to create a conversation and use its returned ID
  */
 @Schema(name = "AiChatRequest", description = "One authenticated user's message to the AI assistant")
 public record AiChatRequest(
@@ -20,6 +20,6 @@ public record AiChatRequest(
         @Schema(description = "User message", example = "Find family-friendly places near me", maxLength = 4000)
         String message,
 
-        @Schema(description = "Existing conversation ID; omit to start a new conversation")
+        @Schema(description = "Existing conversation ID to continue; omit to create a new conversation")
         UUID conversationId) {
 }

@@ -15,64 +15,58 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AiChatGatewayTest {
+
     @Test
     void exposesTheOfficialCallContentResultForTheHttpAdapter() {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         when(chatClient.prompt()).thenReturn(request);
-        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
-        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
-        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        stubRequest(request);
         when(request.call()).thenReturn(responseSpec);
         when(responseSpec.content()).thenReturn("assistant answer");
 
         AiChatGateway gateway = new AiChatGateway(chatClient);
-        assertThat(gateway.answer(UUID.randomUUID(), "conversation-1", "hello"))
+        assertThat(gateway.answer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello"))
                 .isEqualTo("assistant answer");
     }
 
     @Test
-    void delegatesToSpringAiAndScopesConversationByUser() {
+    void delegatesToSpringAiAndValidatesTheResponseEnvelope() {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         ChatClientResponse response = mock(ChatClientResponse.class);
         when(chatClient.prompt()).thenReturn(request);
-        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
-        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
-        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        stubRequest(request);
         when(request.call()).thenReturn(responseSpec);
         when(responseSpec.chatClientResponse()).thenReturn(response);
         when(response.chatResponse()).thenReturn(mock(org.springframework.ai.chat.model.ChatResponse.class));
+
         AiChatGateway gateway = new AiChatGateway(chatClient);
-        assertThat(gateway.chat(UUID.randomUUID(), "conversation-1", "hello")).isSameAs(response);
+        assertThat(gateway.chat(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")).isSameAs(response);
     }
 
     @Test
-    void delegatesToOfficialStreamingChatClientPath() {
+    void delegatesToOfficialStreamingContentPath() {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.StreamResponseSpec responseSpec = mock(ChatClient.StreamResponseSpec.class);
-        ChatClientResponse response = mock(ChatClientResponse.class);
         when(chatClient.prompt()).thenReturn(request);
-        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
-        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
-        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        stubRequest(request);
         when(request.stream()).thenReturn(responseSpec);
-        when(responseSpec.chatClientResponse()).thenReturn(Flux.just(response));
+        when(responseSpec.content()).thenReturn(Flux.just("Hello", " world"));
 
         AiChatGateway gateway = new AiChatGateway(chatClient);
-        assertThat(gateway.stream(UUID.randomUUID(), "conversation-1", "hello")
-                .collectList().block())
-                .containsExactly(response);
+        assertThat(gateway.streamAnswer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")
+                .collectList().block()).containsExactly("Hello", " world");
     }
 
     @Test
-    void rejectsBlankConversationId() {
+    void rejectsBlankSessionId() {
         AiChatGateway gateway = new AiChatGateway(mock(ChatClient.class));
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), " ", "hello"))
+                .isThrownBy(() -> gateway.answer(UUID.randomUUID(), " ", "hello"))
                 .withMessage("conversationId must not be blank");
     }
 
@@ -82,29 +76,20 @@ class AiChatGatewayTest {
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         when(chatClient.prompt()).thenReturn(request);
-        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
-        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
-        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        stubRequest(request);
         when(request.call()).thenReturn(responseSpec);
         when(responseSpec.chatClientResponse()).thenReturn(null);
+
         AiChatGateway gateway = new AiChatGateway(chatClient);
         assertThatIllegalStateException()
-                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), "conversation-1", "hello"))
+                .isThrownBy(() -> gateway.chat(UUID.randomUUID(), UUID.randomUUID().toString(), "hello"))
                 .withMessage("Spring AI returned an empty chat response");
     }
 
-    @Test
-    void scopesConversationDeterministically() {
-        UUID userId = UUID.fromString("11111111-1111-1111-1111-111111111111");
-        // The derived 36-char key: deterministic for the same (user,
-        // conversation) pair — the V107-safe shape the raw concatenation
-        // could never be (41+ chars against VARCHAR(36)).
-        String first = AiChatGateway.scopeConversation(userId, " abc ");
-        String second = AiChatGateway.scopeConversation(userId, "abc");
-        assertThat(first).isEqualTo(second);
-        assertThat(first).hasSize(36);
-        // Per-user isolation: a different user never derives the same row.
-        UUID other = UUID.fromString("22222222-2222-2222-2222-222222222222");
-        assertThat(AiChatGateway.scopeConversation(other, "abc")).isNotEqualTo(first);
+    private static void stubRequest(ChatClient.ChatClientRequestSpec request) {
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any()))
+                .thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
     }
 }

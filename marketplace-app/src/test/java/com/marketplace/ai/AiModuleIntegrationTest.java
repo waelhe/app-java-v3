@@ -2,7 +2,8 @@ package com.marketplace.ai;
 
 import test.config.IntegrationContainers;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -37,13 +38,17 @@ class AiModuleIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void capabilityOffMeansMarketplaceAiAutoConfigurationDoesNotCreateApplicationBeans() {
+    void capabilityOffKeepsChatDisabledWhileOfficialSessionStorageIsAutoConfigured() {
         assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();
         assertThat(context.getBeansOfType(AiKnowledgeGateway.class)).isEmpty();
         assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).isEmpty();
-        assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
+        assertThat(context.getBeansOfType(SessionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(SessionRepository.class)).hasSize(1);
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from information_schema.tables where table_name = 'spring_ai_chat_memory'",
+                "select count(*) from information_schema.tables where table_name = 'ai_session'",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.tables where table_name = 'ai_session_event'",
                 Integer.class)).isEqualTo(1);
     }
 }

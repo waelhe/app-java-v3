@@ -3,7 +3,8 @@ package com.marketplace.ai;
 import test.config.IntegrationContainers;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,7 +38,8 @@ class AiProviderSelectionIntegrationTest {
     void selectorActivatesProviderAndOfficialAutoConfigurationBuildsTheChatStack() {
         assertThat(context.getBeansOfType(ChatModel.class)).hasSize(1);
         assertThat(context.getBeansOfType(ChatClient.Builder.class)).hasSize(1);
-        assertThat(context.getBeansOfType(ChatMemory.class)).hasSize(1);
+        assertThat(context.getBeansOfType(SessionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(SessionRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(AiChatGateway.class)).hasSize(1);
     }
 }

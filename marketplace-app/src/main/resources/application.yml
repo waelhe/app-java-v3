@@ -43,10 +43,11 @@ spring:
     chat:
       client:
         enabled: ${SPRING_AI_CHAT_CLIENT_ENABLED:false}
-      memory:
-        repository:
-          jdbc:
-            initialize-schema: never
+    session:
+      # Let the official Session JDBC starter initialize its own documented schema.
+      repository:
+        jdbc:
+          initialize-schema: always
   datasource:
     # ${DB_URL:…} — same placeholder pattern as username/password below. The prod
     # profile (application-prod.yml) requires DB_URL fail-fast; this default keeps
