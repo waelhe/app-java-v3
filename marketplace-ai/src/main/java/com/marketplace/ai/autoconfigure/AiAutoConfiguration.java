@@ -10,6 +10,7 @@ import com.marketplace.ai.MarketplaceSearchTools;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
+import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
 import org.springaicommunity.typesafe.judge.JevJudge;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
