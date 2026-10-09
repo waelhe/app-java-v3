@@ -84,11 +84,10 @@ public final class JevModelRouter {
         this.confidenceGate = JevConfidenceGate.withDefaultFloor();
         this.tierChoice = Choice.builder()
                 .instructions("""
-                        Choose the least expensive configured model tier that can reliably answer this user's
-                        marketplace request. Prefer FAST for greetings, simple factual questions, short
-                        definitions, or straightforward wording. Choose CAPABLE for multi-step reasoning,
-                        comparisons, long instructions, or tasks where missing context could change the answer.
-                        If the user refers to prior turns (for example "that one" or "as above"), choose CAPABLE.
+                        Choose the least expensive configured model tier that can reliably answer the marketplace request in `user_request`.
+                        Prefer FAST for greetings, simple factual questions, short definitions, or straightforward wording.
+                        Choose CAPABLE for multi-step reasoning, comparisons, long instructions, or tasks where missing context could change the answer.
+                        If `user_request` refers to prior turns (for example "that one" or "as above"), choose CAPABLE.
                         Select only from the declared options; do not answer the user's request.
                         """)
                 .option(Tier.FAST.name(),
@@ -103,7 +102,8 @@ public final class JevModelRouter {
     public RouteDecision route(String userText) {
         Assert.hasText(userText, "userText must not be blank");
         try {
-            SystemOneResponse response = this.typeSafeClient.systemOne(userText, Map.of(QUESTION, this.tierChoice));
+            SystemOneResponse response = this.typeSafeClient.systemOne(
+                    Map.of("user_request", userText), Map.of(QUESTION, this.tierChoice));
             ChoiceAnswer answer = response.choice(QUESTION);
             String selectedTier = answer.value();
             Map<String, Double> probabilities = answer.probabilities();

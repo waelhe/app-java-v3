@@ -96,9 +96,13 @@ class JevModelRouterTest {
         router.route("Plan a multi-step migration.");
 
         @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<Map<String, ?>> state =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
         org.mockito.ArgumentCaptor<Map<String, Question>> questions =
                 org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(client).systemOne(anyString(), questions.capture());
+        verify(client).systemOne(state.capture(), questions.capture());
+        assertThat(state.getValue()).containsOnlyEntry("user_request", "Plan a multi-step migration.");
         assertThat(questions.getValue()).containsOnlyKeys(QUESTION);
         assertThat(((org.springaicommunity.typesafe.question.Choice) questions.getValue().get(QUESTION))
                 .criteria()).containsOnlyKeys("FAST", "CAPABLE");
