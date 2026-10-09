@@ -60,6 +60,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.authentication.logout.HeaderWriterLogoutHandler;
 import org.springframework.security.web.header.writers.ClearSiteDataHeaderWriter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
@@ -185,7 +186,24 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql",
                         "/v3/api-docs/**", "/ws/**"))
                 .cors(Customizer.withDefaults())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // A-05's measured root (2026-10-09, the naming cycle): sessionCreationPolicy(STATELESS)
+                // ALONE does not disarm session management on this chain. The documented wiring
+                // (spring-security-config 7.1.1, SessionManagementConfigurer) adds the policy to
+                // propertiesThatRequireImplicitAuthentication, so the implicit pair — a
+                // SessionManagementFilter carrying the DEFAULT ChangeSessionIdAuthenticationStrategy —
+                // is armed even for STATELESS (and requireExplicitAuthenticationStrategy(true), the
+                // other documented opt-out, is by the configurer's own validation mutually exclusive
+                // with sessionCreationPolicy). The measured consequence: a stateless resource-server
+                // request that presents a live session cookie alongside the Bearer token rotates the
+                // session id (RedisSession rename + Set-Cookie + principal-index swap) — session
+                // state mutated on the API surface, and the login gate's cookie silently invalidated
+                // for the caller's retry. The documented no-op for exactly this posture is
+                // NullAuthenticatedSessionStrategy (spring-security-web, since 3.0): the strategy
+                // does nothing, the stateless chain stays truly sessionless, and the form-login /
+                // authorization-server chains keep their own documented fixation protection untouched.
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                        .sessionAuthenticationStrategy(new NullAuthenticatedSessionStrategy()))
                 .authorizeHttpRequests(auth -> auth
                         // S4/N3 root fix (comprehensive repair plan §10/2.1): the
                         // STOMP handshake joins THIS stateless resource-server chain.
