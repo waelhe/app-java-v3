@@ -14,6 +14,10 @@ spring:
         api-key: ${GOOGLE_GENAI_API_KEY}
         embedding:
           api-key: ${GOOGLE_GENAI_API_KEY}
+    vectorstore:
+      pgvector:
+        # Production database must expose pgvector and permit the official schema initializer.
+        initialize-schema: ${SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA:true}
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}

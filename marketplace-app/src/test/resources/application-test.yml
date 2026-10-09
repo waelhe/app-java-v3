@@ -3,22 +3,26 @@ spring:
   # spring.ai.model.chat=none selector leaves ChatClientAutoConfiguration
   # enabled by default, so the shared base profile explicitly sets
   # spring.ai.chat.client.enabled=false when no ChatModel is selected.
-  # Provider-selection tests opt the official builder back in with the
-  # selected provider. The embedding model remains disabled here; the dummy
-  # key below only satisfies the official Google connection-details config
-  # that is present whenever its starter is on the classpath.
+  # Provider-selection tests opt the official chat builder back in with the
+  # selected chat provider. PGVector's official auto-configuration requires an
+  # EmbeddingModel when its starter is present, so tests use the official Google
+  # embedding model with a test-only key and never make live provider requests.
   ai:
     model:
       chat: none
       embedding:
-        text: none
+        text: google-genai
     google:
       genai:
-        # A non-secret placeholder lets the official embedding connection
-        # auto-configuration initialize in tests. The model selector remains
-        # disabled, so tests never contact Google.
+        # Non-secret test-only credential for official embedding auto-configuration.
+        # Tests validate bean wiring only; no live Google request is issued.
         embedding:
           api-key: test-key
+    vectorstore:
+      pgvector:
+        # PostGIS CI image does not bundle pgvector binaries; test bean wiring
+        # must not attempt to create the extension or vector table.
+        initialize-schema: false
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}

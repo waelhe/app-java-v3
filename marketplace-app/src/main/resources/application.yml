@@ -14,7 +14,7 @@ spring:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
       embedding:
-        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:none}
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:google-genai}
     google:
       genai:
         api-key: ${GOOGLE_GENAI_API_KEY:}
@@ -33,10 +33,12 @@ spring:
     vectorstore:
       pgvector:
         dimensions: ${SPRING_AI_EMBEDDING_DIMENSIONS:768}
-        # Spring AI's official initializer creates the vector extension/table
-        # when embeddings are explicitly enabled. Keep embedding selection OFF
-        # by default so a non-AI deployment does not instantiate this store.
-        initialize-schema: ${SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA:true}
+        # Spring AI's official PGVector auto-configuration requires an EmbeddingModel
+        # whenever its starter is on the classpath. Select Google embeddings above
+        # and keep schema initialization off by default for local databases that do
+        # not ship the pgvector extension. Production enables the official initializer
+        # in application-prod.yml; no custom VectorStore implementation is used.
+        initialize-schema: ${SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA:false}
     # The official ChatClientAutoConfiguration is enabled by default and
     # requires a ChatModel. Keep the client off when no chat provider is selected;
     # the production profile opts in explicitly.

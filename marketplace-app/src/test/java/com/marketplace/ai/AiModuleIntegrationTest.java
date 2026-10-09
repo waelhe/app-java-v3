@@ -31,7 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.ai.google.genai.embedding.api-key=test-key",
-        "spring.ai.model.embedding.text=none"
+        "spring.ai.model.embedding.text=google-genai",
+        "spring.ai.vectorstore.pgvector.initialize-schema=false"
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
@@ -52,10 +53,10 @@ class AiModuleIntegrationTest {
     private SessionService sessionService;
 
     @Test
-    void capabilityOffKeepsChatDisabledWhileOfficialSessionStorageIsAutoConfigured() {
+    void chatOffKeepsOfficialSessionAndEmbeddingVectorStorageAutoConfigured() {
         assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();
-        assertThat(context.getBeansOfType(AiKnowledgeGateway.class)).isEmpty();
-        assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).isEmpty();
+        assertThat(context.getBeansOfType(AiKnowledgeGateway.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).hasSize(1);
         assertThat(context.getBeansOfType(SessionService.class)).hasSize(1);
         assertThat(context.getBeansOfType(SessionRepository.class)).hasSize(1);
         assertThat(jdbcTemplate.queryForObject(
