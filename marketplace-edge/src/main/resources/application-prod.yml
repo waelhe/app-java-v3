@@ -1,2 +1,15 @@
 server:
   forward-headers-strategy: framework
+
+spring:
+  datasource:
+    # Prod fail-fast — the app's own pattern (marketplace-app
+    # application-prod.yml): bare placeholders (no defaults) so a prod boot
+    # without the authorized-client store's credentials fails at startup,
+    # never silently at the first authorized-client write. The base
+    # application.yml carries the localhost default for the AOT trainer
+    # (the Dockerfile trainer stage boots with no environment) and for
+    # local development.
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
