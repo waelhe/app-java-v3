@@ -13,6 +13,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.session.CreateSessionRequest;
 import org.springframework.ai.session.EventFilter;
 import org.springframework.ai.session.Session;
@@ -233,13 +235,28 @@ public class AiChatController {
 
     private AiChatMessageResponse toMessageResponse(SessionEvent event) {
         String text = event.getMessage().getText();
+        List<AiChatToolCallResponse> toolCalls = event.getMessage() instanceof AssistantMessage assistant
+                ? assistant.getToolCalls().stream()
+                        .map(call -> new AiChatToolCallResponse(
+                                call.id(), call.type(), call.name(), call.arguments()))
+                        .toList()
+                : List.of();
+        List<AiChatToolResponse> toolResponses = event.getMessage() instanceof ToolResponseMessage tool
+                ? tool.getResponses().stream()
+                        .map(response -> new AiChatToolResponse(
+                                response.id(), response.name(), response.responseData()))
+                        .toList()
+                : List.of();
+
         return new AiChatMessageResponse(
                 event.getId(),
                 event.getTimestamp(),
                 event.getMessageType().name().toLowerCase(Locale.ROOT),
                 text == null ? "" : text,
                 event.isArchived(),
-                event.hasToolCalls());
+                event.hasToolCalls(),
+                toolCalls,
+                toolResponses);
     }
 
     private static String normalizeTitle(String proposed, String fallback) {

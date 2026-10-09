@@ -5,7 +5,12 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.CreateSessionRequest;
+import org.springframework.ai.session.EventFilter;
+import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.Session;
 import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -134,6 +140,51 @@ class AiChatControllerTest {
         assertThat(response.getBody()).hasSize(2);
         assertThat(response.getBody()).extracting(AiConversationResponse::title)
                 .containsExactlyInAnyOrder("Older", "Newer");
+    }
+
+    @Test
+    void readsPersistedToolCallsAndToolResultsFromTheOfficialSessionEventLog() {
+        UUID conversationId = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        Session session = session(conversationId, userId, Map.of("title", "Search parks"));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(sessionService.findById(conversationId.toString())).thenReturn(session);
+
+        SessionEvent user = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(new UserMessage("Find parks"))
+                .build();
+        SessionEvent assistant = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(AssistantMessage.builder()
+                        .content("I will search.")
+                        .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                "call-1", "function", "search_marketplace_listings",
+                                "{\\"query\\":\\"parks\\"}")))
+                        .build())
+                .build();
+        SessionEvent tool = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(ToolResponseMessage.builder()
+                        .responses(List.of(new ToolResponseMessage.ToolResponse(
+                                "call-1", "search_marketplace_listings", "2 public listings")))
+                        .build())
+                .build();
+
+        when(sessionService.getEvents(eq(conversationId.toString()), any(EventFilter.class)))
+                .thenReturn(List.of(user, assistant, tool));
+
+        ResponseEntity<AiChatHistoryPage> response =
+                controller.messages(conversationId, 0, 50, authentication);
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().messages()).hasSize(3);
+        assertThat(response.getBody().messages().get(0).content()).isEqualTo("Find parks");
+        assertThat(response.getBody().messages().get(1).toolCalls())
+                .containsExactly(new AiChatToolCallResponse(
+                        "call-1", "function", "search_marketplace_listings", "{\\"query\\":\\"parks\\"}"));
+        assertThat(response.getBody().messages().get(2).toolResponses())
+                .containsExactly(new AiChatToolResponse(
+                        "call-1", "search_marketplace_listings", "2 public listings"));
     }
 
     private static Session session(UUID id, UUID owner, Map<String, Object> metadata) {

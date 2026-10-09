@@ -3,8 +3,9 @@ package com.marketplace.app.ai;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
+import java.util.List;
 
-/** A persisted Spring AI Session event exposed as one chat-history item. */
+/** A Spring AI Session event represented by the application's stable JSON contract. */
 @Schema(name = "AiChatMessageResponse")
 public record AiChatMessageResponse(
         String id,
@@ -12,5 +13,7 @@ public record AiChatMessageResponse(
         String role,
         String content,
         boolean archived,
-        boolean hasToolCalls) {
+        boolean hasToolCalls,
+        List<AiChatToolCallResponse> toolCalls,
+        List<AiChatToolResponse> toolResponses) {
 }
