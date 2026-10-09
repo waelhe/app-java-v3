@@ -158,8 +158,7 @@ public class NeighborhoodPostService {
      * This preserves exact-match semantics whenever any FTS match exists,
      * and avoids replacing an out-of-range page with typo candidates.
      */
-    @Observed(name = "community.post.search")
-    @Transactional(readOnly = true)
+        @Transactional(readOnly = true)
     public Page<NeighborhoodPostView> searchFeed(
             UUID callerId, String query, PostCategory category, Pageable pageable) {
         String normalizedQuery = query == null ? "" : query.trim();
