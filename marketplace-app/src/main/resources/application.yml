@@ -18,8 +18,11 @@ spring:
     google:
       genai:
         api-key: ${GOOGLE_GENAI_API_KEY:}
+        # Spring AI 2.0.1 creates Google embedding connection details
+        # whenever this starter is on the classpath; supply this secret in
+        # every runtime, even when the embedding model selector is disabled.
         embedding:
-          api-key: ${GOOGLE_GENAI_API_KEY:}
+          api-key: ${GOOGLE_GENAI_API_KEY}
           text:
             # Keep the model output dimensions identical to PGVector's schema.
             # 768 is below pgvector's HNSW/IVFFlat indexing limits and is
