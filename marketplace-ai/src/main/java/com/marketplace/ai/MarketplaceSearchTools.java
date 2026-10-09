@@ -1,6 +1,6 @@
 package com.marketplace.ai;
 
-import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.MarketplaceSearchPort;
 import com.marketplace.shared.api.ListingSummary;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
@@ -17,11 +17,11 @@ import java.util.Objects;
 public final class MarketplaceSearchTools {
 
     private static final int TOOL_PAGE_SIZE = 5;
-    private final CatalogSearchPort catalogSearchPort;
+    private final MarketplaceSearchPort marketplaceSearchPort;
 
-    public MarketplaceSearchTools(CatalogSearchPort catalogSearchPort) {
-        this.catalogSearchPort = Objects.requireNonNull(
-                catalogSearchPort, "catalogSearchPort must not be null");
+    public MarketplaceSearchTools(MarketplaceSearchPort marketplaceSearchPort) {
+        this.marketplaceSearchPort = Objects.requireNonNull(
+                marketplaceSearchPort, "marketplaceSearchPort must not be null");
     }
 
     @Tool(
@@ -52,10 +52,10 @@ public final class MarketplaceSearchTools {
                 minPrice, maxPrice, null, null, guests);
 
         PagedRequest request = PagedRequest.of(0, TOOL_PAGE_SIZE);
-        PagedResponse<ListingSummary> page =
-                criteria.query() != null && !criteria.query().isBlank()
-                        ? catalogSearchPort.searchFullText(criteria, request)
-                        : catalogSearchPort.searchByCriteria(criteria, request);
+        // Reuse the canonical search orchestration used by the REST surface.
+        // Search owns filter composition, availability/geographic dispatch,
+        // real-estate facets, sort validation, stable ordering, and caching.
+        PagedResponse<ListingSummary> page = marketplaceSearchPort.search(criteria, request);
 
         return new MarketplaceSearchResult(page.content(), page.totalElements());
     }
