@@ -1,4 +1,16 @@
 spring:
+  ai:
+    # Production deliberately selects the configured Google provider. The
+    # credential remains external to Git and is required at deployment time.
+    model:
+      chat: ${SPRING_AI_MODEL_CHAT:google-genai}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:google-genai}
+    google:
+      genai:
+        api-key: ${GOOGLE_GENAI_API_KEY}
+        embedding:
+          api-key: ${GOOGLE_GENAI_API_KEY}
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
