@@ -147,6 +147,25 @@ class AiChatGatewayTest {
     }
 
     @Test
+    void buffersSseWhenCompleteCallPoliciesAreEnabledEvenIfTheBuilderReusesTheClient() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(request);
+        stubRequest(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("accepted answer");
+
+        AiChatGateway gateway = new AiChatGateway(chatClient, chatClient, null, true);
+
+        assertThat(gateway.streamAnswer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")
+                .collectList().block()).containsExactly("accepted answer");
+
+        verify(request).call();
+        verify(request, never()).stream();
+    }
+
+    @Test
     void buffersRawSseResponsesThroughTheGuardedCallWhenJevGuardrailsAreConfigured() {
         ChatClient streamingClient = mock(ChatClient.class);
         ChatClient guardedClient = mock(ChatClient.class);

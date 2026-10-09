@@ -117,7 +117,8 @@ public class AiAutoConfiguration {
                 ? chatClient
                 : configured.clone().defaultAdvisors(completeCallPolicies.toArray(Advisor[]::new)).build();
 
-        return new AiChatGateway(chatClient, policyChatClient, modelRouters.getIfAvailable());
+        return new AiChatGateway(
+                chatClient, policyChatClient, modelRouters.getIfAvailable(), !completeCallPolicies.isEmpty());
     }
 
     /**

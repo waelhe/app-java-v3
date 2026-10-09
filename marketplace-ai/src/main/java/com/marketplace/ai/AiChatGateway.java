@@ -48,9 +48,21 @@ public final class AiChatGateway {
             ChatClient chatClient,
             ChatClient policyChatClient,
             @Nullable JevModelRouter modelRouter) {
+        this(chatClient, policyChatClient, modelRouter, policyChatClient != chatClient);
+    }
+
+    /**
+     * Constructor used by auto-configuration to carry the actual policy decision,
+     * rather than inferring it from ChatClient object identity.
+     */
+    public AiChatGateway(
+            ChatClient chatClient,
+            ChatClient policyChatClient,
+            @Nullable JevModelRouter modelRouter,
+            boolean completeCallPoliciesEnabled) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
         this.policyChatClient = Objects.requireNonNull(policyChatClient, "policyChatClient must not be null");
-        this.completeCallPoliciesEnabled = policyChatClient != chatClient;
+        this.completeCallPoliciesEnabled = completeCallPoliciesEnabled;
         this.modelRouter = modelRouter;
     }
 
