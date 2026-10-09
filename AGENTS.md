@@ -19,6 +19,7 @@ This file adds project-specific conventions.
      - realestate systems     → docs/realestate-systems-plan.md
      - postgis integration     → docs/postgis-integration-plan.md
      - community layer        → docs/neighborhood-community-plan.md
+     - community platform execution → docs/community-platform-execution-plan.md (product scope, measured fit-gap, phases and acceptance gates; technical authority remains docs/official-compliance-plan.md)
      - unified platform       → docs/unified-platform-plan.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
