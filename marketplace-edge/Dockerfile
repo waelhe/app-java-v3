@@ -1,11 +1,15 @@
 # ── Build stage ──────────────────────────────────────
 # Mirrors root Dockerfile recipe (jarmode=tools) for the isolated edge service.
-# Cache id uses a placeholder until the Railway edge service is created
-# (then replace with s/<edge-service-id>-/root/.m2); portable locally.
+# Cache id carries the REAL v4 edge service id (ee9a69ef — service
+# app-java-v3-edge on project successful-simplicity, created 2026-10-09):
+# Railway's documented contract (docs.railway.com/builds/dockerfiles — Cache
+# mounts) requires the id to match the PUBLISHING service, otherwise the build
+# is rejected before scheduling (the measured v3→v4 migration trap,
+# runbook §10.2). Portable locally regardless.
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/51549c2b-20d8-4970-aa2c-a722d422e0b8-/root/.m2,target=/root/.m2 \
+RUN --mount=type=cache,id=s/ee9a69ef-16ee-43b6-9e1b-42e19de56b04-/root/.m2,target=/root/.m2 \
     chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-edge -am
 
 # ── Extract layers stage ─────────────────────────────
