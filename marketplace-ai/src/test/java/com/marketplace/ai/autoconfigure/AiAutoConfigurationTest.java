@@ -5,6 +5,7 @@ import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -21,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class AiAutoConfigurationTest {
 
@@ -48,6 +50,18 @@ class AiAutoConfigurationTest {
                         .hasSingleBean(AiQueryUnderstanding.class));
     }
 
+    @Test
+    void usesSpringAiManagedBuilderWithoutRequiringAChatModelBean() {
+        ChatClient.Builder builder = mock(ChatClient.Builder.class);
+        when(builder.defaultAdvisors(any(Advisor[].class))).thenReturn(builder);
+        when(builder.build()).thenReturn(mock(ChatClient.class));
+
+        contextRunner
+                .withBean(ChatClient.Builder.class, () -> builder)
+                .run(context -> assertThat(context)
+                        .hasSingleBean(AiChatGateway.class)
+                        .hasSingleBean(AiQueryUnderstanding.class));
+    }
 
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
