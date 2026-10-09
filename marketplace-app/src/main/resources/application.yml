@@ -13,11 +13,27 @@ spring:
   ai:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:none}
     google:
       genai:
         api-key: ${GOOGLE_GENAI_API_KEY:}
+        embedding:
+          api-key: ${GOOGLE_GENAI_API_KEY:}
+          text:
+            # Keep the model output dimensions identical to PGVector's schema.
+            # 768 is below pgvector's HNSW/IVFFlat indexing limits and is
+            # supported by the official Gemini embedding API.
+            dimensions: ${SPRING_AI_EMBEDDING_DIMENSIONS:768}
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}
+    vectorstore:
+      pgvector:
+        dimensions: ${SPRING_AI_EMBEDDING_DIMENSIONS:768}
+        # Spring AI's official initializer creates the vector extension/table
+        # when embeddings are explicitly enabled. Keep embedding selection OFF
+        # by default so a non-AI deployment does not instantiate this store.
+        initialize-schema: ${SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA:true}
     chat:
       memory:
         repository:
