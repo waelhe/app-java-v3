@@ -3,6 +3,7 @@ package com.marketplace.ai.autoconfigure;
 import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.MarketplaceSearchTools;
+import com.marketplace.ai.JevModelRouter;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -77,6 +78,7 @@ class AiAutoConfigurationTest {
         VectorStore vectorStore = mock(VectorStore.class);
         ObjectProvider<MarketplaceSearchTools> searchTools = mock(ObjectProvider.class);
         ObjectProvider<VectorStore> vectorStores = mock(ObjectProvider.class);
+        ObjectProvider<JevModelRouter> modelRouters = mock(ObjectProvider.class);
         ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors =
                 mock(ObjectProvider.class);
         when(retrievalAugmentationAdvisors.orderedStream()).thenReturn(Stream.empty());
@@ -92,7 +94,7 @@ class AiAutoConfigurationTest {
         }).when(vectorStores).ifAvailable(any());
 
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, sessionService, searchTools, retrievalAugmentationAdvisors, vectorStores);
+                .aiChatGateway(builder, sessionService, searchTools, modelRouters, retrievalAugmentationAdvisors, vectorStores);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());
