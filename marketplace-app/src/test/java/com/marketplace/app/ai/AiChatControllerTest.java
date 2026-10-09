@@ -187,6 +187,36 @@ class AiChatControllerTest {
                         "call-1", "search_marketplace_listings", "2 public listings"));
     }
 
+    @Test
+    void reportsWhetherTheNextHistoryPageActuallyContainsEvents() {
+        UUID conversationId = UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        Session session = session(conversationId, userId, Map.of("title", "Paged history"));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(sessionService.findById(conversationId.toString())).thenReturn(session);
+
+        SessionEvent first = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(new UserMessage("first"))
+                .build();
+        SessionEvent second = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(new UserMessage("second"))
+                .build();
+        SessionEvent third = SessionEvent.builder()
+                .sessionId(conversationId.toString())
+                .message(new UserMessage("third"))
+                .build();
+        when(sessionService.getEvents(eq(conversationId.toString()), any(EventFilter.class)))
+                .thenReturn(List.of(first, second), List.of(third));
+
+        ResponseEntity<AiChatHistoryPage> response =
+                controller.messages(conversationId, 0, 2, authentication);
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().messages()).hasSize(2);
+        assertThat(response.getBody().hasMore()).isTrue();
+    }
+
     private static Session session(UUID id, UUID owner, Map<String, Object> metadata) {
         return Session.builder()
                 .id(id.toString())

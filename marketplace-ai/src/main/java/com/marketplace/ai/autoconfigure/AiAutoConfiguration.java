@@ -10,6 +10,8 @@ import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvi
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
+import org.springframework.ai.session.compaction.TurnCountTrigger;
+import org.springframework.ai.session.compaction.TurnWindowCompactionStrategy;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
@@ -43,7 +45,12 @@ public class AiAutoConfiguration {
             ObjectProvider<VectorStore> vectorStores) {
 
         ChatClient.Builder configured = builder.defaultAdvisors(
-                SessionMemoryAdvisor.builder(sessionService).build());
+                SessionMemoryAdvisor.builder(sessionService)
+                        .compactionTrigger(new TurnCountTrigger(20))
+                        .compactionStrategy(TurnWindowCompactionStrategy.builder()
+                                .maxTurns(10)
+                                .build())
+                        .build());
         searchTools.ifAvailable(configured::defaultTools);
         vectorStores.ifAvailable(vectorStore -> configured.defaultAdvisors(
                 QuestionAnswerAdvisor.builder(vectorStore)

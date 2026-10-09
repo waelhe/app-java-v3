@@ -75,6 +75,7 @@ public class AiChatController {
     }
 
     @PostMapping("/ai/conversations")
+    @RateLimiter(name = "aiChat")
     @Operation(
             summary = "Create an AI conversation",
             description = "Creates an empty conversation owned by the authenticated user. "
@@ -160,23 +161,29 @@ public class AiChatController {
                     + "omitted. Pages are zero-indexed and the page size is capped at 100.")
     public ResponseEntity<AiChatHistoryPage> messages(
             @PathVariable UUID conversationId,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(1000000) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_HISTORY_PAGE_SIZE) int size,
             Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         Session session = requireOwnedSession(userId, conversationId);
-        List<AiChatMessageResponse> messages = sessionService.getEvents(
-                        session.id(),
-                        EventFilter.builder()
-                                .page(page)
-                                .pageSize(size)
-                                .excludeSynthetic(true)
-                                .build())
-                .stream()
+        EventFilter currentPageFilter = EventFilter.builder()
+                .page(page)
+                .pageSize(size)
+                .excludeSynthetic(true)
+                .build();
+        List<SessionEvent> pageEvents = sessionService.getEvents(session.id(), currentPageFilter);
+        boolean hasMore = pageEvents.size() == size
+                && !sessionService.getEvents(session.id(), EventFilter.builder()
+                        .page(page + 1)
+                        .pageSize(size)
+                        .excludeSynthetic(true)
+                        .build())
+                        .isEmpty();
+        List<AiChatMessageResponse> messages = pageEvents.stream()
                 .map(this::toMessageResponse)
                 .toList();
         return ResponseEntity.ok(new AiChatHistoryPage(
-                conversationId, page, size, messages, messages.size() == size));
+                conversationId, page, size, messages, hasMore));
     }
 
     @DeleteMapping("/ai/conversations/{conversationId}")
