@@ -20,6 +20,9 @@ marketplace:
         # stream calls, the gateway buffers guarded calls and emits verified SSE output only after
         # screening; token-by-token streaming remains enabled when guardrails are off.
         enabled: true
+      judge:
+        # Expose the official Spring AI Evaluator SPI independently of retries.
+        enabled: true
       self-refine:
         # Official JevJudge criteria: answer relevance and grounding in context/tool evidence.
         # Bound retries to avoid unbounded model calls; streams are buffered in this profile.

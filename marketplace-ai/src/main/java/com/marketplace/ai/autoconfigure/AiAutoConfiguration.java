@@ -12,6 +12,8 @@ import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
 import org.springaicommunity.typesafe.judge.JevJudge;
+import org.springaicommunity.typesafe.judge.JevEvaluator;
+import org.springframework.ai.evaluation.Evaluator;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
@@ -165,7 +167,7 @@ public class AiAutoConfiguration {
     @Bean
     @ConditionalOnBean(TypeSafeClient.class)
     @ConditionalOnProperty(
-            prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
+            prefix = "marketplace.ai.typesafe.judge", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     JevJudge marketplaceResponseJudge(TypeSafeClient typeSafeClient) {
         Score helpfulness = Score.builder()
@@ -184,6 +186,19 @@ public class AiAutoConfiguration {
                 .score("helpfulness", helpfulness, 2.0d)
                 .noul("is_grounded", grounded, 0.7d)
                 .build();
+    }
+
+    /**
+     * Official Spring AI Evaluator SPI backed by TypeSafe's JevEvaluator.
+     * It shares the configured JevJudge but is usable independently of chat retries.
+     */
+    @Bean
+    @ConditionalOnBean(JevJudge.class)
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.judge", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(Evaluator.class)
+    Evaluator jevEvaluator(JevJudge judge) {
+        return new JevEvaluator(judge);
     }
 
     /**
