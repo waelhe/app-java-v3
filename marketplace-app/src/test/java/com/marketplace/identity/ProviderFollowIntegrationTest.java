@@ -378,7 +378,7 @@ class ProviderFollowIntegrationTest {
         // MEMBERSHIP_VERIFIED + REPORT_RESOLVED via V158/V159; the union's
         // own wave added BOOKING_CONFIRMED and A-11's three order types
         // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED via V110-V115 —
-        // the 16-type membership V162/V163's CHECK now carries, the same
+        // the 16-type membership V164/V165's CHECK now carries, the same
         // count DocumentationNumbersGuardTest pins).
         UUID listingId = seedDraftListing();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerUserId);

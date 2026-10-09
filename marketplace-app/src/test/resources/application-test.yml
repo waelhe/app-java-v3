@@ -1,11 +1,28 @@
 spring:
-  # AI foundation: the test profile never binds a provider (no network in
-  # tests) — spring.ai.model.chat=none disables every chat
-  # auto-configuration, so the context boots with the capability OFF and
-  # AiChatGateway reports unavailable.
+  # AI foundation: tests do not call a live provider. The official
+  # spring.ai.model.chat=none selector leaves ChatClientAutoConfiguration
+  # enabled by default, so the shared base profile explicitly sets
+  # spring.ai.chat.client.enabled=false when no ChatModel is selected.
+  # Provider-selection tests opt the official chat builder back in with the
+  # selected chat provider. PGVector's official auto-configuration requires an
+  # EmbeddingModel when its starter is present, so tests use the official Google
+  # embedding model with a test-only key and never make live provider requests.
   ai:
     model:
       chat: none
+      embedding:
+        text: google-genai
+    google:
+      genai:
+        # Non-secret test-only credential for official embedding auto-configuration.
+        # Tests validate bean wiring only; no live Google request is issued.
+        embedding:
+          api-key: test-key
+    vectorstore:
+      pgvector:
+        # PostGIS CI image does not bundle pgvector binaries; test bean wiring
+        # must not attempt to create the extension or vector table.
+        initialize-schema: false
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
     username: ${DB_USERNAME:marketplace}

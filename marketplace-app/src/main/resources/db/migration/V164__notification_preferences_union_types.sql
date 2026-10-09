@@ -12,7 +12,7 @@
 --
 -- This pair sits ABOVE every current type-CHECK migration (V158/V159 are
 -- the last), so it survives EVERY application order: a fresh CI database
--- (V1..V161 then V162/V163 last), the production chain's ordered catch-up,
+-- (V1..V161 then V164/V165 last), the production chain's ordered catch-up,
 -- and any out-of-order late arrival — the version number itself is the
 -- correctness mechanism, no ordering assumption rides on it. An earlier
 -- same-purpose pair at V118/V119 (commit 7bbed50a) was measured INSUFFICIENT
@@ -23,14 +23,14 @@
 -- carries its DB-level membership guard — NotificationType stays the single
 -- source of truth for the Java side, this constraint for the SQL side) in
 -- the V44 locking shape: NOT VALID (metadata-only, enforced for new rows
--- immediately). The VALIDATE step rides its OWN migration (V163) so its scan
+-- immediately). The VALIDATE step rides its OWN migration (V165) so its scan
 -- runs under SHARE UPDATE EXCLUSIVE alone — the V66/V75 and V110/V111
 -- precedent verbatim (constraint-missing-not-valid): inside one transaction
 -- the DROP/ADD statements' ACCESS EXCLUSIVE lock would still be held during
 -- the validation scan, blocking ordinary reads and writes for the scan's
 -- duration.
 --
--- Range registration (the frozen ledger §2, additive-only): V162/V163 are
+-- Range registration (the frozen ledger §2, additive-only): V164/V165 are
 -- the union's cross-track fix — consumed from Track B's V150-V189 allocation
 -- by a documented ledger row, because the surviving-constraint contract is
 -- exactly the ledger's cross-track domain and the fix must sit above

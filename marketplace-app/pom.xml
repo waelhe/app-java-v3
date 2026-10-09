@@ -361,11 +361,12 @@
             <artifactId>instancio-junit</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- WebTestClient for GraphQlErrorIntegrationTest -->
+        <!-- Official Spring AI streaming requires the Reactive stack. With WebMVC
+             present, Spring Boot keeps the servlet web application while WebFlux
+             supplies Reactor/WebClient and reactive server-response support. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

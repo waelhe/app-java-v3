@@ -236,6 +236,22 @@ class DeploymentChannelFilesTest {
                 .contains("FAIL  deployment channel stale:");
     }
 
+    @Test
+    void TypeSafeCredentialIsDeclaredSeparatelyAndTheFeatureRemainsExplicitlyOptIn() throws IOException {
+        String railway = read(".railway/railway.ts");
+        assertThat(railway)
+                .contains("TYPESAFE_API_KEY: preserve()")
+                .contains("declaring the secret here neither provisions it nor activates it")
+                .contains("SPRING_PROFILES_ACTIVE: preserve()");
+
+        String profile = read("marketplace-app", "src", "main", "resources", "application-typesafe.yml");
+        assertThat(profile)
+                .contains("api-key: ${TYPESAFE_API_KEY}")
+                .contains("guardrails:")
+                .contains("rag:")
+                .contains("model-routing:");
+    }
+
     private static String read(String... segments) throws IOException {
         Path cwd = Paths.get("").toAbsolutePath();
         Path repoRoot = cwd.resolve("..");
