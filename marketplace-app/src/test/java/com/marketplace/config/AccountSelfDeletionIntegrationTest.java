@@ -128,6 +128,16 @@ class AccountSelfDeletionIntegrationTest {
     @Autowired
     private org.springframework.session.FindByIndexNameSessionRepository<? extends org.springframework.session.Session> sessionRepository;
 
+    /**
+     * The raw-store evidence channel (the second-developer diagnostic cycle
+     * of 2026-10-09): when a session probe fails, the failure message must
+     * carry the Redis ground truth — the keys that actually live under the
+     * session namespace — so the next red run names the mechanism instead of
+     * another hypothesis.
+     */
+    @Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -242,6 +252,19 @@ class AccountSelfDeletionIntegrationTest {
         GateResult gate = loginGate(target, PASSWORD);
         UUID targetId = syncProjectionIdViaMe(gate.accessToken());
 
+        // The discriminating evidence (the 2026-10-09 cycle): the row's
+        // liveness is measured at BOTH boundaries of the rejected deletion —
+        // right after the login gate (the cookie capture's own honesty) and
+        // right after the 401 (the production behavior under test). The
+        // single after-the-fact probe could not tell a stale captured cookie
+        // from a deleted row; this pair can, and the evidence helper dumps
+        // the raw Redis keys either way.
+        String rawId = rawSessionId(gate.sessionCookie());
+        assertThat(sessionRepository.findById(rawId))
+                .as("the session ROW is live right after the login gate: %s",
+                        sessionProbeEvidence(rawId))
+                .isNotNull();
+
         HttpResponse<String> rejected = deleteMyAccount(
                 gate.accessToken(), gate.sessionCookie(), "the-wrong-password");
         assertThat(rejected.statusCode())
@@ -264,15 +287,35 @@ class AccountSelfDeletionIntegrationTest {
         // The session did NOT die: a failed verification (401) must not
         // terminate the caller's authenticated state — the retry keeps its
         // session (the logout runs only after the deletion succeeds).
-        // (The 2026-10-09 diagnostic: the authorize probe alone cannot
-        // discriminate session-deleted-from-Redis vs session-present-but-
-        // unauthenticated — the repository probe answers that, the
-        // RememberMe test's own pattern.)
-        assertThat(sessionRepository.findById(rawSessionId(gate.sessionCookie())))
-                .as("the session ROW survives the failed verification")
+        assertThat(sessionRepository.findById(rawId))
+                .as("the session ROW survives the failed verification: %s",
+                        sessionProbeEvidence(rawId))
                 .isNotNull();
         assertThat(sessionNoLongerAuthenticates(gate.sessionCookie()))
                 .as("a failed verification must not terminate the session").isFalse();
+    }
+
+    /**
+     * The raw-store evidence for a session probe's failure message: the
+     * decoded id, the row's presence, and every key that actually lives
+     * under the session namespace — the ground truth that names the
+     * mechanism on the next red run (deleted row vs moved id vs absent
+     * index vs empty store).
+     */
+    private String sessionProbeEvidence(String rawId) {
+        String keys;
+        try {
+            keys = String.valueOf(redisTemplate.keys("marketplace:session*"));
+        } catch (RuntimeException ex) {
+            keys = "keys-unavailable (" + ex.getClass().getSimpleName() + ")";
+        }
+        boolean rowPresent;
+        try {
+            rowPresent = sessionRepository.findById(rawId) != null;
+        } catch (RuntimeException ex) {
+            rowPresent = false;
+        }
+        return "rawId=" + rawId + " rowPresent=" + rowPresent + " redisKeys=" + keys;
     }
 
     /**

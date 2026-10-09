@@ -128,8 +128,14 @@ class ProductMediaJourneyIntegrationTest {
                 .andExpect(jsonPath("$.objectKey").value(org.hamcrest.Matchers
                         .startsWith("products/" + productId + "/")))
                 .andExpect(jsonPath("$.uploadUrl").value("https://signed-put"))
+                // The view's id field is "mediaId" (MediaUploadView's own record
+                // component), never a bare "id": the 2026-10-09 CI trace printed
+                // the body — {"mediaId":...,"objectKey":...,"uploadUrl":...,
+                // "urlLifetime":...} — and a regex that matches nothing leaves
+                // the WHOLE body as the "asset id", which then rides the
+                // /media/{id}/complete path and dies at a 400 with no handler.
                 .andReturn().getResponse().getContentAsString()
-                .replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+                .replaceAll(".*\"mediaId\":\"([^\"]+)\".*", "$1");
 
         // (3) The confirm runs the server-side verification (the storage
         // seam) and moves the asset to UPLOADED.
