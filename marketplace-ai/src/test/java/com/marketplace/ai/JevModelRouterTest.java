@@ -102,7 +102,8 @@ class JevModelRouterTest {
         org.mockito.ArgumentCaptor<Map<String, Question>> questions =
                 org.mockito.ArgumentCaptor.forClass(Map.class);
         verify(client).systemOne(state.capture(), questions.capture());
-        assertThat(state.getValue()).containsOnlyEntry("user_request", "Plan a multi-step migration.");
+        assertThat(state.getValue()).containsOnlyKeys("user_request")
+                .containsEntry("user_request", "Plan a multi-step migration.");
         assertThat(questions.getValue()).containsOnlyKeys(QUESTION);
         assertThat(((org.springaicommunity.typesafe.question.Choice) questions.getValue().get(QUESTION))
                 .criteria()).containsOnlyKeys("FAST", "CAPABLE");
