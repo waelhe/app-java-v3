@@ -2,7 +2,6 @@ package com.marketplace.ai;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
-import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,20 +26,28 @@ public final class AiChatGateway {
     private static final Logger log = LoggerFactory.getLogger(AiChatGateway.class);
 
     private final ChatClient chatClient;
+    private final ChatClient guardedChatClient;
     private final @Nullable JevModelRouter modelRouter;
-    private final @Nullable JevGuardrailAdvisor guardrailAdvisor;
 
     public AiChatGateway(ChatClient chatClient) {
-        this(chatClient, null, null);
+        this(chatClient, chatClient, null);
     }
 
+    public AiChatGateway(ChatClient chatClient, @Nullable JevModelRouter modelRouter) {
+        this(chatClient, chatClient, modelRouter);
+    }
+
+    /**
+     * Keeps the streaming client free of call-only advisors and selects the guarded client for
+     * complete calls. Both clients are built from the same official builder configuration.
+     */
     public AiChatGateway(
             ChatClient chatClient,
-            @Nullable JevModelRouter modelRouter,
-            @Nullable JevGuardrailAdvisor guardrailAdvisor) {
+            ChatClient guardedChatClient,
+            @Nullable JevModelRouter modelRouter) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
+        this.guardedChatClient = Objects.requireNonNull(guardedChatClient, "guardedChatClient must not be null");
         this.modelRouter = modelRouter;
-        this.guardrailAdvisor = guardrailAdvisor;
     }
 
     public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
@@ -91,17 +98,13 @@ public final class AiChatGateway {
         }
 
         String message = Objects.requireNonNull(userText, "userText must not be null");
-        ChatClient.ChatClientRequestSpec request = chatClient.prompt()
+        ChatClient selectedClient = applyCallGuardrails ? this.guardedChatClient : this.chatClient;
+        ChatClient.ChatClientRequestSpec request = selectedClient.prompt()
                 .advisors(advisors -> advisors
                         .param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, conversationId)
                         .param(SessionMemoryAdvisor.USER_ID_CONTEXT_KEY, userId.toString()))
                 .toolContext(Map.of("userId", userId.toString()))
                 .user(message);
-
-        if (applyCallGuardrails && this.guardrailAdvisor != null) {
-            // JevGuardrailAdvisor must inspect the complete answer and explicitly rejects streaming.
-            request = request.advisors(this.guardrailAdvisor);
-        }
 
         if (this.modelRouter != null) {
             JevModelRouter.RouteDecision route = this.modelRouter.route(message);

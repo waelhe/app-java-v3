@@ -66,7 +66,7 @@ public class AiAutoConfiguration {
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
             ObjectProvider<VectorStore> vectorStores) {
 
-        ChatClient.Builder configured = builder.defaultAdvisors(
+        ChatClient.Builder configured = builder.clone().defaultAdvisors(
                 SessionMemoryAdvisor.builder(sessionService)
                         .compactionTrigger(new TurnCountTrigger(20))
                         .compactionStrategy(TurnWindowCompactionStrategy.builder()
@@ -90,8 +90,13 @@ public class AiAutoConfiguration {
                             .build()));
         }
 
-        return new AiChatGateway(
-                configured.build(), modelRouters.getIfAvailable(), guardrailAdvisors.getIfAvailable());
+        ChatClient chatClient = configured.build();
+        JevGuardrailAdvisor guardrailAdvisor = guardrailAdvisors.getIfAvailable();
+        ChatClient guardedChatClient = guardrailAdvisor == null
+                ? chatClient
+                : configured.clone().defaultAdvisors(guardrailAdvisor).build();
+
+        return new AiChatGateway(chatClient, guardedChatClient, modelRouters.getIfAvailable());
     }
 
     /**
