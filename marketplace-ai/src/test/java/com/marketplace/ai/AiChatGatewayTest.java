@@ -3,8 +3,14 @@ package com.marketplace.ai;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springaicommunity.typesafe.TypeSafeClient;
+import org.springaicommunity.typesafe.response.Answer;
+import org.springaicommunity.typesafe.response.ChoiceAnswer;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -13,6 +19,10 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 
 class AiChatGatewayTest {
 
@@ -45,6 +55,37 @@ class AiChatGatewayTest {
 
         AiChatGateway gateway = new AiChatGateway(chatClient);
         assertThat(gateway.chat(UUID.randomUUID(), UUID.randomUUID().toString(), "hello")).isSameAs(response);
+    }
+
+    @Test
+    void appliesTheJevSelectedModelToTheSpringAiChatCall() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        TypeSafeClient typeSafeClient = mock(TypeSafeClient.class);
+        when(chatClient.prompt()).thenReturn(request);
+        stubRequest(request);
+        when(request.options(any(GoogleGenAiChatOptions.Builder.class))).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("routed answer");
+        when(typeSafeClient.systemOne(anyString(), anyMap())).thenReturn(new SystemOneResponse(
+                "jev-latest",
+                Map.<String, Answer>of("model_tier",
+                        new ChoiceAnswer("FAST", Map.of("FAST", 0.9d, "CAPABLE", 0.1d), 0.9d)),
+                null));
+
+        JevModelRouter router = new JevModelRouter(
+                typeSafeClient, mock(GoogleGenAiChatModel.class),
+                "gemini-3.5-flash-lite", "gemini-3.5-flash", 0.65d);
+        AiChatGateway gateway = new AiChatGateway(chatClient, router);
+
+        assertThat(gateway.answer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello"))
+                .isEqualTo("routed answer");
+
+        org.mockito.ArgumentCaptor<GoogleGenAiChatOptions.Builder> options =
+                org.mockito.ArgumentCaptor.forClass(GoogleGenAiChatOptions.Builder.class);
+        verify(request).options(options.capture());
+        assertThat(options.getValue().build().getModel()).isEqualTo("gemini-3.5-flash-lite");
     }
 
     @Test
