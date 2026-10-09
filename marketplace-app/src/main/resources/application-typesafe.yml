@@ -21,6 +21,12 @@ marketplace:
         # stream calls, the gateway buffers guarded calls and emits verified SSE output only after
         # screening; token-by-token streaming remains enabled when guardrails are off.
         enabled: true
+      self-refine:
+        # Official JevJudge criteria: answer relevance and grounding in context/tool evidence.
+        # Bound retries to avoid unbounded model calls; streams are buffered in this profile.
+        enabled: true
+        max-repeat-attempts: ${TYPESAFE_SELF_REFINE_MAX_REPEAT_ATTEMPTS:2}
+        fail-on-exhausted-attempts: ${TYPESAFE_SELF_REFINE_FAIL_ON_EXHAUSTED_ATTEMPTS:false}
       rag:
         enabled: true
       # Jev chooses a model tier through the official TypeSafe Choice API.

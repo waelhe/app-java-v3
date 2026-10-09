@@ -10,6 +10,8 @@ import org.springaicommunity.typesafe.judge.JevConfidenceGate;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
+import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
+import org.springaicommunity.typesafe.judge.JevJudge;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
@@ -18,6 +20,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springaicommunity.typesafe.question.Noul;
+import org.springaicommunity.typesafe.question.Score;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.generation.augmentation.ContextualQueryAugmenter;
@@ -54,7 +58,7 @@ import java.util.stream.Collectors;
                 "org.springaicommunity.session.autoconfigure.SessionServiceAutoConfiguration",
                 "org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration"
         })
-@EnableConfigurationProperties(TypeSafeModelRoutingProperties.class)
+@EnableConfigurationProperties({TypeSafeModelRoutingProperties.class, TypeSafeSelfRefineProperties.class})
 @ConditionalOnClass(ChatClient.class)
 public class AiAutoConfiguration {
 
@@ -66,6 +70,7 @@ public class AiAutoConfiguration {
             SessionService sessionService,
             ObjectProvider<MarketplaceSearchTools> searchTools,
             ObjectProvider<JevModelRouter> modelRouters,
+            ObjectProvider<JevSelfRefineAdvisor> selfRefineAdvisors,
             ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
             ObjectProvider<VectorStore> vectorStores) {
@@ -95,12 +100,17 @@ public class AiAutoConfiguration {
         }
 
         ChatClient chatClient = configured.build();
-        JevGuardrailAdvisor guardrailAdvisor = guardrailAdvisors.getIfAvailable();
-        ChatClient guardedChatClient = guardrailAdvisor == null
-                ? chatClient
-                : configured.clone().defaultAdvisors(guardrailAdvisor).build();
+        List<Advisor> completeCallPolicies = new java.util.ArrayList<>();
+        selfRefineAdvisors.ifAvailable(completeCallPolicies::add);
+        guardrailAdvisors.ifAvailable(completeCallPolicies::add);
 
-        return new AiChatGateway(chatClient, guardedChatClient, modelRouters.getIfAvailable());
+        // Jev self-refinement and guardrails need the whole answer. The gateway therefore
+        // uses this policy client for JSON and buffers the SSE endpoint to one accepted result.
+        ChatClient policyChatClient = completeCallPolicies.isEmpty()
+                ? chatClient
+                : configured.clone().defaultAdvisors(completeCallPolicies.toArray(Advisor[]::new)).build();
+
+        return new AiChatGateway(chatClient, policyChatClient, modelRouters.getIfAvailable());
     }
 
     /**
@@ -139,6 +149,52 @@ public class AiAutoConfiguration {
                 chatModel,
                 properties.getDeepseek().getFastModel(),
                 properties.getDeepseek().getCapableModel());
+    }
+
+    /**
+     * Official TypeSafe answer judge. These criteria follow the TypeSafe examples:
+     * answer relevance/helpfulness and grounding in the retrieved prompt context and tool results.
+     */
+    @Bean
+    @ConditionalOnBean(TypeSafeClient.class)
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    JevJudge marketplaceResponseJudge(TypeSafeClient typeSafeClient) {
+        Score helpfulness = Score.builder()
+                .instructions("How well does assistant_answer address user_question?")
+                .level("Irrelevant or off-topic; does not answer the user's request")
+                .level("Partly helpful; misses the main question or important constraints")
+                .level("Mostly helpful; answers the request with only minor gaps")
+                .level("Excellent; directly and correctly addresses the request and its constraints")
+                .build();
+        Noul grounded = Noul.builder()
+                .instructions("Are the factual claims in assistant_answer supported by relevant context included in user_question or by results recorded in tool_calls? Do not treat unsupported claims as grounded.")
+                .whenFalse("The answer contains factual claims that are not supported by the provided context or tool results, or contradicts that evidence.")
+                .build();
+
+        return JevJudge.builder(typeSafeClient)
+                .score("helpfulness", helpfulness, 2.0d)
+                .noul("is_grounded", grounded, 0.7d)
+                .build();
+    }
+
+    /**
+     * Official Spring AI CallAdvisor adapter for judging and bounded self-refinement.
+     * The TypeSafe profile opts in; ordinary chat keeps its incremental streaming path.
+     */
+    @Bean
+    @ConditionalOnBean(JevJudge.class)
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    JevSelfRefineAdvisor jevSelfRefineAdvisor(
+            JevJudge judge, TypeSafeSelfRefineProperties properties) {
+        return JevSelfRefineAdvisor.builder()
+                .judge(judge)
+                .maxRepeatAttempts(properties.getMaxRepeatAttempts())
+                .failOnExhaustedAttempts(properties.isFailOnExhaustedAttempts())
+                .build();
     }
 
     /**

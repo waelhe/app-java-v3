@@ -26,9 +26,9 @@ public final class AiChatGateway {
     private static final Logger log = LoggerFactory.getLogger(AiChatGateway.class);
 
     private final ChatClient chatClient;
-    private final ChatClient guardedChatClient;
+    private final ChatClient policyChatClient;
     private final @Nullable JevModelRouter modelRouter;
-    private final boolean guardrailsEnabled;
+    private final boolean completeCallPoliciesEnabled;
 
     public AiChatGateway(ChatClient chatClient) {
         this(chatClient, chatClient, null);
@@ -42,21 +42,21 @@ public final class AiChatGateway {
      * Keeps the unguarded streaming client separate from call-only advisors. When official
      * call-only guardrails are configured, SSE-shaped methods execute a guarded complete call
      * and emit its verified result only after the advisor returns. This avoids sending
-     * unverified answer fragments while respecting JevGuardrailAdvisor's unsupported stream API.
+     * unverified answer fragments while respecting the official TypeSafe advisors' full-answer evaluation requirements.
      */
     public AiChatGateway(
             ChatClient chatClient,
-            ChatClient guardedChatClient,
+            ChatClient policyChatClient,
             @Nullable JevModelRouter modelRouter) {
         this.chatClient = Objects.requireNonNull(chatClient, "chatClient must not be null");
-        this.guardedChatClient = Objects.requireNonNull(guardedChatClient, "guardedChatClient must not be null");
-        this.guardrailsEnabled = guardedChatClient != chatClient;
+        this.policyChatClient = Objects.requireNonNull(policyChatClient, "policyChatClient must not be null");
+        this.completeCallPoliciesEnabled = policyChatClient != chatClient;
         this.modelRouter = modelRouter;
     }
 
     public Flux<ChatClientResponse> stream(UUID userId, String conversationId, String userText) {
-        if (this.guardrailsEnabled) {
-            // JevGuardrailAdvisor's official call path screens the complete answer. Buffer the
+        if (this.completeCallPoliciesEnabled) {
+            // Official TypeSafe answer policies evaluate the complete answer. Buffer the
             // result before publishing it rather than leaking unchecked fragments via stream().
             return Mono.fromCallable(() -> chat(userId, conversationId, userText))
                     .subscribeOn(Schedulers.boundedElastic())
@@ -71,10 +71,10 @@ public final class AiChatGateway {
      * SessionMemoryAdvisor persists the complete tool-call-aware turn.
      */
     public Flux<String> streamAnswer(UUID userId, String conversationId, String userText) {
-        if (this.guardrailsEnabled) {
+        if (this.completeCallPoliciesEnabled) {
             // The official advisor explicitly rejects streaming because it must screen the whole
             // answer. Use its guarded call path and expose the verified answer as one SSE token;
-            // true token-by-token streaming remains available when guardrails are disabled.
+            // true token-by-token streaming remains available when no complete-answer policies are enabled.
             return Mono.fromCallable(() -> answer(userId, conversationId, userText))
                     .subscribeOn(Schedulers.boundedElastic())
                     .flux();
@@ -110,14 +110,14 @@ public final class AiChatGateway {
     }
 
     private ChatClient.ChatClientRequestSpec prompt(
-            UUID userId, String conversationId, String userText, boolean applyCallGuardrails) {
+            UUID userId, String conversationId, String userText, boolean applyCompleteCallPolicies) {
         Objects.requireNonNull(userId, "userId must not be null");
         if (conversationId == null || conversationId.isBlank()) {
             throw new IllegalArgumentException("conversationId must not be blank");
         }
 
         String message = Objects.requireNonNull(userText, "userText must not be null");
-        ChatClient selectedClient = applyCallGuardrails ? this.guardedChatClient : this.chatClient;
+        ChatClient selectedClient = applyCompleteCallPolicies ? this.policyChatClient : this.chatClient;
         ChatClient.ChatClientRequestSpec request = selectedClient.prompt()
                 .advisors(advisors -> advisors
                         .param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, conversationId)
