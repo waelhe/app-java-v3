@@ -28,8 +28,20 @@ public interface PlatformReleaseRepository extends JpaRepository<PlatformRelease
     /**
      * The release identity lookup — V117's unique (channel, version) index,
      * the publish path's own conflict check.
+     *
+     * <p><b>The derivation must name the BUSINESS field (releaseVersion):>
+     * the plain "Version" suffix derives against BaseEntity's
+     * {@code @Version} optimistic-lock Long — the measured CI root of
+     * 2026-10-09 (five red cycles): binding the business version STRING to
+     * the integer-typed path throws Hibernate's parameter-binding
+     * IllegalArgumentException, which the error.VAL-001.detail i18n key
+     * masks into the generic "Validation failed" 400 (no fieldErrors —
+     * the MethodArgumentNotValid path always carries them, so the body
+     * itself named the IllegalArgumentException advice as the producer).
+     * The identity check never ran; every valid publication 400'd.
      */
-    Optional<PlatformRelease> findByChannelAndVersion(PlatformReleaseChannel channel, String version);
+    Optional<PlatformRelease> findByChannelAndReleaseVersion(
+            PlatformReleaseChannel channel, String releaseVersion);
 
     /**
      * The latest published release for a channel — the boot-time read. The

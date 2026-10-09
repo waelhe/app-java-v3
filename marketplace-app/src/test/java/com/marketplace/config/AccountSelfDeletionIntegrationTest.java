@@ -410,11 +410,15 @@ class AccountSelfDeletionIntegrationTest {
     }
 
     /**
-     * The repository keys sessions by the RAW id; the cookie carries the
-     * encoded form (the RememberMe test's decoder, mirrored).
+     * The repository keys sessions by the RAW id; the pair arrives in the
+     * house's cookie-header form "SESSION=<value>" — the VALUE (after the
+     * first '=') is the Base64 the serializer wrote (the measured probe
+     * lesson: decoding the whole pair dies at the '=' — "incorrect ending
+     * byte at 8").
      */
-    private static String rawSessionId(String sessionCookieValue) {
-        return new String(java.util.Base64.getDecoder().decode(sessionCookieValue));
+    private static String rawSessionId(String sessionCookiePair) {
+        String value = sessionCookiePair.substring(sessionCookiePair.indexOf('=') + 1);
+        return new String(java.util.Base64.getDecoder().decode(value));
     }
 
     /**

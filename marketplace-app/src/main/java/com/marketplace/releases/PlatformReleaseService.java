@@ -73,7 +73,7 @@ public class PlatformReleaseService {
     public PlatformReleaseView publish(PlatformReleaseChannel channel, String version,
             String changelog, String minVersion, boolean mandatory, int graceHours,
             String actor) {
-        if (repository.findByChannelAndVersion(channel, version).isPresent()) {
+        if (repository.findByChannelAndReleaseVersion(channel, version).isPresent()) {
             throw new ConflictException(
                     "A release already exists for channel " + channel + " at version " + version
                             + " — release identities are never recycled");
