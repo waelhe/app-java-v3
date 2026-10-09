@@ -2,10 +2,12 @@ package com.marketplace.ai.autoconfigure;
 
 import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiKnowledgeGateway;
+import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.springaicommunity.typesafe.TypeSafeClient;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
 import org.springaicommunity.typesafe.rag.JevDocumentReranker;
 import org.springframework.ai.chat.client.ChatClient;
@@ -31,6 +33,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -57,6 +60,7 @@ public class AiAutoConfiguration {
             ChatClient.Builder builder,
             SessionService sessionService,
             ObjectProvider<MarketplaceSearchTools> searchTools,
+            ObjectProvider<JevModelRouter> modelRouters,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
             ObjectProvider<VectorStore> vectorStores) {
 
@@ -84,7 +88,42 @@ public class AiAutoConfiguration {
                             .build()));
         }
 
-        return new AiChatGateway(configured.build());
+        return new AiChatGateway(configured.build(), modelRouters.getIfAvailable());
+    }
+
+    /**
+     * Optional Jev routing; provider model auto-configuration still owns the actual ChatModel.
+     * Jev selects only between model IDs supported by the active Google GenAI or DeepSeek provider.
+     */
+    @Bean
+    @ConditionalOnBean({TypeSafeClient.class, ChatModel.class})
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.model-routing", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    JevModelRouter jevModelRouter(
+            TypeSafeClient typeSafeClient,
+            ChatModel chatModel,
+            @Value("${marketplace.ai.typesafe.model-routing.minimum-confidence:0.65}")
+            double minimumConfidence,
+            @Value("${marketplace.ai.typesafe.model-routing.google.fast-model:gemini-3.5-flash-lite}")
+            String googleFastModel,
+            @Value("${marketplace.ai.typesafe.model-routing.google.capable-model:gemini-3.5-flash}")
+            String googleCapableModel,
+            @Value("${marketplace.ai.typesafe.model-routing.deepseek.fast-model:deepseek-v4-flash}")
+            String deepSeekFastModel,
+            @Value("${marketplace.ai.typesafe.model-routing.deepseek.capable-model:deepseek-v4-pro}")
+            String deepSeekCapableModel) {
+
+        if (chatModel instanceof org.springframework.ai.google.genai.GoogleGenAiChatModel) {
+            return new JevModelRouter(
+                    typeSafeClient, chatModel, googleFastModel, googleCapableModel, minimumConfidence);
+        }
+        if (chatModel instanceof org.springframework.ai.deepseek.DeepSeekChatModel) {
+            return new JevModelRouter(
+                    typeSafeClient, chatModel, deepSeekFastModel, deepSeekCapableModel, minimumConfidence);
+        }
+        throw new IllegalStateException("Jev model routing is enabled, but the active Spring AI ChatModel "
+                + "provider is not a configured Google GenAI or DeepSeek model.");
     }
 
     /**
