@@ -17,7 +17,6 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,7 +28,7 @@ class JevModelRouterTest {
     @Test
     void usesJevChoiceAndReturnsTheSelectedGoogleModel() {
         TypeSafeClient client = mock(TypeSafeClient.class);
-        when(client.systemOne(anyString(), anyMap())).thenReturn(response(
+        when(client.systemOne(anyMap(), anyMap())).thenReturn(response(
                 new ChoiceAnswer("FAST", Map.of("FAST", 0.92d, "CAPABLE", 0.08d), 0.92d)));
 
         JevModelRouter router = new JevModelRouter(
@@ -49,7 +48,7 @@ class JevModelRouterTest {
     @Test
     void fallsBackToTheCapableModelWhenJevConfidenceIsBelowTheOfficialFloor() {
         TypeSafeClient client = mock(TypeSafeClient.class);
-        when(client.systemOne(anyString(), anyMap())).thenReturn(response(
+        when(client.systemOne(anyMap(), anyMap())).thenReturn(response(
                 new ChoiceAnswer("FAST", Map.of("FAST", 0.56d, "CAPABLE", 0.44d), JevConfidenceGate.DEFAULT_FLOOR - 0.04d)));
 
         JevModelRouter router = new JevModelRouter(
@@ -68,7 +67,7 @@ class JevModelRouterTest {
     @Test
     void fallsBackToTheCapableModelWhenJevIsUnavailable() {
         TypeSafeClient client = mock(TypeSafeClient.class);
-        when(client.systemOne(anyString(), anyMap())).thenThrow(new TypeSafeException("offline"));
+        when(client.systemOne(anyMap(), anyMap())).thenThrow(new TypeSafeException("offline"));
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(DeepSeekChatModel.class),
@@ -86,7 +85,7 @@ class JevModelRouterTest {
     @Test
     void sendsOnlyTheConfiguredTierOptionsToJev() {
         TypeSafeClient client = mock(TypeSafeClient.class);
-        when(client.systemOne(anyString(), anyMap())).thenReturn(response(
+        when(client.systemOne(anyMap(), anyMap())).thenReturn(response(
                 new ChoiceAnswer("CAPABLE", Map.of("FAST", 0.05d, "CAPABLE", 0.95d), 0.95d)));
 
         JevModelRouter router = new JevModelRouter(
