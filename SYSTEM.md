@@ -32,7 +32,7 @@
 
 | الجانب | المالك | الآلية | الدليل |
 |---|---|---|---|
-| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (21 وحدة) |
+| ترتيب بناء الوحدات | Maven | Reactor يستنتجه من جراف الاعتماديات في `<modules>` | `pom.xml` — كتلة `<modules>` في الجذر (26 وحدة) |
 | إصدارات الاعتماديات | Maven | الوراثة (parent 4.1.1) + `dependencyManagement` (BOMs + استثناءات موثقة) | `pom.xml:7-10` + كتلة `<dependencyManagement>` في الجذر (مرجع قسم مستقر — النطاقات الرقمية تنجرف مع كل تعديل pom) |
 | بوابات الجودة | Maven | أهداف plugins مربوطة بمراحل دورة الحياة | `pom.xml` — كتلة `<build>/<plugins>` في الجذر |
 | مخطط قاعدة البيانات | Flyway | ترحيلات V/R — **وحدد صفر `ddl-auto:none`** | `application.yml:28, 41` + `db/migration/` |
@@ -44,7 +44,7 @@
 
 ## 3. طبقة البناء — كيف يبني Maven النظام
 
-**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 21 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
+**البنية:** الجذر `pom.xml` بـ `packaging: pom` (`:17`) — **مجمِّع (Reactor)** يبني 26 وحدة بترتيب يُستنتج آلياً من جراف الاعتماديات، وكل وحدة ترث من `spring-boot-starter-parent:4.1.1` فتحصل على إدارة الإضافات والافتراضات. `dependencyManagement` في الجذر يثبّت BOM مودولِث والاستثناءات (springdoc, mapstruct, resilience4j, instancio, archunit, jackson, prometheus, spring-ai — كتلة `<dependencyManagement>` في `pom.xml` الجذر، مرجع قسم مستقر لا نطاق أسطر ينجرف).
 
 **الدورة الحياتية (من الوثيقة الرسمية المحفوظة):** ثلاث دورات (default / clean / site). المراحل نقاط تسلسل صارمة؛ كل هدف plugin يرتبط بمرحلة؛ استدعاء `./mvnw verify` يشغّل كل ما قبله ضمن default. **ربطاتنا:**
 
@@ -76,9 +76,9 @@
 
 ---
 
-## 5. البنية النمطية — 21 وحدة تحت Modulith
+## 5. البنية النمطية — 22 وحدة نطاقية تحت Modulith
 
-**القسمة (من `pom.xml:21-43`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **18 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai.
+**القسمة (من `pom.xml:21-43`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **22 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai, jobs, knowledge, console, institutions.
 
 **آلية الحدود:** كل وحدة نطاق تحمل `package-info.java` يعلن `@NamedInterface` + `@ApplicationModule(allowedDependencies=...)`. نموذج حرفي (booking):
 
