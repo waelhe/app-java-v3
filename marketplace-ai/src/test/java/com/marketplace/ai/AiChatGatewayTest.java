@@ -6,6 +6,7 @@ import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.response.Answer;
 import org.springaicommunity.typesafe.response.ChoiceAnswer;
+import org.springaicommunity.typesafe.response.SystemOneResponse;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import reactor.core.publisher.Flux;
