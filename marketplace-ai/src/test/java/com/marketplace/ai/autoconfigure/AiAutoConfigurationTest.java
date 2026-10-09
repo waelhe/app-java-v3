@@ -11,10 +11,12 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.session.SessionService;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -75,6 +77,9 @@ class AiAutoConfigurationTest {
         VectorStore vectorStore = mock(VectorStore.class);
         ObjectProvider<MarketplaceSearchTools> searchTools = mock(ObjectProvider.class);
         ObjectProvider<VectorStore> vectorStores = mock(ObjectProvider.class);
+        ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors =
+                mock(ObjectProvider.class);
+        when(retrievalAugmentationAdvisors.orderedStream()).thenReturn(Stream.empty());
 
         doAnswer(invocation -> {
             ((Consumer<MarketplaceSearchTools>) invocation.getArgument(0)).accept(searchTool);
@@ -87,7 +92,7 @@ class AiAutoConfigurationTest {
         }).when(vectorStores).ifAvailable(any());
 
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, sessionService, searchTools, vectorStores);
+                .aiChatGateway(builder, sessionService, searchTools, retrievalAugmentationAdvisors, vectorStores);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());
