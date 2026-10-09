@@ -41,6 +41,9 @@ public class AiKnowledgeEntryEventListener {
 
     @ApplicationModuleListener
     public void onKnowledgeEntryWithdrawn(KnowledgeEntryWithdrawnEvent event) {
-        knowledgeGateway.deletePublicSource(event.entryId().toString());
+        // The tombstone (not a bare delete): the durable withdrawal fact that
+        // also blocks a late retried/replayed publication of the same entry
+        // from re-exposing it in the public index.
+        knowledgeGateway.markWithdrawn(event.entryId().toString());
     }
 }

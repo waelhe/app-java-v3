@@ -9,7 +9,9 @@ import org.mockito.ArgumentCaptor;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class AiKnowledgeEntryEventListenerTest {
@@ -44,13 +46,16 @@ class AiKnowledgeEntryEventListenerTest {
     }
 
     @Test
-    void withdrawnKnowledgeEntryIsRemovedFromThePublicVectorIndex() {
+    void withdrawnKnowledgeEntryIsMarkedWithTheDurableTombstone() {
         AiKnowledgeGateway gateway = mock(AiKnowledgeGateway.class);
         AiKnowledgeEntryEventListener listener = new AiKnowledgeEntryEventListener(gateway);
         UUID entryId = UUID.randomUUID();
 
         listener.onKnowledgeEntryWithdrawn(new KnowledgeEntryWithdrawnEvent(entryId, UUID.randomUUID()));
 
-        verify(gateway).deletePublicSource(entryId.toString());
+        // markWithdrawn (not a bare delete): the tombstone also blocks any late
+        // retried/replayed publication of the same entry (the reversed-order race)
+        verify(gateway).markWithdrawn(entryId.toString());
+        verify(gateway, org.mockito.Mockito.never()).replacePublicSource(any());
     }
 }
