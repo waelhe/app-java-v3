@@ -25,7 +25,7 @@ marketplace:
         minimum-confidence: ${TYPESAFE_ROUTING_MIN_CONFIDENCE:0.65}
         google:
           fast-model: ${SPRING_AI_ROUTING_GOOGLE_FAST_MODEL:gemini-3.5-flash-lite}
-          capable-model: ${SPRING_AI_ROUTING_GOOGLE_CAPABLE_MODEL:gemini-3.5-flash}
+          capable-model: ${SPRING_AI_ROUTING_GOOGLE_CAPABLE_MODEL:gemini-3.6-flash}
         deepseek:
           fast-model: ${SPRING_AI_ROUTING_DEEPSEEK_FAST_MODEL:deepseek-flash}
           capable-model: ${SPRING_AI_ROUTING_DEEPSEEK_CAPABLE_MODEL:deepseek-v4-pro}

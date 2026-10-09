@@ -115,7 +115,7 @@ public class AiAutoConfiguration {
             double minimumConfidence,
             @Value("${marketplace.ai.typesafe.model-routing.google.fast-model:gemini-3.5-flash-lite}")
             String googleFastModel,
-            @Value("${marketplace.ai.typesafe.model-routing.google.capable-model:gemini-3.5-flash}")
+            @Value("${marketplace.ai.typesafe.model-routing.google.capable-model:gemini-3.6-flash}")
             String googleCapableModel,
             @Value("${marketplace.ai.typesafe.model-routing.deepseek.fast-model:deepseek-flash}")
             String deepSeekFastModel,

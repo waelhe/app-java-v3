@@ -33,7 +33,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.5-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.6-flash", 0.65d);
 
         JevModelRouter.RouteDecision decision = router.route("Hello");
 
@@ -53,13 +53,13 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.5-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.6-flash", 0.65d);
 
         JevModelRouter.RouteDecision decision = router.route("Compare two complicated rental contracts");
 
         assertThat(decision.selectedTier()).isEqualTo("FAST");
         assertThat(decision.effectiveTier()).isEqualTo(JevModelRouter.Tier.CAPABLE);
-        assertThat(decision.model()).isEqualTo("gemini-3.5-flash");
+        assertThat(decision.model()).isEqualTo("gemini-3.6-flash");
         assertThat(decision.fallbackApplied()).isTrue();
         assertThat(decision.fallbackReason()).isEqualTo("confidence_below_threshold");
     }
@@ -90,7 +90,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.5-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.6-flash", 0.65d);
 
         router.route("Plan a multi-step migration.");
 
