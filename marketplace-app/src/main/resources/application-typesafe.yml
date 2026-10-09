@@ -4,6 +4,11 @@ spring:
   ai:
     typesafe:
       api-key: ${TYPESAFE_API_KEY}
+    chat:
+      client:
+        tool-search-advisor:
+          enabled: true
+          session-id-key-name: chat_memory_conversation_id
 
 # Enable the community Jev document screening stage in the official Spring AI RAG pipeline.
 # Each request screens the retrieved top-5 passages before they reach the answer model.
@@ -20,9 +25,6 @@ marketplace:
         enabled: true
       # Jev chooses a model tier through the official TypeSafe Choice API.
       # The router only selects model IDs for the active Spring AI provider.
-      tool-search:
-        # Use the official Spring AI ToolIndex SPI with the TypeSafe Jev implementation.
-        enabled: true
       model-routing:
         enabled: true
         google:

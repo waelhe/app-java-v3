@@ -7,19 +7,16 @@ import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.springaicommunity.typesafe.judge.JevConfidenceGate;
-import org.springaicommunity.typesafe.toolsearch.JevToolIndex;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
 import org.springaicommunity.typesafe.rag.JevDocumentReranker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
-import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
@@ -68,7 +65,6 @@ public class AiAutoConfiguration {
             ChatClient.Builder builder,
             SessionService sessionService,
             ObjectProvider<MarketplaceSearchTools> searchTools,
-            ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisors,
             ObjectProvider<JevModelRouter> modelRouters,
             ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
@@ -82,7 +78,6 @@ public class AiAutoConfiguration {
                                 .build())
                         .build());
         searchTools.ifAvailable(configured::defaultTools);
-        toolSearchAdvisors.ifAvailable(advisor -> configured.defaultAdvisors(advisor));
 
         List<RetrievalAugmentationAdvisor> ragAdvisors =
                 retrievalAugmentationAdvisors.orderedStream().toList();
@@ -144,26 +139,6 @@ public class AiAutoConfiguration {
                 chatModel,
                 properties.getDeepseek().getFastModel(),
                 properties.getDeepseek().getCapableModel());
-    }
-
-    /**
-     * Optional official TypeSafe tool selection attached to Spring AI's tool-calling SPI.
-     * It uses the application-managed ToolCallingManager so framework limits, resolution,
-     * exception handling and observations remain in force.
-     */
-    @Bean
-    @ConditionalOnBean({TypeSafeClient.class, ToolCallingManager.class})
-    @ConditionalOnProperty(
-            prefix = "marketplace.ai.typesafe.tool-search", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean
-    ToolSearchToolCallingAdvisor jevToolSearchAdvisor(
-            TypeSafeClient typeSafeClient,
-            ToolCallingManager toolCallingManager) {
-        return ToolSearchToolCallingAdvisor.builder()
-                .toolCallingManager(toolCallingManager)
-                .toolIndex(JevToolIndex.builder(typeSafeClient).build())
-                .sessionIdKeyName(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY)
-                .build();
     }
 
     /**
