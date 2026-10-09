@@ -291,8 +291,31 @@ class AccountSelfDeletionIntegrationTest {
                 .as("the session ROW survives the failed verification: %s",
                         sessionProbeEvidence(rawId, rejected))
                 .isNotNull();
+        // The naming cycle's third round (af68f05b run, 19:17Z): the row
+        // SURVIVES (the rotation fix holds) but the authorize still bounces —
+        // the session's AUTHENTICATED STATE died separately from the row.
+        // This evidence names which half: the session's own attribute set and
+        // the exact SPRING_SECURITY_CONTEXT it carries (present? which
+        // Authentication class? authenticated?), plus the authorize bounce's
+        // exact Location.
+        String contextEvidence;
+        try {
+            var storedSession = sessionRepository.findById(rawId);
+            if (storedSession != null) {
+                Object securityContext = storedSession.getAttribute("SPRING_SECURITY_CONTEXT");
+                contextEvidence = "attrs=" + storedSession.getAttributeNames()
+                        + " context=" + (securityContext == null ? "ABSENT"
+                        : securityContext.getClass().getName() + " " + securityContext);
+            } else {
+                contextEvidence = "row-absent-at-authorize-time";
+            }
+        } catch (RuntimeException ex) {
+            contextEvidence = "context-probe-failed (" + ex.getClass().getSimpleName() + ")";
+        }
         assertThat(sessionNoLongerAuthenticates(gate.sessionCookie()))
-                .as("a failed verification must not terminate the session").isFalse();
+                .as("a failed verification must not terminate the session: %s",
+                        contextEvidence + " " + lastAuthorizeLocation)
+                .isFalse();
     }
 
     /**
@@ -514,6 +537,9 @@ class AccountSelfDeletionIntegrationTest {
      * client's redirect URI — the session is alive) or bounces to the login
      * page (302 to /login — the session is dead).
      */
+    /** The last authorize probe's Location (the naming cycle's third-round evidence). */
+    private String lastAuthorizeLocation = "(not yet probed)";
+
     private boolean sessionNoLongerAuthenticates(String sessionCookie) throws Exception {
         String authorizeUrl = baseUrl() + AUTHORIZE_PATH
                 + "?response_type=code"
@@ -527,6 +553,7 @@ class AccountSelfDeletionIntegrationTest {
         assertThat(authorize.statusCode())
                 .as("authorize with the login session: %s", body(authorize)).isEqualTo(302);
         String location = authorize.headers().firstValue("Location").orElse("");
+        lastAuthorizeLocation = "authorizeLocation=" + location;
         return location.contains(LOGIN_PATH);
     }
 
