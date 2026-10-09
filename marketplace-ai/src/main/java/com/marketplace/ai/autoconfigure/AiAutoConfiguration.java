@@ -7,6 +7,7 @@ import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
+import org.springaicommunity.typesafe.rag.JevDocumentReranker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
@@ -105,7 +106,9 @@ public class AiAutoConfiguration {
                                 .eq("visibility", "PUBLIC")
                                 .build())
                         .build())
-                .documentPostProcessors(JevDocumentFilter.builder(typeSafeClient).build())
+                .documentPostProcessors(
+                        JevDocumentFilter.builder(typeSafeClient).build(),
+                        JevDocumentReranker.builder(typeSafeClient).topK(5).build())
                 .queryAugmenter(ContextualQueryAugmenter.builder()
                         .promptTemplate(new PromptTemplate("""
                                 Answer the user's query using the retrieved context below.
