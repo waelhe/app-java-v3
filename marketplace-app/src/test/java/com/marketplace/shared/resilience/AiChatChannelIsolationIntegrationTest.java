@@ -64,6 +64,15 @@ import static org.mockito.Mockito.mock;
  * very same one.</p>
  */
 @SpringBootTest(properties = {
+        // The chat builder opt-in (the fdf51eba run's measured wiring root):
+        // Spring AI 2.x creates ChatClientAutoConfiguration's Builder only on
+        // the explicit spring.ai.chat.client.enabled=true opt-in — the
+        // provider-selection tests carry the same line. Without it the
+        // Builder never exists, AiAutoConfiguration's
+        // @ConditionalOnBean({ChatClient.Builder, SessionService}) stays
+        // unsatisfied, and the gateway bean (this test's whole subject) is
+        // silently never created.
+        "spring.ai.chat.client.enabled=true",
         // The compressed aiChat circuit: 4-call window, 50% threshold.
         "resilience4j.circuitbreaker.instances.aiChat.sliding-window-size=4",
         "resilience4j.circuitbreaker.instances.aiChat.minimum-number-of-calls=4",
