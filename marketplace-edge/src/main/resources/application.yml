@@ -23,8 +23,19 @@ spring:
                 - Path=/api/**
               filters:
                 - TokenRelay=
-  # Datasource (authorized clients) and Redis credentials bind from the standard
-  # Spring Boot properties/environment variables (SPRING_DATASOURCE_*, SPRING_DATA_REDIS_*).
+  # Datasource (the JdbcOAuth2AuthorizedClientService store) — the app's own
+  # placeholder pattern (marketplace-app application.yml): the prod profile
+  # requires SPRING_DATASOURCE_* fail-fast (application-prod.yml); this
+  # localhost default keeps the Dockerfile AOT-trainer boot green — the
+  # trainer stage runs with NO environment, and the JDBC classpath (added
+  # with the authorized-client store in #518) otherwise fails the lazy
+  # context refresh with "Failed to configure a DataSource: 'url' attribute
+  # is not specified" (measured live on the first v4 edge build,
+  # deployment 4108b12f, 2026-10-09).
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/edge}
+    username: ${SPRING_DATASOURCE_USERNAME:edge}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   security:
     oauth2:
       client:
