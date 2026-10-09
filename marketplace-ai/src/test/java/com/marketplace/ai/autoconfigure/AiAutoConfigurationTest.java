@@ -35,7 +35,9 @@ class AiAutoConfigurationTest {
     @Test
     void backsOffWhenNoChatModelIsAvailable() {
         contextRunner
-                .withPropertyValues("spring.ai.model.chat=none")
+                .withPropertyValues(
+                        "spring.ai.model.chat=none",
+                        "spring.ai.chat.client.enabled=false")
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(AiChatGateway.class)
                         .doesNotHaveBean(AiQueryUnderstanding.class));
