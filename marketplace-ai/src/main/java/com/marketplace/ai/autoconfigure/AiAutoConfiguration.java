@@ -7,7 +7,6 @@ import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
-import org.springaicommunity.typesafe.judge.JevConfidenceGate;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;

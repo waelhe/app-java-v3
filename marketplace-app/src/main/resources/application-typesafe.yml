@@ -8,10 +8,9 @@ spring:
       client:
         tool-search-advisor:
           enabled: true
-          session-id-key-name: chat_memory_conversation_id
 
 # Enable the community Jev document screening stage in the official Spring AI RAG pipeline.
-# Each request screens the retrieved top-5 passages before they reach the answer model.
+# Retrieval depth follows Spring AI's default; TypeSafe screens and reranks the retrieved passages.
 # This is deliberately opt-in because it adds TypeSafe calls and requires TYPESAFE_API_KEY.
 marketplace:
   ai:

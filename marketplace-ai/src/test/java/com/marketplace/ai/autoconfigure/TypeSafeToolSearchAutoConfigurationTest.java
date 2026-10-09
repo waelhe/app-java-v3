@@ -5,6 +5,9 @@ import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration;
 import org.springaicommunity.typesafe.toolsearch.JevToolIndex;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.client.advisor.toolsearch.autoconfigure.ToolSearchAdvisorProperties;
+import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.toolsearch.autoconfigure.ToolSearchAdvisorAutoConfiguration;
 import org.springframework.ai.chat.client.ChatClient;
@@ -44,12 +47,16 @@ class TypeSafeToolSearchAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "spring.ai.typesafe.api-key=test-only-key",
-                        "spring.ai.chat.client.tool-search-advisor.enabled=true",
-                        "spring.ai.chat.client.tool-search-advisor.session-id-key-name=chat_memory_conversation_id")
+                        "spring.ai.chat.client.tool-search-advisor.enabled=true")
                 .run(context -> {
                     assertThat(context).hasSingleBean(TypeSafeClient.class);
                     assertThat(context).hasSingleBean(ToolIndex.class);
                     assertThat(context.getBean(ToolIndex.class)).isInstanceOf(JevToolIndex.class);
+                    // Use Spring AI's managed default so the tool index shares the same
+                    // conversation identity as SessionMemoryAdvisor without a local override.
+                    assertThat(context.getBean(ToolSearchAdvisorProperties.class).getSessionIdKeyName())
+                            .isEqualTo(ChatMemory.CONVERSATION_ID)
+                            .isEqualTo(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY);
                     assertThat(context).hasSingleBean(ToolCallingAdvisor.Builder.class);
                     assertThat(context.getBean(ToolCallingAdvisor.Builder.class))
                             .isInstanceOf(ToolSearchToolCallingAdvisor.Builder.class);
