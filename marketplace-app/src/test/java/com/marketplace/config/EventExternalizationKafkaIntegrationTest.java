@@ -92,7 +92,16 @@ class EventExternalizationKafkaIntegrationTest {
     @Container
     @ServiceConnection
     @SuppressWarnings("resource") // Lifecycle managed by @Testcontainers extension.
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:3.9.0"));
+    // KAFKA-18281 (Apache Kafka 3.9.0's own KRaft regression: the controller
+    // listener bound to 0.0.0.0 crashes the broker at launch — exit code 1,
+    // the measured "Exception in thread \"main\"" in every run): the
+    // Testcontainers maintainer's documented override for exactly this
+    // failure (testcontainers-java #9506 — eddumelendez's recipe: define
+    // KAFKA_LISTENERS with the endpoints sans the 0.0.0.0 binding). The
+    // env override stays on the container's own documented variable, no
+    // bespoke command — the same official-docs line as every container here.
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:3.9.0"))
+            .withEnv("KAFKA_LISTENERS", "PLAINTEXT://:9092,BROKER://:9093,CONTROLLER://:9094");
 
     @Autowired
     private ApplicationEventPublisher events;
