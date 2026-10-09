@@ -256,9 +256,8 @@ public class NeighborhoodPostController {
             UUID locationId,
 
             @NotBlank
-            @Schema(description = "The post's category — RECOMMENDATION (L43) is a neighbor asking "
-                    + "for a local-service recommendation or offering one.",
-                    allowableValues = {"GENERAL", "CLASSIFIED", "LOST_FOUND", "RECOMMENDATION"},
+            @Schema(description = "The post purpose: GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION, QUESTION, or REQUEST.",
+                    allowableValues = {"GENERAL", "CLASSIFIED", "LOST_FOUND", "RECOMMENDATION", "QUESTION", "REQUEST"},
                     example = "GENERAL")
             String category,
 
