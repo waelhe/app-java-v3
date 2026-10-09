@@ -119,6 +119,15 @@ class AccountSelfDeletionIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /**
+     * The session-repository probe (the RememberMe test's own pattern): the
+     * wrong-password leg's diagnostic — the authorize probe alone cannot
+     * tell session-deleted-from-Redis apart from session-present-but-
+     * unauthenticated; reading the row by its raw id can.
+     */
+    @Autowired
+    private org.springframework.session.FindByIndexNameSessionRepository<? extends org.springframework.session.Session> sessionRepository;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -255,6 +264,13 @@ class AccountSelfDeletionIntegrationTest {
         // The session did NOT die: a failed verification (401) must not
         // terminate the caller's authenticated state — the retry keeps its
         // session (the logout runs only after the deletion succeeds).
+        // (The 2026-10-09 diagnostic: the authorize probe alone cannot
+        // discriminate session-deleted-from-Redis vs session-present-but-
+        // unauthenticated — the repository probe answers that, the
+        // RememberMe test's own pattern.)
+        assertThat(sessionRepository.findById(rawSessionId(gate.sessionCookie())))
+                .as("the session ROW survives the failed verification")
+                .isPresent();
         assertThat(sessionNoLongerAuthenticates(gate.sessionCookie()))
                 .as("a failed verification must not terminate the session").isFalse();
     }
@@ -391,6 +407,14 @@ class AccountSelfDeletionIntegrationTest {
             builder.header("Cookie", sessionCookie);
         }
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /**
+     * The repository keys sessions by the RAW id; the cookie carries the
+     * encoded form (the RememberMe test's decoder, mirrored).
+     */
+    private static String rawSessionId(String sessionCookieValue) {
+        return new String(java.util.Base64.getDecoder().decode(sessionCookieValue));
     }
 
     /**

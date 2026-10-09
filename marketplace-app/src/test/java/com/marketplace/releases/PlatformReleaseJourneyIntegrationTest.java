@@ -138,20 +138,28 @@ class PlatformReleaseJourneyIntegrationTest {
     @Test
     void theReleaseJourneyConsoleToPublicPathToNotificationEvent() throws Exception {
         // Phase 1 — the console's publication (the manager's surface).
-        mockMvc.perform(post("/api/v1/admin/releases")
-                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"channel": "ANDROID", "version": "%s",
-                                 "changelog": "The neighborhood market arrives on mobile.",
-                                 "minVersion": "3.0.0", "mandatory": true, "graceHours": 72}
-                                """.formatted(VERSION)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.channel").value("ANDROID"))
-                .andExpect(jsonPath("$.version").value(VERSION))
-                .andExpect(jsonPath("$.minVersion").value("3.0.0"))
-                .andExpect(jsonPath("$.mandatory").value(true))
-                .andExpect(jsonPath("$.graceHours").value(72));
+        // (The 2026-10-09 diagnostic: the 400's ProblemDetail now rides the
+        // assertion message — the fieldErrors or the i18n-masked detail name
+        // the actual constraint, which the bare status() matcher could not.)
+        org.springframework.test.web.servlet.MvcResult publication = mockMvc.perform(
+                        post("/api/v1/admin/releases")
+                                .with(jwt().authorities(() -> "ROLE_ADMIN"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {"channel": "ANDROID", "version": "%s",
+                                         "changelog": "The neighborhood market arrives on mobile.",
+                                         "minVersion": "3.0.0", "mandatory": true, "graceHours": 72}
+                                        """.formatted(VERSION)))
+                .andReturn();
+        assertThat(publication.getResponse().getStatus())
+                .as("the console publication: %s", publication.getResponse().getContentAsString())
+                .isEqualTo(201);
+        assertThat(publication.getResponse().getContentAsString())
+                .contains("\"channel\":\"ANDROID\"")
+                .contains("\"version\":\"" + VERSION + "\"")
+                .contains("\"minVersion\":\"3.0.0\"")
+                .contains("\"mandatory\":true")
+                .contains("\"graceHours\":72");
 
         // Phase 2 — the public boot path: the anonymous §7/2 read answers
         // the SAME facts the console published.
@@ -219,16 +227,21 @@ class PlatformReleaseJourneyIntegrationTest {
 
     @Test
     void releaseIdentitiesAreNeverRecycled() throws Exception {
-        // Publish once...
-        mockMvc.perform(post("/api/v1/admin/releases")
-                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"channel": "IOS", "version": "%s",
-                                 "changelog": "First publication.",
-                                 "minVersion": "1.0.0", "mandatory": false, "graceHours": 24}
-                                """.formatted(VERSION)))
-                .andExpect(status().isCreated());
+        // Publish once... (the 2026-10-09 diagnostic: the body rides the
+        // assertion message — see the journey test's note above)
+        org.springframework.test.web.servlet.MvcResult first = mockMvc.perform(
+                        post("/api/v1/admin/releases")
+                                .with(jwt().authorities(() -> "ROLE_ADMIN"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {"channel": "IOS", "version": "%s",
+                                         "changelog": "First publication.",
+                                         "minVersion": "1.0.0", "mandatory": false, "graceHours": 24}
+                                        """.formatted(VERSION)))
+                .andReturn();
+        assertThat(first.getResponse().getStatus())
+                .as("first publication: %s", first.getResponse().getContentAsString())
+                .isEqualTo(201);
 
         // ...and the same (channel, version) pair answers the V70-stance 409.
         mockMvc.perform(post("/api/v1/admin/releases")
