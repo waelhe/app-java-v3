@@ -17,7 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
-        "spring.jpa.hibernate.ddl-auto=none"
+        "spring.jpa.hibernate.ddl-auto=none",
+        "spring.ai.google.genai.embedding.api-key=test-key",
+        "spring.ai.model.embedding.text=none"
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
