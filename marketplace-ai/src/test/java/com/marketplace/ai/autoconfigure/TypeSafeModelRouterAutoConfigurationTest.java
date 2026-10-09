@@ -4,7 +4,6 @@ import com.marketplace.ai.JevModelRouter;
 import org.junit.jupiter.api.Test;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -18,7 +17,13 @@ class TypeSafeModelRouterAutoConfigurationTest {
             .withConfiguration(AutoConfigurations.of(
                     TypeSafeAutoConfiguration.class,
                     AiAutoConfiguration.class))
-            .withBean(ChatModel.class, () -> mock(GoogleGenAiChatModel.class));
+            // Register the mock under its CONCRETE type: the router beans guard on
+            // @ConditionalOnBean(GoogleGenAiChatModel.class), and ConditionalOnBean
+            // matches the bean DEFINITION's type — a ChatModel-typed definition never
+            // satisfies it, so the router (correctly) stays away. Production registers
+            // the real model with its concrete type, so the concrete-typed mock is the
+            // faithful wiring under test (Spring Boot reference: ConditionalOnBean).
+            .withBean(GoogleGenAiChatModel.class, () -> mock(GoogleGenAiChatModel.class));
 
     @Test
     void routingRemainsOffWithoutTheTypesafeProfileProperty() {
