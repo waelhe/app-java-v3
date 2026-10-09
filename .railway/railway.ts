@@ -45,6 +45,9 @@ export default defineRailway(() => {
       DB_PASSWORD: preserve(),
       DB_URL: preserve(),
       DB_USERNAME: preserve(),
+      // Provider credentials stay in Railway's secret store; never literal
+      // values in the IaC source or Git history.
+      GOOGLE_GENAI_API_KEY: preserve(),
       EXCHANGE_BASE_CURRENCY: preserve(),
       JWT_KEYSTORE_B64: preserve(),
       JWT_KEYSTORE_PASSWORD: preserve(),
