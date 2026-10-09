@@ -22,10 +22,13 @@
         <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-model-deepseek</artifactId></dependency>
         <!-- Official Spring AI Community session JDBC starter: complete, tool-call-safe history. -->
         <dependency><groupId>org.springaicommunity</groupId><artifactId>spring-ai-starter-session-jdbc</artifactId></dependency>
-        <!-- Official TypeSafe AI System One client; auto-configuration is opt-in via its separate API key. -->
+        <!-- Official Spring AI Community TypeSafe AI System One (Jev) client. The separate typesafe profile supplies its key. -->
         <dependency><groupId>org.springaicommunity</groupId><artifactId>spring-ai-starter-typesafe</artifactId></dependency>
-        <!-- Official community Spring AI SPIs: Jev judge/advisors and optional RAG/tool-index integrations. -->
+        <!-- Official TypeSafe integrations on Spring AI SPIs: judge, advisors, RAG processing and tool selection. -->
         <dependency><groupId>org.springaicommunity</groupId><artifactId>typesafe-spring-ai</artifactId></dependency>
+        <!-- The upstream TypeSafe POM deliberately marks these SPIs optional; this module already owns RAG and tool capabilities. -->
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-rag</artifactId></dependency>
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-tool-search-tool</artifactId></dependency>
         <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-vector-store-advisor</artifactId></dependency>
         <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-vector-store-pgvector</artifactId></dependency>
         <dependency>
