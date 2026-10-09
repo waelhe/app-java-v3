@@ -10,7 +10,7 @@ import org.springframework.modulith.events.ApplicationModuleListener;
  * business transaction commits and in a separate transaction; failed indexing
  * therefore remains retryable through the event publication registry.
  */
-public final class AiKnowledgeEntryEventListener {
+public class AiKnowledgeEntryEventListener {
 
     private final AiKnowledgeGateway knowledgeGateway;
 
