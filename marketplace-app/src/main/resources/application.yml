@@ -10,6 +10,10 @@ spring:
     compose:
       enabled: false
 
+  # spring-ai-starter-typesafe is a community client for TypeSafe AI System One (Jev),
+  # not generic Spring AI structured output and not the Google/DeepSeek chat provider.
+  # It remains opt-in: activate the 'typesafe' profile only after provisioning the
+  # separate TYPESAFE_API_KEY; without that profile, official auto-configuration backs off.
   ai:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}

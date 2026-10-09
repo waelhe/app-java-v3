@@ -12,6 +12,7 @@ import org.springframework.ai.session.SessionEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.session.SessionRepository;
 import org.springframework.ai.session.SessionService;
+import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -59,6 +60,8 @@ class AiModuleIntegrationTest {
         assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).hasSize(1);
         assertThat(context.getBeansOfType(SessionService.class)).hasSize(1);
         assertThat(context.getBeansOfType(SessionRepository.class)).hasSize(1);
+        // The official TypeSafe starter stays inactive until its dedicated API key is configured.
+        assertThat(context.getBeansOfType(TypeSafeClient.class)).isEmpty();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from information_schema.tables where table_name = 'ai_session'",
                 Integer.class)).isEqualTo(1);

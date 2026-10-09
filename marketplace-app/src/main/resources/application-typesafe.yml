@@ -1,0 +1,6 @@
+# Optional TypeSafe AI System One (Jev) integration.
+# Enable the "typesafe" profile only after provisioning the separate TYPESAFE_API_KEY secret.
+spring:
+  ai:
+    typesafe:
+      api-key: ${TYPESAFE_API_KEY}
