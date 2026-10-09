@@ -43,6 +43,17 @@ class TypeSafeModelRouterAutoConfigurationTest {
     }
 
     @Test
+    void usesProviderSpecificDefaultModelsWhenRoutingIsEnabledWithoutOverrides() {
+        contextRunner
+                .withPropertyValues(
+                        "spring.ai.typesafe.api-key=test-only-key",
+                        "marketplace.ai.typesafe.model-routing.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(JevModelRouter.class);
+                });
+    }
+
+    @Test
     void anUnconfiguredTypesafeClientDoesNotCreateTheRouter() {
         contextRunner
                 .withPropertyValues("marketplace.ai.typesafe.model-routing.enabled=true")

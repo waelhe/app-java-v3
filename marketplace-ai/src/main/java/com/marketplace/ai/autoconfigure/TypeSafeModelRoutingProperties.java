@@ -11,8 +11,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "marketplace.ai.typesafe.model-routing")
 public class TypeSafeModelRoutingProperties {
 
-    private ProviderModels google = new ProviderModels();
-    private ProviderModels deepseek = new ProviderModels();
+    private ProviderModels google = new ProviderModels("gemini-3.5-flash-lite", "gemini-3.8-flash");
+    private ProviderModels deepseek = new ProviderModels("deepseek-flash", "deepseek-v4-pro");
 
     public ProviderModels getGoogle() {
         return google;
@@ -34,6 +34,14 @@ public class TypeSafeModelRoutingProperties {
 
         private String fastModel;
         private String capableModel;
+
+        public ProviderModels() {
+        }
+
+        private ProviderModels(String fastModel, String capableModel) {
+            this.fastModel = fastModel;
+            this.capableModel = capableModel;
+        }
 
         public String getFastModel() {
             return fastModel;

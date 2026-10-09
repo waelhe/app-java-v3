@@ -43,6 +43,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -100,7 +101,7 @@ public class AiAutoConfiguration {
         }
 
         ChatClient chatClient = configured.build();
-        List<Advisor> completeCallPolicies = new java.util.ArrayList<>();
+        List<Advisor> completeCallPolicies = new ArrayList<>();
         selfRefineAdvisors.ifAvailable(completeCallPolicies::add);
         guardrailAdvisors.ifAvailable(completeCallPolicies::add);
 
@@ -184,7 +185,7 @@ public class AiAutoConfiguration {
      * The TypeSafe profile opts in; ordinary chat keeps its incremental streaming path.
      */
     @Bean
-    @ConditionalOnBean(JevJudge.class)
+    @ConditionalOnBean(TypeSafeClient.class)
     @ConditionalOnProperty(
             prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
@@ -224,14 +225,13 @@ public class AiAutoConfiguration {
         return RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(VectorStoreDocumentRetriever.builder()
                         .vectorStore(vectorStore)
-                        .topK(5)
                         .filterExpression(new FilterExpressionBuilder()
                                 .eq("visibility", "PUBLIC")
                                 .build())
                         .build())
                 .documentPostProcessors(
                         JevDocumentFilter.builder(typeSafeClient).build(),
-                        JevDocumentReranker.builder(typeSafeClient).topK(5).build())
+                        JevDocumentReranker.builder(typeSafeClient).build())
                 .queryAugmenter(ContextualQueryAugmenter.builder()
                         .promptTemplate(new PromptTemplate("""
                                 Answer the user's query using the retrieved context below.

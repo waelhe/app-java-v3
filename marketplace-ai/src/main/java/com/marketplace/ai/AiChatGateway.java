@@ -39,10 +39,10 @@ public final class AiChatGateway {
     }
 
     /**
-     * Keeps the unguarded streaming client separate from call-only advisors. When official
-     * call-only guardrails are configured, SSE-shaped methods execute a guarded complete call
-     * and emit its verified result only after the advisor returns. This avoids sending
-     * unverified answer fragments while respecting the official TypeSafe advisors' full-answer evaluation requirements.
+     * Keeps the normal streaming client separate from complete-answer policy advisors.
+     * When TypeSafe self-refinement or guardrails are enabled, SSE-shaped methods execute
+     * the policy-checked call and emit the accepted result only after evaluation. This avoids
+     * sending unchecked answer fragments and respects the official advisors' full-answer contract.
      */
     public AiChatGateway(
             ChatClient chatClient,
@@ -72,9 +72,8 @@ public final class AiChatGateway {
      */
     public Flux<String> streamAnswer(UUID userId, String conversationId, String userText) {
         if (this.completeCallPoliciesEnabled) {
-            // The official advisor explicitly rejects streaming because it must screen the whole
-            // answer. Use its guarded call path and expose the verified answer as one SSE token;
-            // true token-by-token streaming remains available when no complete-answer policies are enabled.
+            // Judgment and guardrails require the complete answer. Use the policy path and expose
+            // its accepted answer as one SSE token; normal turns keep incremental streaming.
             return Mono.fromCallable(() -> answer(userId, conversationId, userText))
                     .subscribeOn(Schedulers.boundedElastic())
                     .flux();
