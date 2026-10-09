@@ -83,6 +83,10 @@
         <bucket4j.version>8.21.0</bucket4j.version>
         <firebase-admin.version>9.11.0</firebase-admin.version>
         <spring-ai.version>2.0.1</spring-ai.version>
+        <!-- Community extension: event-sourced, tool-call-safe session history and JDBC repository. -->
+        <spring-ai-session.version>0.10.0</spring-ai-session.version>
+        <!-- Official community extension for TypeSafe AI System One; opt-in via its profile and separate credential. -->
+        <spring-ai-typesafe.version>0.4.0</spring-ai-typesafe.version>
         <!-- Cloud train for the edge BFF (exception #14): single property,
              per-artifact versions stay managed by the BOM below. -->
         <spring-cloud.version>2025.1.3</spring-cloud.version>
@@ -204,6 +208,23 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Community extension #18: published Spring AI Session BOM; v0.10.0 documents
+                 compatibility with Spring AI 2.0.1+ and Spring Boot 4.1.1+. -->
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>spring-ai-session-bom</artifactId>
+                <version>${spring-ai-session.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Official Spring AI Community TypeSafe BOM: versions all published TypeSafe artifacts together. -->
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>typesafe-bom</artifactId>
+                <version>${spring-ai-typesafe.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

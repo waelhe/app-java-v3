@@ -1,4 +1,23 @@
 spring:
+  ai:
+    chat:
+      client:
+        enabled: ${SPRING_AI_CHAT_CLIENT_ENABLED:true}
+    # Production deliberately selects the configured Google provider. The
+    # credential remains external to Git and is required at deployment time.
+    model:
+      chat: ${SPRING_AI_MODEL_CHAT:google-genai}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING_TEXT:google-genai}
+    google:
+      genai:
+        api-key: ${GOOGLE_GENAI_API_KEY}
+        embedding:
+          api-key: ${GOOGLE_GENAI_API_KEY}
+    vectorstore:
+      pgvector:
+        # Production database must expose pgvector and permit the official schema initializer.
+        initialize-schema: ${SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA:true}
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}

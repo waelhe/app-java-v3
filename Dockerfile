@@ -89,6 +89,7 @@ RUN java -XX:AOTCacheOutput=/app/app.aot \
     -Dspring.sql.init.mode=never \
     -Dspring.session.redis.configure-action=none \
     -Dmanagement.opentelemetry.map-environment-variables=false \
+    -Dspring.autoconfigure.exclude=org.springaicommunity.session.jdbc.autoconfigure.JdbcSessionRepositoryAutoConfiguration \
     -jar app.jar
 
 # ── Runtime stage ────────────────────────────────────

@@ -1,0 +1,35 @@
+# Optional TypeSafe AI System One (Jev) integration.
+# Enable the "typesafe" profile only after provisioning the separate TYPESAFE_API_KEY secret.
+spring:
+  ai:
+    typesafe:
+      api-key: ${TYPESAFE_API_KEY}
+    chat:
+      client:
+        tool-search-advisor:
+          enabled: true
+
+# Enable the community Jev document screening stage in the official Spring AI RAG pipeline.
+# Retrieval depth follows Spring AI's default; TypeSafe screens and reranks the retrieved passages.
+# This is deliberately opt-in because it adds TypeSafe calls and requires TYPESAFE_API_KEY.
+marketplace:
+  ai:
+    typesafe:
+      guardrails:
+        # The official Jev guardrail screens input and final answer. Since the advisor rejects
+        # stream calls, the gateway buffers guarded calls and emits verified SSE output only after
+        # screening; token-by-token streaming remains enabled when guardrails are off.
+        enabled: true
+      judge:
+        # Expose the official Spring AI Evaluator SPI independently of retries.
+        enabled: true
+      self-refine:
+        # The bound defaults come from TypeSafeSelfRefineProperties and remain environment-configurable.
+        enabled: true
+      rag:
+        enabled: true
+      # Jev chooses a model tier through the official TypeSafe Choice API.
+      # The router only selects model IDs for the active Spring AI provider.
+      # Model IDs and environment overrides are managed by TypeSafeModelRoutingProperties.
+      model-routing:
+        enabled: true

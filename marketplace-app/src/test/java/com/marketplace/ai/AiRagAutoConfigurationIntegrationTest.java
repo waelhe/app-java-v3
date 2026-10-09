@@ -2,10 +2,8 @@ package com.marketplace.ai;
 
 import test.config.IntegrationContainers;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.session.SessionRepository;
-import org.springframework.ai.session.SessionService;
-import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -18,13 +16,14 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-        "spring.ai.model.chat=google-genai",
-        "spring.ai.chat.client.enabled=true",
-        "spring.ai.google.genai.api-key=test-key",
+        "spring.ai.model.chat=none",
+        "spring.ai.model.embedding.text=google-genai",
+        "spring.ai.google.genai.embedding.api-key=test-key",
+        "spring.ai.vectorstore.pgvector.initialize-schema=false"
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
-class AiProviderSelectionIntegrationTest {
+class AiRagAutoConfigurationIntegrationTest {
 
     @Container
     @ServiceConnection
@@ -35,11 +34,12 @@ class AiProviderSelectionIntegrationTest {
     private ApplicationContext context;
 
     @Test
-    void selectorActivatesProviderAndOfficialAutoConfigurationBuildsTheChatStack() {
-        assertThat(context.getBeansOfType(ChatModel.class)).hasSize(1);
-        assertThat(context.getBeansOfType(ChatClient.Builder.class)).hasSize(1);
-        assertThat(context.getBeansOfType(SessionService.class)).hasSize(1);
-        assertThat(context.getBeansOfType(SessionRepository.class)).hasSize(1);
-        assertThat(context.getBeansOfType(AiChatGateway.class)).hasSize(1);
+    void officialEmbeddingAndPgVectorAutoConfigurationComposeTheKnowledgeGateway() {
+        assertThat(context.getBeansOfType(EmbeddingModel.class)).hasSize(1);
+        assertThat(context.getBeansOfType(VectorStore.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiWithdrawnSourceStore.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiKnowledgeGateway.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiKnowledgeEntryEventListener.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AiChatGateway.class)).isEmpty();
     }
 }

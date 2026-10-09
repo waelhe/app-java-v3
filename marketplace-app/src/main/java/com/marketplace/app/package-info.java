@@ -4,7 +4,8 @@
         "shared :: shared-security",
         "catalog :: catalog-api",
         "catalog :: catalog-spi",
-        "messaging :: messaging-api"
+        "messaging :: messaging-api",
+        "ai"
     }
 )
 package com.marketplace.app;
