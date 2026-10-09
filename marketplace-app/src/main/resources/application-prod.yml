@@ -1,5 +1,8 @@
 spring:
   ai:
+    chat:
+      client:
+        enabled: ${SPRING_AI_CHAT_CLIENT_ENABLED:true}
     # Production deliberately selects the configured Google provider. The
     # credential remains external to Git and is required at deployment time.
     model:
