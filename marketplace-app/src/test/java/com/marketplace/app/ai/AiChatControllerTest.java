@@ -159,7 +159,7 @@ class AiChatControllerTest {
                         .content("I will search.")
                         .toolCalls(List.of(new AssistantMessage.ToolCall(
                                 "call-1", "function", "search_marketplace_listings",
-                                "{\\"query\\":\\"parks\\"}")))
+                                "{\"query\":\"parks\"}")))
                         .build())
                 .build();
         SessionEvent tool = SessionEvent.builder()
@@ -181,7 +181,7 @@ class AiChatControllerTest {
         assertThat(response.getBody().messages().get(0).content()).isEqualTo("Find parks");
         assertThat(response.getBody().messages().get(1).toolCalls())
                 .containsExactly(new AiChatToolCallResponse(
-                        "call-1", "function", "search_marketplace_listings", "{\\"query\\":\\"parks\\"}"));
+                        "call-1", "function", "search_marketplace_listings", "{\"query\":\"parks\"}"));
         assertThat(response.getBody().messages().get(2).toolResponses())
                 .containsExactly(new AiChatToolResponse(
                         "call-1", "search_marketplace_listings", "2 public listings"));
