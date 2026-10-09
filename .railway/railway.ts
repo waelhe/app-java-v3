@@ -13,13 +13,14 @@ import { defineRailway, github, preserve, project, service } from "railway/iac";
 //     by the pre-migration state, and any `railway config apply` with it
 //     would rebind this service to a repository whose sync workflow is
 //     disabled and whose account is drained (the CodeRabbit-flagged trap).
-//   - env: the full measured live set — 45 service-scoped names on the v3
-//     service's production environment (set-equality verified against the
-//     GraphQL enumeration after the faithful transfer; the 2026-09-13
-//     declaration had 35 names — the S3 media bundle, the two IP hash keys,
-//     SPRING_AI_MODEL_CHAT, MAIL_PORT and SPRING_DATA_REDIS_SSL_ENABLED were
-//     added since). All via preserve() — the official mechanism that keeps
-//     values managed in Railway (secrets never materialize here).
+//   - env: originally the measured 45-name live set on the v3 service's
+//     production environment (set-equality verified against the GraphQL
+//     enumeration after the faithful transfer; the 2026-09-13 declaration had
+//     35 names). This AI-alignment branch adds GOOGLE_GENAI_API_KEY as a new
+//     preserved secret declaration; it is NOT proof that a value already
+//     exists in Railway. Revoke the key exposed in chat, then provision its
+//     replacement in the Railway service before deploying this profile.
+//     All entries use preserve() — values never materialize in this file.
 //   - volumeMounts: REMOVED — the v3 service runs without a volume (the
 //     /data "app-java-v3-volume" residue belonged to the retired account's
 //     service; the v3 deployment 4b203ec2 is measured healthy without it).
