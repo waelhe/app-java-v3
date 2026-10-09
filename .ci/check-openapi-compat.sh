@@ -35,7 +35,11 @@ generate_spec() {
   # (FlywayException: no value provided for placeholder ${seedContent} —
   # the tag's application.yml does not define it). A clean build guarantees
   # each phase's jar contains exactly its own tree.
-  ./mvnw -q -pl marketplace-app -am clean package -DskipTests
+  # -U also retries artifacts Maven previously cached as missing. The
+  # baseline tag can reference a valid release that a transient Central
+  # response marked absent; without -U, the shared ~/.m2 cache may repeat
+  # that false negative and prevent the compatibility comparison from running.
+  ./mvnw -U -q -pl marketplace-app -am clean package -DskipTests
   java -jar marketplace-app/target/marketplace-app-*.jar >"$WORK_DIR/${label}.log" 2>&1 &
   local app_pid=$!
   trap 'kill $app_pid >/dev/null 2>&1 || true' RETURN
