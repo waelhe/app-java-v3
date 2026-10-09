@@ -536,6 +536,19 @@ class AccountSelfDeletionIntegrationTest {
      * the session cookie either still authenticates (302 straight to the
      * client's redirect URI — the session is alive) or bounces to the login
      * page (302 to /login — the session is dead).
+     *
+     * <p>The predicate matches the DESTINATION, not a substring: the
+     * f9774d66 run's evidence (21:10:46Z) measured the alive leg answering
+     * {@code authorizeLocation=https://login-gate.test.example/callback?code=…}
+     * while the probe returned {@code true} — the shared fixture's RFC 2606
+     * redirect domain (login-gate.test.example) itself contains the literal
+     * substring {@code /login}, so {@code location.contains(LOGIN_PATH)}
+     * classified a fully-alive, code-minting session as dead (the session's
+     * own SPRING_SECURITY_CONTEXT sat in the same failure message, fully
+     * authenticated). The class's own alive-matcher is the gate's step (4)
+     * {@code startsWith(REDIRECT_URI)}; the probe now uses the same
+     * destination-first shape — "no longer authenticates" means the
+     * authorize did NOT land on the client's callback.
      */
     /** The last authorize probe's Location (the naming cycle's third-round evidence). */
     private String lastAuthorizeLocation = "(not yet probed)";
@@ -554,7 +567,7 @@ class AccountSelfDeletionIntegrationTest {
                 .as("authorize with the login session: %s", body(authorize)).isEqualTo(302);
         String location = authorize.headers().firstValue("Location").orElse("");
         lastAuthorizeLocation = "authorizeLocation=" + location;
-        return location.contains(LOGIN_PATH);
+        return !location.startsWith(REDIRECT_URI);
     }
 
     private UUID syncProjectionIdViaMe(String accessToken) throws Exception {
