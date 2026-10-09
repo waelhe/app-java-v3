@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
         "spring.ai.model.chat=deepseek",
+        "spring.ai.chat.client.enabled=true",
         "spring.ai.deepseek.api-key=test-key",
 })
 @ActiveProfiles("test")
