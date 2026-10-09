@@ -108,6 +108,11 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-community</artifactId>
         </dependency>
+        <!-- B-13 wiring: connect the existing institutions module to the executable app. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-institutions</artifactId>
+        </dependency>
         <!-- B-12 wiring (CR): the jobs employment vertical joins the aggregation
              exactly like community — the app is the assembly point. -->
         <dependency>
