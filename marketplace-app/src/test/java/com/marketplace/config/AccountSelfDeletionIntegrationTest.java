@@ -270,7 +270,7 @@ class AccountSelfDeletionIntegrationTest {
         // RememberMe test's own pattern.)
         assertThat(sessionRepository.findById(rawSessionId(gate.sessionCookie())))
                 .as("the session ROW survives the failed verification")
-                .isPresent();
+                .isNotNull();
         assertThat(sessionNoLongerAuthenticates(gate.sessionCookie()))
                 .as("a failed verification must not terminate the session").isFalse();
     }
