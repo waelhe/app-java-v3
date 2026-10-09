@@ -43,8 +43,18 @@ class TypeSafeSelfRefineAutoConfigurationTest {
                         .hasSingleBean(TypeSafeClient.class)
                         .hasSingleBean(JevJudge.class)
                         .hasSingleBean(Evaluator.class)
-                        .hasSingleBean(JevSelfRefineAdvisor.class)
-                        .isInstanceOf(JevSelfRefineAdvisor.class));
+                        .hasSingleBean(JevSelfRefineAdvisor.class));
+    }
+
+    @Test
+    void selfRefinementDoesNotActivateUnlessTheSharedJudgeIsEnabled() {
+        contextRunner
+                .withPropertyValues(
+                        "spring.ai.typesafe.api-key=test-only-key",
+                        "marketplace.ai.typesafe.self-refine.enabled=true")
+                .run(context -> assertThat(context)
+                        .hasSingleBean(TypeSafeClient.class)
+                        .doesNotHaveBean(JevSelfRefineAdvisor.class));
     }
 
     @Test

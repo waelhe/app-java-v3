@@ -208,6 +208,8 @@ public class AiAutoConfiguration {
     @Bean
     @ConditionalOnBean(TypeSafeClient.class)
     @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.judge", name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
             prefix = "marketplace.ai.typesafe.self-refine", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     JevSelfRefineAdvisor jevSelfRefineAdvisor(
