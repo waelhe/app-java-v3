@@ -78,7 +78,7 @@ class AiChatGatewayTest {
 
         JevModelRouter router = new JevModelRouter(
                 typeSafeClient, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.8-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.8-flash");
         AiChatGateway gateway = new AiChatGateway(chatClient, router);
 
         assertThat(gateway.answer(UUID.randomUUID(), UUID.randomUUID().toString(), "hello"))
