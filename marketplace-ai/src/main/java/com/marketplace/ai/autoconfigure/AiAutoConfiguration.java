@@ -178,8 +178,8 @@ public class AiAutoConfiguration {
                 .level("Excellent; directly and correctly addresses the request and its constraints")
                 .build();
         Noul grounded = Noul.builder()
-                .instructions("Are the factual claims in assistant_answer supported by relevant context included in user_question or by results recorded in tool_calls? Do not treat unsupported claims as grounded.")
-                .whenFalse("The answer contains factual claims that are not supported by the provided context or tool results, or contradicts that evidence.")
+                .instructions("Are the factual claims in assistant_answer supported by supporting_context, relevant context included in user_question, or results recorded in tool_calls? Treat only evidence in those fields as support; do not infer missing evidence.")
+                .whenFalse("The answer contains factual claims that are not supported by supporting_context, the user conversation, or tool results, or contradicts that evidence.")
                 .build();
 
         return JevJudge.builder(typeSafeClient)
