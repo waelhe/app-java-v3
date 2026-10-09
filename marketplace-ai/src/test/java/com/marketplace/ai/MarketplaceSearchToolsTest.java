@@ -83,7 +83,7 @@ class MarketplaceSearchToolsTest {
         assertThat(result.listings()).containsExactly(listing);
         verify(port).search(argThat(criteria ->
                         criteria.query() == null
-                                && "real-estate".equals(criteria.category()),
+                                && "real-estate".equals(criteria.category())),
                 argThat(request -> request.page() == 0 && request.size() == 5));
     }
 
