@@ -11,6 +11,12 @@ spring:
       enabled: false
 
   ai:
+    # The official ChatClientAutoConfiguration is enabled by default and
+    # requires a ChatModel. Keep the client off in deployments that deliberately
+    # select no chat provider; the production profile opts in explicitly.
+    chat:
+      client:
+        enabled: ${SPRING_AI_CHAT_CLIENT_ENABLED:false}
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
       embedding:
