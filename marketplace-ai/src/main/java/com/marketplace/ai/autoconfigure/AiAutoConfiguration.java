@@ -109,7 +109,7 @@ public class AiAutoConfiguration {
             String googleFastModel,
             @Value("${marketplace.ai.typesafe.model-routing.google.capable-model:gemini-3.5-flash}")
             String googleCapableModel,
-            @Value("${marketplace.ai.typesafe.model-routing.deepseek.fast-model:deepseek-v4-flash}")
+            @Value("${marketplace.ai.typesafe.model-routing.deepseek.fast-model:deepseek-flash}")
             String deepSeekFastModel,
             @Value("${marketplace.ai.typesafe.model-routing.deepseek.capable-model:deepseek-v4-pro}")
             String deepSeekCapableModel) {

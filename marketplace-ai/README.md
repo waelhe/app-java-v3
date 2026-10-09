@@ -20,7 +20,7 @@ Model routing does not switch provider or credentials. Spring AI's existing `spr
 | Active provider | FAST | CAPABLE |
 |---|---|---|
 | Google GenAI | `gemini-3.5-flash-lite` | `gemini-3.5-flash` |
-| DeepSeek | `deepseek-v4-flash` | `deepseek-v4-pro` |
+| DeepSeek | `deepseek-flash` | `deepseek-v4-pro` |
 
 Override these using `SPRING_AI_ROUTING_GOOGLE_FAST_MODEL`, `SPRING_AI_ROUTING_GOOGLE_CAPABLE_MODEL`, `SPRING_AI_ROUTING_DEEPSEEK_FAST_MODEL`, or `SPRING_AI_ROUTING_DEEPSEEK_CAPABLE_MODEL`. Override the confidence floor with `TYPESAFE_ROUTING_MIN_CONFIDENCE`.
 
@@ -29,7 +29,8 @@ Override these using `SPRING_AI_ROUTING_GOOGLE_FAST_MODEL`, `SPRING_AI_ROUTING_G
 - Keep the usual provider key for the active chat provider. Google GenAI embeddings and the pgvector store have their own existing configuration requirements.
 - The TypeSafe profile adds a Jev routing call per chat request. Screening and reranking make additional Jev calls based on how many passages are retrieved/survive the filter; the feature is opt-in rather than silently imposed on every deployment.
 - The current routing is intentionally within-provider. It does not dynamically switch Google GenAI to DeepSeek (or vice versa), because the official Spring AI provider auto-configuration selects one chat model at startup.
-- This module does not attach `JevGuardrailAdvisor` or `JevSelfRefineAdvisor` globally: the upstream community documentation marks their streaming path unsupported, and the shared gateway serves both complete JSON responses and SSE streams. They need a separate non-streaming or streaming-compatible design before activation.
+- **DeepSeek model caveat (verified against official documentation on 2026-10-09):** use `deepseek-flash`, not the retired `deepseek-v4-flash` alias. DeepSeek currently routes `deepseek-v4-pro` requests to V4.1-Flash until V4.1-Pro is launched, so FAST/CAPABLE may resolve to the same provider-side model during that transition. The router selects configured model IDs; it cannot override server-side routing. See [DeepSeek's V4.1-Flash announcement](https://www.deepseek.com/en/news/deepseek-v4-1-flash/) and the [official model-list API](https://api-docs.deepseek.com/api/list-models/).
+- This module does not attach `JevGuardrailAdvisor` or `JevSelfRefineAdvisor` globally: upstream documents that Jev itself does not stream and these advisors buffer while judging or retrying. Attaching them to the shared client would change SSE token streaming into buffered delivery, so they need a deliberately separate non-streaming policy before activation.
 - TypeSafe's official document filter passes a passage through as unclassified if Jev cannot screen it. Such passages are labelled `UNSCREENED` in the augmented context rather than represented as verified evidence; this is fail-open behavior, not a guarantee that screening succeeded.
 
 ## Upstream references
