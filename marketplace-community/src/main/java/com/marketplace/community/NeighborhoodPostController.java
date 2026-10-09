@@ -61,6 +61,7 @@ public class NeighborhoodPostController {
      * gate, exactly where the plan's criterion 3 pins it.
      */
     static final int MAX_BODY_LENGTH = 2000;
+    static final int MAX_SEARCH_QUERY_LENGTH = 200;
 
     private final NeighborhoodPostService postService;
     private final CurrentUserProvider currentUserProvider;
@@ -77,17 +78,42 @@ public class NeighborhoodPostController {
                     + "membership is the scope (there is no location parameter: one membership, "
                     + "one feed — G-N1/G-N3). No active membership answers 403. The optional "
                     + "category filter is the feed's one axis (GENERAL/CLASSIFIED/LOST_FOUND/"
-                    + "RECOMMENDATION — L43 widened the vocabulary); "
+                    + "RECOMMENDATION/QUESTION/REQUEST — the category vocabulary); "
                     + "an invalid value answers 400 before any read. Deterministic pagination on "
                     + "the complete sort key (createdAt DESC, id DESC) — no shaky page boundaries.")
     public ResponseEntity<PagedResponse<NeighborhoodPostView>> feed(
-            @Parameter(description = "Optional category filter — GENERAL, CLASSIFIED, LOST_FOUND or RECOMMENDATION")
+            @Parameter(description = "Optional category filter — GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION, QUESTION or REQUEST")
             @RequestParam(required = false) String category,
             Pageable pageable,
             Authentication authentication) {
         UUID callerId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(PagedResponse.of(
                 postService.getFeed(callerId, parseCategory(category), pageable)));
+    }
+
+    @GetMapping("/neighborhood/posts/search")
+    @Operation(summary = "Search visible posts in my neighborhood",
+            description = "Full-text search is scoped to the caller's active neighborhood, visible posts only. "
+                    + "The search uses PostgreSQL's Arabic text-search configuration and ranks by relevance; "
+                    + "a typo-tolerant pg_trgm fallback runs only when full-text search has no matches. "
+                    + "Pagination is deterministic. The category filter is optional.")
+    public ResponseEntity<PagedResponse<NeighborhoodPostView>> search(
+            @Parameter(description = "Text to search, trimmed and limited to 200 Unicode code points")
+            @RequestParam("q") String query,
+            @Parameter(description = "Optional category filter — GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION, QUESTION or REQUEST")
+            @RequestParam(required = false) String category,
+            Pageable pageable,
+            Authentication authentication) {
+        String normalizedQuery = query == null ? "" : query.trim();
+        if (normalizedQuery.isEmpty()) {
+            throw new BadRequestException("q must not be blank");
+        }
+        if (normalizedQuery.codePointCount(0, normalizedQuery.length()) > MAX_SEARCH_QUERY_LENGTH) {
+            throw new BadRequestException("q must not exceed " + MAX_SEARCH_QUERY_LENGTH + " Unicode code points");
+        }
+        UUID callerId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(PagedResponse.of(
+                postService.searchFeed(callerId, normalizedQuery, parseCategory(category), pageable)));
     }
 
     @PostMapping("/neighborhood/posts")
@@ -213,7 +239,7 @@ public class NeighborhoodPostController {
             return PostCategory.valueOf(raw.trim());
         } catch (IllegalArgumentException invalid) {
             throw new BadRequestException(
-                    "Invalid category '" + raw + "' — valid values: GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION");
+                    "Invalid category '" + raw + "' — valid values: GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION, QUESTION, REQUEST");
         }
     }
 

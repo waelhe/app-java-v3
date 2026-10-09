@@ -69,6 +69,33 @@ class NeighborhoodPostControllerTest {
     }
 
     @Test
+    void search_delegatesNormalizedQueryAndParsedCategory() {
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
+        when(postService.searchFeed(
+                org.mockito.ArgumentMatchers.eq(authorId),
+                org.mockito.ArgumentMatchers.eq("مفقودات"),
+                org.mockito.ArgumentMatchers.eq(PostCategory.QUESTION),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        controller.search("  مفقودات  ", "QUESTION", Pageable.unpaged(), authentication);
+
+        verify(postService).searchFeed(
+                org.mockito.ArgumentMatchers.eq(authorId),
+                org.mockito.ArgumentMatchers.eq("مفقودات"),
+                org.mockito.ArgumentMatchers.eq(PostCategory.QUESTION),
+                org.mockito.ArgumentMatchers.any(Pageable.class));
+    }
+
+    @Test
+    void search_blankQuery_is400BeforeAnyServiceCall() {
+        assertThatThrownBy(() -> controller.search("  ", null, Pageable.unpaged(), authentication))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessage("q must not be blank");
+        org.mockito.Mockito.verifyNoInteractions(postService);
+    }
+
+    @Test
     void feed_absentCategory_delegatesWithNull() {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(authorId);
         when(postService.getFeed(org.mockito.ArgumentMatchers.eq(authorId),
@@ -92,7 +119,7 @@ class NeighborhoodPostControllerTest {
 
         // L43 widened the listed vocabulary to the four values.
         assertThat(thrown).hasMessageContaining(
-                "GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION");
+                "GENERAL, CLASSIFIED, LOST_FOUND, RECOMMENDATION, QUESTION, REQUEST");
         org.mockito.Mockito.verifyNoInteractions(postService);
     }
 

@@ -715,4 +715,37 @@ class NeighborhoodPostModuleIntegrationTest {
         }
         throw new AssertionError("PostCommentedEvent publication never settled");
     }
+    @Test
+    void questionAndRequestCategoriesPersistAndArabicSearchStaysInMyNeighborhood() throws Exception {
+        UUID authorId = UUID.randomUUID();
+        UUID locationId = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        membershipService.join(authorId, locationId);
+
+        postService.createPost(
+                authorId, locationId, PostCategory.QUESTION,
+                "سؤال عن سباك موثوق",
+                "أبحث عن سباك موثوق في الحي لإصلاح تسرب ماء.");
+        postService.createPost(
+                authorId, locationId, PostCategory.REQUEST,
+                "طلب مساعدة في نقل أثاث",
+                "أحتاج مساعدة محلية في نقل الأثاث.");
+
+        var questions = postService.searchFeed(
+                authorId, "سباك", PostCategory.QUESTION,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+        assertThat(questions.getContent())
+                .hasSize(1)
+                .allSatisfy(post -> {
+                    assertThat(post.category()).isEqualTo("QUESTION");
+                    assertThat(post.title()).contains("سباك");
+                });
+
+        var requests = postService.getFeed(
+                authorId, PostCategory.REQUEST,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+        assertThat(requests.getContent())
+                .hasSize(1)
+                .allSatisfy(post -> assertThat(post.category()).isEqualTo("REQUEST"));
+    }
+
 }

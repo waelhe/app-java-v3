@@ -148,18 +148,54 @@ public class NeighborhoodPostService {
                         .and(NeighborhoodPostSpecifications.isVisible())
                         .and(NeighborhoodPostSpecifications.hasCategory(category)),
                 feedPageable);
-        // L47: the feed read carries the two reaction facts — the grouped
-        // live count per post and the caller's own live voice (the filled
-        // heart the client renders). One grouped aggregate + one IN read
-        // over the page's ids — a closed feed costs neither (the empty
-        // page short-circuits below).
-        //
-        // L48: the same read now carries each post's media — ONE grouped
-        // port read over the same page's ids (the reactions pattern
-        // verbatim: no per-post reads, the empty page costs nothing). The
-        // entries arrive presigned by the media module; the view maps them
-        // to the feed's own read model (PostMediaView — no storage facts
-        // cross the boundary).
+        return toViewPage(callerId, page);
+    }
+
+    /**
+     * Code-first community search, scoped exclusively to the caller's own
+     * active neighborhood. PostgreSQL Arabic FTS is the primary path; the
+     * existing pg_trgm capability is used only when FTS has no matches.
+     * This preserves exact-match semantics whenever any FTS match exists,
+     * and avoids replacing an out-of-range page with typo candidates.
+     */
+    @Observed(name = "community.post.search")
+    @Transactional(readOnly = true)
+    public Page<NeighborhoodPostView> searchFeed(
+            UUID callerId, String query, PostCategory category, Pageable pageable) {
+        String normalizedQuery = query == null ? "" : query.trim();
+        if (normalizedQuery.isEmpty()) {
+            throw new BadRequestException("q must not be blank");
+        }
+        if (normalizedQuery.codePointCount(0, normalizedQuery.length()) > 200) {
+            throw new BadRequestException("q must not exceed 200 Unicode code points");
+        }
+        if (pageable.getSort().isSorted()) {
+            throw new BadRequestException("Community text search uses relevance order; sort is not supported");
+        }
+
+        UUID locationId = requireMembership(callerId,
+                "Join a neighborhood before searching its posts (PUT /api/v1/me/neighborhood)")
+                .getLocationId();
+        Pageable searchPageable = PageRequest.of(
+                pageable.isPaged() ? pageable.getPageNumber() : 0,
+                pageable.isPaged() ? Math.min(pageable.getPageSize(), 100) : 20);
+
+        String categoryName = category == null ? null : category.name();
+        Page<NeighborhoodPost> page = repository.searchVisibleFullText(
+                locationId, categoryName, normalizedQuery, searchPageable);
+
+        // Match the listing-search contract: fallback only when NO primary
+        // FTS matches exist, not merely when the requested page is empty.
+        if (page.getTotalElements() == 0
+                && normalizedQuery.codePointCount(0, normalizedQuery.length()) >= 3) {
+            page = repository.searchVisibleSimilar(
+                    locationId, categoryName, normalizedQuery, searchPageable);
+        }
+        return toViewPage(callerId, page);
+    }
+
+    /** One grouped projection path shared by chronological and text-search feed reads. */
+    private Page<NeighborhoodPostView> toViewPage(UUID callerId, Page<NeighborhoodPost> page) {
         List<NeighborhoodPost> posts = page.getContent();
         Map<UUID, Long> counts = reactionCounts(posts);
         Set<UUID> mine = myReactions(callerId, posts);

@@ -45,7 +45,7 @@ class NeighborhoodPostTest {
         // L43's widening (V68/V69); HIDDEN_BY_MODERATOR is L45's flip.
         assertThat(PostCategory.values()).containsExactly(
                 PostCategory.GENERAL, PostCategory.CLASSIFIED, PostCategory.LOST_FOUND,
-                PostCategory.RECOMMENDATION);
+                PostCategory.RECOMMENDATION, PostCategory.QUESTION, PostCategory.REQUEST);
         assertThat(PostStatus.values()).containsExactly(
                 PostStatus.VISIBLE, PostStatus.HIDDEN_BY_MODERATOR);
     }
