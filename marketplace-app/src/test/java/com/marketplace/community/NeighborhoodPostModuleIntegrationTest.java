@@ -718,13 +718,20 @@ class NeighborhoodPostModuleIntegrationTest {
     @Test
     void questionAndRequestCategoriesPersistAndArabicSearchStaysInMyNeighborhood() throws Exception {
         UUID authorId = UUID.randomUUID();
+        UUID otherNeighborhoodAuthorId = UUID.randomUUID();
         UUID locationId = UUID.fromString(QUDSAYYA_OLD_TOWN);
+        UUID otherNeighborhoodId = UUID.fromString(QUDSAYYA_SUBURB);
         membershipService.join(authorId, locationId);
+        membershipService.join(otherNeighborhoodAuthorId, otherNeighborhoodId);
 
         postService.createPost(
                 authorId, locationId, PostCategory.QUESTION,
                 "سؤال عن سباك موثوق",
                 "أبحث عن سباك موثوق في الحي لإصلاح تسرب ماء.");
+        postService.createPost(
+                otherNeighborhoodAuthorId, otherNeighborhoodId, PostCategory.QUESTION,
+                "سباك موثوق في الضاحية",
+                "أبحث عن سباك موثوق في ضاحية قدسيا.");
         postService.createPost(
                 authorId, locationId, PostCategory.REQUEST,
                 "طلب مساعدة في نقل أثاث",
@@ -733,11 +740,13 @@ class NeighborhoodPostModuleIntegrationTest {
         var questions = postService.searchFeed(
                 authorId, "سباك", PostCategory.QUESTION,
                 org.springframework.data.domain.PageRequest.of(0, 10));
+        assertThat(questions.getTotalElements()).isEqualTo(1);
         assertThat(questions.getContent())
                 .hasSize(1)
                 .allSatisfy(post -> {
                     assertThat(post.category()).isEqualTo("QUESTION");
                     assertThat(post.title()).contains("سباك");
+                    assertThat(post.locationId()).isEqualTo(locationId);
                 });
 
         var requests = postService.getFeed(
