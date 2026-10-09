@@ -107,10 +107,17 @@ class AiAutoConfigurationTest {
 
     @Test
     void registersMarketplaceSearchToolsOnlyWhenCatalogSearchPortIsAvailable() {
-        contextRunner.run(context -> assertThat(context)
-                .doesNotHaveBean(MarketplaceSearchTools.class));
+        contextRunner
+                .withPropertyValues(
+                        "spring.ai.model.chat=none",
+                        "spring.ai.chat.client.enabled=false")
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(MarketplaceSearchTools.class));
 
         contextRunner
+                .withPropertyValues(
+                        "spring.ai.model.chat=none",
+                        "spring.ai.chat.client.enabled=false")
                 .withBean(CatalogSearchPort.class, () -> mock(CatalogSearchPort.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(MarketplaceSearchTools.class));
