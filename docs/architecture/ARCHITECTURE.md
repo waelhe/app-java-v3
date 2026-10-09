@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **25 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **26 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -80,7 +80,7 @@ L1: 21 domain modules            ← Bounded contexts (each owns its data + logi
 L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero domain dependencies)
 ```
 
-### The 25 Modules
+### The 26 Modules
 
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
@@ -109,6 +109,7 @@ L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero doma
 | 23 | `marketplace-jobs` | L1 | Domain core | Employment vertical: job listings + applications (B-12, C.2) |
 | 24 | `marketplace-knowledge` | L1 | Domain support | Neighborhood knowledge base: entries, revision, indexing events (B-15, C.9) |
 | 25 | `marketplace-console` | L1 | Domain support | Operator console: remote configs, feature flags, geo gates, metrics (B-16, C.10) |
+| 26 | `marketplace-institutions` | L1 | Domain support | Verified institution registry, review lifecycle, JSON-LD (B-13, C.3) |
 
 ### Spring Modulith Boundaries
 
