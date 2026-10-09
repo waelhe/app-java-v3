@@ -289,7 +289,7 @@ class AccountSelfDeletionIntegrationTest {
         // session (the logout runs only after the deletion succeeds).
         assertThat(sessionRepository.findById(rawId))
                 .as("the session ROW survives the failed verification: %s",
-                        sessionProbeEvidence(rawId))
+                        sessionProbeEvidence(rawId, rejected))
                 .isNotNull();
         assertThat(sessionNoLongerAuthenticates(gate.sessionCookie()))
                 .as("a failed verification must not terminate the session").isFalse();
@@ -303,11 +303,49 @@ class AccountSelfDeletionIntegrationTest {
      * index vs empty store).
      */
     private String sessionProbeEvidence(String rawId) {
+        return sessionProbeEvidence(rawId, null);
+    }
+
+    /**
+     * The naming cycle (2026-10-09, the discriminator's second run): the
+     * first run's measured evidence — first probe green (the cookie is
+     * honest), row gone after the 401, two surviving session rows, one
+     * 30-minute and one 30-day expirations bucket, and a live
+     * principal-name index — narrows the mechanism to the rejected
+     * deletion's own request window. This round carries the full naming
+     * set: the 401 response's own Set-Cookie headers (a session minted
+     * during the failure itself), the principal index's exact members
+     * (a stale entry names a rename, a cleaned entry names deleteById),
+     * and every surviving row's creation/lastAccessed/maxInactive meta —
+     * together they say which component rotated, deleted, or re-created
+     * the session, not just that the row is gone.
+     */
+    private String sessionProbeEvidence(String rawId, HttpResponse<String> rejectedResponse) {
         String keys;
+        String indexMembers;
+        String sessionMetas;
         try {
             keys = String.valueOf(redisTemplate.keys("marketplace:session*"));
+            indexMembers = String.valueOf(redisTemplate.opsForSet().members(
+                    "marketplace:session:index:org.springframework.session.FindByIndexNameSessionRepository"
+                            + ".PRINCIPAL_NAME_INDEX_NAME:it-self-delete-wrongpw-user"));
+            StringBuilder metas = new StringBuilder("[");
+            for (String key : redisTemplate.keys("marketplace:session:sessions:*").stream()
+                    .filter(k -> !k.contains(":expires:")).toList()) {
+                var hash = redisTemplate.<String, String>opsForHash().entries(key);
+                metas.append("{").append(key.substring(key.lastIndexOf(':') + 1))
+                        .append(" creation=").append(hash.get("creationTime"))
+                        .append(" lastAccessed=").append(hash.get("lastAccessedTime"))
+                        .append(" maxInactive=").append(hash.get("maxInactiveInterval"))
+                        .append(" attrs=").append(hash.keySet().stream()
+                                .filter(a -> a.startsWith("session_attr:")).toList())
+                        .append("}, ");
+            }
+            sessionMetas = metas.append("]").toString();
         } catch (RuntimeException ex) {
             keys = "keys-unavailable (" + ex.getClass().getSimpleName() + ")";
+            indexMembers = "unavailable";
+            sessionMetas = "unavailable";
         }
         boolean rowPresent;
         try {
@@ -315,7 +353,13 @@ class AccountSelfDeletionIntegrationTest {
         } catch (RuntimeException ex) {
             rowPresent = false;
         }
-        return "rawId=" + rawId + " rowPresent=" + rowPresent + " redisKeys=" + keys;
+        String setCookies = rejectedResponse == null ? "n/a"
+                : String.valueOf(rejectedResponse.headers().allValues("Set-Cookie"));
+        return "rawId=" + rawId + " rowPresent=" + rowPresent
+                + " 401SetCookie=" + setCookies
+                + " indexMembers=" + indexMembers
+                + " sessionMetas=" + sessionMetas
+                + " redisKeys=" + keys;
     }
 
     /**
