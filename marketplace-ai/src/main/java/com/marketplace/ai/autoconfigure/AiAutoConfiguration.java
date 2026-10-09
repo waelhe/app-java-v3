@@ -85,9 +85,7 @@ public class AiAutoConfiguration {
         ChatClient.Builder configured = builder.clone().defaultAdvisors(
                 SessionMemoryAdvisor.builder(sessionService)
                         .compactionTrigger(new TurnCountTrigger(20))
-                        .compactionStrategy(TurnWindowCompactionStrategy.builder()
-                                .maxTurns(10)
-                                .build())
+                        .compactionStrategy(TurnWindowCompactionStrategy.builder().build())
                         .build());
         searchTools.ifAvailable(configured::defaultTools);
 

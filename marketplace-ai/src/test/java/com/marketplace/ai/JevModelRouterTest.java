@@ -3,6 +3,7 @@ package com.marketplace.ai;
 import org.junit.jupiter.api.Test;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.exception.TypeSafeException;
+import org.springaicommunity.typesafe.judge.JevConfidenceGate;
 import org.springaicommunity.typesafe.question.Question;
 import org.springaicommunity.typesafe.response.Answer;
 import org.springaicommunity.typesafe.response.ChoiceAnswer;
@@ -49,7 +50,7 @@ class JevModelRouterTest {
     void fallsBackToTheCapableModelWhenJevConfidenceIsBelowTheOfficialFloor() {
         TypeSafeClient client = mock(TypeSafeClient.class);
         when(client.systemOne(anyString(), anyMap())).thenReturn(response(
-                new ChoiceAnswer("FAST", Map.of("FAST", 0.56d, "CAPABLE", 0.44d), 0.56d)));
+                new ChoiceAnswer("FAST", Map.of("FAST", 0.56d, "CAPABLE", 0.44d), JevConfidenceGate.DEFAULT_FLOOR - 0.04d)));
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
