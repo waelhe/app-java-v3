@@ -70,7 +70,7 @@ class AiChatGatewayTest {
         when(request.options(any(GoogleGenAiChatOptions.Builder.class))).thenReturn(request);
         when(request.call()).thenReturn(responseSpec);
         when(responseSpec.content()).thenReturn("routed answer");
-        when(typeSafeClient.systemOne(anyString(), anyMap())).thenReturn(new SystemOneResponse(
+        when(typeSafeClient.systemOne(anyMap(), anyMap())).thenReturn(new SystemOneResponse(
                 "jev-latest",
                 Map.<String, Answer>of("model_tier",
                         new ChoiceAnswer("FAST", Map.of("FAST", 0.9d, "CAPABLE", 0.1d), 0.9d)),

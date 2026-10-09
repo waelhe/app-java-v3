@@ -95,7 +95,7 @@ class JevModelRouterTest {
         router.route("Plan a multi-step migration.");
 
         @SuppressWarnings("unchecked")
-        org.mockito.ArgumentCaptor<Map<String, ?>> state =
+        org.mockito.ArgumentCaptor<Map<String, Object>> state =
                 org.mockito.ArgumentCaptor.forClass(Map.class);
         @SuppressWarnings("unchecked")
         org.mockito.ArgumentCaptor<Map<String, Question>> questions =
