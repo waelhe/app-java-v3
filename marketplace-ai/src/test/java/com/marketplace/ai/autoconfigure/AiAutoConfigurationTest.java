@@ -4,6 +4,7 @@ import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.MarketplaceSearchTools;
 import com.marketplace.ai.JevModelRouter;
+import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -57,6 +58,7 @@ class AiAutoConfigurationTest {
     @Test
     void usesSpringAiManagedBuilderWithoutRequiringAChatModelBean() {
         ChatClient.Builder builder = mock(ChatClient.Builder.class);
+        when(builder.clone()).thenReturn(builder);
         when(builder.defaultAdvisors(any(Advisor[].class))).thenReturn(builder);
         when(builder.build()).thenReturn(mock(ChatClient.class));
 
@@ -79,6 +81,7 @@ class AiAutoConfigurationTest {
         ObjectProvider<MarketplaceSearchTools> searchTools = mock(ObjectProvider.class);
         ObjectProvider<VectorStore> vectorStores = mock(ObjectProvider.class);
         ObjectProvider<JevModelRouter> modelRouters = mock(ObjectProvider.class);
+        ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors = mock(ObjectProvider.class);
         ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors =
                 mock(ObjectProvider.class);
         when(retrievalAugmentationAdvisors.orderedStream()).thenReturn(Stream.empty());
@@ -94,7 +97,7 @@ class AiAutoConfigurationTest {
         }).when(vectorStores).ifAvailable(any());
 
         AiChatGateway gateway = new AiAutoConfiguration()
-                .aiChatGateway(builder, sessionService, searchTools, modelRouters, retrievalAugmentationAdvisors, vectorStores);
+                .aiChatGateway(builder, sessionService, searchTools, modelRouters, guardrailAdvisors, retrievalAugmentationAdvisors, vectorStores);
 
         assertThat(gateway).isNotNull();
         verify(searchTools).ifAvailable(any());
