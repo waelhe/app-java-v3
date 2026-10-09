@@ -16,6 +16,23 @@ import static org.mockito.Mockito.when;
 
 class AiChatGatewayTest {
     @Test
+    void exposesTheOfficialCallContentResultForTheHttpAdapter() {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(request);
+        when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any())).thenReturn(request);
+        when(request.toolContext(org.mockito.ArgumentMatchers.anyMap())).thenReturn(request);
+        when(request.user(org.mockito.ArgumentMatchers.anyString())).thenReturn(request);
+        when(request.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("assistant answer");
+
+        AiChatGateway gateway = new AiChatGateway(chatClient);
+        assertThat(gateway.answer(UUID.randomUUID(), "conversation-1", "hello"))
+                .isEqualTo("assistant answer");
+    }
+
+    @Test
     void delegatesToSpringAiAndScopesConversationByUser() {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec request = mock(ChatClient.ChatClientRequestSpec.class);
