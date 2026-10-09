@@ -6,21 +6,25 @@ import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
+import org.springaicommunity.typesafe.judge.JevConfidenceGate;
+import org.springaicommunity.typesafe.toolsearch.JevToolIndex;
 import com.marketplace.shared.api.CatalogSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
-import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.deepseek.DeepSeekChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springaicommunity.typesafe.rag.JevDocumentFilter;
 import org.springaicommunity.typesafe.rag.JevDocumentReranker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
+import org.springframework.ai.chat.client.advisor.toolsearch.ToolSearchToolCallingAdvisor;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.generation.augmentation.ContextualQueryAugmenter;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
-import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.ai.session.compaction.TurnCountTrigger;
@@ -34,8 +38,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -52,6 +57,7 @@ import java.util.stream.Collectors;
                 "org.springaicommunity.session.autoconfigure.SessionServiceAutoConfiguration",
                 "org.springaicommunity.typesafe.autoconfigure.TypeSafeAutoConfiguration"
         })
+@EnableConfigurationProperties(TypeSafeModelRoutingProperties.class)
 @ConditionalOnClass(ChatClient.class)
 public class AiAutoConfiguration {
 
@@ -62,6 +68,7 @@ public class AiAutoConfiguration {
             ChatClient.Builder builder,
             SessionService sessionService,
             ObjectProvider<MarketplaceSearchTools> searchTools,
+            ObjectProvider<ToolSearchToolCallingAdvisor> toolSearchAdvisors,
             ObjectProvider<JevModelRouter> modelRouters,
             ObjectProvider<JevGuardrailAdvisor> guardrailAdvisors,
             ObjectProvider<RetrievalAugmentationAdvisor> retrievalAugmentationAdvisors,
@@ -75,6 +82,7 @@ public class AiAutoConfiguration {
                                 .build())
                         .build());
         searchTools.ifAvailable(configured::defaultTools);
+        toolSearchAdvisors.ifAvailable(advisor -> configured.defaultAdvisors(advisor));
 
         List<RetrievalAugmentationAdvisor> ragAdvisors =
                 retrievalAugmentationAdvisors.orderedStream().toList();
@@ -101,38 +109,61 @@ public class AiAutoConfiguration {
     }
 
     /**
-     * Optional Jev routing; provider model auto-configuration still owns the actual ChatModel.
-     * Jev selects only between model IDs supported by the active Google GenAI or DeepSeek provider.
+     * Optional Jev routing for the official Google GenAI and DeepSeek chat providers.
+     * The configured Spring AI model remains authoritative; Jev chooses among provider model IDs.
+     * Confidence uses the official TypeSafe JevConfidenceGate default floor rather than a
+     * duplicate application-level confidence policy.
      */
     @Bean
-    @ConditionalOnBean({TypeSafeClient.class, ChatModel.class})
+    @ConditionalOnBean({TypeSafeClient.class, GoogleGenAiChatModel.class})
     @ConditionalOnProperty(
             prefix = "marketplace.ai.typesafe.model-routing", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
-    JevModelRouter jevModelRouter(
+    JevModelRouter jevGoogleGenAiModelRouter(
             TypeSafeClient typeSafeClient,
-            ChatModel chatModel,
-            @Value("${marketplace.ai.typesafe.model-routing.minimum-confidence:0.65}")
-            double minimumConfidence,
-            @Value("${marketplace.ai.typesafe.model-routing.google.fast-model:gemini-3.5-flash-lite}")
-            String googleFastModel,
-            @Value("${marketplace.ai.typesafe.model-routing.google.capable-model:gemini-3.8-flash}")
-            String googleCapableModel,
-            @Value("${marketplace.ai.typesafe.model-routing.deepseek.fast-model:deepseek-flash}")
-            String deepSeekFastModel,
-            @Value("${marketplace.ai.typesafe.model-routing.deepseek.capable-model:deepseek-v4-pro}")
-            String deepSeekCapableModel) {
+            GoogleGenAiChatModel chatModel,
+            TypeSafeModelRoutingProperties properties) {
+        return new JevModelRouter(
+                typeSafeClient,
+                chatModel,
+                properties.getGoogle().getFastModel(),
+                properties.getGoogle().getCapableModel());
+    }
 
-        if (chatModel instanceof org.springframework.ai.google.genai.GoogleGenAiChatModel) {
-            return new JevModelRouter(
-                    typeSafeClient, chatModel, googleFastModel, googleCapableModel, minimumConfidence);
-        }
-        if (chatModel instanceof org.springframework.ai.deepseek.DeepSeekChatModel) {
-            return new JevModelRouter(
-                    typeSafeClient, chatModel, deepSeekFastModel, deepSeekCapableModel, minimumConfidence);
-        }
-        throw new IllegalStateException("Jev model routing is enabled, but the active Spring AI ChatModel "
-                + "provider is not a configured Google GenAI or DeepSeek model.");
+    @Bean
+    @ConditionalOnBean({TypeSafeClient.class, DeepSeekChatModel.class})
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.model-routing", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    JevModelRouter jevDeepSeekModelRouter(
+            TypeSafeClient typeSafeClient,
+            DeepSeekChatModel chatModel,
+            TypeSafeModelRoutingProperties properties) {
+        return new JevModelRouter(
+                typeSafeClient,
+                chatModel,
+                properties.getDeepseek().getFastModel(),
+                properties.getDeepseek().getCapableModel());
+    }
+
+    /**
+     * Optional official TypeSafe tool selection attached to Spring AI's tool-calling SPI.
+     * It uses the application-managed ToolCallingManager so framework limits, resolution,
+     * exception handling and observations remain in force.
+     */
+    @Bean
+    @ConditionalOnBean({TypeSafeClient.class, ToolCallingManager.class})
+    @ConditionalOnProperty(
+            prefix = "marketplace.ai.typesafe.tool-search", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    ToolSearchToolCallingAdvisor jevToolSearchAdvisor(
+            TypeSafeClient typeSafeClient,
+            ToolCallingManager toolCallingManager) {
+        return ToolSearchToolCallingAdvisor.builder()
+                .toolCallingManager(toolCallingManager)
+                .toolIndex(JevToolIndex.builder(typeSafeClient).build())
+                .sessionIdKeyName(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY)
+                .build();
     }
 
     /**

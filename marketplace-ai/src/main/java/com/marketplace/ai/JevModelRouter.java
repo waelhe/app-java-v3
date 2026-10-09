@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.exception.TypeSafeException;
+import org.springaicommunity.typesafe.judge.JevConfidenceGate;
 import org.springaicommunity.typesafe.question.Choice;
 import org.springaicommunity.typesafe.response.ChoiceAnswer;
 import org.springaicommunity.typesafe.response.SystemOneResponse;
@@ -53,23 +54,19 @@ public final class JevModelRouter {
     private final Choice tierChoice;
     private final String fastModel;
     private final String capableModel;
-    private final double minimumConfidence;
+    private final JevConfidenceGate confidenceGate;
     private final Function<String, ChatOptions.Builder<?>> optionsBuilder;
 
     public JevModelRouter(
             TypeSafeClient typeSafeClient,
             ChatModel configuredChatModel,
             String fastModel,
-            String capableModel,
-            double minimumConfidence) {
+            String capableModel) {
 
         this.typeSafeClient = Objects.requireNonNull(typeSafeClient, "typeSafeClient must not be null");
         Objects.requireNonNull(configuredChatModel, "configuredChatModel must not be null");
         Assert.hasText(fastModel, "fastModel must not be blank");
         Assert.hasText(capableModel, "capableModel must not be blank");
-        Assert.isTrue(minimumConfidence >= 0.0d && minimumConfidence <= 1.0d,
-                "minimumConfidence must be between 0 and 1");
-
         if (configuredChatModel instanceof GoogleGenAiChatModel) {
             this.optionsBuilder = model -> GoogleGenAiChatOptions.builder().model(model);
         }
@@ -84,7 +81,7 @@ public final class JevModelRouter {
 
         this.fastModel = fastModel;
         this.capableModel = capableModel;
-        this.minimumConfidence = minimumConfidence;
+        this.confidenceGate = JevConfidenceGate.withDefaultFloor();
         this.tierChoice = Choice.builder()
                 .instructions("""
                         Choose the least expensive configured model tier that can reliably answer this user's
@@ -116,8 +113,8 @@ public final class JevModelRouter {
             if (selected == null) {
                 return fallback(selectedTier, confidence, probabilities, "jev_returned_unknown_tier");
             }
-            if (!Double.isFinite(confidence) || confidence < this.minimumConfidence) {
-                return fallback(selectedTier, confidence, probabilities, "confidence_below_threshold");
+            if (this.confidenceGate.decide(answer) != JevConfidenceGate.Decision.EXECUTE) {
+                return fallback(selectedTier, confidence, probabilities, "confidence_below_official_floor");
             }
 
             return new RouteDecision(selectedTier, selected, modelFor(selected), confidence,

@@ -20,9 +20,11 @@ marketplace:
         enabled: true
       # Jev chooses a model tier through the official TypeSafe Choice API.
       # The router only selects model IDs for the active Spring AI provider.
+      tool-search:
+        # Use the official Spring AI ToolIndex SPI with the TypeSafe Jev implementation.
+        enabled: true
       model-routing:
         enabled: true
-        minimum-confidence: ${TYPESAFE_ROUTING_MIN_CONFIDENCE:0.65}
         google:
           fast-model: ${SPRING_AI_ROUTING_GOOGLE_FAST_MODEL:gemini-3.5-flash-lite}
           capable-model: ${SPRING_AI_ROUTING_GOOGLE_CAPABLE_MODEL:gemini-3.8-flash}

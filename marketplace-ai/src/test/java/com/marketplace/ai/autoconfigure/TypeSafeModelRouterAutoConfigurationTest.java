@@ -35,7 +35,6 @@ class TypeSafeModelRouterAutoConfigurationTest {
                 .withPropertyValues(
                         "spring.ai.typesafe.api-key=test-only-key",
                         "marketplace.ai.typesafe.model-routing.enabled=true",
-                        "marketplace.ai.typesafe.model-routing.minimum-confidence=0.72",
                         "marketplace.ai.typesafe.model-routing.google.fast-model=gemini-test-fast",
                         "marketplace.ai.typesafe.model-routing.google.capable-model=gemini-test-capable")
                 .run(context -> assertThat(context)

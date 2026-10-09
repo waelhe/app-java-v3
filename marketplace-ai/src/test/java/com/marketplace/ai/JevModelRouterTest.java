@@ -33,7 +33,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.8-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.8-flash");
 
         JevModelRouter.RouteDecision decision = router.route("Hello");
 
@@ -53,7 +53,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.8-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.8-flash");
 
         JevModelRouter.RouteDecision decision = router.route("Compare two complicated rental contracts");
 
@@ -61,7 +61,7 @@ class JevModelRouterTest {
         assertThat(decision.effectiveTier()).isEqualTo(JevModelRouter.Tier.CAPABLE);
         assertThat(decision.model()).isEqualTo("gemini-3.8-flash");
         assertThat(decision.fallbackApplied()).isTrue();
-        assertThat(decision.fallbackReason()).isEqualTo("confidence_below_threshold");
+        assertThat(decision.fallbackReason()).isEqualTo("confidence_below_official_floor");
     }
 
     @Test
@@ -71,7 +71,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(DeepSeekChatModel.class),
-                "deepseek-v4-flash", "deepseek-v4-pro", 0.65d);
+                "deepseek-flash", "deepseek-v4-pro");
 
         JevModelRouter.RouteDecision decision = router.route("Explain the account statement");
 
@@ -90,7 +90,7 @@ class JevModelRouterTest {
 
         JevModelRouter router = new JevModelRouter(
                 client, mock(GoogleGenAiChatModel.class),
-                "gemini-3.5-flash-lite", "gemini-3.8-flash", 0.65d);
+                "gemini-3.5-flash-lite", "gemini-3.8-flash");
 
         router.route("Plan a multi-step migration.");
 
