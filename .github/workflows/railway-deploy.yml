@@ -1,35 +1,18 @@
 name: Railway Deploy
 
-# The automatic deploy channel — replaces the manual serviceInstanceDeployV2
-# session scripts (the measured manual intervention between a green main and
-# production) with platform automation inside the two official channels:
-# GitHub Actions and the Railway GraphQL API.
+# The manual deploy lever — the automatic channel that used to live here was
+# disabled by the owner's measured decision (2026-10-10): the project runs on
+# a trial account, merges arrive in bursts, and every merge rebuilt two Java
+# images for no behavioural change. Everything below is unchanged, so the
+# automatic path returns by restoring the `workflow_run` trigger alone.
 #
-# Official basis (docs cited, not invented):
-# - GitHub docs, "Events that trigger workflows" — workflow_run: "This event
-#   will only trigger a workflow run if the workflow file is on the default
-#   branch"; the run fires when each named workflow completes.
-# - Railway docs, "GitHub autodeploys" — Wait for CI: "new deployments sit
-#   in a WAITING state until every GitHub Actions check suite on the commit
-#   has finished... A workflow that fails skips the deployment immediately.
-#   A workflow that is skipped or reports neutral never blocks. A workflow
-#   that is cancelled blocks the deployment only if no other workflow on the
-#   same commit succeeded." This gate adopts exactly those semantics.
-# - Railway API cookbook, "Deploy a specific service in an environment"
-#   (integrations/api/manage-deployments) — the documented deploy mutations.
-#   serviceInstanceDeployV2(commitSha, environmentId, serviceId) pins the
-#   exact commit that passed the gate, so a newer push can never race ahead
-#   of verification.
-#
-# Why this channel and not Railway-native auto-deploy (measured 2026-10-09):
-# the Railway project has no workspace member with their GitHub account
-# connected to this repository — deploymentTriggerCreate answers "no one in
-#   the project has access to it" and serviceInstanceAutoDeployUpdate answers
-#   "No workspace member has their GitHub account connected with access to
-#   this repository". The native path needs that user-owned connection
-#   (Railway docs, GitHub autodeploys → Requirements). Until the owner
-#   connects it, this workflow is the automatic channel; when they do, the
-#   native triggers with "Wait for CI" can replace this file wholesale.
+# Why a workflow at all rather than Railway-native auto-deploy (measured
+# 2026-10-09): the Railway project has no workspace member with their GitHub
+# account connected to this repository — deploymentTriggerCreate answers "no
+#   one in the project has access to it" and serviceInstanceAutoDeployUpdate
+# answers "No workspace member has their GitHub account connected with access
+#   to this repository". The native path needs that user-owned connection
+# (Railway docs, GitHub autodeploys → Requirements).
 #
 # Deployment targets (Railway project successful-simplicity, production):
 #   app-java-v3       — the main web marketplace service (root Dockerfile)
@@ -41,9 +24,6 @@ name: Railway Deploy
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["CI", "Integration Test", "CodeQL", "Container Scan"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -63,14 +43,17 @@ env:
 
 jobs:
   deploy:
-    name: Deploy main to Railway (every suite green)
-    # workflow_run fires for PR-head runs too — deploy only main commits.
-    # workflow_dispatch keeps a gated emergency lever (same all-green gate).
+    name: Deploy the dispatched commit to Railway (all suites green)
+    # Manual lever only. The automatic channel that used to fire on every
+    # main merge was disabled by the owner's measured decision
+    # (2026-10-10): a trial account with bursty merges (13 in one day, mostly
+    # docs and design) paid two full Java image builds per merge for no
+    # behavioural change. Restoring it means adding back the `workflow_run`
+    # trigger and the two clauses:
+    #   github.event.workflow_run.event == 'push' &&
+    #   github.event.workflow_run.head_branch == 'main'
     if: >-
-      github.repository == 'waelhe/app-java-v3' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'))
+      github.repository == 'waelhe/app-java-v3'
     runs-on: ubuntu-latest
     steps:
       - name: Gate — every GitHub Actions suite on the commit must be green
