@@ -26,7 +26,7 @@
 --   * The CHECKs in the V64 shape: the body bound the house pins in
 --     Java (2000) is the schema's own too — a blank body never lands.
 --
--- Numbering: V166 — Track B's range (V150-V189).
+-- Numbering: V170 — Track B's range (V150-V189). The V166-V169 band belongs to #529's community-post search wave (merged to main first).
 --
 -- Checksum registered in migration-checksums.properties in this same
 -- unit (MigrationChecksumGuardTest — the 2026-09-14 incident class).
