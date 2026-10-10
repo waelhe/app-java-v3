@@ -31,7 +31,7 @@
 
 ```text
 client/                          (مستودع نفسه، دليل جديد بجانب marketplace-*)
-├── design/tokens.json           (المصدر من UX doc — يولّد ThemeData)
+├── design/tokens.json (في المسار الكامل client/design/tokens.json)           (المصدر من UX doc — يولّد ThemeData)
 ├── lib/
 │   ├── core/
 │   │   ├── api/                 (مولّد آليًا من openapi-generator — dart-dio؛ لا تعديل يدوي)
@@ -59,7 +59,7 @@ client/                          (مستودع نفسه، دليل جديد بج
 
 - `Directionality.rtl` في جذر التطبيق؛ LTR وضع معكوس كامل للاختبار (golden test لكل مكون بالاتجاهين — UX doc §12.3).
 - **CMP-29** `DirectionSafeText`: عزل bidi للنص المختلط (LRI/RLI/FSI) في كل عرض نصي من مصدر خارجي — منع تكسر أسماء الأعمال اللاتينية والأرقام في جمل عربية.
-- الخط: D-22 (توصية IBM Plex Sans Arabic) يُثبت في `ThemeData` من tokens.json — مع بدائل سقوط عربية محددة.
+- الخط: D-22 (توصية IBM Plex Sans Arabic) يُثبت في `ThemeData` من client/design/tokens.json — مع بدائل سقوط عربية محددة.
 - الأرقام الغربية (D-24) في كل البيانات؛ التقويم ميلادي + خيار هجري عبر `intl` ‏(pub.dev/packages/intl — حزمة Dart الرسمية) بصيغة ar-SA-u-ca-islamic.
 - الإدخال: `TextDirection` يتبع أول حرف مع محاذاة RTL — سلوك موحد واحد عبر كل الحقول (UX doc §6.2.3).
 
@@ -70,7 +70,7 @@ client/                          (مستودع نفسه، دليل جديد بج
 1. **Golden test إلزامي:** لقطة RTL + لقطة LTR + حالاته (مثال OfficialCard: ACTIVE/CORRECTED/WITHDRAWN/EXPIRED) — docs.flutter.dev/testing/overview.
 2. **Semantics عربية:** اسم/دور/قيمة لقارئ الشاشة يقرأ الحالة («منتهٍ»، «بحاجة تحقق») — WCAG 4.1.2 عبر semantics المدمجة (docs.flutter.dev/development/accessibility).
 3. **هدف لمس ≥ 44×44** وتباين من tokens — يتحقق آليًا في CI (اختبار يجتاز الشجرة ويقيس الأهداف).
-4. **لا قيمة بصرية خارج tokens.json** — قاعدة UX doc §2 تطبق بفحص CI على الكود (منع قيم hex/px صلبة).
+4. **لا قيمة بصرية خارج client/design/tokens.json** — قاعدة UX doc §2 تطبق بفحص CI على الكود (منع قيم hex/px صلبة).
 
 ## 5. الإشعارات والاتصال الحي
 
