@@ -1311,6 +1311,8 @@ AVAILABLE → REQUESTED → (DECLINED أو ACCEPTED_PENDING_PAYMENT) → CONFIRM
 
 هذه المراجع تُستخدم لاستخلاص مبادئ سلوك المنتج فقط؛ ليست مواصفات ملزمة لمنصتنا ولا دليلًا على كيفية بناء كود Nextdoor الداخلي.
 
+- **مرجع المقارنة المنتجية والمعمارية المُصنّف بحسب قوة الدليل:** [community-platform-nextdoor-benchmark.md](community-platform-nextdoor-benchmark.md) — يثبت السلوك المعلن، ويصنّف القرائن الهندسية الثانوية والتفاصيل غير المتحققة، ويربط الدروس برحلات JT-01..JT-19.
+
 1. **Nextdoor — Product Updates، أغسطس 2026:** Ask يستفيد من المحادثات السابقة عند بقاء السؤال بلا جواب، تحسين ظهور مدى وصول المنشورات، وإعادة بناء اكتشاف الفعاليات.  
    https://blog.nextdoor.com/whats-new-on-nextdoor-product-updates-2
 2. **Nextdoor — Local Faves، 2 سبتمبر 2026:** مركز اكتشاف للأعمال مبني على توصيات جيران حقيقيين موثّقين، وتحديثات صفحات الأعمال.  
