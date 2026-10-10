@@ -1,6 +1,7 @@
 package com.marketplace.shared.security;
 
 import com.marketplace.shared.api.AccountStatusChanged;
+import com.marketplace.shared.api.UserRoleAssignmentRevoked;
 import com.marketplace.shared.api.UserRoleChanged;
 
 import org.junit.jupiter.api.Test;
@@ -110,6 +111,46 @@ class AccountStatusSessionInvalidatorTest {
                 .as("role change expires the stale-authority session").extracting(info -> info.isExpired())
                 .isEqualTo(true);
         assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+    }
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role REVOKE leg: a
+     * withdrawn assignment is fail-OPEN inside every live session whose
+     * cached authorities still hold the role (the V183 view repairs the
+     * source only at the NEXT login/token mint), so all of the account's
+     * sessions expire now. The GRANT leg publishes nothing by design — it
+     * is fail-closed for live sessions, the documented asymmetry this
+     * consumer's {@code AccountStatusChanged} leg already rides.
+     */
+    @Test
+    void roleAssignmentRevocationExpiresAllSessionsOfTheAccount() {
+        MapSession first = sessionFor(PRINCIPAL);
+        MapSession bystander = sessionFor(OTHER_PRINCIPAL);
+
+        invalidator.onUserRoleAssignmentRevoked(
+                new UserRoleAssignmentRevoked(UUID.randomUUID(), PRINCIPAL, "PROVIDER"));
+
+        assertThat(registry.getSessionInformation(first.getId())).isNotNull()
+                .as("the revoked role's stale-authority sessions expire")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+        assertThat(registry.getSessionInformation(bystander.getId())).isNotNull()
+                .as("the bystander's session is untouched")
+                .extracting(info -> info.isExpired()).isEqualTo(false);
+    }
+
+    /**
+     * The revoke re-delivered after the sessions have already timed out is
+     * a clean no-op — the publication registry's resubmission must never
+     * surface as an error (the disable no-op's own reasoning, on the
+     * assignment carrier).
+     */
+    @Test
+    void roleAssignmentRevocationWithNoSessionsIsANoOp() {
+        invalidator.onUserRoleAssignmentRevoked(
+                new UserRoleAssignmentRevoked(UUID.randomUUID(), "nobody@example.com", "ADMIN"));
+
+        assertThat(registry.getAllSessions("nobody@example.com", false)).isEmpty();
     }
 
     /**

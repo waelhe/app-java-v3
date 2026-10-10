@@ -3,6 +3,7 @@ package com.marketplace.shared.security;
 import java.util.List;
 
 import com.marketplace.shared.api.AccountStatusChanged;
+import com.marketplace.shared.api.UserRoleAssignmentRevoked;
 import com.marketplace.shared.api.UserRoleChanged;
 
 import org.slf4j.Logger;
@@ -135,6 +136,23 @@ public class AccountStatusSessionInvalidator {
     public void onUserRoleChanged(UserRoleChanged event) {
         expireAllSessions(event.username(),
                 "role changed: " + event.previousRole() + " -> " + event.newRole());
+    }
+
+    /**
+     * Phase 1 (the unified plan §10, D-03) — the multi-role REVOKE leg:
+     * a withdrawn assignment ({@code user_role_assignments}, V182) is
+     * fail-OPEN inside every live session whose cached authorities still
+     * hold the role (the V183 effective-authorities view repairs the
+     * source only at the NEXT login/token mint), so the sessions are
+     * expired now. The GRANT leg publishes nothing by design — it is
+     * fail-CLOSED for live sessions (the new authority is simply absent
+     * until the next login), the documented asymmetry this consumer's
+     * {@code AccountStatusChanged} leg already rides.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onUserRoleAssignmentRevoked(UserRoleAssignmentRevoked event) {
+        expireAllSessions(event.username(), "role assignment revoked: " + event.role());
     }
 
     private void expireAllSessions(String username, String reason) {

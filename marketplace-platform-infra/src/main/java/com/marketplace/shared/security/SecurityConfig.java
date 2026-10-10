@@ -728,7 +728,20 @@ public class SecurityConfig {
     JdbcUserDetailsManager userDetailsService(DataSource dataSource) {
         JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
         manager.setUsersByUsernameQuery("select username, password, enabled from auth_users where username = ?");
-        manager.setAuthoritiesByUsernameQuery("select username, authority from auth_authorities where username = ?");
+        // Phase 1 (the unified plan §10, D-03): the effective authority
+        // source. The mapping's ONE-parameter contract is untouched —
+        // what changed is the data layer behind it: V183's
+        // auth_effective_authorities view unions the login-side
+        // auth_authorities rows (the primary role's S2/N4/N6
+        // projection) with the account's ACTIVE multi-role assignments
+        // (V182's user_role_assignments). The union is the old behavior
+        // plus exactly the granted assignments — the migration's own
+        // header proves the no-privilege-expansion invariant — and a
+        // revoked assignment drops out at the next login/token mint.
+        // Same store, same shape, same single placeholder: no parallel
+        // mechanism, the documented seam widened at its data source.
+        manager.setAuthoritiesByUsernameQuery(
+                "select username, authority from auth_effective_authorities where username = ?");
         manager.setCreateUserSql("insert into auth_users (username, password, enabled) values (?, ?, ?)");
         manager.setUpdateUserSql("update auth_users set password = ?, enabled = ? where username = ?");
         manager.setDeleteUserSql("delete from auth_users where username = ?");
