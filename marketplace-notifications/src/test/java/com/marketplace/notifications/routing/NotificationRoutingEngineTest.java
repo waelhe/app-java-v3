@@ -139,7 +139,11 @@ class NotificationRoutingEngineTest {
         RoutingDecision decision = engine(Optional.empty()).route(valid);
 
         assertThat(decision.inbox()).isTrue();
-        assertThat(decision.suppressions()).isEmpty();
+        // The D-10 provider seam is still absent in this setup — the push
+        // leg's honest CHANNEL_NOT_CONFIGURED is the one suppression; the
+        // inbox row (the always-on channel) routed normally.
+        assertThat(decision.suppressions())
+                .containsExactly(RoutingSuppression.CHANNEL_NOT_CONFIGURED);
     }
 
     @Test
@@ -202,6 +206,11 @@ class NotificationRoutingEngineTest {
                 NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
         when(topicPreferences.findChannelOverride(RECIPIENT, NotificationTopic.OFFICIAL,
                 NotificationChannel.WS)).thenReturn(Optional.of(false));
+        // The geo gate passes first (the opt-in subscription admits the
+        // recipient) — this test exercises the CHANNEL hierarchy, not the
+        // geographic one.
+        when(geoSubscriptions.existsByUserIdAndLocationId(RECIPIENT, NEIGHBORHOOD))
+                .thenReturn(true);
 
         RoutingDecision decision = engine(Optional.empty()).route(scopedPolicy());
 
@@ -224,6 +233,10 @@ class NotificationRoutingEngineTest {
                 NotificationChannel.EMAIL)).thenReturn(Optional.of(false));
         when(typePreferences.findChannelOverride(RECIPIENT, NotificationType.URGENT_ALERT,
                 NotificationChannel.WS)).thenReturn(Optional.of(true));
+        // The geo gate passes (the opt-in subscription) — the hierarchy
+        // under test here is the type level's, not the geography's.
+        when(geoSubscriptions.existsByUserIdAndLocationId(RECIPIENT, NEIGHBORHOOD))
+                .thenReturn(true);
 
         RoutingDecision decision = engine(Optional.empty()).route(scopedPolicy());
 

@@ -38,7 +38,12 @@ class NotificationDisputeEventListenerTest {
     static class TestConfig {
         @Bean
         NotificationEventListener notificationEventListener(NotificationService notificationService) {
-            return new NotificationEventListener(notificationService);
+            // The dispute leg of the listener never touches the urgent-alert
+            // router (the CMP-46 routing path is its own listener method) —
+            // a mock satisfies the constructor without wiring its seven
+            // collaborators into this slice.
+            return new NotificationEventListener(notificationService,
+                    org.mockito.Mockito.mock(com.marketplace.notifications.routing.UrgentAlertNotificationRouter.class));
         }
     }
 
