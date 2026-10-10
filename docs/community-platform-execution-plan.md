@@ -163,7 +163,7 @@
 | المراسلة | marketplace-messaging + WebSocket | مسارا دردشة — لا يُنشأ نظام موازٍ |
 | الإشعارات | DB/email/WebSocket + تفضيلات | قنوات حية — push الجوال وتوجيه الموضوع/الجغرافيا غير مثبتين |
 | اللوحة | marketplace-console + إعدادات | أعلام وميزات جغرافية — ليست سجل تخطيط ديناميكي |
-| **AI** | **مدمج ومنشور من #522؛ وتوحيد البحث #524 مدمج في baseline**: `MarketplaceSearchTools` يستخدم الآن `MarketplaceSearchPort` عبر `MarketplaceSearchAdapter` للوصول إلى orchestration البحث الموحد. ما لا يثبته ذلك: تغطية AI لكل المجالات؛ `AiSearchIntent` لا يزال متمحورًا حول الكتالوج/القوائم (`SEARCH/LISTING_DETAILS/GENERAL` ومرشحات القوائم)، بينما JevModelRouter يختار FAST/CAPABLE لمزودي Google/DeepSeek فقط ويحتاج القياس الموثق المحدد في §9.3 |
+| **AI** | **مدمج ومنشور من #522؛ وتوحيد البحث #524 مدمج في baseline**: `MarketplaceSearchTools` يستخدم الآن `MarketplaceSearchPort` عبر `MarketplaceSearchAdapter` للوصول إلى orchestration البحث الموحد. | ما لا يثبته ذلك: تغطية AI لكل المجالات؛ `AiSearchIntent` لا يزال متمحورًا حول الكتالوج/القوائم (`SEARCH/LISTING_DETAILS/GENERAL` ومرشحات القوائم)، بينما JevModelRouter يختار FAST/CAPABLE لمزودي Google/DeepSeek فقط ويحتاج القياس الموثق المحدد في §9.3 |
 | المؤسسات | مصدر + V154 — **غير موصولة** | كود موجود لا يثبت التحامه بالتطبيق runnable |
 
 ### §2.4 الوضع الحي للـPRs والقنوات (لقطة مرتبطة بـbaseline `fdb6295a` في 2026-10-10)
