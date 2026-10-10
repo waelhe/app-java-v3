@@ -3,7 +3,7 @@
 **الإصدار:** 1.0 — 2026-10-10  
 **الغرض:** تعريف عميل الجوال كاملًا من قرار المنصة إلى موجات التنفيذ: معمارية الطبقات، توليد طبقة الـAPI من عقد OpenAPI، تطبيق نظام التصميم (UX doc)، الإشعارات، الإصدار والتحديث، الاختبار وCI — جاهزة للمطورين ووكلاء الذكاء الاصطناعي.  
 **واقع البداية (مقيس 2026-10-10):** **لا عميل موجود اليوم** — المستودع باك-إند Java خالص (26 وحدة) بعقد OpenAPI حي (107 مسارات مقيسة من الإنتاج) ومصادقة OIDC/PKCE عبر `marketplace-edge`. العميل greenfield يستهلك العقد القائم — لا يُنزع منه شيء.  
-**علاقة السلطة:** [تصميم UX](community-platform-ux-design.md) يملك الشكل والحالات (CMP-01..43)؛ [مواصفة الرحلات](community-platform-user-journeys.md) تملك السلوك ومعايير القبول؛ [خطة الباك-إند](community-platform-backend-execution.md) تملك العقود والموجات C-x — عميل الجوال يواكبها بموجات M-x. المرجع التقني الحاكم يبقى [خطة المطابقة الرسمية](official-compliance-plan.md).  
+**علاقة السلطة:** [تصميم UX](community-platform-ux-design.md) يملك الشكل والحالات (CMP-01..46)؛ [مواصفة الرحلات](community-platform-user-journeys.md) تملك السلوك ومعايير القبول؛ [خطة الباك-إند](community-platform-backend-execution.md) تملك العقود والموجات C-x — عميل الجوال يواكبها بموجات M-x. المرجع التقني الحاكم يبقى [خطة المطابقة الرسمية](official-compliance-plan.md).  
 **مرجع العمل المنتجّي:** [نظام إدارة المنتج والتسليم](community-platform-product-management.md) يحدد قرار المالك وبوابات DoR/DoD؛ سجل D الوحيد في الخطة الموحدة. **حالة الوثيقة:** خطة مقترحة لاعتماد المالك؛ قرار المنصة (D-17) بابها الأول.
 
 ---
@@ -42,7 +42,7 @@ client/                          (مستودع نفسه، دليل جديد بج
 │   ├── features/<journey>/      (feature-first: onboarding/, feed/, search/, business/,
 │   │                            market/, official/, conversations/, verification/,
 │   │                            moderation/, settings/, data-rights/, knowledge/)
-│   └── shared/widgets/          (CMP-01..43 — كل مكون widget + golden test)
+│   └── shared/widgets/          (CMP-01..46 — كل مكون widget + golden test)
 ├── integration_test/            (رحلات JT حرجة ضد خادم CI)
 └── .github/workflows/client.yml (analyze + test + golden + build — نفس بوابات الدمج)
 ```
