@@ -35,12 +35,15 @@ CREATE TABLE notification_deliveries (
     id           UUID PRIMARY KEY,
     event_id     UUID NOT NULL,
     recipient_id UUID NOT NULL,
-    channel      VARCHAR(20) NOT NULL
-                 CONSTRAINT notification_deliveries_channel_check
-                 CHECK (channel IN ('EMAIL', 'WS', 'PUSH')) NOT VALID,
+    channel      VARCHAR(20) NOT NULL,
     delivered_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- The channel vocabulary's membership guard, in the V44/V179 locking
+-- shape verbatim (the CI-measured lesson: NOT VALID lives on ALTER TABLE
+-- ADD CONSTRAINT only — an inline CREATE TABLE CHECK cannot say it).
+ALTER TABLE notification_deliveries ADD CONSTRAINT notification_deliveries_channel_check
+    CHECK (channel IN ('EMAIL', 'WS', 'PUSH')) NOT VALID;
 ALTER TABLE notification_deliveries VALIDATE CONSTRAINT notification_deliveries_channel_check;
 
 -- One delivery per (source event, recipient, channel) EVER — the §8.1

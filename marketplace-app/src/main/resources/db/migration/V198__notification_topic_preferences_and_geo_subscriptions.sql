@@ -58,9 +58,7 @@ CREATE TABLE notification_topic_preferences (
     id         UUID PRIMARY KEY,
     user_id    UUID NOT NULL,
     topic      VARCHAR(30) NOT NULL,
-    channel    VARCHAR(20) NOT NULL
-               CONSTRAINT notification_topic_preferences_channel_check
-               CHECK (channel IN ('EMAIL', 'WS')) NOT VALID,
+    channel    VARCHAR(20) NOT NULL,
     enabled    BOOLEAN NOT NULL DEFAULT TRUE,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     version    BIGINT NOT NULL DEFAULT 0,
@@ -72,6 +70,13 @@ CREATE TABLE notification_topic_preferences (
         UNIQUE (user_id, topic, channel)
 );
 
+-- The channel vocabulary's membership guard, in the V44/V179 locking
+-- shape verbatim (the CI-measured lesson: PostgreSQL's grammar carries
+-- NOT VALID on ALTER TABLE ADD CONSTRAINT only — an inline CHECK in
+-- CREATE TABLE cannot say it, and the born-empty freedom never justified
+-- an invalid statement).
+ALTER TABLE notification_topic_preferences ADD CONSTRAINT notification_topic_preferences_channel_check
+    CHECK (channel IN ('EMAIL', 'WS')) NOT VALID;
 ALTER TABLE notification_topic_preferences VALIDATE CONSTRAINT notification_topic_preferences_channel_check;
 
 ALTER TABLE notification_topic_preferences
