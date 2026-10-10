@@ -60,7 +60,7 @@ client/                          (مستودع نفسه، دليل جديد بج
 - `Directionality.rtl` في جذر التطبيق؛ LTR وضع معكوس كامل للاختبار (golden test لكل مكون بالاتجاهين — UX doc §12.3).
 - **CMP-29** `DirectionSafeText`: عزل bidi للنص المختلط (LRI/RLI/FSI) في كل عرض نصي من مصدر خارجي — منع تكسر أسماء الأعمال اللاتينية والأرقام في جمل عربية.
 - الخط: D-22 (توصية IBM Plex Sans Arabic) يُثبت في `ThemeData` من client/design/tokens.json — مع بدائل سقوط عربية محددة.
-- الأرقام الغربية (D-24) في كل البيانات؛ التقويم ميلادي + خيار هجري عبر `intl` ‏(pub.dev/packages/intl — حزمة Dart الرسمية) بصيغة ar-SA-u-ca-islamic.
+- الأرقام الغربية (D-24) في البيانات؛ التنسيق الميلادي عبر إصدار مثبت من `intl` (pub.dev/packages/intl). إذا اعتمد D-24 عرضًا هجريًا، فلا يُفترض أن `intl` أو locale `ar-SA-u-ca-islamic` يحوّل التاريخ إلى التقويم الهجري: يلزم اختيار مكتبة تحويل هجري متوافقة أو تحويل صريح مدقق قبل التنسيق، واختبار التحويل منفصلًا عن اختبار عرض التاريخ.
 - الإدخال: `TextDirection` يتبع أول حرف مع محاذاة RTL — سلوك موحد واحد عبر كل الحقول (UX doc §6.2.3).
 
 ## 4. مكتبة الويدجات = ترجمة CMP
@@ -95,7 +95,7 @@ client/                          (مستودع نفسه، دليل جديد بج
 
 ## 6. الإشعارات والاتصال الحي
 
-- **Push عبر منظومة الخادم القائمة فقط — لا قناة ثانية** (رحلات JT-10 §12.1.8): FCM (firebase.google.com/docs/cloud-messaging) وAPNs (developer.apple.com/documentation/usernotifications) بعد قرار المزود D-10؛ الرموز تسجل في `notifications` القائم.
+- **Push عبر منظومة الخادم القائمة فقط — لا قناة ثانية** (رحلات JT-10 §12.1.8): FCM (firebase.google.com/docs/cloud-messaging) وAPNs (developer.apple.com/documentation/usernotifications) بعد قرار المزود D-10؛ يجب إضافة واختبار API لتسجيل رموز الأجهزة وإزالتها في `notifications` قبل تكامل push في موجة M-6. هذه القدرة غير مثبتة كقدرة قائمة في baseline الحالي.
 - **WebSocket للمحادثات/الإشعارات الحية** وفق عقد القنوات (رحلات §13.3) — قطع الاتصال حالة معلنة لا صمت.
 - شاشة القفل: مقتضب محايد وفق سياسة كتالوج رحلات §23؛ quiet hours وdigest خلفية خادمية (D-26).
 
