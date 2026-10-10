@@ -78,7 +78,7 @@
 
 ## 5. البنية النمطية — 22 وحدة تحت Modulith
 
-**القسمة (من `pom.xml:21-43`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **22 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai, institutions, jobs, knowledge, console.
+**القسمة (من `pom.xml:21-50`):** وحدة تجميع `marketplace-app` (جذر التركيب: ymls، الترحيلات، `main()`) + بنية تحتية مشتركة `marketplace-platform-infra` (ثماني حزم: `cache/config/email/jpa/observability/resilience/security/web`) + `marketplace-shared` (واجهات SPI + الأحداث المشتركة + الاستثناءات) + **23 وحدة نطاق**: identity, catalog, booking, payments, pricing, reviews, messaging, search, provider, availability, notifications, ledger, disputes, media, geo, realestate, community, ai, jobs, knowledge, console, institutions, orders.
 
 **آلية الحدود:** كل وحدة نطاق تحمل `package-info.java` يعلن `@NamedInterface` + `@ApplicationModule(allowedDependencies=...)`. نموذج حرفي (booking):
 
