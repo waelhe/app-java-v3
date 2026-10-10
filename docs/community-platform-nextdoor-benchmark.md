@@ -189,7 +189,7 @@
 - Local Faves، 2 سبتمبر 2026: https://blog.nextdoor.com/small-business-improvements
 - شراكة Waze وتنبيهات الطريق، 10 نوفمبر 2025: https://about.nextdoor.com/press-releases/nextdoor-and-waze-partner-to-bring-real-time-traffic-and-road-alerts-to-neighbors
 - شرح الجهات العامة ومناطق الإرسال: https://business.nextdoor.com/en-us/public-agency/resources/engagement-guides/nextdoor-for-public-agencies-engagement-plan-for-emergency-managers
-- تقرير الشفافية حول التحقق والسلوك: https://about.nextdoor.com/wp-content/uploads/2024/12/Nextdoor-Transparency-Report-2023-2022-Reflection-1.pdf
+- تقرير الشفافية لـNextdoor لعام 2025، منشور 9 مارس 2026: https://about.nextdoor.com/press-releases/nextdoor-publishes-2025-transparency-report
 - دليل الانضمام/الحي: https://nextdoor.com/find-neighborhood/
 
 ### مصدر هندسي ثانوي
