@@ -48,8 +48,15 @@ class ProviderListingsAdapterTest {
                 .set(field(ProviderListing::getCurrency), "SAR")
                 .create();
 
+        // The mock answers the metadata the real repository would: the
+        // REQUEST's own shape (page 0, size 20, one total element) — the
+        // documented three-argument PageImpl contract. The one-argument
+        // form defaults its pageable to PageRequest.of(0, content.size())
+        // (size 1 here), so the page carried a synthetic size the request
+        // never asked for and the pageSize assertion failed against the
+        // mock's own default — the CI-measured failure on 4589f116.
         when(repository.findByProviderIdInAndStatus(any(), eq(ListingStatus.ACTIVE), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(listing)));
+                .thenReturn(new PageImpl<>(List.of(listing), PageRequest.of(0, 20), 1));
 
         PagedResponse<ProviderListingSummary> response = adapter.findActiveByProviders(
                 Set.of(listing.getProviderId()), new PagedRequest(0, 20, List.of()));
