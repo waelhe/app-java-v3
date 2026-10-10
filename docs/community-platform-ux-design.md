@@ -61,7 +61,7 @@
 | `color.{semantic}` | جدول §1.2 + محايد 9 درجات دافئة |
 | `motion.duration` | micro 120ms · transition 200ms · sheet 250ms |
 | `motion.easing` | standard (decelerate) · emphasized (spatial) |
-| `motion.reduce` | احترام `prefers-reduced-motion` نظاميًا — إلزامي (WCAG 2.3.3 هدفنا AA: بدائل بلا حركة) |
+| `motion.reduce` | احترام `prefers-reduced-motion` نظاميًا. هذا مطلب تصميم داخلي؛ WCAG 2.3.3 معيار AAA اختياري، وليس شرطًا ضمن هدف AA |
 | `elevation` | 0 / 1 / 2 |
 | `z-layer` | base / nav / sheet / dialog / toast |
 
