@@ -3,6 +3,8 @@ package com.marketplace.disputes;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolvedEvent;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -117,7 +119,8 @@ public class DisputeService {
             dispute.recordRefund(outcome.paymentId(), outcome.refundedAmountCents());
             refundedAmountCents = outcome.refundedAmountCents();
         }
-        eventPublisher.publishEvent(new DisputeResolvedEvent(id, dispute.getBookingId(), resolution, refundedAmountCents));
+        eventPublisher.publishEvent(new DisputeResolvedEvent(id, dispute.getBookingId(),
+                dispute.getOpenedBy(), resolution.name(), refundedAmountCents));
         return dispute;
     }
 }
