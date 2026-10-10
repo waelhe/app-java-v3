@@ -1,6 +1,14 @@
-# API Error Contract (RFC 7807)
+# API Error Contract (RFC 7807 / RFC 9457)
 
 This document defines the canonical error payload for Marketplace REST APIs.
+
+> **Spec note (A-03, measured 2026-10-07):** the Spring Framework's
+> governing reference (`docs.spring.io/spring-framework/reference/web/webmvc/
+> mvc-ann-rest-exceptions.html`) now cites the specification as **RFC 9457**
+> ("Problem Details for HTTP APIs", which obsoletes RFC 7807). The wire
+> format is unchanged between the two revisions — the fields below are
+> exactly the same — so every "RFC 7807" reference in this contract reads
+> as the same payload under the current spec name.
 
 ## Media type
 
@@ -77,9 +85,39 @@ Example:
 
 ## Implementation notes
 
-- `spring.mvc.problemdetails.enabled=true` is enabled in application configuration.
-- `ResourceNotFoundException` implements Spring `ErrorResponse` and provides a prebuilt RFC 7807 body.
-- `GlobalExceptionHandler` enriches `ProblemDetail` with `type`, `instance`, and validation `fieldErrors`.
+- `spring.mvc.problemdetails.enabled=true` is enabled in application
+  configuration — the official automatic: Spring Boot autoconfigures its own
+  `ResponseEntityExceptionHandler` advice (measured `@Order(0)`) that renders
+  every built-in Spring MVC exception (405, 415, 406, unreadable body, …) with
+  the Framework's own RFC 9457 body.
+- `GlobalExceptionHandler` is `@Order(Ordered.HIGHEST_PRECEDENCE)` — ordered
+  **ahead** of that automatic handler, exactly as the official reference
+  prescribes for taking a specific built-in over ("You'll need to ensure your
+  handler is ordered ahead of the one configured by Spring Boot whose order is
+  0."). It takes over precisely the two built-ins whose documented house
+  contract is richer than the automatic body: `MethodArgumentNotValidException`
+  (the `fieldErrors` extension below) and `NoResourceFoundException` (the
+  taxonomy 404 with `errorCode`/`category`/`instance`), plus every
+  domain/security/validation/resilience handler.
+- `GlobalErrorFallbackHandler` is `@Order(Ordered.LOWEST_PRECEDENCE)` — the
+  uncaught-exception safety net (the 500 INTERNAL taxonomy body) as its own
+  LAST-ordered advice, behind the automatic handler. Measured necessity: a
+  catch-all inside the ahead-ordered advice would swallow every built-in
+  before the automatic handler sees it (a 405 answered 500 in the measured
+  regression) — the official reference prescribes the takeover advice for
+  *specific* built-ins only, so the composition is three layers in resolution
+  order: the specific house advice, Boot's automatic order-0 handler, then the
+  fallback.
+- `ApiProblemDetailException` (the `ResourceNotFoundException` family) extends
+  the Framework's own `ErrorResponseException` — the official base the
+  reference defines as "basic ErrorResponse implementation that others can use
+  as a convenient base class" — carrying a prebuilt RFC 9457 body with the
+  taxonomy `type`/`errorCode`/`category`.
+- `GlobalExceptionHandler` enriches `ProblemDetail` with `type`, `instance`,
+  and validation `fieldErrors`.
+- The unified contract tests pinning all three layers of the composition live
+  in `BookingErrorContractWebMvcTest` (the 404/403/400-`fieldErrors` house
+  side and the 405 automatic side).
 
 
 ## REST (RFC 7807) vs GraphQL error envelope

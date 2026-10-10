@@ -48,6 +48,12 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-reviews</artifactId>
         </dependency>
+        <!-- A-11 (compliance plan wave C: C.1) — the orders module joins the
+             aggregating application. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-orders</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-messaging</artifactId>
@@ -201,7 +207,17 @@
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-actuator</artifactId>
         </dependency>
-        <!-- spring-modulith-observability removed in Modulith 2.1 — functionality subsumed by Micrometer Observation -->
+        <!-- spring-modulith-observability-core is NOT removed in 2.1.1 (measured:
+             it exists on Maven Central, HTTP 200, and the 2.1.1 "Production-ready
+             Features" reference documents it) — the earlier "removed in Modulith
+             2.1" note below this line was factually wrong. It is deliberately NOT
+             declared here: D.1's incomplete-publication monitoring rides the
+             health contributor + the modulith actuator (both official channels,
+             both present), and the observability artifact's module-API span
+             aspect + module.events.published counters overlap the house's own
+             Micrometer Observation discipline (@Observed pins guarded by
+             ObservationCoverageFilesTest) — adding it is an owner decision, not
+             a per-unit one. -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-core</artifactId>
@@ -213,6 +229,30 @@
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-events-jpa</artifactId>
+        </dependency>
+        <!-- D.3 (compliance plan wave D — «استحداث الأحداث خارجياً عند الحاجة»,
+             Modulith events.html "Externalizing Events"): the official Kafka
+             externalization artifact (runtime scope — the documented recipe;
+             version from the Modulith BOM). The measured activation facts
+             (spring-modulith-events-kafka 2.1.1 bytecode): the transport's
+             auto-configuration is @ConditionalOnClass(KafkaTemplate) +
+             @ConditionalOnProperty(spring.modulith.events.externalization.enabled,
+             havingValue="true", matchIfMissing=true) — and the SELECTION gate
+             is the @Externalized annotation itself: only event types carrying
+             it route to the broker. Zero production event types are annotated
+             today (no external consumer exists — the item's own "عند الحاجة"
+             condition), so the capability rides fully inert until the owner
+             annotates the externally-consumed events and provisions a broker
+             (spring.kafka.*): activation is then configuration, not code —
+             the platform's "change from the console, not the code" posture.
+             The registry guards broker delivery (events.html: publications
+             resubmittable through the registry APIs — the A-13 machinery),
+             and the end-to-end official path is proven by
+             EventExternalizationKafkaIntegrationTest (CI judge). -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-events-kafka</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Exception #7: springdoc-openapi — community OpenAPI auto-generation + Swagger UI -->
@@ -273,6 +313,25 @@
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- D.3: the Kafka container for the externalization IT — the
+             Testcontainers 2.x kafka module (org.testcontainers.kafka.KafkaContainer,
+             Apache Kafka image; version managed by the Boot BOM's testcontainers
+             line, same as the postgresql module above). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- A-04: GreenMail — the in-JVM SMTP receiver the account-mail journey ITs
+             read the real outbound mails from (version: root exception #18). The
+             JUnit 5 extension starts the server on GreenMail's default port 3025,
+             which the test profile's spring.mail binding already points at. -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>${greenmail.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Exception #10: spring-security-test — @WithMockUser for integration tests -->
         <dependency>
             <groupId>org.springframework.security</groupId>
@@ -309,11 +368,12 @@
             <artifactId>instancio-junit</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- WebTestClient for GraphQlErrorIntegrationTest -->
+        <!-- Official Spring AI streaming requires the Reactive stack. With WebMVC
+             present, Spring Boot keeps the servlet web application while WebFlux
+             supplies Reactor/WebClient and reactive server-response support. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

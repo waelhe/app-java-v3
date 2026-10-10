@@ -105,11 +105,12 @@ L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero doma
 | 19 | `marketplace-community` | L1 | Domain support | Neighborhoods, posts, moderation |
 | 20 | `marketplace-ai` | L1 | Domain support | Provider-agnostic AI chat gateway |
 | 21 | `marketplace-app` | L4 | Composition | @SpringBootApplication, Admin REST |
-| 22 | `marketplace-edge` | L5 | Edge BFF | Spring Cloud Gateway Server MVC, TokenRelay, shared sessions |
-| 23 | `marketplace-jobs` | L1 | Domain core | Employment vertical: job listings + applications (B-12, C.2) |
-| 24 | `marketplace-knowledge` | L1 | Domain support | Neighborhood knowledge base: entries, revision, indexing events (B-15, C.9) |
-| 25 | `marketplace-console` | L1 | Domain support | Operator console: remote configs, feature flags, geo gates, metrics (B-16, C.10) |
-| 26 | `marketplace-institutions` | L1 | Domain support | Verified institution registry, review lifecycle, JSON-LD (B-13, C.3) |
+| 22 | `marketplace-orders` | L1 | Domain core | A-11: cart → order → fulfillment state machine (event-driven, Modulith) |
+| 23 | `marketplace-edge` | L5 | Edge BFF | Spring Cloud Gateway Server MVC, TokenRelay, shared sessions |
+| 24 | `marketplace-jobs` | L1 | Domain core | Employment vertical: job listings + applications (B-12, C.2) |
+| 25 | `marketplace-knowledge` | L1 | Domain support | Neighborhood knowledge base: entries, revision, indexing events (B-15, C.9) |
+| 26 | `marketplace-console` | L1 | Domain support | Operator console: remote configs, feature flags, geo gates, metrics (B-16, C.10) |
+| 27 | `marketplace-institutions` | L1 | Domain support | Verified institution registry, review lifecycle, JSON-LD (B-13, C.3) |
 
 ### Spring Modulith Boundaries
 

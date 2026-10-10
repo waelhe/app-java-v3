@@ -19,3 +19,16 @@ All REST errors include:
 - `errorCode`: stable machine-readable code.
 - `category`: error taxonomy category.
 - `userMessage` (optional): user-facing fallback message if distinct from `detail`.
+
+### The documented exception: framework-level statuses
+
+The framework's own protocol statuses — 405 Method Not Allowed, 406 Not
+Acceptable, 415 Unsupported Media Type — answer with the OFFICIAL automatic
+`ProblemDetail` body (`spring.mvc.problemdetails.enabled`, the framework
+reference's "automatic before the manual" stance): RFC 9457 fields, no house
+`errorCode`/`category` extensions. These statuses carry no house taxonomy
+row (none appears in the table above) — the contract's extensions are the
+HOUSE error taxonomy's own surface; protocol-level rejections are the
+framework's. `BookingErrorContractWebMvcTest.methodNotSupportedOnBookingPath_
+answers405ProblemDetailByTheAutomaticHandler_a03` pins this documented shape
+(the assertion set includes the absence of the house extensions).

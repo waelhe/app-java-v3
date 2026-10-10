@@ -60,6 +60,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.authentication.logout.HeaderWriterLogoutHandler;
 import org.springframework.security.web.header.writers.ClearSiteDataHeaderWriter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
@@ -142,8 +143,15 @@ public class SecurityConfig {
                 // same bound property and the same SpringSessionBackedSessionRegistry
                 // bean: getAllSessions/principal indexing/expiry all live in the
                 // Spring Session store, one source of truth for both chains.
+                // A-06 (official-compliance plan §6 wave A — A.4) completes the
+                // documented concurrency pair with maxSessionsPreventsLogin from
+                // the same bound property: inert on THIS chain's login path (SAS
+                // owns the endpoint's strategy, per the bytecode note above) but
+                // kept symmetric so the policy stays one configuration, not two.
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maxSessions())
+                        .maxSessionsPreventsLogin(
+                                properties.security().session().maxSessionsPreventsLogin())
                         .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
@@ -178,7 +186,24 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/actuator/**", "/graphql",
                         "/v3/api-docs/**", "/ws/**"))
                 .cors(Customizer.withDefaults())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // A-05's measured root (2026-10-09, the naming cycle): sessionCreationPolicy(STATELESS)
+                // ALONE does not disarm session management on this chain. The documented wiring
+                // (spring-security-config 7.1.1, SessionManagementConfigurer) adds the policy to
+                // propertiesThatRequireImplicitAuthentication, so the implicit pair — a
+                // SessionManagementFilter carrying the DEFAULT ChangeSessionIdAuthenticationStrategy —
+                // is armed even for STATELESS (and requireExplicitAuthenticationStrategy(true), the
+                // other documented opt-out, is by the configurer's own validation mutually exclusive
+                // with sessionCreationPolicy). The measured consequence: a stateless resource-server
+                // request that presents a live session cookie alongside the Bearer token rotates the
+                // session id (RedisSession rename + Set-Cookie + principal-index swap) — session
+                // state mutated on the API surface, and the login gate's cookie silently invalidated
+                // for the caller's retry. The documented no-op for exactly this posture is
+                // NullAuthenticatedSessionStrategy (spring-security-web, since 3.0): the strategy
+                // does nothing, the stateless chain stays truly sessionless, and the form-login /
+                // authorization-server chains keep their own documented fixation protection untouched.
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                        .sessionAuthenticationStrategy(new NullAuthenticatedSessionStrategy()))
                 .authorizeHttpRequests(auth -> auth
                         // S4/N3 root fix (comprehensive repair plan §10/2.1): the
                         // STOMP handshake joins THIS stateless resource-server chain.
@@ -275,6 +300,14 @@ public class SecurityConfig {
                         // only the anonymous read the click-from-a-review
                         // needs is public.
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*/public").permitAll()
+                        // A-18 (compliance plan C.12 — the §7/2 moment): the
+                        // public platform-release read, the FIRST-SCREEN /
+                        // bootstrap-settings family. The client calls it at
+                        // boot by definition BEFORE any authenticated session
+                        // exists (the sitemap/robots and public-catalog
+                        // precedent family) — one precise GET line, the
+                        // admin publication surface keeps its own chain rule.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/releases/**").permitAll()
                         // B-12 (compliance plan C.2 — CodeRabbit round-1
                         // root adoption): the jobs board and detail are the
                         // documented PUBLIC surfaces ("The public jobs
@@ -319,6 +352,25 @@ public class SecurityConfig {
                         // authenticated; the password lifecycle items of the
                         // gate will each carry their own line when they open.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                        // A-04 (official-compliance plan §6 wave A — A.1/A.2):
+                        // the four token-redemption surfaces join the register
+                        // precedent by the same measured rule — every one of
+                        // them PRECEDES an authenticated session by
+                        // definition (the reset requester forgot the
+                        // credential a session would need; the unverified
+                        // account's holder is locked out by the hold), and
+                        // the request's proof is NOT a session but the
+                        // single-use, time-limited V112 token the mail leg
+                        // delivered out of band. Enumeration-safe 202s answer
+                        // the two "send me the mail" surfaces; the
+                        // redemption pairs answer 204 or the honest 400 of
+                        // the single-use wall. Nothing here trusts the
+                        // caller beyond the token each redemption presents.
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/auth/password-reset/request",
+                                "/api/v1/auth/password-reset/complete",
+                                "/api/v1/auth/email-verification/resend",
+                                "/api/v1/auth/email-verification/complete").permitAll()
                         // L34 (realestate systems plan §5): the public lead
                         // submission — the plan's "بلا مصادقة إلزامية" (the
                         // guest fills name and phone). A public POST is the
@@ -407,8 +459,23 @@ public class SecurityConfig {
                 .logout((logout) -> logout
                         .addLogoutHandler(new HeaderWriterLogoutHandler(
                                 new ClearSiteDataHeaderWriter(ClearSiteDataHeaderWriter.Directive.COOKIES))))
+                // A-06 (official-compliance plan §6 wave A — A.4): the
+                // multi-device policy's login-time leg — THE surface where the
+                // documented overflow decision lands (the form-login POST on
+                // this chain). maximumSessions + sessionRegistry are the R8-era
+                // wiring; maxSessionsPreventsLogin completes the documented pair
+                // (Spring Security Reference › Session Management: the
+                // maximumSessions/maxSessionsPreventsLogin samples): false (the
+                // bound default) expires the least-recent session on overflow so
+                // the newest login succeeds; true rejects the new login at the
+                // form-login failure URL. Session fixation protection needs no
+                // line here — changeSessionId is the documented default on
+                // Servlet 3.1+ containers, and the concurrent-sessions IT
+                // measures the id rotation across the login POST.
                 .sessionManagement(session -> session
                         .maximumSessions(properties.security().session().maxSessions())
+                        .maxSessionsPreventsLogin(
+                                properties.security().session().maxSessionsPreventsLogin())
                         .sessionRegistry(sessionRegistry))
                 .cors(Customizer.withDefaults());
 
@@ -597,8 +664,52 @@ public class SecurityConfig {
         objectMapper.writeValue(response.getOutputStream(), problemDetail);
     }
 
+    /**
+     * A-07 (official-compliance plan §6 wave A — A.6, «upgradeEncoding
+     * للترميز»): the password-upgrade leg of the login journey.
+     *
+     * <p><b>The official mechanism, as it stands in Spring Security 7.1.1</b>
+     * (bytecode-verified against the resolved artifacts this change): the
+     * {@code DaoAuthenticationProvider} the framework assembles from these
+     * beans ({@code InitializeUserDetailsBeanManagerConfigurer} — one
+     * {@code UserDetailsService} bean + the {@code PasswordEncoder} bean
+     * below) consults {@code PasswordEncoder#upgradeEncoding(String)} on
+     * every successful authentication. The {@code DelegatingPasswordEncoder}
+     * from {@link PasswordEncoderFactories} answers {@code true} whenever the
+     * stored {@code {id}} differs from the preferred one ({@code {bcrypt}})
+     * or the stored bcrypt strength is below the configured one — and the
+     * provider then re-encodes the presented raw password and persists it
+     * through {@code UserDetailsPasswordService#updatePassword}. The 6.x
+     * {@code setUpgradeEncoding(boolean)} switch no longer exists in 7.x: the
+     * decision is the encoder's own.
+     *
+     * <p><b>Why the declared return type is the concrete class.</b> The
+     * framework's assembly wires the password service through
+     * {@code getBeanProvider(UserDetailsPasswordService.class).getIfUnique()}
+     * — a lookup by the STATICALLY predicted bean type. Declared as
+     * {@code UserDetailsManager} (an interface that does not extend
+     * {@code UserDetailsPasswordService}) the lookup cannot match the
+     * factory-method prediction, and the upgrade path stays dormant behind
+     * the {@code NOOP} default. Declared as {@code JdbcUserDetailsManager}
+     * (which implements {@code UserDetailsPasswordService}), the provider is
+     * wired with the SAME manager instance the login chain already reads —
+     * no second bean, no custom {@code AuthenticationProvider} definition
+     * (the framework's own warning path when one exists).
+     *
+     * <p><b>The write switch.</b> {@code JdbcUserDetailsManager} carries the
+     * 7.x {@code enableUpdatePassword} flag (bytecode default: {@code false}
+     * — {@code updatePassword} then returns the user untouched without any
+     * SQL). Enabled here: {@code updatePassword} funnels into the SAME
+     * documented {@code updateUser} choreography the S2/N4/N6 role-change
+     * fix already trusts — the customized {@code updateUserSql} rewrites the
+     * {@code auth_users} row and the authority pair is replaced atomically,
+     * so an upgraded verifier lands exactly where every other login-row
+     * write lands. Login-time upgrade is the documented migration path for
+     * one-way hashes («Since there is no way to recover the plaintext, it is
+     * difficult to migrate the passwords» — the reference's own words).
+     */
     @Bean
-    UserDetailsManager userDetailsService(DataSource dataSource) {
+    JdbcUserDetailsManager userDetailsService(DataSource dataSource) {
         JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
         manager.setUsersByUsernameQuery("select username, password, enabled from auth_users where username = ?");
         manager.setAuthoritiesByUsernameQuery("select username, authority from auth_authorities where username = ?");
@@ -608,6 +719,7 @@ public class SecurityConfig {
         manager.setCreateAuthoritySql("insert into auth_authorities (username, authority) values (?, ?)");
         manager.setDeleteUserAuthoritiesSql("delete from auth_authorities where username = ?");
         manager.setUserExistsSql("select count(*) from auth_users where username = ?");
+        manager.setEnableUpdatePassword(true);
         return manager;
     }
 

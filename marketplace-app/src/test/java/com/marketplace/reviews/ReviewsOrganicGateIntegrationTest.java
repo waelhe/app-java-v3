@@ -18,7 +18,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -123,6 +126,26 @@ class ReviewsOrganicGateIntegrationTest {
     }
 
     /**
+     * A-07: the settings write surface carries the service-level
+     * {@code hasRole('ADMIN')} gate now — a fixture arrangement that flips a
+     * platform setting IS an operator action, so the helper declares the
+     * matching authority for the duration of the direct call and restores
+     * the ambient (class-level CONSUMER) principal afterwards.
+     */
+    private void runAsAdmin(Runnable action) {
+        SecurityContext previous = SecurityContextHolder.getContext();
+        SecurityContext admin = SecurityContextHolder.createEmptyContext();
+        admin.setAuthentication(new UsernamePasswordAuthenticationToken(
+                "w1-test-operator", null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        SecurityContextHolder.setContext(admin);
+        try {
+            action.run();
+        } finally {
+            SecurityContextHolder.setContext(previous);
+        }
+    }
+
+    /**
      * The booking path's FK-honest seed (the CI-measured first-run lesson:
      * this suite boots on REAL Flyway — `spring.flyway.enabled=true` — so
      * `reviews_booking_id_fkey` from V6 is live and a random booking id
@@ -144,14 +167,18 @@ class ReviewsOrganicGateIntegrationTest {
     }
 
     private void setMode(String mode) {
-        settingsService.update(SystemSettingKeys.REVIEWS_MODE,
-                JsonNodeFactory.instance.textNode(mode), null, "w1-test");
+        // A-07: the settings write surface carries the service-level ADMIN
+        // gate now — the fixture arrangement is an operator action, so the
+        // helper declares the matching authority for the direct call (the
+        // ambient CONSUMER principal is restored right after).
+        runAsAdmin(() -> settingsService.update(SystemSettingKeys.REVIEWS_MODE,
+                JsonNodeFactory.instance.textNode(mode), null, "w1-test"));
     }
 
     @AfterEach
     void restoreSeedAndCleanUp() {
-        settingsService.update(SystemSettingKeys.REVIEWS_MODE,
-                JsonNodeFactory.instance.textNode("VERIFIED_ONLY"), null, "w1-test");
+        runAsAdmin(() -> settingsService.update(SystemSettingKeys.REVIEWS_MODE,
+                JsonNodeFactory.instance.textNode("VERIFIED_ONLY"), null, "w1-test"));
         // CodeRabbit W1 r3 (adopted from the root): V87 declares
         // review_flags.review_id REFERENCES reviews(id) with no ON DELETE
         // CASCADE — a flag is evidence, not luggage — so the cleanup deletes

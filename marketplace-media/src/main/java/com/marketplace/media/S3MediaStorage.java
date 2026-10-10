@@ -1,5 +1,6 @@
 package com.marketplace.media;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -40,6 +41,24 @@ import java.time.Duration;
  * <p>Content-type pinning: the declared {@code contentType} is part of the
  * signed PutObjectRequest, so a client cannot upload bytes of a different type
  * under the issued URL without breaking the signature (the storage rejects it).
+ *
+ * <p><b>D.4 (compliance plan wave D) — the channel's isolation seam.</b> The
+ * four network operations ({@link #verifyUploaded}, {@link #deleteObject},
+ * {@link #getObject}, {@link #putObject}) are the ONLY storage-side surface,
+ * and every one of them rides through a Resilience4j {@link CircuitBreaker}
+ * created by the auto-configured {@code CircuitBreakerRegistry} (instance
+ * {@code mediaStorage}, application.yml). The official programmatic API
+ * (the Resilience4j reference's decorator style) is used instead of the
+ * annotation style because the precise failure window is the CHANNEL call
+ * itself: a DB or validation failure in a calling service method must never
+ * count toward the storage circuit, and this final, package-private class is
+ * not a proxy candidate anyway. A storage outage then behaves as: verify
+ * degrades to the honest "not verifiable" false (the existing anti-forgery
+ * contract), the thumbnail pipeline and best-effort deletes fail FAST with
+ * {@code CallNotPermittedException} instead of hanging on connect timeouts,
+ * and the half-open probes bound the recovery traffic. Presigning stays
+ * unwrapped by design — the R2/AWS doc evidence above: it is local
+ * computation, never a network call.
  */
 final class S3MediaStorage implements AutoCloseable {
 
@@ -48,12 +67,16 @@ final class S3MediaStorage implements AutoCloseable {
     private final String bucket;
     private final Duration presignTtl;
     private final SdkHttpClient httpClient;
+    private final CircuitBreaker circuitBreaker;
 
     /**
      * Production constructor — builds the presigner, the client and its JDK-based
      * HTTP implementation from bound properties. Used by {@code MediaConfig}.
+     *
+     * @param circuitBreaker the {@code mediaStorage} instance from the
+     *                       auto-configured registry (D.4 — see class javadoc)
      */
-    S3MediaStorage(MediaProperties.Storage storage, Duration presignTtl) {
+    S3MediaStorage(MediaProperties.Storage storage, Duration presignTtl, CircuitBreaker circuitBreaker) {
         this.httpClient = UrlConnectionHttpClient.builder().build();
         var credentials = StaticCredentialsProvider.create(
                 AwsBasicCredentials.create(storage.accessKey(), storage.secretKey()));
@@ -91,18 +114,22 @@ final class S3MediaStorage implements AutoCloseable {
                 .build();
         this.bucket = storage.bucket();
         this.presignTtl = presignTtl;
+        this.circuitBreaker = circuitBreaker;
     }
 
     /**
      * Test constructor — collaborators injected (real presigner against a fake
-     * endpoint still works offline; a mocked client for HeadObject tests).
+     * endpoint still works offline; a mocked client for HeadObject tests; the
+     * breaker rides from the test's own registry).
      */
-    S3MediaStorage(S3Presigner presigner, S3Client client, String bucket, Duration presignTtl) {
+    S3MediaStorage(S3Presigner presigner, S3Client client, String bucket, Duration presignTtl,
+                   CircuitBreaker circuitBreaker) {
         this.presigner = presigner;
         this.client = client;
         this.bucket = bucket;
         this.presignTtl = presignTtl;
         this.httpClient = null;
+        this.circuitBreaker = circuitBreaker;
     }
 
     /**
@@ -145,12 +172,15 @@ final class S3MediaStorage implements AutoCloseable {
     boolean verifyUploaded(String objectKey, String contentType, long sizeBytes) {
         HeadObjectResponse head;
         try {
-            head = client.headObject(HeadObjectRequest.builder()
+            head = circuitBreaker.executeSupplier(() -> client.headObject(HeadObjectRequest.builder()
                     .bucket(bucket)
                     .key(objectKey)
-                    .build());
+                    .build()));
         } catch (RuntimeException ex) {
             // NoSuchKey, 403 on missing object, connectivity — all mean "not verifiable"
+            // (D.4: the failure is counted by the breaker's window; an OPEN
+            // circuit surfaces here as CallNotPermittedException — same honest
+            // false, now failing fast instead of hanging on connect timeouts)
             return false;
         }
         return sizeEquals(head, sizeBytes) && contentTypeEquals(head, contentType);
@@ -170,10 +200,10 @@ final class S3MediaStorage implements AutoCloseable {
      * orphan cleanup.
      */
     void deleteObject(String objectKey) {
-        client.deleteObject(DeleteObjectRequest.builder()
+        circuitBreaker.executeRunnable(() -> client.deleteObject(DeleteObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)
-                .build());
+                .build()));
     }
 
     /**
@@ -183,10 +213,10 @@ final class S3MediaStorage implements AutoCloseable {
      */
     byte[] getObject(String objectKey) {
         ResponseBytes<GetObjectResponse> object =
-                client.getObjectAsBytes(GetObjectRequest.builder()
+                circuitBreaker.executeSupplier(() -> client.getObjectAsBytes(GetObjectRequest.builder()
                         .bucket(bucket)
                         .key(objectKey)
-                        .build());
+                        .build()));
         return object.asByteArray();
     }
 
@@ -197,13 +227,13 @@ final class S3MediaStorage implements AutoCloseable {
      * this process, never by a client).
      */
     void putObject(String objectKey, String contentType, byte[] bytes) {
-        client.putObject(PutObjectRequest.builder()
+        circuitBreaker.executeRunnable(() -> client.putObject(PutObjectRequest.builder()
                         .bucket(bucket)
                         .key(objectKey)
                         .contentType(contentType)
                         .contentLength((long) bytes.length)
                         .build(),
-                RequestBody.fromBytes(bytes));
+                RequestBody.fromBytes(bytes)));
     }
 
     @Override

@@ -1,1 +1,4 @@
 com.marketplace.ai.autoconfigure.AiAutoConfiguration
+com.marketplace.ai.autoconfigure.AiKnowledgeEventListenerAutoConfiguration
+com.marketplace.ai.autoconfigure.TypeSafeToolSearchAutoConfiguration
+com.marketplace.ai.autoconfigure.TypeSafeJudgeAdaptersAutoConfiguration
