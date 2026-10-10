@@ -23,7 +23,7 @@ fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.marketplace.android"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.marketplace.android"
