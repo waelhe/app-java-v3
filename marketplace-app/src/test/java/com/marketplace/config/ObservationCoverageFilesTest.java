@@ -155,6 +155,9 @@ class ObservationCoverageFilesTest {
                     "community.membership.verification.review",
                     "community.poll.create", "community.poll.vote", "community.poll.withdraw",
                     "community.post.comment", "community.post.create", "community.post.delete",
+                    // waves D1-D4 (JT-20): the owner's lost&found lifecycle
+                    // resolution command (ACTIVE -> RESOLVED/FOUND).
+                    "community.post.lostFoundState",
                     "community.post.react", "community.post.unreact",
                     // B-19 (compliance plan C.11): the automatic moderation
                     // rules' operator commands — register/revise/toggle/retire.
@@ -180,7 +183,14 @@ class ObservationCoverageFilesTest {
             // the pin carries the commands from the day they exist.
             Map.entry("marketplace-institutions", List.of(
                     "institution.register", "institution.verification.request",
-                    "institution.verification.review")),
+                    "institution.verification.review",
+                    // waves D1-D4 (CMP-46/JT-10): the delegated urgent-alert
+                    // surface — source lifecycle (create + verification
+                    // request/review) and the publish/withdraw pair; the
+                    // eligibility gates themselves are reads, not commands.
+                    "urgentAlert.publish", "urgentAlert.source.create",
+                    "urgentAlert.source.verification.request",
+                    "urgentAlert.source.verification.review", "urgentAlert.withdraw")),
             // B-14 (compliance plan C.4): the knowledge guide's three
             // business commands (the contribution + the revision + the
             // withdrawal) — the same source-tree-scan discipline.

@@ -2,8 +2,7 @@
     allowedDependencies = {
         "shared :: shared-api",
         "shared :: shared-security",
-        "shared :: shared-jpa",
-        "knowledge"
+        "shared :: shared-jpa"
     }
 )
 package com.marketplace.ai;

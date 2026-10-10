@@ -2,6 +2,8 @@ package com.marketplace.knowledge;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.KnowledgeEntryPublishedEvent;
+import com.marketplace.shared.api.KnowledgeEntryWithdrawnEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
@@ -77,7 +79,7 @@ public class KnowledgeService {
         KnowledgeEntry entry = repository.save(KnowledgeEntry.contribute(
                 authorId, request.locationId(), request.category(), request.title(), request.body()));
         eventPublisher.publishEvent(new KnowledgeEntryPublishedEvent(
-                entry.getId(), entry.getLocationId(), entry.getCategory(),
+                entry.getId(), entry.getLocationId(), entry.getCategory().name(),
                 entry.getTitle(), entry.getBody(), entry.getAuthorId()));
         return entry;
     }
@@ -136,7 +138,7 @@ public class KnowledgeService {
         }
         entry.revise(request.category(), request.title(), request.body());
         eventPublisher.publishEvent(new KnowledgeEntryPublishedEvent(
-                entry.getId(), entry.getLocationId(), entry.getCategory(),
+                entry.getId(), entry.getLocationId(), entry.getCategory().name(),
                 entry.getTitle(), entry.getBody(), entry.getAuthorId()));
         return entry;
     }

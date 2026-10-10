@@ -1,7 +1,7 @@
 package com.marketplace.ai;
 
-import com.marketplace.knowledge.KnowledgeEntryPublishedEvent;
-import com.marketplace.knowledge.KnowledgeEntryWithdrawnEvent;
+import com.marketplace.shared.api.KnowledgeEntryPublishedEvent;
+import com.marketplace.shared.api.KnowledgeEntryWithdrawnEvent;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
 /**
@@ -9,6 +9,11 @@ import org.springframework.modulith.events.ApplicationModuleListener;
  * publication events. Spring Modulith dispatches these listeners after the
  * business transaction commits and in a separate transaction; failed indexing
  * therefore remains retryable through the event publication registry.
+ *
+ * <p>The event records live in {@code shared/api} (the events-through-Modulith
+ * rule's placement — the contracts ledger §1): this listener imports the
+ * shared contracts and the module's {@code knowledge} dependency is retired
+ * from its allowedDependencies — the events were its only reason.</p>
  */
 public class AiKnowledgeEntryEventListener {
 
@@ -28,7 +33,7 @@ public class AiKnowledgeEntryEventListener {
 
                 %s
                 """.formatted(
-                event.category().name(),
+                event.category(),
                 event.locationId(),
                 event.title(),
                 event.body());

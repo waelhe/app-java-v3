@@ -50,4 +50,18 @@ public final class NeighborhoodPostSpecifications {
                 ? cb.conjunction()
                 : cb.equal(root.get("category"), category);
     }
+
+    /**
+     * JT-20: the lost-and-found lifecycle predicate — the discovery
+     * rail's ACTIVE gate composes on top of {@link #hasCategory} (an
+     * ACTIVE state without the LOST_FOUND category is a contradiction
+     * the column's own null shape makes unrepresentable, and the
+     * adapter composes both). Null is ABSENT (the same official model
+     * every optional predicate here rides).
+     */
+    public static Specification<NeighborhoodPost> hasLostFoundState(LostFoundState state) {
+        return (root, query, cb) -> state == null
+                ? cb.conjunction()
+                : cb.equal(root.get("lostFoundState"), state);
+    }
 }
