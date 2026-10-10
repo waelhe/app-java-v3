@@ -1099,7 +1099,10 @@ public class UserService implements IdentitySpi {
                 user.getRole().name(),
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
-                user.getPseudonymizedAt()
+                user.getPseudonymizedAt(),
+                // D-03: the roster answers the role SET (the combinations),
+                // not just the primary-role mirror.
+                roleSetOf(user.getId()).stream().map(Enum::name).toList()
         );
     }
 }

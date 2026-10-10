@@ -1,6 +1,7 @@
 package com.marketplace.shared.api;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record UserSummary(
@@ -17,8 +18,27 @@ public record UserSummary(
          * module's reviewer identity, yelp plan §4.5) without reaching into
          * the identity module.
          */
-        Instant pseudonymizedAt
+        Instant pseudonymizedAt,
+        /**
+         * D-03 (community platform execution plan Stage 1): the account's
+         * role SET — the roster surface answers the combinations, not just
+         * the primary-role mirror. Never null/empty in the canonical form
+         * (the 7-arg compatibility constructor fills it from the primary
+         * role); the owning service populates the authoritative set.
+         */
+        List<String> roles
 ) {
+
+    /** The pre-D-03 shape: the set is the primary role, the callers stay untouched. */
+    public UserSummary(UUID id, String email, String displayName, String role,
+                       Instant createdAt, Instant updatedAt, Instant pseudonymizedAt) {
+        this(id, email, displayName, role, createdAt, updatedAt, pseudonymizedAt,
+                role == null ? List.of() : List.of(role));
+    }
+
+    public UserSummary {
+        roles = roles == null ? List.of() : List.copyOf(roles);
+    }
 
     /**
      * I7 (account-pseudonymization-plan §5-أ step 3): the neutral
