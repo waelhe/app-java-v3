@@ -36,7 +36,7 @@ class MediaControllerTest {
     void requestUpload_returnsCreated() {
         UUID listingId = UUID.randomUUID();
         var view = new MediaService.MediaUploadView(UUID.randomUUID(), "k", "https://u", java.time.Duration.ofMinutes(15));
-        var request = new MediaController.RequestUploadRequest(listingId, null, "image/jpeg", 1024L);
+        var request = new MediaController.RequestUploadRequest(listingId, null, null, "image/jpeg", 1024L);
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
         when(mediaService.requestUpload(listingId, "image/jpeg", 1024L, auth)).thenReturn(view);
 
@@ -57,7 +57,7 @@ class MediaControllerTest {
         UUID postId = UUID.randomUUID();
         var view = new MediaService.MediaUploadView(UUID.randomUUID(), "posts/k/u.jpg", "https://u",
                 java.time.Duration.ofMinutes(15));
-        var request = new MediaController.RequestUploadRequest(null, postId, "image/png", 2048L);
+        var request = new MediaController.RequestUploadRequest(null, postId, null, "image/png", 2048L);
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
         when(mediaService.requestPostUpload(postId, "image/png", 2048L, auth)).thenReturn(view);
 
@@ -76,27 +76,27 @@ class MediaControllerTest {
      */
     @Test
     void requestUpload_bothTargets_answers400BeforeAnyServiceCall() {
-        var request = new MediaController.RequestUploadRequest(UUID.randomUUID(), UUID.randomUUID(),
+        var request = new MediaController.RequestUploadRequest(UUID.randomUUID(), UUID.randomUUID(), null,
                 "image/jpeg", 1024L);
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
 
         BadRequestException ex = assertThrows(BadRequestException.class,
                 () -> controller.requestUpload(request, auth));
 
-        assertEquals("Exactly one target is required — listingId or postId (got both)", ex.getMessage());
+        assertEquals("Exactly one target is required — listingId, postId or productId (got more than one)", ex.getMessage());
         verifyNoInteractions(mediaService);
     }
 
     /** L48: the mirror — carrying NEITHER target answers the same 400. */
     @Test
     void requestUpload_noTarget_answers400BeforeAnyServiceCall() {
-        var request = new MediaController.RequestUploadRequest(null, null, "image/jpeg", 1024L);
+        var request = new MediaController.RequestUploadRequest(null, null, null, "image/jpeg", 1024L);
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
 
         BadRequestException ex = assertThrows(BadRequestException.class,
                 () -> controller.requestUpload(request, auth));
 
-        assertEquals("Exactly one target is required — listingId or postId (got neither)", ex.getMessage());
+        assertEquals("Exactly one target is required — listingId, postId or productId (got none)", ex.getMessage());
         verifyNoInteractions(mediaService);
     }
 
@@ -104,7 +104,7 @@ class MediaControllerTest {
     void confirmUpload_returnsOk() {
         UUID id = UUID.randomUUID();
         Authentication auth = org.mockito.Mockito.mock(Authentication.class);
-        var view = new MediaService.MediaAssetView(id, UUID.randomUUID(), null, "image/jpeg", 1L,
+        var view = new MediaService.MediaAssetView(id, UUID.randomUUID(), null, null, "image/jpeg", 1L,
                 "UPLOADED", 1, "https://u", null, null);
         when(mediaService.confirmUpload(id, auth)).thenReturn(view);
 

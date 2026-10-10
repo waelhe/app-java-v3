@@ -72,7 +72,7 @@ public class ModuleTestConfig {
                                 new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", "", ""),
                                 "marketplace-api"
                         ),
-                        new MarketplaceProperties.Security.Session(2),
+                        new MarketplaceProperties.Security.Session(2, false),
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
@@ -86,7 +86,7 @@ public class ModuleTestConfig {
                         // boot (PricingModuleIntegrationTest / AdminModuleIntegrationTest
                         // — the CI round-2 failures). Blank keeps the documented
                         // contract: not configured = the break-glass bootstrap skips.
-                        new MarketplaceProperties.Security.AdminSeed(""))
-        );
+                        new MarketplaceProperties.Security.AdminSeed("")),
+        new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
     }
 }

@@ -67,10 +67,11 @@ class NotificationPreferenceServiceTest {
 
     @Test
     void getMyPreferencesReturnsTheFullEffectiveMatrix() {
-        // Thirty-six rows today (12 types x 3 channels — L34 added LEAD_RECEIVED,
+        // Forty-eight rows today (16 types x 3 channels — L34 added LEAD_RECEIVED,
         // L35 added SAVED_SEARCH_MATCH, L42 added POST_COMMENTED, L46 added
         // NEW_LISTING_IN_NEIGHBORHOOD, L45 added CONTENT_MODERATED, L47 added
-        // POST_REACTED, W4 added FOLLOWED_PROVIDER_NEW_LISTING, B-08 added
+        // POST_REACTED, W4 added FOLLOWED_PROVIDER_NEW_LISTING, A-03 added
+        // BOOKING_CONFIRMED, A-11 added the three order types, B-08 added
         // MESSAGE_RECEIVED, B-17 added MEMBERSHIP_VERIFIED and REPORT_RESOLVED)
         // in stable order, all enabled except the one stored override.
         NotificationPreference override = NotificationPreference.create(
@@ -81,7 +82,7 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(36);
+        assertThat(matrix).hasSize(48);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
@@ -110,9 +111,30 @@ class NotificationPreferenceServiceTest {
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.WS, true),
+                // A-03 (compliance plan 0.6): BOOKING_CONFIRMED joins as the tenth type —
+                // the same point addition, default on across all three channels.
+                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.BOOKING_CONFIRMED, NotificationChannel.WS, true),
+                // A-11 (order machine legs): the three order types join the
+                // effective matrix — default on, the L22 day-one contract.
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CONFIRMED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_FULFILLED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.ORDER_CANCELLED, NotificationChannel.WS, true),
+                // B-08 (compliance plan 0.10, unioned from main): MESSAGE_RECEIVED
+                // joins as the fourteenth type — same point addition, default on.
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.MESSAGE_RECEIVED, NotificationChannel.WS, true),
+                // B-17 (compliance plan C.9, unioned from main): the trust pair —
+                // MEMBERSHIP_VERIFIED (fifteenth) and REPORT_RESOLVED (sixteenth),
+                // same point additions, default on.
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL, true),
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.WS, true),
@@ -144,8 +166,10 @@ class NotificationPreferenceServiceTest {
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true,
+                        true, true, true,
                         true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + B-08: MESSAGE_RECEIVED x3, default on + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3, default on
     }
 
     @Test
@@ -243,7 +267,9 @@ class NotificationPreferenceServiceTest {
         assertThat(matrix).extracting(NotificationPreferenceView::enabled)
                 .containsExactly(true, true, true, true, false, true, true, true, true,
                         true, true, true, true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true,
+                        true, true, true,
                         true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true); // L35: SAVED_SEARCH_MATCH x3 + L42: POST_COMMENTED x3 + L46: NEW_LISTING_IN_NEIGHBORHOOD x3 + L45: CONTENT_MODERATED x3 + L47: POST_REACTED x3 + W4: FOLLOWED_PROVIDER_NEW_LISTING x3 + B-08: MESSAGE_RECEIVED x3, default on + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3, default on
     }
 }

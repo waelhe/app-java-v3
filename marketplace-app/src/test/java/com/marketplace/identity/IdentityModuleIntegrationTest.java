@@ -30,6 +30,22 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @WithMockUser
 class IdentityModuleIntegrationTest {
 
+    /**
+     * A-04's AuthActionTokenService consumes the injectable Clock — the
+     * production bean lives in platform-infra's ClockConfig, which this
+     * slice does not scan (the catalog slice's own ClockBean pattern: one
+     * Clock per context, never two; the slices that DO load infra keep the
+     * production bean). The measured context-load failure of 2026-10-09
+     * ("required a bean of type 'java.time.Clock'") closes here.
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @Container
     @ServiceConnection
     @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.

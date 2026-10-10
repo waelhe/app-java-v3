@@ -45,11 +45,13 @@ public class MediaController {
      * of the three high-impact public write endpoints covered by an independent
      * named rate-limiter instance (fail-fast 429 RL-001).
      *
-     * <p>L48: the single media-upload channel serves BOTH targets of the
-     * generalized media line — exactly one of {@code listingId} (the provider
-     * flow, PROVIDER role + listing ownership in the service) or {@code postId}
-     * (the member flow, the post's author alone) must be present; the type
-     * gate below answers the house 400 BEFORE any service call, the same
+     * <p>L48 + A-17 (compliance plan C.7 — the M1 store root): the single
+     * media-upload channel serves the THREE targets of the generalized media
+     * line — exactly one of {@code listingId} (the provider flow, PROVIDER
+     * role + listing ownership in the service), {@code postId} (the member
+     * flow, the post's author alone) or {@code productId} (the store flow,
+     * the product's owning provider) must be present; the type gate below
+     * answers the house 400 BEFORE any service call, the same
      * {@code parseCategory} discipline the community controller pins. The
      * complete/delete endpoints are target-agnostic — the asset row carries
      * its own target and the ownership gate reads it.
@@ -60,22 +62,27 @@ public class MediaController {
             description = "Returns a presigned PUT URL the client uploads bytes to directly. The "
                     + "object key is server-generated; the declared content type is pinned into the "
                     + "signature. Call the complete endpoint after the upload. Exactly one target — "
-                    + "listingId (the listing flow) or postId (the neighborhood post flow, L48) — "
-                    + "must be present; carrying both or neither answers 400 before anything is signed.")
+                    + "listingId (the listing flow), postId (the neighborhood post flow, L48) or "
+                    + "productId (the store product flow, A-17/C.7) — must be present; carrying "
+                    + "more than one or none answers 400 before anything is signed.")
     public ResponseEntity<MediaService.MediaUploadView> requestUpload(
             @Valid @RequestBody RequestUploadRequest request, Authentication authentication) {
-        boolean hasListing = request.listingId() != null;
-        boolean hasPost = request.postId() != null;
-        if (hasListing == hasPost) {
+        int targets = (request.listingId() != null ? 1 : 0)
+                + (request.postId() != null ? 1 : 0)
+                + (request.productId() != null ? 1 : 0);
+        if (targets != 1) {
             throw new BadRequestException(
-                    "Exactly one target is required — listingId or postId (got "
-                            + (hasListing ? "both" : "neither") + ")");
+                    "Exactly one target is required — listingId, postId or productId (got "
+                            + (targets == 0 ? "none" : "more than one") + ")");
         }
-        MediaService.MediaUploadView view = hasPost
+        MediaService.MediaUploadView view = request.postId() != null
                 ? mediaService.requestPostUpload(
                         request.postId(), request.contentType(), request.sizeBytes(), authentication)
-                : mediaService.requestUpload(
-                        request.listingId(), request.contentType(), request.sizeBytes(), authentication);
+                : request.productId() != null
+                        ? mediaService.requestProductUpload(
+                                request.productId(), request.contentType(), request.sizeBytes(), authentication)
+                        : mediaService.requestUpload(
+                                request.listingId(), request.contentType(), request.sizeBytes(), authentication);
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -121,6 +128,25 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.listByListing(listingId, authentication));
     }
 
+    /**
+     * A-17 (compliance plan C.7 — the M1 store root): the product-target
+     * read — every UPLOADED asset of the store product in display order,
+     * each with a freshly presigned GET URL. The M1 root has no public
+     * storefront surface (that arrives with the M2 wave, C.8), so the read
+     * is the owning provider's own (plus admins); a stranger's read
+     * answers the honest 404 — the R5 privacy posture for non-public
+     * targets (the same shape the non-published listing read carries).
+     */
+    @GetMapping("/media/products/{productId}")
+    @Operation(summary = "List a store product's media (M1 — the owner's read)",
+            description = "Every UPLOADED asset in display order, each with a freshly presigned "
+                    + "GET URL. The owning provider (and admins) read; a stranger's read answers "
+                    + "the honest 404 — the public storefront surfaces arrive with the M2 wave.")
+    public ResponseEntity<List<MediaService.MediaAssetView>> listByProduct(
+            @PathVariable UUID productId, Authentication authentication) {
+        return ResponseEntity.ok(mediaService.listByProduct(productId, authentication));
+    }
+
     @DeleteMapping("/media/{id}")
     @Operation(summary = "Delete a media asset", description = "Soft-deletes the asset and removes "
             + "the storage object best-effort after commit.")
@@ -140,12 +166,12 @@ public class MediaController {
      * {@code @ConfigurationProperties} channel — never a hard-coded constant,
      * per the Spring Boot externalized-configuration model.
      *
-     * <p>L48: exactly one target — {@code listingId} (optional since L48;
-     * every pre-L48 request still carries it, unchanged) or {@code postId}.
-     * The exactly-one rule is the controller's type gate above, answering
-     * 400 before any service call.
+     * <p>L48 + A-17: exactly one target — {@code listingId} (optional since
+     * L48; every pre-L48 request still carries it, unchanged), {@code postId}
+     * or {@code productId}. The exactly-one rule is the controller's type
+     * gate above, answering 400 before any service call.
      */
-    @Schema(description = "Upload declaration: exactly one target (listingId or postId), the declared "
+    @Schema(description = "Upload declaration: exactly one target (listingId, postId or productId), the declared "
             + "content type and size — verified server-side at confirm time")
     public record RequestUploadRequest(
             @Schema(description = "The listing the photo belongs to (the listing flow's target)",
@@ -157,6 +183,11 @@ public class MediaController {
                     nullable = true,
                     example = "9c8b7a65-4321-4fed-ba98-76543210fedc")
             UUID postId,
+            @Schema(description = "The store product the photo belongs to (the product flow's "
+                    + "target — A-17/C.7; the product's owning provider alone may upload)",
+                    nullable = true,
+                    example = "5e4d3c2b-1a09-876f-ed54-321098765abc")
+            UUID productId,
             @Schema(description = "Declared image content type (from the server allowlist)",
                     example = "image/jpeg")
             @NotBlank String contentType,

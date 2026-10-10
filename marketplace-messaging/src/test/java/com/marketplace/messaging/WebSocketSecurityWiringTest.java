@@ -144,12 +144,14 @@ class WebSocketSecurityWiringTest {
                             new MarketplaceProperties.Security.Jwt(
                                     new MarketplaceProperties.Security.Jwt.KeyStore("", "", "", "", ""),
                                     "marketplace-api"),
-                            new MarketplaceProperties.Security.Session(2),
+                            new MarketplaceProperties.Security.Session(2, false),
                             new MarketplaceProperties.Security.OAuth2(
                                     new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
                                     new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
                             new MarketplaceProperties.Security.Pseudonymization("", List.of()),
-                            null));
+                            null),
+                    // the empty deprecations map — no version deprecated in the wiring test
+                    new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
         }
     }
 }

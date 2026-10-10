@@ -60,33 +60,43 @@ package com.marketplace.notifications;
  * the standing L22 per-type/channel preference matrix from day one, no
  * new mechanism.
  *
- * <p>B-08 (compliance plan 0.10 — the measured defect §3.4-8): {@code
- * MESSAGE_RECEIVED} joins as the tenth type — the same point addition
- * (the V151 CHECK widens the DB-side membership guard to match, V152
- * validates it under SHARE UPDATE EXCLUSIVE alone). The recipient is the
- * conversation's OTHER participant, resolved at the source by the
- * messaging publisher ({@code MessageReceivedEvent} carries the arrival
- * fact complete) — this listener never re-derives party facts; one event
- * is one notification, and the delivery rides the standing L22
+ * <p>A-03 (official-compliance plan 0.6 — the dead {@code BookingConfirmedEvent}'s
+ * delivery, the notification leg of the owner's identity rule "an event
+ * without a listener is a measured defect"): {@code BOOKING_CONFIRMED} joins
+ * as the tenth type — the same point addition (the V110 CHECK widens the
+ * DB-side membership guard to match, V111 validates it under SHARE UPDATE
+ * EXCLUSIVE alone — the V74/V75 precedent verbatim). The recipient is the
+ * booking's consumer alone; the listener is the {@code BookingConfirmedEvent}
+ * consumer the parallel contracts ledger recorded as "returning with round
+ * A-03" (the late-lander crossing documented there).
+ *
+ * <p>B-08 (compliance plan 0.10 — the measured defect §3.4-8, unioned from
+ * main 2026-10-08): {@code MESSAGE_RECEIVED} joins as the fourteenth type —
+ * the same point addition (the V151 CHECK widens the DB-side membership
+ * guard to match, V152 validates it under SHARE UPDATE EXCLUSIVE alone).
+ * The recipient is the conversation's OTHER participant, resolved at the
+ * source by the messaging publisher ({@code MessageReceivedEvent} carries
+ * the arrival fact complete) — this listener never re-derives party facts;
+ * one event is one notification, and the delivery rides the standing L22
  * per-type/channel preference matrix from day one, no new mechanism.
  *
- * <p>B-17 (compliance plan C.9 — the trust &amp; verification sidecar):
- * {@code MEMBERSHIP_VERIFIED} joins as the eleventh type and {@code
- * REPORT_RESOLVED} as the twelfth — the same point additions (the V158
- * CHECK widens the DB-side membership guard to match, V159 validates it
- * under SHARE UPDATE EXCLUSIVE alone). The recipients are the measured
- * journeys' own parties: the VERIFIED member (the grant event fires on
- * both {@code PENDING -> VERIFIED} and {@code REJECTED -> VERIFIED} —
- * the re-admission is a grant of the same signal) and the report's
- * REPORTER (the adjudication event fires on every outcome — {@code
- * RESOLVED} behind {@code HIDE_CONTENT} and {@code DISMISSED} behind
- * {@code DISMISS}; distinct from the author's {@code CONTENT_MODERATED}
- * alert, which is the hide fact alone). The event records live in
- * {@code shared/api} and the listener wiring LANDED (the CodeRabbit
- * round-1 adoption closing the CR-10 crossing: the B-08/
+ * <p>B-17 (compliance plan C.9 — the trust &amp; verification sidecar,
+ * unioned from main 2026-10-08): {@code MEMBERSHIP_VERIFIED} joins as the
+ * fifteenth type and {@code REPORT_RESOLVED} as the sixteenth — the same
+ * point additions (the V158 CHECK widens the DB-side membership guard to
+ * match, V159 validates it under SHARE UPDATE EXCLUSIVE alone). The
+ * recipients are the measured journeys' own parties: the VERIFIED member
+ * (the grant event fires on both {@code PENDING -> VERIFIED} and {@code
+ * REJECTED -> VERIFIED} — the re-admission is a grant of the same signal)
+ * and the report's REPORTER (the adjudication event fires on every
+ * outcome — {@code RESOLVED} behind {@code HIDE_CONTENT} and {@code
+ * DISMISSED} behind {@code DISMISS}; distinct from the author's {@code
+ * CONTENT_MODERATED} alert, which is the hide fact alone). The event
+ * records live in {@code shared/api} and the listener wiring LANDED (the
+ * CodeRabbit round-1 adoption closing the CR-10 crossing: the B-08/
  * {@code MessageReceivedEvent} precedent — the record's shared/api
- * placement, no pom change anywhere, and
- * {@code NotificationEventListener} delivers on every publication).
+ * placement, no pom change anywhere, and {@code NotificationEventListener}
+ * delivers on every publication).
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -98,6 +108,20 @@ public enum NotificationType {
     CONTENT_MODERATED,
     POST_REACTED,
     FOLLOWED_PROVIDER_NEW_LISTING,
+    BOOKING_CONFIRMED,
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * notification leg; the V110 widening precedent applied three types
+     * later by V114/V115): the three order transitions whose buyer-facing
+     * information crosses the module boundary. The recipient is the order's
+     * consumer alone — the payload carries the id (the late-lander crossing
+     * is recorded in the parallel contracts ledger, execution plan §5.3:
+     * orders (Track A) publishes, the late-lander writes the listeners in
+     * notifications, and the module's owner reviews).
+     */
+    ORDER_CONFIRMED,
+    ORDER_FULFILLED,
+    ORDER_CANCELLED,
     MESSAGE_RECEIVED,
     MEMBERSHIP_VERIFIED,
     REPORT_RESOLVED

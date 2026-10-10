@@ -13,13 +13,14 @@ import { defineRailway, github, preserve, project, service } from "railway/iac";
 //     by the pre-migration state, and any `railway config apply` with it
 //     would rebind this service to a repository whose sync workflow is
 //     disabled and whose account is drained (the CodeRabbit-flagged trap).
-//   - env: the full measured live set — 45 service-scoped names on the v3
-//     service's production environment (set-equality verified against the
-//     GraphQL enumeration after the faithful transfer; the 2026-09-13
-//     declaration had 35 names — the S3 media bundle, the two IP hash keys,
-//     SPRING_AI_MODEL_CHAT, MAIL_PORT and SPRING_DATA_REDIS_SSL_ENABLED were
-//     added since). All via preserve() — the official mechanism that keeps
-//     values managed in Railway (secrets never materialize here).
+//   - env: originally the measured 45-name live set on the v3 service's
+//     production environment (set-equality verified against the GraphQL
+//     enumeration after the faithful transfer; the 2026-09-13 declaration had
+//     35 names). This AI-alignment branch declares GOOGLE_GENAI_API_KEY and TYPESAFE_API_KEY
+//     as preserved secrets; these declarations are NOT proof that values already
+//     exist in Railway. Revoke the key exposed in chat, provision its replacement,
+//     and provision TYPESAFE_API_KEY separately before activating the matching profile.
+//     All entries use preserve() — values never materialize in this file.
 //   - volumeMounts: REMOVED — the v3 service runs without a volume (the
 //     /data "app-java-v3-volume" residue belonged to the retired account's
 //     service; the v3 deployment 4b203ec2 is measured healthy without it).
@@ -45,6 +46,12 @@ export default defineRailway(() => {
       DB_PASSWORD: preserve(),
       DB_URL: preserve(),
       DB_USERNAME: preserve(),
+      // Provider credentials stay in Railway's secret store; never literal
+      // values in the IaC source or Git history.
+      GOOGLE_GENAI_API_KEY: preserve(),
+      // Optional TypeSafe/Jev decision, guardrail and RAG calls. This profile is
+      // opt-in; declaring the secret here neither provisions it nor activates it.
+      TYPESAFE_API_KEY: preserve(),
       EXCHANGE_BASE_CURRENCY: preserve(),
       JWT_KEYSTORE_B64: preserve(),
       JWT_KEYSTORE_PASSWORD: preserve(),

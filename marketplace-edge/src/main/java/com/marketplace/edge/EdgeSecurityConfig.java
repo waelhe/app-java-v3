@@ -1,8 +1,11 @@
 package com.marketplace.edge;
 
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -147,6 +150,31 @@ class EdgeSecurityConfig {
                 new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
         oidcLogoutSuccessHandler.setPostLogoutRedirectUri("{baseUrl}");
         return oidcLogoutSuccessHandler;
+    }
+
+    /**
+     * Active in prod AND staging (the production-parity sandbox — B.2): a
+     * blank or missing {@code EDGE_CLIENT_SECRET} is a startup failure,
+     * never a silent fallback (D6). The sandbox must exercise the same
+     * fail-fast posture so a deployment that passes it behaves the way
+     * production behaves. (Union note 2026-10-08: the CWE-319 transport
+     * twin retired into main's {@link EdgeBackendProperties} binding-time
+     * guard — the official {@code @ConfigurationProperties} fail-fast with
+     * the same {@code EDGE_BACKEND_ALLOW_INSECURE_TRANSPORT} escape hatch,
+     * pinned by its own EdgeBackendPropertiesTest; this secret guard
+     * survives the union because main's class javadoc still promises the
+     * D6 prod fail-fast and no other bean enforces it.)
+     */
+    @Bean
+    @Profile({"prod", "staging"})
+    ApplicationRunner edgeProdGuard(Environment env) {
+        return args -> {
+            String secret = env.getProperty("EDGE_CLIENT_SECRET", "");
+            if (secret == null || secret.isBlank()) {
+                throw new IllegalStateException(
+                        "EDGE_CLIENT_SECRET is required in prod (D6) — refusing to start a secret-less confidential client");
+            }
+        };
     }
 
     /**

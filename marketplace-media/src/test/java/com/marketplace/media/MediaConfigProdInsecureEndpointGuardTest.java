@@ -29,6 +29,14 @@ class MediaConfigProdInsecureEndpointGuardTest {
     @Mock
     private Environment environment;
 
+    /**
+     * D.4: the registry seam the production constructor now carries — a real
+     * defaults registry (its mediaStorage instance can never open inside these
+     * guard tests; the guard under proof is the cleartext-endpoint fail-fast).
+     */
+    private static final io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry REGISTRY =
+            io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults();
+
     private static MediaProperties properties(boolean allowInsecure) {
         return new MediaProperties(
                 new MediaProperties.Storage("https://media.example.local", "auto", "b", "ak", "sk", allowInsecure),
@@ -41,7 +49,7 @@ class MediaConfigProdInsecureEndpointGuardTest {
         when(environment.acceptsProfiles(any(Profiles.class))).thenReturn(true);
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> config.s3MediaStorage(properties(true), environment));
+                () -> config.s3MediaStorage(properties(true), environment, REGISTRY));
 
         assertTrue(thrown.getMessage().contains("allow-insecure-endpoint"));
         assertTrue(thrown.getMessage().contains("prod"));
@@ -52,7 +60,7 @@ class MediaConfigProdInsecureEndpointGuardTest {
         when(environment.acceptsProfiles(any(Profiles.class))).thenReturn(false);
 
         assertDoesNotThrow(() -> {
-            try (S3MediaStorage storage = config.s3MediaStorage(properties(true), environment)) {
+            try (S3MediaStorage storage = config.s3MediaStorage(properties(true), environment, REGISTRY)) {
                 assertTrue(storage != null);
             }
         });
@@ -64,7 +72,7 @@ class MediaConfigProdInsecureEndpointGuardTest {
         // is never even consulted (hence no stubbing here).
 
         assertDoesNotThrow(() -> {
-            try (S3MediaStorage storage = config.s3MediaStorage(properties(false), environment)) {
+            try (S3MediaStorage storage = config.s3MediaStorage(properties(false), environment, REGISTRY)) {
                 assertTrue(storage != null);
             }
         });

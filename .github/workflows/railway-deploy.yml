@@ -1,0 +1,162 @@
+name: Railway Deploy
+
+# The automatic deploy channel — replaces the manual serviceInstanceDeployV2
+# session scripts (the measured manual intervention between a green main and
+# production) with platform automation inside the two official channels:
+# GitHub Actions and the Railway GraphQL API.
+#
+# Official basis (docs cited, not invented):
+# - GitHub docs, "Events that trigger workflows" — workflow_run: "This event
+#   will only trigger a workflow run if the workflow file is on the default
+#   branch"; the run fires when each named workflow completes.
+# - Railway docs, "GitHub autodeploys" — Wait for CI: "new deployments sit
+#   in a WAITING state until every GitHub Actions check suite on the commit
+#   has finished... A workflow that fails skips the deployment immediately.
+#   A workflow that is skipped or reports neutral never blocks. A workflow
+#   that is cancelled blocks the deployment only if no other workflow on the
+#   same commit succeeded." This gate adopts exactly those semantics.
+# - Railway API cookbook, "Deploy a specific service in an environment"
+#   (integrations/api/manage-deployments) — the documented deploy mutations.
+#   serviceInstanceDeployV2(commitSha, environmentId, serviceId) pins the
+#   exact commit that passed the gate, so a newer push can never race ahead
+#   of verification.
+#
+# Why this channel and not Railway-native auto-deploy (measured 2026-10-09):
+# the Railway project has no workspace member with their GitHub account
+# connected to this repository — deploymentTriggerCreate answers "no one in
+#   the project has access to it" and serviceInstanceAutoDeployUpdate answers
+#   "No workspace member has their GitHub account connected with access to
+#   this repository". The native path needs that user-owned connection
+#   (Railway docs, GitHub autodeploys → Requirements). Until the owner
+#   connects it, this workflow is the automatic channel; when they do, the
+#   native triggers with "Wait for CI" can replace this file wholesale.
+#
+# Deployment targets (Railway project successful-simplicity, production):
+#   app-java-v3       — the main web marketplace service (root Dockerfile)
+#   app-java-v3-edge  — the edge unit (marketplace-edge/Dockerfile, PR #520)
+# Both deploy at the same verified commit, matching the measured manual
+# practice. If the project migrates accounts (runbook §10), these three IDs
+# move with it — update the env block below as part of the documented
+# migration checklist (same class as the cache-mount id rebind).
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI", "Integration Test", "CodeQL", "Container Scan"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # One deploy gate per target commit; re-triggers queue, never cancel.
+  group: railway-deploy-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API: https://backboard.railway.com/graphql/v2
+  RAILWAY_PROJECT_ID: bf8053b0-8021-4a13-af3a-45695223f5a2
+  RAILWAY_ENVIRONMENT_ID: 2f49b83a-ebe8-4c14-8e83-ba5678fce752
+  RAILWAY_SERVICE_APP: 221b33de-25ac-4df6-be61-911af3f9da18
+  RAILWAY_SERVICE_EDGE: ee9a69ef-16ee-43b6-9e1b-42e19de56b04
+
+jobs:
+  deploy:
+    name: Deploy main to Railway (every suite green)
+    # workflow_run fires for PR-head runs too — deploy only main commits.
+    # workflow_dispatch keeps a gated emergency lever (same all-green gate).
+    if: >-
+      github.repository == 'waelhe/app-java-v3' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate — every GitHub Actions suite on the commit must be green
+        uses: actions/github-script@v8
+        id: gate
+        with:
+          script: |
+            // The verified commit: the workflow_run's head for merge pushes,
+            // the dispatched ref's head for the manual lever.
+            const target = context.eventName === 'workflow_dispatch'
+              ? context.sha
+              : context.payload.workflow_run.head_sha;
+
+            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: target,
+              per_page: 100,
+            });
+
+            // Only the push-event suites of the four gate workflows on this
+            // exact commit. This workflow runs from the default-branch head
+            // (workflow_run context), so when main === target it must exclude
+            // itself by its own workflow path or the gate would wait on itself.
+            const deployPath = '.github/workflows/railway-deploy.yml';
+            const gate = workflow_runs.filter(r => r.event === 'push' && r.path !== deployPath);
+
+            core.info(`Target commit: ${target}`);
+            core.info(`Suites: ${gate.map(r => `${r.name}=${r.status}/${r.conclusion}`).join(', ') || '(none)'}`);
+
+            if (gate.length === 0) {
+              core.setFailed('No push-event suites found for the target commit — the gate cannot verify this sha.');
+              return;
+            }
+
+            // Wait-for-CI: suites still running → exit neutral; the last suite
+            // to finish re-triggers this workflow for the same commit.
+            const incomplete = gate.filter(r => r.status !== 'completed');
+            if (incomplete.length > 0) {
+              core.notice(`Still running: ${incomplete.map(r => r.name).join(', ')} — the last suite to complete re-triggers this gate.`);
+              core.setOutput('deploy', 'false');
+              return;
+            }
+
+            // Wait-for-CI: a failure skips the deployment immediately.
+            const failed = gate.filter(r => r.conclusion === 'failure');
+            if (failed.length > 0) {
+              core.setFailed(`Failing suites — deployment skipped: ${failed.map(r => r.name).join(', ')}`);
+              return;
+            }
+
+            // Wait-for-CI: skipped/neutral never block; cancelled blocks only
+            // when no other workflow on the same commit succeeded.
+            const succeeded = gate.filter(r => r.conclusion === 'success');
+            const cancelled = gate.filter(r => r.conclusion === 'cancelled');
+            if (cancelled.length > 0 && succeeded.length === 0) {
+              core.setFailed(`All suites cancelled and none succeeded — deployment skipped: ${cancelled.map(r => r.name).join(', ')}`);
+              return;
+            }
+
+            core.setOutput('deploy', 'true');
+            core.setOutput('sha', target);
+            core.info(`All suites green on ${target} — deploying.`);
+
+      - name: Deploy app-java-v3 (the main web marketplace service)
+        if: steps.gate.outputs.deploy == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sSf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_APP"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
+          echo "$response"
+          echo "$response" | grep -q '"serviceInstanceDeployV2"'
+
+      - name: Deploy app-java-v3-edge (the edge unit)
+        if: steps.gate.outputs.deploy == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sSf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }","variables":{"serviceId":"'"$RAILWAY_SERVICE_EDGE"'","environmentId":"'"$RAILWAY_ENVIRONMENT_ID"'","commitSha":"'"${{ steps.gate.outputs.sha }}"'"}}')"
+          echo "$response"
+          echo "$response" | grep -q '"serviceInstanceDeployV2"'

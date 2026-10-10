@@ -91,4 +91,20 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
      */
     @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(:postId, 0))", nativeQuery = true)
     void lockPostPositionAllocation(@Param("postId") String postId);
+
+    /** A-17 (C.7): the product twin of {@link #findMaxPositionByPostId(UUID)}. */
+    @Query("select coalesce(max(a.position), 0) from MediaAsset a where a.productId = :productId")
+    int findMaxPositionByProductId(@Param("productId") UUID productId);
+
+    /**
+     * A-17 (C.7): the product twin of {@link #lockPostPositionAllocation(String)}
+     * — the same advisory transaction lock discipline (CodeRabbit #241),
+     * serialized per PRODUCT id in the shared key space (the over-serialize
+     * stance the post twin documents).
+     */
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(:productId, 0))", nativeQuery = true)
+    void lockProductPositionAllocation(@Param("productId") String productId);
+
+    /** A-17 (C.7): the owner-gated product read — UPLOADED assets in display order. */
+    List<MediaAsset> findByProductIdAndStatusOrderByPositionAsc(UUID productId, MediaAssetStatus status);
 }

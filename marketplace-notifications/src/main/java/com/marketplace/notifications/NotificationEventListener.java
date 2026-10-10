@@ -1,13 +1,19 @@
 package com.marketplace.notifications;
 
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ContentReportResolvedEvent;
+import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
 import com.marketplace.shared.api.MembershipVerificationGrantedEvent;
 import com.marketplace.shared.api.MessageReceivedEvent;
 import com.marketplace.shared.api.NewListingInNeighborhoodEvent;
+import com.marketplace.shared.api.OrderCancelledEvent;
+import com.marketplace.shared.api.OrderConfirmedEvent;
+import com.marketplace.shared.api.OrderFulfilledEvent;
+import com.marketplace.shared.api.PasswordResetRequestedEvent;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.PostCommentedEvent;
 import com.marketplace.shared.api.PostReactedEvent;
@@ -32,6 +38,90 @@ public class NotificationEventListener {
     public void onBookingCreated(BookingCreatedEvent event) {
         notificationService.onBookingCreated(event.bookingId());
         log.info("Notification sent for booking created: {}", event.bookingId());
+    }
+
+    /**
+     * A-04 (official-compliance plan §6 wave A — A.1/A.2, the parallel
+     * contracts ledger's additive registration): the security-mail pair.
+     * Identity (Track A's garden) publishes each event inside the issuing
+     * transaction; this consumer renders the mail through the house seam —
+     * the mail channel ALONE, no in-app row, no WebSocket push, no
+     * preference gate (the measured exception both NotificationService
+     * methods document: the recipient is outside the application by
+     * definition, and the OWASP-declared security mail rides no marketing
+     * preference). The registry entry commits atomically with the token
+     * row on the publisher's side, and a failed mail leg stays incomplete
+     * for the framework's resubmission — the standing housekeeping.
+     */
+    @ApplicationModuleListener
+    public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
+        notificationService.onPasswordResetRequested(
+                event.userId(), event.displayName(), event.resetLink(), event.expiresAt());
+        log.info("Password reset mail sent: userId={}", event.userId());
+    }
+
+    /**
+     * A-04's A.2 leg — same contract as the reset listener above; the
+     * welcome mail carries the one-time verification deep link that lifts
+     * the registration hold (the dormant template's activation).
+     */
+    @ApplicationModuleListener
+    public void onEmailVerificationRequested(EmailVerificationRequestedEvent event) {
+        notificationService.onEmailVerificationRequested(
+                event.userId(), event.displayName(), event.verificationLink());
+        log.info("Email verification mail sent: userId={}", event.userId());
+    }
+
+    /**
+     * A-03 (official-compliance plan 0.6 — the dead BookingConfirmedEvent's
+     * delivery; the parallel contracts ledger recorded this consumer as
+     * "returning with round A-03" and rules the crossing: booking (Track A)
+     * publishes, the late-lander writes the listener here in notifications,
+     * and the module's owner reviews it — execution plan §5.3). The event was
+     * published at both confirm sites (the provider's confirm and the
+     * payment-driven autoConfirm) with no consumer at all — which in the
+     * official Modulith mechanism (reference/events.html) means the
+     * Event Publication Registry never wrote an entry for it: the registry
+     * "finds out about the transactional event listeners that will get the
+     * event delivered and writes entries for each of them", so a
+     * listener-less event is a fire into the void — no registry row, no
+     * completion tracking, no retry. This listener completes the journey:
+     * from here the publication rides the registry like every other house
+     * event (AFTER_COMMIT, its own transaction, framework-managed
+     * completion/resubmission).
+     */
+    @ApplicationModuleListener
+    public void onBookingConfirmed(BookingConfirmedEvent event) {
+        notificationService.onBookingConfirmed(event.bookingId());
+        log.info("Notification sent for booking confirmed: {}", event.bookingId());
+    }
+
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * notification legs; the parallel contracts ledger records this
+     * late-lander crossing — orders (Track A) publishes, the late-lander
+     * writes the listener here in notifications, and the module's owner
+     * reviews it, execution plan §5.3). The payload carries the consumer
+     * id, so the listener resolves nothing — the same AFTER_COMMIT /
+     * independent-transaction contract every listener here rides
+     * (reference/events.html).
+     */
+    @ApplicationModuleListener
+    public void onOrderConfirmed(OrderConfirmedEvent event) {
+        notificationService.onOrderConfirmed(event.orderId(), event.consumerId());
+        log.info("Notification sent for order confirmed: {}", event.orderId());
+    }
+
+    @ApplicationModuleListener
+    public void onOrderFulfilled(OrderFulfilledEvent event) {
+        notificationService.onOrderFulfilled(event.orderId(), event.consumerId());
+        log.info("Notification sent for order fulfilled: {}", event.orderId());
+    }
+
+    @ApplicationModuleListener
+    public void onOrderCancelled(OrderCancelledEvent event) {
+        notificationService.onOrderCancelled(event.orderId(), event.consumerId(), event.reason());
+        log.info("Notification sent for order cancelled: {}", event.orderId());
     }
 
     @ApplicationModuleListener
