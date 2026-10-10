@@ -75,6 +75,69 @@ public class AdminController {
      */
     public record ChangeRoleRequest(@NotBlank String role) {}
 
+    /**
+     * D-03 (community platform execution plan Stage 1): the role-set
+     * surfaces. The pre-existing {@code PUT /users/{id}/role} keeps its
+     * documented replace semantics (the set rewritten to the single
+     * target); these three manage the SET itself — read it, grant one
+     * role into it (idempotent), revoke one role out of it (the
+     * last-active-ADMIN and at-least-one-role guards answer 409). Every
+     * mutation answers the resulting set — the operator sees the operative
+     * truth without a second round-trip. The actor is part of the contract
+     * exactly like the role/status/pseudonymize family: recorded with the
+     * action in the identity module's structured audit line (and on the
+     * {@code user_roles} row itself with its {@code granted_by}/{@code source}
+     * provenance, Envers-audited).
+     */
+    public record GrantRoleRequest(
+            @NotBlank
+            @jakarta.validation.constraints.Pattern(regexp = "CONSUMER|PROVIDER|ADMIN",
+                    message = "role must be CONSUMER, PROVIDER, or ADMIN") String role) {}
+
+    @GetMapping("/users/{id}/roles")
+    @Operation(summary = "Read an account's role set",
+            description = "D-03 multi-role model: every role the account holds (the authoritative "
+                    + "user_roles set, stored enum names). Never empty — the legacy-fallback rule "
+                    + "answers the users.role mirror for a row the backfill missed. The users.role "
+                    + "column remains the account's PRIMARY role; the operative authorization is "
+                    + "this set.")
+    public ResponseEntity<java.util.Set<String>> getUserRoles(@PathVariable UUID id) {
+        return ResponseEntity.ok(identitySpi.rolesOf(id));
+    }
+
+    @PostMapping("/users/{id}/roles")
+    @Operation(summary = "Grant a role to an account",
+            description = "D-03: adds one role (CONSUMER/PROVIDER/ADMIN) to the account's set. "
+                    + "Idempotent (granting an already-held role is a documented no-op). One "
+                    + "transaction across the set row (with granted_by/source provenance, Envers-audited), "
+                    + "the primary-role mirror (rank-derived when the grant elevates it), and the "
+                    + "login-side authority projection; outstanding authorizations die with the change. "
+                    + "Answers the resulting set.")
+    public ResponseEntity<java.util.Set<String>> grantUserRole(
+            @PathVariable UUID id,
+            @Valid @RequestBody GrantRoleRequest request,
+            Authentication authentication) {
+        identitySpi.grantRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(identitySpi.rolesOf(id));
+    }
+
+    @DeleteMapping("/users/{id}/roles/{role}")
+    @Operation(summary = "Revoke a role from an account",
+            description = "D-03: removes one role from the account's set. Guards: revoking the last "
+                    + "active ADMIN role or the account's last remaining role answers 409 (the L23 "
+                    + "invariant and the at-least-one-role rule); a role the account does not hold "
+                    + "answers 404. Same three-store single-transaction discipline as the grant. "
+                    + "Answers the resulting set.")
+    public ResponseEntity<java.util.Set<String>> revokeUserRole(
+            @PathVariable UUID id,
+            @PathVariable String role,
+            Authentication authentication) {
+        identitySpi.revokeRole(id, role,
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(identitySpi.rolesOf(id));
+    }
+
     @PutMapping("/users/{id}/role")
     @Operation(summary = "Change an account's role",
             description = "Sets the account's role (CONSUMER/PROVIDER/ADMIN) on the users store — "

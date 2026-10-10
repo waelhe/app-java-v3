@@ -61,6 +61,10 @@ class UserServiceSecurityTest {
     @MockitoBean
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    /** D-03: the role-SET store is a constructor dependency now — mocked like its peers. */
+    @MockitoBean
+    private AccountRoleRepository accountRoleRepository;
+
     @MockitoBean
     private UserDetailsManager userDetailsManager;
 
@@ -134,6 +138,22 @@ class UserServiceSecurityTest {
         verifyNoInteractions(auditHistoryPurgeService);
     }
 
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void grantRole_whenNotAdmin_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class)
+                .isThrownBy(() -> userService.grantRole(UUID.randomUUID(), "PROVIDER", "actor"));
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    @WithMockUser(roles = "CONSUMER")
+    void revokeRole_whenNotAdmin_thenAccessDenied() {
+        assertThatExceptionOfType(AccessDeniedException.class)
+                .isThrownBy(() -> userService.revokeRole(UUID.randomUUID(), "PROVIDER", "actor"));
+        verifyNoInteractions(userRepository);
+    }
+
     // -- The dual-contract rule on pseudonymizeAccount --
 
     @Test
@@ -186,11 +206,48 @@ class UserServiceSecurityTest {
     void updateUserRole_whenAdmin_thenReachesTheDomain() {
         UUID target = UUID.randomUUID();
         when(userRepository.findById(target)).thenReturn(Optional.of(domainUser("target@example.com")));
+        // D-03: the replace path reads the role SET first (empty here — the
+        // set is then rewritten to the single target role).
+        when(accountRoleRepository.findByUserId(target)).thenReturn(java.util.List.of());
         when(userDetailsManager.loadUserByUsername(anyString())).thenReturn(storedLoginRow());
 
         assertThatCode(() -> userService.updateUserRole(target, "PROVIDER", "admin")).doesNotThrowAnyException();
 
         verify(userRepository).findById(target);
+        verify(userDetailsManager).updateUser(any(UserDetails.class));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void grantRole_whenAdmin_thenReachesTheDomain() {
+        UUID target = UUID.randomUUID();
+        when(userRepository.findById(target)).thenReturn(Optional.of(domainUser("target@example.com")));
+        when(accountRoleRepository.existsByUserIdAndRole(target, UserRole.PROVIDER)).thenReturn(false);
+        when(accountRoleRepository.findByUserId(target)).thenReturn(java.util.List.of());
+        when(userDetailsManager.loadUserByUsername(anyString())).thenReturn(storedLoginRow());
+
+        assertThatCode(() -> userService.grantRole(target, "PROVIDER", "admin")).doesNotThrowAnyException();
+
+        verify(accountRoleRepository).save(any(AccountRole.class));
+        verify(userDetailsManager).updateUser(any(UserDetails.class));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void revokeRole_whenAdmin_thenReachesTheDomain() {
+        UUID target = UUID.randomUUID();
+        AccountRole consumerRow = AccountRole.grant(target, UserRole.CONSUMER, "system", RoleGrantSource.REGISTRATION);
+        AccountRole providerRow = AccountRole.grant(target, UserRole.PROVIDER, "admin", RoleGrantSource.ADMIN_GRANT);
+        when(userRepository.findById(target)).thenReturn(Optional.of(domainUser("target@example.com")));
+        when(accountRoleRepository.findByUserIdAndRole(target, UserRole.PROVIDER))
+                .thenReturn(Optional.of(providerRow));
+        when(accountRoleRepository.findByUserId(target))
+                .thenReturn(java.util.List.of(consumerRow, providerRow));
+        when(userDetailsManager.loadUserByUsername(anyString())).thenReturn(storedLoginRow());
+
+        assertThatCode(() -> userService.revokeRole(target, "PROVIDER", "admin")).doesNotThrowAnyException();
+
+        verify(accountRoleRepository).delete(providerRow);
         verify(userDetailsManager).updateUser(any(UserDetails.class));
     }
 
