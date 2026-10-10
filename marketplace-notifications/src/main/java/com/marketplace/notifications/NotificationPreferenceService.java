@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -84,6 +85,30 @@ public class NotificationPreferenceService {
         return repository.findByUserIdAndTypeAndChannel(userId, type, channel)
                 .map(NotificationPreference::isEnabled)
                 .orElse(true);
+    }
+
+    /**
+     * Phase 7 (§8.1 — the routing engine's FIRST resolution level): the
+     * stored type-level override as an {@code Optional} — present when an
+     * explicit row exists (either value), empty when the user never
+     * expressed one. The distinction is the hierarchy's load-bearing
+     * seam: the engine falls through to the topic level (then the
+     * default) ONLY on an empty answer, so an explicit type-level
+     * {@code enabled = true} overrides a topic-level {@code enabled =
+     * false} — the documented resolution order is total, not
+     * last-disabled-wins.
+     *
+     * @param userId   the recipient (users.id space)
+     * @param type     the notification type being delivered
+     * @param channel  the delivery channel being consulted
+     * @return the stored override, or empty for "no explicit type-level
+     *         switch — consult the next hierarchy level"
+     */
+    @Transactional(readOnly = true)
+    public Optional<Boolean> findChannelOverride(UUID userId, NotificationType type,
+                                                           NotificationChannel channel) {
+        return repository.findByUserIdAndTypeAndChannel(userId, type, channel)
+                .map(NotificationPreference::isEnabled);
     }
 
     /**

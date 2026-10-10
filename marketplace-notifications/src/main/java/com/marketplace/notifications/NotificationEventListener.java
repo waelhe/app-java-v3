@@ -31,9 +31,12 @@ public class NotificationEventListener {
     private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
 
     private final NotificationService notificationService;
+    private final com.marketplace.notifications.routing.UrgentAlertNotificationRouter urgentAlertRouter;
 
-    public NotificationEventListener(NotificationService notificationService) {
+    public NotificationEventListener(NotificationService notificationService,
+                                     com.marketplace.notifications.routing.UrgentAlertNotificationRouter urgentAlertRouter) {
         this.notificationService = notificationService;
+        this.urgentAlertRouter = urgentAlertRouter;
     }
 
     @ApplicationModuleListener
@@ -404,5 +407,37 @@ public class NotificationEventListener {
                 event.resolution(), event.refundedAmountCents());
         log.info("Notification sent for dispute resolved: disputeId={}, openedBy={}, resolution={}",
                 event.disputeId(), event.openedBy(), event.resolution());
+    }
+
+    /**
+     * Phase 7 (execution plan §10 / §8.1 — notification routing): the
+     * official-urgent-alert's notification leg — the {@code URGENT_ALERT}
+     * type's V180 registration finally delivering. The listener is the
+     * Modulith seam only (AFTER_COMMIT, its own transaction, the
+     * framework's retry — the house contract every listener here rides);
+     * the ROUTING is the {@code UrgentAlertNotificationRouter}'s
+     * documented official-alert policy: validity re-checked through the
+     * standing {@code UrgentAlertsPort}, geography through the scope's
+     * two data owners (the members port + the V198 opt-in
+     * subscriptions), the channels through the §8.1 routing engine with
+     * the per-channel idempotency ledger — a retried publication can
+     * never duplicate a delivery (the Phase 7 gate).
+     *
+     * <p><b>The recipients are NOT derived from unrelated payloads:</b>
+     * the event carries the committed alert facts (source, scope, level,
+     * title) and the fan-out resolves the SCOPE's own membership through
+     * the data-owner port — the §8.1 rule "لا يشتق المستلمون في مستمع
+     * الإشعارات إذا كان الحدث يحمل الحقيقة الملتزمة" governs party facts
+     * the event was supposed to carry (the DisputeResolvedEvent
+     * {@code openedBy} rule), not the enumeration of a geo scope's own
+     * members, which is the fan-out's input by construction (the
+     * NeighborhoodMembersPort contract documents the split).
+     */
+    @ApplicationModuleListener
+    public void onUrgentAlertPublished(
+            com.marketplace.shared.api.UrgentAlertPublishedEvent event) {
+        urgentAlertRouter.onUrgentAlertPublished(event);
+        log.info("Urgent alert notification leg completed: alertId={}, scope={}",
+                event.alertId(), event.locationId());
     }
 }
