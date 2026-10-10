@@ -136,7 +136,14 @@ class ObservationCoverageFilesTest {
                     "catalog.create.listing",
                     // W3 (G19): the favorites surface's two commands — the
                     // same commands-not-reads policy as every house entry.
-                    "catalog.favorites.save", "catalog.favorites.unsave")),
+                    "catalog.favorites.save", "catalog.favorites.unsave",
+                    // A-17 (C.7 — the M1 store root): the registration command;
+                    // the owner read stays unobserved (the commands-not-reads policy).
+                    // B-16 (C.8 — the M2 store wave) adds the Q&A pair's two
+                    // commands — the same commands-not-reads policy; the wave's
+                    // two public reads stay unobserved.
+                    "catalog.product.answer.publish", "catalog.product.question.ask",
+                    "catalog.product.register")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
                     "community.event.rsvp", "community.event.unrsvp",
@@ -161,9 +168,11 @@ class ObservationCoverageFilesTest {
                     "community.rule.toggle", "community.rule.update")),
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
+                    "email.verification.complete", "email.verification.resend", "email.verification.send",
+                    "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
-                    "user.status.update", "user.sync.oidc")),
+                    "user.self.deletion", "user.status.update", "user.sync.oidc")),
             // B-13 (compliance plan C.3): the institution registry's three
             // business commands (register + the verification request + the
             // review verdict) — the module is not yet in the app reactor
@@ -197,6 +206,11 @@ class ObservationCoverageFilesTest {
                     "media.review.upload.confirm", "media.review.upload.request",
                     "media.thumbnail.process", "media.upload.confirm",
                     "media.upload.request", "media.upload.request.post")),            Map.entry("marketplace-messaging", List.of("messaging.send")),
+            Map.entry("marketplace-orders", List.of(
+                    // A-11 (compliance plan wave C: C.1) — the order machine's
+                    // four commands (the reads stay unobserved per the
+                    // commands-not-reads policy).
+                    "order.cancel", "order.confirm", "order.fulfill", "order.place")),
             Map.entry("marketplace-notifications", List.of(
                     "notification.delete", "notification.mark.all.read",
                     "notification.mark.read", "notification.preferences.update")),

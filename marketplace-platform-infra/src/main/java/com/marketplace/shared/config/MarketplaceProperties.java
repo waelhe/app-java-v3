@@ -3,7 +3,9 @@ package com.marketplace.shared.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Type-safe configuration properties for the marketplace application.
@@ -29,8 +31,54 @@ public record MarketplaceProperties(
     // security().session().maxSessions() unconditionally (CodeRabbit #241
     // flagged exactly this gap — only OAuth2 was primed before).
     @DefaultValue Cors cors,
-    @DefaultValue Security security
+    @DefaultValue Security security,
+    @DefaultValue ApiVersioning apiVersioning
 ) {
+    /**
+     * B.1 (official-compliance plan §6 wave B) — the managed API deprecation
+     * policy for the versioned surface. The routing half of B.1 is already the
+     * measured contract: every Track-A controller declares
+     * {@code @RequestMapping(version = "1.0")} and {@link com.marketplace.shared.web.ApiVersioningConfig}
+     * resolves the request version from the {@code X-API-Version} header with
+     * default {@code 1.0}. This section is the deprecation half: when a map
+     * entry exists for a request version, the official
+     * {@code StandardApiVersionDeprecationHandler} (Spring Framework — Web on
+     * Servlet Stack › API Versioning: "can set the 'Deprecation' 'Sunset'
+     * headers and 'Link' headers as defined in RFC 9745 and RFC 8594") sends
+     * those response headers to that version's callers.
+     *
+     * <p>The map key is the API version string exactly as clients send it
+     * (semantic major.minor[.patch], e.g. {@code 1.0}). Map keys that contain
+     * dots bind through the bracket notation
+     * ({@code marketplace.api-versioning.deprecations[1.0].sunset-date}) —
+     * pinned by {@code MarketplacePropertiesBindingTest}.
+     *
+     * <p>Empty map (the default) = no deprecation handler is registered at
+     * all — zero behavioral change for the live {@code 1.0} surface. The
+     * policy is deliberately configuration, not code: deprecating a version
+     * when a newer one ships is an environment change on the owner's channel,
+     * never a rebuild.
+     */
+    public record ApiVersioning(
+        @DefaultValue Map<String, Deprecation> deprecations
+    ) {
+        /**
+         * One deprecated version's hint set — the official
+         * {@code StandardApiVersionDeprecationHandler.VersionSpec} DSL mapped
+         * one-to-one: {@code deprecationDate} → RFC 9745 {@code Deprecation}
+         * header, {@code sunsetDate} → RFC 8594 {@code Sunset} header,
+         * {@code link} → the {@code Link} header pointing callers at the
+         * migration document. Dates bind from ISO-8601 strings
+         * ({@code 2026-11-01T00:00:00Z}); absent components are simply not
+         * set on the spec.
+         */
+        public record Deprecation(
+            ZonedDateTime deprecationDate,
+            ZonedDateTime sunsetDate,
+            @DefaultValue("") String link
+        ) {}
+    }
+
     public record Cors(
         @DefaultValue("https://marketplace.com") List<String> allowedOrigins
     ) {}
@@ -140,8 +188,24 @@ public record MarketplaceProperties(
                 @DefaultValue("") String keyPassword
             ) {}
         }
+        /**
+         * A.4 (official-compliance plan §6 wave A) — the multi-device session
+         * policy, bound once and consumed by both session-bearing chains.
+         * {@code maxSessions} bounds how many concurrent authenticated
+         * sessions one principal may hold (Spring Security Reference › Servlet
+         * › Session Management: "This will prevent a user from logging in
+         * multiple times - a second login will cause the first to be
+         * invalidated"). {@code maxSessionsPreventsLogin} selects the
+         * documented overflow behavior: {@code false} — the documented
+         * default — expires the least-recent session so the newest login
+         * always succeeds; {@code true} instead rejects the new login
+         * outright ("The second login will then be rejected... the user will
+         * be sent to the authentication-failure-url if form-based login is
+         * being used").
+         */
         public record Session(
-            @DefaultValue("2") int maxSessions
+            @DefaultValue("2") int maxSessions,
+            @DefaultValue("false") boolean maxSessionsPreventsLogin
         ) {}
         public record OAuth2(
             @DefaultValue Client client,

@@ -65,9 +65,7 @@ public class InstitutionController {
                     + "JSON-LD block assembled over the resolved administrative chain (the "
                     + "structured-data surface the public page serves). Unknown is 404.")
     public ResponseEntity<InstitutionResponse> detail(@PathVariable UUID id) {
-        Institution institution = institutionService.getInstitution(id);
-        return ResponseEntity.ok(InstitutionResponse.from(institution,
-                institutionService.resolveChain(institution.getLocationId())));
+        return ResponseEntity.ok(institutionService.getInstitutionDetail(id));
     }
 
     @GetMapping("/institutions/me")

@@ -207,7 +207,7 @@ class AdminUserInitializerTest {
                         null,
                         null,
                         null,
-                        new MarketplaceProperties.Security.AdminSeed(adminSeedPassword)));
+                        new MarketplaceProperties.Security.AdminSeed(adminSeedPassword)), new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
     }
 
     private static Environment environment(boolean prod) {

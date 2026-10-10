@@ -100,6 +100,15 @@ class MediaThumbnailIntegrationTest {
     @MockitoBean
     ReviewLookupPort reviewLookupPort;
 
+    // The A-11-era constructor arm: MediaService resolves the store
+    // product through ProductLookupPort — the catalog module's adapter,
+    // outside this module slice. The measured context-load failure of
+    // 2026-10-09 ("required a bean of type 'ProductLookupPort'") closes
+    // here — the same cross-module-port convention every field above
+    // follows.
+    @MockitoBean
+    com.marketplace.shared.api.ProductLookupPort productLookupPort;
+
     /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
     @MockitoBean
     PostLookupPort postLookupPort;

@@ -1,6 +1,7 @@
 package com.marketplace.booking;
 
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPriceProvider.ListingInfo;
@@ -298,7 +299,13 @@ class BookingServiceTest {
     }
 
     @Test
-    void getByIdForUser_throwsWhenNotParticipant() {
+    void getByIdForUser_throwsNotFoundWhenNotParticipant_a03PublishedContract() {
+        // A-03 (compliance plan 0.6 — the measured 404/403 contract defect):
+        // the endpoint's published OpenAPI contract reads "the consumer or
+        // the provider of the booking (or ADMIN); anyone else gets 404" — an
+        // authenticated non-participant must not learn the booking exists.
+        // The previous assertion here pinned the DEFECT (AccessDeniedException
+        // = a 403 existence leak); it now pins the published privacy sentence.
         UUID id = Instancio.create(UUID.class);
         Booking booking = Instancio.of(Booking.class)
                 .set(field(Booking::getPriceCents), 5000L)
@@ -311,7 +318,52 @@ class BookingServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
-        assertThrows(AccessDeniedException.class, () -> service.getByIdForUser(id, authentication));
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.getByIdForUser(id, authentication));
+        assertEquals("Booking not found: " + id, ex.getMessage());
+    }
+
+    @Test
+    void getByIdForUser_allowsTheProviderParticipant_a03() {
+        UUID id = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getId), id)
+                .set(field(Booking::getConsumerId), Instancio.create(UUID.class))
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
+                .create();
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        Booking result = service.getByIdForUser(id, authentication);
+
+        assertEquals(id, result.getId());
+    }
+
+    @Test
+    void getByIdForUser_allowsTheAdminBypass_a03() {
+        UUID id = UUID.randomUUID();
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getId), id)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
+                .create();
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(Instancio.create(UUID.class));
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
+
+        Booking result = service.getByIdForUser(id, authentication);
+
+        assertEquals(id, result.getId());
     }
 
     @Test
@@ -558,5 +610,55 @@ class BookingServiceTest {
         service.autoCancel(id);
 
         verify(availabilityPort).releaseSlot(providerId, startsAt, endsAt, booking.getId(), null);
+    }
+
+    // ------------------------------------------------------------------
+    // A-03 (compliance plan 0.6 — the BookingConfirmedEvent publication,
+    // the unit-level half of the PublishedEvents gate; the module-level
+    // half rides CI via BookingModuleIntegrationTest).
+    // ------------------------------------------------------------------
+
+    @Test
+    void confirm_publishesBookingConfirmedEvent_a03() {
+        UUID id = Instancio.create(UUID.class);
+        UUID consumerId = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getId), id)
+                .set(field(Booking::getConsumerId), consumerId)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
+                .create();
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(providerId);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+
+        service.confirm(id, authentication);
+
+        verify(eventPublisher).publishEvent(new BookingConfirmedEvent(id));
+    }
+
+    @Test
+    void autoConfirm_publishesBookingConfirmedEvent_a03() {
+        UUID id = Instancio.create(UUID.class);
+        UUID providerId = Instancio.create(UUID.class);
+        Booking booking = Instancio.of(Booking.class)
+                .set(field(Booking::getId), id)
+                .set(field(Booking::getProviderId), providerId)
+                .set(field(Booking::getPriceCents), 5000L)
+                .set(field(Booking::getNotes), "notes")
+                .set(field(Booking::getStatus), BookingStatus.PENDING)
+                .set(field(Booking::getStartsAt), null)
+                .set(field(Booking::getEndsAt), null)
+                .create();
+        when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+
+        service.autoConfirm(id);
+
+        verify(eventPublisher).publishEvent(new BookingConfirmedEvent(id));
     }
 }

@@ -2,6 +2,7 @@ package com.marketplace.media;
 
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PostLookupPort;
+import com.marketplace.shared.api.ProductLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ServiceUnavailableException;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -65,6 +66,16 @@ class MediaServiceSecurityTest {
     /** L48: the post-target seam — mocked at the media module slice (community implements it in the full app). */
     @MockitoBean
     PostLookupPort postLookupPort;
+
+    /**
+     * A-17 (C.7): the product-target seam — mocked at this media slice
+     * (catalog implements it in the full app). No product flow is exercised
+     * here, so the mock rides inert, the same boundary the ports above form;
+     * the missing bean is what the CI-measured context-load failure of
+     * 7ac165b0 showed (constructor parameter 7, UnsatisfiedDependency).
+     */
+    @MockitoBean
+    private ProductLookupPort productLookupPort;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;

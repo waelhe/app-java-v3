@@ -84,6 +84,31 @@ public class NotificationService {
         sendWebSocket(info.providerId(), NotificationType.BOOKING_CREATED, providerMessage);
     }
 
+    public void onBookingConfirmed(UUID bookingId) {
+        BookingInfo info = bookingParticipantProvider.getBookingInfo(bookingId);
+        // A-03 (compliance plan 0.6 — the dead BookingConfirmedEvent's
+        // delivery, the notification leg of the owner's identity rule "an
+        // event without a listener is a measured defect"): the recipient is
+        // the CONSUMER alone — the party whose booking just moved to
+        // CONFIRMED and who is waiting on that answer. The provider's
+        // knowledge of the same moment already arrives on its own channel:
+        // on the manual path the provider performed the confirm themselves,
+        // and on the payment-driven autoConfirm path both parties already
+        // receive the PAYMENT_STATE notification for the state change that
+        // triggered it — a second provider row here would duplicate that
+        // alert, not carry a new fact. Same delivery shape as
+        // onBookingCreated: the in-app row is always on, EMAIL rides the
+        // per-type/channel preference matrix (L22) from day one, WS honors
+        // an explicit opt-out.
+        repository.save(Notification.create(info.consumerId(),
+                NotificationType.BOOKING_CONFIRMED.name(), "Booking confirmed: " + bookingId));
+        if (preferences.isChannelEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(info.consumerId(), "Booking Confirmed", "email/notification",
+                    Map.of("message", "Your booking " + bookingId + " has been confirmed."));
+        }
+        sendWebSocket(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
+    }
+
     public void onPaymentStateChanged(UUID paymentIntentId, String state) {
         paymentIntentLookupPort.findById(paymentIntentId).ifPresent(intent -> {
             // B-11: the state name renders through the payments vocabulary
@@ -350,6 +375,106 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
+    }
+
+    /**
+     * A-04 (official-compliance plan §6 wave A — A.1): the password-reset
+     * mail leg — the DORMANT {@code email/password-reset} template's
+     * activation, with exactly the model variables it was authored with
+     * ({@code name}, {@code resetLink}, {@code expirationMinutes}).
+     *
+     * <p><b>Why this leg carries NO in-app row, NO WebSocket push, and NO
+     * preference gate — a measured exception to every channel rule above,
+     * stated here so the exception is policy, not omission:</b> the
+     * recipient is by definition OUTSIDE the application (the reset
+     * requester forgot the very credential a session would need), so the
+     * in-app channels have no reader to reach; and the OWASP Forgot
+     * Password Cheat Sheet (the declared trusted community source) treats
+     * this as security mail, not a notification preference — an account's
+     * redemption right is delivered regardless of marketing-channel
+     * opt-outs. The NotificationType vocabulary therefore gains nothing
+     * (no type, no preferences-CHECK widening pair): this is the mail
+     * channel alone, the same {@link EmailNotificationService} seam every
+     * other mail rides.</p>
+     */
+    public void onPasswordResetRequested(UUID userId, String displayName,
+                                         String resetLink, java.time.Instant expiresAt) {
+        long expirationMinutes = Math.max(0,
+                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        emailNotificationService.sendEmail(userId, "Reset Your Password", "email/password-reset",
+                Map.of("name", displayName == null ? "" : displayName,
+                        "resetLink", resetLink,
+                        "expirationMinutes", expirationMinutes));
+    }
+
+    /**
+     * A-04 (wave A — A.2): the email-verification mail leg — the DORMANT
+     * {@code email/welcome} template's activation for its real purpose:
+     * the welcome mail now carries the one-time verification deep link
+     * that lifts the registration hold. The same measured exception as
+     * {@link #onPasswordResetRequested}: the unverified account's holder
+     * cannot be inside the application (the hold locks the login gate), so
+     * no in-app channel and no preference gate — the mail channel alone.
+     */
+    public void onEmailVerificationRequested(UUID userId, String displayName, String verificationLink) {
+        emailNotificationService.sendEmail(userId, "Welcome to Marketplace — verify your email",
+                "email/welcome",
+                Map.of("name", displayName == null ? "" : displayName,
+                        "verificationLink", verificationLink));
+    }
+
+    /**
+     * A-11 (official-compliance plan §6 wave C — C.1: the order machine's
+     * CONFIRMED leg). The recipient is the order's CONSUMER alone — the
+     * party waiting on the merchant's acceptance. The same delivery shape
+     * as onBookingConfirmed: the in-app row is always on, EMAIL rides the
+     * per-type/channel preference matrix (L22) from day one, WS honors an
+     * explicit opt-out. The event payload carries the consumer id, so
+     * unlike the booking legs this path never consults the participant
+     * provider — the payload IS the resolution (the ledger's placement
+     * rule paying off).
+     */
+    public void onOrderConfirmed(UUID orderId, UUID consumerId) {
+        String message = "Order confirmed: " + orderId;
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_CONFIRMED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Confirmed", "email/notification",
+                    Map.of("message", "Your order " + orderId + " has been confirmed."));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_CONFIRMED, message);
+    }
+
+    /**
+     * A-11 (C.1: the order machine's FULFILLED leg — the delivery
+     * completion). Recipient and channels as onOrderConfirmed.
+     */
+    public void onOrderFulfilled(UUID orderId, UUID consumerId) {
+        String message = "Order fulfilled: " + orderId;
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_FULFILLED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Fulfilled", "email/notification",
+                    Map.of("message", "Your order " + orderId + " has been fulfilled."));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_FULFILLED, message);
+    }
+
+    /**
+     * A-11 (C.1: the order machine's CANCELLED leg). The reason rides the
+     * event payload so the buyer learns WHY without any cross-module
+     * re-query.
+     */
+    public void onOrderCancelled(UUID orderId, UUID consumerId, String reason) {
+        String message = "Order cancelled: " + orderId + (reason == null || reason.isBlank() ? "" : " — " + reason);
+        repository.save(Notification.create(consumerId,
+                NotificationType.ORDER_CANCELLED.name(), message));
+        if (preferences.isChannelEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(consumerId, "Order Cancelled", "email/notification",
+                    Map.of("message", "Your order " + orderId + " was cancelled"
+                            + (reason == null || reason.isBlank() ? "." : ": " + reason)));
+        }
+        sendWebSocket(consumerId, NotificationType.ORDER_CANCELLED, message);
     }
 
     private void sendWebSocket(UUID userId, NotificationType type, String message) {

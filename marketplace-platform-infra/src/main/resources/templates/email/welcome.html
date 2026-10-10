@@ -8,8 +8,20 @@
 <h1 style="color: #2d6a4f;">Welcome to Marketplace!</h1>
 <p th:text="'Hello, ' + ${name} + '!'">Hello, User!</p>
 <p>Thank you for joining our marketplace. We're excited to have you on board.</p>
-<p>You can now browse listings, book services, and start selling.</p>
+<p style="margin: 20px 0;">One last step before you can sign in: confirm that this email
+    address really is yours.</p>
+<p style="margin: 20px 0;">
+    <a th:href="${verificationLink}"
+       style="background-color: #2d6a4f; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
+        Verify My Email
+    </a>
+</p>
+<p style="font-size: 14px; color: #666;">This link is single-use and expires 24 hours
+    after it was requested. If it has expired, you can request a fresh one from the app's
+    sign-in screen.</p>
+<p>Once verified, you can browse listings, book services, and start selling.</p>
 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-<p style="font-size: 12px; color: #999;">If you did not create this account, please ignore this email.</p>
+<p style="font-size: 12px; color: #999;">If you did not create this account, please ignore
+    this email and the account will never be activated.</p>
 </body>
 </html>

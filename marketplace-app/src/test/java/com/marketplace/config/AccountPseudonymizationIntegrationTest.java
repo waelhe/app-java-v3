@@ -27,6 +27,10 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
@@ -423,8 +427,12 @@ class AccountPseudonymizationIntegrationTest {
             assertThat(before.getSubject()).isEqualTo(cacheUser);
 
             // Replica A runs the real transactional operation (service path:
-            // transform + AFTER_COMMIT eviction in A's JVM).
-            userServiceA.pseudonymizeAccount(cacheUserId, "cross-replica cache proof", "admin-actor");
+            // transform + AFTER_COMMIT eviction in A's JVM). A-07 made the
+            // service-level admin gate real — the erasure's direct caller
+            // now declares its actual authority (the actor string said
+            // "admin-actor" all along; the SecurityContext finally agrees).
+            runAsAdmin(() -> userServiceA.pseudonymizeAccount(
+                    cacheUserId, "cross-replica cache proof", "admin-actor"));
 
             // Replica B must see the transformed subject — only a shared-store
             // eviction (A's relay) followed by a miss-and-reload produces it.
@@ -457,6 +465,26 @@ class AccountPseudonymizationIntegrationTest {
     }
 
     // -- fixtures & helpers (the L23 gate shapes) --------------------------
+
+    /**
+     * A-07: the service-level {@code hasRole('ADMIN')} gate is real now, so a
+     * test thread that drives the admin surface directly must carry the
+     * matching authority — the Spring Security way to say what the actor
+     * string always said. The ambient context (if any) is restored after the
+     * action, so the swap never leaks into the assertions that follow.
+     */
+    private void runAsAdmin(Runnable action) {
+        SecurityContext previous = SecurityContextHolder.getContext();
+        SecurityContext admin = SecurityContextHolder.createEmptyContext();
+        admin.setAuthentication(new UsernamePasswordAuthenticationToken(
+                "it-a07-admin-actor", null, java.util.List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        SecurityContextHolder.setContext(admin);
+        try {
+            action.run();
+        } finally {
+            SecurityContextHolder.setContext(previous);
+        }
+    }
 
     private void registerUser(String username, String role) {
         if (userDetailsManager.userExists(username)) {

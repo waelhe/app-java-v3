@@ -3,15 +3,20 @@ package com.marketplace.booking;
 import test.config.IntegrationContainers;
 import test.config.ModuleTestConfig;
 import com.marketplace.shared.api.AvailabilityPort;
+import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.EffectivePricePort;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
+import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.modulith.test.PublishedEvents;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -21,6 +26,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest
@@ -28,6 +35,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 @Import(ModuleTestConfig.class)
 @WithMockUser
+// The class mixes empty-page contract tests with a row-creating test —
+// an inter-test dependency, and JUnit's official answer to exactly this
+// shape is a pinned method order (@TestMethodOrder's own javadoc: the
+// default order is "deterministic but not predictable"). The empty-page
+// contracts run FIRST by construction; the sweep stays as belt-and-braces
+// for any future row-creating addition.
+@TestMethodOrder(OrderAnnotation.class)
 class BookingModuleIntegrationTest {
 
     @Container
@@ -63,19 +77,73 @@ class BookingModuleIntegrationTest {
     @Autowired
     private BookingService bookingService;
 
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    /**
+     * CodeRabbit #4209499442 (adopted from the root): the class's own rows
+     * leave with each test. The empty-page contracts (listAllSummaries /
+     * listByStatus) must hold for EVERY execution order, not only when the
+     * row-creating autoConfirm test happens to run after them — the class
+     * owns its container (the per-class isolation rule), so sweeping the
+     * booking rows it created is safe and order-proof.
+     */
+    @org.junit.jupiter.api.AfterEach
+    void sweepBookingRows() {
+        bookingRepository.deleteAll();
+    }
+
     @Test
+    @Order(1)
     void contextLoads() {
     }
 
     @Test
+    @Order(2)
     void listAllSummaries_returnsEmptyPage() {
         var page = bookingService.listAllSummaries(Pageable.ofSize(10));
         assertThat(page).isEmpty();
     }
 
     @Test
+    @Order(3)
     void listByStatus_returnsEmptyPage() {
         var page = bookingService.listByStatus(BookingStatus.PENDING, Pageable.ofSize(10));
         assertThat(page).isEmpty();
+    }
+
+    /**
+     * A-03 (official-compliance plan 0.6 — the unit's measured gate,
+     * "PublishedEvents test"): the official Modulith test API
+     * (reference/events.html — "Spring Modulith's @ApplicationModuleTest
+     * enables the ability to get a PublishedEvents instance injected into
+     * the test method to verify a particular set of events has been
+     * published during the course of the business operation under test")
+     * pins the once-dead event's publication on the real transactional path:
+     * autoConfirm is the payment-driven confirm site (the plain, unadorned
+     * one — no method-security or resilience aspect rides it), publishing
+     * the SAME event type and payload as the manual confirm path
+     * (BookingConfirmedEvent(bookingId)) inside its business transaction.
+     * The delivery consumer (the notifications listener this unit landed)
+     * lives in another module's slice by design — the registry journey and
+     * the notification delivery are integration-tested at the app level
+     * (CI judges, disabledWithoutDocker here).
+     */
+    @Test
+    @Order(4)
+    void autoConfirmPublishesBookingConfirmedEvent_a03(PublishedEvents events) {
+        UUID consumerId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        var booking = Booking.create(consumerId, providerId, listingId, 5000L,
+                java.time.Instant.parse("2026-10-01T10:00:00Z"),
+                java.time.Instant.parse("2026-10-01T11:00:00Z"), "a03 notes");
+        var saved = bookingRepository.save(booking);
+
+        bookingService.autoConfirm(saved.getId());
+
+        var matching = events.ofType(BookingConfirmedEvent.class)
+                .matchingValue(BookingConfirmedEvent::bookingId, saved.getId());
+        assertThat(matching).hasSize(1);
     }
 }

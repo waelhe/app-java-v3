@@ -190,12 +190,12 @@ class JwkSourceProdHardeningTest {
                                 new MarketplaceProperties.Security.Jwt.KeyStore(path, b64, storePassword, alias, keyPassword),
                                 "marketplace-api"
                         ),
-                        new MarketplaceProperties.Security.Session(2),
+                        new MarketplaceProperties.Security.Session(2, false),
                         new MarketplaceProperties.Security.OAuth2(
                                 new MarketplaceProperties.Security.OAuth2.Client("", "", "", ""),
                                 new MarketplaceProperties.Security.OAuth2.PublicClient("", "")),
                         new MarketplaceProperties.Security.Pseudonymization("", java.util.List.of()),
-                        null)
-        );
+                        null),
+        new MarketplaceProperties.ApiVersioning(java.util.Map.of()));
     }
 }

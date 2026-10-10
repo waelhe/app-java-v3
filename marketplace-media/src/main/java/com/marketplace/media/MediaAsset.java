@@ -54,6 +54,13 @@ public class MediaAsset extends BaseEntity {
     @Column(name = "post_id")
     private UUID postId;
 
+    /**
+     * A-17 (C.7): the store-product target — NULL for every listing and
+     * post row (the V116 widening of the V76 exactly-one-target CHECK).
+     */
+    @Column(name = "product_id")
+    private UUID productId;
+
     @Column(name = "provider_id", nullable = false)
     private UUID providerId;
 
@@ -93,12 +100,13 @@ public class MediaAsset extends BaseEntity {
     }
 
     private MediaAsset(UUID id, MediaOwnerKind ownerKind, UUID listingId, UUID postId,
-                       UUID providerId, String objectKey, String contentType, Long sizeBytes,
-                       Integer position) {
+                       UUID productId, UUID providerId, String objectKey, String contentType,
+                       Long sizeBytes, Integer position) {
         this.id = id;
         this.ownerKind = ownerKind;
         this.listingId = listingId;
         this.postId = postId;
+        this.productId = productId;
         this.providerId = providerId;
         this.objectKey = objectKey;
         this.contentType = contentType;
@@ -113,7 +121,7 @@ public class MediaAsset extends BaseEntity {
      */
     public static MediaAsset create(UUID listingId, UUID providerId, String objectKey,
                                     String contentType, Long sizeBytes, Integer position) {
-        return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.LISTING, listingId, null,
+        return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.LISTING, listingId, null, null,
                 providerId, objectKey, contentType, sizeBytes, position);
     }
 
@@ -126,8 +134,22 @@ public class MediaAsset extends BaseEntity {
      */
     public static MediaAsset createForPost(UUID postId, UUID authorId, String objectKey,
                                            String contentType, Long sizeBytes, Integer position) {
-        return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.POST, null, postId,
+        return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.POST, null, postId, null,
                 authorId, objectKey, contentType, sizeBytes, position);
+    }
+
+    /**
+     * A-17 (C.7 — the M1 store root): creates a new PRODUCT-targeted asset
+     * awaiting a client upload — the product's owning provider rides
+     * {@code providerId} (the same ownership basis every target carries,
+     * resolved through the {@code ProductLookupPort} seam). The object key
+     * is supplied by the service layer (server-generated, under the
+     * {@code products/} prefix).
+     */
+    public static MediaAsset createForProduct(UUID productId, UUID providerId, String objectKey,
+                                              String contentType, Long sizeBytes, Integer position) {
+        return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.PRODUCT, null, null, productId,
+                providerId, objectKey, contentType, sizeBytes, position);
     }
 
     /**
@@ -153,6 +175,7 @@ public class MediaAsset extends BaseEntity {
     public MediaOwnerKind getOwnerKind() { return ownerKind; }
     public UUID getListingId() { return listingId; }
     public UUID getPostId() { return postId; }
+    public UUID getProductId() { return productId; }
     public UUID getProviderId() { return providerId; }
     public String getObjectKey() { return objectKey; }
     public String getContentType() { return contentType; }
