@@ -29,6 +29,12 @@ public final class ApiConstants {
      */
     public static final String CART = API_V1 + "/me/cart";
     public static final String SEARCH = API_V1 + "/search";
+    /**
+     * §5.1 (plan #536): the unified search entry — ONE door by domain and
+     * geography over the measured per-domain sources; the listings facets
+     * stay on {@link #SEARCH} itself.
+     */
+    public static final String SEARCH_UNIFIED = SEARCH + "/unified";
     public static final String ADMIN = API_V1 + "/admin";
     /**
      * A-18 (compliance plan C.12): the public platform-release path — the
