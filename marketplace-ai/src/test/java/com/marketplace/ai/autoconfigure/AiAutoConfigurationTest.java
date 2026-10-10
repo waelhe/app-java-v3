@@ -5,7 +5,8 @@ import com.marketplace.ai.AiKnowledgeGateway;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiWithdrawnSourceStore;
 import com.marketplace.ai.MarketplaceSearchTools;
-import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MarketplaceSearchPort;
 import com.marketplace.ai.JevModelRouter;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
@@ -111,7 +112,7 @@ class AiAutoConfigurationTest {
     }
 
     @Test
-    void registersMarketplaceSearchToolsOnlyWhenCatalogSearchPortIsAvailable() {
+    void registersMarketplaceSearchToolsOnlyWhenCanonicalPortsAreAvailable() {
         contextRunner
                 .withPropertyValues(
                         "spring.ai.model.chat=none",
@@ -123,7 +124,16 @@ class AiAutoConfigurationTest {
                 .withPropertyValues(
                         "spring.ai.model.chat=none",
                         "spring.ai.chat.client.enabled=false")
-                .withBean(CatalogSearchPort.class, () -> mock(CatalogSearchPort.class))
+                .withBean(MarketplaceSearchPort.class, () -> mock(MarketplaceSearchPort.class))
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(MarketplaceSearchTools.class));
+
+        contextRunner
+                .withPropertyValues(
+                        "spring.ai.model.chat=none",
+                        "spring.ai.chat.client.enabled=false")
+                .withBean(MarketplaceSearchPort.class, () -> mock(MarketplaceSearchPort.class))
+                .withBean(GeoLookupPort.class, () -> mock(GeoLookupPort.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(MarketplaceSearchTools.class));
     }

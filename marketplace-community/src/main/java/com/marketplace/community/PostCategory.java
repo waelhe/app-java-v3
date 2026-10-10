@@ -22,5 +22,7 @@ public enum PostCategory {
     GENERAL,
     CLASSIFIED,
     LOST_FOUND,
-    RECOMMENDATION
+    RECOMMENDATION,
+    QUESTION,
+    REQUEST
 }
