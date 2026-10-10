@@ -7,7 +7,8 @@ import com.marketplace.ai.JevModelRouter;
 import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
-import com.marketplace.shared.api.CatalogSearchPort;
+import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.MarketplaceSearchPort;
 import org.springaicommunity.typesafe.TypeSafeClient;
 import org.springaicommunity.typesafe.advisor.JevGuardrailAdvisor;
 import org.springaicommunity.typesafe.advisor.JevSelfRefineAdvisor;
@@ -281,10 +282,12 @@ public class AiAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(CatalogSearchPort.class)
+    @ConditionalOnBean({MarketplaceSearchPort.class, GeoLookupPort.class})
     @ConditionalOnMissingBean
-    MarketplaceSearchTools marketplaceSearchTools(CatalogSearchPort catalogSearchPort) {
-        return new MarketplaceSearchTools(catalogSearchPort);
+    MarketplaceSearchTools marketplaceSearchTools(
+            MarketplaceSearchPort marketplaceSearchPort,
+            GeoLookupPort geoLookupPort) {
+        return new MarketplaceSearchTools(marketplaceSearchPort, geoLookupPort);
     }
 
     @Bean
