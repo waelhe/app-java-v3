@@ -26,6 +26,7 @@ import jakarta.validation.constraints.NotBlank;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -85,6 +86,53 @@ public class AdminController {
                                                @Valid @RequestBody ChangeRoleRequest request,
                                                Authentication authentication) {
         identitySpi.updateUserRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * ADR-0001 (D-03, plan §Phase 1) — the multi-role admin surface: the
+     * vocabulary pinned at the request boundary (the ChangeStatusRequest
+     * pattern); the service keeps its own parse guard as defense-in-depth
+     * for SPI callers.
+     */
+    public record ModifyRoleRequest(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "CONSUMER|PROVIDER|ADMIN",
+                    message = "role must be one of CONSUMER, PROVIDER, ADMIN") String role) {}
+
+    @GetMapping("/users/{id}/roles")
+    @Operation(summary = "List an account's roles",
+            description = "The full multi-role set (ADR-0001) — the user_roles truth whose primary "
+                    + "projection the roster's single-value role field renders. Sorted, stable order.")
+    public ResponseEntity<Set<String>> getUserRoles(@PathVariable UUID id) {
+        return ResponseEntity.ok(identitySpi.getUserRoles(id));
+    }
+
+    @PostMapping("/users/{id}/roles")
+    @Operation(summary = "Grant a role to an account",
+            description = "Adds one role (CONSUMER/PROVIDER/ADMIN) to the account's set, keeping every "
+                    + "role it already holds (ADR-0001). One transaction on both stores of truth — the "
+                    + "user_roles set + its primary mirror, and the authorization authorities riding the "
+                    + "role — with the account's outstanding OIDC authorizations invalidated and the "
+                    + "acting administrator recorded in the audit line.")
+    public ResponseEntity<Void> grantUserRole(@PathVariable UUID id,
+                                              @Valid @RequestBody ModifyRoleRequest request,
+                                              Authentication authentication) {
+        identitySpi.grantUserRole(id, request.role(),
+                authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/users/{id}/roles/{role}")
+    @Operation(summary = "Revoke a role from an account",
+            description = "Removes one role (CONSUMER/PROVIDER/ADMIN) from the account's set (ADR-0001). "
+                    + "Idempotent on an absent role; revoking the last remaining role is a 409, and "
+                    + "revoking ADMIN from the last active ADMIN account is rejected by the standing "
+                    + "counting constraint. Same dual-store transaction and audit discipline as the grant.")
+    public ResponseEntity<Void> revokeUserRole(@PathVariable UUID id,
+                                               @PathVariable String role,
+                                               Authentication authentication) {
+        identitySpi.revokeUserRole(id, role,
                 authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok().build();
     }

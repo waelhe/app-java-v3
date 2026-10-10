@@ -36,6 +36,14 @@ public final class ApiConstants {
      * GET family.
      */
     public static final String RELEASES = API_V1 + "/releases";
+    /**
+     * ADR-0001 (plan §Phase 1): the verification-credential family — the
+     * self-service pair (submit + mine); the admin queue rides the
+     * {@link #ADMIN} prefix with the {@link #VERIFICATION_CREDENTIALS_SUFFIX}.
+     */
+    public static final String VERIFICATION_CREDENTIALS = API_V1 + "/verification-credentials";
+    /** The admin half of the verification-credential family (after {@link #ADMIN}). */
+    public static final String VERIFICATION_CREDENTIALS_SUFFIX = "/verification-credentials";
 
     private ApiConstants() {
     }

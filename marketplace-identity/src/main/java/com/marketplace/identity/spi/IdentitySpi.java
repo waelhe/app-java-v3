@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.modulith.NamedInterface;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,6 +44,48 @@ public interface IdentitySpi {
      *                the action in the audit line
      */
     void updateUserRole(UUID userId, String newRole, String actor);
+
+    /**
+     * ADR-0001 (D-03, plan §Phase 1) — the multi-role grant: adds ONE role
+     * to the account's set while keeping every role it already holds. The
+     * same dual-store discipline as {@link #updateUserRole}: one
+     * transaction writes the {@code user_roles} set + its primary-role
+     * mirror and replaces the login-side {@code auth_authorities}
+     * projection with the FULL target set, kills the issued authorizations,
+     * invalidates the caches, publishes {@code UserRoleChanged} in-transaction,
+     * and records the actor in the audit line. Idempotent: granting a held
+     * role is a documented no-op.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to add
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action in the audit line
+     */
+    void grantUserRole(UUID userId, String role, String actor);
+
+    /**
+     * ADR-0001 (D-03, plan §Phase 1) — the multi-role revoke: removes ONE
+     * role from the account's set. Idempotent on an absent role; removing
+     * the last remaining role is the 409 contract (an account is never
+     * roleless), and removing {@code ROLE_ADMIN} from the only enabled
+     * account holding it rides the standing last-active-ADMIN guard.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to remove
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action in the audit line
+     */
+    void revokeUserRole(UUID userId, String role, String actor);
+
+    /**
+     * ADR-0001 (D-03) — the admin read of the FULL role set (the
+     * {@code user_roles} truth) whose primary projection the roster's
+     * single-value {@code role} field renders.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @return the stored role names, sorted (stable admin display order)
+     */
+    Set<String> getUserRoles(UUID userId);
 
     /**
      * L23 (feature-expansion roadmap §5): administrative account disable/enable.

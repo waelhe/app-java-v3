@@ -3,6 +3,7 @@ package com.marketplace.identity;
 import com.marketplace.identity.spi.AuditHistoryPurgeResult;
 import com.marketplace.identity.spi.IdentitySpi;
 import com.marketplace.shared.api.AccountStatusChanged;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -30,6 +31,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -72,6 +75,9 @@ public class UserService implements IdentitySpi {
     private final org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoder;
 
     private static final Set<String> USER_CACHE_NAMES = Set.of("users", "userSubjects");
+
+    /** The house authority shape: {@code ROLE_<role>} rows in {@code auth_authorities}. */
+    static final String ROLE_AUTHORITY_PREFIX = "ROLE_";
 
     /**
      * I7 §5-أ step 3 — the neutral label read surfaces render for a
@@ -312,8 +318,8 @@ public class UserService implements IdentitySpi {
                                 "Account for this subject was pseudonymized and cannot be "
                                         + "re-provisioned: " + subject);
                     }
-                    UserRole role = resolveRole(subject, token);
-                    User newUser = User.create(subject, email, name, role);
+                    Set<UserRole> initialRoles = resolveInitialRoles(subject, token);
+                    User newUser = User.create(subject, email, name, initialRoles);
                     profileChanged.set(true);
                     return userRepository.save(newUser);
                 });
@@ -343,30 +349,57 @@ public class UserService implements IdentitySpi {
      * fallback only serves foreign/test-minted tokens, and the account
      * bootstrap keeps working exactly as before in every environment.
      */
-    private UserRole resolveRole(String subject, JwtAuthenticationToken token) {
+    private Set<UserRole> resolveInitialRoles(String subject, JwtAuthenticationToken token) {
         try {
             UserDetails stored = userDetailsManager.loadUserByUsername(subject);
-            return fromAuthorities(stored.getAuthorities());
+            return rolesFromAuthorities(stored.getAuthorities());
         } catch (UsernameNotFoundException ex) {
-            return resolveRoleFromClaim(token);
+            return rolesFromClaim(token);
         }
     }
 
-    /** The stored authority set → the domain role (the seed's shape: one {@code ROLE_<role>}). */
-    private static UserRole fromAuthorities(Collection<? extends GrantedAuthority> authorities) {
+    /**
+     * The stored authority set → the domain role set (ADR-0001): every
+     * {@code ROLE_<role>} authority the live store carries maps to its
+     * enum member — the multi-role bootstrap reads the FULL set, not the
+     * first match. An authority outside the domain vocabulary is not a
+     * role and is skipped; an empty result degrades to CONSUMER (the
+     * registration birthright — never a roleless account).
+     */
+    private static Set<UserRole> rolesFromAuthorities(Collection<? extends GrantedAuthority> authorities) {
+        Set<UserRole> roles = EnumSet.noneOf(UserRole.class);
         for (GrantedAuthority authority : authorities) {
             String name = authority.getAuthority();
-            if ("ROLE_ADMIN".equals(name)) return UserRole.ADMIN;
-            if ("ROLE_PROVIDER".equals(name)) return UserRole.PROVIDER;
+            if (name != null && name.startsWith(ROLE_AUTHORITY_PREFIX)) {
+                try {
+                    roles.add(UserRole.valueOf(name.substring(ROLE_AUTHORITY_PREFIX.length())));
+                } catch (IllegalArgumentException ignored) {
+                    // not a domain role — not part of the identity set
+                }
+            }
         }
-        return UserRole.CONSUMER;
+        if (roles.isEmpty()) {
+            roles.add(UserRole.CONSUMER);
+        }
+        return Set.copyOf(roles);
     }
 
-    private static UserRole resolveRoleFromClaim(JwtAuthenticationToken token) {
+    private static Set<UserRole> rolesFromClaim(JwtAuthenticationToken token) {
         var roles = token.getToken().getClaimAsStringList("roles");
-        if (roles != null && roles.contains("ADMIN")) return UserRole.ADMIN;
-        if (roles != null && roles.contains("PROVIDER")) return UserRole.PROVIDER;
-        return UserRole.CONSUMER;
+        Set<UserRole> parsed = EnumSet.noneOf(UserRole.class);
+        if (roles != null) {
+            for (String role : roles) {
+                try {
+                    parsed.add(UserRole.valueOf(role));
+                } catch (IllegalArgumentException ignored) {
+                    // not a domain role — not part of the identity set
+                }
+            }
+        }
+        if (parsed.isEmpty()) {
+            parsed.add(UserRole.CONSUMER);
+        }
+        return Set.copyOf(parsed);
     }
 
     /**
@@ -431,16 +464,108 @@ public class UserService implements IdentitySpi {
     @Override
     public void updateUserRole(UUID userId, String newRole, String actor) {
         UserRole target = UserRole.valueOf(newRole);
+        writeRoleProjection(userId, EnumSet.of(target), actor, "replace");
+    }
+
+    /**
+     * ADR-0001 (D-03) — the grant path of the multi-role model: adds one
+     * role to the account's set, keeping every role the account already
+     * holds. The dual-store projection rides the same
+     * {@link #writeRoleProjection} transaction as the replace command.
+     */
+    @Observed(name = "user.role.grant")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Override
+    public void grantUserRole(UUID userId, String newRole, String actor) {
+        UserRole target = parseDomainRole(newRole);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        if (user.getRoles().contains(target)) {
+            // Idempotent grant — the role is already held; nothing to write,
+            // nothing to invalidate.
+            log.info("Account roles no-op: userId={}, action=grant, role held={}, actor={}",
+                    userId, target, actor);
+            return;
+        }
+        Set<UserRole> targetRoles = new HashSet<>(user.getRoles());
+        targetRoles.add(target);
+        writeRoleProjection(userId, targetRoles, actor, "grant");
+    }
+
+    /**
+     * ADR-0001 (D-03) — the revoke path: removes one role from the set.
+     * Idempotent on a role the account does not hold; revoking the last
+     * remaining role is the 409 contract (an account is never roleless).
+     */
+    @Observed(name = "user.role.revoke")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Override
+    public void revokeUserRole(UUID userId, String role, String actor) {
+        UserRole target = parseDomainRole(role);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        if (!user.getRoles().contains(target)) {
+            log.info("Account roles no-op: userId={}, action=revoke, role absent={}, actor={}",
+                    userId, target, actor);
+            return;
+        }
+        if (user.getRoles().size() <= 1) {
+            throw new ConflictException(
+                    "Cannot revoke the last remaining role of an account: " + role);
+        }
+        Set<UserRole> targetRoles = new HashSet<>(user.getRoles());
+        targetRoles.remove(target);
+        writeRoleProjection(userId, targetRoles, actor, "revoke");
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    @Override
+    public Set<String> getUserRoles(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        return user.getRoles().stream().map(Enum::name)
+                .sorted().collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private static UserRole parseDomainRole(String role) {
+        try {
+            return UserRole.valueOf(role);
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("Unknown role: " + role);
+        }
+    }
+
+    /**
+     * The one writer of the dual-store role truth (ADR-0001): the
+     * {@code user_roles} set plus its primary-role mirror ({@code
+     * users.role}) on the domain side, the {@code auth_authorities}
+     * projection (the framework {@code UserDetailsManager.updateUser}
+     * contract) on the login side, the issued authorizations killed with
+     * the change, and the cache invalidation + {@code UserRoleChanged}
+     * fact published in-transaction. Replace, grant, and revoke all land
+     * here — one transaction, one guard, one audit line.
+     */
+    private void writeRoleProjection(UUID userId, Set<UserRole> targetRoles, String actor, String action) {
         // The write path reads the source of truth directly — NOT the
         // @Cacheable getById (a cache hit hands back a JDK-deserialized
         // DETACHED copy, and dirty checking never sees its mutations: the
         // role change would be silently lost while the response looks
         // applied). Same-class fix discovered while building I7's
         // pseudonymizeAccount write path; the read cache stays for readers.
+        //
+        // NO no-op shortcut here by design: the REPLACE command is the
+        // documented reconciliation path for a drifted pair — a same-value
+        // replace still re-projects the login-side authorities (the drifted
+        // CONSUMER-role/ROLE_ADMIN-authority stock must hit the guard and a
+        // reverse drift must still be rewritten, the pinned S2/N4/N6
+        // behavior). Idempotence lives where the set is COMPUTED (grant's
+        // already-held check, revoke's absent-role check).
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        Set<UserRole> previousRoles = user.getRoles();
         UserRole previous = user.getRole();
-        user.changeRole(target);
+        user.replaceRoles(targetRoles);
 
         String username = user.getSubject();
         UserDetails stored;
@@ -451,19 +576,16 @@ public class UserService implements IdentitySpi {
                     "No authentication account for user: " + userId + " (subject: " + username + ")");
         }
 
-        // The counting constraint protects the authority REMOVAL (an
-        // anything→non-ADMIN replacement of an enabled account that HOLDS
-        // ROLE_ADMIN), exactly like the disable surface it was built for —
-        // same lock, same FOR UPDATE serialization rationale (concurrent
-        // admin removals serialize on the counted rows). CodeRabbit round 1,
-        // adopted from the root: the decision reads the STORED authority (the
-        // login-side rows this update is about to replace), never
-        // {@code previous} (the users.role mirror) — a drifted pair (role
-        // CONSUMER, authority ROLE_ADMIN — the pre-fix stock) must still hit
-        // the guard, because what the replacement removes is the ROLE_ADMIN
-        // row; and a reverse drift (role ADMIN, authority gone) removes
-        // nothing and correctly skips.
-        if (target != UserRole.ADMIN && stored.isEnabled() && hasAdminAuthority(stored)) {
+        // The counting constraint protects any change that REMOVES the
+        // ROLE_ADMIN authority from an enabled account that HOLDS it —
+        // the replace, the revoke, and the drifted grant alike — exactly
+        // like the disable surface it was built for. CodeRabbit round 1,
+        // adopted from the root: the decision reads the STORED authority
+        // (the login-side rows this update is about to replace), never the
+        // mirror — a drifted pair (role CONSUMER, authority ROLE_ADMIN)
+        // must still hit the guard, because what the replacement removes
+        // is the ROLE_ADMIN row.
+        if (!targetRoles.contains(UserRole.ADMIN) && stored.isEnabled() && hasAdminAuthority(stored)) {
             // The advisory lock serializes the decision itself (see
             // LOCK_ACTIVE_ADMIN_INVARIANT) — the count below then reads a
             // post-commit truth, not a pre-wait snapshot.
@@ -475,15 +597,16 @@ public class UserService implements IdentitySpi {
         }
 
         // The login-side projection: authorities replaced with the target
-        // role's, everything else replayed verbatim (the L23 builder shape
-        // — the manager's updateUser SQL pair writes password/enabled and
-        // re-creates the authority rows atomically in THIS transaction).
-        // roles() is the builder's own ROLE_-prefixing contract — the
-        // authority shape the seed and every hasRole gate already speak.
+        // set's ROLE_<role> rows, everything else replayed verbatim (the
+        // L23 builder shape — the manager's updateUser SQL pair writes
+        // password/enabled and re-creates the authority rows atomically in
+        // THIS transaction). roles() is the builder's own ROLE_-prefixing
+        // contract — the authority shape the seed and every hasRole gate
+        // already speak; the varargs form carries the FULL multi-role set.
         userDetailsManager.updateUser(org.springframework.security.core.userdetails.User
                 .withUsername(username)
                 .password(stored.getPassword())
-                .roles(target.name())
+                .roles(targetRoles.stream().map(Enum::name).toArray(String[]::new))
                 .accountExpired(!stored.isAccountNonExpired())
                 .accountLocked(!stored.isAccountNonLocked())
                 .credentialsExpired(!stored.isCredentialsNonExpired())
@@ -498,11 +621,14 @@ public class UserService implements IdentitySpi {
         // R8 Wave 1: username joins the payload so the session invalidator
         // consumes the fact without a query back into this module — the
         // authorities inside every live session are stale against the
-        // replaced projection, so they all expire.
-        eventPublisher.publishEvent(new UserRoleChanged(userId, username, previous.name(), target.name()));
+        // replaced projection, so they all expire. The payload keeps the
+        // primary-role projection (the single-value contract the session
+        // reason string renders).
+        eventPublisher.publishEvent(new UserRoleChanged(userId, username,
+                previous.name(), User.primaryOf(targetRoles).name()));
 
-        log.info("Account role audit: userId={}, username={}, role: {} -> {}, actor={}",
-                userId, username, previous, target, actor);
+        log.info("Account roles audit: userId={}, username={}, action={}, roles: {} -> {}, actor={}",
+                userId, username, action, previousRoles, targetRoles, actor);
     }
 
     /**
