@@ -1,4 +1,4 @@
-package com.marketplace.knowledge;
+package com.marketplace.shared.api;
 
 import java.util.UUID;
 
@@ -21,9 +21,25 @@ import java.util.UUID;
  * mock-verify discipline) and the app-level IT's {@code PublishedEvents}
  * in CI.</p>
  *
+ * <p><b>Relocated to shared-api per the events-through-Modulith rule</b>
+ * (the contracts ledger §1 placement rule: every application event that
+ * crosses module boundaries lives in {@code shared/api} — with the first
+ * cross-boundary consumer arriving, the module-local record moves here,
+ * the {@code MessageReceivedEvent} CR-4 flow verbatim: package
+ * declaration only, no pom change anywhere). The knowledge-side
+ * {@code knowledge :: knowledge} consumer need it protected no longer:
+ * the consumer imports the shared record and the module dependency is
+ * retired from its allowedDependencies.</p>
+ *
+ * <p><b>The vocabulary is carried, not shared (the
+ * {@code ContentReportResolvedEvent} String precedent):</b>
+ * {@code category} rides as the STORED name ({@code "PLACES".."TIPS"} —
+ * the {@code KnowledgeCategory} vocabulary, pinned DB-side by V156) so
+ * the record stays free of knowledge-domain enum types.</p>
+ *
  * @param entryId    the entry's id
  * @param locationId the neighborhood the entry documents (the geo level-3 node)
- * @param category   the guide's own vocabulary value
+ * @param category   the guide's own vocabulary value as the stored name
  * @param title      the entry's title
  * @param body       the entry's body (the complete indexing text)
  * @param authorId   the contributor's user id (the trust/identity axis)
@@ -31,7 +47,7 @@ import java.util.UUID;
 public record KnowledgeEntryPublishedEvent(
         UUID entryId,
         UUID locationId,
-        KnowledgeCategory category,
+        String category,
         String title,
         String body,
         UUID authorId

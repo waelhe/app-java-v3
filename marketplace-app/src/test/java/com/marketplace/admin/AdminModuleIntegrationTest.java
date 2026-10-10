@@ -138,6 +138,14 @@ class AdminModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ReviewerStatsPort reviewerStatsPort;
 
+    // The discovery waves' generalized follow (D1): the closure pulls
+    // identity's FollowService, whose GROUP follow targets resolve through
+    // GroupLookupPort — the community module's adapter, outside the
+    // closure — the same house mock pattern (the CI-measured round: without
+    // it the context boot fails on FollowService's constructor).
+    @MockitoBean
+    com.marketplace.shared.api.GroupLookupPort groupLookupPort;
+
     @Autowired
     private RevisionService revisionService;
 

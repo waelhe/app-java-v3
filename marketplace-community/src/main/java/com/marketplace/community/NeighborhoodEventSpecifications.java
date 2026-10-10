@@ -17,10 +17,14 @@ import java.util.UUID;
  * {@code upcoming} is the board's forward-looking floor (an event
  * whose start has passed leaves the board — its row, seats and audit
  * trail stay; the board itself is the product's upcoming-gatherings
- * surface), and {@code hasCategory} is the one OPTIONAL filter axis
- * (null = absent — the official Specifications model; {@code cb.equal}
- * with a null argument is not portable, the catalog's own CodeRabbit
- * round-1 lesson).
+ * surface) — and, since JT-20, its status-honest twin: a CANCELLED or
+ * POSTPONED event NEVER masquerades as upcoming (the gathering state
+ * is deterministic eligibility, applied before any ordering), and
+ * {@code hasCategory} is the one OPTIONAL filter axis (null = absent —
+ * the official Specifications model; {@code cb.equal} with a null
+ * argument is not portable, the catalog's own CodeRabbit round-1
+ * lesson), joined by {@code hasStatus} (JT-20's optional status axis —
+ * null = absent, the same model).
  *
  * <p>Soft-deleted rows are excluded automatically by the entity's
  * {@code @SoftDelete} filter — no predicate of its own, by design.
@@ -44,10 +48,21 @@ public final class NeighborhoodEventSpecifications {
         return (root, query, cb) -> cb.equal(root.get("locationId"), locationId);
     }
 
-    /** The board's floor: only events still to come (starts_at >= now). */
+    /**
+     * The board's floor: only events still to come (starts_at >= now)
+     * AND not withdrawn from the calendar — a CANCELLED or POSTPONED
+     * event never masquerades as upcoming (JT-20's status-honest
+     * contract; the exclusion is expressed as the literal NOT-IN so the
+     * predicate survives a future vocabulary widening without silently
+     * re-admitting a withdrawn gathering). The row, its seats and its
+     * audit trail stay — the state is a fact, not an erasure.
+     */
     public static Specification<NeighborhoodEvent> upcoming(Instant now) {
-        return (root, query, cb) ->
-                cb.greaterThanOrEqualTo(root.get("startsAt"), now);
+        return (root, query, cb) -> cb.and(
+                cb.greaterThanOrEqualTo(root.get("startsAt"), now),
+                cb.not(root.get("status").in(
+                        NeighborhoodEventStatus.CANCELLED,
+                        NeighborhoodEventStatus.POSTPONED)));
     }
 
     /**
@@ -60,5 +75,19 @@ public final class NeighborhoodEventSpecifications {
         return (root, query, cb) -> category == null
                 ? cb.conjunction()
                 : cb.equal(root.get("category"), category);
+    }
+
+    /**
+     * JT-20: the optional status predicate — the explicit status axis on
+     * the board read (null = ABSENT, the same official model). Composed
+     * ON TOP of {@link #upcoming}: on the forward-looking board only an
+     * ACTIVE event can match today (a cancelled or postponed one never
+     * rides the upcoming floor) — the axis exists so the surface speaks
+     * the state vocabulary honestly and the rails can pin it explicitly.
+     */
+    public static Specification<NeighborhoodEvent> hasStatus(NeighborhoodEventStatus status) {
+        return (root, query, cb) -> status == null
+                ? cb.conjunction()
+                : cb.equal(root.get("status"), status);
     }
 }

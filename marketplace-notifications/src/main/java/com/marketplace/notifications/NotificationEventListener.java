@@ -4,6 +4,8 @@ import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ContentReportResolvedEvent;
+import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolvedEvent;
 import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
@@ -29,9 +31,12 @@ public class NotificationEventListener {
     private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
 
     private final NotificationService notificationService;
+    private final com.marketplace.notifications.routing.UrgentAlertNotificationRouter urgentAlertRouter;
 
-    public NotificationEventListener(NotificationService notificationService) {
+    public NotificationEventListener(NotificationService notificationService,
+                                     com.marketplace.notifications.routing.UrgentAlertNotificationRouter urgentAlertRouter) {
         this.notificationService = notificationService;
+        this.urgentAlertRouter = urgentAlertRouter;
     }
 
     @ApplicationModuleListener
@@ -349,5 +354,90 @@ public class NotificationEventListener {
                 event.reporterId(), event.targetType(), event.targetId(), event.outcome());
         log.info("Notification sent for content report resolved: reportId={}, reporterId={}, "
                         + "outcome={}", event.reportId(), event.reporterId(), event.outcome());
+    }
+
+    /**
+     * Task 5-f (the discovery waves' measured repairs — the
+     * events-without-consumers closure, the B-06 dispute pair's delivery):
+     * the dispute opener's DISPUTE_OPENED acknowledgment. The B-06 events
+     * were published since their landing with ZERO listeners (the measured
+     * defect — the identity rule "an event without a listener is a
+     * measured defect", the BookingConfirmedEvent A-03 precedent) and the
+     * records now live in shared/api (the contracts ledger §1.1 own
+     * ruling: the record moves to shared/api at the first cross-boundary
+     * consumer — this listener is that consumer, the late-lander crossing
+     * documented in the worklog).
+     *
+     * <p><b>The recipient is the dispute's OPENER — the honest
+     * acknowledgment, not a counterpart alert:</b> the payload carries
+     * {@code openedBy} alone (no counterpart party fact), so the
+     * delivery is the opener's own pipeline-entry confirmation ("تم فتح
+     * نزاعك رقم ... قيد المراجعة"). Same contract as the listeners above
+     * — after commit, its own transaction, the framework's retry: a
+     * failed delivery never loses the acknowledgment (the registry entry
+     * stays incomplete until the listener succeeds) — and the delivery is
+     * IDEMPOTENT beyond that: the service dedupes on
+     * {@code source_event_id = disputeId} (the notifications ledger, V180)
+     * so a re-delivered publication can never duplicate the row.
+     */
+    @ApplicationModuleListener
+    public void onDisputeOpened(DisputeOpenedEvent event) {
+        notificationService.onDisputeOpened(event.disputeId(), event.openedBy());
+        log.info("Notification sent for dispute opened: disputeId={}, openedBy={}",
+                event.disputeId(), event.openedBy());
+    }
+
+    /**
+     * Task 5-f: the dispute opener's DISPUTE_RESOLVED adjudication fact —
+     * the resolve decision's arrival with its EXECUTED financial outcome
+     * ({@code resolution} rides the stored name, {@code
+     * refundedAmountCents} the executed movement — the complete-fact
+     * discipline; {@code openedBy} joined the payload AT the shared/api
+     * relocation, the {@code MessageReceivedEvent} complete-fact rule —
+     * no consumer re-derives party facts). Same contract as the listener
+     * above — after commit, its own transaction, the framework's retry —
+     * and idempotent on the DETERMINISTIC ledger key
+     * {@code nameUUIDFromBytes(disputeId + "-resolved")}: the redelivered
+     * publication derives the same source_event_id, the ledger holds
+     * exactly-once by construction.
+     */
+    @ApplicationModuleListener
+    public void onDisputeResolved(DisputeResolvedEvent event) {
+        notificationService.onDisputeResolved(event.disputeId(), event.openedBy(),
+                event.resolution(), event.refundedAmountCents());
+        log.info("Notification sent for dispute resolved: disputeId={}, openedBy={}, resolution={}",
+                event.disputeId(), event.openedBy(), event.resolution());
+    }
+
+    /**
+     * Phase 7 (execution plan §10 / §8.1 — notification routing): the
+     * official-urgent-alert's notification leg — the {@code URGENT_ALERT}
+     * type's V180 registration finally delivering. The listener is the
+     * Modulith seam only (AFTER_COMMIT, its own transaction, the
+     * framework's retry — the house contract every listener here rides);
+     * the ROUTING is the {@code UrgentAlertNotificationRouter}'s
+     * documented official-alert policy: validity re-checked through the
+     * standing {@code UrgentAlertsPort}, geography through the scope's
+     * two data owners (the members port + the V198 opt-in
+     * subscriptions), the channels through the §8.1 routing engine with
+     * the per-channel idempotency ledger — a retried publication can
+     * never duplicate a delivery (the Phase 7 gate).
+     *
+     * <p><b>The recipients are NOT derived from unrelated payloads:</b>
+     * the event carries the committed alert facts (source, scope, level,
+     * title) and the fan-out resolves the SCOPE's own membership through
+     * the data-owner port — the §8.1 rule "لا يشتق المستلمون في مستمع
+     * الإشعارات إذا كان الحدث يحمل الحقيقة الملتزمة" governs party facts
+     * the event was supposed to carry (the DisputeResolvedEvent
+     * {@code openedBy} rule), not the enumeration of a geo scope's own
+     * members, which is the fan-out's input by construction (the
+     * NeighborhoodMembersPort contract documents the split).
+     */
+    @ApplicationModuleListener
+    public void onUrgentAlertPublished(
+            com.marketplace.shared.api.UrgentAlertPublishedEvent event) {
+        urgentAlertRouter.onUrgentAlertPublished(event);
+        log.info("Urgent alert notification leg completed: alertId={}, scope={}",
+                event.alertId(), event.locationId());
     }
 }
