@@ -84,6 +84,14 @@ class UserServiceTest {
     @Mock
     private org.springframework.beans.factory.ObjectProvider<org.springframework.security.crypto.password.PasswordEncoder> passwordEncoderProvider;
 
+    /**
+     * D-03: the authoritative role-SET store (V182 user_roles) — mocked
+     * like its peers; the service's role-set paths are exercised against
+     * it by the AccountRoleSetTest guards.
+     */
+    @Mock
+    private AccountRoleRepository accountRoleRepository;
+
     @InjectMocks
     private UserService userService;
 
@@ -93,6 +101,18 @@ class UserServiceTest {
         // stubs would fail every other test on the unused stubbing.
         org.mockito.Mockito.lenient().when(passwordEncoderProvider.getObject()).thenReturn(
                 org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder());
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void lenientEmptyRoleSet() {
+        // D-03: the role-SET store defaults to an EMPTY set on these flows —
+        // the replace path then grants the single target role (the
+        // documented replace semantics) and roleSetOf falls back to the
+        // users.role mirror. Tests that need specific rows re-stub locally
+        // (the later stub wins); lenient keeps the untouched tests clean.
+        org.mockito.Mockito.lenient()
+                .when(accountRoleRepository.findByUserId(any(UUID.class)))
+                .thenReturn(java.util.List.of());
     }
 
     @Test

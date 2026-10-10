@@ -130,4 +130,59 @@ public interface IdentitySpi {
      *         erasure flow (pseudonymize first)
      */
     AuditHistoryPurgeResult purgeAuditHistory(UUID userId, String reason, String actor);
+
+    /**
+     * D-03 (community platform execution plan Stage 1): the account's role
+     * SET — the authoritative multi-role record (V182 {@code user_roles}),
+     * stored enum names ({@code CONSUMER}/{@code PROVIDER}/{@code ADMIN}).
+     * The {@code users.role} mirror remains the account's PRIMARY role;
+     * the operative authorization is this set (every {@code hasRole} gate
+     * is a membership check).
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @return the held role names, never empty (the legacy-fallback rule)
+     */
+    java.util.Set<String> rolesOf(UUID userId);
+
+    /**
+     * D-03: the administrative GRANT — adds one role to the account's set,
+     * one transaction across all three stores (the set row with its actor
+     * and provenance, the primary-role mirror when the grant elevates it,
+     * the login-side authority projection), kills the account's issued
+     * authorizations, invalidates the caches, publishes the domain fact
+     * for the session invalidator, and records the structured audit line.
+     * Idempotent: granting an already-held role is a documented no-op.
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to add
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action
+     * @throws com.marketplace.shared.api.BadRequestException
+     *         the role name is outside the vocabulary
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id
+     */
+    void grantRole(UUID userId, String role, String actor);
+
+    /**
+     * D-03: the administrative REVOKE — removes one role from the
+     * account's set with the same three-store single-transaction
+     * discipline as the grant. Guards verbatim: the last-active-ADMIN
+     * counting constraint (the L23 invariant) and the
+     * at-least-one-role rule (an account is closed through the status
+     * surface, never by stripping its last role).
+     *
+     * @param userId the identity projection id (the {@code users} row)
+     * @param role   the stored {@code UserRole} name to remove
+     * @param actor  the acting administrator (JWT subject), recorded with
+     *               the action
+     * @throws com.marketplace.shared.api.BadRequestException
+     *         the role name is outside the vocabulary
+     * @throws com.marketplace.shared.api.ResourceNotFoundException
+     *         no users row for the id, or the account does not hold the role
+     * @throws com.marketplace.shared.api.ConflictException
+     *         the target is the last active ADMIN role, or the account's
+     *         last remaining role
+     */
+    void revokeRole(UUID userId, String role, String actor);
 }
