@@ -39,6 +39,14 @@ class NotificationControllerWebMvcTest {
     @MockitoBean
     private NotificationPreferenceService preferenceService;
 
+    /** Phase 7 (§8.1): the topic-hierarchy endpoints' collaborator. */
+    @MockitoBean
+    private com.marketplace.notifications.routing.NotificationTopicPreferenceService topicPreferenceService;
+
+    /** Phase 7 (§8.1): the geo-subscription endpoints' collaborator. */
+    @MockitoBean
+    private com.marketplace.notifications.routing.NotificationGeoSubscriptionService geoSubscriptionService;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {
