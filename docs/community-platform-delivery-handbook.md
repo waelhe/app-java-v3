@@ -110,7 +110,7 @@
 
 ## 9. المراجع الرسمية المشتركة
 
-Spring الرسمية (spring.io · docs.spring.io — Boot/Modulith/AI/Security) · PostgreSQL (postgresql.org/docs) + pgvector · Flyway (flywaydb.org) · OpenAPI (spec.openapis.org) + RFC 7807 (rfc-editor.org/rfc/rfc7807) · W3C WCAG 2.2 (w3.org/TR/WCAG22) + Design Tokens (tr.designtokens.org) · Material 3 (m3.material.io) + Apple HIG (developer.apple.com/design/human-interface-guidelines) · Flutter الرسمية (docs.flutter.dev) + openapi-generator (openapi-generator.tech) · FCM/APNs الرسمية · SDAIA (sdaia.gov.sa) · تجربة Nextdoor المنشورة 2026 (نموذج مرجعي فقط — روابط رحلات §29 مقاسة حية).
+Spring الرسمية (spring.io · docs.spring.io — Boot/Modulith/AI/Security) · PostgreSQL (postgresql.org/docs) + pgvector · Flyway (flywaydb.org) · OpenAPI (spec.openapis.org) + RFC 9457 (rfc-editor.org/rfc/rfc9457) · W3C WCAG 2.2 (w3.org/TR/WCAG22) + Design Tokens (tr.designtokens.org) · Material 3 (m3.material.io) + Apple HIG (developer.apple.com/design/human-interface-guidelines) · Flutter الرسمية (docs.flutter.dev) + openapi-generator (openapi-generator.tech) · FCM/APNs الرسمية · SDAIA (sdaia.gov.sa) · تجربة Nextdoor المنشورة 2026 (نموذج مرجعي فقط — روابط رحلات §29 مقاسة حية).
 
 ---
 
