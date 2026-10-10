@@ -138,17 +138,34 @@ public class NeighborhoodEventService {
 
     /**
      * The board — the caller's OWN neighborhood, upcoming events only,
-     * on the complete sort key. The one filter axis is {@code category}
-     * (absent = the whole board — the feed's own discipline); the
-     * product's THIS_WEEK and MINE view chips stay client-side by
-     * contract ({@code startsAt} and {@code rsvpedByMe} ride every
-     * row). No membership ⇒ the explicit 403 (G-N3's default) — there
-     * is no location parameter to read anyone else's board: the
-     * membership IS the scope. ANY verification state reads (D-N3:
-     * REJECTED blocks community writes, not the board).
+     * on the complete sort key. The filter axes are {@code category}
+     * and, since JT-20, the optional {@code status} (both absent = the
+     * whole board — the feed's own discipline); the upcoming floor
+     * itself is status-honest: a CANCELLED or POSTPONED event never
+     * masquerades as upcoming (so on today's vocabulary only an ACTIVE
+     * event can match an explicit status filter). The product's
+     * THIS_WEEK and MINE view chips stay client-side by contract
+     * ({@code startsAt} and {@code rsvpedByMe} ride every row). No
+     * membership ⇒ the explicit 403 (G-N3's default) — there is no
+     * location parameter to read anyone else's board: the membership IS
+     * the scope. ANY verification state reads (D-N3: REJECTED blocks
+     * community writes, not the board).
      */
     @Transactional(readOnly = true)
     public Page<NeighborhoodEventView> getBoard(UUID callerId, EventCategory category,
+                                                Pageable pageable) {
+        return getBoard(callerId, category, null, pageable);
+    }
+
+    /**
+     * JT-20: the status-filtered board read — the 3-arg overload's own
+     * body with the optional status axis composed (null = absent). The
+     * pre-JT-20 callers keep their exact signature; the axis is the
+     * board's honest second filter.
+     */
+    @Transactional(readOnly = true)
+    public Page<NeighborhoodEventView> getBoard(UUID callerId, EventCategory category,
+                                                NeighborhoodEventStatus status,
                                                 Pageable pageable) {
         UUID locationId = requireMembership(callerId,
                 "Join a neighborhood before reading its events board (PUT /api/v1/me/neighborhood)")
@@ -158,7 +175,8 @@ public class NeighborhoodEventService {
         Page<NeighborhoodEvent> page = eventRepository.findAll(
                 NeighborhoodEventSpecifications.hasLocation(locationId)
                         .and(NeighborhoodEventSpecifications.upcoming(clock.instant()))
-                        .and(NeighborhoodEventSpecifications.hasCategory(category)),
+                        .and(NeighborhoodEventSpecifications.hasCategory(category))
+                        .and(NeighborhoodEventSpecifications.hasStatus(status)),
                 boardPageable);
         // The board read carries the two attendance facts — the grouped
         // live seat count per event and the caller's own live seat (the

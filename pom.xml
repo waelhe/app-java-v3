@@ -43,6 +43,7 @@
         <module>marketplace-knowledge</module>
         <module>marketplace-console</module>
         <module>marketplace-ai</module>
+        <module>marketplace-discovery</module>
         <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
         <module>marketplace-orders</module>
         <module>marketplace-app</module>
@@ -658,6 +659,11 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-ai</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-discovery</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

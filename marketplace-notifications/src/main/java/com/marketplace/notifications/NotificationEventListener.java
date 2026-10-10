@@ -4,6 +4,8 @@ import com.marketplace.shared.api.BookingConfirmedEvent;
 import com.marketplace.shared.api.BookingCreatedEvent;
 import com.marketplace.shared.api.ContentModeratedEvent;
 import com.marketplace.shared.api.ContentReportResolvedEvent;
+import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolvedEvent;
 import com.marketplace.shared.api.EmailVerificationRequestedEvent;
 import com.marketplace.shared.api.FollowedProviderNewListingEvent;
 import com.marketplace.shared.api.ListingLeadCreatedEvent;
@@ -349,5 +351,58 @@ public class NotificationEventListener {
                 event.reporterId(), event.targetType(), event.targetId(), event.outcome());
         log.info("Notification sent for content report resolved: reportId={}, reporterId={}, "
                         + "outcome={}", event.reportId(), event.reporterId(), event.outcome());
+    }
+
+    /**
+     * Task 5-f (the discovery waves' measured repairs — the
+     * events-without-consumers closure, the B-06 dispute pair's delivery):
+     * the dispute opener's DISPUTE_OPENED acknowledgment. The B-06 events
+     * were published since their landing with ZERO listeners (the measured
+     * defect — the identity rule "an event without a listener is a
+     * measured defect", the BookingConfirmedEvent A-03 precedent) and the
+     * records now live in shared/api (the contracts ledger §1.1 own
+     * ruling: the record moves to shared/api at the first cross-boundary
+     * consumer — this listener is that consumer, the late-lander crossing
+     * documented in the worklog).
+     *
+     * <p><b>The recipient is the dispute's OPENER — the honest
+     * acknowledgment, not a counterpart alert:</b> the payload carries
+     * {@code openedBy} alone (no counterpart party fact), so the
+     * delivery is the opener's own pipeline-entry confirmation ("تم فتح
+     * نزاعك رقم ... قيد المراجعة"). Same contract as the listeners above
+     * — after commit, its own transaction, the framework's retry: a
+     * failed delivery never loses the acknowledgment (the registry entry
+     * stays incomplete until the listener succeeds) — and the delivery is
+     * IDEMPOTENT beyond that: the service dedupes on
+     * {@code source_event_id = disputeId} (the notifications ledger, V180)
+     * so a re-delivered publication can never duplicate the row.
+     */
+    @ApplicationModuleListener
+    public void onDisputeOpened(DisputeOpenedEvent event) {
+        notificationService.onDisputeOpened(event.disputeId(), event.openedBy());
+        log.info("Notification sent for dispute opened: disputeId={}, openedBy={}",
+                event.disputeId(), event.openedBy());
+    }
+
+    /**
+     * Task 5-f: the dispute opener's DISPUTE_RESOLVED adjudication fact —
+     * the resolve decision's arrival with its EXECUTED financial outcome
+     * ({@code resolution} rides the stored name, {@code
+     * refundedAmountCents} the executed movement — the complete-fact
+     * discipline; {@code openedBy} joined the payload AT the shared/api
+     * relocation, the {@code MessageReceivedEvent} complete-fact rule —
+     * no consumer re-derives party facts). Same contract as the listener
+     * above — after commit, its own transaction, the framework's retry —
+     * and idempotent on the DETERMINISTIC ledger key
+     * {@code nameUUIDFromBytes(disputeId + "-resolved")}: the redelivered
+     * publication derives the same source_event_id, the ledger holds
+     * exactly-once by construction.
+     */
+    @ApplicationModuleListener
+    public void onDisputeResolved(DisputeResolvedEvent event) {
+        notificationService.onDisputeResolved(event.disputeId(), event.openedBy(),
+                event.resolution(), event.refundedAmountCents());
+        log.info("Notification sent for dispute resolved: disputeId={}, openedBy={}, resolution={}",
+                event.disputeId(), event.openedBy(), event.resolution());
     }
 }

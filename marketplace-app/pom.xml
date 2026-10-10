@@ -144,6 +144,15 @@
             <artifactId>marketplace-ai</artifactId>
         </dependency>
 
+        <!-- Discovery foundation (waves D1-D4): the home rails' projection
+             module joins the aggregation exactly like institutions — the
+             app is the assembly root where every domain module meets
+             Spring's component scanning and the Modulith boundary check. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-discovery</artifactId>
+        </dependency>
+
         <!-- Boot starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

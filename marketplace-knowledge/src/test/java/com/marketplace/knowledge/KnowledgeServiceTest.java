@@ -2,6 +2,8 @@ package com.marketplace.knowledge;
 
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.GeoLookupPort;
+import com.marketplace.shared.api.KnowledgeEntryPublishedEvent;
+import com.marketplace.shared.api.KnowledgeEntryWithdrawnEvent;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -85,7 +87,7 @@ class KnowledgeServiceTest {
         KnowledgeEntryPublishedEvent event = (KnowledgeEntryPublishedEvent) published.getValue();
         assertThat(event.entryId()).isEqualTo(entry.getId());
         assertThat(event.locationId()).isEqualTo(NEIGHBORHOOD_ID);
-        assertThat(event.category()).isEqualTo(KnowledgeCategory.PLACES);
+        assertThat(event.category()).isEqualTo(KnowledgeCategory.PLACES.name());
         assertThat(event.title()).isEqualTo("مسجد الحي: القصة والتاريخ");
         assertThat(event.body()).startsWith("بُني مسجد الحي");
         assertThat(event.authorId()).isEqualTo(AUTHOR_ID);
