@@ -82,7 +82,10 @@ class NotificationPreferenceServiceTest {
         List<NotificationPreferenceView> matrix = createService(repository, mockUser())
                 .getMyPreferences(mock(Authentication.class));
 
-        assertThat(matrix).hasSize(48);
+        // Waves D1-D4: URGENT_ALERT (the CMP-46 registered vocabulary) joins
+        // DISPUTE_OPENED/DISPUTE_RESOLVED (the disputes void closure) — 19 types
+        // x 3 channels = 57 effective preferences.
+        assertThat(matrix).hasSize(57);
         assertThat(matrix).containsExactly(
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL, true),
@@ -140,7 +143,22 @@ class NotificationPreferenceServiceTest {
                 new NotificationPreferenceView(NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.WS, true),
                 new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.DB, true),
                 new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL, true),
-                new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.WS, true));
+                new NotificationPreferenceView(NotificationType.REPORT_RESOLVED, NotificationChannel.WS, true),
+                // Waves D1-D4: the three point additions — URGENT_ALERT (the
+                // CMP-46/JT-10 delegated-alert vocabulary; the collective alert
+                // delivery rides the discovery surface, the notification type is
+                // registered structurally), and the disputes pair closing the
+                // events-without-consumers void (the opener's own facts) —
+                // same point additions, default on.
+                new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.URGENT_ALERT, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_OPENED, NotificationChannel.WS, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.DB, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.EMAIL, true),
+                new NotificationPreferenceView(NotificationType.DISPUTE_RESOLVED, NotificationChannel.WS, true));
     }
 
     @Test
@@ -169,7 +187,8 @@ class NotificationPreferenceServiceTest {
                         true, true, true, true, true, true,
                         true, true, true,
                         true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3, default on
+                        true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3 + waves D1-D4: URGENT_ALERT x3 + DISPUTE_OPENED x3 + DISPUTE_RESOLVED x3, default on
     }
 
     @Test
@@ -270,6 +289,7 @@ class NotificationPreferenceServiceTest {
                         true, true, true, true, true, true,
                         true, true, true,
                         true, true, true, true, true, true, true, true, true,
-                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3, default on
+                        true, true, true, true, true, true, true, true, true,
+                        true, true, true, true, true, true, true, true, true); // + A-11: ORDER_CONFIRMED x3 + ORDER_FULFILLED x3 + ORDER_CANCELLED x3 + B-08: MESSAGE_RECEIVED x3 + B-17: MEMBERSHIP_VERIFIED x3 + REPORT_RESOLVED x3 + waves D1-D4: URGENT_ALERT x3 + DISPUTE_OPENED x3 + DISPUTE_RESOLVED x3, default on
     }
 }

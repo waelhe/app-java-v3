@@ -126,6 +126,14 @@ class IdentityModuleIntegrationTest {
     @MockitoBean
     com.marketplace.shared.api.ProviderLookupPort providerLookupPort;
 
+    // The discovery waves' generalized follow (D1): FollowService validates
+    // a GROUP follow target through GroupLookupPort — the community
+    // module's adapter, outside this slice; the same house @MockitoBean
+    // pattern as the ports above. The CI-measured round: without this mock
+    // the context boot fails on FollowService's constructor.
+    @MockitoBean
+    com.marketplace.shared.api.GroupLookupPort groupLookupPort;
+
     // I7 Phase 3: the purge orchestration (AuthoredContentPurgeService, in
     // this module slice) consumes the cross-module purge port as a List —
     // the shared-api contract implemented by the six owning modules'
