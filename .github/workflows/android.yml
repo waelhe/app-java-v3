@@ -1,0 +1,53 @@
+name: Android native client
+
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - "docs/android-native-client.md"
+      - ".github/workflows/android.yml"
+  push:
+    branches:
+      - "feat/android-native-client"
+    paths:
+      - "android/**"
+      - "docs/android-native-client.md"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Gradle 8.13
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            https://services.gradle.org/distributions/gradle-8.13-bin.zip \
+            --output "$RUNNER_TEMP/gradle-8.13-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle-8.13-bin.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.13/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK platforms
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Verify native Android project
+        working-directory: android
+        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
