@@ -13,6 +13,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -88,11 +89,19 @@ class ProductQaServiceTest {
         when(questionRepository.save(any(ProductQuestion.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProductQuestion question = service.ask(productId, "Does it ship with a filter basket?", authentication);
+        ProductQaService.ProductQuestionWithAnswer view =
+                service.ask(productId, "Does it ship with a filter basket?", authentication);
 
-        assertThat(question.getProductId()).isEqualTo(productId);
-        assertThat(question.getAskerId()).as("the asker IS the caller").isEqualTo(caller);
-        assertThat(question.getBody()).isEqualTo("Does it ship with a filter basket?");
+        // The wire speaks the data-minimized view only (the ArchUnit
+        // HTTP-boundary rule); the asker's honesty lives on the saved
+        // entity, verified through the repository seam.
+        assertThat(view.productId()).isEqualTo(productId);
+        assertThat(view.body()).isEqualTo("Does it ship with a filter basket?");
+        assertThat(view.answer()).as("a fresh question carries no answer yet").isNull();
+        ArgumentCaptor<ProductQuestion> saved = ArgumentCaptor.forClass(ProductQuestion.class);
+        verify(questionRepository).save(saved.capture());
+        assertThat(saved.getValue().getAskerId()).as("the asker IS the caller").isEqualTo(caller);
+        assertThat(saved.getValue().getBody()).isEqualTo("Does it ship with a filter basket?");
     }
 
     // --- The answer ladder (404 → 403 → 409 → save) -----------------------
@@ -145,11 +154,20 @@ class ProductQaServiceTest {
         when(answerRepository.save(any(ProductAnswer.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProductAnswer answer = service.answer(question.getId(),
+        ProductQaService.ProductQuestionWithAnswer view = service.answer(question.getId(),
                 "Yes — 12 months, serviceable in-store.", authentication);
 
-        assertThat(answer.getQuestionId()).isEqualTo(question.getId());
-        assertThat(answer.getProviderId()).as("the answering seller IS the caller").isEqualTo(caller);
+        // The view rides its question's own shape with the official
+        // answer attached (the wire speaks the data-minimized record —
+        // the ArchUnit HTTP-boundary rule); the answer's honesty lives on
+        // the saved entity, verified through the repository seam.
+        assertThat(view.questionId()).isEqualTo(question.getId());
+        assertThat(view.body()).isEqualTo("Warranty?");
+        assertThat(view.answer().body()).isEqualTo("Yes — 12 months, serviceable in-store.");
+        ArgumentCaptor<ProductAnswer> saved = ArgumentCaptor.forClass(ProductAnswer.class);
+        verify(answerRepository).save(saved.capture());
+        assertThat(saved.getValue().getQuestionId()).isEqualTo(question.getId());
+        assertThat(saved.getValue().getProviderId()).as("the answering seller IS the caller").isEqualTo(caller);
     }
 
     // --- The feed's assembly contract --------------------------------------

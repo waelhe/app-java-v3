@@ -86,9 +86,11 @@ public class StorefrontController {
             @PathVariable UUID id,
             @Valid @RequestBody AskQuestionRequest request,
             Authentication authentication) {
-        ProductQuestion question = productQaService.ask(id, request.body(), authentication);
+        // The service assembles the view — the controller never touches a
+        // JPA entity (the ArchUnit HTTP-boundary rule: the wire speaks the
+        // data-minimized record only).
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ProductQaService.ProductQuestionWithAnswer.of(question, null));
+                .body(productQaService.ask(id, request.body(), authentication));
     }
 
     /**
@@ -109,10 +111,11 @@ public class StorefrontController {
             @PathVariable UUID id,
             @Valid @RequestBody AnswerQuestionRequest request,
             Authentication authentication) {
-        ProductAnswer answer = productQaService.answer(id, request.body(), authentication);
-        ProductQuestion question = productQaService.getQuestion(answer.getQuestionId());
+        // The answer rides its question's own view, assembled by the
+        // service — the controller never touches a JPA entity (the
+        // ArchUnit HTTP-boundary rule).
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ProductQaService.ProductQuestionWithAnswer.of(question, answer));
+                .body(productQaService.answer(id, request.body(), authentication));
     }
 
     /**

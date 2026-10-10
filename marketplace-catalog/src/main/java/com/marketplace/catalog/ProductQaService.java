@@ -70,11 +70,16 @@ public class ProductQaService {
      */
     @Observed(name = "catalog.product.question.ask")
     @Transactional
-    public ProductQuestion ask(UUID productId, String body, Authentication authentication) {
+    public ProductQuestionWithAnswer ask(UUID productId, String body, Authentication authentication) {
         productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         UUID askerId = currentUserProvider.getCurrentUserId(authentication);
-        return questionRepository.save(ProductQuestion.ask(productId, askerId, body));
+        ProductQuestion question = questionRepository.save(ProductQuestion.ask(productId, askerId, body));
+        // The view is assembled HERE — the controller never touches the
+        // entity (the ArchUnit HTTP-boundary rule: the wire speaks the
+        // data-minimized record only, the asker resolves through the
+        // public-profile surface).
+        return ProductQuestionWithAnswer.of(question, null);
     }
 
     /**
@@ -88,7 +93,7 @@ public class ProductQaService {
     @Observed(name = "catalog.product.answer.publish")
     @Transactional
     @PreAuthorize("hasRole('PROVIDER')")
-    public ProductAnswer answer(UUID questionId, String body, Authentication authentication) {
+    public ProductQuestionWithAnswer answer(UUID questionId, String body, Authentication authentication) {
         ProductQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductQuestion", questionId));
         Product product = productRepository.findById(question.getProductId())
@@ -103,20 +108,11 @@ public class ProductQaService {
             throw new ConflictException(
                     "ProductQuestion " + questionId + " already holds its official answer");
         }
-        return answerRepository.save(ProductAnswer.publish(questionId, caller, body));
-    }
-
-    /**
-     * The public single-question read — the answer path's response
-     * assembly (the created answer rides its question's own view). The
-     * honest 404 on an unknown question; a deleted question's answer
-     * cannot exist (the one-answer gate and the soft-delete filter hold
-     * the pair's liveness together).
-     */
-    @Transactional(readOnly = true)
-    public ProductQuestion getQuestion(UUID questionId) {
-        return questionRepository.findById(questionId)
-                .orElseThrow(() -> new ResourceNotFoundException("ProductQuestion", questionId));
+        ProductAnswer answer = answerRepository.save(ProductAnswer.publish(questionId, caller, body));
+        // The answer rides its question's own view, assembled HERE — the
+        // controller never touches either entity (the ArchUnit
+        // HTTP-boundary rule: the wire speaks the data-minimized record).
+        return ProductQuestionWithAnswer.of(question, answer);
     }
 
     /**
