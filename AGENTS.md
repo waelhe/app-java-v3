@@ -20,6 +20,7 @@ This file adds project-specific conventions.
      - postgis integration     → docs/postgis-integration-plan.md
      - community layer        → docs/neighborhood-community-plan.md
      - community platform execution → docs/community-platform-execution-plan.md (product scope, measured fit-gap, phases and acceptance gates; unified v2 merge of the attachment evaluation + #531 plan + live code measurement; technical authority remains docs/official-compliance-plan.md)
+     - community platform user journeys → docs/community-platform-user-journeys.md (required companion for end-to-end UX flows, screens, states, permissions, notifications, recovery and journey acceptance IDs; interpret with community-platform-execution-plan.md; technical authority remains docs/official-compliance-plan.md)
      - unified platform       → docs/unified-platform-plan.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
