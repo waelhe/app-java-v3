@@ -77,10 +77,10 @@ class InstitutionControllerTest {
     @Test
     void detailAnswers200WithTheJsonLdBlock() {
         Institution institution = institution();
-        when(service.getInstitution(institution.getId())).thenReturn(institution);
-        when(service.resolveChain(institution.getLocationId())).thenReturn(List.of(
+        InstitutionResponse response = InstitutionResponse.from(institution, List.of(
                 new com.marketplace.shared.api.GeoLookupPort.GeoNode(
                         UUID.randomUUID(), null, 2, "الرياض", "Riyadh", "riyadh", List.of())));
+        when(service.getInstitutionDetail(institution.getId())).thenReturn(response);
 
         ResponseEntity<InstitutionResponse> result = controller.detail(institution.getId());
 

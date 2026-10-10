@@ -22,7 +22,7 @@
 
 ## 1. Executive Summary
 
-The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **26 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
+The Marketplace Backend is a **modular monolith** built on **Spring Boot 4.1.1 + Java 25 LTS** with **Spring Modulith 2.1.1** enforcing bounded contexts. It comprises **27 Maven modules** organized in 5 layers (composition root → infra → shared contracts → domain core → domain support → edge BFF).
 
 **Key characteristics:**
 - ✅ **Modular monolith** (not microservices) — operational simplicity, single deployment unit
@@ -76,11 +76,11 @@ User → HTTPS → CF Worker (proxy + CORS) → HTTP → CF Container (Spring Bo
 L4: marketplace-app              ← Composition root (REST, admin, bootstrap)
 L3: marketplace-platform-infra   ← Cross-cutting (JPA, Security, Cache, Observability)
 L2: marketplace-shared           ← API contracts (SPIs, events, exceptions, DTOs)
-L1: 21 domain modules            ← Bounded contexts (each owns its data + logic)
+L1: 23 domain modules            ← Bounded contexts (each owns its data + logic)
 L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero domain dependencies)
 ```
 
-### The 26 Modules
+### The 27 Modules
 
 | # | Module | Layer | Role | Key Artifacts |
 |---|--------|-------|------|---------------|
@@ -110,6 +110,7 @@ L5: marketplace-edge             ← Edge BFF (Gateway, TokenRelay — zero doma
 | 24 | `marketplace-jobs` | L1 | Domain core | Employment vertical: job listings + applications (B-12, C.2) |
 | 25 | `marketplace-knowledge` | L1 | Domain support | Neighborhood knowledge base: entries, revision, indexing events (B-15, C.9) |
 | 26 | `marketplace-console` | L1 | Domain support | Operator console: remote configs, feature flags, geo gates, metrics (B-16, C.10) |
+| 27 | `marketplace-institutions` | L1 | Domain support | Verified institution registry, review lifecycle, JSON-LD (B-13, C.3) |
 
 ### Spring Modulith Boundaries
 

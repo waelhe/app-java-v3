@@ -108,6 +108,13 @@
             <groupId>com.marketplace</groupId>
             <artifactId>marketplace-community</artifactId>
         </dependency>
+        <!-- B-13 wiring: the existing institutions module joins the executable app assembly.
+             Without this dependency its controllers and services are not loaded in the app,
+             even though the module sources and Flyway migration are present. -->
+        <dependency>
+            <groupId>com.marketplace</groupId>
+            <artifactId>marketplace-institutions</artifactId>
+        </dependency>
         <!-- B-12 wiring (CR): the jobs employment vertical joins the aggregation
              exactly like community — the app is the assembly point. -->
         <dependency>

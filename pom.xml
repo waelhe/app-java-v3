@@ -38,6 +38,7 @@
         <module>marketplace-geo</module>
         <module>marketplace-realestate</module>
         <module>marketplace-community</module>
+        <module>marketplace-institutions</module>
         <module>marketplace-jobs</module>
         <module>marketplace-knowledge</module>
         <module>marketplace-console</module>
@@ -628,6 +629,12 @@
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-community</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- B-13 wiring: the existing institutions module's managed version entry. -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-institutions</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <!-- B-12 wiring (CR): the jobs module's managed version entry -->

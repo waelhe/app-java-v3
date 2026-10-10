@@ -103,6 +103,18 @@ public class InstitutionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Institution not found: " + institutionId));
     }
 
+    /**
+     * The public detail read model. Entity field access and schema.org
+     * assembly remain inside the institutions domain; the HTTP controller
+     * receives only the published response DTO.
+     */
+    @Transactional(readOnly = true)
+    public InstitutionResponse getInstitutionDetail(UUID institutionId) {
+        Institution institution = repository.findById(institutionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Institution not found: " + institutionId));
+        return InstitutionResponse.from(institution, resolveChain(institution.getLocationId()));
+    }
+
     /** The representative's own registry — their managed institutions. */
     @Transactional(readOnly = true)
     public Page<Institution> myInstitutions(Authentication authentication, Pageable pageable) {
