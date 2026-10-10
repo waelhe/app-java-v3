@@ -160,7 +160,9 @@ public class AdBillingBatchExecutor {
                 amount, campaign.getCurrency());
     }
 
-    /** The run's UTC today — one derivation, the job and its tests share it. */
+    /** The UTC today — one derivation; the campaign service's resume path
+     * reads it (the settle's own horizon is the {@code DayHasPassed} event's
+     * payload since the C.6 Moments migration). */
     static LocalDate todayUtc(Clock clock) {
         return LocalDate.now(clock);
     }

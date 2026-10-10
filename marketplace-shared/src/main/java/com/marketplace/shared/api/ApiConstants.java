@@ -21,8 +21,21 @@ public final class ApiConstants {
     public static final String PAYMENTS = API_V1 + "/payments";
     public static final String REVIEWS = API_V1 + "/reviews";
     public static final String MESSAGING = API_V1 + "/messages";
+    public static final String ORDERS = API_V1 + "/orders";
+    /**
+     * A-11 (compliance plan wave C: C.1): the buyer's cart — a /me-family
+     * surface (identity from the authentication itself, the same family
+     * shape as favorites and saved-searches).
+     */
+    public static final String CART = API_V1 + "/me/cart";
     public static final String SEARCH = API_V1 + "/search";
     public static final String ADMIN = API_V1 + "/admin";
+    /**
+     * A-18 (compliance plan C.12): the public platform-release path — the
+     * client's boot-time read (the §7/2 first-screen moment), a permitAll
+     * GET family.
+     */
+    public static final String RELEASES = API_V1 + "/releases";
 
     private ApiConstants() {
     }

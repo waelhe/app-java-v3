@@ -161,6 +161,84 @@ class NotificationServiceTest {
     }
 
     @Test
+    void onBookingConfirmedCreatesOneConsumerNotification_a03() {
+        // A-03 (compliance plan 0.6 — the dead BookingConfirmedEvent's
+        // delivery): the recipient is the CONSUMER alone — the in-app row
+        // lands exactly once, for the party whose booking moved to
+        // CONFIRMED. The provider's knowledge of the same moment already
+        // rides its own channel (their own confirm action, or the
+        // PAYMENT_STATE notification on the autoConfirm path).
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.empty());
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingConfirmed(bookingId);
+
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(bookingProvider).getBookingInfo(bookingId);
+    }
+
+    @Test
+    void onBookingConfirmedSendsConsumerEmailAndWebSocket_a03() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingConfirmed(bookingId);
+
+        // One email and one WS push, both addressed to the consumer alone.
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), eq("Booking Confirmed"), anyString(), anyMap());
+        verify(emailService, never()).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(messagingTemplate, times(1))
+                .convertAndSend(eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
+    }
+
+    @Test
+    void onBookingConfirmedSuppressesEmailForUnsubscribedConsumer_a03() {
+        // L22 rides from day one (no new mechanism): the consumer opted out
+        // of EMAIL for BOOKING_CONFIRMED => the in-app row still lands and
+        // the WS push still goes, but no email call is made.
+        NotificationPreferenceService preferences = defaultPreferences();
+        when(preferences.isChannelEnabled(CONSUMER_ID, NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL))
+                .thenReturn(false);
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
+                preferences);
+
+        UUID bookingId = create(UUID.class);
+        when(bookingProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo());
+
+        service.onBookingConfirmed(bookingId);
+
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(repository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(WebSocketNotification.class));
+    }
+
+    @Test
     void onPaymentStateChangedSuppressesEmailForUnsubscribedConsumer() {
         // L22 acceptance criterion 1: the consumer unsubscribed from EMAIL
         // for PAYMENT_STATE => the in-app notification is created, WS is

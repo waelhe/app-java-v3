@@ -6,6 +6,7 @@ import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.MediaLookupPort;
 import com.marketplace.shared.api.MediaUploadedEvent;
 import com.marketplace.shared.api.PostLookupPort;
+import com.marketplace.shared.api.ProductLookupPort;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ServiceUnavailableException;
@@ -64,6 +65,7 @@ public class MediaService {
     private final ListingPublicStatePort listingPublicStatePort;
     private final ProviderLookupPort providerLookupPort;
     private final PostLookupPort postLookupPort;
+    private final ProductLookupPort productLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final MediaThumbnailMetrics thumbnailMetrics;
@@ -75,6 +77,7 @@ public class MediaService {
                         ListingPublicStatePort listingPublicStatePort,
                         ProviderLookupPort providerLookupPort,
                         PostLookupPort postLookupPort,
+                        ProductLookupPort productLookupPort,
                         CurrentUserProvider currentUserProvider,
                         ApplicationEventPublisher eventPublisher,
                         MediaThumbnailMetrics thumbnailMetrics) {
@@ -85,6 +88,7 @@ public class MediaService {
         this.listingPublicStatePort = listingPublicStatePort;
         this.providerLookupPort = providerLookupPort;
         this.postLookupPort = postLookupPort;
+        this.productLookupPort = productLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
         this.thumbnailMetrics = thumbnailMetrics;
@@ -177,6 +181,74 @@ public class MediaService {
 
         String uploadUrl = s3.presignUpload(objectKey, normalizedType);
         return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+    }
+
+    /**
+     * A-17 (compliance plan C.7 — the M1 store root): issues a presigned
+     * PUT URL for a new asset of the given store PRODUCT — the media
+     * line's third target, the {@code requestUpload} (listing) gate shape
+     * on the product seam: PROVIDER role (the method security below), the
+     * product's owning provider resolved through {@code ProductLookupPort}
+     * (existence answers the seam's own 404 — attaching to the absent is
+     * nonsense), and plain user-id ownership (the M1 root has no
+     * publication state, so there is no visibility gate to re-check — the
+     * owner is always writable, exactly like the listing flow's own
+     * always-writable provider). Position allocation is the same advisory
+     * transaction lock discipline (CodeRabbit #241), serialized per
+     * PRODUCT id in the shared key space.
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public MediaUploadView requestProductUpload(UUID productId, String contentType,
+                                                 long sizeBytes, Authentication authentication) {
+        S3MediaStorage s3 = requireStorage();
+        String normalizedType = normalizeContentType(contentType);
+        validateContentType(normalizedType);
+        validateSize(sizeBytes);
+
+        ProductLookupPort.ProductInfo product = productLookupPort.getProductInfo(productId);
+        verifyListingOwnership(product.providerId(), authentication);
+
+        mediaAssetRepository.lockProductPositionAllocation(productId.toString());
+
+        String objectKey = buildProductObjectKey(productId, normalizedType);
+        MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForProduct(
+                productId, product.providerId(), objectKey, normalizedType,
+                sizeBytes, mediaAssetRepository.findMaxPositionByProductId(productId) + 1));
+
+        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+    }
+
+    /**
+     * A-17 (C.7): the owner-gated product read — every UPLOADED asset in
+     * display order, each with a freshly presigned GET URL. The M1 root
+     * has no public storefront surface (that arrives with the M2 wave,
+     * C.8), so the read is the owning provider's own (plus admins, the
+     * {@code verifyListingOwnership} admin bypass); a stranger's read
+     * answers the honest 404 — the R5 privacy posture for non-public
+     * targets.
+     */
+    @PreAuthorize("hasRole('PROVIDER')")
+    public List<MediaAssetView> listByProduct(UUID productId, Authentication authentication) {
+        ProductLookupPort.ProductInfo product = productLookupPort.getProductInfo(productId);
+        verifyListingOwnership(product.providerId(), authentication);
+        // The honest degradation (listByListing's own rule): query FIRST,
+        // require storage only when rows exist — a photo-less product's read
+        // never touches storage.
+        List<MediaAsset> assets = mediaAssetRepository
+                .findByProductIdAndStatusOrderByPositionAsc(productId, MediaAssetStatus.UPLOADED);
+        if (assets.isEmpty()) {
+            return List.of();
+        }
+        S3MediaStorage s3 = requireStorage();
+        return assets
+                .stream()
+                .map(asset -> toView(asset,
+                        s3.presignDownload(asset.getObjectKey()),
+                        asset.getThumbObjectKey() == null
+                                ? null
+                                : s3.presignDownload(asset.getThumbObjectKey())))
+                .toList();
     }
 
     /**
@@ -616,6 +688,11 @@ public class MediaService {
         return MediaUploadRules.buildObjectKey("posts", postId, contentType);
     }
 
+    /** A-17 (C.7): the product target's own namespace, the same one-place helper. */
+    private String buildProductObjectKey(UUID productId, String contentType) {
+        return MediaUploadRules.buildObjectKey("products", productId, contentType);
+    }
+
     /**
      * Confirm-time view: the thumbnail has not been processed yet (the
      * listener runs AFTER_COMMIT) — {@code thumbUrl} is null by contract.
@@ -633,6 +710,7 @@ public class MediaService {
                 asset.getId(),
                 asset.getListingId(),
                 asset.getPostId(),
+                asset.getProductId(),
                 asset.getContentType(),
                 asset.getSizeBytes(),
                 asset.getStatus().name(),
@@ -688,6 +766,11 @@ public class MediaService {
                     nullable = true,
                     example = "9c8b7a65-4321-4fed-ba98-76543210fedc")
             UUID postId,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The store product the asset belongs to "
+                    + "(the A-17 product target — null for listing and post assets)",
+                    nullable = true,
+                    example = "5e4d3c2b-1a09-876f-ed54-321098765abc")
+            UUID productId,
             @io.swagger.v3.oas.annotations.media.Schema(description = "Image content type",
                     example = "image/jpeg")
             String contentType,

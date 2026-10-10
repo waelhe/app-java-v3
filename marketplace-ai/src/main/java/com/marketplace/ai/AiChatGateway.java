@@ -1,5 +1,6 @@
 package com.marketplace.ai;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.jspecify.annotations.Nullable;
@@ -15,13 +16,37 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Provider-neutral application gateway around Spring AI's managed ChatClient.
+ * The single entry point to the AI chat capability — the provider-neutral
+ * conversational gateway over Spring AI's managed {@code ChatClient}. Conversation
+ * state is owned by Spring AI Session: session IDs are opaque server-issued
+ * identifiers, and the advisor receives both the session ID and the authenticated
+ * user ID so its official ownership check is applied on every turn.
  *
- * <p>Conversation state is owned by Spring AI Session. Session IDs are opaque
- * server-issued identifiers; the advisor receives both the session ID and the
- * authenticated user ID so its official ownership check is applied on every turn.</p>
+ * <p><b>Union note (2026-10-09, the two-generation merge):</b> the class body is
+ * the completed AI contract from main (#514 → #519 → #522 — Spring AI Session
+ * ownership, the separate policy client for complete-call policies, and the Jev
+ * model router). What survives from Track A's D.4 (channel resilience wave) is
+ * the outage-isolation half: {@code chat} — the synchronous external crossing —
+ * wears {@code @CircuitBreaker(name = "aiChat")}, the official Resilience4j
+ * annotation mirroring the payments PSP house pattern; the instance (with the
+ * OFF-state honesty ignore-list) rides {@code application.yml}, and the class
+ * dropped {@code final} for the CGLIB proxy the annotation aspect needs (a final
+ * class proxies silently to nothing — the measured trap this note exists to
+ * prevent).
+ *
+ * <p><b>Why @Retry did not survive the union:</b> the D.4 wave's retry leg was
+ * measured safe on a single-turn design ("an idempotent completion — no side
+ * effects to double-apply"), but THIS design writes the user turn into Spring AI
+ * Session through the advisor on every invocation — a retried call would
+ * duplicate the turn in the conversation history, so the retry instance was
+ * retired rather than transplanted (the yml documents the retirement where the
+ * instance used to live). {@code stream()}/{@code streamAnswer()} stay
+ * unannotated: the Flux-returning crossings would need the reactor-typed
+ * resilience support on this module's classpath, and no speculative dependency
+ * rides an unwired consumer — the first streaming consumer's own wiring carries
+ * that decision.
  */
-public final class AiChatGateway {
+public class AiChatGateway {
 
     private static final Logger log = LoggerFactory.getLogger(AiChatGateway.class);
 
@@ -104,6 +129,15 @@ public final class AiChatGateway {
         return content;
     }
 
+    /**
+     * Sends one user turn to the bound provider and returns its response —
+     * the AI channel's synchronous external crossing, so it wears the D.4
+     * outage-isolation breaker ({@code aiChat}): a provider outage fails
+     * FAST with {@code CallNotPermittedException} instead of hanging a
+     * request thread. The OFF state stays honest — the yml instance's
+     * ignore-list keeps the circuit closed on the capability's own 503s.
+     */
+    @CircuitBreaker(name = "aiChat")
     public ChatClientResponse chat(UUID userId, String conversationId, String userText) {
         ChatClientResponse response = prompt(userId, conversationId, userText, true)
                 .call()

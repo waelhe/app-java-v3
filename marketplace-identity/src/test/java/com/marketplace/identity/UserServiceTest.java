@@ -61,6 +61,20 @@ class UserServiceTest {
     private AuditHistoryPurgeService auditHistoryPurgeService;
 
     /**
+     * A-04: the two arms of the registration hold — the verification
+     * issuance (register mints the right) and the token lifecycle the
+     * administrative surfaces consume outstanding rights through. Mocked
+     * here; their own unit guards (AuthActionTokenServiceTest,
+     * EmailVerificationServiceTest, PasswordResetServiceTest) carry the
+     * real behavior contracts.
+     */
+    @Mock
+    private EmailVerificationService emailVerificationService;
+
+    @Mock
+    private AuthActionTokenService authActionTokenService;
+
+    /**
      * S1/B1: the register surface's encoder provider — a REAL
      * DelegatingPasswordEncoder (the same bean type the full app wires):
      * the unit guards then assert the genuinely-encoded value crosses to the
@@ -119,7 +133,16 @@ class UserServiceTest {
         assertThat(captured.getValue().getPassword()).doesNotContain("clear-password");
         assertTrue(captured.getValue().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_CONSUMER")));
-        assertTrue(captured.getValue().isAccountNonLocked(), "the account is born enabled — no verification hold");
+        // A-04 closed the declared debt: the login row is born HELD
+        // (enabled=false — the framework's account-state primitive; the
+        // login gate refuses the account until the verification surface
+        // lifts the hold), and the birth transaction mints the
+        // verification right for it.
+        assertFalse(captured.getValue().isEnabled(),
+                "A-04: the login row is born held — the email-verification hold");
+        assertTrue(captured.getValue().isAccountNonLocked(),
+                "the hold is the enabled bit alone — no other account flag is touched");
+        verify(emailVerificationService).issueFor("new@example.com");
         // Registration grants NOTHING above CONSUMER — no admin, no provider.
         assertFalse(captured.getValue().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
@@ -609,6 +632,11 @@ class UserServiceTest {
         // Issued authorizations die with the disable — and nothing else is written.
         verify(jdbcTemplate).update(eq(UserService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL), eq("target-user"));
         verifyNoMoreInteractions(jdbcTemplate);
+        // A-04 — the ban-vs-verification invariant's administrative leg: the
+        // disabled account's outstanding redemption rights are consumed in
+        // the SAME transaction (a banned account can never be re-enabled
+        // through the verification surface; the Envers-audited consumption).
+        verify(authActionTokenService).invalidateOutstanding("target-user");
         // R8 Wave 1: the disable also publishes the domain fact (inside this
         // transaction — the publication row commits atomically with the flip);
         // the AccountStatusSessionInvalidator consumes it AFTER_COMMIT.
@@ -629,6 +657,11 @@ class UserServiceTest {
         verify(userDetailsManager).updateUser(captured.capture());
         assertTrue(captured.getValue().isEnabled(), "the account must be enabled");
         // Enabling emits no token and removes nothing (the user logs in again).
+        // A-04: an enable is NOT a verification — no outstanding token is
+        // consumed (there is none to consume: the account already finished
+        // its lifecycle one way or another), the redemption rights stand
+        // exactly as they were.
+        verifyNoInteractions(authActionTokenService);
         // CodeRabbit #250 (Mockito 5 varargs semantics — adopted): any() on a
         // varargs position matches exactly one element, so a never() check
         // with (Object) any() would pass vacuously even if the five-arg
@@ -738,6 +771,11 @@ class UserServiceTest {
         // Step 5: the login identity dies through the framework manager's
         // deleteUser (authorities first, then the row — the official order).
         verify(userDetailsManager).deleteUser("target-subject");
+        // A-04 runs BEFORE that delete: the outstanding tokens are consumed
+        // inside the SAME transaction — the FK-safe order for V112's
+        // reference to auth_users, and the ban-vs-verification invariant
+        // (a pseudonymized account holds no redemption right).
+        verify(authActionTokenService).invalidateOutstanding("target-subject");
         // The L23 flip channel is never touched (pseudonymization deletes,
         // it does not disable).
         verify(userDetailsManager, never()).updateUser(any());

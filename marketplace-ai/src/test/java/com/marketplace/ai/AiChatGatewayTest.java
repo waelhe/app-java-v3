@@ -213,6 +213,35 @@ class AiChatGatewayTest {
                 .withMessage("Spring AI returned an empty chat response");
     }
 
+    @Test
+    void theD4BreakerPinsTheChatCrossing() throws Exception {
+        // D.4's surviving half (union 2026-10-09): the synchronous external
+        // crossing wears the official Resilience4j circuitbreaker annotation,
+        // and the class must stay proxyable (non-final) for the aspect's
+        // CGLIB proxy — a final class would make the annotation silently
+        // inert, the measured trap this pin exists to prevent.
+        java.lang.reflect.Method chat = AiChatGateway.class
+                .getDeclaredMethod("chat", UUID.class, String.class, String.class);
+        io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker breaker =
+                chat.getAnnotation(io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker.class);
+        assertThat(breaker).as("chat() must wear @CircuitBreaker").isNotNull();
+        assertThat(breaker.name()).isEqualTo("aiChat");
+        assertThat(java.lang.reflect.Modifier.isFinal(AiChatGateway.class.getModifiers()))
+                .as("AiChatGateway must stay non-final for the breaker's CGLIB proxy")
+                .isFalse();
+        // The retry leg retired with the single-turn design: a retried call
+        // would duplicate the user turn in the Spring AI Session history. Pin
+        // its absence so it never silently returns.
+        assertThat(chat.isAnnotationPresent(io.github.resilience4j.retry.annotation.Retry.class))
+                .as("chat() must NOT wear @Retry — session-history writes make the call non-idempotent")
+                .isFalse();
+    }
+
+    // The pre-#522 scopeConversation derivation pin retired WITH its design:
+    // main's completed contract owns conversation state through Spring AI
+    // Session (opaque server-issued IDs + the advisor's official ownership
+    // check), so the derived 36-char key has no remaining call site.
+
     private static void stubRequest(ChatClient.ChatClientRequestSpec request) {
         when(request.advisors(org.mockito.ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any()))
                 .thenReturn(request);

@@ -1,5 +1,7 @@
 package com.marketplace.media;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -47,13 +49,24 @@ class S3MediaStorageTest {
                 .build();
     }
 
+    /**
+     * D.4: a defaults-registry breaker (100-call window, 50% threshold) — it
+     * can never open inside these signing/verification tests, so the storage's
+     * new isolation seam rides fully inert exactly as it does in the passing
+     * paths of production. The OPEN-state behavior has its own dedicated
+     * {@code S3MediaStorageIsolationTest}.
+     */
+    private static CircuitBreaker neverOpens() {
+        return CircuitBreakerRegistry.ofDefaults().circuitBreaker("mediaStorage");
+    }
+
     @Mock
     private S3Client client;
 
     @Test
     void presignUpload_signsKeyContentTypeAndExpiry() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             String url = storage.presignUpload("listings/abc/photo.jpg", "image/jpeg");
 
             assertTrue(url.startsWith(ENDPOINT + "/" + BUCKET + "/listings/abc/photo.jpg"),
@@ -68,7 +81,7 @@ class S3MediaStorageTest {
     @Test
     void presignDownload_addressesSameObjectForGet() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             String url = storage.presignDownload("listings/abc/photo.jpg");
 
             assertTrue(url.startsWith(ENDPOINT + "/" + BUCKET + "/listings/abc/photo.jpg"));
@@ -79,7 +92,7 @@ class S3MediaStorageTest {
     @Test
     void verifyUploaded_trueWhenTypeAndSizeMatch() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
                     .thenReturn(HeadObjectResponse.builder()
                             .contentLength(2048L)
@@ -93,7 +106,7 @@ class S3MediaStorageTest {
     @Test
     void verifyUploaded_falseWhenSizeMismatches() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
                     .thenReturn(HeadObjectResponse.builder()
                             .contentLength(999L)
@@ -107,7 +120,7 @@ class S3MediaStorageTest {
     @Test
     void verifyUploaded_falseWhenTypeMismatches() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
                     .thenReturn(HeadObjectResponse.builder()
                             .contentLength(2048L)
@@ -121,7 +134,7 @@ class S3MediaStorageTest {
     @Test
     void verifyUploaded_falseWhenObjectMissingOrUnreachable() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
                     .thenThrow(new RuntimeException("NoSuchKey"));
 
@@ -132,7 +145,7 @@ class S3MediaStorageTest {
     @Test
     void deleteObject_delegatesToTheClient() {
         try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
 
             storage.deleteObject("listings/abc/photo.jpg");
 
@@ -143,7 +156,7 @@ class S3MediaStorageTest {
     @Test
     void close_shutsDownPresignerAndClient() {
         S3Presigner presigner = org.mockito.Mockito.mock(S3Presigner.class);
-        S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15));
+        S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
 
         storage.close();
 
@@ -161,7 +174,7 @@ class S3MediaStorageTest {
         // credentials and object bytes in the clear — the production
         // constructor must refuse it before any client or presigner is built.
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> new S3MediaStorage(storage("http://localhost:4566", false), Duration.ofMinutes(15)));
+                () -> new S3MediaStorage(storage("http://localhost:4566", false), Duration.ofMinutes(15), neverOpens()));
 
         assertTrue(thrown.getMessage().contains("must use https"));
         assertTrue(thrown.getMessage().contains("http://localhost:4566"));
@@ -171,7 +184,7 @@ class S3MediaStorageTest {
     void productionConstructor_acceptsHttpsEndpoint() {
         // The honest default: https endpoints build normally.
         try (S3MediaStorage storage = new S3MediaStorage(storage("https://media.example.local", false),
-                Duration.ofMinutes(15))) {
+                Duration.ofMinutes(15), neverOpens())) {
             assertNotNull(storage);
         }
     }
@@ -181,7 +194,7 @@ class S3MediaStorageTest {
         // The explicit local-emulator escape hatch (allow-insecure-endpoint)
         // is the only way an http endpoint builds.
         try (S3MediaStorage storage = new S3MediaStorage(storage("http://localhost:4566", true),
-                Duration.ofMinutes(15))) {
+                Duration.ofMinutes(15), neverOpens())) {
             assertNotNull(storage);
         }
     }

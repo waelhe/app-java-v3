@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         classes = {
                 MailSenderAutoConfiguration.class,
                 ThymeleafAutoConfiguration.class,
-                EmailService.class
+                EmailServiceAutoConfiguration.class
         },
         webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class EmailServiceGreenMailTest {

@@ -16,8 +16,11 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.constraints.NotBlank;
 import java.lang.reflect.Method;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -27,6 +30,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 class GlobalExceptionHandlerTest {
@@ -291,20 +295,13 @@ class GlobalExceptionHandlerTest {
     }
 
     /**
-     * An unexpected exception is masked behind the 500 INTERNAL problem
-     * body.
+     * A-03: the uncaught-exception safety net moved to its own LAST-ordered
+     * advice ({@code GlobalErrorFallbackHandler}) so this advice's specific
+     * handlers can sit ahead of Boot's automatic one without a catch-all
+     * swallowing the built-ins — the 500 contract itself is pinned in
+     * {@code GlobalErrorFallbackHandlerTest}, including the three-layer
+     * ordering this composition is measured on.
      */
-    @Test
-    void handleGeneral_returnsInternalError() {
-        var ex = new RuntimeException("Unexpected error");
-        var request = new StubHttpServletRequest("/api/bookings");
-        var response = handler.handleGeneral(ex, request);
-
-        assertThat(response.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
-        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/internal-error"));
-        assertThat(response.getProperties().get("errorCode")).isEqualTo("INT-001");
-        assertThat(response.getProperties().get("category")).isEqualTo("internal");
-    }
 
     static class TestController {
         public void submit(String email) {
@@ -344,5 +341,53 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleUniqueViolation(ex, request);
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    }
+
+    // ------------------------------------------------------------------
+    // A-03 (compliance plan 0.9 / matrix row 7 — the ordered composition
+    // and the unified official carrier) — two structural pins.
+    // ------------------------------------------------------------------
+
+    /**
+     * The official doc's prescription, verbatim (mvc-ann-rest-exceptions):
+     * "you'll need to ensure your handler is ordered ahead of the one
+     * configured by Spring Boot whose order is 0" — the house advice carries
+     * the highest precedence so its two documented built-in takeovers (the
+     * fieldErrors validation contract, the taxonomy 404) win over Boot's
+     * autoconfigured {@code ProblemDetailsExceptionHandler}, while every
+     * other built-in falls through to the official automatic rendering.
+     */
+    @Test
+    void adviceIsOrderedAheadOfTheBootAutomaticProblemDetailsHandler_a03() {
+        Order order = GlobalExceptionHandler.class.getAnnotation(Order.class);
+        assertThat(order).isNotNull();
+        assertThat(order.value()).isEqualTo(Ordered.HIGHEST_PRECEDENCE);
+    }
+
+    /**
+     * The unified carrier: the house API exception family rides the
+     * Framework's own {@code ErrorResponseException} base (the official doc:
+     * "basic ErrorResponse implementation that others can use as a convenient
+     * base class"), so every domain 404/400/409/429/503 is natively
+     * renderable by the Framework's own advice entry point for the type —
+     * while the message contract stays the bare domain detail sentence the
+     * GraphQL envelope and the logs have always carried.
+     */
+    @Test
+    void apiProblemDetailExceptionsRideTheOfficialErrorResponseExceptionBase_a03() {
+        assertThat(ErrorResponseException.class)
+                .isAssignableFrom(ApiProblemDetailException.class);
+        assertThat(ErrorResponseException.class)
+                .isAssignableFrom(ResourceNotFoundException.class);
+
+        UUID id = UUID.randomUUID();
+        ResourceNotFoundException ex = new ResourceNotFoundException("Booking", id);
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        // The house message contract, preserved over the official base's
+        // "status, ProblemDetail[...]" rendering: the message IS the detail.
+        assertThat(ex.getMessage()).isEqualTo("Booking not found: " + id);
+        assertThat(ex.getMessage()).isEqualTo(ex.getBody().getDetail());
+        assertThat(ex.getBody().getType()).isEqualTo(URI.create("https://marketplace.com/errors/not-found"));
+        assertThat(ex.getBody().getProperties()).containsEntry("errorCode", "NF-001");
     }
 }

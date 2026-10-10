@@ -92,7 +92,20 @@ spring:
     enabled: true
     locations: classpath:db/migration
     validate-on-migrate: true
-    out-of-order: false
+    # The parallel-range reality (the contracts ledger's §2 table): Track B
+    # owns V150-V189 and already consumed V150-V152 on its branch while
+    # Track A's V110-V149 range is still filling (V110-V117 today). Once a
+    # deployment applies V152, Flyway's officially documented behavior with
+    # outOfOrder=false IGNORES any newly found lower version — Track A's
+    # next V118 would be silently skipped, its tables never created, and
+    # the E2E surface broken at the first use of the feature. Flyway's own
+    # docs prescribe outOfOrder=true for exactly this shape: "If you
+    # already have versions 1 and 3 applied, and now a version 2 is found,
+    # it will be applied too instead of being ignored" — the documented
+    # multiple-branches setting. The other half of the contract stays
+    # guarded by MigrationChecksumGuardTest: applied migrations are never
+    # modified (validate-on-migrate keeps checking them at every boot).
+    out-of-order: true
     clean-disabled: true
     # V51 (postgis plan §5 D-I1) runs DROP/CREATE INDEX CONCURRENTLY —
     # PostgreSQL statements that cannot execute inside a transaction
@@ -330,7 +343,15 @@ management:
         enabled: true
       group:
         readiness:
-          include: db,diskSpace
+          # The documented membership (A-15's smoke, the watchdog's probe
+          # contract, MultiReplicaReadiness's replica story — all three name
+          # the same trio): db, redis, diskSpace. Redis carries the login
+          # sessions themselves (spring-session-data-redis, the indexed
+          # repository) and the named caches — a Redis outage leaves the
+          # login gate down, which is exactly a not-ready state, the same
+          # core-vs-auxiliary line S10 drew when mail (notifications only,
+          # best-effort) was kept OUT of platform health.
+          include: db,redis,diskSpace
         liveness:
           include: ping
   observations:
@@ -390,6 +411,26 @@ resilience4j:
     instances:
       paymentProcessing:
         base-config: default
+      # D.4 (compliance plan wave D — channel resilience): the three channels
+      # that cross the process boundary beyond the PSP. mailSend guards the
+      # SMTP crossing (EmailService.send — the async AFTER_COMMIT mail leg);
+      # aiChat guards the AI provider crossing (AiChatGateway.chat) and must
+      # NEVER open on the OFF state: ServiceUnavailableException (the honest
+      # 503 SU-001 "capability is OFF, not broken") is a state, not a channel
+      # failure — the official ignore-exceptions mechanism keeps the circuit
+      # honest about the provider's real health only. mediaStorage guards the
+      # S3-compatible object storage's four network operations (HeadObject
+      # verify, GetObject/PutObject thumbnail pipeline, DeleteObject) via the
+      # programmatic decorator in S3MediaStorage — yml configures it exactly
+      # like the annotation instances.
+      mailSend:
+        base-config: default
+      aiChat:
+        base-config: default
+        ignore-exceptions:
+          - com.marketplace.shared.api.ServiceUnavailableException
+      mediaStorage:
+        base-config: default
   retry:
     configs:
       default:
@@ -404,6 +445,20 @@ resilience4j:
       booking:
         base-config: default
         max-attempts: 2
+      # D.4: transient-blip absorption for the annotation-style channel
+      # (the programmatic mediaStorage breaker needs no retry wrapper — the
+      # S3 SDK's own retry policy owns transport-level blips; the breaker
+      # here owns the outage decision).
+      # Union note 2026-10-09: the aiChat retry instance RETIRED — the
+      # conversational gateway writes the user turn into the Spring AI
+      # Session history through the advisor on every invocation, so a retried
+      # call would duplicate the turn in the conversation history (measured
+      # non-idempotence on this design; the single-turn design the instance
+      # was measured for retired with Track A's gateway). The outage-isolation half survives on the chat
+      # crossing's @CircuitBreaker — its circuitbreaker instance above keeps
+      # the OFF-state ignore-list.
+      mailSend:
+        base-config: default
   ratelimiter:
     configs:
       default:
@@ -714,6 +769,14 @@ marketplace:
         key-password: ${JWT_KEY_PASSWORD:}
     session:
       max-sessions: ${SESSION_MAX_SESSIONS:2}
+      # A.4 (official-compliance plan §6 wave A) — the multi-device overflow
+      # policy, the second documented half of the concurrency pair: false =
+      # the documented Spring Security default (the least-recent session is
+      # expired so the newest login always succeeds); true = the new login is
+      # rejected at the form-login failure URL instead. The env channel gives
+      # the platform owner the policy word, exactly like SESSION_MAX_SESSIONS
+      # above it.
+      max-sessions-prevents-login: ${SESSION_MAX_SESSIONS_PREVENTS_LOGIN:false}
     # N1 (admin-seed hardening): the break-glass administrator's password —
     # env-only channel in production, exactly like OAUTH_CLIENT_SECRET. The
     # fixed bcrypt hash that previously shipped in R__seed_oauth2_client.sql

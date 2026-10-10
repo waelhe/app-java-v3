@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -13,7 +14,9 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration;
@@ -35,6 +38,9 @@ class UserControllerWebMvcTest {
 
     @MockitoBean
     private UserDataExportService userDataExportService;
+
+    @MockitoBean
+    private AccountSelfDeletionService accountSelfDeletionService;
 
     @TestConfiguration
     @EnableMethodSecurity
@@ -81,6 +87,28 @@ class UserControllerWebMvcTest {
 
         mockMvc.perform(get("/api/v1/users/me/export"))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * A-05 (A.3): the deletion surface's request contract at the slice —
+     * a blank password answers the standing 400 VAL-001 validation
+     * contract with the fieldErrors extension (the house advice's wire
+     * shape). The slice carries no security filter chain (the house's
+     * measured WebMvcTest shape — the same unauthenticated reach the
+     * blank-reason purge slice test uses), so the wire-level 204/401 with
+     * a real JWT belongs to the integration guard — the unit's declared
+     * gate ("IT deletion"), which walks the real login gate.
+     */
+    @Test
+    void deleteMyAccount_withABlankPasswordAnswersThe400ValidationContract() throws Exception {
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VAL-001"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("password"));
+
+        org.mockito.Mockito.verifyNoInteractions(accountSelfDeletionService);
     }
 
     private static UserResponse mockResponse() {

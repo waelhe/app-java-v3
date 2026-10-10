@@ -208,7 +208,7 @@ class NotificationPreferencesIntegrationTest {
         verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
 
         // The effective matrix reads all-enabled for a user with no overrides
-        // (thirty-six rows: 12 types x 3 channels — L35 added SAVED_SEARCH_MATCH
+        // (forty-eight rows: 16 types x 3 channels — L35 added SAVED_SEARCH_MATCH
         // backed by the V55 CHECK widening; L42 added POST_COMMENTED backed
         // by the V62 CHECK widening; L46 added NEW_LISTING_IN_NEIGHBORHOOD
         // backed by the V63 CHECK widening; L45 added CONTENT_MODERATED
@@ -217,12 +217,15 @@ class NotificationPreferencesIntegrationTest {
         // FOLLOWED_PROVIDER_NEW_LISTING backed by the V93/V94 CHECK widening;
         // B-11 added MESSAGE_RECEIVED backed by the V151/V152 CHECK widening;
         // B-17 added MEMBERSHIP_VERIFIED + REPORT_RESOLVED backed by the
-        // V158/V159 CHECK widening — the documented crossing ledger lives in
-        // PR-B's worklog CR list).
+        // V158/V159 CHECK widening; the union's own wave added
+        // BOOKING_CONFIRMED and A-11's three order types
+        // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED backed by the
+        // V110-V115 CHECK widening — the 16-type membership V164/V165's
+        // CHECK carries, the count DocumentationNumbersGuardTest pins).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(36);
+        assertThat(matrix).hasSize(48);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 

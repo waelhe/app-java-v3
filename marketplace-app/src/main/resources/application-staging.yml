@@ -1,0 +1,178 @@
+spring:
+  # B.2 (compliance plan §4 row 12 / wave B) — the staging SANDBOX profile:
+  # production-parity posture on sandboxed resources. Official basis (Boot
+  # reference › Features › Profiles, cached at scripts/a09-docs/): profile-
+  # specific documents override the base document; this document mirrors the
+  # production document's runtime posture exactly and changes ONLY the
+  # environment identity — so a deployment that passes the sandbox passes it
+  # behaving the way production behaves (forward headers, graceful shutdown,
+  # Redis cache, real mail submission, Modulith staleness monitoring, secrets
+  # scrubbing), never a dev-shaped approximation of it.
+  datasource:
+    # D6 parity: staging resources are provisioned, not defaulted — an unset
+    # DB_URL fails at placeholder resolution exactly like production.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+
+  jpa:
+    show-sql: false
+
+  devtools:
+    restart:
+      enabled: false
+    livereload:
+      enabled: false
+
+  flyway:
+    # A shared sandbox database is never cleanable (same posture as prod).
+    clean-disabled: true
+
+  graphql:
+    graphiql:
+      enabled: false
+    schema:
+      introspection:
+        enabled: false
+      inspection:
+        enabled: false
+
+  cache:
+    type: redis
+
+  modulith:
+    events:
+      completion-mode: archive
+      # Production parity: the staleness monitor must run in the sandbox so
+      # the behavior under test is the production behavior (the measured
+      # property names, documented in application-prod.yml).
+      staleness:
+        published: 6h
+        processing: 1h
+        resubmitted: 1h
+      republish-outstanding-events-on-restart: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+  mail:
+    # The sandbox mailbox: its own credentials via the same channel shape as
+    # production (auth + TLS) — staging mail is submitted for real into a
+    # dedicated mailbox, never silently dropped, so the mail journey's
+    # production path is what gets measured.
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 5000
+
+  security:
+    oauth2:
+      authorizationserver:
+        # D6 parity: the issuer must be the sandbox's public origin, never the
+        # base-profile default.
+        issuer: ${AUTH_SERVER_ISSUER}
+
+server:
+  shutdown: graceful
+  # Production parity (the same trusted TLS-terminating proxy topology): the
+  # ForwardedHeaderFilter must run in the sandbox, or every host-sensitive
+  # surface (issuer derivation, redirect generation) measures dev behavior.
+  forward-headers-strategy: FRAMEWORK
+  tomcat:
+    redirect-context-root: false
+
+logging:
+  pattern:
+    # The same secrets-scrubbing console pattern as production.
+    console: "%replace(%msg){'(password|secret|token|api[-_]?key|authorization)\\s*[=:]\\s*[^,\\s]+', '$1=****'}%n"
+  level:
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    com.marketplace: INFO
+
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: db,redis,diskSpace
+        liveness:
+          include: ping
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  observations:
+    enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      # The sandbox samples every trace: its purpose is measuring journeys.
+      probability: ${OTEL_TRACING_SAMPLING:1.0}
+  otlp:
+    metrics:
+      export:
+        # D6 parity: no default — an unset export URL fails at placeholder
+        # resolution exactly like production, so the sandbox's observability
+        # wiring is provisioned consciously, never silently absent.
+        url: ${OTEL_METRICS_EXPORT_URL}
+        step: ${OTEL_METRICS_EXPORT_STEP:1m}
+        headers:
+          Authorization: ${GRAFANA_OTLP_AUTH_HEADER:}
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+      service.version: ${OTEL_SERVICE_VERSION:0.1.0}
+      # The environment identity: observable staging, never "production".
+      deployment.environment: staging
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_TRACES_EXPORT_URL}
+          headers:
+            Authorization: ${GRAFANA_OTLP_AUTH_HEADER:}
+
+marketplace:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  security:
+    jwt:
+      audience: ${JWT_AUDIENCE:marketplace-api}
+      keystore:
+        # D6 parity: the sandbox keys arrive through the same two channels
+        # (b64 wins), with the same no-default credentials contract.
+        b64: ${JWT_KEYSTORE_B64:}
+        path: ${JWT_KEYSTORE_PATH:}
+        password: ${JWT_KEYSTORE_PASSWORD}
+        alias: ${JWT_KEY_ALIAS}
+        key-password: ${JWT_KEY_PASSWORD}
+    admin-seed:
+      password: ${ADMIN_SEED_PASSWORD}
+    oauth2:
+      client:
+        client-id: ${OAUTH_CLIENT_ID}
+        secret: ${OAUTH_CLIENT_SECRET}
+        redirect-uris: ${OAUTH_CLIENT_REDIRECT_URIS}
+        post-logout-redirect-uri: ${OAUTH_POST_LOGOUT_REDIRECT_URI}
+      public-client:
+        client-id: ${OAUTH_PUBLIC_CLIENT_ID}
+        redirect-uris: ${OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}

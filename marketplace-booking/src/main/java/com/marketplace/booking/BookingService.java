@@ -67,7 +67,21 @@ public class BookingService implements BookingSpi {
     @Transactional(readOnly = true)
     public Booking getByIdForUser(UUID id, Authentication authentication) {
         Booking booking = getById(id);
-        verifyParticipantOwnership(booking, authentication);
+        // A-03 (compliance plan 0.6 — the measured 404/403 contract defect):
+        // the endpoint's published contract (the OpenAPI operation document,
+        // the mobile developer's contract) reads "the consumer or the provider
+        // of the booking (or ADMIN); anyone else gets 404" — but the measured
+        // behavior answered 403 to an authenticated non-participant, leaking
+        // the booking's existence. The privacy sentence wins because it is the
+        // published promise (error taxonomy NOT_FOUND through the official
+        // ErrorResponseException carrier), and it matches the house precedent
+        // for private two-party artifacts (L51's group leave: "an honest 404
+        // for both the missing group and the non-member"). The write paths
+        // (cancel) keep the ownership 403 — their published contracts make no
+        // 404 promise, and a 403 there is the documented ownership gate.
+        if (!isParticipantOrAdmin(booking, authentication)) {
+            throw new ResourceNotFoundException("Booking", id);
+        }
         return booking;
     }
 
@@ -187,7 +201,12 @@ public class BookingService implements BookingSpi {
     }
 
     @Observed(name = "booking.cancel")
-    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER')")
+    // CodeRabbit #4209499463 (adopted from the root): ADMIN joins the role
+    // gate — the controller's published contract promises "participant (or
+    // ADMIN) may cancel", and the participant gate below already admits an
+    // admin; an ADMIN-only token was rejected at THIS role gate before ever
+    // reaching it.
+    @PreAuthorize("hasAnyRole('CONSUMER','PROVIDER','ADMIN')")
     @Retry(name = "booking")
     @ConcurrencyLimit(10)
     public Booking cancel(UUID id, Authentication authentication) {
@@ -274,12 +293,22 @@ public class BookingService implements BookingSpi {
     }
 
     private void verifyParticipantOwnership(Booking booking, Authentication authentication) {
-        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
-        if (!booking.getConsumerId().equals(currentUserId)
-                && !booking.getProviderId().equals(currentUserId)
-                && !currentUserProvider.isAdmin(authentication)) {
+        if (!isParticipantOrAdmin(booking, authentication)) {
             throw new AccessDeniedException("You are not a participant in this booking");
         }
+    }
+
+    /**
+     * The single participant predicate shared by both booking read/write
+     * ownership gates — A-03 extracted it so the 404 (read, the published
+     * privacy contract) and the 403 (write, the ownership gate) differ ONLY
+     * in the exception they raise, never in who they admit.
+     */
+    private boolean isParticipantOrAdmin(Booking booking, Authentication authentication) {
+        UUID currentUserId = currentUserProvider.getCurrentUserId(authentication);
+        return booking.getConsumerId().equals(currentUserId)
+                || booking.getProviderId().equals(currentUserId)
+                || currentUserProvider.isAdmin(authentication);
     }
 
     private void verifyUserOrAdmin(UUID userId, Authentication authentication) {
