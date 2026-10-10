@@ -67,4 +67,41 @@ interface MarketplaceApi {
 
     @POST("api/v1/notifications/{id}/read")
     suspend fun markNotificationRead(@Path("id") id: String): NotificationDto
+
+    @GET("api/v1/neighborhood/events")
+    suspend fun getEvents(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<EventDto>
+
+    @POST("api/v1/neighborhood/events")
+    suspend fun createEvent(@Body request: CreateEventRequest): EventDto
+
+    @POST("api/v1/events/{eventId}/rsvp")
+    suspend fun rsvpEvent(@Path("eventId") eventId: String)
+
+    @DELETE("api/v1/events/{eventId}/rsvp")
+    suspend fun cancelEventRsvp(@Path("eventId") eventId: String)
+
+    @DELETE("api/v1/neighborhood/events/{eventId}")
+    suspend fun deleteEvent(@Path("eventId") eventId: String)
+
+    @GET("api/v1/neighborhood/groups")
+    suspend fun getGroups(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<GroupDto>
+
+    @POST("api/v1/neighborhood/groups/{groupId}/membership")
+    suspend fun joinGroup(@Path("groupId") groupId: String)
+
+    @DELETE("api/v1/neighborhood/groups/{groupId}/membership")
+    suspend fun leaveGroup(@Path("groupId") groupId: String)
+
+    @GET("api/v1/neighborhood/polls")
+    suspend fun getPolls(@Query("page") page: Int = 0, @Query("size") size: Int = 30): ApiPage<PollDto>
+
+    @POST("api/v1/neighborhood/polls")
+    suspend fun createPoll(@Body request: CreatePollRequest): PollDto
+
+    @POST("api/v1/polls/{pollId}/vote")
+    suspend fun voteOnPoll(@Path("pollId") pollId: String, @Body request: VoteRequest)
+
+    @DELETE("api/v1/polls/{pollId}/vote")
+    suspend fun withdrawPollVote(@Path("pollId") pollId: String)
+
 }

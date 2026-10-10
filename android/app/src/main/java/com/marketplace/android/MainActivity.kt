@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.marketplace.android.feature.CommunityViewModel
+import com.marketplace.android.feature.ExploreMode
 import com.marketplace.android.ui.DayfApp
 import com.marketplace.android.ui.DayfTheme
 import java.security.MessageDigest
@@ -88,9 +89,29 @@ class MainActivity : ComponentActivity() {
                         onMarketCurrency = viewModel::setMarketCurrency,
                         onMarketPickup = viewModel::setMarketPickup,
                         onPublishMarket = viewModel::publishMarketItem,
+                        onEventCategory = viewModel::setEventCategory,
+                        onEventTitle = viewModel::setEventTitle,
+                        onEventDescription = viewModel::setEventDescription,
+                        onEventStartsAt = viewModel::setEventStartsAt,
+                        onEventLocationLabel = viewModel::setEventLocationLabel,
+                        onEventOrganizerLabel = viewModel::setEventOrganizerLabel,
+                        onEventRegistration = viewModel::setEventRegistration,
+                        onEventCapacity = viewModel::setEventCapacity,
+                        onPublishEvent = viewModel::publishEvent,
+                        onPollQuestion = viewModel::setPollQuestion,
+                        onPollAuthorLabel = viewModel::setPollAuthorLabel,
+                        onPollOption = viewModel::setPollOption,
+                        onAddPollOption = viewModel::addPollOption,
+                        onRemovePollOption = viewModel::removePollOption,
+                        onPublishPoll = viewModel::publishPoll,
                         onWithdrawMarketItem = viewModel::withdrawMarketItem,
                         onSearchQuery = viewModel::updateSearchQuery,
                         onSearch = viewModel::searchPosts,
+                        onExploreMode = viewModel::selectExploreMode,
+                        onRsvpEvent = viewModel::toggleEventRsvp,
+                        onToggleGroup = viewModel::toggleGroupMembership,
+                        onVotePoll = viewModel::castPollVote,
+                        onWithdrawPollVote = viewModel::withdrawPollVote,
                         onLoadMore = viewModel::loadMorePosts,
                         onReact = viewModel::toggleReaction,
                         onOpenComments = viewModel::openComments,

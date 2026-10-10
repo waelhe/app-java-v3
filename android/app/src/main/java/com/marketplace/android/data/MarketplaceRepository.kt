@@ -64,4 +64,19 @@ class MarketplaceRepository {
     suspend fun withdrawMarketItem(itemId: String) = api.withdrawMarketItem(itemId)
     suspend fun getNotifications() = api.getNotifications()
     suspend fun markNotificationRead(id: String) = api.markNotificationRead(id)
+
+    suspend fun getEvents(page: Int = 0) = api.getEvents(page = page)
+    suspend fun createEvent(request: com.marketplace.android.core.network.CreateEventRequest) = api.createEvent(request)
+    suspend fun rsvpEvent(eventId: String) = api.rsvpEvent(eventId)
+    suspend fun cancelEventRsvp(eventId: String) = api.cancelEventRsvp(eventId)
+    suspend fun deleteEvent(eventId: String) = api.deleteEvent(eventId)
+    suspend fun getGroups(page: Int = 0) = api.getGroups(page = page)
+    suspend fun joinGroup(groupId: String) = api.joinGroup(groupId)
+    suspend fun leaveGroup(groupId: String) = api.leaveGroup(groupId)
+    suspend fun getPolls(page: Int = 0) = api.getPolls(page = page)
+    suspend fun createPoll(request: com.marketplace.android.core.network.CreatePollRequest) = api.createPoll(request)
+    suspend fun voteOnPoll(pollId: String, optionId: String) =
+        api.voteOnPoll(pollId, com.marketplace.android.core.network.VoteRequest(optionId))
+    suspend fun withdrawPollVote(pollId: String) = api.withdrawPollVote(pollId)
+
 }

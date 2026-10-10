@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.marketplace.android.core.network.CommentDto
 import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
+import com.marketplace.android.core.network.CreateEventRequest
+import com.marketplace.android.core.network.CreatePollRequest
+import com.marketplace.android.core.network.EventDto
+import com.marketplace.android.core.network.GroupDto
+import com.marketplace.android.core.network.PollDto
 import com.marketplace.android.core.network.GeoNodeDto
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.MembershipDto
@@ -23,7 +28,8 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 enum class MainTab { HOME, EXPLORE, MARKET, NOTIFICATIONS, PROFILE }
-enum class ComposerKind { POST, MARKET }
+enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS }
+enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
     val authenticated: Boolean = false,
@@ -37,6 +43,28 @@ data class AppUiState(
     val locationBusy: Boolean = false,
     val locationError: String? = null,
     val tab: MainTab = MainTab.HOME,
+    val exploreMode: ExploreMode = ExploreMode.POSTS,
+    val events: List<EventDto> = emptyList(),
+    val eventsBusy: Boolean = false,
+    val eventsError: String? = null,
+    val groups: List<GroupDto> = emptyList(),
+    val groupsBusy: Boolean = false,
+    val groupsError: String? = null,
+    val polls: List<PollDto> = emptyList(),
+    val pollsBusy: Boolean = false,
+    val pollsError: String? = null,
+    val eventCategory: String = "SOCIAL",
+    val eventTitle: String = "",
+    val eventDescription: String = "",
+    val eventStartsAt: String = "",
+    val eventLocationLabel: String = "",
+    val eventOrganizerLabel: String = "",
+    val eventRegistration: String = "OPEN",
+    val eventCapacity: String = "",
+    val pollQuestion: String = "",
+    val pollAuthorLabel: String = "",
+    val pollOptions: List<String> = listOf("", ""),
+    val pollActionIds: Set<String> = emptySet(),
     val posts: List<PostDto> = emptyList(),
     val feedBusy: Boolean = false,
     val feedError: String? = null,
@@ -171,7 +199,8 @@ class CommunityViewModel(
         _uiState.update { it.copy(tab = tab, notice = null) }
         when (tab) {
             MainTab.HOME -> loadFeed()
-            MainTab.EXPLORE, MainTab.PROFILE -> Unit
+            MainTab.EXPLORE -> loadExploreBoard()
+            MainTab.PROFILE -> Unit
             MainTab.MARKET -> loadMarket()
             MainTab.NOTIFICATIONS -> loadNotifications()
         }
@@ -180,7 +209,7 @@ class CommunityViewModel(
     fun refresh() {
         when (_uiState.value.tab) {
             MainTab.HOME -> loadFeed()
-            MainTab.EXPLORE -> searchPosts()
+            MainTab.EXPLORE -> loadExploreBoard()
             MainTab.MARKET -> loadMarket()
             MainTab.NOTIFICATIONS -> loadNotifications()
             MainTab.PROFILE -> loadAccount()
@@ -242,7 +271,11 @@ class CommunityViewModel(
             it.copy(
                 composer = kind, postCategory = "GENERAL", postTitle = "", postBody = "",
                 marketCategory = "FREE", marketCondition = "GOOD", marketTitle = "",
-                marketPrice = "", marketCurrency = "EUR", marketPickup = "", notice = null
+                marketPrice = "", marketCurrency = "EUR", marketPickup = "",
+                eventCategory = "SOCIAL", eventTitle = "", eventDescription = "", eventStartsAt = "",
+                eventLocationLabel = "", eventOrganizerLabel = "", eventRegistration = "OPEN",
+                eventCapacity = "", pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""),
+                notice = null
             )
         }
     }
@@ -258,6 +291,215 @@ class CommunityViewModel(
     fun setMarketCurrency(value: String) { _uiState.update { it.copy(marketCurrency = value.take(3).uppercase()) } }
     fun setMarketPickup(value: String) { _uiState.update { it.copy(marketPickup = value.take(200)) } }
     fun setCommentDraft(value: String) { _uiState.update { it.copy(commentDraft = value.take(2000)) } }
+
+    fun selectExploreMode(mode: ExploreMode) {
+        _uiState.update { it.copy(exploreMode = mode, notice = null) }
+        when (mode) {
+            ExploreMode.POSTS -> Unit
+            ExploreMode.EVENTS -> loadEvents()
+            ExploreMode.GROUPS -> loadGroups()
+            ExploreMode.POLLS -> loadPolls()
+        }
+    }
+
+    private fun loadExploreBoard() {
+        when (_uiState.value.exploreMode) {
+            ExploreMode.POSTS -> Unit
+            ExploreMode.EVENTS -> loadEvents()
+            ExploreMode.GROUPS -> loadGroups()
+            ExploreMode.POLLS -> loadPolls()
+        }
+    }
+
+    fun loadEvents() {
+        if (!_uiState.value.authenticated || _uiState.value.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(eventsBusy = true, eventsError = null) }
+            try {
+                val page = repository.getEvents()
+                _uiState.update { it.copy(events = page.content, eventsBusy = false, eventsError = null) }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(eventsBusy = false, eventsError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun loadGroups() {
+        if (!_uiState.value.authenticated || _uiState.value.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(groupsBusy = true, groupsError = null) }
+            try {
+                val page = repository.getGroups()
+                _uiState.update { it.copy(groups = page.content, groupsBusy = false, groupsError = null) }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(groupsBusy = false, groupsError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun loadPolls() {
+        if (!_uiState.value.authenticated || _uiState.value.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pollsBusy = true, pollsError = null) }
+            try {
+                val page = repository.getPolls()
+                _uiState.update { it.copy(polls = page.content, pollsBusy = false, pollsError = null) }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(pollsBusy = false, pollsError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun toggleEventRsvp(event: EventDto) {
+        if (event.id in _uiState.value.pollActionIds) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pollActionIds = it.pollActionIds + event.id) }
+            try {
+                if (event.rsvpedByMe) repository.cancelEventRsvp(event.id) else repository.rsvpEvent(event.id)
+                loadEvents()
+                _uiState.update { it.copy(notice = if (event.rsvpedByMe) "أُلغي تسجيل حضورك." else "سُجّل حضورك للفعالية.") }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(notice = failureMessage(error)) }
+            } finally {
+                _uiState.update { it.copy(pollActionIds = it.pollActionIds - event.id) }
+            }
+        }
+    }
+
+    fun toggleGroupMembership(group: GroupDto) {
+        if (group.id in _uiState.value.pollActionIds) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pollActionIds = it.pollActionIds + group.id) }
+            try {
+                if (group.joinedByMe) repository.leaveGroup(group.id) else repository.joinGroup(group.id)
+                loadGroups()
+                _uiState.update { it.copy(notice = if (group.joinedByMe) "غادرت المجموعة." else "انضممت إلى المجموعة.") }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(notice = failureMessage(error)) }
+            } finally {
+                _uiState.update { it.copy(pollActionIds = it.pollActionIds - group.id) }
+            }
+        }
+    }
+
+    fun castPollVote(poll: PollDto, optionId: String) {
+        if (poll.id in _uiState.value.pollActionIds || poll.votedByMe != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pollActionIds = it.pollActionIds + poll.id) }
+            try {
+                repository.voteOnPoll(poll.id, optionId)
+                loadPolls()
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(notice = failureMessage(error)) }
+            } finally {
+                _uiState.update { it.copy(pollActionIds = it.pollActionIds - poll.id) }
+            }
+        }
+    }
+
+    fun withdrawPollVote(poll: PollDto) {
+        if (poll.id in _uiState.value.pollActionIds || poll.votedByMe == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pollActionIds = it.pollActionIds + poll.id) }
+            try {
+                repository.withdrawPollVote(poll.id)
+                loadPolls()
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(notice = failureMessage(error)) }
+            } finally {
+                _uiState.update { it.copy(pollActionIds = it.pollActionIds - poll.id) }
+            }
+        }
+    }
+
+    fun setEventCategory(value: String) { _uiState.update { it.copy(eventCategory = value) } }
+    fun setEventTitle(value: String) { _uiState.update { it.copy(eventTitle = value.take(200)) } }
+    fun setEventDescription(value: String) { _uiState.update { it.copy(eventDescription = value.take(2000)) } }
+    fun setEventStartsAt(value: String) { _uiState.update { it.copy(eventStartsAt = value.take(40)) } }
+    fun setEventLocationLabel(value: String) { _uiState.update { it.copy(eventLocationLabel = value.take(200)) } }
+    fun setEventOrganizerLabel(value: String) { _uiState.update { it.copy(eventOrganizerLabel = value.take(200)) } }
+    fun setEventRegistration(value: String) { _uiState.update { it.copy(eventRegistration = value) } }
+    fun setEventCapacity(value: String) { _uiState.update { it.copy(eventCapacity = value.take(8)) } }
+    fun setPollQuestion(value: String) { _uiState.update { it.copy(pollQuestion = value.take(200)) } }
+    fun setPollAuthorLabel(value: String) { _uiState.update { it.copy(pollAuthorLabel = value.take(200)) } }
+    fun setPollOption(index: Int, value: String) {
+        _uiState.update { state -> state.copy(pollOptions = state.pollOptions.mapIndexed { i, old -> if (i == index) value.take(200) else old }) }
+    }
+    fun addPollOption() {
+        _uiState.update { state -> if (state.pollOptions.size < 5) state.copy(pollOptions = state.pollOptions + "") else state }
+    }
+    fun removePollOption(index: Int) {
+        _uiState.update { state -> if (state.pollOptions.size > 2) state.copy(pollOptions = state.pollOptions.filterIndexed { i, _ -> i != index }) else state }
+    }
+
+    fun publishEvent() {
+        val current = _uiState.value
+        val membership = current.membership ?: return
+        val startsAt = runCatching { java.time.Instant.parse(current.eventStartsAt.trim()) }.getOrNull()
+        val title = current.eventTitle.trim()
+        val description = current.eventDescription.trim()
+        val location = current.eventLocationLabel.trim()
+        val organizer = current.eventOrganizerLabel.trim()
+        val capacity = current.eventCapacity.trim().toIntOrNull()
+        if (title.isEmpty() || description.isEmpty() || location.isEmpty() || organizer.isEmpty() || startsAt == null) {
+            _uiState.update { it.copy(notice = "أكمل عنوان الفعالية وتفاصيلها ومكانها والجهة المنظمة وموعدها بصيغة ISO-8601.") }
+            return
+        }
+        if (!startsAt.isAfter(java.time.Instant.now())) {
+            _uiState.update { it.copy(notice = "موعد الفعالية يجب أن يكون في المستقبل.") }
+            return
+        }
+        if (current.eventRegistration == "OPEN" && current.eventCapacity.isNotBlank() ||
+            current.eventRegistration != "OPEN" && (capacity == null || capacity <= 0)) {
+            _uiState.update { it.copy(notice = "الفعالية المفتوحة لا تحتاج سعة؛ والفعالية محدودة المقاعد تتطلب سعة موجبة.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(submitBusy = true, notice = null) }
+            try {
+                repository.createEvent(
+                    CreateEventRequest(
+                        locationId = membership.locationId,
+                        category = current.eventCategory,
+                        title = title,
+                        description = description,
+                        startsAt = startsAt.toString(),
+                        endsAt = null,
+                        locationLabel = location,
+                        organizerLabel = organizer,
+                        capacity = if (current.eventRegistration == "OPEN") null else capacity,
+                        registration = current.eventRegistration
+                    )
+                )
+                _uiState.update { it.copy(composer = null, submitBusy = false, exploreMode = ExploreMode.EVENTS, tab = MainTab.EXPLORE, notice = "أُنشئت الفعالية في حيّك.") }
+                loadEvents()
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun publishPoll() {
+        val current = _uiState.value
+        val membership = current.membership ?: return
+        val question = current.pollQuestion.trim()
+        val author = current.pollAuthorLabel.trim()
+        val options = current.pollOptions.map(String::trim).filter(String::isNotEmpty)
+        if (question.isEmpty() || author.isEmpty() || options.size !in 2..5 || options.distinct().size != options.size) {
+            _uiState.update { it.copy(notice = "أدخل سؤالًا واسم الجهة الناشرة وخيارين إلى خمسة خيارات مختلفة.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(submitBusy = true, notice = null) }
+            try {
+                repository.createPoll(CreatePollRequest(membership.locationId, question, author, options))
+                _uiState.update { it.copy(composer = null, submitBusy = false, pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""), exploreMode = ExploreMode.POLLS, tab = MainTab.EXPLORE, notice = "نُشر الاستطلاع في حيّك.") }
+                loadPolls()
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
+            }
+        }
+    }
 
     fun publishPost() {
         val current = _uiState.value

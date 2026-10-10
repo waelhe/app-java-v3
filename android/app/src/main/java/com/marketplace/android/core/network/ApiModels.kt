@@ -109,3 +109,59 @@ data class CreateMarketItemRequest(
     val priceCurrency: String?,
     val locationLabel: String
 )
+
+
+data class EventDto(
+    val id: String = "",
+    val authorId: String = "",
+    val locationId: String = "",
+    val category: String = "SOCIAL",
+    val title: String = "",
+    val description: String = "",
+    val startsAt: String = "",
+    val endsAt: String? = null,
+    val locationLabel: String = "",
+    val organizerLabel: String = "",
+    val capacity: Int? = null,
+    val registration: String = "OPEN",
+    val featured: Boolean = false,
+    val attending: Long = 0,
+    val rsvpedByMe: Boolean = false,
+    val createdAt: String = "",
+    val updatedAt: String = ""
+)
+
+data class GroupDto(
+    val id: String = "",
+    val name: String = "",
+    val description: String = "",
+    val members: Long = 0,
+    val joinedByMe: Boolean = false
+)
+
+data class PollOptionDto(val id: String = "", val label: String = "", val position: Int = 0, val votes: Long = 0)
+
+data class PollDto(
+    val id: String = "",
+    val question: String = "",
+    val author: String = "",
+    val options: List<PollOptionDto> = emptyList(),
+    val votedByMe: String? = null,
+    val createdAt: String = ""
+)
+
+data class CreateEventRequest(
+    val locationId: String,
+    val category: String,
+    val title: String,
+    val description: String,
+    val startsAt: String,
+    val endsAt: String?,
+    val locationLabel: String,
+    val organizerLabel: String,
+    val capacity: Int?,
+    val registration: String
+)
+
+data class CreatePollRequest(val locationId: String, val question: String, val authorLabel: String, val options: List<String>)
+data class VoteRequest(val optionId: String)

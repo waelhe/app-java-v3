@@ -341,7 +341,7 @@ internal fun NotificationCard(notification: NotificationDto, onClick: () -> Unit
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun ComposerSheet(
+internal fun ComposerSheetLegacy(
     state: AppUiState,
     onDismiss: () -> Unit,
     onPostCategory: (String) -> Unit,

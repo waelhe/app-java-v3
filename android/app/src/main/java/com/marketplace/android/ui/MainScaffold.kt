@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -57,10 +58,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.NotificationDto
+import com.marketplace.android.core.network.EventDto
+import com.marketplace.android.core.network.GroupDto
+import com.marketplace.android.core.network.PollDto
 import com.marketplace.android.core.network.PostDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
 import com.marketplace.android.feature.MainTab
+import com.marketplace.android.feature.ExploreMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +79,11 @@ internal fun SignedInScaffold(
     onOpenComments: (PostDto) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
+    onExploreMode: (ExploreMode) -> Unit,
+    onRsvpEvent: (EventDto) -> Unit,
+    onToggleGroup: (GroupDto) -> Unit,
+    onVotePoll: (PollDto, String) -> Unit,
+    onWithdrawPollVote: (PollDto) -> Unit,
     onWithdrawMarketItem: (MarketItemDto) -> Unit,
     onMarkRead: (NotificationDto) -> Unit,
     onRequestVerification: () -> Unit,
@@ -145,7 +155,19 @@ internal fun SignedInScaffold(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { onBeginComposer(if (state.tab == MainTab.MARKET) ComposerKind.MARKET else ComposerKind.POST) },
+                onClick = {
+                    onBeginComposer(
+                        when (state.tab) {
+                            MainTab.MARKET -> ComposerKind.MARKET
+                            MainTab.EXPLORE -> when (state.exploreMode) {
+                                ExploreMode.EVENTS -> ComposerKind.EVENT
+                                ExploreMode.POLLS -> ComposerKind.POLL
+                                else -> ComposerKind.POST
+                            }
+                            else -> ComposerKind.POST
+                        }
+                    )
+                },
                 containerColor = Forest,
                 contentColor = androidx.compose.ui.graphics.Color.White,
                 shape = RoundedCornerShape(18.dp)
@@ -159,7 +181,10 @@ internal fun SignedInScaffold(
                     state, onRefresh, onLoadMore, onReact, onOpenComments,
                     onCreate = { onBeginComposer(ComposerKind.POST) }
                 )
-                MainTab.EXPLORE -> SearchScreen(state, onSearchQuery, onSearch, onReact, onOpenComments)
+                MainTab.EXPLORE -> ExploreScreen(
+                    state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments,
+                    onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onBeginComposer, onRefresh
+                )
                 MainTab.MARKET -> MarketScreen(
                     state, onRefresh, onWithdrawMarketItem,
                     onCreate = { onBeginComposer(ComposerKind.MARKET) }
@@ -221,52 +246,155 @@ private fun FeedScreen(
 }
 
 @Composable
-private fun SearchScreen(
+private fun ExploreScreen(
     state: AppUiState,
     onQuery: (String) -> Unit,
     onSearch: () -> Unit,
+    onMode: (ExploreMode) -> Unit,
     onReact: (PostDto) -> Unit,
-    onOpenComments: (PostDto) -> Unit
+    onOpenComments: (PostDto) -> Unit,
+    onRsvpEvent: (EventDto) -> Unit,
+    onToggleGroup: (GroupDto) -> Unit,
+    onVotePoll: (PollDto, String) -> Unit,
+    onWithdrawPollVote: (PollDto) -> Unit,
+    onBeginComposer: (ComposerKind) -> Unit,
+    onRefresh: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("ابحث في الحي", fontSize = 25.sp, fontWeight = FontWeight.Bold)
-        Text("البحث العربي الفعلي في عناوين المنشورات ونصوصها.", color = Muted, fontSize = 13.sp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = onQuery,
-                modifier = Modifier.weight(1f),
-                label = { Text("كلمة أو عبارة") },
-                singleLine = true,
-                shape = RoundedCornerShape(15.dp)
-            )
-            Button(onClick = onSearch, enabled = !state.searchBusy, shape = RoundedCornerShape(14.dp)) {
-                Icon(Icons.Filled.Search, contentDescription = "بحث")
+        Text("اكتشف مجتمعك", fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        Text("منشورات وفعاليات ومجموعات واستطلاعات حيّك من الخدمة نفسها.", color = Muted, fontSize = 13.sp)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf(
+                ExploreMode.POSTS to "منشورات",
+                ExploreMode.EVENTS to "فعاليات",
+                ExploreMode.GROUPS to "مجموعات",
+                ExploreMode.POLLS to "استطلاعات"
+            ).forEach { (mode, label) ->
+                AssistChip(
+                    onClick = { onMode(mode) },
+                    label = { Text(label) },
+                    leadingIcon = if (state.exploreMode == mode) {
+                        { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.CheckCircle, contentDescription = null) }
+                    } else null
+                )
             }
         }
-        state.searchError?.let { InfoBanner(it, isError = true) }
-        if (state.searchBusy) LinearLoading()
-        if (state.searchResults.isEmpty() && !state.searchBusy && state.searchError == null) {
-            EmptyState(
-                title = "اكتشف ما يهم حيّك",
-                detail = "اكتب حرفين أو أكثر ثم ابدأ البحث. النتائج تأتي من الخدمة فقط."
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 95.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(state.searchResults, key = { it.id }) { post ->
-                    PostCard(
-                        post = post,
-                        reacting = post.id in state.reactingPostIds,
-                        onReact = { onReact(post) },
-                        onComments = { onOpenComments(post) }
+        when (state.exploreMode) {
+            ExploreMode.POSTS -> {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = state.searchQuery,
+                        onValueChange = onQuery,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("ابحث في منشورات الحي") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(15.dp)
                     )
+                    Button(onClick = onSearch, enabled = !state.searchBusy, shape = RoundedCornerShape(14.dp)) {
+                        Icon(Icons.Filled.Search, contentDescription = "بحث")
+                    }
+                }
+                state.searchError?.let { InfoBanner(it, isError = true) }
+                if (state.searchBusy) LinearLoading()
+                if (state.searchResults.isEmpty() && !state.searchBusy && state.searchError == null) {
+                    EmptyState(
+                        title = "ابدأ الاكتشاف",
+                        detail = "ابحث في محتوى الحي أو افتح تبويب الفعاليات والمجموعات والاستطلاعات."
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(state.searchResults, key = { it.id }) { post ->
+                            PostCard(
+                                post = post,
+                                reacting = post.id in state.reactingPostIds,
+                                onReact = { onReact(post) },
+                                onComments = { onOpenComments(post) }
+                            )
+                        }
+                    }
+                }
+            }
+            ExploreMode.EVENTS -> {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("ما سيحدث قريبًا", fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { onBeginComposer(ComposerKind.EVENT) }) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("نظّم فعالية")
+                    }
+                }
+                when {
+                    state.eventsBusy && state.events.isEmpty() -> LoadingCard("نحمّل فعاليات الحي…")
+                    state.eventsError != null && state.events.isEmpty() -> ErrorCard(state.eventsError, onRefresh)
+                    state.events.isEmpty() -> EmptyState("لا توجد فعاليات قادمة", "أنشئ فعالية مجتمعية أو عد لاحقًا لمشاهدة ما ينظمه جيرانك.")
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(state.events, key = { it.id }) { event ->
+                            EventCard(event, busy = event.id in state.pollActionIds, onRsvp = { onRsvpEvent(event) })
+                        }
+                        state.eventsError?.let { error -> item { ErrorCard(error, onRefresh) } }
+                    }
+                }
+            }
+            ExploreMode.GROUPS -> {
+                Text("مساحات تجمع الجيران حسب الاهتمام", color = Muted, fontSize = 13.sp)
+                when {
+                    state.groupsBusy && state.groups.isEmpty() -> LoadingCard("نحمّل مجموعات الحي…")
+                    state.groupsError != null && state.groups.isEmpty() -> ErrorCard(state.groupsError, onRefresh)
+                    state.groups.isEmpty() -> EmptyState("لا توجد مجموعات متاحة", "لا نعرض مجموعات تجريبية. ستظهر هنا المجموعات المسجلة لحيّك.")
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(state.groups, key = { it.id }) { group ->
+                            GroupCard(group, busy = group.id in state.pollActionIds, onToggle = { onToggleGroup(group) })
+                        }
+                        state.groupsError?.let { error -> item { ErrorCard(error, onRefresh) } }
+                    }
+                }
+            }
+            ExploreMode.POLLS -> {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("صوتك جزء من الحي", fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { onBeginComposer(ComposerKind.POLL) }) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("أنشئ استطلاعًا")
+                    }
+                }
+                when {
+                    state.pollsBusy && state.polls.isEmpty() -> LoadingCard("نحمّل استطلاعات الحي…")
+                    state.pollsError != null && state.polls.isEmpty() -> ErrorCard(state.pollsError, onRefresh)
+                    state.polls.isEmpty() -> EmptyState("لا توجد استطلاعات", "ابدأ سؤالًا مع خيارات واضحة ليشارك جيرانك في القرار.")
+                    else -> LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 95.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(state.polls, key = { it.id }) { poll ->
+                            PollCard(
+                                poll,
+                                busy = poll.id in state.pollActionIds,
+                                onVote = { optionId -> onVotePoll(poll, optionId) },
+                                onWithdraw = { onWithdrawPollVote(poll) }
+                            )
+                        }
+                        state.pollsError?.let { error -> item { ErrorCard(error, onRefresh) } }
+                    }
                 }
             }
         }

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.marketplace.android.core.network.GeoNodeDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
+import com.marketplace.android.feature.ExploreMode
 import com.marketplace.android.feature.MainTab
 
 val Forest = Color(0xFF155D50)
@@ -97,9 +98,29 @@ fun DayfApp(
     onMarketCurrency: (String) -> Unit,
     onMarketPickup: (String) -> Unit,
     onPublishMarket: () -> Unit,
+    onEventCategory: (String) -> Unit,
+    onEventTitle: (String) -> Unit,
+    onEventDescription: (String) -> Unit,
+    onEventStartsAt: (String) -> Unit,
+    onEventLocationLabel: (String) -> Unit,
+    onEventOrganizerLabel: (String) -> Unit,
+    onEventRegistration: (String) -> Unit,
+    onEventCapacity: (String) -> Unit,
+    onPublishEvent: () -> Unit,
+    onPollQuestion: (String) -> Unit,
+    onPollAuthorLabel: (String) -> Unit,
+    onPollOption: (Int, String) -> Unit,
+    onAddPollOption: () -> Unit,
+    onRemovePollOption: (Int) -> Unit,
+    onPublishPoll: () -> Unit,
     onWithdrawMarketItem: (com.marketplace.android.core.network.MarketItemDto) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
+    onExploreMode: (ExploreMode) -> Unit,
+    onRsvpEvent: (com.marketplace.android.core.network.EventDto) -> Unit,
+    onToggleGroup: (com.marketplace.android.core.network.GroupDto) -> Unit,
+    onVotePoll: (com.marketplace.android.core.network.PollDto, String) -> Unit,
+    onWithdrawPollVote: (com.marketplace.android.core.network.PollDto) -> Unit,
     onLoadMore: () -> Unit,
     onReact: (com.marketplace.android.core.network.PostDto) -> Unit,
     onOpenComments: (com.marketplace.android.core.network.PostDto) -> Unit,
@@ -136,6 +157,11 @@ fun DayfApp(
             onOpenComments = onOpenComments,
             onSearchQuery = onSearchQuery,
             onSearch = onSearch,
+            onExploreMode = onExploreMode,
+            onRsvpEvent = onRsvpEvent,
+            onToggleGroup = onToggleGroup,
+            onVotePoll = onVotePoll,
+            onWithdrawPollVote = onWithdrawPollVote,
             onWithdrawMarketItem = onWithdrawMarketItem,
             onMarkRead = onMarkRead,
             onRequestVerification = onRequestVerification,
@@ -157,7 +183,22 @@ fun DayfApp(
             onMarketPrice = onMarketPrice,
             onMarketCurrency = onMarketCurrency,
             onMarketPickup = onMarketPickup,
-            onPublishMarket = onPublishMarket
+            onPublishMarket = onPublishMarket,
+            onEventCategory = onEventCategory,
+            onEventTitle = onEventTitle,
+            onEventDescription = onEventDescription,
+            onEventStartsAt = onEventStartsAt,
+            onEventLocationLabel = onEventLocationLabel,
+            onEventOrganizerLabel = onEventOrganizerLabel,
+            onEventRegistration = onEventRegistration,
+            onEventCapacity = onEventCapacity,
+            onPublishEvent = onPublishEvent,
+            onPollQuestion = onPollQuestion,
+            onPollAuthorLabel = onPollAuthorLabel,
+            onPollOption = onPollOption,
+            onAddPollOption = onAddPollOption,
+            onRemovePollOption = onRemovePollOption,
+            onPublishPoll = onPublishPoll
         )
     }
     if (state.commentsPost != null) {
