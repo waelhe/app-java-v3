@@ -33,6 +33,26 @@ public interface InstitutionRepository extends JpaRepository<Institution, UUID> 
                                   @Param("state") InstitutionVerificationState state,
                                   Pageable pageable);
 
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the registry's unified-search read. The SAME
+     * visibility contract as the public board above (every verification
+     * state — the honest registry; the soft-delete filter applies to the
+     * JPQL) with the text axis over name/description and the location
+     * axis optional. Deterministic (name, id) order. The unified
+     * orchestrator's adapter adds no predicate and drops none.
+     */
+    @Query("""
+            select i from Institution i
+            where (:locationId is null or i.locationId = :locationId)
+              and (lower(i.name) like lower(concat('%', :query, '%'))
+                   or lower(coalesce(i.description, '')) like lower(concat('%', :query, '%')))
+            order by i.name asc, i.id asc
+            """)
+    Page<Institution> searchPublicTextUnified(@Param("locationId") UUID locationId,
+                                              @Param("query") String query,
+                                              Pageable pageable);
+
     /** The representative's own registry — their managed institutions (the service passes the sort). */
     Page<Institution> findByRepresentativeId(UUID representativeId, Pageable pageable);
 

@@ -46,4 +46,25 @@ public interface NeighborhoodEventRepository
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from NeighborhoodEvent e where e.id = :id")
     Optional<NeighborhoodEvent> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the events' unified-search read. JPQL (the
+     * {@code @SoftDelete} filter applies to it — a withdrawn event never
+     * answers), the text axis over title/description/location label, the
+     * location axis optional (null = all neighborhoods), and the stable
+     * (startsAt, id) order — soonest first, the event's own read surface
+     * convention. The adapter adds no predicate and drops none.
+     */
+    @Query("""
+            select e from NeighborhoodEvent e
+            where (:locationId is null or e.locationId = :locationId)
+              and (lower(e.title) like lower(concat('%', :query, '%'))
+                   or lower(coalesce(e.description, '')) like lower(concat('%', :query, '%'))
+                   or lower(coalesce(e.locationLabel, '')) like lower(concat('%', :query, '%')))
+            order by e.startsAt asc, e.id asc
+            """)
+    Page<NeighborhoodEvent> searchLiveTextUnified(@Param("locationId") UUID locationId,
+                                                  @Param("query") String query,
+                                                  Pageable pageable);
 }

@@ -102,4 +102,42 @@ public interface NeighborhoodPostRepository
             @Param("category") String category,
             @Param("query") String query,
             Pageable pageable);
+
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the cross-neighborhood form of the Arabic FTS
+     * read — the SAME visibility predicates as {@link #searchVisibleFullText}
+     * (soft-delete, status VISIBLE, the arabic tokenizer, the ts_rank_cd
+     * relevance with the created_at/id stable tiebreak) with the location
+     * axis optional (null = all neighborhoods). The unified orchestrator's
+     * post adapter rides this method; it adds no predicate and drops none.
+     */
+    @Query(value = """
+            SELECT p.*
+            FROM neighborhood_posts p
+            WHERE (:locationId IS NULL OR p.location_id = :locationId)
+              AND p.is_deleted = FALSE
+              AND p.status = 'VISIBLE'
+              AND to_tsvector('arabic', coalesce(p.title, '') || ' ' || coalesce(p.body, ''))
+                  @@ websearch_to_tsquery('arabic', :query)
+            ORDER BY ts_rank_cd(
+                         to_tsvector('arabic', coalesce(p.title, '') || ' ' || coalesce(p.body, '')),
+                         websearch_to_tsquery('arabic', :query)
+                     ) DESC,
+                     p.created_at DESC, p.id DESC
+            """,
+            countQuery = """
+                    SELECT COUNT(*)
+                    FROM neighborhood_posts p
+                    WHERE (:locationId IS NULL OR p.location_id = :locationId)
+                      AND p.is_deleted = FALSE
+                      AND p.status = 'VISIBLE'
+                      AND to_tsvector('arabic', coalesce(p.title, '') || ' ' || coalesce(p.body, ''))
+                          @@ websearch_to_tsquery('arabic', :query)
+                    """,
+            nativeQuery = true)
+    Page<NeighborhoodPost> searchVisibleFullTextUnified(
+            @Param("locationId") UUID locationId,
+            @Param("query") String query,
+            Pageable pageable);
 }

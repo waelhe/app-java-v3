@@ -20,9 +20,11 @@ import org.springframework.web.bind.annotation.*;
 public class SearchController {
 
     private final SearchService searchService;
+    private final UnifiedSearchService unifiedSearchService;
 
-    public SearchController(SearchService searchService) {
+    public SearchController(SearchService searchService, UnifiedSearchService unifiedSearchService) {
         this.searchService = searchService;
+        this.unifiedSearchService = unifiedSearchService;
     }
 
     @GetMapping
@@ -156,5 +158,37 @@ public class SearchController {
         SearchCriteria criteria = new SearchCriteria(null, category, null, null);
         Pageable effective = SearchSorts.normalize(pageable);
         return ResponseEntity.ok(PagedResponse.of(searchService.search(criteria, effective)));
+    }
+
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the merged multi-domain answer. Every consulted
+     * domain answers through its own {@code UnifiedSearchSourcePort}
+     * adapter with its own visibility predicates — this surface orchestrates
+     * and owns nothing. REST and the AI tool ride the SAME
+     * {@code MarketplaceSearchPort.unified} method (parity by construction;
+     * measured by the parity integration test).
+     */
+    @GetMapping("/unified")
+    @RateLimiter(name = "search")
+    @Operation(summary = "Unified multi-domain search",
+            description = "Stage 5: one query across the community posts, community events, "
+                    + "knowledge entries, and the institutions registry — each source answers "
+                    + "through its own visibility contract (hidden/withdrawn/rejected rows never "
+                    + "appear), merged deterministically (source declaration order, each group in "
+                    + "its own relevance order), each source capped at limit. A degraded source "
+                    + "degrades to its absence (degradedSources names it) — the answer never "
+                    + "fails whole because one domain is down. Every consultation is measured "
+                    + "(search.unified.hits / search.unified.consulted).")
+    public ResponseEntity<com.marketplace.shared.api.UnifiedSearchResponse> unified(
+            @Parameter(description = "Free-text query (required)", example = "سباكة حي السلام")
+            @RequestParam String q,
+            @Parameter(description = "Geo node to scope every source by (optional — all locations "
+                    + "when absent)")
+            @RequestParam(required = false) UUID locationId,
+            @Parameter(description = "Per-source cap, within [1, 20]", example = "5")
+            @RequestParam(defaultValue = "5") int limit) {
+        var query = new com.marketplace.shared.api.UnifiedSearchQuery(q, locationId, limit);
+        return ResponseEntity.ok(unifiedSearchService.search(query));
     }
 }
