@@ -225,7 +225,7 @@ fun DayfApp(
 }
 
 @Composable
-private fun SignInScreen(error: String?, onSignIn: () -> Unit) {
+internal fun SignInScreen(error: String?, onSignIn: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(DeepForest, Forest, WarmCanvas)))

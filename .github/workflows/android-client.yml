@@ -48,7 +48,7 @@ jobs:
         run: gradle -p android :app:testDebugUnitTest
 
       - name: Build debug APK
-        run: gradle -p android :app:assembleDebug
+        run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
