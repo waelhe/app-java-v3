@@ -127,6 +127,14 @@ public class ProductQaService {
      */
     @Transactional(readOnly = true)
     public Page<ProductQuestionWithAnswer> getQuestions(UUID productId, Pageable pageable) {
+        // The product gate FIRST (the CodeRabbit adoption): an unknown or
+        // soft-deleted product answers the honest 404 BEFORE any feed
+        // query — a dead product's questions are absent exactly as the
+        // product itself is (the community feed's posture, now actually
+        // delivered: the question rows may still be live, but the gate
+        // hides them with their product).
+        productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         Page<ProductQuestion> questions =
                 questionRepository.findByProductIdOrderByCreatedAtDescIdDesc(productId, pageable);
         if (questions.isEmpty()) {

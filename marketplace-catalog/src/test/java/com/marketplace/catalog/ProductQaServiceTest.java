@@ -155,11 +155,27 @@ class ProductQaServiceTest {
     // --- The feed's assembly contract --------------------------------------
 
     @Test
+    void feedAnswersTheHonest404ForAnUnknownOrDeletedProduct_BeforeAnyFeedQuery() {
+        // The CodeRabbit adoption's regression pin: the product gate runs
+        // FIRST — an unknown product never answers an empty 200 page, and
+        // a soft-deleted product's still-live question rows are absent
+        // exactly as the product itself is (the community feed's posture).
+        when(productRepository.findById(productId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getQuestions(productId,
+                PageRequest.of(0, 20)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(questionRepository, never())
+                .findByProductIdOrderByCreatedAtDescIdDesc(any(UUID.class), any(Pageable.class));
+    }
+
+    @Test
     void feedAssemblesEachQuestionWithItsAnswer_ThroughOneBulkRead() {
         ProductQuestion answered = ProductQuestion.ask(productId, UUID.randomUUID(), "Warranty?");
         ProductQuestion unanswered = ProductQuestion.ask(productId, UUID.randomUUID(), "Colors?");
         ProductAnswer official = ProductAnswer.publish(answered.getId(), caller, "Yes — 12 months.");
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
         when(questionRepository.findByProductIdOrderByCreatedAtDescIdDesc(productId, pageable))
                 .thenReturn(new PageImpl<>(List.of(answered, unanswered), pageable, 2));
         when(answerRepository.findByQuestionIdIn(List.of(answered.getId(), unanswered.getId())))
