@@ -337,6 +337,22 @@ public class SecurityConfig {
                         // anyRequest().authenticated().
                         .requestMatchers(HttpMethod.GET, "/api/v1/institutions/me", "/api/v1/institutions/me/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/institutions/**").permitAll()
+                        // B-16 (compliance plan C.8 — the M2 store wave):
+                        // the wave's two PUBLIC reads — the product Q&A
+                        // feed («أسئلة/أجوبة المنتج») and the seller
+                        // summary («ملخص البائع العام»). The
+                        // jobs/institutions mirror shape: one-segment
+                        // wildcards open the public GETs precisely. The
+                        // M1 owner-read GET /store/products/{id} is NOT
+                        // opened here — it stays A-17's owner-private
+                        // mapping exactly as shipped (the product
+                        // browsing page is a later wave's surface); the
+                        // two Q&A POSTs (ask/answer) fall to
+                        // anyRequest().authenticated() — the answer's
+                        // PROVIDER scope + ownership gate live on the
+                        // service (the house method-security shape).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/products/*/questions").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/sellers/*/summary").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs").permitAll()

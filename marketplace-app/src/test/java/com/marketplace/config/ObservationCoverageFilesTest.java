@@ -139,6 +139,10 @@ class ObservationCoverageFilesTest {
                     "catalog.favorites.save", "catalog.favorites.unsave",
                     // A-17 (C.7 — the M1 store root): the registration command;
                     // the owner read stays unobserved (the commands-not-reads policy).
+                    // B-16 (C.8 — the M2 store wave) adds the Q&A pair's two
+                    // commands — the same commands-not-reads policy; the wave's
+                    // two public reads stay unobserved.
+                    "catalog.product.answer.publish", "catalog.product.question.ask",
                     "catalog.product.register")),
             Map.entry("marketplace-community", List.of(
                     "community.event.create", "community.event.delete",
