@@ -26,6 +26,16 @@ import static org.mockito.Mockito.when;
 
 class MarketplaceSearchAdapterTest {
 
+    /**
+     * Stage 5: the adapter now also fronts the unified multi-domain
+     * orchestration — mocked here; the orchestrator's own guards live in
+     * UnifiedSearchServiceTest and the parity journey in the app's real-PG
+     * UnifiedSearchParityIntegrationTest.
+     */
+    private static UnifiedSearchService unified() {
+        return org.mockito.Mockito.mock(UnifiedSearchService.class);
+    }
+
     @Test
     void delegatesToCanonicalSearchAndPreservesPageMetadata() {
         SearchService service = mock(SearchService.class);
@@ -36,7 +46,7 @@ class MarketplaceSearchAdapterTest {
                 .thenReturn(new PageImpl<>(List.of(listing), PageRequest.of(0, 5), 1));
 
         PagedResponse<ListingSummary> result =
-                new MarketplaceSearchAdapter(service).search(criteria, PagedRequest.of(0, 5));
+                new MarketplaceSearchAdapter(service, unified()).search(criteria, PagedRequest.of(0, 5));
 
         assertThat(result.content()).containsExactly(listing);
         assertThat(result.pageNumber()).isZero();
@@ -57,7 +67,7 @@ class MarketplaceSearchAdapterTest {
         when(service.search(any(SearchCriteria.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 5), 0));
 
-        new MarketplaceSearchAdapter(service).search(
+        new MarketplaceSearchAdapter(service, unified()).search(
                 criteria,
                 PagedRequest.of(0, 5, new PagedRequest.Order("price", false)));
 
@@ -74,7 +84,7 @@ class MarketplaceSearchAdapterTest {
     @Test
     void rejectsUnsupportedSortBeforeCallingSearchService() {
         SearchService service = mock(SearchService.class);
-        MarketplaceSearchAdapter adapter = new MarketplaceSearchAdapter(service);
+        MarketplaceSearchAdapter adapter = new MarketplaceSearchAdapter(service, unified());
 
         assertThatThrownBy(() -> adapter.search(
                 new SearchCriteria(null, "electronics", null, null),

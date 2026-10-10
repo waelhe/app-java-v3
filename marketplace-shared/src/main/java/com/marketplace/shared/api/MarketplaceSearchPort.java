@@ -24,4 +24,13 @@ public interface MarketplaceSearchPort {
      * before a repository query is issued.
      */
     PagedResponse<ListingSummary> search(SearchCriteria criteria, PagedRequest request);
+
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the merged multi-domain answer. REST and AI
+     * callers ride THIS one method (parity by construction — the same
+     * bean, the same orchestration, the same visibility predicates); the
+     * domain adapters are implementation details of the search pipeline.
+     */
+    UnifiedSearchResponse unified(UnifiedSearchQuery query);
 }

@@ -9,6 +9,10 @@ import com.marketplace.shared.api.PagedResponse;
 import com.marketplace.shared.api.PropertyPurpose;
 import com.marketplace.shared.api.PropertyType;
 import com.marketplace.shared.api.SearchCriteria;
+import com.marketplace.shared.api.UnifiedSearchHit;
+import com.marketplace.shared.api.UnifiedSearchQuery;
+import com.marketplace.shared.api.UnifiedSearchResponse;
+import com.marketplace.shared.api.UnifiedSearchSource;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -155,6 +159,57 @@ public final class MarketplaceSearchTools {
                 null, null, null, null, null, null, toolContext);
     }
 
+    /**
+     * Stage 5 (community platform execution plan — the unified legal
+     * multi-domain search): the AI-side surface of the unified search.
+     * REST and AI ride the SAME {@code MarketplaceSearchPort.unified}
+     * method — parity by construction, measured by the parity integration
+     * test on the real PostgreSQL. The location resolution reuses the
+     * listings tool's fail-closed contract: an explicit but unresolved
+     * location asks for clarification, it never silently broadens the
+     * search to other places.
+     */
+    @Tool(
+            name = "search_unified",
+            description = "Search across the community's domains at once: neighborhood posts, "
+                    + "community events, knowledge entries, and the institutions registry. Use it "
+                    + "when the user's ask is not clearly a marketplace listing — who provides a "
+                    + "service in this neighborhood, what is happening this week, local guides, "
+                    + "official institutions. Every source applies its own visibility rules "
+                    + "(hidden/withdrawn/rejected rows never appear).")
+    public UnifiedSearchResult searchUnified(
+            @ToolParam(description = "Free-text search query, in the user's own words.")
+            String query,
+            @ToolParam(description = "Exact city or neighborhood name explicitly requested by the user; "
+                    + "do not provide an inferred location.", required = false)
+            String locationName,
+            ToolContext toolContext) {
+
+        requireUserContext(toolContext);
+
+        String normalizedQuery = normalizeOptional(query);
+        if (normalizedQuery == null) {
+            throw new BadRequestException("query is required for the unified search");
+        }
+        if (normalizedQuery.codePointCount(0, normalizedQuery.length()) > MAX_QUERY_CODE_POINTS) {
+            throw new BadRequestException(
+                    "query must not exceed " + MAX_QUERY_CODE_POINTS + " Unicode code points");
+        }
+
+        LocationResolution location = resolveLocation(locationName);
+        if (location.requested() && location.locationId() == null) {
+            // Fail closed: an explicit but unresolved location must never be
+            // silently dropped, which would broaden the search to other places.
+            return new UnifiedSearchResult(List.of(), List.of(), List.of(),
+                    location.clarification(), location.options());
+        }
+
+        UnifiedSearchResponse response = marketplaceSearchPort.unified(
+                new UnifiedSearchQuery(normalizedQuery, location.locationId(), TOOL_PAGE_SIZE));
+        return new UnifiedSearchResult(response.hits(), response.consultedSources(),
+                response.degradedSources(), null, List.of());
+    }
+
     private LocationResolution resolveLocation(String locationName) {
         String normalized = normalizeOptional(locationName);
         if (normalized == null) {
@@ -256,6 +311,22 @@ public final class MarketplaceSearchTools {
 
         public MarketplaceSearchResult {
             listings = listings == null ? List.of() : List.copyOf(listings);
+            locationOptions = locationOptions == null ? List.of() : List.copyOf(locationOptions);
+        }
+    }
+
+    /** The unified tool's answer: the merged hits plus the consultation/degradation report. */
+    public record UnifiedSearchResult(
+            List<UnifiedSearchHit> hits,
+            List<UnifiedSearchSource> consultedSources,
+            List<UnifiedSearchSource> degradedSources,
+            String clarification,
+            List<LocationSuggestion> locationOptions) {
+
+        public UnifiedSearchResult {
+            hits = hits == null ? List.of() : List.copyOf(hits);
+            consultedSources = consultedSources == null ? List.of() : List.copyOf(consultedSources);
+            degradedSources = degradedSources == null ? List.of() : List.copyOf(degradedSources);
             locationOptions = locationOptions == null ? List.of() : List.copyOf(locationOptions);
         }
     }
