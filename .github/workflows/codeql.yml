@@ -30,7 +30,12 @@ on:
     # only: PRs targeting main and push events are unaffected; the
     # remaining open PRs target main directly and gate through the
     # pull_request event.
-    branches: [ main ]
+    # The #540 review split's stacked base rides the same §4.1 mechanism:
+    # #541 (discovery/wave-part1 -> main) is slice 1, #540 (the full D1-D4
+    # head -> discovery/wave-part1) is slice 2 — the CodeRabbit free-plan
+    # 100-file review limit's documented remedy (split or change base). The
+    # entry retires with the wave (the precedent's own inertness rule).
+    branches: [ main, discovery/wave-part1 ]
   schedule:
     - cron: '27 5 * * 1'
 
