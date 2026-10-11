@@ -36,7 +36,8 @@ public record PaymentIntentDetails(
         String status,
         String origin,
         long amountCents,
-        String currency
+        String currency,
+        UUID orderId
 ) {
 
     /** The verified path's origin — the whole pre-W5 table. */
@@ -45,7 +46,15 @@ public record PaymentIntentDetails(
     /** W5's ad-bill origin — the payer is the provider, no booking. */
     public static final String ORIGIN_AD = "AD";
 
+    /** Stage 6 (ADR-0002): the order-checkout origin — the payer is the buyer, the subject is the order. */
+    public static final String ORIGIN_ORDER = "ORDER";
+
     public boolean isAdOrigin() {
         return ORIGIN_AD.equals(origin);
+    }
+
+    /** Stage 6 (ADR-0002): the order-checkout settlement branch's own test. */
+    public boolean isOrderOrigin() {
+        return ORIGIN_ORDER.equals(origin);
     }
 }

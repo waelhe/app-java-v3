@@ -439,6 +439,34 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     /**
+     * Stage 6 (ADR-0002): the order-checkout intent — the
+     * {@code createAdIntent} twin verbatim: the deterministic
+     * {@code order-{orderId}} idempotency key is the first line of
+     * defense (the replay answers the SAME intent), the V172
+     * partial-unique index is the concurrency backstop, and the INITIATED
+     * event keeps the notification vocabulary continuous.
+     */
+    public PaymentIntent createOrderIntent(UUID orderId, UUID consumerId,
+                                           long amountCents, String currency) {
+        String idempotencyKey = "order-" + orderId;
+        var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
+        if (existing.isPresent()) {
+            if (!existing.get().getConsumerId().equals(consumerId)) {
+                throw new AccessDeniedException("Idempotency key belongs to another payer");
+            }
+            return existing.get();
+        }
+        if (amountCents <= 0) {
+            throw new ConflictException("An order intent requires a positive amount: " + amountCents + " cents");
+        }
+        PaymentIntent intent = PaymentIntent.createForOrder(orderId, consumerId,
+                amountCents, currency, idempotencyKey);
+        PaymentIntent saved = paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
+        return saved;
+    }
+
+    /**
      * Result of processing a payment intent: the local intent plus the PSP
      * client secret when the real channel is bound (the calling client needs
      * it to complete the payment on the provider side). Null clientSecret =
@@ -729,6 +757,32 @@ public class PaymentsService implements PaymentsSpi {
                                         bookingId, intent.getId(), intent.getStatus());
                     }
                 });
+    }
+
+    /**
+     * Stage 6 (ADR-0002): the ORDER cancellation's money half — the
+     * {@code autoRefundByBooking} twin verbatim, keyed by the order's ONE
+     * intent (the V172 partial-unique index makes the single lookup the
+     * whole truth): the collectible attempt is aborted where it stands,
+     * the collected attempt is refunded in full — through the ONE refund
+     * contract, no second refund path.
+     */
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void autoRefundByOrder(UUID orderId) {
+        paymentIntentRepository.findByOrderId(orderId).ifPresent(intent -> {
+            switch (intent.getStatus()) {
+                case CREATED -> cancelUnpaid(intent);
+                case PROCESSING -> failInFlight(intent);
+                case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
+                case REFUNDED ->
+                        log.info("Auto-refund for order {} skipped — intent {} already terminal in REFUNDED",
+                                orderId, intent.getId());
+                default ->
+                        log.info("Auto-refund for order {} skipped — intent {} already terminal in {}",
+                                orderId, intent.getId(), intent.getStatus());
+            }
+        });
     }
 
     /**

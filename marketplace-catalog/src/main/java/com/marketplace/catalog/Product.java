@@ -5,6 +5,8 @@ import java.util.UUID;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.envers.Audited;
@@ -65,6 +67,30 @@ public class Product extends BaseEntity {
     @Column(name = "provider_id", nullable = false)
     private UUID providerId;
 
+    /**
+     * Stage 6 (ADR-0002): the store's own stock record — the units on the
+     * shelf. The reserved set lives beside it (V172's CHECK pins
+     * {@code reserved <= stock} at the database level); placement reserves,
+     * fulfillment deducts, cancellation releases — all through the
+     * {@code ProductStockPort} seam's conditional updates, never through
+     * a read-modify-write here.
+     */
+    @Column(name = "stock_quantity", nullable = false)
+    private int stockQuantity;
+
+    /** The units currently frozen by open placements (never read-modify-written here). */
+    @Column(name = "reserved_quantity", nullable = false)
+    private int reservedQuantity;
+
+    /**
+     * The display lifecycle (V172's CHECK membership set). Only ACTIVE
+     * products may enter a cart or a storefront read — the suspended and
+     * archived states are the buyer-invisible surfaces of that one rule.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "product_status", nullable = false, length = 16)
+    private ProductStatus status = ProductStatus.ACTIVE;
+
     protected Product() {
     }
 
@@ -77,6 +103,9 @@ public class Product extends BaseEntity {
         this.priceMinor = priceMinor;
         this.currency = currency;
         this.providerId = providerId;
+        this.stockQuantity = 0;
+        this.reservedQuantity = 0;
+        this.status = ProductStatus.ACTIVE;
     }
 
     /**
@@ -116,5 +145,58 @@ public class Product extends BaseEntity {
 
     public UUID getProviderId() {
         return providerId;
+    }
+
+    public int getStockQuantity() {
+        return stockQuantity;
+    }
+
+    public int getReservedQuantity() {
+        return reservedQuantity;
+    }
+
+    public ProductStatus getStatus() {
+        return status;
+    }
+
+    /**
+     * The provider's inventory write — an absolute shelf count. Lowering
+     * below the reserved set is refused here (the same invariant the V172
+     * CHECK pins at the database level) so an open placement can never
+     * strand.
+     */
+    public void restock(int quantity) {
+        if (quantity < reservedQuantity) {
+            throw new IllegalArgumentException(
+                    "Stock %d cannot fall below the reserved %d".formatted(quantity, reservedQuantity));
+        }
+        this.stockQuantity = quantity;
+    }
+
+    /** The lifecycle writes — the guarded transitions (the service gates ownership). */
+    public void suspend() {
+        requireTransition(ProductStatus.SUSPENDED);
+        this.status = ProductStatus.SUSPENDED;
+    }
+
+    public void reactivate() {
+        requireTransition(ProductStatus.ACTIVE);
+        this.status = ProductStatus.ACTIVE;
+    }
+
+    public void archive() {
+        if (status == ProductStatus.ARCHIVED) {
+            throw new IllegalStateException("Product " + id + " is already ARCHIVED (terminal)");
+        }
+        this.status = ProductStatus.ARCHIVED;
+    }
+
+    private void requireTransition(ProductStatus target) {
+        if (status == ProductStatus.ARCHIVED) {
+            throw new IllegalStateException("Product " + id + " is ARCHIVED (terminal) — no transition out");
+        }
+        if (status == target) {
+            throw new IllegalStateException("Product " + id + " is already " + target);
+        }
     }
 }

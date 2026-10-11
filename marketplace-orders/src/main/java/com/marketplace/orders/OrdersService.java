@@ -4,6 +4,10 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.OrderCancelledEvent;
 import com.marketplace.shared.api.OrderConfirmedEvent;
 import com.marketplace.shared.api.OrderFulfilledEvent;
+import com.marketplace.shared.api.OrderPaymentPort;
+import com.marketplace.shared.api.PaymentIntentDetails;
+import com.marketplace.shared.api.ProductPricingPort;
+import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
@@ -45,6 +49,17 @@ import java.util.UUID;
  * <p><b>Privacy contract (the A-03 404/403 precedent for private
  * artifacts):</b> reads answer an honest 404 to anyone but the buyer or
  * ADMIN — existence itself is not public information.
+ *
+ * <p>Stage 6 (ADR-0002 — the commerce fit-gap closure): the cart's amount
+ * SOURCE is the store's authoritative pricing ({@link ProductPricingPort}
+ * — no caller-supplied amount exists anywhere on the write path, the
+ * boundary this unit itself documented); placement reserves the lines'
+ * stock through {@link ProductStockPort} (the whole-map atomic write — a
+ * failed reservation rolls the placement back), enforces the single-seller
+ * cart invariant, and freezes the CURRENT authoritative price as the
+ * buyer-agreement record; cancellation releases the reservation (and the
+ * payment engine settles the money through {@code OrderCancelledEvent});
+ * fulfillment commits the reservation into real deductions.
  */
 @Service
 public class OrdersService {
@@ -55,19 +70,28 @@ public class OrdersService {
     private final OrderItemRepository orderItemRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProductPricingPort productPricingPort;
+    private final ProductStockPort productStockPort;
+    private final OrderPaymentPort orderPaymentPort;
 
     public OrdersService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
                          OrderRepository orderRepository,
                          OrderItemRepository orderItemRepository,
                          CurrentUserProvider currentUserProvider,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         ProductPricingPort productPricingPort,
+                         ProductStockPort productStockPort,
+                         OrderPaymentPort orderPaymentPort) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.productPricingPort = productPricingPort;
+        this.productStockPort = productStockPort;
+        this.orderPaymentPort = orderPaymentPort;
     }
 
     // ------------------------------------------------------------------
@@ -90,15 +114,21 @@ public class OrdersService {
      * the cart — the unique {@code (cart_id, product_id)} key collapses the
      * duplicate add into the quantity bump).
      *
-     * <p><b>The amount-source boundary (documented):</b> {@code unitAmountMinor}
-     * arrives from the caller today; the store's authoritative product
-     * pricing (compliance plan C.7/M1, unit A-17) replaces the SOURCE, never
-     * the snapshot path — the fields below are the buyer-agreement record
-     * the order will freeze.
+     * <p><b>The amount-source boundary (ADR-0002 — the closure of the
+     * documented TODO):</b> the line's amount is the store's authoritative
+     * product pricing, resolved through {@link ProductPricingPort} INSIDE
+     * this transaction — no caller-supplied amount exists on the write
+     * path. A non-ACTIVE product (suspended/archived/deleted) answers the
+     * house 409: the storefront read already hides it, and the write path
+     * re-checks the state at its own boundary.
      */
     @Transactional
-    public CartItem addCartItem(UUID consumerId, UUID productId, int quantity,
-                                long unitAmountMinor, String currency) {
+    public CartItem addCartItem(UUID consumerId, UUID productId, int quantity) {
+        ProductPricingPort.ProductPrice price = productPricingPort.priceOf(productId);
+        if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
+            throw new ConflictException("Product " + productId + " is " + price.storefront()
+                    + " — only ACTIVE products are purchasable");
+        }
         Cart cart = getOrCreateActiveCart(consumerId);
         return cartItemRepository.findByCartIdAndProductId(cart.getId(), productId)
                 .map(existing -> {
@@ -106,7 +136,8 @@ public class OrdersService {
                     return existing;
                 })
                 .orElseGet(() -> cartItemRepository.save(
-                        CartItem.of(cart.getId(), productId, quantity, unitAmountMinor, currency)));
+                        CartItem.of(cart.getId(), productId, quantity,
+                                price.priceMinor(), price.currency())));
     }
 
     @Transactional
@@ -134,8 +165,19 @@ public class OrdersService {
      * Cart to order: the placement transaction — the order row, every
      * snapshot line, and the cart's CHECKED_OUT tombstone commit together,
      * or nothing does. The total is derived (never caller-supplied): the
-     * sum of the frozen lines. Returns the view assembly (order + frozen
-     * lines) so the HTTP boundary chains without an entity local.
+     * sum of the frozen lines.
+     *
+     * <p><b>Stage 6 (ADR-0002):</b> placement also (1) re-resolves every
+     * line's authoritative price and state — a product that left the
+     * ACTIVE shelf or changed its price since the add re-prices the line
+     * here (the frozen record is the placement-instant agreement), (2)
+     * enforces the single-seller invariant (a mixed-seller cart answers
+     * 409 — the seller attribution the ledger's settlement needs; the
+     * multi-seller split is the documented deferral), and (3) reserves
+     * the lines' stock through {@link ProductStockPort} — the whole-map
+     * atomic write whose refusal rolls the whole placement back. Returns
+     * the view assembly (order + frozen lines) so the HTTP boundary
+     * chains without an entity local.
      */
     @Transactional
     @Observed(name = "order.place")
@@ -147,26 +189,48 @@ public class OrdersService {
         if (lines.isEmpty()) {
             throw new ConflictException("Cannot place an order from an empty cart");
         }
-        String currency = lines.get(0).getCurrency();
         long total = 0;
+        UUID sellerId = null;
         for (CartItem line : lines) {
-            if (!line.getCurrency().equals(currency)) {
-                throw new ConflictException("Mixed-currency cart cannot be placed: "
-                        + line.getCurrency() + " line against " + currency + " cart");
+            ProductPricingPort.ProductPrice price = productPricingPort.priceOf(line.getProductId());
+            if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
+                throw new ConflictException("Product " + line.getProductId() + " is "
+                        + price.storefront() + " — the cart line is no longer purchasable");
+            }
+            if (sellerId == null) {
+                sellerId = price.providerId();
+            } else if (!sellerId.equals(price.providerId())) {
+                throw new ConflictException("Mixed-seller cart cannot be placed: the ADR-0002 "
+                        + "invariant is one seller per order (the multi-seller split is "
+                        + "the documented deferral)");
+            }
+            if (!line.getCurrency().equals(price.currency())) {
+                throw new ConflictException("Cart line " + line.getId() + " carries "
+                        + line.getCurrency() + " but the product now prices in " + price.currency()
+                        + " — re-add the line before placing");
+            }
+            if (price.priceMinor() != line.getUnitAmountMinor()) {
+                line.updateUnitAmountMinor(price.priceMinor());
             }
             total += line.lineTotalMinor();
         }
+        // The whole-map atomic reservation — a zero row anywhere answers
+        // 409 and rolls the placement back (no order row, no partial hold).
+        productStockPort.reserve(ProductStockPort.StockLine.asMap(lines.stream()
+                .map(line -> new ProductStockPort.StockLine(line.getProductId(), line.getQuantity()))
+                .toList()));
         Order order = orderRepository.save(
-                Order.placed(consumerId, total, currency));
+                Order.placed(consumerId, total, lines.get(0).getCurrency(), sellerId));
         List<OrderItem> frozen = new java.util.ArrayList<>(lines.size());
         for (CartItem line : lines) {
             frozen.add(orderItemRepository.save(OrderItem.snapshotOf(order.getId(), line)));
         }
+        order.markStockReserved();
         cart.checkOut(Instant.now());
         cartRepository.save(cart);
         // PLACED publishes nothing — the A-03 discipline (no event without a
         // listener); the machine's cross-boundary information begins at
-        // CONFIRMED.
+        // CONFIRMED (and the cancellation edge's OrderCancelledEvent).
         return new OrderDetail(order, List.copyOf(frozen));
     }
 
@@ -187,7 +251,9 @@ public class OrdersService {
     }
 
     /**
-     * CONFIRMED → FULFILLED (terminal). The delivery completion.
+     * CONFIRMED → FULFILLED (terminal). The delivery completion — and the
+     * stock's commit edge (ADR-0002): the reservation becomes a real
+     * deduction, exactly once (the machine's guard is the idempotency).
      */
     @Transactional
     @Observed(name = "order.fulfill")
@@ -195,6 +261,10 @@ public class OrdersService {
         Order order = requireOrder(orderId);
         requireStatus(order, OrderStatus.CONFIRMED, "fulfill");
         order.fulfill(Instant.now());
+        if (order.isStockReserved()) {
+            productStockPort.commit(stockMapOf(order.getId()));
+            order.markStockReleased();
+        }
         Order saved = orderRepository.save(order);
         eventPublisher.publishEvent(new OrderFulfilledEvent(order.getId(), order.getConsumerId()));
         return saved;
@@ -204,6 +274,14 @@ public class OrdersService {
      * PLACED/CONFIRMED → CANCELLED (terminal). The buyer's own escape hatch
      * (the controller route) and the machine's administrative one share the
      * same guarded edge.
+     *
+     * <p><b>Stage 6 (ADR-0002):</b> cancellation releases the placement's
+     * stock reservation exactly once (the {@code stockReserved} flag), and
+     * the money settles through the EXISTING engine — the
+     * {@code OrderCancelledEvent} carries the edge to the payments module,
+     * whose listener cancels the unpaid intent or fully refunds the
+     * collected one (the booking-cancellation pattern verbatim; no refund
+     * path is reimplemented here).
      */
     @Transactional
     @Observed(name = "order.cancel")
@@ -214,10 +292,62 @@ public class OrdersService {
                     + " — cancel is legal from PLACED or CONFIRMED only");
         }
         order.cancel(reason, Instant.now());
+        if (order.isStockReserved()) {
+            productStockPort.release(stockMapOf(order.getId()));
+            order.markStockReleased();
+        }
         Order saved = orderRepository.save(order);
         eventPublisher.publishEvent(new OrderCancelledEvent(
                 order.getId(), order.getConsumerId(), reason));
         return saved;
+    }
+
+    /**
+     * Stage 6 (ADR-0002): the buyer's payment-intent surface — creates (or
+     * idempotently returns) the order's intent through the EXISTING
+     * payments engine ({@link OrderPaymentPort}; one intent per order, the
+     * V172 partial-unique index as the second line of defense) and links
+     * it to the machine. The total is the frozen lines' sum — the intent
+     * carries exactly what the buyer agreed to at placement.
+     */
+    @Transactional
+    @Observed(name = "order.payment-intent")
+    public PaymentIntentDetails requestPaymentIntent(UUID orderId, Authentication authentication) {
+        Order order = getOrderForUser(orderId, authentication);
+        requireStatus(order, OrderStatus.PLACED, "payment-intent creation");
+        PaymentIntentDetails details = orderPaymentPort.createForOrder(
+                order.getId(), order.getConsumerId(), order.getTotalAmountMinor(), order.getCurrency());
+        if (!details.paymentIntentId().equals(order.getPaymentIntentId())) {
+            order.linkPaymentIntent(details.paymentIntentId());
+            orderRepository.save(order);
+        }
+        return details;
+    }
+
+    /**
+     * Stage 6 (ADR-0002): the settlement listener's write — the payment's
+     * COMPLETED state auto-confirms the PLACED order (the booking's
+     * auto-confirm pattern verbatim). Idempotent by the state guard: a
+     * redelivered event for an already-CONFIRMED (or moved-past) order is
+     * a logged no-op, never a 409 the retry would trap on.
+     */
+    @Transactional
+    public void confirmFromPayment(java.util.UUID paymentIntentId) {
+        orderRepository.findByPaymentIntentId(paymentIntentId)
+                .filter(order -> order.getStatus() == OrderStatus.PLACED)
+                .ifPresentOrElse(order -> confirm(order.getId()),
+                        () -> {
+                            // The honest no-op: the order moved past PLACED
+                            // (or carries no such intent) — the machine's
+                            // current state is already the newer truth.
+                        });
+    }
+
+    /** The lines' product→quantity map, one hop, for the stock seams. */
+    private java.util.Map<UUID, Integer> stockMapOf(UUID orderId) {
+        return ProductStockPort.StockLine.asMap(orderItemRepository.findByOrderId(orderId).stream()
+                .map(item -> new ProductStockPort.StockLine(item.getProductId(), item.getQuantity()))
+                .toList());
     }
 
     // ------------------------------------------------------------------

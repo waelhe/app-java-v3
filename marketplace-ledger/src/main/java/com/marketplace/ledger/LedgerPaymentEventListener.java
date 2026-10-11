@@ -2,6 +2,7 @@ package com.marketplace.ledger;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.OrderSellerPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -22,15 +23,18 @@ public class LedgerPaymentEventListener {
     private final LedgerService ledgerService;
     private final PaymentIntentLookupPort paymentIntentLookupPort;
     private final BookingParticipantProvider bookingParticipantProvider;
+    private final OrderSellerPort orderSellerPort;
     private final double commissionRate;
 
     public LedgerPaymentEventListener(LedgerService ledgerService,
                                        PaymentIntentLookupPort paymentIntentLookupPort,
                                        BookingParticipantProvider bookingParticipantProvider,
+                                       OrderSellerPort orderSellerPort,
                                        @Value("${app.commission.rate:0.10}") double commissionRate) {
         this.ledgerService = ledgerService;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.orderSellerPort = orderSellerPort;
         this.commissionRate = commissionRate;
     }
 
@@ -69,6 +73,27 @@ public class LedgerPaymentEventListener {
                     intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
             return;
         }
+        // Stage 6 (ADR-0002): the ORDER settlement — the seller credit plus
+        // the announced commission debit (the same announced rate the
+        // booking path books; the plan's «عمولة معلنة» rule honored by the
+        // EXISTING configuration, never a second rate). The seller rides
+        // the OrderSellerPort seam — the ledger never imports the orders
+        // module (the BookingParticipantProvider twin verbatim).
+        if (intent.isOrderOrigin()) {
+            java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
+            ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            long commissionCents = BigDecimal.valueOf(intent.amountCents())
+                    .multiply(BigDecimal.valueOf(commissionRate))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
+            ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
+            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission — "
+                            + "the order settlement (intent {})",
+                    intent.amountCents(), intent.currency(), sellerId, commissionCents,
+                    intent.currency(), intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
@@ -103,6 +128,19 @@ public class LedgerPaymentEventListener {
             log.info("Ledger processed: debited {} {} from provider {} — the ad bill's "
                             + "refund mirrors its settlement credit (intent {})",
                     intent.amountCents(), intent.currency(), intent.consumerId(), intent.paymentIntentId());
+            return;
+        }
+        // Stage 6 (ADR-0002): the ORDER refund mirrors its settlement credit
+        // exactly — same seller, same amount, same currency — so the debit
+        // lands on the balance the credit moved (the booking branch's R9
+        // rule, one port hop away).
+        if (intent.isOrderOrigin()) {
+            java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
+            ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: debited {} {} from seller {} — the order refund "
+                            + "mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), sellerId, intent.paymentIntentId());
             return;
         }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());

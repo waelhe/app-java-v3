@@ -23,6 +23,9 @@ public class PaymentIntent extends BaseEntity {
     /** W5's ad-bill origin — the payer is the provider, no booking. */
     static final String ORIGIN_AD = "AD";
 
+    /** Stage 6 (ADR-0002): the order-checkout origin — the payer is the buyer, the subject is the order. */
+    static final String ORIGIN_ORDER = "ORDER";
+
     @Id
     private UUID id;
 
@@ -46,6 +49,16 @@ public class PaymentIntent extends BaseEntity {
      */
     @Column(name = "ad_campaign_id")
     private UUID adCampaignId;
+
+    /**
+     * Stage 6 (ADR-0002): the order this intent pays for — non-null iff
+     * origin is ORDER (the V172 pairing CHECK pins the pairing at the
+     * database level). One intent per order is the partial-unique index's
+     * own rule; the deterministic {@code order-…} idempotency key is the
+     * first line of defense.
+     */
+    @Column(name = "order_id")
+    private UUID orderId;
 
     @Column(name = "consumer_id", nullable = false)
     private UUID consumerId;
@@ -127,9 +140,26 @@ public class PaymentIntent extends BaseEntity {
         return intent;
     }
 
+    /**
+     * Stage 6 (ADR-0002): the order-checkout intent. The payer is the
+     * buyer (consumer_id carries the order's consumer), the subject is
+     * the order (no booking, no campaign — the V172 pairing CHECK), and
+     * the idempotency key is the DETERMINISTIC order key
+     * {@code order-{orderId}} — the engine deduplicates on it.
+     */
+    public static PaymentIntent createForOrder(UUID orderId, UUID consumerId,
+                                               Long amountCents, String currency, String idempotencyKey) {
+        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, consumerId,
+                amountCents, currency, idempotencyKey);
+        intent.origin = ORIGIN_ORDER;
+        intent.orderId = orderId;
+        return intent;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getBookingId() { return bookingId; }
+    public UUID getOrderId() { return orderId; }
     public UUID getConsumerId() { return consumerId; }
     public String getOrigin() { return origin; }
     public UUID getAdCampaignId() { return adCampaignId; }

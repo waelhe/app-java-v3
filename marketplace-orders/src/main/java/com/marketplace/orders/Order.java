@@ -63,21 +63,47 @@ public class Order extends BaseEntity {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
+    /**
+     * Stage 6 (ADR-0002): the order's single seller — stored at placement
+     * (the single-seller cart invariant; mixed-seller carts answer the
+     * house 409). A plain user id, never a JPA relation (the V32
+     * discipline); nullable because legacy orders predate the invariant.
+     */
+    @Column(name = "seller_id")
+    private UUID sellerId;
+
+    /**
+     * Stage 6 (ADR-0002): the order's payment intent — linked when the
+     * buyer requests it (one intent per order, the V172 partial-unique
+     * index); the settlement's COMPLETED event auto-confirms from here.
+     */
+    @Column(name = "payment_intent_id")
+    private UUID paymentIntentId;
+
+    /**
+     * Stage 6 (ADR-0002): whether placement reserved the lines' stock —
+     * the flag the cancel/fulfill edges read to release/commit exactly
+     * once (the machine's guard is the idempotency).
+     */
+    @Column(name = "stock_reserved", nullable = false)
+    private boolean stockReserved;
+
     protected Order() {
         // JPA
     }
 
-    private Order(UUID id, UUID consumerId, Long totalAmountMinor, String currency) {
+    private Order(UUID id, UUID consumerId, Long totalAmountMinor, String currency, UUID sellerId) {
         this.id = id;
         this.consumerId = consumerId;
         this.status = OrderStatus.PLACED;
         this.placedAt = Instant.now();
         this.totalAmountMinor = totalAmountMinor;
         this.currency = currency;
+        this.sellerId = sellerId;
     }
 
-    public static Order placed(UUID consumerId, Long totalAmountMinor, String currency) {
-        return new Order(UUID.randomUUID(), consumerId, totalAmountMinor, currency);
+    public static Order placed(UUID consumerId, Long totalAmountMinor, String currency, UUID sellerId) {
+        return new Order(UUID.randomUUID(), consumerId, totalAmountMinor, currency, sellerId);
     }
 
     public void confirm(Instant at) {
@@ -94,6 +120,18 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.CANCELLED;
         this.cancelReason = reason;
         this.cancelledAt = at;
+    }
+
+    public void linkPaymentIntent(UUID paymentIntentId) {
+        this.paymentIntentId = paymentIntentId;
+    }
+
+    public void markStockReserved() {
+        this.stockReserved = true;
+    }
+
+    public void markStockReleased() {
+        this.stockReserved = false;
     }
 
     @Override
@@ -135,5 +173,17 @@ public class Order extends BaseEntity {
 
     public String getCurrency() {
         return currency;
+    }
+
+    public UUID getSellerId() {
+        return sellerId;
+    }
+
+    public UUID getPaymentIntentId() {
+        return paymentIntentId;
+    }
+
+    public boolean isStockReserved() {
+        return stockReserved;
     }
 }

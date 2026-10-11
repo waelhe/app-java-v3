@@ -79,12 +79,32 @@ public class OrdersController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Cancel an order", description = "Cancels the caller's order while it "
             + "is still open (PLACED or CONFIRMED); a fulfilled order answers 409 — the machine's "
-            + "terminal states do not reopen.")
+            + "terminal states do not reopen. The stock reservation is released and the money "
+            + "settles through the existing payments engine (cancel the unpaid intent, fully "
+            + "refund the collected one).")
     public ResponseEntity<OrderResponses.OrderResponse> cancel(
             @PathVariable UUID id, @Valid @RequestBody CancelOrderRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(OrderResponses.OrderResponse.of(
                 ordersService.cancelForUser(id, request.reason(), authentication)));
+    }
+
+    /**
+     * Stage 6 (ADR-0002): the buyer's payment surface — the order's intent
+     * through the EXISTING payments engine (one intent per order, the
+     * deterministic idempotency key). The response is the engine's own
+     * details carrier — the client confirms the payment against it and the
+     * settlement's COMPLETED event auto-confirms the machine.
+     */
+    @PostMapping("/{id}/payment-intent")
+    @Operation(summary = "Create (or return) the order's payment intent", description = "Links "
+            + "the order to exactly one payment intent from the existing payments engine "
+            + "(idempotent by the order key). Only a PLACED order can open an intent; the "
+            + "settlement's COMPLETED event auto-confirms the order.")
+    public ResponseEntity<com.marketplace.shared.api.PaymentIntentDetails> requestPaymentIntent(
+            @PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(ordersService.requestPaymentIntent(id, authentication));
     }
 
     public record CancelOrderRequest(

@@ -46,6 +46,13 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
     /** Resolves a local intent from the remote PSP intent id (webhook path, V33). */
     Optional<PaymentIntent> findByPspIntentId(String pspIntentId);
 
+    /**
+     * Stage 6 (ADR-0002): the order's intent — the V172 partial-unique
+     * index guarantees at most one row per order, so the Optional is the
+     * whole truth (no arbitrary-row hazard like the R4 booking lesson).
+     */
+    Optional<PaymentIntent> findByOrderId(UUID orderId);
+
     Page<PaymentIntentSummaryView> findAllSummariesBy(Pageable pageable);
 }
 

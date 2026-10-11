@@ -119,7 +119,7 @@ class LedgerModuleIntegrationTest {
         long commissionCents = 500L; // app.commission.rate = 0.10 (test profile)
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(
-                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR")));
+                new PaymentIntentDetails(paymentIntentId, bookingId, consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null)));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", priceCents, "SAR",
                 Instant.now(), Instant.now()));
