@@ -380,7 +380,7 @@ public class DiscoveryService {
      * documented size cap of 50 — keep the full global-window guarantee.
      */
     private static int deepWindowSize(PagedRequest request) {
-        return (int) Math.min((long) (request.page() + 1) * request.size(), FOR_YOU_DEEP_WINDOW_MAX);
+        return (int) Math.min(((long) request.page() + 1) * request.size(), FOR_YOU_DEEP_WINDOW_MAX);
     }
 
     /**
@@ -505,7 +505,7 @@ public class DiscoveryService {
         List<DiscoveryCardView> window = cards.size() <= request.size()
                 ? cards : cards.subList(0, request.size());
         int totalPages = (int) Math.ceil(totalElements / (double) request.size());
-        boolean last = (long) (request.page() + 1) * request.size() >= totalElements;
+        boolean last = ((long) request.page() + 1) * request.size() >= totalElements;
         return new PagedResponse<>(window, request.page(), request.size(), totalElements, totalPages, last);
     }
 
