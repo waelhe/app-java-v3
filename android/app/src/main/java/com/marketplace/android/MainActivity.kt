@@ -255,8 +255,10 @@ class MainActivity : ComponentActivity() {
                     return@runOnUiThread
                 }
 
+                // The current public-client registration has no post-logout redirect URI.
+                // Do not send an unregistered URI: request RP-initiated logout with the
+                // ID-token hint/client id and report honestly if the provider gives no callback.
                 val requestBuilder = EndSessionRequest.Builder(configuration)
-                    .setPostLogoutRedirectUri(Uri.parse(BuildConfig.OIDC_REDIRECT_URI))
                     .setAdditionalParameters(mapOf("client_id" to BuildConfig.OIDC_CLIENT_ID))
                 if (!idTokenHint.isNullOrBlank()) requestBuilder.setIdTokenHint(idTokenHint)
 

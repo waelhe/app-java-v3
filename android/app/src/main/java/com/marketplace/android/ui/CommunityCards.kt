@@ -38,11 +38,19 @@ import java.util.Locale
 
 @Composable
 internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
+    val active = event.status.equals("ACTIVE", ignoreCase = true)
+    val statusLabel = when (event.status.uppercase(Locale.ROOT)) {
+        "ACTIVE" -> "فعالية نشطة"
+        "CANCELLED" -> "أُلغيت الفعالية"
+        "POSTPONED" -> "أُجّلت الفعالية"
+        else -> "حالة الفعالية غير معروفة"
+    }
     val full = event.capacity != null && event.attending >= event.capacity && !event.rsvpedByMe
     ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(eventCategoryLabel(event.category), color = Forest, fontSize = 12.sp)
+            if (!active) Text(statusLabel, color = Warning, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(event.title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(event.description, lineHeight = 21.sp, maxLines = 5)
             Text("الموعد: ${formatEventTime(event.startsAt)}", color = Muted, fontSize = 13.sp)
@@ -50,10 +58,15 @@ internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
             Text("المنظّم: ${event.organizerLabel}", color = Muted, fontSize = 13.sp)
             Text(if (event.capacity == null) "${event.attending} مشارك" else "${event.attending} / ${event.capacity}",
                 color = Muted, fontSize = 12.sp)
-            Button(onClick = onRsvp, enabled = !busy && (event.rsvpedByMe || !full),
+            Button(onClick = onRsvp, enabled = !busy && active && (event.rsvpedByMe || !full),
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                else Text(when { event.rsvpedByMe -> "إلغاء تسجيل الحضور"; full -> "اكتملت السعة"; else -> "سأحضر" })
+                else Text(when {
+                    !active -> statusLabel
+                    event.rsvpedByMe -> "إلغاء تسجيل الحضور"
+                    full -> "اكتملت السعة"
+                    else -> "سأحضر"
+                })
             }
         }
     }

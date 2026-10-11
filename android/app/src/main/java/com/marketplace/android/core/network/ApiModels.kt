@@ -144,6 +144,7 @@ data class EventDto(
     val organizerLabel: String = "",
     val capacity: Int? = null,
     val registration: String = "OPEN",
+    val status: String = "ACTIVE",
     val featured: Boolean = false,
     val attending: Long = 0,
     val rsvpedByMe: Boolean = false,

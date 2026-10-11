@@ -61,6 +61,20 @@ class ApiModelsTest {
         assertEquals("city-1", node.parentId)
         assertTrue(node.children.isEmpty())
     }
+
+    @Test
+    fun eventStatusIsPreservedFromServerResponse() {
+        val postponed = moshi.adapter(EventDto::class.java).fromJson(
+            """{"id":"event-1","title":"لقاء الحي","status":"POSTPONED"}"""
+        )!!
+        val active = moshi.adapter(EventDto::class.java).fromJson(
+            """{"id":"event-2","title":"سوق الحي","status":"ACTIVE"}"""
+        )!!
+
+        assertEquals("POSTPONED", postponed.status)
+        assertEquals("ACTIVE", active.status)
+    }
+
     @Test
     fun listingSearchPageParsesPricesAndProviderReputation() {
         val type = Types.newParameterizedType(ApiPage::class.java, ListingSummaryDto::class.java)
