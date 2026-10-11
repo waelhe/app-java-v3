@@ -1,7 +1,12 @@
 package com.marketplace.android.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -219,6 +224,26 @@ private fun StatusChip(status: String) {
 }
 
 @Composable
+private fun LostFoundStatusChip(state: String?) {
+    val normalized = state?.uppercase(Locale.ROOT) ?: return
+    val (label, active) = when (normalized) {
+        "ACTIVE" -> "بلاغ مفتوح" to true
+        "FOUND" -> "تم العثور عليه" to false
+        "RESOLVED" -> "أُغلق البلاغ" to false
+        else -> "حالة البلاغ: $normalized" to false
+    }
+    Surface(color = if (active) Sage else Sand, shape = RoundedCornerShape(8.dp)) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = if (active) Forest else Warning,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
 internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onComments: () -> Unit) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -242,6 +267,32 @@ internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onC
             }
             Text(post.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 26.sp)
             Text(post.body, color = Ink, fontSize = 14.sp, lineHeight = 22.sp)
+            if (post.category.equals("LOST_FOUND", ignoreCase = true)) {
+                LostFoundStatusChip(post.lostFoundState)
+            }
+            val photos = post.media.filter { it.url.isNotBlank() }.sortedBy { it.position }
+            if (photos.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = photos,
+                        key = { photo -> photo.mediaId.ifBlank { "${post.id}:${photo.position}" } }
+                    ) { photo ->
+                        AsyncImage(
+                            model = photo.thumbUrl?.takeIf { it.isNotBlank() } ?: photo.url,
+                            contentDescription = "صورة مرفقة بالمنشور: ${post.title}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(184.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Sand)
+                        )
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip(post.status)
                 Text("المصدر: منشور حيّ", fontSize = 11.sp, color = Muted)

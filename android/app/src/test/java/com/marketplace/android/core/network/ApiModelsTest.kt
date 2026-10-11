@@ -29,7 +29,13 @@ class ApiModelsTest {
                 "status": "VISIBLE",
                 "reactionsCount": 2,
                 "reactedByMe": true,
-                "media": [],
+                "media": [{
+                  "mediaId": "asset-1",
+                  "url": "https://media.example.test/post-image.jpg",
+                  "thumbUrl": null,
+                  "contentType": "image/jpeg",
+                  "position": 0
+                }],
                 "createdAt": "2026-10-11T09:00:00Z",
                 "updatedAt": "2026-10-11T09:00:00Z"
               }],
@@ -49,6 +55,7 @@ class ApiModelsTest {
         assertFalse(page.last)
         assertEquals("من يعرف سباكًا؟", page.content.single().title)
         assertTrue(page.content.single().reactedByMe)
+        assertEquals("https://media.example.test/post-image.jpg", page.content.single().media.single().url)
     }
 
     @Test
@@ -60,6 +67,16 @@ class ApiModelsTest {
         assertEquals("الميدان", node.nameAr)
         assertEquals("city-1", node.parentId)
         assertTrue(node.children.isEmpty())
+    }
+
+    @Test
+    fun lostFoundStateParsesFromServerResponse() {
+        val post = moshi.adapter(PostDto::class.java).fromJson(
+            """{"id":"post-2","category":"LOST_FOUND","lostFoundState":"FOUND","media":[]}"""
+        )!!
+
+        assertEquals("FOUND", post.lostFoundState)
+        assertTrue(post.media.isEmpty())
     }
 
     @Test

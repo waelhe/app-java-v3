@@ -21,10 +21,21 @@ data class PostDto(
     val title: String = "",
     val body: String = "",
     val status: String = "VISIBLE",
+    val lostFoundState: String? = null,
     val reactionsCount: Long = 0,
     val reactedByMe: Boolean = false,
+    val media: List<PostMediaDto> = emptyList(),
     val createdAt: String = "",
     val updatedAt: String = ""
+)
+
+@JsonClass(generateAdapter = false)
+data class PostMediaDto(
+    val mediaId: String = "",
+    val url: String = "",
+    val thumbUrl: String? = null,
+    val contentType: String = "",
+    val position: Int = 0
 )
 
 @JsonClass(generateAdapter = false)
