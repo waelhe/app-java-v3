@@ -34,6 +34,9 @@ enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
     val authenticated: Boolean = false,
+    val sessionRestoring: Boolean = false,
+    val sessionRestoreAttempted: Boolean = false,
+    val silentReauthRequired: Boolean = false,
     val loadingAccount: Boolean = false,
     val authError: String? = null,
     val membership: MembershipDto? = null,
@@ -130,13 +133,60 @@ class CommunityViewModel(
 
     fun authenticated(accessToken: String) {
         repository.setAccessToken(accessToken)
-        _uiState.value = AppUiState(authenticated = true, loadingAccount = true)
+        _uiState.value = AppUiState(
+            authenticated = true,
+            loadingAccount = true,
+            sessionRestoreAttempted = true
+        )
         loadAccount()
+    }
+
+    fun requestSessionRestoreIfNeeded() {
+        _uiState.update {
+            if (it.authenticated || it.sessionRestoreAttempted || it.sessionRestoring) {
+                it
+            } else {
+                it.copy(
+                    sessionRestoring = true,
+                    sessionRestoreAttempted = true,
+                    silentReauthRequired = true
+                )
+            }
+        }
+    }
+
+    fun consumeSilentReauthRequest() {
+        _uiState.update { it.copy(silentReauthRequired = false) }
+    }
+
+    fun sessionRestorationFailed(message: String? = null) {
+        _uiState.update {
+            it.copy(
+                sessionRestoring = false,
+                silentReauthRequired = false,
+                loadingAccount = false,
+                authError = message ?: it.authError
+            )
+        }
     }
 
     fun signOutOnDevice() {
         repository.clearAccessToken()
-        _uiState.value = AppUiState()
+        _uiState.value = AppUiState(sessionRestoreAttempted = true)
+    }
+
+    fun completeSignOut(errorMessage: String? = null) {
+        _uiState.update {
+            it.copy(
+                authenticated = false,
+                loadingAccount = false,
+                sessionRestoring = false,
+                sessionRestoreAttempted = true,
+                silentReauthRequired = false,
+                authError = errorMessage,
+                authSuccess = if (errorMessage == null) "تم تسجيل الخروج وإنهاء جلسة الدخول." else null
+            )
+        }
     }
 
     fun dismissNotice() { _uiState.update { it.copy(notice = null) } }
@@ -848,7 +898,12 @@ class CommunityViewModel(
             return when (error.code()) {
                 401 -> {
                     repository.clearAccessToken()
-                    _uiState.value = AppUiState(authError = "انتهت جلسة الدخول. سجّل الدخول مجددًا لمتابعة الاستخدام.")
+                    _uiState.value = AppUiState(
+                        sessionRestoring = true,
+                        sessionRestoreAttempted = true,
+                        silentReauthRequired = true,
+                        authError = "انتهت جلسة الدخول. نحاول استعادتها بأمان…"
+                    )
                     "انتهت جلسة الدخول."
                 }
                 403 -> "لا تملك الصلاحية لهذا الإجراء أو أن عضويتك في الحي غير نشطة."
