@@ -38,7 +38,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var authorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var silentAuthorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var endSessionLauncher: ActivityResultLauncher<Intent>
-    private var currentIdToken: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -159,8 +158,7 @@ class MainActivity : ComponentActivity() {
                         if (silent) viewModel.sessionRestorationFailed(message)
                         else viewModel.authenticationFailed(message)
                     } else {
-                        currentIdToken = tokenResponse?.idToken
-                        viewModel.authenticated(token)
+                        viewModel.authenticated(token, tokenResponse?.idToken)
                     }
                 }
             }
@@ -238,9 +236,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginSignOut() {
-        val idTokenHint = currentIdToken
-        currentIdToken = null
-        viewModel.signOutOnDevice()
+        val idTokenHint = viewModel.signOutOnDevice()
 
         if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
             viewModel.completeSignOut(
