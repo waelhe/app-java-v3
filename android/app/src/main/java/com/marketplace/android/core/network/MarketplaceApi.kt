@@ -55,6 +55,12 @@ interface MarketplaceApi {
     @POST("api/v1/neighborhood/posts")
     suspend fun createPost(@Body request: CreatePostRequest): PostDto
 
+    @POST("api/v1/media/uploads")
+    suspend fun requestPostMediaUpload(@Body request: RequestPostMediaUpload): MediaUploadDto
+
+    @POST("api/v1/media/{id}/complete")
+    suspend fun confirmPostMediaUpload(@Path("id") mediaId: String)
+
     @GET("api/v1/posts/{postId}/comments")
     suspend fun getComments(
         @Path("postId") postId: String,

@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.CompositionLocalProvider
@@ -17,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.marketplace.android.data.MarketplaceRepository
 import com.marketplace.android.feature.CommunityViewModel
 import com.marketplace.android.feature.ExploreMode
 import com.marketplace.android.ui.DayfApp
@@ -33,11 +35,14 @@ import net.openid.appauth.EndSessionResponse
 import net.openid.appauth.ResponseTypeValues
 
 class MainActivity : ComponentActivity() {
-    private val viewModel: CommunityViewModel by viewModels { CommunityViewModel.Factory() }
+    private val viewModel: CommunityViewModel by viewModels {
+        CommunityViewModel.Factory(MarketplaceRepository(applicationContext))
+    }
     private lateinit var authorizationService: AuthorizationService
     private lateinit var authorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var silentAuthorizationLauncher: ActivityResultLauncher<Intent>
     private lateinit var endSessionLauncher: ActivityResultLauncher<Intent>
+    private lateinit var postPhotoPickerLauncher: ActivityResultLauncher<PickVisualMediaRequest>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +62,11 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             handleEndSessionResult(result)
+        }
+        postPhotoPickerLauncher = registerForActivityResult(
+            ActivityResultContracts.PickMultipleVisualMedia(5)
+        ) { selectedUris ->
+            viewModel.addPostPhotos(selectedUris)
         }
 
         if (BuildConfig.OIDC_CLIENT_ID.isNotBlank()) {
@@ -87,6 +97,9 @@ class MainActivity : ComponentActivity() {
                         onPostCategory = viewModel::setPostCategory,
                         onPostTitle = viewModel::setPostTitle,
                         onPostBody = viewModel::setPostBody,
+                        onPickPostPhotos = ::pickPostPhotos,
+                        onRemovePostPhoto = viewModel::removePostPhoto,
+                        onSkipPendingPhotoUpload = viewModel::skipPendingPhotoUpload,
                         onPublishPost = viewModel::publishPost,
                         onMarketCategory = viewModel::setMarketCategory,
                         onMarketCondition = viewModel::setMarketCondition,
@@ -140,6 +153,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun pickPostPhotos() {
+        if (viewModel.uiState.value.postPhotoUris.size >= 5) return
+        postPhotoPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
     }
 
     private fun handleAuthorizationResult(result: ActivityResult, silent: Boolean) {

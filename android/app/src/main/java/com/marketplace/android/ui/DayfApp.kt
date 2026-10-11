@@ -1,5 +1,6 @@
 package com.marketplace.android.ui
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -104,6 +105,9 @@ fun DayfApp(
     onPostCategory: (String) -> Unit,
     onPostTitle: (String) -> Unit,
     onPostBody: (String) -> Unit,
+    onPickPostPhotos: () -> Unit,
+    onRemovePostPhoto: (Uri) -> Unit,
+    onSkipPendingPhotoUpload: () -> Unit,
     onPublishPost: () -> Unit,
     onMarketCategory: (String) -> Unit,
     onMarketCondition: (String) -> Unit,
@@ -221,6 +225,9 @@ fun DayfApp(
             onPostCategory = onPostCategory,
             onPostTitle = onPostTitle,
             onPostBody = onPostBody,
+            onPickPostPhotos = onPickPostPhotos,
+            onRemovePostPhoto = onRemovePostPhoto,
+            onSkipPendingPhotoUpload = onSkipPendingPhotoUpload,
             onPublishPost = onPublishPost,
             onMarketCategory = onMarketCategory,
             onMarketCondition = onMarketCondition,

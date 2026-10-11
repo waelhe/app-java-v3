@@ -2,8 +2,11 @@ package com.marketplace.android.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -35,6 +38,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,6 +62,9 @@ internal fun ComposerSheet(
     onPostCategory: (String) -> Unit,
     onPostTitle: (String) -> Unit,
     onPostBody: (String) -> Unit,
+    onPickPostPhotos: () -> Unit,
+    onRemovePostPhoto: (Uri) -> Unit,
+    onSkipPendingPhotoUpload: () -> Unit,
     onPublishPost: () -> Unit,
     onMarketCategory: (String) -> Unit,
     onMarketCondition: (String) -> Unit,
@@ -97,7 +106,7 @@ internal fun ComposerSheet(
         ) {
             Text(
                 when (state.composer) {
-                    ComposerKind.POST -> "شارك مع حيّك"
+                    ComposerKind.POST -> if (state.pendingPhotoPostId != null) "أكمل إرفاق صور المنشور" else "شارك مع حيّك"
                     ComposerKind.MARKET -> "أضف إلى سوق الحي"
                     ComposerKind.EVENT -> "نظّم فعالية في حيّك"
                     ComposerKind.POLL -> "أنشئ استطلاعًا"
@@ -109,35 +118,85 @@ internal fun ComposerSheet(
 
             when (state.composer) {
                 ComposerKind.POST -> {
-                    Text("نوع المنشور", fontWeight = FontWeight.SemiBold)
-                    val categories = listOf(
-                        "GENERAL" to "عام", "QUESTION" to "سؤال", "REQUEST" to "طلب مساعدة",
-                        "RECOMMENDATION" to "توصية", "LOST_FOUND" to "مفقودات", "CLASSIFIED" to "إعلان"
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        categories.forEach { (code, label) ->
-                            AssistChip(
-                                onClick = { onPostCategory(code) },
-                                label = { Text(label) },
-                                leadingIcon = if (state.postCategory == code) {
-                                    { Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                } else null
-                            )
+                    if (state.pendingPhotoPostId != null) {
+                        Text(
+                            "نُشر نص المنشور بالفعل. أعد محاولة رفع الصور المتبقية فقط؛ لن يتم إنشاء منشور مكرر.",
+                            color = Muted,
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        Text("نوع المنشور", fontWeight = FontWeight.SemiBold)
+                        val categories = listOf(
+                            "GENERAL" to "عام", "QUESTION" to "سؤال", "REQUEST" to "طلب مساعدة",
+                            "RECOMMENDATION" to "توصية", "LOST_FOUND" to "مفقودات", "CLASSIFIED" to "إعلان"
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            categories.forEach { (code, label) ->
+                                AssistChip(
+                                    onClick = { onPostCategory(code) },
+                                    label = { Text(label) },
+                                    leadingIcon = if (state.postCategory == code) {
+                                        { Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
+                        OutlinedTextField(
+                            value = state.postTitle, onValueChange = onPostTitle,
+                            modifier = Modifier.fillMaxWidth(), label = { Text("عنوان المنشور") },
+                            supportingText = { Text("${state.postTitle.length}/200") },
+                            singleLine = true, shape = RoundedCornerShape(14.dp)
+                        )
+                        OutlinedTextField(
+                            value = state.postBody, onValueChange = onPostBody,
+                            modifier = Modifier.fillMaxWidth(), label = { Text("التفاصيل") },
+                            supportingText = { Text("${state.postBody.length}/2000") },
+                            minLines = 4, maxLines = 8, shape = RoundedCornerShape(14.dp)
+                        )
+                        Text("سيُنشر المنشور ضمن نطاق حيّك الحالي.", color = Muted, fontSize = 12.sp)
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onPickPostPhotos,
+                            enabled = !state.submitBusy && state.postPhotoUris.size < 5
+                        ) {
+                            Text("إرفاق صور (${state.postPhotoUris.size}/5)")
+                        }
+                        Text("JPEG أو PNG أو WebP أو GIF", color = Muted, fontSize = 11.sp)
+                    }
+                    if (state.postPhotoUris.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(items = state.postPhotoUris, key = { it.toString() }) { uri ->
+                                Column(
+                                    modifier = Modifier.width(112.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    AsyncImage(
+                                        model = uri,
+                                        contentDescription = "صورة مختارة للمنشور",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(100.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+                                    TextButton(onClick = { onRemovePostPhoto(uri) }, enabled = !state.submitBusy) {
+                                        Text("إزالة")
+                                    }
+                                }
+                            }
                         }
                     }
-                    OutlinedTextField(
-                        value = state.postTitle, onValueChange = onPostTitle,
-                        modifier = Modifier.fillMaxWidth(), label = { Text("عنوان المنشور") },
-                        supportingText = { Text("${state.postTitle.length}/200") },
-                        singleLine = true, shape = RoundedCornerShape(14.dp)
-                    )
-                    OutlinedTextField(
-                        value = state.postBody, onValueChange = onPostBody,
-                        modifier = Modifier.fillMaxWidth(), label = { Text("التفاصيل") },
-                        supportingText = { Text("${state.postBody.length}/2000") },
-                        minLines = 4, maxLines = 8, shape = RoundedCornerShape(14.dp)
-                    )
-                    Text("سيُنشر المنشور ضمن نطاق حيّك الحالي.", color = Muted, fontSize = 12.sp)
+                    if (state.pendingPhotoPostId != null) {
+                        TextButton(
+                            onClick = onSkipPendingPhotoUpload,
+                            enabled = !state.submitBusy &&
+                    (state.composer != ComposerKind.POST || state.pendingPhotoPostId == null || state.postPhotoUris.isNotEmpty()),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("متابعة دون الصور المتبقية") }
+                    }
                 }
 
                 ComposerKind.MARKET -> {
@@ -321,6 +380,7 @@ internal fun ComposerSheet(
                 null -> Unit
             }
 
+            state.uploadProgress?.let { Text(it, color = Forest, fontSize = 12.sp) }
             state.notice?.let { InfoBanner(it, isError = true) }
             Button(
                 onClick = when (state.composer) {
@@ -337,7 +397,7 @@ internal fun ComposerSheet(
                 if (state.submitBusy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Text(
                     when (state.composer) {
-                        ComposerKind.POST -> "نشر المنشور"
+                        ComposerKind.POST -> if (state.pendingPhotoPostId != null) "إعادة محاولة رفع الصور" else "نشر المنشور"
                         ComposerKind.MARKET -> "نشر العرض"
                         ComposerKind.EVENT -> "إنشاء الفعالية"
                         ComposerKind.POLL -> "نشر الاستطلاع"

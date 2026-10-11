@@ -1,5 +1,7 @@
 package com.marketplace.android.data
 
+import android.content.Context
+import android.net.Uri
 import com.marketplace.android.BuildConfig
 import com.marketplace.android.core.network.CreateCommentRequest
 import com.marketplace.android.core.network.CreateMarketItemRequest
@@ -7,11 +9,19 @@ import com.marketplace.android.core.network.CreatePostRequest
 import com.marketplace.android.core.network.EmailOnlyRequest
 import com.marketplace.android.core.network.JoinNeighborhoodRequest
 import com.marketplace.android.core.network.RegisterRequest
+import com.marketplace.android.core.network.RequestPostMediaUpload
 import com.marketplace.android.core.network.MarketplaceApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
+import java.io.IOException
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.HttpException
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -19,7 +29,9 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 /**
  * The UI's only data entry point. Access tokens stay volatile and memory-only.
  */
-class MarketplaceRepository {
+class MarketplaceRepository(private val applicationContext: Context? = null) {
+    private val storageUploadClient: OkHttpClient by lazy { OkHttpClient.Builder().build() }
+
     @Volatile
     private var accessToken: String? = null
 
@@ -83,6 +95,54 @@ class MarketplaceRepository {
     suspend fun getFeed(page: Int = 0) = api.getFeed(page = page)
     suspend fun searchPosts(query: String) = api.searchPosts(query = query)
     suspend fun createPost(request: CreatePostRequest) = api.createPost(request)
+
+    suspend fun uploadPostMedia(postId: String, uri: Uri) {
+        val context = applicationContext
+            ?: throw IllegalStateException("Media uploads require an Android application context.")
+
+        withContext(Dispatchers.IO) {
+            val resolver = context.contentResolver
+            val contentType = resolver.getType(uri)
+                ?.substringBefore(';')
+                ?.trim()
+                ?.lowercase(Locale.ROOT)
+                ?.takeIf { it.startsWith("image/") }
+                ?: throw IOException("تعذر تحديد نوع الصورة. اختر صورة بصيغة JPEG أو PNG أو WebP أو GIF.")
+
+            val file = File.createTempFile("community-post-", ".upload", context.cacheDir)
+            try {
+                val input = resolver.openInputStream(uri)
+                    ?: throw IOException("تعذر قراءة الصورة المختارة.")
+                input.use { source ->
+                    file.outputStream().use { target -> source.copyTo(target) }
+                }
+                val sizeBytes = file.length()
+                if (sizeBytes <= 0L) throw IOException("ملف الصورة فارغ أو غير قابل للقراءة.")
+
+                val upload = api.requestPostMediaUpload(
+                    RequestPostMediaUpload(postId, contentType, sizeBytes)
+                )
+                if (upload.mediaId.isBlank() || upload.uploadUrl.isBlank()) {
+                    throw IOException("لم يُرجع الخادم رابط رفع صالحًا للصورة.")
+                }
+
+                // Never send the bearer token to the third-party presigned storage URL.
+                val request = Request.Builder()
+                    .url(upload.uploadUrl)
+                    .header("Content-Type", contentType)
+                    .put(file.asRequestBody(contentType.toMediaType()))
+                    .build()
+                storageUploadClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw IOException("رفض مخزن الصور الرفع (HTTP ${response.code}).")
+                    }
+                }
+                api.confirmPostMediaUpload(upload.mediaId)
+            } finally {
+                file.delete()
+            }
+        }
+    }
     suspend fun getComments(postId: String) = api.getComments(postId)
     suspend fun createComment(postId: String, body: String) = api.createComment(postId, CreateCommentRequest(body))
     suspend fun react(postId: String) = api.reactToPost(postId)

@@ -1,5 +1,6 @@
 package com.marketplace.android.feature
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -21,6 +22,7 @@ import com.marketplace.android.data.MarketplaceRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.SocketTimeoutException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -103,6 +105,9 @@ data class AppUiState(
     val postCategory: String = "GENERAL",
     val postTitle: String = "",
     val postBody: String = "",
+    val postPhotoUris: List<Uri> = emptyList(),
+    val pendingPhotoPostId: String? = null,
+    val uploadProgress: String? = null,
     val marketCategory: String = "FREE",
     val marketCondition: String = "GOOD",
     val marketTitle: String = "",
@@ -478,20 +483,71 @@ class CommunityViewModel(
     }
 
     fun beginComposer(kind: ComposerKind) {
+        _uiState.update { current ->
+            if (kind == ComposerKind.POST && current.pendingPhotoPostId != null) {
+                current.copy(
+                    composer = ComposerKind.POST,
+                    submitBusy = false,
+                    uploadProgress = null,
+                    notice = "أكمل رفع الصور المتبقية للمنشور المنشور مسبقًا."
+                )
+            } else {
+                current.copy(
+                    composer = kind, postCategory = "GENERAL", postTitle = "", postBody = "",
+                    postPhotoUris = if (current.pendingPhotoPostId != null) current.postPhotoUris else emptyList(),
+                    uploadProgress = null,
+                    marketCategory = "FREE", marketCondition = "GOOD", marketTitle = "",
+                    marketPrice = "", marketCurrency = "SYP", marketPickup = "",
+                    eventCategory = "SOCIAL", eventTitle = "", eventDescription = "", eventStartsAt = "",
+                    eventLocationLabel = "", eventOrganizerLabel = "", eventRegistration = "OPEN",
+                    eventCapacity = "", pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""),
+                    notice = null
+                )
+            }
+        }
+    }
+
+    fun closeComposer() {
         _uiState.update {
-            it.copy(
-                composer = kind, postCategory = "GENERAL", postTitle = "", postBody = "",
-                marketCategory = "FREE", marketCondition = "GOOD", marketTitle = "",
-                marketPrice = "", marketCurrency = "SYP", marketPickup = "",
-                eventCategory = "SOCIAL", eventTitle = "", eventDescription = "", eventStartsAt = "",
-                eventLocationLabel = "", eventOrganizerLabel = "", eventRegistration = "OPEN",
-                eventCapacity = "", pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""),
-                notice = null
+            if (it.submitBusy) it
+            else it.copy(
+                composer = null,
+                submitBusy = false,
+                uploadProgress = null,
+                postPhotoUris = if (it.pendingPhotoPostId != null) it.postPhotoUris else emptyList()
             )
         }
     }
 
-    fun closeComposer() { _uiState.update { it.copy(composer = null, submitBusy = false) } }
+    fun addPostPhotos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        _uiState.update { current ->
+            val merged = (current.postPhotoUris + uris).distinctBy { it.toString() }
+            current.copy(
+                postPhotoUris = merged.take(5),
+                notice = if (merged.size > 5) "يمكن إرفاق خمس صور كحد أقصى لكل منشور." else current.notice
+            )
+        }
+    }
+
+    fun removePostPhoto(uri: Uri) {
+        _uiState.update { it.copy(postPhotoUris = it.postPhotoUris.filterNot { selected -> selected == uri }) }
+    }
+
+    fun skipPendingPhotoUpload() {
+        _uiState.update {
+            if (it.pendingPhotoPostId == null) it
+            else it.copy(
+                composer = null,
+                pendingPhotoPostId = null,
+                postPhotoUris = emptyList(),
+                uploadProgress = null,
+                submitBusy = false,
+                notice = "أُبقي المنشور كما نُشر دون الصور التي تعذّر رفعها."
+            )
+        }
+    }
+
     fun setPostCategory(value: String) { _uiState.update { it.copy(postCategory = value) } }
     fun setPostTitle(value: String) { _uiState.update { it.copy(postTitle = value.take(200)) } }
     fun setPostBody(value: String) { _uiState.update { it.copy(postBody = value.take(2000)) } }
@@ -717,22 +773,87 @@ class CommunityViewModel(
     fun publishPost() {
         val current = _uiState.value
         val membership = current.membership ?: return
+        val retryPostId = current.pendingPhotoPostId
         val title = current.postTitle.trim()
         val body = current.postBody.trim()
-        if (title.isEmpty() || body.isEmpty()) {
+        if (retryPostId == null && (title.isEmpty() || body.isEmpty())) {
             _uiState.update { it.copy(notice = "أدخل عنوان المنشور ونصه.") }
             return
         }
+        if (retryPostId != null && current.postPhotoUris.isEmpty()) {
+            _uiState.update { it.copy(notice = "اختر صورة لإعادة المحاولة، أو أنهِ الرفع دون صور.") }
+            return
+        }
+
         viewModelScope.launch {
-            _uiState.update { it.copy(submitBusy = true, notice = null) }
+            _uiState.update { it.copy(submitBusy = true, notice = null, uploadProgress = null) }
             try {
-                repository.createPost(CreatePostRequest(membership.locationId, current.postCategory, title, body))
-                _uiState.update {
-                    it.copy(composer = null, submitBusy = false, tab = MainTab.HOME, postTitle = "", postBody = "", notice = "نُشر المحتوى بنجاح.")
+                val targetPostId: String = if (retryPostId == null) {
+                    val created = repository.createPost(
+                        CreatePostRequest(membership.locationId, current.postCategory, title, body)
+                    )
+                    _uiState.update {
+                        it.copy(
+                            pendingPhotoPostId = created.id,
+                            uploadProgress = if (current.postPhotoUris.isEmpty()) null else "نُشر النص؛ نبدأ رفع الصور…"
+                        )
+                    }
+                    created.id
+                } else {
+                    retryPostId
+                }
+
+                val selectedPhotos = current.postPhotoUris
+                val failedPhotos = mutableListOf<Uri>()
+                selectedPhotos.forEachIndexed { index, uri ->
+                    _uiState.update {
+                        it.copy(uploadProgress = "رفع الصورة ${index + 1} من ${selectedPhotos.size}…")
+                    }
+                    try {
+                        repository.uploadPostMedia(targetPostId, uri)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        failedPhotos += uri
+                    }
+                }
+
+                if (failedPhotos.isEmpty()) {
+                    val message = when {
+                        retryPostId != null -> "اكتمل رفع الصور المتبقية للمنشور."
+                        selectedPhotos.isEmpty() -> "نُشر المنشور بنجاح."
+                        else -> "نُشر المنشور وأُرفقت الصور بنجاح."
+                    }
+                    _uiState.update {
+                        it.copy(
+                            composer = null,
+                            submitBusy = false,
+                            tab = MainTab.HOME,
+                            postTitle = "",
+                            postBody = "",
+                            postPhotoUris = emptyList(),
+                            pendingPhotoPostId = null,
+                            uploadProgress = null,
+                            notice = message
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            composer = ComposerKind.POST,
+                            submitBusy = false,
+                            postPhotoUris = failedPhotos,
+                            pendingPhotoPostId = targetPostId,
+                            uploadProgress = null,
+                            notice = "نُشر النص، لكن تعذر رفع ${failedPhotos.size} من ${selectedPhotos.size} صور. أعد المحاولة أدناه؛ لن يُنشأ منشور جديد."
+                        )
+                    }
                 }
                 loadFeed()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
-                _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
+                _uiState.update { it.copy(submitBusy = false, uploadProgress = null, notice = failureMessage(error)) }
             }
         }
     }

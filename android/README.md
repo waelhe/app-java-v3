@@ -6,14 +6,14 @@ This is the native Android client for the local community platform. The product 
 
 - Four primary destinations: **الحي / السوق / العقار / دليل الأعمال**.
 - Public account registration, email-verification resend, OIDC Authorization Code + PKCE sign-in through the system browser, and neighborhood selection/membership using the existing APIs.
-- Live neighborhood feed with server-issued post photos, Arabic post search, post creation, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
+- Live neighborhood feed with server-issued post photos, photo picking and direct presigned upload for new posts, Arabic post search, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
 - Neighborhood classified listings are separate from the store. The property view filters real listing search by purpose/property type; the business-discovery view searches published service/listing offers and can show returned provider-rating metadata.
 - Notification list/read state and the actual neighborhood membership-verification state.
 - Arabic-first RTL UI with loading, empty, error, and unavailable-contract states rather than fake server data.
 
 ## Known product-contract boundaries
 
-The current backend does **not** expose the complete public storefront/cart/order/delivery/checkout path. The سوق destination must not fabricate a catalog, stock, purchase or order confirmation. Business discovery currently searches published offers; it is not yet a complete provider-profile directory. Android now displays photos already attached to posts using the feed's time-limited media URLs, but selecting and uploading a photo from the Android composer is not wired yet. A full inbox/conversation-list contract, device push registration/delivery, reporting/moderation, official institution broadcasts and additional approved discovery rails remain outside this slice. Each must be connected through a verified end-to-end contract before it is presented as working.
+The current backend does **not** expose the complete public storefront/cart/order/delivery/checkout path. The سوق destination must not fabricate a catalog, stock, purchase or order confirmation. Business discovery currently searches published offers; it is not yet a complete provider-profile directory. Photo upload is wired for community posts only; photo upload for classified listings and provider/product imagery is not part of this slice. A full inbox/conversation-list contract, device push registration/delivery, reporting/moderation, official institution broadcasts and additional approved discovery rails remain outside this slice. Each must be connected through a verified end-to-end contract before it is presented as working.
 
 ## Security and configuration
 
