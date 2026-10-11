@@ -18,8 +18,10 @@ The current backend does **not** expose the complete public storefront/cart/orde
 ## Security and configuration
 
 - AppAuth handles Authorization Code + PKCE in the system browser. No confidential-client secret is packaged in the APK.
-- The access token is held in memory only; HTTP 401 clears it and returns the user to sign-in. This public client currently has no refresh token grant, so session continuation depends on the server session and the supported OIDC flow.
-- The issuer, public client ID, API base URL and redirect URI must match the public OAuth client registered on the backend. A deployment configuration step is required before real staging sign-in can be considered verified. No backend or production OAuth settings are changed by this client PR.
+- Access and ID tokens stay in memory only; neither token is written to persistent app storage. On app launch and after an API 401, the client attempts OIDC Authorization Code + PKCE with `prompt=none` to reuse a valid system-browser session. If the provider returns `login_required`, the app returns to interactive sign-in instead of inventing a local session.
+- Explicit sign-out clears local tokens and invokes AppAuth's RP-initiated end-session request with the discovered end-session endpoint, ID-token hint when available, registered post-logout redirect URI and client ID. If the provider does not confirm the end-session response, the app tells the user that only local sign-out is confirmed.
+- The public client has no refresh-token grant. The resource server validates JWTs locally, so a previously issued access token may remain valid up to its documented 900-second lifetime even after server logout; the app discards its local copy immediately.
+- The issuer, public client ID, API base URL and redirect URI must match the public OAuth client registered on the backend. Real staging sign-in and end-session behavior still require verification against the configured deployment. No backend or production OAuth settings are changed by this client PR.
 
 ## Build and test
 
