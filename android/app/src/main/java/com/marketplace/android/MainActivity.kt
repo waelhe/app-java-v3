@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onSignIn = ::beginSignIn,
                         onRegisterAccount = viewModel::registerAccount,
+                        onResendVerification = viewModel::resendVerificationEmail,
                         onRefresh = viewModel::refresh,
                         onSelectTab = viewModel::selectTab,
                         onLocationQuery = viewModel::setLocationQuery,

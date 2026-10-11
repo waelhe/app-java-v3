@@ -94,6 +94,7 @@ fun DayfApp(
     state: AppUiState,
     onSignIn: () -> Unit,
     onRegisterAccount: (String, String, String) -> Unit,
+    onResendVerification: () -> Unit,
     onRefresh: () -> Unit,
     onSelectTab: (MainTab) -> Unit,
     onLocationQuery: (String) -> Unit,
@@ -158,8 +159,11 @@ fun DayfApp(
             error = state.authError,
             success = state.authSuccess,
             registrationBusy = state.registrationBusy,
+            canResendVerification = state.registrationEmail.isNotBlank(),
+            verificationResendBusy = state.verificationResendBusy,
             onSignIn = onSignIn,
-            onRegister = onRegisterAccount
+            onRegister = onRegisterAccount,
+            onResendVerification = onResendVerification
         )
         state.loadingAccount -> CenterState(
             title = "نجهّز مساحتك المحلية",
@@ -264,8 +268,11 @@ internal fun SignInScreen(
     error: String?,
     success: String?,
     registrationBusy: Boolean,
+    canResendVerification: Boolean,
+    verificationResendBusy: Boolean,
     onSignIn: () -> Unit,
-    onRegister: (String, String, String) -> Unit
+    onRegister: (String, String, String) -> Unit,
+    onResendVerification: () -> Unit
 ) {
     var showRegistration by rememberSaveable { mutableStateOf(false) }
     var displayName by rememberSaveable { mutableStateOf("") }
@@ -332,6 +339,19 @@ internal fun SignInScreen(
                     )
                     if (!error.isNullOrBlank()) InfoBanner(error, isError = true)
                     if (!success.isNullOrBlank()) InfoBanner(success, isError = false)
+                    if (canResendVerification) {
+                        TextButton(
+                            enabled = !verificationResendBusy,
+                            onClick = onResendVerification,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (verificationResendBusy) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("إعادة إرسال رسالة التحقق")
+                        }
+                    }
                     Button(
                         onClick = onSignIn,
                         modifier = Modifier.fillMaxWidth().height(54.dp),

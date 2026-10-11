@@ -93,6 +93,8 @@ data class AppUiState(
     val directoryBusy: Boolean = false,
     val directoryError: String? = null,
     val registrationBusy: Boolean = false,
+    val registrationEmail: String = "",
+    val verificationResendBusy: Boolean = false,
     val authSuccess: String? = null,
     val composer: ComposerKind? = null,
     val postCategory: String = "GENERAL",
@@ -319,8 +321,9 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(
                         registrationBusy = false,
+                        registrationEmail = normalizedEmail,
                         authError = null,
-                        authSuccess = "تم إنشاء الحساب. سجّل الدخول الآن باستخدام بريدك وكلمة المرور."
+                        authSuccess = "تم إنشاء الحساب. تحقّق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول."
                     )
                 }
             } catch (error: Throwable) {
@@ -334,6 +337,31 @@ class CommunityViewModel(
                     else -> failureMessage(error)
                 }
                 _uiState.update { it.copy(registrationBusy = false, authError = message, authSuccess = null) }
+            }
+        }
+    }
+
+    fun resendVerificationEmail() {
+        val email = _uiState.value.registrationEmail.trim()
+        if (email.isBlank()) {
+            _uiState.update { it.copy(authError = "أعد إدخال البريد عبر إنشاء الحساب أو أعد المحاولة من جديد.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(verificationResendBusy = true, authError = null) }
+            try {
+                repository.resendVerificationEmail(email)
+                _uiState.update {
+                    it.copy(
+                        verificationResendBusy = false,
+                        authError = null,
+                        authSuccess = "قُبل الطلب. إذا كان الحساب بانتظار التحقق، فستصل رسالة إلى البريد المسجّل."
+                    )
+                }
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(verificationResendBusy = false, authError = failureMessage(error))
+                }
             }
         }
     }

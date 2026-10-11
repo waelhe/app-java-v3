@@ -4,6 +4,7 @@ import com.marketplace.android.BuildConfig
 import com.marketplace.android.core.network.CreateCommentRequest
 import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
+import com.marketplace.android.core.network.EmailOnlyRequest
 import com.marketplace.android.core.network.JoinNeighborhoodRequest
 import com.marketplace.android.core.network.RegisterRequest
 import com.marketplace.android.core.network.MarketplaceApi
@@ -51,6 +52,12 @@ class MarketplaceRepository {
 
     suspend fun registerAccount(email: String, password: String, displayName: String) {
         val response = api.registerAccount(RegisterRequest(email = email, password = password, displayName = displayName))
+        if (!response.isSuccessful) throw HttpException(response)
+        response.body()?.close()
+    }
+
+    suspend fun resendVerificationEmail(email: String) {
+        val response = api.resendVerificationEmail(EmailOnlyRequest(email = email))
         if (!response.isSuccessful) throw HttpException(response)
         response.body()?.close()
     }

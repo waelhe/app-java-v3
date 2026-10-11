@@ -14,6 +14,9 @@ interface MarketplaceApi {
     @POST("api/v1/auth/register")
     suspend fun registerAccount(@Body request: RegisterRequest): Response<ResponseBody>
 
+    @POST("api/v1/auth/email-verification/resend")
+    suspend fun resendVerificationEmail(@Body request: EmailOnlyRequest): Response<ResponseBody>
+
     @GET("api/v1/search")
     suspend fun searchListings(
         @Query("q") query: String? = null,

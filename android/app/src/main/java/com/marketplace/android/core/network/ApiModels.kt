@@ -115,6 +115,8 @@ data class RegisterRequest(
     val displayName: String
 )
 
+data class EmailOnlyRequest(val email: String)
+
 data class JoinNeighborhoodRequest(val locationId: String)
 data class CreatePostRequest(val locationId: String, val category: String, val title: String, val body: String)
 data class CreateCommentRequest(val body: String)
