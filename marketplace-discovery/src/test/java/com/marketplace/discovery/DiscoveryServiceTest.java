@@ -395,6 +395,69 @@ class DiscoveryServiceTest {
     }
 
     @Test
+    void forYouTopicPageOmittedCardsStayEligibleForLaterPages() {
+        // CodeRabbit round 3 on the #540 slice: the FOR_YOU window is a
+        // GLOBAL slice over the recency-ordered pool — every source
+        // contributes its FIRST (page+1)*size rows (the k-way merge over
+        // sorted sources), so a card cut from page 0's window stays ranked
+        // in the global pool and appears on its own later page. The
+        // pre-fix per-source cursors (each page fetching each source's OWN
+        // page N) let the cut card fall between the cursors — lost forever.
+        callerHasMembership();
+        // Page 1 of size 2: the deep fetch each source must answer is
+        // (0, (1+1)*2) = the first 4 rows — asserted on the wire below.
+        PagedRequest request = PagedRequest.of(1, 2);
+        PagedRequest deep = PagedRequest.of(0, 4);
+        when(followedSourcesPort.followedSources(USER_ID)).thenReturn(Set.of());
+        UUID l1 = UUID.randomUUID();
+        UUID l2 = UUID.randomUUID();
+        UUID l3 = UUID.randomUUID();
+        UUID r1 = UUID.randomUUID();
+        UUID r2 = UUID.randomUUID();
+        // Lost-found: 5 rows total, its deep page carries the first 4 (not
+        // last). Recency: L1(now) > L2(now-10) > L3(now-20).
+        when(communityPort.findActiveLostFound(NEIGHBORHOOD_ID, deep))
+                .thenReturn(new PagedResponse<>(List.of(
+                        post(l1, UUID.randomUUID(), now),
+                        post(l2, UUID.randomUUID(), now.minusSeconds(10)),
+                        post(l3, UUID.randomUUID(), now.minusSeconds(20))),
+                        0, 4, 5, 2, false));
+        // Recommendations: 2 rows total, its deep page carries them all
+        // (last). Recency: R1(now-5) > R2(now-15).
+        when(communityPort.findRecommendations(NEIGHBORHOOD_ID, deep))
+                .thenReturn(new PagedResponse<>(List.of(
+                        post(r1, UUID.randomUUID(), now.minusSeconds(5)),
+                        post(r2, UUID.randomUUID(), now.minusSeconds(15))),
+                        0, 4, 2, 1, true));
+        when(communityPort.findUpcomingEvents(NEIGHBORHOOD_ID, deep))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 4, 0, 0, true));
+        when(jobsPort.findOpenJobs(NEIGHBORHOOD_ID, deep))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 4, 0, 0, true));
+
+        PagedResponse<DiscoveryCardView> result =
+                service().rowPage(USER_ID, DiscoveryRowType.FOR_YOU, request);
+
+        // The global pool by recency is L1, R1, L2, R2, L3 — page 1's
+        // window is [L2, R2]: the two cards the pre-fix cursors would have
+        // skipped past (page 0 cut them; page 1's per-source fetch moved
+        // every cursor beyond them). They appear, in the pool's own order.
+        assertThat(result.content()).extracting(DiscoveryCardView::sourceId)
+                .containsExactly(l2, r2);
+        // The deep fetch the merge discipline requires — asserted on the
+        // wire: every source consulted with (0, (page+1)*size).
+        verify(communityPort).findActiveLostFound(NEIGHBORHOOD_ID, deep);
+        verify(communityPort).findRecommendations(NEIGHBORHOOD_ID, deep);
+        verify(communityPort).findUpcomingEvents(NEIGHBORHOOD_ID, deep);
+        verify(jobsPort).findOpenJobs(NEIGHBORHOOD_ID, deep);
+        // The envelope: the sources' honest sum; not last — lost-found's
+        // own deep page still has a row beyond the window's reach.
+        assertThat(result.totalElements()).isEqualTo(7L);
+        assertThat(result.last()).isFalse();
+        assertThat(result.pageNumber()).isEqualTo(1);
+        assertThat(result.pageSize()).isEqualTo(2);
+    }
+
+    @Test
     void eventsAndOpportunitiesRowPageMergesItsSourcesByRecency() {
         callerHasMembership();
         PagedRequest request = PagedRequest.of(0, 50);

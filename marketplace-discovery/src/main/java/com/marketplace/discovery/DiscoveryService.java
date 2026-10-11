@@ -77,6 +77,17 @@ public class DiscoveryService {
      */
     static final int HOME_ROW_CARD_LIMIT = 10;
 
+    /**
+     * FOR_YOU's deep-fetch window cap — {@link #forYouPage}'s own merge
+     * discipline budget. The global window needs each source's first
+     * (page+1)*size rows; past this cap the widened fetch would both
+     * overflow int on absurd page indexes and ask a source for its whole
+     * table, so the window honestly degrades (the envelope's totals stay
+     * the paging client's termination authority). See
+     * {@link #deepWindowSize}.
+     */
+    static final int FOR_YOU_DEEP_WINDOW_MAX = 1000;
+
     /** The closed card sourceType vocabulary (the {@code DiscoveryCardView} contract). */
     static final String SOURCE_NEIGHBORHOOD_POST = "NEIGHBORHOOD_POST";
     static final String SOURCE_NEIGHBORHOOD_EVENT = "NEIGHBORHOOD_EVENT";
@@ -302,14 +313,27 @@ public class DiscoveryService {
 
     private PagedResponse<DiscoveryCardView> forYouPage(UUID locationId, UUID userId, PagedRequest request) {
         FollowedSources followed = followedSources(userId);
+        // CodeRabbit round 3 on the #540 slice: the FOR_YOU window is a
+        // GLOBAL slice over the recency-ordered pool, so every source must
+        // contribute its FIRST (page+1)*size rows — the k-way merge over
+        // sorted sources (the global window [page*size, page*size+size) can
+        // never need more than (page+1)*size rows from any single source).
+        // The pre-fix per-source cursors (each FOR_YOU page fetched each
+        // source's OWN page N) let a card cut from an early window fall
+        // between the cursors — cut from page 0's window, never seen on any
+        // later page. The deep fetch rides the same PagedRequest contract
+        // (page 0, the widened size, the caller's own sort untouched) and
+        // grows with the page index exactly as the merge discipline
+        // requires — the topic page's own honest cost.
+        PagedRequest deep = new PagedRequest(0, deepWindowSize(request), request.sort());
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> lostFound =
-                communityPort.findActiveLostFound(locationId, request);
+                communityPort.findActiveLostFound(locationId, deep);
         PagedResponse<CommunityDiscoveryPort.DiscoveryPostCard> recommendations =
-                communityPort.findRecommendations(locationId, request);
+                communityPort.findRecommendations(locationId, deep);
         PagedResponse<CommunityDiscoveryPort.DiscoveryEventCard> events =
-                communityPort.findUpcomingEvents(locationId, request);
+                communityPort.findUpcomingEvents(locationId, deep);
         PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> jobs =
-                jobsPort.findOpenJobs(locationId, request);
+                jobsPort.findOpenJobs(locationId, deep);
         // CodeRabbit round 2 on the #540 slice: the candidate pool rides the
         // merged rails' own discipline BEFORE the window cuts — recency DESC
         // with the sourceId tiebreaker (D-13's "recency over declared scope"
@@ -327,14 +351,36 @@ public class DiscoveryService {
         // envelope's total stays the sources' honest sum (mergedPage's own
         // vocabulary — an upper bound over the followed-excluded pool, the
         // exclusion happens per page and the sources' own totals are the
-        // honest derivation available at this seam).
-        boolean last = lostFound.last() && recommendations.last() && events.last() && jobs.last();
+        // honest derivation available at this seam). Round 3 adds the
+        // window's own tail: even an exhausted pool is last only when this
+        // window's cut reaches the pool's end.
+        boolean sourcesExhausted = lostFound.last() && recommendations.last() && events.last() && jobs.last();
         long totalElements = lostFound.totalElements() + recommendations.totalElements()
                 + events.totalElements() + jobs.totalElements();
-        List<DiscoveryCardView> window = candidates.size() <= request.size()
-                ? candidates : candidates.subList(0, request.size());
+        long from = (long) request.page() * request.size();
+        int to = (int) Math.min(from + request.size(), candidates.size());
+        List<DiscoveryCardView> window = from >= candidates.size()
+                ? List.of() : candidates.subList((int) from, to);
+        boolean last = sourcesExhausted && to >= candidates.size();
         int totalPages = (int) Math.ceil(totalElements / (double) request.size());
         return new PagedResponse<>(window, request.page(), request.size(), totalElements, totalPages, last);
+    }
+
+    /**
+     * Round 3's deep window size: (page+1)*size in long math, capped at
+     * {@link #FOR_YOU_DEEP_WINDOW_MAX}. The cap closes the overflow gap the
+     * widened fetch would otherwise open on absurd page indexes (the topic
+     * page validates page >= 0 with no upper bound — (page+1)*size would
+     * overflow int and the unclamped deep fetch would ask a source for its
+     * whole table). Beyond the cap the deep fetch honestly degrades: the
+     * pool stops covering the window, the page answers its honest empty
+     * window with the sources' honest totals, and the envelope's own
+     * totalElements/totalPages stay the paging client's termination
+     * authority. The first FOR_YOU_DEEP_WINDOW_MAX/size pages — 20 at the
+     * documented size cap of 50 — keep the full global-window guarantee.
+     */
+    private static int deepWindowSize(PagedRequest request) {
+        return (int) Math.min((long) (request.page() + 1) * request.size(), FOR_YOU_DEEP_WINDOW_MAX);
     }
 
     /**
