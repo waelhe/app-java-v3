@@ -164,7 +164,8 @@ class MainActivity : ComponentActivity() {
             }
             exception != null && silent -> {
                 val message = when (exception.error) {
-                    "login_required" -> null
+                    "login_required" ->
+                        "لا توجد جلسة نشطة. سجّل الدخول للمتابعة."
                     "consent_required", "interaction_required" ->
                         "تحتاج الجلسة إلى تسجيل دخول تفاعلي. اضغط تسجيل الدخول للمتابعة."
                     else -> exception.errorDescription ?: "تعذر استعادة جلسة الدخول تلقائيًا."
