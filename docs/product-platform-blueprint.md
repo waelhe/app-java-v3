@@ -142,6 +142,19 @@
 
 Unit tests للـViewModels والتدفقات والمستودعات، واختبارات عقد الشبكة، وCompose UI/navigation tests، واختبارات رحلات على جهاز/محاكي في CI، ثم اختبارات أداء حرجة باستخدام Macrobenchmark وBaseline Profiles حيث تتوفر بيئة القياس. نقيس startup والتمرير والذاكرة وحجم الحزمة بدل الادعاء بأنها سريعة.
 
+### 6.4 خط الأدوات الرسمي المثبت وقت إعداد الأساس — 2026-10-11
+
+هذه لقطة تحقق للمصادر الرسمية، وليست تثبيتًا نهائيًا للأرقام في المشروع. قبل إضافة تطبيق Android، تُراجع مصفوفة توافق Android Studio/Kotlin/Compose Compiler/Gradle/AGP في نفس PR ويُختار مزيج واحد مستقر يمر على CI.
+
+- **Android Gradle Plugin:** صفحة الإصدار الرسمي تعرض **AGP 9.4.0 (سبتمبر 2026)**؛ Gradle الافتراضي/الحد الأدنى المعلن له **9.6.0**، ويدعم حتى API 37، وJDK 17 هو خط أساسه. لذلك لا نكرر إعدادات Gradle 8.x/AGP 8.x من فروع Android القديمة دون سبب توافق موثق. المصدر: [Android Gradle Plugin 9.4.0 release notes](https://developer.android.com/build/releases/agp-9-4-0-release-notes).
+- **Compose UI:** استخدام Jetpack Compose مع **Material 3 Expressive** ونظام tokens خاص بالمنتج، لا نسخ قالب واجهة جاهز. المصدر: [Material 3 in Compose](https://developer.android.com/develop/ui/compose/designsystems/material3).
+- **Architecture:** طبقات UI/Data واضحة، repository مصدر وصول البيانات، UDF، `StateFlow` لحالة UI، و`collectAsStateWithLifecycle`; لا تُنشأ domain/use-case classes لكل عملية بصورة شكلية. المصدر: [Official Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations).
+- **Navigation:** قيّم **Navigation 3** لتطبيق Compose جديد لأنه مستقر منذ 2025 ومصمم للحالة التفاعلية والـadaptive back stack/deep links. لا تُخلط Navigation 2 و3 في التطبيق دون حدّ انتقال موثق. المصدر: [Navigation 3 official guide](https://developer.android.com/guide/navigation/navigation-3) و[Navigation 3 stable announcement](https://developer.android.com/blog/posts/jetpack-navigation-3-is-stable).
+- **Adaptive layouts:** صمم من البداية للهاتف واللوحي والقابل للطي والنوافذ القابلة لتغيير الحجم. استخدم window size classes ومكتبات Material 3 Adaptive لتغيير نمط التنقل والتخطيط (bottom bar للهاتف، rail/drawer أو list-detail للمساحات الأوسع). المصدر: [Get started with adaptive apps](https://developer.android.com/develop/adaptive-apps/guides/get-started-with-adaptive-apps).
+- **اختبارات العميل:** اختبار ViewModels/Flows/repositories، واختبارات Navigation/Compose UI في CI، ثم Macrobenchmark/Baseline Profiles بعد وجود مسار واقعي. لا يُقبل «آخر إصدار» لمجرد حداثته إذا كسر التوافق أو منع إعادة البناء القابل للتكرار.
+
+لا تُثبت أرقام مكتبات Compose BOM أو Kotlin أو Navigation في هذا المخطط كأنها أحدث أرقام صالحة دائمًا؛ تُستخرج من صفحات الإصدارات الرسمية لحظة تهيئة العميل وتُثبّت في Version Catalog. ويظل `targetSdk` قرارًا مستقلًا من توافق النظام ومتطلبات النشر، لا يتبع أعلى API يستطيع AGP تجميعه تلقائيًا.
+
 ## 7. معمارية الباك إند والمنصة
 
 ### 7.1 خط الأساس
