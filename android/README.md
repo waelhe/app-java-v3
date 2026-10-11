@@ -44,8 +44,10 @@ Override environment-specific values without committing them:
 
 ## Official references
 
-- Android app architecture: https://developer.android.com/topic/architecture
+- Android app architecture and unidirectional UI state: https://developer.android.com/topic/architecture/recommendations
 - Jetpack Compose: https://developer.android.com/develop/ui/compose
+- Android Photo Picker (official multi-select flow): https://developer.android.com/training/data-storage/shared/photo-picker
+- Coil 3 Compose `AsyncImage` and network setup: https://github.com/coil-kt/coil/blob/main/docs/getting_started.md
 - Android SDK setup action: https://github.com/android-actions/setup-android
 - Native OAuth 2.0 guidance: https://datatracker.ietf.org/doc/html/rfc8252
 - AppAuth Android: https://github.com/openid/AppAuth-Android

@@ -131,6 +131,7 @@ class CommunityViewModel(
     private val _uiState = MutableStateFlow(AppUiState())
     private var idTokenHint: String? = null
     private var silentReauthInFlight: Boolean = false
+    private var stateBeforeSessionRecovery: AppUiState? = null
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
 
@@ -142,10 +143,23 @@ class CommunityViewModel(
         silentReauthInFlight = false
         idTokenHint = idToken
         repository.setAccessToken(accessToken)
-        _uiState.value = AppUiState(
+        val savedState = stateBeforeSessionRecovery
+        stateBeforeSessionRecovery = null
+        _uiState.value = (savedState ?: AppUiState()).copy(
             authenticated = true,
+            sessionRestoring = false,
+            sessionRestoreAttempted = true,
+            silentReauthRequired = false,
             loadingAccount = true,
-            sessionRestoreAttempted = true
+            authError = null,
+            authSuccess = null,
+            submitBusy = false,
+            uploadProgress = null,
+            notice = if (savedState?.pendingPhotoPostId != null) {
+                "استُعيد تسجيل الدخول. أكمل رفع الصور المتبقية للمنشور نفسه."
+            } else {
+                savedState?.notice
+            }
         )
         loadAccount()
     }
@@ -183,6 +197,7 @@ class CommunityViewModel(
     fun signOutOnDevice(): String? {
         repository.clearAccessToken()
         silentReauthInFlight = true
+        stateBeforeSessionRecovery = null
         val idToken = idTokenHint
         idTokenHint = null
         _uiState.value = AppUiState(sessionRestoreAttempted = true)
@@ -192,6 +207,7 @@ class CommunityViewModel(
     fun completeSignOut(errorMessage: String? = null) {
         idTokenHint = null
         silentReauthInFlight = true
+        stateBeforeSessionRecovery = null
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -1036,6 +1052,24 @@ class CommunityViewModel(
             return when (error.code()) {
                 401 -> {
                     repository.clearAccessToken()
+                    val current = _uiState.value
+                    if (current.authenticated &&
+                        (current.composer == ComposerKind.POST ||
+                            current.pendingPhotoPostId != null ||
+                            current.postPhotoUris.isNotEmpty())) {
+                        stateBeforeSessionRecovery = current.copy(
+                            submitBusy = false,
+                            uploadProgress = null,
+                            sessionRestoring = false,
+                            silentReauthRequired = false,
+                            authError = null,
+                            notice = if (current.pendingPhotoPostId != null) {
+                                "انتهت الجلسة أثناء رفع الصور. بعد تسجيل الدخول، أعد محاولة الصور المتبقية دون إنشاء منشور جديد."
+                            } else {
+                                current.notice
+                            }
+                        )
+                    }
                     if (!silentReauthInFlight) {
                         silentReauthInFlight = true
                         _uiState.value = AppUiState(
