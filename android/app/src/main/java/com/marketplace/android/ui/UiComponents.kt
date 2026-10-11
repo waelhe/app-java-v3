@@ -224,26 +224,6 @@ private fun StatusChip(status: String) {
 }
 
 @Composable
-private fun LostFoundStatusChip(state: String?) {
-    val normalized = state?.uppercase(Locale.ROOT) ?: return
-    val (label, active) = when (normalized) {
-        "ACTIVE" -> "بلاغ مفتوح" to true
-        "FOUND" -> "تم العثور عليه" to false
-        "RESOLVED" -> "أُغلق البلاغ" to false
-        else -> "حالة البلاغ: $normalized" to false
-    }
-    Surface(color = if (active) Sage else Sand, shape = RoundedCornerShape(8.dp)) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            color = if (active) Forest else Warning,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
 internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onComments: () -> Unit) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -267,9 +247,6 @@ internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onC
             }
             Text(post.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 26.sp)
             Text(post.body, color = Ink, fontSize = 14.sp, lineHeight = 22.sp)
-            if (post.category.equals("LOST_FOUND", ignoreCase = true)) {
-                LostFoundStatusChip(post.lostFoundState)
-            }
             val photos = post.media.filter { it.url.isNotBlank() }.sortedBy { it.position }
             if (photos.isNotEmpty()) {
                 LazyRow(

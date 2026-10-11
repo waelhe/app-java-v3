@@ -21,7 +21,6 @@ data class PostDto(
     val title: String = "",
     val body: String = "",
     val status: String = "VISIBLE",
-    val lostFoundState: String? = null,
     val reactionsCount: Long = 0,
     val reactedByMe: Boolean = false,
     val media: List<PostMediaDto> = emptyList(),
@@ -168,8 +167,7 @@ data class EventDto(
     val organizerLabel: String = "",
     val capacity: Int? = null,
     val registration: String = "OPEN",
-    val status: String = "ACTIVE",
-    val featured: Boolean = false,
+    val featured: Boolean = false
     val attending: Long = 0,
     val rsvpedByMe: Boolean = false,
     val createdAt: String = "",

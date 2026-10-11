@@ -70,26 +70,46 @@ class ApiModelsTest {
     }
 
     @Test
-    fun lostFoundStateParsesFromServerResponse() {
+    fun lostFoundPostParsesOnlyFieldsExposedByBackendView() {
         val post = moshi.adapter(PostDto::class.java).fromJson(
-            """{"id":"post-2","category":"LOST_FOUND","lostFoundState":"FOUND","media":[]}"""
+            """{"id":"post-2","category":"LOST_FOUND","status":"VISIBLE","media":[]}"""
         )!!
 
-        assertEquals("FOUND", post.lostFoundState)
+        assertEquals("LOST_FOUND", post.category)
+        assertEquals("VISIBLE", post.status)
         assertTrue(post.media.isEmpty())
     }
 
     @Test
-    fun eventStatusIsPreservedFromServerResponse() {
-        val postponed = moshi.adapter(EventDto::class.java).fromJson(
-            """{"id":"event-1","title":"لقاء الحي","status":"POSTPONED"}"""
-        )!!
-        val active = moshi.adapter(EventDto::class.java).fromJson(
-            """{"id":"event-2","title":"سوق الحي","status":"ACTIVE"}"""
+    fun eventResponseMatchesCurrentBackendView() {
+        val event = moshi.adapter(EventDto::class.java).fromJson(
+            """
+            {
+              "id": "event-1",
+              "authorId": "member-1",
+              "locationId": "neighborhood-1",
+              "category": "SOCIAL",
+              "title": "لقاء الحي",
+              "description": "لقاء الجيران",
+              "startsAt": "2026-10-12T17:00:00Z",
+              "endsAt": null,
+              "locationLabel": "الساحة",
+              "organizerLabel": "لجنة الحي",
+              "capacity": 10,
+              "registration": "OPEN",
+              "featured": false,
+              "attending": 3,
+              "rsvpedByMe": true,
+              "createdAt": "2026-10-11T09:00:00Z",
+              "updatedAt": "2026-10-11T09:00:00Z"
+            }
+            """.trimIndent()
         )!!
 
-        assertEquals("POSTPONED", postponed.status)
-        assertEquals("ACTIVE", active.status)
+        assertEquals("لقاء الحي", event.title)
+        assertEquals("OPEN", event.registration)
+        assertEquals(3L, event.attending)
+        assertTrue(event.rsvpedByMe)
     }
 
     @Test
