@@ -813,7 +813,13 @@ class CommunityViewModel(
                         repository.uploadPostMedia(targetPostId, uri)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Exception) {
+                    } catch (error: HttpException) {
+                        if (error.code() == 400) {
+                            failedPhotos += uri
+                        } else {
+                            throw error
+                        }
+                    } catch (error: java.io.IOException) {
                         failedPhotos += uri
                     }
                 }

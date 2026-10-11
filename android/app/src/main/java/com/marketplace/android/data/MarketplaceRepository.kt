@@ -30,7 +30,12 @@ import retrofit2.converter.moshi.MoshiConverterFactory
  * The UI's only data entry point. Access tokens stay volatile and memory-only.
  */
 class MarketplaceRepository(private val applicationContext: Context? = null) {
-    private val storageUploadClient: OkHttpClient by lazy { OkHttpClient.Builder().build() }
+    private val storageUploadClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
 
     @Volatile
     private var accessToken: String? = null
@@ -102,12 +107,13 @@ class MarketplaceRepository(private val applicationContext: Context? = null) {
 
         withContext(Dispatchers.IO) {
             val resolver = context.contentResolver
+            val allowedContentTypes = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
             val contentType = resolver.getType(uri)
                 ?.substringBefore(';')
                 ?.trim()
                 ?.lowercase(Locale.ROOT)
-                ?.takeIf { it.startsWith("image/") }
-                ?: throw IOException("تعذر تحديد نوع الصورة. اختر صورة بصيغة JPEG أو PNG أو WebP أو GIF.")
+                ?.takeIf { it in allowedContentTypes }
+                ?: throw IOException("صيغة الصورة غير مدعومة. الصيغ المعتمدة: JPEG وPNG وWebP وGIF.")
 
             val file = File.createTempFile("community-post-", ".upload", context.cacheDir)
             try {
