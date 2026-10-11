@@ -1,47 +1,49 @@
-# ضَيف — Native Android client
+# Native Android client — Local community platform
 
-This is the native Android application for the community platform. It uses Kotlin, Jetpack Compose, Retrofit/Moshi and AppAuth, and remains outside the root Maven reactor. It adds no Spring module and changes no backend code.
+This is the native Android client for the local community platform. The product brand has not been selected, so the app uses a neutral display name. The client is built with Kotlin, Jetpack Compose, Retrofit/Moshi and AppAuth, outside the root Maven reactor. It adds no Spring module and makes no backend or database changes.
 
-## First working vertical slice
+## Current app journeys
 
-- OpenID Connect Authorization Code + PKCE through the system browser.
-- Neighborhood lookup and membership creation through the existing geo and membership APIs.
-- Real neighborhood feed, Arabic post search, publishing posts, comments and reactions.
-- Real neighborhood market, publishing and withdrawing the caller's own items.
-- In-app notifications and mark-as-read.
-- Profile with the actual neighborhood-membership verification state.
-- Arabic-first RTL UI, and explicit loading, empty, error, expired-session and offline states.
+- Four primary destinations: **الحي / السوق / العقار / دليل الأعمال**.
+- Public account registration, email-verification resend, OIDC Authorization Code + PKCE sign-in through the system browser, and neighborhood selection/membership using the existing APIs.
+- Live neighborhood feed, Arabic post search, post creation, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
+- Neighborhood classified listings are separate from the store. The property view filters real listing search by purpose/property type; the business-discovery view searches published service/listing offers and can show returned provider-rating metadata.
+- Notification list/read state and the actual neighborhood membership-verification state.
+- Arabic-first RTL UI with loading, empty, error, and unavailable-contract states rather than fake server data.
 
-Server data only: failed/unavailable API calls are error states, not sample content. The access token is kept in memory only. The current public-client registration issues no refresh tokens; HTTP 401 clears the token and takes the user to sign-in.
+## Known product-contract boundaries
 
-## Build
+The current backend does **not** expose the complete public storefront/cart/order/delivery/checkout path. The سوق destination must not fabricate a catalog, stock, purchase or order confirmation. Business discovery currently searches published offers; it is not yet a complete provider-profile directory. A full inbox/conversation-list contract, device push registration/delivery, media uploads, reporting/moderation, official institution broadcasts and additional approved discovery rails remain outside this slice. Each must be connected through a verified end-to-end contract before it is presented as working.
 
-Use Android Studio with JDK 17 and Gradle 9.6.0, or install Gradle 9.6.0 locally:
+## Security and configuration
 
-    gradle -p android :app:testDebugUnitTest :app:assembleDebug
+- AppAuth handles Authorization Code + PKCE in the system browser. No confidential-client secret is packaged in the APK.
+- The access token is held in memory only; HTTP 401 clears it and returns the user to sign-in. This public client currently has no refresh token grant, so session continuation depends on the server session and the supported OIDC flow.
+- The issuer, public client ID, API base URL and redirect URI must match the public OAuth client registered on the backend. A deployment configuration step is required before real staging sign-in can be considered verified. No backend or production OAuth settings are changed by this client PR.
 
-The default endpoint is the shared staging backend; production is never the default. Override configuration without committing environment-specific values:
+## Build and test
+
+Use JDK 17 and Gradle 9.6.0:
+
+    gradle -p android :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+The Android client workflow installs Android SDK platform 36, runs JVM unit tests, builds the debug APK and uploads it as a workflow artifact. The CI artifact is a debug build, not a production-signed release.
+
+Override environment-specific values without committing them:
 
     gradle -p android :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
 
-The issuer, public client ID and redirect URI must match the public OAuth client registered on the backend. **Do not bundle a client secret.** The backend's existing OAuth2PublicClientInitializer reads OAUTH_PUBLIC_CLIENT_ID and OAUTH_PUBLIC_CLIENT_REDIRECT_URIS from server configuration. If the public client is not provisioned with this exact redirect URI, sign-in will fail; no fake login is provided.
+## Code boundaries
 
-## Architecture
-
-- core/network: typed API contracts matching existing Spring endpoints.
+- core/network: typed DTOs and API contracts for existing backend endpoints.
 - data: one repository owns HTTP and bearer-token injection.
-- feature: ViewModel/state flow owns screen state; Compose renders state and forwards actions.
-- No database, fake backend, parallel business rules, or token persistence is introduced.
-
-## Current scope boundaries
-
-The backend does not expose a dedicated community conversation-inbox listing contract in this slice, so this initial app does not pretend to implement a complete inbox; that contract must be agreed before messaging UI is connected. The first slice also does not yet cover media upload, push-token registration/delivery, moderation/report flows, events/institutions/business directory, or the topical discovery rails described in the community product plan. These are product capabilities to implement as complete vertical slices, not static screens.
+- feature: ViewModel and StateFlow own screen state; Compose renders state and forwards actions.
+- No parallel backend, local product database, sample content pretending to be server data, or client secret.
 
 ## Official references
 
 - Android app architecture: https://developer.android.com/topic/architecture
 - Jetpack Compose: https://developer.android.com/develop/ui/compose
-- AGP 9 built-in Kotlin: https://developer.android.com/build/migrate-to-built-in-kotlin
-- AGP 9.4 compatibility: https://developer.android.com/build/releases/agp-9-4-0-release-notes
+- Android SDK setup action: https://github.com/android-actions/setup-android
 - Native OAuth 2.0 guidance: https://datatracker.ietf.org/doc/html/rfc8252
 - AppAuth Android: https://github.com/openid/AppAuth-Android
