@@ -313,7 +313,7 @@ internal fun SignInScreen(
                 }
             }
             Spacer(Modifier.height(22.dp))
-            Text("ضَيف", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold)
+            Text("المجتمع المحلي", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text("مجتمعك المحلي، أقرب إليك", color = Color.White.copy(alpha = 0.92f), fontSize = 18.sp)
             Spacer(Modifier.height(10.dp))
@@ -382,7 +382,7 @@ internal fun SignInScreen(
     if (showRegistration) {
         AlertDialog(
             onDismissRequest = { if (!registrationBusy) showRegistration = false },
-            title = { Text("إنشاء حساب ضَيف") },
+            title = { Text("إنشاء حساب جديد") },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
