@@ -17,6 +17,9 @@ The current backend does **not** expose the complete public storefront/cart/orde
 
 ## Security and configuration
 
+- The default API base URL and OIDC issuer target the Railway service `https://app-java-v3-production-59bf.up.railway.app`, the environment selected for this test run. Override both with Gradle properties when targeting another environment.
+- Android sign-in requires the public client ID to match the backend's `OAUTH_PUBLIC_CLIENT_ID`. Pass it with `-PoidcClientId=...` locally, or set the GitHub Actions repository variable `OAUTH_PUBLIC_CLIENT_ID` to the same public value for CI-built APKs. The backend must register the redirect URI `com.marketplace.android:/oauth2redirect`. No client secret is shipped in the app.
+
 - AppAuth handles Authorization Code + PKCE in the system browser. No confidential-client secret is packaged in the APK.
 - Access and ID tokens stay in memory only; neither token is written to persistent app storage. On app launch and after an API 401, the client attempts OIDC Authorization Code + PKCE with `prompt=none` to reuse a valid system-browser session. If the provider returns `login_required`, the app returns to interactive sign-in instead of inventing a local session.
 - Explicit sign-out clears local tokens and invokes AppAuth's RP-initiated end-session request with the discovered end-session endpoint, ID-token hint when available and client ID. The current server registration configures authorization redirect URIs but does not register a post-logout redirect URI, so the client does not send an unregistered callback URL. If the provider does not return an end-session response to the app, the UI confirms only local sign-out; a smooth automatic return requires a registered post-logout redirect in the server's public-client contract.
@@ -36,7 +39,7 @@ Override environment-specific values without committing them:
 
 From the `android/` directory, override environment-specific values without committing them:
 
-    ./gradlew :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
+    ./gradlew :app:testDebugUnitTest :app:assembleDebug -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
 ## Code boundaries
 
