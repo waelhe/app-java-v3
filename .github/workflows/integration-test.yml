@@ -23,6 +23,17 @@ on:
     # same inertness the precedent documents above).
     branches: [ main ]
 
+
+# One test round per ref: a newer push supersedes the older round and
+# cancels it in place (GitHub's documented concurrency discipline — the
+# 2026-10-11 measured flood: an iterating sibling branch's pushes parked
+# ~75 superseded runs in the queue while the account's 20-runner ceiling
+# starved every live gate). The merge ruleset reads the LATEST head's
+# check-runs, so only superseded rounds are ever cancelled — never the
+# round a gate is waiting on.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 
