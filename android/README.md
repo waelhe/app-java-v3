@@ -34,7 +34,8 @@ The Android client workflow installs Android SDK platform 37 (Build Tools 36.0.0
 
 Override environment-specific values without committing them:
 
-    cd android
+From the `android/` directory, override environment-specific values without committing them:
+
     ./gradlew :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
 ## Code boundaries
