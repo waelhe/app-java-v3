@@ -1140,13 +1140,17 @@ class CommunityViewModel(
             try {
                 val updated = repository.updateLostFoundState(post.id, targetState)
                 _uiState.update { state ->
-                    val replace: (PostDto) -> PostDto = { row ->
-                        if (row.id == updated.id) updated else row
+                    // The command response is a write-path projection; it does not
+                    // carry the feed's grouped media/reaction aggregates. Merge only
+                    // the lifecycle fact into existing rows so UI state cannot lose
+                    // images or reset reaction counts after a successful command.
+                    val mergeLifecycleState: (PostDto) -> PostDto = { row ->
+                        if (row.id == updated.id) row.copy(lostFoundState = updated.lostFoundState) else row
                     }
                     state.copy(
-                        posts = state.posts.map(replace),
-                        searchResults = state.searchResults.map(replace),
-                        commentsPost = state.commentsPost?.let(replace),
+                        posts = state.posts.map(mergeLifecycleState),
+                        searchResults = state.searchResults.map(mergeLifecycleState),
+                        commentsPost = state.commentsPost?.let(mergeLifecycleState),
                         notice = if (targetState == "FOUND") {
                             "تم تحديث البلاغ: عُثر على المفقود."
                         } else {
