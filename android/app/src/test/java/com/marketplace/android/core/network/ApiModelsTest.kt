@@ -116,6 +116,14 @@ class ApiModelsTest {
     }
 
     @Test
+    fun lostFoundStateCommandMatchesBackendRequestShape() {
+        val json = moshi.adapter(UpdateLostFoundStateRequest::class.java)
+            .toJson(UpdateLostFoundStateRequest(state = "FOUND"))
+
+        assertEquals("{\"state\":\"FOUND\"}", json)
+    }
+
+    @Test
     fun postPhotoUploadRequestAndSignedResponseMatchMediaControllerContract() {
         val request = RequestPostMediaUpload(
             postId = "post-1",
