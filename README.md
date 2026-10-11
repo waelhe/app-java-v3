@@ -1,8 +1,6 @@
-# Marketplace Backend (app-java-v3)
+# Local Community Platform Foundation (app-java-v3)
 
-Local-services marketplace backend: **REST + GraphQL** in a single Spring context,
-built as a **Spring Modulith** of 27 Maven modules (23 domain modules + the app
-assembly + shared contracts + platform infrastructure + the edge BFF).
+This repository contains a multi-domain Spring backend foundation (**REST + GraphQL**) built as a **Spring Modulith**. The target is a coherent local-community platform at country/city/neighborhood scale—not a thin Android wrapper around existing endpoints. The current backend is a foundation to reuse and extend where measured user journeys require it; this README does not claim that all target journeys are implemented.
 
 | | |
 |---|---|
@@ -14,6 +12,13 @@ assembly + shared contracts + platform infrastructure + the edge BFF).
 
 Live production: `https://app-java-v3-production.up.railway.app`
 
+## Product direction and journey contracts
+
+- **Product, UX, and target architecture:** [docs/product-platform-blueprint.md](docs/product-platform-blueprint.md)
+- **Journey contract JT-01..JT-20:** [docs/community-platform-user-journeys.md](docs/community-platform-user-journeys.md)
+- **Design system and screen catalog:** [docs/community-platform-ux-design.md](docs/community-platform-ux-design.md)
+- **Accepted and open product decisions:** [docs/platform-product-decisions.md](docs/platform-product-decisions.md)
+
 ## Where the truth lives (read these first)
 
 This repository keeps a strict truth hierarchy — every claim in the code,
@@ -23,7 +28,8 @@ or an archived official source):
 1. **`SYSTEM.md`** — how the system actually works (the living reference map).
 2. **`PROJECT_MAP.md`** — the state log: what merged, what is open, what is deferred.
 3. **`AGENTS.md`** — the binding work rules (mandatory load order before any action).
-4. `docs/` — domain plans, governance decisions, SLOs, runbooks and operating guides.
+4. Product/UX documents describe target behavior; they do not prove implementation. Re-measure code, CI, PR and deployment state before claiming a feature is complete.
+5. `docs/` — domain references, governance decisions, SLOs, runbooks and operating guides.
 
 ## Build & verify
 
