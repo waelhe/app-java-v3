@@ -78,6 +78,9 @@ data class AppUiState(
     val feedLast: Boolean = true,
     val searchQuery: String = "",
     val searchResults: List<PostDto> = emptyList(),
+    val searchResultsQuery: String = "",
+    val searchPage: Int = 0,
+    val searchLast: Boolean = true,
     val searchBusy: Boolean = false,
     val searchError: String? = null,
     val marketItems: List<MarketItemDto> = emptyList(),
@@ -132,6 +135,17 @@ data class AppUiState(
  * within the API's Int range. BigDecimal.toInt() silently overflows, which
  * can otherwise turn a very large price into a small positive price.
  */
+/**
+ * Enforce a Unicode-code-point limit without splitting UTF-16 surrogate pairs.
+ * The posts-search API contract accepts at most 200 Unicode code points.
+ */
+internal fun takeCodePoints(value: String, maximum: Int): String {
+    require(maximum >= 0) { "maximum must be non-negative" }
+    val count = value.codePointCount(0, value.length)
+    return if (count <= maximum) value
+    else value.substring(0, value.offsetByCodePoints(0, maximum))
+}
+
 internal fun parsePriceCents(raw: String): Int? =
     raw.trim().replace(',', '.')
         .toBigDecimalOrNull()
@@ -169,6 +183,7 @@ class CommunityViewModel(
     private var stateBeforeSessionRecovery: AppUiState? = null
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
+    private var searchJob: Job? = null
 
     fun authenticationFailed(message: String) {
         _uiState.update { it.copy(authError = message, authSuccess = null, loadingAccount = false) }
@@ -536,23 +551,106 @@ class CommunityViewModel(
         }
     }
 
-    fun updateSearchQuery(query: String) { _uiState.update { it.copy(searchQuery = query, searchError = null) } }
+    fun updateSearchQuery(query: String) {
+        val boundedQuery = takeCodePoints(query, 200)
+        if (_uiState.value.searchQuery == boundedQuery) return
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(searchQuery = boundedQuery, searchBusy = false, searchError = null)
+        }
+    }
 
     fun searchPosts() {
         val query = _uiState.value.searchQuery.trim()
-        if (query.length < 2) {
-            _uiState.update { it.copy(searchError = "اكتب حرفين على الأقل لبدء البحث.") }
+        if (query.codePointCount(0, query.length) < 2) {
+            searchJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    searchResultsQuery = "",
+                    searchPage = 0,
+                    searchLast = true,
+                    searchBusy = false,
+                    searchError = "اكتب حرفين على الأقل لبدء البحث."
+                )
+            }
             return
         }
-        viewModelScope.launch {
-            _uiState.update { it.copy(searchBusy = true, searchError = null) }
+
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    searchResultsQuery = query,
+                    searchPage = 0,
+                    searchLast = true,
+                    searchBusy = true,
+                    searchError = null
+                )
+            }
             try {
-                val page = repository.searchPosts(query)
-                _uiState.update { it.copy(searchResults = page.content, searchBusy = false, searchError = null) }
+                val page = repository.searchPosts(query, page = 0)
+                _uiState.update { state ->
+                    if (state.searchQuery.trim() != query || state.searchResultsQuery != query) {
+                        state.copy(searchBusy = false)
+                    } else {
+                        state.copy(
+                            searchResults = page.content,
+                            searchPage = page.pageNumber,
+                            searchLast = page.last,
+                            searchBusy = false,
+                            searchError = null
+                        )
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _uiState.update { it.copy(searchBusy = false, searchError = failureMessage(error)) }
+                val message = failureMessage(error)
+                _uiState.update { state ->
+                    if (state.searchResultsQuery == query && state.searchQuery.trim() == query) {
+                        state.copy(searchBusy = false, searchError = message)
+                    } else state
+                }
+            }
+        }
+    }
+
+    fun loadMoreSearchResults() {
+        val current = _uiState.value
+        val query = current.searchResultsQuery
+        if (current.searchBusy || current.searchLast || query.isBlank() ||
+            query != current.searchQuery.trim()) return
+        val requestedPage = current.searchPage + 1
+
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _uiState.update { it.copy(searchBusy = true, searchError = null) }
+            try {
+                val page = repository.searchPosts(query, page = requestedPage)
+                _uiState.update { state ->
+                    if (state.searchResultsQuery != query || state.searchQuery.trim() != query) {
+                        state.copy(searchBusy = false)
+                    } else {
+                        state.copy(
+                            searchResults = (state.searchResults + page.content).distinctBy { it.id },
+                            searchPage = page.pageNumber,
+                            searchLast = page.last,
+                            searchBusy = false,
+                            searchError = null
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val message = failureMessage(error)
+                _uiState.update { state ->
+                    if (state.searchResultsQuery == query && state.searchQuery.trim() == query) {
+                        state.copy(searchBusy = false, searchError = message)
+                    } else state
+                }
             }
         }
     }

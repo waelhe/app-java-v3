@@ -127,7 +127,8 @@ class MarketplaceRepository(
     suspend fun joinNeighborhood(locationId: String) = api.joinNeighborhood(JoinNeighborhoodRequest(locationId))
     suspend fun requestNeighborhoodVerification() = api.requestNeighborhoodVerification()
     suspend fun getFeed(page: Int = 0) = api.getFeed(page = page)
-    suspend fun searchPosts(query: String) = api.searchPosts(query = query)
+    suspend fun searchPosts(query: String, page: Int = 0, size: Int = 20) =
+        api.searchPosts(query = query, page = page, size = size)
     suspend fun createPost(request: CreatePostRequest) = api.createPost(request)
     suspend fun updateLostFoundState(postId: String, state: String) =
         api.updateLostFoundState(postId, UpdateLostFoundStateRequest(state))

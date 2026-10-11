@@ -3,6 +3,7 @@ package com.marketplace.android.core.network
 import com.marketplace.android.feature.canChangeEventRsvp
 import com.marketplace.android.feature.mergeLostFoundLifecycleState
 import com.marketplace.android.feature.parsePriceCents
+import com.marketplace.android.feature.takeCodePoints
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -116,6 +117,13 @@ class ApiModelsTest {
         assertEquals("ACTIVE", event.status)
         assertEquals(3L, event.attending)
         assertTrue(event.rsvpedByMe)
+    }
+
+    @Test
+    fun searchQueryLimitDoesNotSplitSurrogatePairs() {
+        assertEquals("a😀", takeCodePoints("a😀b", 2))
+        assertEquals("😀", takeCodePoints("😀abc", 1))
+        assertEquals("abcdef", takeCodePoints("abcdef", 10))
     }
 
     @Test

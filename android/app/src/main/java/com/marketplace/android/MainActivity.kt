@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
                         onWithdrawMarketItem = viewModel::withdrawMarketItem,
                         onSearchQuery = viewModel::updateSearchQuery,
                         onSearch = viewModel::searchPosts,
+                        onLoadMoreSearchResults = viewModel::loadMoreSearchResults,
                         onExploreMode = viewModel::selectExploreMode,
                         onRsvpEvent = viewModel::toggleEventRsvp,
                         onToggleGroup = viewModel::toggleGroupMembership,

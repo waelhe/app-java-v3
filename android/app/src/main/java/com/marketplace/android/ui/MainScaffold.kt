@@ -83,6 +83,7 @@ internal fun SignedInScaffold(
     onUpdateLostFoundState: (PostDto, String) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
+    onLoadMoreSearchResults: () -> Unit,
     onExploreMode: (ExploreMode) -> Unit,
     onRsvpEvent: (EventDto) -> Unit,
     onToggleGroup: (GroupDto) -> Unit,
@@ -196,7 +197,7 @@ internal fun SignedInScaffold(
                 MainTab.EXPLORE -> ExploreScreen(
                     state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState,
                     onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
-                    onBeginComposer, onRefresh
+                    onBeginComposer, onRefresh, onLoadMoreSearchResults
                 )
                 MainTab.MARKET -> StorefrontScreen(onOpenNeighborhoodMarket = onOpenNeighborhoodMarket)
                 MainTab.PROPERTY -> PropertySearchScreen(
@@ -281,7 +282,8 @@ private fun ExploreScreen(
     onWithdrawPollVote: (PollDto) -> Unit,
     onWithdrawMarketItem: (MarketItemDto) -> Unit,
     onBeginComposer: (ComposerKind) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onLoadMoreSearchResults: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -325,6 +327,9 @@ private fun ExploreScreen(
                     }
                 }
                 state.searchError?.let { InfoBanner(it, isError = true) }
+                if (state.searchResults.isNotEmpty() && state.searchResultsQuery != state.searchQuery.trim()) {
+                    InfoBanner("غيّرت نص البحث؛ اضغط زر البحث لتحديث النتائج.", isError = false)
+                }
                 if (state.searchBusy) LinearLoading()
                 if (state.searchResults.isEmpty() && !state.searchBusy && state.searchError == null) {
                     EmptyState(
@@ -347,6 +352,18 @@ private fun ExploreScreen(
                                 onReact = { onReact(post) },
                                 onComments = { onOpenComments(post) }
                             )
+                        }
+                        if (state.searchResultsQuery == state.searchQuery.trim() && !state.searchLast) {
+                            item {
+                                OutlinedButton(
+                                    onClick = onLoadMoreSearchResults,
+                                    enabled = !state.searchBusy,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(if (state.searchBusy) "نحمّل نتائج أخرى…" else "عرض نتائج أخرى")
+                                }
+                            }
                         }
                     }
                 }
