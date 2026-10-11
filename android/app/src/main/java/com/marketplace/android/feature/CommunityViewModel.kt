@@ -126,6 +126,20 @@ data class AppUiState(
     val notice: String? = null
 )
 
+
+/**
+ * Merge only the lifecycle field returned by the command endpoint.
+ * Its write projection intentionally does not contain the feed's grouped
+ * media/reaction aggregates, so replacing a feed row with it would lose
+ * presentation data until the next full feed read.
+ */
+internal fun mergeLostFoundLifecycleState(current: PostDto, serverUpdate: PostDto): PostDto =
+    if (current.id == serverUpdate.id) {
+        current.copy(lostFoundState = serverUpdate.lostFoundState)
+    } else {
+        current
+    }
+
 class CommunityViewModel(
     private val repository: MarketplaceRepository
 ) : ViewModel() {
@@ -1145,7 +1159,7 @@ class CommunityViewModel(
                     // the lifecycle fact into existing rows so UI state cannot lose
                     // images or reset reaction counts after a successful command.
                     val mergeLifecycleState: (PostDto) -> PostDto = { row ->
-                        if (row.id == updated.id) row.copy(lostFoundState = updated.lostFoundState) else row
+                        mergeLostFoundLifecycleState(row, updated)
                     }
                     state.copy(
                         posts = state.posts.map(mergeLifecycleState),
