@@ -496,6 +496,45 @@ public class NotificationService {
         sendPush(consumerId, NotificationType.ORDER_CANCELLED, message);
     }
 
+    /**
+     * Stage 8 (ADR-0004): the lending workflow's three legs — the owner's
+     * decision gate (requested), the borrower's payment gate (approved),
+     * and the borrower's cancellation receipt (the order legs' twins
+     * verbatim; the recipient is the DECISION-MAKER, the message carries
+     * the ids, the channels ride the same gates).
+     */
+    public void onLoanRequested(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Lending request received: " + loanId;
+        repository.save(Notification.create(ownerId,
+                NotificationType.LOAN_REQUESTED.name(), message));
+        if (preferences.isChannelEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(ownerId, "Lending Request", "email/notification",
+                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."));
+        }
+        sendWebSocket(ownerId, NotificationType.LOAN_REQUESTED, message);
+        sendPush(ownerId, NotificationType.LOAN_REQUESTED, message);
+    }
+
+    public void onLoanApproved(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Lending request approved: " + loanId;
+        repository.save(Notification.create(borrowerId,
+                NotificationType.LOAN_APPROVED.name(), message));
+        if (preferences.isChannelEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(borrowerId, "Lending Approved", "email/notification",
+                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."));
+        }
+        sendWebSocket(borrowerId, NotificationType.LOAN_APPROVED, message);
+        sendPush(borrowerId, NotificationType.LOAN_APPROVED, message);
+    }
+
+    public void onLoanCancelled(UUID loanId, UUID borrowerId) {
+        String message = "Loan cancelled: " + loanId;
+        repository.save(Notification.create(borrowerId,
+                NotificationType.LOAN_CANCELLED.name(), message));
+        sendWebSocket(borrowerId, NotificationType.LOAN_CANCELLED, message);
+        sendPush(borrowerId, NotificationType.LOAN_CANCELLED, message);
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.

@@ -2,6 +2,7 @@ package com.marketplace.ledger;
 
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
@@ -24,17 +25,20 @@ public class LedgerPaymentEventListener {
     private final PaymentIntentLookupPort paymentIntentLookupPort;
     private final BookingParticipantProvider bookingParticipantProvider;
     private final OrderSellerPort orderSellerPort;
+    private final LoanOwnerPort loanOwnerPort;
     private final double commissionRate;
 
     public LedgerPaymentEventListener(LedgerService ledgerService,
                                        PaymentIntentLookupPort paymentIntentLookupPort,
                                        BookingParticipantProvider bookingParticipantProvider,
                                        OrderSellerPort orderSellerPort,
+                                       LoanOwnerPort loanOwnerPort,
                                        @Value("${app.commission.rate:0.10}") double commissionRate) {
         this.ledgerService = ledgerService;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.orderSellerPort = orderSellerPort;
+        this.loanOwnerPort = loanOwnerPort;
         this.commissionRate = commissionRate;
     }
 
@@ -94,6 +98,24 @@ public class LedgerPaymentEventListener {
                     intent.currency(), intent.paymentIntentId());
             return;
         }
+        // Stage 8 (ADR-0004): the LOAN settlement — the owner's fee credit
+        // plus the SAME announced commission debit (the order branch's twin
+        // one port hop away; no second rate, no escrow vocabulary).
+        if (intent.isLoanOrigin()) {
+            java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
+            ledgerService.creditFromPayment(ownerId, intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            long commissionCents = BigDecimal.valueOf(intent.amountCents())
+                    .multiply(BigDecimal.valueOf(commissionRate))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
+            ledgerService.debitFromCommission(ownerId, intent.paymentIntentId(), commissionCents, intent.currency());
+            log.info("Ledger processed: credited {} {} to owner {}, debited {} {} as commission — "
+                            + "the loan-fee settlement (intent {})",
+                    intent.amountCents(), intent.currency(), ownerId, commissionCents,
+                    intent.currency(), intent.paymentIntentId());
+            return;
+        }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
         long priceCents = bookingInfo.priceCents();
         // R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's
@@ -141,6 +163,17 @@ public class LedgerPaymentEventListener {
             log.info("Ledger processed: debited {} {} from seller {} — the order refund "
                             + "mirrors its settlement credit (intent {})",
                     intent.amountCents(), intent.currency(), sellerId, intent.paymentIntentId());
+            return;
+        }
+        // Stage 8 (ADR-0004): the LOAN refund mirrors its settlement credit
+        // exactly (the order branch's twin).
+        if (intent.isLoanOrigin()) {
+            java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
+            ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            log.info("Ledger processed: debited {} {} from owner {} — the loan-fee refund "
+                            + "mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), ownerId, intent.paymentIntentId());
             return;
         }
         BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());

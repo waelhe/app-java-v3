@@ -124,5 +124,9 @@ public enum NotificationType {
     ORDER_CANCELLED,
     MESSAGE_RECEIVED,
     MEMBERSHIP_VERIFIED,
-    REPORT_RESOLVED
+    REPORT_RESOLVED,
+    /** Stage 8 (ADR-0004): the lending workflow's decision gates. */
+    LOAN_REQUESTED,
+    LOAN_APPROVED,
+    LOAN_CANCELLED
 }

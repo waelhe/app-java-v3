@@ -53,6 +53,13 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
      */
     Optional<PaymentIntent> findByOrderId(UUID orderId);
 
+    /**
+     * Stage 8 (ADR-0004): the loan's intent — the V174 partial-unique
+     * index guarantees at most one row per loan (the {@code findByOrderId}
+     * twin verbatim).
+     */
+    Optional<PaymentIntent> findByLoanId(UUID loanId);
+
     Page<PaymentIntentSummaryView> findAllSummariesBy(Pageable pageable);
 }
 

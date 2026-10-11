@@ -58,7 +58,7 @@ class BookingPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         PaymentStateChangedEvent event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
 
-        PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null);
+        PaymentIntentDetails intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         doThrow(new RuntimeException("Database error")).when(bookingService).autoConfirm(bookingId);
 

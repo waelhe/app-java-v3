@@ -45,6 +45,8 @@
         <module>marketplace-ai</module>
         <!-- A-11 (compliance plan wave C: C.1) — the store's order flow -->
         <module>marketplace-orders</module>
+        <!-- Stage 8 (plan D-09, ADR-0004) — the lending workflow -->
+        <module>marketplace-lending</module>
         <module>marketplace-app</module>
         <module>marketplace-edge</module>
     </modules>

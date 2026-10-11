@@ -1,6 +1,7 @@
 package com.marketplace.ledger;
 
 import com.marketplace.shared.api.BookingInfo;
+import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
@@ -25,9 +26,11 @@ class LedgerPaymentEventListenerTest {
     private final PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
     private final BookingParticipantProvider bookingParticipantProvider = mock(BookingParticipantProvider.class);
     private final OrderSellerPort orderSellerPort = org.mockito.Mockito.mock(OrderSellerPort.class);
+    private final LoanOwnerPort loanOwnerPort = org.mockito.Mockito.mock(LoanOwnerPort.class);
 
     private final LedgerPaymentEventListener listener = new LedgerPaymentEventListener(
-            ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort, COMMISSION_RATE);
+            ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort,
+            loanOwnerPort, COMMISSION_RATE);
 
     @Test
     void ignoresNonCompletedEvents() {
@@ -54,7 +57,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "REFUNDED", "BOOKING", 25000L, "SAR", null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -75,7 +78,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 
@@ -100,7 +103,7 @@ class LedgerPaymentEventListenerTest {
         UUID paymentIntentId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenThrow(new RuntimeException("lookup failed"));
@@ -117,7 +120,7 @@ class LedgerPaymentEventListenerTest {
         UUID providerId = UUID.randomUUID();
         long priceCents = 5000L;
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
-        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null);
+        var intent = new PaymentIntentDetails(paymentIntentId, bookingId, UUID.randomUUID(), null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null);
         var bookingInfo = new BookingInfo(providerId, UUID.randomUUID(), "CONFIRMED",
                 priceCents, "USD", Instant.now(), Instant.now());
 

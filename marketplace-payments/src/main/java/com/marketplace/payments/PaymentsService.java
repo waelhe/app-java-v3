@@ -467,6 +467,31 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     /**
+     * Stage 8 (ADR-0004): the loan-fee intent — the order-checkout twin
+     * verbatim (the deterministic {@code loan-{loanId}} key is the first
+     * line of defense, the V174 partial-unique index the backstop).
+     */
+    public PaymentIntent createLoanIntent(UUID loanId, UUID borrowerId,
+                                          long amountCents, String currency) {
+        String idempotencyKey = "loan-" + loanId;
+        var existing = paymentIntentRepository.findByIdempotencyKey(idempotencyKey);
+        if (existing.isPresent()) {
+            if (!existing.get().getConsumerId().equals(borrowerId)) {
+                throw new AccessDeniedException("Idempotency key belongs to another payer");
+            }
+            return existing.get();
+        }
+        if (amountCents <= 0) {
+            throw new ConflictException("A loan intent requires a positive amount: " + amountCents + " cents");
+        }
+        PaymentIntent intent = PaymentIntent.createForLoan(loanId, borrowerId,
+                amountCents, currency, idempotencyKey);
+        PaymentIntent saved = paymentIntentRepository.save(intent);
+        eventPublisher.publishEvent(new PaymentStateChangedEvent(saved.getId(), "INITIATED"));
+        return saved;
+    }
+
+    /**
      * Result of processing a payment intent: the local intent plus the PSP
      * client secret when the real channel is bound (the calling client needs
      * it to complete the payment on the provider side). Null clientSecret =
@@ -767,6 +792,24 @@ public class PaymentsService implements PaymentsSpi {
      * the collected attempt is refunded in full — through the ONE refund
      * contract, no second refund path.
      */
+    @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void autoRefundByLoan(UUID loanId) {
+        paymentIntentRepository.findByLoanId(loanId).ifPresent(intent -> {
+            switch (intent.getStatus()) {
+                case CREATED -> cancelUnpaid(intent);
+                case PROCESSING -> failInFlight(intent);
+                case SUCCEEDED, PARTIALLY_REFUNDED -> refundFully(intent);
+                case REFUNDED ->
+                        log.info("Auto-refund for loan {} skipped — intent {} already terminal in REFUNDED",
+                                loanId, intent.getId());
+                default ->
+                        log.info("Auto-refund for loan {} skipped — intent {} already terminal in {}",
+                                loanId, intent.getId(), intent.getStatus());
+            }
+        });
+    }
+
     @Retry(name = "paymentProcessing")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void autoRefundByOrder(UUID orderId) {

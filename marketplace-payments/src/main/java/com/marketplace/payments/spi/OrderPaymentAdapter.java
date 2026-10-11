@@ -35,6 +35,6 @@ public class OrderPaymentAdapter implements OrderPaymentPort {
         PaymentIntent intent = paymentsService.createOrderIntent(orderId, consumerId, amountMinor, currency);
         return new PaymentIntentDetails(intent.getId(), intent.getBookingId(), intent.getConsumerId(),
                 intent.getAdCampaignId(), intent.getStatus().name(), intent.getOrigin(),
-                intent.getAmountCents(), intent.getCurrency(), intent.getOrderId());
+                intent.getAmountCents(), intent.getCurrency(), intent.getOrderId(), intent.getLoanId());
     }
 }
