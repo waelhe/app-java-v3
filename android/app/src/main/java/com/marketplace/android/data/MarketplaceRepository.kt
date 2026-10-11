@@ -57,12 +57,13 @@ class MarketplaceRepository {
 
     suspend fun searchListings(
         query: String? = null,
+        locationId: String? = null,
         purpose: String? = null,
         propertyType: String? = null,
         minRating: Double? = null,
         page: Int = 0,
         size: Int = 20
-    ) = api.searchListings(query, purpose, propertyType, minRating, page, size)
+    ) = api.searchListings(query, locationId, purpose, propertyType, minRating, page, size)
 
     suspend fun suggestLocations(query: String) = api.suggestLocations(query)
     suspend fun getGeoTree() = api.getGeoTree()

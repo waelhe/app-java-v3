@@ -17,6 +17,7 @@ interface MarketplaceApi {
     @GET("api/v1/search")
     suspend fun searchListings(
         @Query("q") query: String? = null,
+        @Query("locationId") locationId: String? = null,
         @Query("purpose") purpose: String? = null,
         @Query("propertyType") propertyType: String? = null,
         @Query("minRating") minRating: Double? = null,

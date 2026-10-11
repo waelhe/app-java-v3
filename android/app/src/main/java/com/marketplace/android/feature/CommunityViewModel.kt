@@ -260,6 +260,7 @@ class CommunityViewModel(
             try {
                 val page = repository.searchListings(
                     query = current.propertyQuery.trim().ifBlank { null },
+                    locationId = current.membership.locationId,
                     purpose = current.propertyPurpose,
                     propertyType = current.propertyType,
                     page = 0,
@@ -289,6 +290,7 @@ class CommunityViewModel(
             try {
                 val page = repository.searchListings(
                     query = current.directoryQuery.trim().ifBlank { null },
+                    locationId = current.membership.locationId,
                     minRating = current.directoryMinRating,
                     page = 0,
                     size = 30

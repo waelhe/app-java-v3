@@ -58,4 +58,37 @@ class ApiModelsTest {
         assertEquals("city-1", node.parentId)
         assertTrue(node.children.isEmpty())
     }
+    @Test
+    fun listingSearchPageParsesPricesAndProviderReputation() {
+        val type = Types.newParameterizedType(ApiPage::class.java, ListingSummaryDto::class.java)
+        val json = """
+            {
+              "content": [{
+                "id": "listing-1",
+                "title": "شقة قريبة من الخدمات",
+                "category": "REAL_ESTATE",
+                "price": 125000.00,
+                "currency": "SYP",
+                "providerName": "مكتب الحي",
+                "providerRating": 4.5,
+                "providerReviewCount": 18
+              }],
+              "pageNumber": 0,
+              "pageSize": 20,
+              "totalElements": 1,
+              "totalPages": 1,
+              "last": true
+            }
+        """.trimIndent()
+
+        val page = moshi.adapter<ApiPage<ListingSummaryDto>>(type).fromJson(json)!!
+
+        assertEquals(1, page.content.size)
+        assertEquals("شقة قريبة من الخدمات", page.content.single().title)
+        assertEquals(java.math.BigDecimal("125000.00"), page.content.single().price)
+        assertEquals("SYP", page.content.single().currency)
+        assertEquals(4.5, page.content.single().providerRating!!, 0.0)
+        assertEquals(18L, page.content.single().providerReviewCount)
+    }
+
 }
