@@ -63,5 +63,16 @@
             <artifactId>instancio-junit</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Same exception as marketplace-app #10: spring-security-test —
+             @WithMockUser for the VerificationCredentialServiceTest slices
+             (the 2026-10-11 CI measured the missing test-scope dependency:
+             "package org.springframework.security.test.context.support
+             does not exist") -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
