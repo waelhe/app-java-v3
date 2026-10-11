@@ -9,7 +9,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApiModelsTest {
-    private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+    private val moshi = Moshi.Builder()
+        .add(java.math.BigDecimal::class.java, BigDecimalJsonAdapter().nullSafe())
+        .add(KotlinJsonAdapterFactory())
+        .build()
 
     @Test
     fun pagedPostResponseMatchesServerEnvelopeAndKeepsArabicText() {
