@@ -176,6 +176,13 @@ class ObservationCoverageFilesTest {
                     // the same observation discipline as the provider follow pair.
                     "follow.group.create", "follow.group.delete",
                     "follow.user.create", "follow.user.delete",
+                    // phase 1 (D-03 + §6.5): the role-assignment and trust
+                    // -attestation commands join under the same discipline —
+                    // every business command observed at its service seam,
+                    // reads stay out (the commands-not-reads policy).
+                    "identity.attestation.grant", "identity.attestation.reject",
+                    "identity.attestation.request", "identity.attestation.revoke",
+                    "identity.role.grant", "identity.role.revoke",
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",

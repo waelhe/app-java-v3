@@ -72,7 +72,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
+        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql,classpath:sql/init/auth_effective_authorities_view.sql",
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
