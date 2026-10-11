@@ -70,13 +70,14 @@ class ApiModelsTest {
     }
 
     @Test
-    fun lostFoundPostParsesOnlyFieldsExposedByBackendView() {
+    fun lostFoundPostParsesLifecycleStateExposedByBackendView() {
         val post = moshi.adapter(PostDto::class.java).fromJson(
-            """{"id":"post-2","category":"LOST_FOUND","status":"VISIBLE","media":[]}"""
+            """{"id":"post-2","category":"LOST_FOUND","status":"VISIBLE","lostFoundState":"ACTIVE","media":[]}"""
         )!!
 
         assertEquals("LOST_FOUND", post.category)
         assertEquals("VISIBLE", post.status)
+        assertEquals("ACTIVE", post.lostFoundState)
         assertTrue(post.media.isEmpty())
     }
 
@@ -97,6 +98,7 @@ class ApiModelsTest {
               "organizerLabel": "لجنة الحي",
               "capacity": 10,
               "registration": "OPEN",
+              "status": "ACTIVE",
               "featured": false,
               "attending": 3,
               "rsvpedByMe": true,
@@ -108,6 +110,7 @@ class ApiModelsTest {
 
         assertEquals("لقاء الحي", event.title)
         assertEquals("OPEN", event.registration)
+        assertEquals("ACTIVE", event.status)
         assertEquals(3L, event.attending)
         assertTrue(event.rsvpedByMe)
     }
