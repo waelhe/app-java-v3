@@ -122,6 +122,7 @@ data class AppUiState(
     val commentDraft: String = "",
     val commentBusy: Boolean = false,
     val reactingPostIds: Set<String> = emptySet(),
+    val lostFoundActionIds: Set<String> = emptySet(),
     val notice: String? = null
 )
 
@@ -666,7 +667,7 @@ class CommunityViewModel(
     }
 
     fun toggleEventRsvp(event: EventDto) {
-        if (event.id in _uiState.value.pollActionIds) return
+        if (event.id in _uiState.value.pollActionIds || !event.status.equals("ACTIVE", ignoreCase = true)) return
         viewModelScope.launch {
             _uiState.update { it.copy(pollActionIds = it.pollActionIds + event.id) }
             try {
@@ -1116,6 +1117,51 @@ class CommunityViewModel(
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update { it.copy(reactingPostIds = it.reactingPostIds - post.id, notice = failureMessage(error)) }
+            }
+        }
+    }
+
+    /**
+     * The backend is the authority for the LOST_FOUND lifecycle. Only the
+     * author may close an active report, and only the server-confirmed view
+     * replaces the row in local state.
+     */
+    fun updateLostFoundState(post: PostDto, targetState: String) {
+        val current = _uiState.value
+        if (!post.category.equals("LOST_FOUND", ignoreCase = true) ||
+            targetState !in setOf("FOUND", "RESOLVED") ||
+            !post.lostFoundState.equals("ACTIVE", ignoreCase = true) ||
+            current.membership?.userId?.equals(post.authorId, ignoreCase = true) != true ||
+            post.id in current.lostFoundActionIds
+        ) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(lostFoundActionIds = it.lostFoundActionIds + post.id) }
+            try {
+                val updated = repository.updateLostFoundState(post.id, targetState)
+                _uiState.update { state ->
+                    val replace: (PostDto) -> PostDto = { row ->
+                        if (row.id == updated.id) updated else row
+                    }
+                    state.copy(
+                        posts = state.posts.map(replace),
+                        searchResults = state.searchResults.map(replace),
+                        commentsPost = state.commentsPost?.let(replace),
+                        notice = if (targetState == "FOUND") {
+                            "تم تحديث البلاغ: عُثر على المفقود."
+                        } else {
+                            "تم إغلاق بلاغ المفقودات."
+                        }
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update { it.copy(notice = failureMessage(error)) }
+            } finally {
+                _uiState.update {
+                    it.copy(lostFoundActionIds = it.lostFoundActionIds - post.id)
+                }
             }
         }
     }
