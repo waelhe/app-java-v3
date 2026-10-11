@@ -1,4 +1,4 @@
-package com.marketplace.knowledge;
+package com.marketplace.shared.api;
 
 import java.util.UUID;
 
@@ -12,9 +12,14 @@ import java.util.UUID;
  * entries forever).
  *
  * <p>Same shape and same ownership as
- * {@link KnowledgeEntryPublishedEvent} (the module-owned record on the
- * exposed {@code knowledge} interface, the complete fact, the
+ * {@link KnowledgeEntryPublishedEvent} (the complete fact, the
  * late-lander consumer).</p>
+ *
+ * <p><b>Relocated to shared-api per the events-through-Modulith rule</b>
+ * (the contracts ledger §1 placement rule, the
+ * {@code KnowledgeEntryPublishedEvent} relocation of this same commit —
+ * package declaration only, byte-equivalent payload, no pom change
+ * anywhere).</p>
  *
  * @param entryId    the withdrawn entry's id
  * @param locationId the neighborhood the entry documented (the consumer's scoping axis)

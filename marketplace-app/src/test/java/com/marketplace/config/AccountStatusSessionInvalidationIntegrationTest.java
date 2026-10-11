@@ -85,7 +85,7 @@ import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
+        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql,classpath:sql/init/auth_effective_authorities_view.sql",
         "marketplace.security.oauth2.client.client-id=marketplace-web-client",
         "marketplace.security.oauth2.client.secret=it-app-secret",
         "marketplace.security.oauth2.client.redirect-uris=http://127.0.0.1:8080/login/oauth2/code/marketplace-web-client"

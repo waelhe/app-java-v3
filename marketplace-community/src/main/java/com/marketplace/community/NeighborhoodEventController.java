@@ -87,22 +87,29 @@ public class NeighborhoodEventController {
             description = "The caller's OWN neighborhood's upcoming events, soonest first — "
                     + "the membership is the scope (there is no location parameter: one "
                     + "membership, one board — G-N1/G-N3). No active membership answers 403. "
-                    + "The board is forward-looking: only events whose start is still to come "
-                    + "ride the read (past gatherings stay in the audit trail, not on the "
-                    + "board). The optional category filter is the board's one axis "
+                    + "The board is forward-looking and status-honest: only events whose start "
+                    + "is still to come ride the read, and a CANCELLED or POSTPONED event never "
+                    + "masquerades as upcoming (past gatherings and withdrawn ones stay in the "
+                    + "audit trail, not on the board). The optional filters are the category "
                     + "(SPORTS_FAMILY/VOLUNTEER/SOCIAL/MARKET/WORKSHOP — the product's own "
-                    + "chips); an invalid value answers 400 before any read. Every row "
-                    + "carries the two attendance facts: attending (the live seat count) and "
-                    + "rsvpedByMe (the caller's own live seat). Deterministic pagination on "
-                    + "the complete sort key (startsAt ASC, id ASC) — no shaky page boundaries.")
+                    + "chips) and, since JT-20, the status (ACTIVE/CANCELLED/POSTPONED — on "
+                    + "today's board only an ACTIVE event can match); an invalid value answers "
+                    + "400 before any read. Every row carries the two attendance facts "
+                    + "(attending, rsvpedByMe) and its honest status. Deterministic pagination "
+                    + "on the complete sort key (startsAt ASC, id ASC) — no shaky page "
+                    + "boundaries.")
     public ResponseEntity<PagedResponse<NeighborhoodEventView>> board(
             @Parameter(description = "Optional category filter — SPORTS_FAMILY, VOLUNTEER, SOCIAL, MARKET or WORKSHOP")
             @RequestParam(required = false) String category,
+            @Parameter(description = "Optional status filter — ACTIVE, CANCELLED or POSTPONED "
+                    + "(the upcoming floor already excludes the withdrawn states)")
+            @RequestParam(required = false) String status,
             Pageable pageable,
             Authentication authentication) {
         UUID callerId = currentUserProvider.getCurrentUserId(authentication);
         return ResponseEntity.ok(PagedResponse.of(
-                eventService.getBoard(callerId, parseCategory(category), pageable)));
+                eventService.getBoard(callerId, parseCategory(category),
+                        parseStatus(status), pageable)));
     }
 
     @PostMapping("/neighborhood/events")
@@ -218,6 +225,24 @@ public class NeighborhoodEventController {
         } catch (IllegalArgumentException invalid) {
             throw new BadRequestException(
                     "Invalid registration '" + raw + "' — valid values: OPEN, LIMITED_SEATS, TABLE_RESERVATION");
+        }
+    }
+
+    /**
+     * JT-20: the status type gate (the same discipline): a String in,
+     * the enum out — an invalid value answers the house 400 listing the
+     * gathering state's own three values, BEFORE any service call. Null
+     * or blank is the absent filter (the optional axis).
+     */
+    private static NeighborhoodEventStatus parseStatus(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return NeighborhoodEventStatus.valueOf(raw.trim());
+        } catch (IllegalArgumentException invalid) {
+            throw new BadRequestException(
+                    "Invalid status '" + raw + "' — valid values: ACTIVE, CANCELLED, POSTPONED");
         }
     }
 

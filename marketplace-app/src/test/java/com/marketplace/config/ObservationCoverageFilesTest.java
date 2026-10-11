@@ -155,6 +155,9 @@ class ObservationCoverageFilesTest {
                     "community.membership.verification.review",
                     "community.poll.create", "community.poll.vote", "community.poll.withdraw",
                     "community.post.comment", "community.post.create", "community.post.delete",
+                    // waves D1-D4 (JT-20): the owner's lost&found lifecycle
+                    // resolution command (ACTIVE -> RESOLVED/FOUND).
+                    "community.post.lostFoundState",
                     "community.post.react", "community.post.unreact",
                     // B-19 (compliance plan C.11): the automatic moderation
                     // rules' operator commands — register/revise/toggle/retire.
@@ -169,6 +172,17 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "email.verification.complete", "email.verification.resend", "email.verification.send",
+                    // waves D1-D4: the generalized follows (USER/GROUP) ride
+                    // the same observation discipline as the provider follow pair.
+                    "follow.group.create", "follow.group.delete",
+                    "follow.user.create", "follow.user.delete",
+                    // phase 1 (D-03 + §6.5): the role-assignment and trust
+                    // -attestation commands join under the same discipline —
+                    // every business command observed at its service seam,
+                    // reads stay out (the commands-not-reads policy).
+                    "identity.attestation.grant", "identity.attestation.reject",
+                    "identity.attestation.request", "identity.attestation.revoke",
+                    "identity.role.grant", "identity.role.revoke",
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",
@@ -180,7 +194,14 @@ class ObservationCoverageFilesTest {
             // the pin carries the commands from the day they exist.
             Map.entry("marketplace-institutions", List.of(
                     "institution.register", "institution.verification.request",
-                    "institution.verification.review")),
+                    "institution.verification.review",
+                    // waves D1-D4 (CMP-46/JT-10): the delegated urgent-alert
+                    // surface — source lifecycle (create + verification
+                    // request/review) and the publish/withdraw pair; the
+                    // eligibility gates themselves are reads, not commands.
+                    "urgentAlert.publish", "urgentAlert.source.create",
+                    "urgentAlert.source.verification.request",
+                    "urgentAlert.source.verification.review", "urgentAlert.withdraw")),
             // B-14 (compliance plan C.4): the knowledge guide's three
             // business commands (the contribution + the revision + the
             // withdrawal) — the same source-tree-scan discipline.

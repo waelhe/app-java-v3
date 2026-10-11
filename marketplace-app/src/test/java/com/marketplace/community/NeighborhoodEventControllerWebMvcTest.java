@@ -79,7 +79,7 @@ class NeighborhoodEventControllerWebMvcTest {
         return new NeighborhoodEventView(UUID.randomUUID(), authorId, locationId,
                 "VOLUNTEER", "Park cleanup morning", "Tools provided.", starts, ends,
                 "Community garden — main gate", "Development committee",
-                20, "LIMITED_SEATS", false, 0L, false, starts, starts);
+                20, "LIMITED_SEATS", "ACTIVE", false, 0L, false, starts, starts);
     }
 
     @Test
@@ -91,9 +91,9 @@ class NeighborhoodEventControllerWebMvcTest {
                 "VOLUNTEER", "Park cleanup morning", "Tools provided.",
                 Instant.parse("2026-10-02T08:00:00Z"), Instant.parse("2026-10-02T11:00:00Z"),
                 "Community garden — main gate", "Development committee",
-                20, "LIMITED_SEATS", false, 7L, true,
+                20, "LIMITED_SEATS", "ACTIVE", false, 7L, true,
                 Instant.parse("2026-09-30T09:00:00Z"), Instant.parse("2026-09-30T09:00:00Z"));
-        when(eventService.getBoard(eq(userId), isNull(), any()))
+        when(eventService.getBoard(eq(userId), isNull(), isNull(), any()))
                 .thenReturn(new PageImpl<>(List.of(view)));
 
         mockMvc.perform(get("/api/v1/neighborhood/events"))
@@ -117,7 +117,7 @@ class NeighborhoodEventControllerWebMvcTest {
     @Test
     void getBoard_categoryParsesToTheEnum_volunteer() throws Exception {
         UUID userId = stubCaller();
-        when(eventService.getBoard(eq(userId), eq(EventCategory.VOLUNTEER), any()))
+        when(eventService.getBoard(eq(userId), eq(EventCategory.VOLUNTEER), isNull(), any()))
                 .thenReturn(new PageImpl<>(List.of(eventView(userId, UUID.randomUUID()))));
 
         mockMvc.perform(get("/api/v1/neighborhood/events")
@@ -129,7 +129,7 @@ class NeighborhoodEventControllerWebMvcTest {
     @Test
     void getBoard_noMembership_answers403ProblemDetail() throws Exception {
         UUID userId = stubCaller();
-        when(eventService.getBoard(eq(userId), isNull(), any()))
+        when(eventService.getBoard(eq(userId), isNull(), isNull(), any()))
                 .thenThrow(new AccessDeniedException("Join a neighborhood before reading its events board"));
 
         mockMvc.perform(get("/api/v1/neighborhood/events"))

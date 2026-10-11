@@ -80,7 +80,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql",
+        "spring.sql.init.schema-locations=classpath:db/migration/V13__authorization_security.sql,classpath:sql/init/auth_effective_authorities_view.sql",
         "marketplace.security.oauth2.public-client.client-id=marketplace-public-client",
         "marketplace.security.oauth2.public-client.redirect-uris=com.marketplace.test:/oauth2/callback"
 })

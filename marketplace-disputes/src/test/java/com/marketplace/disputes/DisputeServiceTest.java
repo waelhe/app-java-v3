@@ -4,6 +4,8 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolvedEvent;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -284,7 +286,7 @@ class DisputeServiceTest {
         DisputeResolvedEvent event = (DisputeResolvedEvent) captor.getValue();
         assertThat(event.disputeId()).isEqualTo(disputeId);
         assertThat(event.bookingId()).isEqualTo(bookingId);
-        assertThat(event.resolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
+        assertThat(event.resolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER.name());
         assertThat(event.refundedAmountCents()).isEqualTo(5000L);
     }
 
@@ -304,7 +306,7 @@ class DisputeServiceTest {
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(captor.capture());
         DisputeResolvedEvent event = (DisputeResolvedEvent) captor.getValue();
-        assertThat(event.resolution()).isEqualTo(DisputeResolution.RELEASE_PROVIDER);
+        assertThat(event.resolution()).isEqualTo(DisputeResolution.RELEASE_PROVIDER.name());
         assertThat(event.refundedAmountCents()).isNull();
     }
 }
