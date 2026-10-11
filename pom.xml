@@ -578,6 +578,17 @@
                 <artifactId>marketplace-orders</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- Stage 8 (plan D-09, ADR-0004) — the lending module's managed
+                 version: the aggregating app declares it bare, the management
+                 entry supplies ${project.version} (the house pattern every
+                 internal module rides; the 2026-10-11 CI measured its
+                 absence: "'dependencies.dependency.version' for
+                 com.marketplace:marketplace-lending:jar is missing"). -->
+            <dependency>
+                <groupId>com.marketplace</groupId>
+                <artifactId>marketplace-lending</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.marketplace</groupId>
                 <artifactId>marketplace-messaging</artifactId>
