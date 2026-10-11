@@ -31,10 +31,19 @@ import java.util.UUID;
  * left the publish factory has none (the same zero-fresh stance the
  * reaction facts carry).
  *
+ * <p><b>JT-20 (the lost-and-found lifecycle) widens the projection with
+ * the report's own state:</b> {@code lostFoundState} — present ONLY when
+ * the post's category is {@code LOST_FOUND} (the V171 column's own
+ * documented shape: every other category carries null, so a GENERAL
+ * post never renders a lost-and-found state it does not have). The
+ * client renders the honest state: ACTIVE while the search is on,
+ * RESOLVED / FOUND when the story ends.
+ *
  * <p>The compatibility constructor (the nine-argument shape every
  * pre-L47 call site rode) keeps compiling: it delegates with the fresh
  * post's own zero-false facts — a post that just left the publish
- * factory has no reactions, no caller voice, and no photos yet.
+ * factory has no reactions, no caller voice, and no photos yet (and a
+ * non-LOST_FOUND post no lost-and-found state at all).
  */
 public record NeighborhoodPostView(
         UUID id,
@@ -44,12 +53,25 @@ public record NeighborhoodPostView(
         String title,
         String body,
         String status,
+        String lostFoundState,
         long reactionsCount,
         boolean reactedByMe,
         List<PostMediaView> media,
         Instant createdAt,
         Instant updatedAt
 ) {
+    /**
+     * The state's one projection rule (JT-20): it travels ONLY on a
+     * LOST_FOUND post — null for every other category, exactly as the
+     * column is null for them.
+     */
+    private static String lostFoundStateOf(NeighborhoodPost post) {
+        return post.getCategory() == PostCategory.LOST_FOUND
+                && post.getLostFoundState() != null
+                ? post.getLostFoundState().name()
+                : null;
+    }
+
     static NeighborhoodPostView of(NeighborhoodPost post) {
         return new NeighborhoodPostView(
                 post.getId(),
@@ -59,6 +81,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                lostFoundStateOf(post),
                 0L,
                 false,
                 List.of(),
@@ -82,6 +105,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                lostFoundStateOf(post),
                 reactionsCount,
                 reactedByMe,
                 media.stream().map(PostMediaView::of).toList(),
@@ -100,6 +124,6 @@ public record NeighborhoodPostView(
                                 String category, String title, String body, String status,
                                 Instant createdAt, Instant updatedAt) {
         this(id, authorId, locationId, category, title, body, status,
-                0L, false, List.of(), createdAt, updatedAt);
+                null, 0L, false, List.of(), createdAt, updatedAt);
     }
 }
