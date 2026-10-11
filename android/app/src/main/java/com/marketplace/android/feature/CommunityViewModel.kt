@@ -243,7 +243,7 @@ class CommunityViewModel(
                 loadFeed()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
                         it.copy(authenticated = true, loadingAccount = false, membership = null, membershipRequired = true, authError = null)
@@ -270,7 +270,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(locationResults = results, locationBusy = false, locationError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(locationBusy = false, locationError = failureMessage(error)) }
             }
         }
@@ -296,7 +296,7 @@ class CommunityViewModel(
                 loadMarket()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(locationBusy = false, locationError = failureMessage(error)) }
             }
         }
@@ -363,7 +363,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(propertyListings = page.content, propertyBusy = false, propertyError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(propertyBusy = false, propertyError = failureMessage(error)) }
             }
         }
@@ -394,7 +394,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(directoryListings = page.content, directoryBusy = false, directoryError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(directoryBusy = false, directoryError = failureMessage(error)) }
             }
         }
@@ -424,7 +424,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 val message = when (error) {
                     is HttpException -> when (error.code()) {
                         400 -> "بيانات التسجيل غير صالحة. تحقق من البريد وكلمة المرور."
@@ -458,7 +458,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update {
                     it.copy(verificationResendBusy = false, authError = failureMessage(error))
                 }
@@ -477,7 +477,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(feedBusy = false, feedError = failureMessage(error)) }
             }
         }
@@ -495,7 +495,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(feedBusy = false, feedError = failureMessage(error)) }
             }
         }
@@ -516,7 +516,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(searchResults = page.content, searchBusy = false, searchError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(searchBusy = false, searchError = failureMessage(error)) }
             }
         }
@@ -629,7 +629,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(events = page.content, eventsBusy = false, eventsError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(eventsBusy = false, eventsError = failureMessage(error)) }
             }
         }
@@ -644,7 +644,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(groups = page.content, groupsBusy = false, groupsError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(groupsBusy = false, groupsError = failureMessage(error)) }
             }
         }
@@ -659,7 +659,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(polls = page.content, pollsBusy = false, pollsError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(pollsBusy = false, pollsError = failureMessage(error)) }
             }
         }
@@ -675,7 +675,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(notice = if (event.rsvpedByMe) "أُلغي تسجيل حضورك." else "سُجّل حضورك للفعالية.") }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
                 _uiState.update { it.copy(pollActionIds = it.pollActionIds - event.id) }
@@ -693,7 +693,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(notice = if (group.joinedByMe) "غادرت المجموعة." else "انضممت إلى المجموعة.") }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
                 _uiState.update { it.copy(pollActionIds = it.pollActionIds - group.id) }
@@ -710,7 +710,7 @@ class CommunityViewModel(
                 loadPolls()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
                 _uiState.update { it.copy(pollActionIds = it.pollActionIds - poll.id) }
@@ -727,7 +727,7 @@ class CommunityViewModel(
                 loadPolls()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
                 _uiState.update { it.copy(pollActionIds = it.pollActionIds - poll.id) }
@@ -798,7 +798,7 @@ class CommunityViewModel(
                 loadEvents()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -822,7 +822,7 @@ class CommunityViewModel(
                 loadPolls()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -929,7 +929,7 @@ class CommunityViewModel(
                 loadFeed()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(submitBusy = false, uploadProgress = null, notice = failureMessage(error)) }
             }
         }
@@ -970,7 +970,7 @@ class CommunityViewModel(
                 loadMarket()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -986,7 +986,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             }
         }
@@ -1001,7 +1001,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(marketItems = page.content, marketBusy = false, marketError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(marketBusy = false, marketError = failureMessage(error)) }
             }
         }
@@ -1016,7 +1016,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(notifications = page.content, notificationsBusy = false, notificationsError = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notificationsBusy = false, notificationsError = failureMessage(error)) }
             }
         }
@@ -1032,7 +1032,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             }
         }
@@ -1048,7 +1048,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(profileBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -1064,7 +1064,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(comments = page.content, commentsBusy = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(commentsBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -1089,7 +1089,7 @@ class CommunityViewModel(
                 _uiState.update { it.copy(comments = it.comments + comment, commentDraft = "", commentBusy = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(commentBusy = false, notice = failureMessage(error)) }
             }
         }
@@ -1114,7 +1114,7 @@ class CommunityViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _uiState.update { it.copy(reactingPostIds = it.reactingPostIds - post.id, notice = failureMessage(error)) }
             }
         }
