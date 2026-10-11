@@ -310,7 +310,15 @@ public class DiscoveryService {
                 communityPort.findUpcomingEvents(locationId, request);
         PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> jobs =
                 jobsPort.findOpenJobs(locationId, request);
-        List<DiscoveryCardView> candidates = forYouCandidates(lostFound, recommendations, events, jobs, followed);
+        // CodeRabbit round 2 on the #540 slice: the candidate pool rides the
+        // merged rails' own discipline BEFORE the window cuts — recency DESC
+        // with the sourceId tiebreaker (D-13's "recency over declared scope"
+        // that forYouCandidates' own javadoc declares and every other merged
+        // rail already rides). The pre-fix source-major order made the
+        // visible window's cut depend on source iteration order — the same
+        // pool, a different window, page 0's cut not deterministic.
+        List<DiscoveryCardView> candidates = recencyOrdered(
+                forYouCandidates(lostFound, recommendations, events, jobs, followed));
         // CodeRabbit round on the #540 slice: the page is LAST only when
         // EVERY source page is last — the current page's candidate count was
         // never the eligible set's size (page 0 with more than `size`

@@ -356,6 +356,45 @@ class DiscoveryServiceTest {
     }
 
     @Test
+    void forYouTopicPageCutsItsWindowByRecencyNotSourceOrder() {
+        // CodeRabbit round 2 on the #540 slice: the FOR_YOU pool rides the
+        // merged rails' own discipline BEFORE the window cuts — a newer
+        // recommendations card must out-rank an older lost-found card for
+        // the visible window, exactly like EVENTS_AND_OPPORTUNITIES (the
+        // pre-fix source-major order let the first source's older card take
+        // the cut by iteration order, not by the documented recency D-13).
+        callerHasMembership();
+        PagedRequest request = PagedRequest.of(0, 1);
+        when(followedSourcesPort.followedSources(USER_ID)).thenReturn(Set.of());
+        UUID olderLostFoundPost = UUID.randomUUID();
+        UUID newerRecommendation = UUID.randomUUID();
+        when(communityPort.findActiveLostFound(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(
+                        List.of(post(olderLostFoundPost, UUID.randomUUID(), now.minusSeconds(30))),
+                        0, 1, 1, 1, true));
+        when(communityPort.findRecommendations(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(
+                        List.of(post(newerRecommendation, UUID.randomUUID(), now)),
+                        0, 1, 1, 1, true));
+        when(communityPort.findUpcomingEvents(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 1, 0, 0, true));
+        when(jobsPort.findOpenJobs(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 1, 0, 0, true));
+
+        PagedResponse<DiscoveryCardView> result =
+                service().rowPage(USER_ID, DiscoveryRowType.FOR_YOU, request);
+
+        // The window's single cut is the NEWEST candidate (recency), never
+        // the first source's card by iteration order; the envelope stays
+        // the sources' honest sum.
+        assertThat(result.content()).extracting(DiscoveryCardView::sourceId)
+                .containsExactly(newerRecommendation);
+        assertThat(result.content()).extracting(DiscoveryCardView::sourceType)
+                .containsExactly("NEIGHBORHOOD_POST");
+        assertThat(result.totalElements()).isEqualTo(2L);
+    }
+
+    @Test
     void eventsAndOpportunitiesRowPageMergesItsSourcesByRecency() {
         callerHasMembership();
         PagedRequest request = PagedRequest.of(0, 50);
