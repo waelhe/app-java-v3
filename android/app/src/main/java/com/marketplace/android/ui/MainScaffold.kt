@@ -504,7 +504,7 @@ private fun ProfileScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("حسابك في ضَيف", fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        Text("حسابك في المجتمع المحلي", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Text("هوية الدخول وعضوية الحي والتوثيق حالات منفصلة.", color = Muted, lineHeight = 21.sp)
         ElevatedCard(
             shape = RoundedCornerShape(22.dp),
