@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,17 +72,21 @@ class NotificationServiceDisputeDedupTest {
 
     @Mock
     private NotificationPreferenceService preferences;
+    @Mock
+    private com.marketplace.notifications.routing.NotificationDeliveryLedger deliveryLedger;
 
     private NotificationService service() {
         return new NotificationService(repository, bookingParticipantProvider,
                 paymentIntentLookupPort, currentUserProvider, emailNotificationService,
                 Optional.<SimpMessagingTemplate>empty(), preferences,
-                new NotificationTextSource(), new DisputeDeliveryWriter(repository));
+                new NotificationTextSource(), new DisputeDeliveryWriter(repository),
+                new DisputeChannelDelivery(preferences, emailNotificationService,
+                        Optional.<SimpMessagingTemplate>empty(), deliveryLedger,
+                        new NotificationTextSource()));
     }
 
     @Test
     void onDisputeOpened_createsTheLedgeredRow() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(false);
 
         service().onDisputeOpened(DISPUTE_ID, OPENER_ID);
 
@@ -94,17 +100,32 @@ class NotificationServiceDisputeDedupTest {
     }
 
     @Test
-    void onDisputeOpened_reDeliveryIsASilentEarlyReturn() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(true);
+    void onDisputeOpened_reDeliveryIsAbsorbedAndTheChannelsStaySilent() {
+        // CodeRabbit's final round on the #544 slice (fixed where the V199
+        // per-channel ledger lives): the pre-fix exists() early return
+        // stranded the channel legs — a send that failed once was never
+        // retried because the inbox row existed. The re-delivery now
+        // re-persists (the ledger row absorbs the duplicate), and the
+        // channel legs consult their OWN per-channel ledger: what was
+        // already delivered stays silent.
+        when(repository.saveAndFlush(any(Notification.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint "
+                                + "\"uq_notifications_source_event_once\""));
+        when(deliveryLedger.recordDelivery(eq(DISPUTE_ID), eq(OPENER_ID),
+                eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
+                .thenReturn(false);
+        when(deliveryLedger.recordDelivery(eq(DISPUTE_ID), eq(OPENER_ID),
+                eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.WS)))
+                .thenReturn(false);
 
-        service().onDisputeOpened(DISPUTE_ID, OPENER_ID);
-
-        verify(repository, never()).saveAndFlush(any(Notification.class));
+        assertThatCode(() -> service().onDisputeOpened(DISPUTE_ID, OPENER_ID))
+                .doesNotThrowAnyException();
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
 
     @Test
     void onDisputeOpened_ledgerRaceIsAbsorbedAsTheWinnersProof() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(false);
         when(repository.saveAndFlush(any(Notification.class)))
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint "
@@ -116,7 +137,6 @@ class NotificationServiceDisputeDedupTest {
 
     @Test
     void onDisputeOpened_aForeignIntegrityViolationPropagates() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(false);
         when(repository.saveAndFlush(any(Notification.class)))
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint \"uq_follows_one_live\""));
@@ -127,8 +147,6 @@ class NotificationServiceDisputeDedupTest {
 
     @Test
     void onDisputeResolved_usesTheDeterministicLedgerKey() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, deterministicKey()))
-                .thenReturn(false);
 
         service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "REFUND_CONSUMER", 5000L);
 
@@ -146,13 +164,22 @@ class NotificationServiceDisputeDedupTest {
     }
 
     @Test
-    void onDisputeResolved_reDeliveryDerivesTheSameKeyAndIsASilentEarlyReturn() {
-        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, deterministicKey()))
-                .thenReturn(true);
+    void onDisputeResolved_reDeliveryDerivesTheSameKeyAndTheLedgerAbsorbsIt() {
+        when(repository.saveAndFlush(any(Notification.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint "
+                                + "\"uq_notifications_source_event_once\""));
+        when(deliveryLedger.recordDelivery(eq(deterministicKey()), eq(OPENER_ID),
+                eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.EMAIL)))
+                .thenReturn(false);
+        when(deliveryLedger.recordDelivery(eq(deterministicKey()), eq(OPENER_ID),
+                eq(com.marketplace.notifications.routing.NotificationDeliveryChannel.WS)))
+                .thenReturn(false);
 
-        service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "NO_ACTION", null);
-
-        verify(repository, never()).saveAndFlush(any(Notification.class));
+        assertThatCode(() ->
+                service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "NO_ACTION", null))
+                .doesNotThrowAnyException();
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
 
     private UUID deterministicKey() {
