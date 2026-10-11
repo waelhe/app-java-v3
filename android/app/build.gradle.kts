@@ -17,6 +17,11 @@ val oidcClientId = providers.gradleProperty("oidcClientId").orElse("").get()
 val oidcRedirectUri = providers.gradleProperty("oidcRedirectUri")
     .orElse("com.marketplace.android:/oauth2redirect")
     .get()
+val mediaMaxUploadBytes = providers.gradleProperty("mediaMaxUploadBytes")
+    .map { it.toLong() }
+    .orElse(10L * 1024 * 1024)
+    .get()
+require(mediaMaxUploadBytes > 0L) { "mediaMaxUploadBytes must be a positive number of bytes." }
 val redirectScheme = oidcRedirectUri.substringBefore(":")
 
 fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("")
@@ -37,6 +42,7 @@ extensions.configure<ApplicationExtension> {
         buildConfigField("String", "OIDC_ISSUER", oidcIssuer.asBuildConfigString())
         buildConfigField("String", "OIDC_CLIENT_ID", oidcClientId.asBuildConfigString())
         buildConfigField("String", "OIDC_REDIRECT_URI", oidcRedirectUri.asBuildConfigString())
+        buildConfigField("long", "MEDIA_MAX_UPLOAD_BYTES", "${mediaMaxUploadBytes}L")
     }
 
     buildFeatures {

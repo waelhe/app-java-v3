@@ -6,14 +6,14 @@ This is the native Android client for the local community platform. The product 
 
 - Four primary destinations: **الحي / السوق / العقار / دليل الأعمال**.
 - Public account registration, email-verification resend, OIDC Authorization Code + PKCE sign-in through the system browser, and neighborhood selection/membership using the existing APIs.
-- Live neighborhood feed with server-issued post photos, photo picking and direct presigned upload for new posts, Arabic post search, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
+- Live neighborhood feed with server-issued post photos, official Android Photo Picker selection (up to five attachments), presigned direct PUT upload and server-side confirmation, Arabic post search, comments, reactions, events and RSVPs, groups and membership, and polls/voting where the backend contracts exist.
 - Neighborhood classified listings are separate from the store. The property view filters real listing search by purpose/property type; the business-discovery view searches published service/listing offers and can show returned provider-rating metadata.
 - Notification list/read state and the actual neighborhood membership-verification state.
 - Arabic-first RTL UI with loading, empty, error, and unavailable-contract states rather than fake server data.
 
 ## Known product-contract boundaries
 
-The current backend does **not** expose the complete public storefront/cart/order/delivery/checkout path. The سوق destination must not fabricate a catalog, stock, purchase or order confirmation. Business discovery currently searches published offers; it is not yet a complete provider-profile directory. Photo upload is wired for community posts only; photo upload for classified listings and provider/product imagery is not part of this slice. A full inbox/conversation-list contract, device push registration/delivery, reporting/moderation, official institution broadcasts and additional approved discovery rails remain outside this slice. Each must be connected through a verified end-to-end contract before it is presented as working.
+The current backend does **not** expose the complete public storefront/cart/order/delivery/checkout path. The سوق destination must not fabricate a catalog, stock, purchase or order confirmation. Business discovery currently searches published offers; it is not yet a complete provider-profile directory. Android post-photo uploads use the existing media contract: request a presigned URL, stage the selected file within the configured byte limit, PUT directly to HTTPS storage without a bearer token, then confirm the asset through the API. The client default is 10 MiB to match the server default; set `-PmediaMaxUploadBytes=<bytes>` to match a deployment that customizes `MEDIA_MAX_UPLOAD_BYTES`. Photo upload for classified listings and provider/product imagery is not part of this slice. A full inbox/conversation-list contract, device push registration/delivery, reporting/moderation, official institution broadcasts and additional approved discovery rails remain outside this slice. Each must be connected through a verified end-to-end contract before it is presented as working.
 
 ## Security and configuration
 
@@ -33,7 +33,7 @@ The Android client workflow installs Android SDK platform 36, runs JVM unit test
 
 Override environment-specific values without committing them:
 
-    gradle -p android :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+    gradle -p android :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
 ## Code boundaries
 

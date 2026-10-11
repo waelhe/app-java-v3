@@ -15,12 +15,16 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.HttpException
@@ -29,9 +33,13 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 /**
  * The UI's only data entry point. Access tokens stay volatile and memory-only.
  */
-class MarketplaceRepository(private val applicationContext: Context? = null) {
+class MarketplaceRepository(context: Context) {
+    private val applicationContext: Context = context.applicationContext
     private val storageUploadClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(2, TimeUnit.MINUTES)
+            .callTimeout(2, TimeUnit.MINUTES)
             .followRedirects(false)
             .followSslRedirects(false)
             .build()
@@ -103,7 +111,6 @@ class MarketplaceRepository(private val applicationContext: Context? = null) {
 
     suspend fun uploadPostMedia(postId: String, uri: Uri) {
         val context = applicationContext
-            ?: throw IllegalStateException("Media uploads require an Android application context.")
 
         withContext(Dispatchers.IO) {
             val resolver = context.contentResolver
@@ -117,24 +124,42 @@ class MarketplaceRepository(private val applicationContext: Context? = null) {
 
             val file = File.createTempFile("community-post-", ".upload", context.cacheDir)
             try {
+                val maxBytes = BuildConfig.MEDIA_MAX_UPLOAD_BYTES
+                var sizeBytes = 0L
                 val input = resolver.openInputStream(uri)
                     ?: throw IOException("تعذر قراءة الصورة المختارة.")
                 input.use { source ->
-                    file.outputStream().use { target -> source.copyTo(target) }
+                    file.outputStream().buffered().use { target ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val read = source.read(buffer)
+                            if (read < 0) break
+                            if (read.toLong() > maxBytes - sizeBytes) {
+                                throw IOException(
+                                    "حجم الصورة يتجاوز الحد المضبوط لهذا البناء (${maxBytes / (1024 * 1024)} MiB)."
+                                )
+                            }
+                            target.write(buffer, 0, read)
+                            sizeBytes += read
+                        }
+                    }
                 }
-                val sizeBytes = file.length()
                 if (sizeBytes <= 0L) throw IOException("ملف الصورة فارغ أو غير قابل للقراءة.")
 
                 val upload = api.requestPostMediaUpload(
                     RequestPostMediaUpload(postId, contentType, sizeBytes)
                 )
-                if (upload.mediaId.isBlank() || upload.uploadUrl.isBlank()) {
-                    throw IOException("لم يُرجع الخادم رابط رفع صالحًا للصورة.")
+                val uploadUrl = upload.uploadUrl.toHttpUrlOrNull()
+                    ?.takeIf { it.isHttps && it.host.isNotBlank() }
+                    ?: throw IOException("لم يُرجع الخادم رابط رفع HTTPS صالحًا للصورة.")
+                if (upload.mediaId.isBlank()) {
+                    throw IOException("لم يُرجع الخادم معرّف رفع صالحًا للصورة.")
                 }
 
                 // Never send the bearer token to the third-party presigned storage URL.
                 val request = Request.Builder()
-                    .url(upload.uploadUrl)
+                    .url(uploadUrl)
                     .header("Content-Type", contentType)
                     .put(file.asRequestBody(contentType.toMediaType()))
                     .build()

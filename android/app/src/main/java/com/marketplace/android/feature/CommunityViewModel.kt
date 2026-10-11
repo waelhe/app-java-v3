@@ -237,6 +237,8 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
@@ -262,6 +264,8 @@ class CommunityViewModel(
             try {
                 val results = repository.suggestLocations(query.trim()).filter { it.level == 3 }
                 _uiState.update { it.copy(locationResults = results, locationBusy = false, locationError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(locationBusy = false, locationError = failureMessage(error)) }
             }
@@ -286,6 +290,8 @@ class CommunityViewModel(
                 }
                 loadFeed()
                 loadMarket()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(locationBusy = false, locationError = failureMessage(error)) }
             }
@@ -351,6 +357,8 @@ class CommunityViewModel(
                     size = 20
                 )
                 _uiState.update { it.copy(propertyListings = page.content, propertyBusy = false, propertyError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(propertyBusy = false, propertyError = failureMessage(error)) }
             }
@@ -380,6 +388,8 @@ class CommunityViewModel(
                     size = 30
                 )
                 _uiState.update { it.copy(directoryListings = page.content, directoryBusy = false, directoryError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(directoryBusy = false, directoryError = failureMessage(error)) }
             }
@@ -408,6 +418,8 @@ class CommunityViewModel(
                         authSuccess = "تم إنشاء الحساب. تحقّق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول."
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 val message = when (error) {
                     is HttpException -> when (error.code()) {
@@ -440,6 +452,8 @@ class CommunityViewModel(
                         authSuccess = "قُبل الطلب. إذا كان الحساب بانتظار التحقق، فستصل رسالة إلى البريد المسجّل."
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update {
                     it.copy(verificationResendBusy = false, authError = failureMessage(error))
@@ -457,6 +471,8 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(posts = page.content, feedPage = page.pageNumber, feedLast = page.last, feedBusy = false, feedError = null)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(feedBusy = false, feedError = failureMessage(error)) }
             }
@@ -473,6 +489,8 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(posts = it.posts + page.content, feedPage = page.pageNumber, feedLast = page.last, feedBusy = false)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(feedBusy = false, feedError = failureMessage(error)) }
             }
@@ -492,6 +510,8 @@ class CommunityViewModel(
             try {
                 val page = repository.searchPosts(query)
                 _uiState.update { it.copy(searchResults = page.content, searchBusy = false, searchError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(searchBusy = false, searchError = failureMessage(error)) }
             }
@@ -603,6 +623,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getEvents()
                 _uiState.update { it.copy(events = page.content, eventsBusy = false, eventsError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(eventsBusy = false, eventsError = failureMessage(error)) }
             }
@@ -616,6 +638,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getGroups()
                 _uiState.update { it.copy(groups = page.content, groupsBusy = false, groupsError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(groupsBusy = false, groupsError = failureMessage(error)) }
             }
@@ -629,6 +653,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getPolls()
                 _uiState.update { it.copy(polls = page.content, pollsBusy = false, pollsError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(pollsBusy = false, pollsError = failureMessage(error)) }
             }
@@ -643,6 +669,8 @@ class CommunityViewModel(
                 if (event.rsvpedByMe) repository.cancelEventRsvp(event.id) else repository.rsvpEvent(event.id)
                 loadEvents()
                 _uiState.update { it.copy(notice = if (event.rsvpedByMe) "أُلغي تسجيل حضورك." else "سُجّل حضورك للفعالية.") }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
@@ -659,6 +687,8 @@ class CommunityViewModel(
                 if (group.joinedByMe) repository.leaveGroup(group.id) else repository.joinGroup(group.id)
                 loadGroups()
                 _uiState.update { it.copy(notice = if (group.joinedByMe) "غادرت المجموعة." else "انضممت إلى المجموعة.") }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
@@ -674,6 +704,8 @@ class CommunityViewModel(
             try {
                 repository.voteOnPoll(poll.id, optionId)
                 loadPolls()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
@@ -689,6 +721,8 @@ class CommunityViewModel(
             try {
                 repository.withdrawPollVote(poll.id)
                 loadPolls()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             } finally {
@@ -758,6 +792,8 @@ class CommunityViewModel(
                 )
                 _uiState.update { it.copy(composer = null, submitBusy = false, exploreMode = ExploreMode.EVENTS, tab = MainTab.EXPLORE, notice = "أُنشئت الفعالية في حيّك.") }
                 loadEvents()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
@@ -780,6 +816,8 @@ class CommunityViewModel(
                 repository.createPoll(CreatePollRequest(membership.locationId, question, author, options))
                 _uiState.update { it.copy(composer = null, submitBusy = false, pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""), exploreMode = ExploreMode.POLLS, tab = MainTab.EXPLORE, notice = "نُشر الاستطلاع في حيّك.") }
                 loadPolls()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
@@ -827,6 +865,9 @@ class CommunityViewModel(
                     }
                     try {
                         repository.uploadPostMedia(targetPostId, uri)
+                        _uiState.update { state ->
+                            state.copy(postPhotoUris = state.postPhotoUris.filterNot { it == uri })
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: HttpException) {
@@ -913,6 +954,8 @@ class CommunityViewModel(
                     )
                 }
                 loadMarket()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(submitBusy = false, notice = failureMessage(error)) }
             }
@@ -927,6 +970,8 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(marketItems = it.marketItems.filterNot { row -> row.id == item.id }, notice = "سُحب العرض من السوق.")
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             }
@@ -940,6 +985,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getMarket()
                 _uiState.update { it.copy(marketItems = page.content, marketBusy = false, marketError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(marketBusy = false, marketError = failureMessage(error)) }
             }
@@ -953,6 +1000,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getNotifications()
                 _uiState.update { it.copy(notifications = page.content, notificationsBusy = false, notificationsError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notificationsBusy = false, notificationsError = failureMessage(error)) }
             }
@@ -967,6 +1016,8 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(notifications = it.notifications.map { row -> if (row.id == updated.id) updated else row })
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(notice = failureMessage(error)) }
             }
@@ -981,6 +1032,8 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(membership = membership, profileBusy = false, notice = "سُجّل طلب التحقق؛ لم تصبح العضوية موثّقة بعد.")
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(profileBusy = false, notice = failureMessage(error)) }
             }
@@ -995,6 +1048,8 @@ class CommunityViewModel(
             try {
                 val page = repository.getComments(post.id)
                 _uiState.update { it.copy(comments = page.content, commentsBusy = false) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(commentsBusy = false, notice = failureMessage(error)) }
             }
@@ -1018,6 +1073,8 @@ class CommunityViewModel(
             try {
                 val comment = repository.createComment(post.id, body)
                 _uiState.update { it.copy(comments = it.comments + comment, commentDraft = "", commentBusy = false) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(commentBusy = false, notice = failureMessage(error)) }
             }
@@ -1041,6 +1098,8 @@ class CommunityViewModel(
                         reactingPostIds = state.reactingPostIds - post.id
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 _uiState.update { it.copy(reactingPostIds = it.reactingPostIds - post.id, notice = failureMessage(error)) }
             }
@@ -1105,7 +1164,7 @@ class CommunityViewModel(
         return null
     }
 
-    class Factory(private val repository: MarketplaceRepository = MarketplaceRepository()) : ViewModelProvider.Factory {
+    class Factory(private val repository: MarketplaceRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (!modelClass.isAssignableFrom(CommunityViewModel::class.java)) {
