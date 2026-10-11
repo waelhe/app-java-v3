@@ -1,18 +1,38 @@
 name: Railway Deploy
 
-# The manual deploy lever — the automatic channel that used to live here was
-# disabled by the owner's measured decision (2026-10-10): the project runs on
-# a trial account, merges arrive in bursts, and every merge rebuilt two Java
-# images for no behavioural change. Everything below is unchanged, so the
-# automatic path returns by restoring the `workflow_run` trigger alone.
+# The automatic deploy channel — RESTORED per the owner's standing order
+# (2026-10-11): «أي تدخل يدوي بدل الادرة التلقائية قم بإزالتها بدون استثناء
+# وفعل الإدارة التلقائية» — the manual lever of #535 was exactly that: a
+# manual intervention standing where platform automation used to stand. The
+# `workflow_run` trigger returns with the gate, the two service IDs and the
+# documented mutations all unchanged — the three-line restore the #535 header
+# itself recorded.
 #
-# Why a workflow at all rather than Railway-native auto-deploy (measured
-# 2026-10-09): the Railway project has no workspace member with their GitHub
-# account connected to this repository — deploymentTriggerCreate answers "no
-#   one in the project has access to it" and serviceInstanceAutoDeployUpdate
-# answers "No workspace member has their GitHub account connected with access
-#   to this repository". The native path needs that user-owned connection
-# (Railway docs, GitHub autodeploys → Requirements).
+# Official basis (docs cited, not invented):
+# - GitHub docs, "Events that trigger workflows" — workflow_run: "This event
+#   will only trigger a workflow run if the workflow file is on the default
+#   branch"; the run fires when each named workflow completes.
+# - Railway docs, "GitHub autodeploys" — Wait for CI: "new deployments sit
+#   in a WAITING state until every GitHub Actions check suite on the commit
+#   has finished... A workflow that fails skips the deployment immediately.
+#   A workflow that is skipped or reports neutral never blocks. A workflow
+#   that is cancelled blocks the deployment only if no other workflow on the
+#   same commit succeeded." This gate adopts exactly those semantics.
+# - Railway API cookbook, "Deploy a specific service in an environment"
+#   (integrations/api/manage-deployments) — the documented deploy mutations.
+#   serviceInstanceDeployV2(commitSha, environmentId, serviceId) pins the
+#   exact commit that passed the gate, so a newer push can never race ahead
+#   of verification.
+#
+# Why this channel and not Railway-native auto-deploy (measured 2026-10-09):
+# the Railway project has no workspace member with their GitHub account
+# connected to this repository — deploymentTriggerCreate answers "no one in
+#   the project has access to it" and serviceInstanceAutoDeployUpdate answers
+#   "No workspace member has their GitHub account connected with access to
+#   this repository". The native path needs that user-owned connection
+# (Railway docs, GitHub autodeploys → Requirements). Until the owner
+# connects it, this workflow is the automatic channel; when they do, the
+# native triggers with "Wait for CI" can replace this file wholesale.
 #
 # Deployment targets (Railway project successful-simplicity, production):
 #   app-java-v3       — the main web marketplace service (root Dockerfile)
@@ -24,6 +44,9 @@ name: Railway Deploy
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["CI", "Integration Test", "CodeQL", "Container Scan"]
+    types: [completed]
 
 permissions:
   contents: read
