@@ -38,8 +38,7 @@ import java.util.Locale
 
 @Composable
 internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
-    // The current backend event view exposes RSVP/capacity facts, but no lifecycle status.
-    // Availability is therefore determined from the exposed RSVP facts and enforced by the server.
+    // The server's lifecycle state is authoritative; unknown or non-active states fail closed.
     val active = event.status.equals("ACTIVE", ignoreCase = true)
     val full = event.capacity != null && event.attending >= event.capacity && !event.rsvpedByMe
     ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
