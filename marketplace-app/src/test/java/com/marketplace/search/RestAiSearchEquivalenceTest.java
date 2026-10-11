@@ -105,16 +105,26 @@ class RestAiSearchEquivalenceTest {
         // One orchestration entrypoint received BOTH translations — and the
         // AI translation is criterion-for-criterion the REST one.
         ArgumentCaptor<SearchCriteria> criteriaCaptor = ArgumentCaptor.forClass(SearchCriteria.class);
-        verify(searchService, times(2)).search(criteriaCaptor.capture(), any(Pageable.class));
+        ArgumentCaptor<Pageable> pageCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(searchService, times(2)).search(criteriaCaptor.capture(), pageCaptor.capture());
 
+        // CodeRabbit's round on the #544 slice: the equivalence claim rides
+        // the record's OWN structural equality — all seventeen criteria
+        // fields compared at once, never a hand-picked seven that would let
+        // an unchecked field drift (guests, purpose, propertyType, the
+        // rooms/baths/area floors, the geo triple, minRating) without the
+        // contract's own test noticing.
         SearchCriteria aiCriteria = criteriaCaptor.getAllValues().get(1);
-        assertThat(aiCriteria.query()).isEqualTo(restCriteria.query());
-        assertThat(aiCriteria.category()).isEqualTo(restCriteria.category());
-        assertThat(aiCriteria.locationId()).isEqualTo(restCriteria.locationId());
-        assertThat(aiCriteria.minPrice()).isEqualTo(restCriteria.minPrice());
-        assertThat(aiCriteria.maxPrice()).isEqualTo(restCriteria.maxPrice());
-        assertThat(aiCriteria.checkIn()).isEqualTo(restCriteria.checkIn());
-        assertThat(aiCriteria.checkOut()).isEqualTo(restCriteria.checkOut());
+        assertThat(aiCriteria).isEqualTo(restCriteria);
+
+        // The page shapes are each surface's OWN documented contract — the
+        // REST caller's chosen size (20 here) and the tool's fixed
+        // TOOL_PAGE_SIZE of 5 — never claimed equal; what IS equal is the
+        // single orchestration both entered. Captured per-call (never
+        // any-matched) so a drift in either surface's page shape answers
+        // here by name, not by silence.
+        assertThat(pageCaptor.getAllValues().get(0).getPageSize()).isEqualTo(20);
+        assertThat(pageCaptor.getAllValues().get(1).getPageSize()).isEqualTo(5);
 
         // And the AI answer is the page the single orchestration chose, in
         // its order — the same eligibility/scope/sort, no side path.

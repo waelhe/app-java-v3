@@ -109,19 +109,44 @@ class ArabicReferenceCorpusIntegrationTest {
 
     @Test
     void arabicNormalizationFoldsTheRecordedHamzaPrelude() throws Exception {
-        // Corpus row N01 measured on this engine family: أ/إ/آ fold to ا,
-        // so «أحمد» normalizes to the lexeme «احمد» — the fold the variant
-        // pins depend on. Re-measured live, not assumed.
-        String tsv;
+        // Corpus rows N01-N09 measured on this engine family: أ/إ/آ fold to ا
+        // (N01), and every other recorded normalization lexeme re-measures
+        // live too — CodeRabbit's round on the #544 slice: measuring only
+        // N01 left N02-N09's pinned lexemes un-reproduced (a change that
+        // removed or replaced the N05/N09 folds would pass silently). Each
+        // row's recorded lexemes are re-queried and each asserted present.
+        List<String> drifts = new ArrayList<>();
+        int rows = 0;
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT to_tsvector('arabic', ?)::text")) {
-            ps.setString(1, "أحمد");
-            try (ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                tsv = rs.getString(1);
+            for (JsonNode row : corpus.path("normalizationEvidence")) {
+                String input = row.path("input").asText();
+                JsonNode lexemes = row.path("lexemes");
+                if (!lexemes.isArray() || lexemes.isEmpty()) {
+                    continue;
+                }
+                rows++;
+                ps.setString(1, input);
+                String tsv;
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    tsv = rs.getString(1);
+                }
+                for (JsonNode lexeme : lexemes) {
+                    String pinned = lexeme.asText();
+                    if (!tsv.contains("'" + pinned + "'")) {
+                        drifts.add(row.path("id").asText() + ": '" + input + "' expected lexeme '"
+                                + pinned + "' but to_tsvector said " + tsv);
+                    }
+                }
             }
         }
-        assertThat(tsv).as("the hamza fold N01 records").contains("'احمد'");
+        assertThat(rows)
+                .as("the corpus's normalizationEvidence rows must all carry recorded lexemes")
+                .isGreaterThanOrEqualTo(9);
+        assertThat(drifts)
+                .as("every recorded normalization lexeme (N01-N09) reproduces on the live engine")
+                .isEmpty();
     }
 
     // ------------------------------------------------------------------
