@@ -41,10 +41,22 @@ jobs:
         with:
           packages: "platform-tools"
 
-      # Android 17 / API 37 is still published as a preview SDK package.
-      # Include preview channels so sdkmanager can resolve platforms;android-37.
-      - name: Install required SDK platforms
-        run: sdkmanager --channel=3 "platforms;android-37" "build-tools;36.0.0"
+      # Android 17 / API 37 is a preview SDK. Use Google's current Android CLI
+      # and its documented canary channel rather than the deprecated sdkmanager.
+      - name: Install Android CLI
+        shell: bash
+        run: |
+          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
+          android_bin="$(command -v android || true)"
+          if [[ -z "$android_bin" ]]; then
+            android_bin="$(find -L "$HOME" -type f -name android -perm -u+x -print -quit)"
+          fi
+          if [[ -z "$android_bin" ]]; then
+            echo "Android CLI was installed but could not be located." >&2
+            exit 1
+          fi
+          echo "$(dirname "$android_bin")" >> "$GITHUB_PATH"
+          "$android_bin" --sdk="$ANDROID_SDK_ROOT" sdk install --canary platforms/android-37 build-tools/36.0.0
 
       - name: Run JVM tests
         run: gradle -p android :app:testDebugUnitTest
