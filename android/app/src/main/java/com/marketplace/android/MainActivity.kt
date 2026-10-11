@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
                         onLoadMore = viewModel::loadMorePosts,
                         onReact = viewModel::toggleReaction,
                         onOpenComments = viewModel::openComments,
+                        onUpdateLostFoundState = viewModel::updateLostFoundState,
                         onCloseComments = viewModel::closeComments,
                         onCommentDraft = viewModel::setCommentDraft,
                         onSendComment = viewModel::sendComment,
