@@ -109,14 +109,16 @@ ALTER TABLE urgent_alerts VALIDATE CONSTRAINT chk_urgent_alerts_level;
 ALTER TABLE urgent_alerts VALIDATE CONSTRAINT chk_urgent_alerts_window;
 
 -- The public read's own index (the service's one active-alerts query):
--- location-scoped, live-only (withdrawn alerts never serve — JT-10), on
+-- location-scoped, live-only (withdrawn alerts never serve — JT-10, and
+-- soft-deleted rows never leave the index either — the queue index's
+-- live-row predicate above, carried here per the CodeRabbit round), on
 -- the complete sort key (valid_from DESC, id DESC — D-N5's complete-key
 -- discipline: the freshest alert first, page boundaries stable). A plain
 -- CREATE INDEX inside this transaction: the table is born empty (the
 -- V61/V73 same-transaction freedom; CONCURRENTLY is for populated ones).
 CREATE INDEX idx_urgent_alerts_active
     ON urgent_alerts (location_id, valid_from DESC, id DESC)
-    WHERE is_withdrawn = FALSE;
+    WHERE is_withdrawn = FALSE AND is_deleted = FALSE;
 
 -- Envers audit history (V24 convention): every delegation verdict (MOD),
 -- every publish (ADD), every withdrawal (MOD) and the row-lifecycle
