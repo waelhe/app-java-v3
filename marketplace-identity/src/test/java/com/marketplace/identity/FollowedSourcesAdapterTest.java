@@ -41,7 +41,7 @@ class FollowedSourcesAdapterTest {
         // stores — the adapter's contract is that the port's consumers see
         // the honest union, not a mock of it.
         FollowService service = new FollowService(repository, providerFollowRepository,
-                userRepository, groupLookupPort);
+                userRepository, groupLookupPort, new FollowWriter(repository));
         adapter = new FollowedSourcesAdapter(service);
     }
 
