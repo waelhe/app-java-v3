@@ -18,7 +18,7 @@ The current backend does **not** expose the complete public storefront/cart/orde
 ## Security and configuration
 
 - The default API base URL and OIDC issuer target the Railway service `https://app-java-v3-production-59bf.up.railway.app`, the environment selected for this test run. Override both with Gradle properties when targeting another environment.
-- Android sign-in requires the public client ID to match the backend's `OAUTH_PUBLIC_CLIENT_ID`. Pass it with `-PoidcClientId=...` locally, or set the GitHub Actions repository variable `OAUTH_PUBLIC_CLIENT_ID` to the same public value for CI-built APKs. The backend must register the redirect URI `com.marketplace.android:/oauth2redirect`. No client secret is shipped in the app.
+- Android sign-in uses the public client ID `android-community-native`, matched to the Railway service's `OAUTH_PUBLIC_CLIENT_ID`. The GitHub Actions Android build passes this explicitly as `-PoidcClientId=android-community-native`. The backend registers `com.marketplace.android:/oauth2redirect`. The client ID is public configuration; no client secret is shipped in the app.
 
 - AppAuth handles Authorization Code + PKCE in the system browser. No confidential-client secret is packaged in the APK.
 - Access and ID tokens stay in memory only; neither token is written to persistent app storage. On app launch and after an API 401, the client attempts OIDC Authorization Code + PKCE with `prompt=none` to reuse a valid system-browser session. If the provider returns `login_required`, the app returns to interactive sign-in instead of inventing a local session.
@@ -39,7 +39,7 @@ Override environment-specific values without committing them:
 
 From the `android/` directory, override environment-specific values without committing them:
 
-    ./gradlew :app:testDebugUnitTest :app:assembleDebug -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
+    ./gradlew :app:testDebugUnitTest :app:assembleDebug -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
 ## Code boundaries
 
