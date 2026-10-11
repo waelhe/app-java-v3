@@ -61,10 +61,10 @@ class OrdersControllerTest {
 
     @Test
     void placeAnswersCreatedWithTheDerivedTotal() {
-        Order order = Order.placed(caller, 17400L, "SAR");
-        when(ordersService.place(caller)).thenReturn(new OrderDetail(order, List.of(
+        Order order = Order.placed(caller, 17400L, "SAR", null);
+        when(ordersService.place(caller)).thenReturn(List.of(new OrderDetail(order, List.of(
                 OrderItem.snapshotOf(order.getId(),
-                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), 2, 8700L, "SAR")))));
+                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), 2, 8700L, "SAR"))))));
 
         ResponseEntity<OrderResponses.OrderResponse> result = controller.place(authentication);
 
@@ -76,11 +76,13 @@ class OrdersControllerTest {
         assertThat(body.items()).hasSize(1);
         assertThat(body.items().get(0).lineTotalMinor()).isEqualTo(17400L);
         assertThat(body.confirmedAt()).isNull();
+        assertThat(body.additionalOrders())
+                .as("the single-seller placement carries no sibling orders").isEmpty();
     }
 
     @Test
     void getOwnOrderAnswersTheSnapshot() {
-        Order order = Order.placed(caller, 5000L, "SAR");
+        Order order = Order.placed(caller, 5000L, "SAR", null);
         when(ordersService.getOrderDetailForUser(order.getId(), authentication))
                 .thenReturn(new OrderDetail(order, List.of()));
 
@@ -105,7 +107,7 @@ class OrdersControllerTest {
 
     @Test
     void cancelAnswersTheCancelledState() {
-        Order order = Order.placed(caller, 5000L, "SAR");
+        Order order = Order.placed(caller, 5000L, "SAR", null);
         order.cancel("changed mind", java.time.Instant.now());
         when(ordersService.cancelForUser(order.getId(), "changed mind", authentication))
                 .thenReturn(new OrderDetail(order, List.of()));
@@ -150,13 +152,13 @@ class OrdersControllerTest {
         UUID product = UUID.randomUUID();
         Cart cart = Cart.activeFor(caller);
         CartItem line = CartItem.of(cart.getId(), product, 2, 1500L, "SAR");
-        when(ordersService.addCartItem(caller, product, 2, 1500L, "SAR")).thenReturn(line);
+        when(ordersService.addCartItem(caller, product, 2)).thenReturn(line);
 
         ResponseEntity<OrderResponses.CartItemResponse> result = cartController.addItem(
                 new CartController.AddCartItemRequest(product, 2, 1500L, "SAR"), authentication);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getBody().productId()).isEqualTo(product);
-        verify(ordersService).addCartItem(caller, product, 2, 1500L, "SAR");
+        verify(ordersService).addCartItem(caller, product, 2);
     }
 }

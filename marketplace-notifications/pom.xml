@@ -14,6 +14,13 @@
     <name>marketplace-notifications</name>
 
     <dependencies>
+        <!-- Stage 7 (ADR-0003): the FCM push channel through Google's own
+             Admin SDK — the parent POM's managed firebase-admin (the house's
+             recorded "official client" decision; no Spring-native equivalent). -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+        </dependency>
         <!-- L29 (feature-expansion roadmap §5): OpenAPI annotation vocabulary for the
              springdoc-generated public client contract (summaries/examples on the
              mobile-consumed endpoints and request records). Managed at the root

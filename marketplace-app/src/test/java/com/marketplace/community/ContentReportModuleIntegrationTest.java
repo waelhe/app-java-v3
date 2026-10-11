@@ -138,7 +138,7 @@ class ContentReportModuleIntegrationTest {
         UUID authorId = UUID.randomUUID();
         membershipService.join(authorId, UUID.fromString(locationId));
         var view = postService.createPost(authorId, UUID.fromString(locationId),
-                PostCategory.GENERAL, "Seeded title", "Seeded body");
+                PostCategory.GENERAL, "Seeded title", "Seeded body", false);
         return new SeededPost(authorId, view.id());
     }
 

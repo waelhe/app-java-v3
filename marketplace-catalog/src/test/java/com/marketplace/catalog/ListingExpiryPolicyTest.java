@@ -59,6 +59,9 @@ class ListingExpiryPolicyTest {
     @org.mockito.Mock
     private com.marketplace.shared.api.ReviewStatsPort reviewStatsPort;
 
+    @org.mockito.Mock
+    private AdCampaignRepository adCampaignRepository;
+
     @BeforeEach
     void setUp() {
         service = new CatalogService(listingRepository, currentUserProvider,
@@ -66,7 +69,7 @@ class ListingExpiryPolicyTest {
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(90, 1),
                     new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
                     new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)), new CatalogProperties.Ads(java.time.Duration.ofDays(1))),
-                categoryRepository, reviewStatsPort);
+                categoryRepository, reviewStatsPort, adCampaignRepository);
     }
 
     private ProviderListing draftListing() {
@@ -143,7 +146,7 @@ class ListingExpiryPolicyTest {
                 CLOCK, new CatalogProperties(new CatalogProperties.Expiry(null, 1),
                 new CatalogProperties.Seo("", "/listings/{id}", "/categories/{code}", java.util.List.of()),
                 new CatalogProperties.Views("test-key", java.time.Duration.ofDays(1)), new CatalogProperties.Ads(java.time.Duration.ofDays(1))),
-                categoryRepository, reviewStatsPort);
+                categoryRepository, reviewStatsPort, adCampaignRepository);
         ProviderListing draft = draftListing();
 
         assertThatThrownBy(() -> unpolicy.activate(draft.getId(), null, authentication))

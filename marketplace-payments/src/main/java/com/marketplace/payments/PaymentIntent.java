@@ -23,6 +23,12 @@ public class PaymentIntent extends BaseEntity {
     /** W5's ad-bill origin — the payer is the provider, no booking. */
     static final String ORIGIN_AD = "AD";
 
+    /** Stage 6 (ADR-0002): the order-checkout origin — the payer is the buyer, the subject is the order. */
+    static final String ORIGIN_ORDER = "ORDER";
+
+    /** Stage 8 (ADR-0004): the loan-fee origin — the payer is the borrower, the subject is the loan. */
+    static final String ORIGIN_LOAN = "LOAN";
+
     @Id
     private UUID id;
 
@@ -46,6 +52,24 @@ public class PaymentIntent extends BaseEntity {
      */
     @Column(name = "ad_campaign_id")
     private UUID adCampaignId;
+
+    /**
+     * Stage 6 (ADR-0002): the order this intent pays for — non-null iff
+     * origin is ORDER (the V172 pairing CHECK pins the pairing at the
+     * database level). One intent per order is the partial-unique index's
+     * own rule; the deterministic {@code order-…} idempotency key is the
+     * first line of defense.
+     */
+    @Column(name = "order_id")
+    private UUID orderId;
+
+    /**
+     * Stage 8 (ADR-0004): the loan this intent's fee pays for — non-null
+     * iff origin is LOAN (the V174 pairing CHECK). One intent per loan is
+     * the partial-unique index's own rule.
+     */
+    @Column(name = "loan_id")
+    private UUID loanId;
 
     @Column(name = "consumer_id", nullable = false)
     private UUID consumerId;
@@ -127,9 +151,42 @@ public class PaymentIntent extends BaseEntity {
         return intent;
     }
 
+    /**
+     * Stage 6 (ADR-0002): the order-checkout intent. The payer is the
+     * buyer (consumer_id carries the order's consumer), the subject is
+     * the order (no booking, no campaign — the V172 pairing CHECK), and
+     * the idempotency key is the DETERMINISTIC order key
+     * {@code order-{orderId}} — the engine deduplicates on it.
+     */
+    public static PaymentIntent createForOrder(UUID orderId, UUID consumerId,
+                                               Long amountCents, String currency, String idempotencyKey) {
+        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, consumerId,
+                amountCents, currency, idempotencyKey);
+        intent.origin = ORIGIN_ORDER;
+        intent.orderId = orderId;
+        return intent;
+    }
+
+    /**
+     * Stage 8 (ADR-0004): the loan-fee intent — the order-checkout twin
+     * verbatim: the payer is the borrower, the subject is the loan, and
+     * the idempotency key is the DETERMINISTIC loan key
+     * {@code loan-{loanId}}.
+     */
+    public static PaymentIntent createForLoan(UUID loanId, UUID borrowerId,
+                                              Long amountCents, String currency, String idempotencyKey) {
+        PaymentIntent intent = new PaymentIntent(UUID.randomUUID(), null, borrowerId,
+                amountCents, currency, idempotencyKey);
+        intent.origin = ORIGIN_LOAN;
+        intent.loanId = loanId;
+        return intent;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getBookingId() { return bookingId; }
+    public UUID getOrderId() { return orderId; }
+    public UUID getLoanId() { return loanId; }
     public UUID getConsumerId() { return consumerId; }
     public String getOrigin() { return origin; }
     public UUID getAdCampaignId() { return adCampaignId; }

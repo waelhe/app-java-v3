@@ -1,6 +1,7 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.ApiConstants;
+import com.marketplace.shared.api.DisputeResolution;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -50,6 +51,40 @@ public class DisputeController {
                     + "booking's participants (consumer/provider) and administrators.")
     public ResponseEntity<List<DisputeResponse>> list(@PathVariable UUID bookingId, Authentication authentication) {
         List<DisputeResponse> disputes = service.listForBooking(bookingId, authentication).stream()
+                .map(disputeMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(disputes);
+    }
+
+    /**
+     * ADR-0009 (plan D-09 closure — the ADR-0004 deferral): the loan
+     * subject's opening — the booking endpoint's twin (the same creation
+     * semantics: 201 Created, RFC 9110 §15.3.2 — a NEW path, so no gate
+     * entry is needed; the baseline gains it additively). The party gate is
+     * the loan's own (borrower/owner); the opened dispute's LOAN subject
+     * freezes the loan's ACTIVE edges through the lending module's listener.
+     */
+    @PostMapping("/loans/{loanId}/disputes")
+    @Operation(summary = "Open a dispute on a loan",
+            description = "ADR-0009: opens a dispute on the caller's own loan (borrower or "
+                    + "owner) with a mandatory reason — the lending workflow's damage-dispute "
+                    + "entry. The loan freezes (DISPUTED) until the resolution; a "
+                    + "REFUND_CONSUMER resolution settles the money through the loan's own "
+                    + "cancellation chain (the existing payments engine).")
+    public ResponseEntity<DisputeResponse> openLoan(@PathVariable UUID loanId,
+                                                    @RequestParam @NotBlank String reason,
+                                                    Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(disputeMapper.toResponse(service.openForLoan(loanId, reason, authentication)));
+    }
+
+    @GetMapping("/loans/{loanId}/disputes")
+    @Operation(summary = "List a loan's disputes",
+            description = "ADR-0009: the dispute trail of one loan — visibility-scoped to "
+                    + "the loan's parties (borrower/owner) and administrators.")
+    public ResponseEntity<List<DisputeResponse>> listForLoan(@PathVariable UUID loanId,
+                                                             Authentication authentication) {
+        List<DisputeResponse> disputes = service.listForLoan(loanId, authentication).stream()
                 .map(disputeMapper::toResponse)
                 .toList();
         return ResponseEntity.ok(disputes);

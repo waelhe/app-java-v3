@@ -42,7 +42,11 @@ class ListingSummarySerializationContractTest {
     void roundTripPreservesEveryComponent() throws Exception {
         var original = new com.marketplace.shared.api.ListingSummary(
                 UUID.randomUUID(), "Beachfront Villa", "VILLA",
-                new BigDecimal("320.00"), "SAR", "provider-display-name", 4.7, 23L);
+                new BigDecimal("320.00"), "SAR", "provider-display-name", 4.7, 23L,
+                // ADR-0011: the row's real-time promotion identification —
+                // a record component like any other for the JDK-serialized
+                // cache value (the round-trip must carry it intact).
+                true);
 
         var bytes = serialize(original);
         com.marketplace.shared.api.ListingSummary restored = deserialize(bytes);

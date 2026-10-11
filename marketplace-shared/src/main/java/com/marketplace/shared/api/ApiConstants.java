@@ -29,6 +29,12 @@ public final class ApiConstants {
      */
     public static final String CART = API_V1 + "/me/cart";
     public static final String SEARCH = API_V1 + "/search";
+    /**
+     * §5.1 (plan #536): the unified search entry — ONE door by domain and
+     * geography over the measured per-domain sources; the listings facets
+     * stay on {@link #SEARCH} itself.
+     */
+    public static final String SEARCH_UNIFIED = SEARCH + "/unified";
     public static final String ADMIN = API_V1 + "/admin";
     /**
      * A-18 (compliance plan C.12): the public platform-release path — the
@@ -36,6 +42,14 @@ public final class ApiConstants {
      * GET family.
      */
     public static final String RELEASES = API_V1 + "/releases";
+    /**
+     * ADR-0001 (plan §Phase 1): the verification-credential family — the
+     * self-service pair (submit + mine); the admin queue rides the
+     * {@link #ADMIN} prefix with the {@link #VERIFICATION_CREDENTIALS_SUFFIX}.
+     */
+    public static final String VERIFICATION_CREDENTIALS = API_V1 + "/verification-credentials";
+    /** The admin half of the verification-credential family (after {@link #ADMIN}). */
+    public static final String VERIFICATION_CREDENTIALS_SUFFIX = "/verification-credentials";
 
     private ApiConstants() {
     }

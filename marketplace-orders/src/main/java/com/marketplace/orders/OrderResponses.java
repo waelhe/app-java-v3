@@ -55,7 +55,10 @@ public final class OrderResponses {
             @Schema(description = "When the merchant confirmed it (null while PLACED)") Instant confirmedAt,
             @Schema(description = "When fulfillment completed (null until FULFILLED)") Instant fulfilledAt,
             @Schema(description = "When it was cancelled (null unless CANCELLED)") Instant cancelledAt,
-            @Schema(description = "The cancellation reason (null unless CANCELLED)") String cancelReason) {
+            @Schema(description = "The cancellation reason (null unless CANCELLED)") String cancelReason,
+            @Schema(description = "ADR-0010: the other orders this placement created when the cart mixed "
+                    + "sellers (one order per seller) — empty for the single-seller placement and "
+                    + "for every other read") List<OrderResponse> additionalOrders) {
 
         static OrderResponse of(OrderDetail detail) {
             return of(detail.order(), detail.items());
@@ -66,7 +69,22 @@ public final class OrderResponses {
                     items.stream().map(OrderItemResponse::of).toList(),
                     order.getTotalAmountMinor(), order.getCurrency(),
                     order.getPlacedAt(), order.getConfirmedAt(), order.getFulfilledAt(),
-                    order.getCancelledAt(), order.getCancelReason());
+                    order.getCancelledAt(), order.getCancelReason(), List.of());
+        }
+
+        /**
+         * ADR-0010: the placement's view — the first group's order is the
+         * response body; its sibling orders ride the ADDITIVE
+         * {@code additionalOrders} list (no field removed, no client
+         * broken — the OpenAPI compatibility gate's additive-only rule).
+         */
+        static OrderResponse ofPlacement(List<OrderDetail> placed) {
+            OrderResponse primary = of(placed.get(0));
+            List<OrderResponse> additional = placed.stream().skip(1).map(OrderResponse::of).toList();
+            return new OrderResponse(primary.id(), primary.status(), primary.items(),
+                    primary.totalAmountMinor(), primary.currency(),
+                    primary.placedAt(), primary.confirmedAt(), primary.fulfilledAt(),
+                    primary.cancelledAt(), primary.cancelReason(), additional);
         }
     }
 }

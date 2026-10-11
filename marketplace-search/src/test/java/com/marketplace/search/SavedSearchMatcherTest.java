@@ -199,6 +199,6 @@ class SavedSearchMatcherTest {
 
     private static ListingSummary summary() {
         return new ListingSummary(LISTING, "title", "stay", new java.math.BigDecimal("10.00"),
-                null, null, null, 0L);
+                null, null, null, 0L, false);
     }
 }

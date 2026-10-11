@@ -9,4 +9,7 @@ import java.util.UUID;
 
 public interface DisputeRepository extends JpaRepository<Dispute, UUID>, JpaSpecificationExecutor<Dispute>, RevisionRepository<Dispute, UUID, Integer> {
     List<Dispute> findByBookingId(UUID bookingId);
+
+    /** ADR-0009: the loan subject's trail (the booking twin). */
+    List<Dispute> findByLoanId(UUID loanId);
 }

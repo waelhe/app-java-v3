@@ -32,6 +32,7 @@ public class NotificationService {
     private final PaymentIntentLookupPort paymentIntentLookupPort;
     private final CurrentUserProvider currentUserProvider;
     private final EmailNotificationService emailNotificationService;
+    private final PushTokenService pushTokenService;
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final NotificationPreferenceService preferences;
     private final NotificationTextSource text;
@@ -43,12 +44,14 @@ public class NotificationService {
                                EmailNotificationService emailNotificationService,
                                Optional<SimpMessagingTemplate> messagingTemplate,
                                NotificationPreferenceService preferences,
-                               NotificationTextSource text) {
+                               NotificationTextSource text,
+                               PushTokenService pushTokenService) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
         this.currentUserProvider = currentUserProvider;
         this.emailNotificationService = emailNotificationService;
+        this.pushTokenService = pushTokenService;
         this.messagingTemplate = messagingTemplate;
         this.preferences = preferences;
         this.text = text;
@@ -81,7 +84,9 @@ public class NotificationService {
                     Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
+        sendPush(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
         sendWebSocket(info.providerId(), NotificationType.BOOKING_CREATED, providerMessage);
+        sendPush(info.providerId(), NotificationType.BOOKING_CREATED, providerMessage);
     }
 
     public void onBookingConfirmed(UUID bookingId) {
@@ -107,6 +112,7 @@ public class NotificationService {
                     Map.of("message", "Your booking " + bookingId + " has been confirmed."));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
+        sendPush(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
     }
 
     public void onPaymentStateChanged(UUID paymentIntentId, String state) {
@@ -134,6 +140,7 @@ public class NotificationService {
                             "email/notification", Map.of("message", adMessage));
                 }
                 sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, adMessage);
+                sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, adMessage);
                 return;
             }
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
@@ -152,7 +159,9 @@ public class NotificationService {
                         "email/notification", Map.of("message", message));
             }
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
+            sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendWebSocket(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, message);
+            sendPush(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, message);
         });
     }
 
@@ -185,6 +194,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
+        sendPush(providerUserId, NotificationType.LEAD_RECEIVED, message);
     }
 
     /**
@@ -214,6 +224,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
+        sendPush(userId, NotificationType.SAVED_SEARCH_MATCH, message);
     }
 
     /**
@@ -245,6 +256,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
+        sendPush(postAuthorId, NotificationType.POST_COMMENTED, message);
     }
 
     /**
@@ -276,6 +288,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
+        sendPush(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
     }
 
     /**
@@ -311,6 +324,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
+        sendPush(recipientId, NotificationType.CONTENT_MODERATED, message);
     }
 
     /**
@@ -342,6 +356,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
+        sendPush(postAuthorId, NotificationType.POST_REACTED, message);
     }
 
     /**
@@ -375,6 +390,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
+        sendPush(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
     }
 
     /**
@@ -443,6 +459,7 @@ public class NotificationService {
                     Map.of("message", "Your order " + orderId + " has been confirmed."));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CONFIRMED, message);
+        sendPush(consumerId, NotificationType.ORDER_CONFIRMED, message);
     }
 
     /**
@@ -458,6 +475,7 @@ public class NotificationService {
                     Map.of("message", "Your order " + orderId + " has been fulfilled."));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_FULFILLED, message);
+        sendPush(consumerId, NotificationType.ORDER_FULFILLED, message);
     }
 
     /**
@@ -475,6 +493,98 @@ public class NotificationService {
                             + (reason == null || reason.isBlank() ? "." : ": " + reason)));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CANCELLED, message);
+        sendPush(consumerId, NotificationType.ORDER_CANCELLED, message);
+    }
+
+    /**
+     * Stage 8 (ADR-0004): the lending workflow's three legs — the owner's
+     * decision gate (requested), the borrower's payment gate (approved),
+     * and the borrower's cancellation receipt (the order legs' twins
+     * verbatim; the recipient is the DECISION-MAKER, the message carries
+     * the ids, the channels ride the same gates).
+     */
+    public void onLoanRequested(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Lending request received: " + loanId;
+        repository.save(Notification.create(ownerId,
+                NotificationType.LOAN_REQUESTED.name(), message));
+        if (preferences.isChannelEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(ownerId, "Lending Request", "email/notification",
+                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."));
+        }
+        sendWebSocket(ownerId, NotificationType.LOAN_REQUESTED, message);
+        sendPush(ownerId, NotificationType.LOAN_REQUESTED, message);
+    }
+
+    public void onLoanApproved(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Lending request approved: " + loanId;
+        repository.save(Notification.create(borrowerId,
+                NotificationType.LOAN_APPROVED.name(), message));
+        if (preferences.isChannelEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(borrowerId, "Lending Approved", "email/notification",
+                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."));
+        }
+        sendWebSocket(borrowerId, NotificationType.LOAN_APPROVED, message);
+        sendPush(borrowerId, NotificationType.LOAN_APPROVED, message);
+    }
+
+    public void onLoanCancelled(UUID loanId, UUID borrowerId) {
+        String message = "Loan cancelled: " + loanId;
+        repository.save(Notification.create(borrowerId,
+                NotificationType.LOAN_CANCELLED.name(), message));
+        sendWebSocket(borrowerId, NotificationType.LOAN_CANCELLED, message);
+        sendPush(borrowerId, NotificationType.LOAN_CANCELLED, message);
+    }
+
+    /**
+     * ADR-0009 (the dispute cycle): the loan's freeze and release facts —
+     * both parties' receipts (the payload carries the truth, the listeners
+     * derive nothing); the channels ride the standing preference gates.
+     */
+    public void onLoanDisputed(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan disputed: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_DISPUTED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
+                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_DISPUTED, message);
+            sendPush(recipient, NotificationType.LOAN_DISPUTED, message);
+        }
+    }
+
+    public void onLoanDisputeResolved(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan dispute resolved: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_DISPUTE_RESOLVED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
+                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
+            sendPush(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
+        }
+    }
+
+    /**
+     * ADR-0009: the settlement's terminal receipt — both parties (the
+     * computed late-fee adjustment rides the loan's own record; the
+     * LoanClosedEvent listener was the A-03 gap the closure repairs).
+     */
+    public void onLoanClosed(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan closed: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_CLOSED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Closed", "email/notification",
+                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_CLOSED, message);
+            sendPush(recipient, NotificationType.LOAN_CLOSED, message);
+        }
     }
 
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
@@ -487,6 +597,21 @@ public class NotificationService {
             template.convertAndSend("/topic/notifications/" + userId,
                     new WebSocketNotification(type.name(), message))
         );
+    }
+
+    /**
+     * Stage 7 (plan D-10, ADR-0003): the push channel's routing half —
+     * the EMAIL gate semantics verbatim (the stored preference gates the
+     * send) plus the device-token registry (a user with no token answers
+     * nothing; the sparse-override default keeps existing behavior
+     * unchanged). The provider's verdicts prune the dead tokens inside
+     * {@link PushTokenService#sendToUser} — the self-healing registry.
+     */
+    private void sendPush(UUID userId, NotificationType type, String message) {
+        if (!preferences.isChannelEnabled(userId, type, NotificationChannel.PUSH)) {
+            return;
+        }
+        pushTokenService.sendToUser(userId, type, type.name(), message);
     }
 
     /**
@@ -514,6 +639,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
+        sendPush(recipientId, NotificationType.MESSAGE_RECEIVED, message);
     }
 
     /**
@@ -548,6 +674,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
+        sendPush(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
     }
 
     /**
@@ -586,6 +713,7 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(reporterId, NotificationType.REPORT_RESOLVED, message);
+        sendPush(reporterId, NotificationType.REPORT_RESOLVED, message);
     }
 
     @Transactional(readOnly = true)

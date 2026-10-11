@@ -41,20 +41,25 @@ public class OrdersController {
     }
 
     /**
-     * Cart to order: the placement transaction — no body (the cart IS the
-     * order's content; the total is derived, never caller-supplied). Chained
-     * through the service's view assembly: the HTTP boundary never declares
-     * an entity local (the controllersMustNotDependOnJpaEntities rule).
+     * Cart to order(S): the placement transaction — no body (the cart IS
+     * the order(S)' content; the totals are derived, never caller-supplied).
+     * Chained through the service's view assembly: the HTTP boundary never
+     * declares an entity local (the controllersMustNotDependOnJpaEntities
+     * rule). ADR-0010: the body is the first group's order; a mixed-seller
+     * placement's sibling orders ride the ADDITIVE {@code additionalOrders}
+     * list (additive-only — no client breaks, no gate entry).
      */
     @PostMapping
     @Operation(summary = "Place an order from the cart", description = "Freezes the caller's "
-            + "active cart lines into an order (PLACED) and tombstones the cart — one atomic "
-            + "transaction. The total is derived from the frozen lines; an empty or absent cart "
-            + "answers 409.")
+            + "active cart lines into order(s) (PLACED) — one order per seller (ADR-0010: a "
+            + "mixed-seller cart splits; the response body is the first order and its siblings "
+            + "ride additionalOrders) — and tombstones the cart, one atomic transaction. The "
+            + "totals are derived from the frozen lines; an empty or absent cart answers 409.")
     public ResponseEntity<OrderResponses.OrderResponse> place(Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        java.util.List<OrderDetail> placed = ordersService.place(caller);
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
-                .body(OrderResponses.OrderResponse.of(ordersService.place(caller)));
+                .body(OrderResponses.OrderResponse.ofPlacement(placed));
     }
 
     @GetMapping("/{id}")
@@ -79,12 +84,32 @@ public class OrdersController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Cancel an order", description = "Cancels the caller's order while it "
             + "is still open (PLACED or CONFIRMED); a fulfilled order answers 409 — the machine's "
-            + "terminal states do not reopen.")
+            + "terminal states do not reopen. The stock reservation is released and the money "
+            + "settles through the existing payments engine (cancel the unpaid intent, fully "
+            + "refund the collected one).")
     public ResponseEntity<OrderResponses.OrderResponse> cancel(
             @PathVariable UUID id, @Valid @RequestBody CancelOrderRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(OrderResponses.OrderResponse.of(
                 ordersService.cancelForUser(id, request.reason(), authentication)));
+    }
+
+    /**
+     * Stage 6 (ADR-0002): the buyer's payment surface — the order's intent
+     * through the EXISTING payments engine (one intent per order, the
+     * deterministic idempotency key). The response is the engine's own
+     * details carrier — the client confirms the payment against it and the
+     * settlement's COMPLETED event auto-confirms the machine.
+     */
+    @PostMapping("/{id}/payment-intent")
+    @Operation(summary = "Create (or return) the order's payment intent", description = "Links "
+            + "the order to exactly one payment intent from the existing payments engine "
+            + "(idempotent by the order key). Only a PLACED order can open an intent; the "
+            + "settlement's COMPLETED event auto-confirms the order.")
+    public ResponseEntity<com.marketplace.shared.api.PaymentIntentDetails> requestPaymentIntent(
+            @PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(ordersService.requestPaymentIntent(id, authentication));
     }
 
     public record CancelOrderRequest(
