@@ -26,9 +26,15 @@ The new foundation retains and updates the later JT-01..JT-20 journey contract, 
 
 The review found active implementation PRs #540/#541 (discovery), #543/#546 (multi-role/trust), #544/#547 (unified search), and #545 (notification routing). They are not closed solely on filename overlap: their domain and migration impacts must be reviewed against main and each other before a close, retarget, or merge decision. #541 and #545 share many changed file paths, so they are a conflict-risk requiring explicit dependency review.
 
-## Actions and limits
+## Actions completed
 
-- Close the duplicate Android PRs and stale documentation-plan chain only after verifying the replacement content is preserved.
-- Never merge into main without explicit owner instruction.
-- The connected GitHub action set in this session supports closing PRs and reading/updating files, but does not expose a branch-delete operation. Closing a PR does **not** delete its remote branch; do not claim the branch was deleted. Branch deletion can be done later through GitHub's branch UI or an authorized delete-ref integration if available.
-- Keep older commits/branches recoverable until useful backend changes are selectively extracted and tested.
+- **Closed without merge:** #548, #549, #550 — repeated Android client attempts. Each received a cleanup explanation and a link to the replacement foundation.
+- **Closed without merge:** #532, #534, #536 — superseded planning-document chain. The newer JT-01..JT-20 journey specification, UX design system, product-management guidance, and public-evidence benchmark were copied into the replacement branch before closure.
+- **No main merge, no code PR merge, and no new PR were created.** The replacement remains a reviewable branch, not a published implementation.
+- Branch comparison after the initial foundation update: this branch was 13 commits ahead of main and 0 commits behind at the time of measurement. Re-run comparison before any review/PR decision.
+
+## Outstanding limits and preservation
+
+- The connected GitHub action set in this session supports closing PRs and reading/updating files, but does not expose a branch-delete operation. Closing a PR does **not** delete its remote branch; the six closed PR branches remain recoverable. Do not report branch deletion as complete.
+- PRs #540, #541, #543, #544, #545, #546, and #547 remain open for engineering review; they were not closed merely because they have overlapping filenames or related themes. In particular, #541 and #545 shared 97 changed file paths at the time of inspection; their branch/migration dependency must be reconciled before either is merged.
+- Preserve existing backend work until its semantic and migration effects are evaluated. Never merge into main without explicit owner instruction.
