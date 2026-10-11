@@ -10,6 +10,7 @@ import com.marketplace.android.core.network.EmailOnlyRequest
 import com.marketplace.android.core.network.JoinNeighborhoodRequest
 import com.marketplace.android.core.network.RegisterRequest
 import com.marketplace.android.core.network.RequestPostMediaUpload
+import com.marketplace.android.core.network.UpdateLostFoundStateRequest
 import com.marketplace.android.core.network.MarketplaceApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -128,6 +129,8 @@ class MarketplaceRepository(
     suspend fun getFeed(page: Int = 0) = api.getFeed(page = page)
     suspend fun searchPosts(query: String) = api.searchPosts(query = query)
     suspend fun createPost(request: CreatePostRequest) = api.createPost(request)
+    suspend fun updateLostFoundState(postId: String, state: String) =
+        api.updateLostFoundState(postId, UpdateLostFoundStateRequest(state))
 
     suspend fun uploadPostMedia(postId: String, uri: Uri) {
         val context = applicationContext
