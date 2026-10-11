@@ -16,6 +16,7 @@ import com.marketplace.android.core.network.MarketItemDto
 import com.marketplace.android.core.network.MembershipDto
 import com.marketplace.android.core.network.NotificationDto
 import com.marketplace.android.core.network.PostDto
+import com.marketplace.android.core.network.ListingSummaryDto
 import com.marketplace.android.data.MarketplaceRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -27,8 +28,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-enum class MainTab { HOME, EXPLORE, MARKET, NOTIFICATIONS, PROFILE }
-enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS }
+enum class MainTab { HOME, MARKET, PROPERTY, DIRECTORY, EXPLORE, NOTIFICATIONS, PROFILE }
+enum class ExploreMode { POSTS, EVENTS, GROUPS, POLLS, MARKET }
 enum class ComposerKind { POST, MARKET, EVENT, POLL }
 
 data class AppUiState(
@@ -80,6 +81,19 @@ data class AppUiState(
     val notifications: List<NotificationDto> = emptyList(),
     val notificationsBusy: Boolean = false,
     val notificationsError: String? = null,
+    val propertyQuery: String = "",
+    val propertyPurpose: String = "RENT",
+    val propertyType: String = "APARTMENT",
+    val propertyListings: List<ListingSummaryDto> = emptyList(),
+    val propertyBusy: Boolean = false,
+    val propertyError: String? = null,
+    val directoryQuery: String = "",
+    val directoryMinRating: Double? = null,
+    val directoryListings: List<ListingSummaryDto> = emptyList(),
+    val directoryBusy: Boolean = false,
+    val directoryError: String? = null,
+    val registrationBusy: Boolean = false,
+    val authSuccess: String? = null,
     val composer: ComposerKind? = null,
     val postCategory: String = "GENERAL",
     val postTitle: String = "",
@@ -88,7 +102,7 @@ data class AppUiState(
     val marketCondition: String = "GOOD",
     val marketTitle: String = "",
     val marketPrice: String = "",
-    val marketCurrency: String = "EUR",
+    val marketCurrency: String = "SYP",
     val marketPickup: String = "",
     val submitBusy: Boolean = false,
     val profileBusy: Boolean = false,
@@ -109,7 +123,7 @@ class CommunityViewModel(
     private var locationSearchJob: Job? = null
 
     fun authenticationFailed(message: String) {
-        _uiState.update { it.copy(authError = message, loadingAccount = false) }
+        _uiState.update { it.copy(authError = message, authSuccess = null, loadingAccount = false) }
     }
 
     fun authenticated(accessToken: String) {
@@ -139,7 +153,6 @@ class CommunityViewModel(
                     )
                 }
                 loadFeed()
-                loadMarket()
             } catch (error: Throwable) {
                 if (error is HttpException && error.code() == 404) {
                     _uiState.update {
@@ -199,20 +212,127 @@ class CommunityViewModel(
         _uiState.update { it.copy(tab = tab, notice = null) }
         when (tab) {
             MainTab.HOME -> loadFeed()
+            MainTab.MARKET -> Unit // Public product catalog/cart is not exposed by the current API.
+            MainTab.PROPERTY -> loadPropertyListings()
+            MainTab.DIRECTORY -> loadDirectoryListings()
             MainTab.EXPLORE -> loadExploreBoard()
-            MainTab.PROFILE -> Unit
-            MainTab.MARKET -> loadMarket()
             MainTab.NOTIFICATIONS -> loadNotifications()
+            MainTab.PROFILE -> Unit
         }
     }
 
     fun refresh() {
         when (_uiState.value.tab) {
             MainTab.HOME -> loadFeed()
+            MainTab.MARKET -> Unit
+            MainTab.PROPERTY -> loadPropertyListings()
+            MainTab.DIRECTORY -> loadDirectoryListings()
             MainTab.EXPLORE -> loadExploreBoard()
-            MainTab.MARKET -> loadMarket()
             MainTab.NOTIFICATIONS -> loadNotifications()
             MainTab.PROFILE -> loadAccount()
+        }
+    }
+
+    fun openNeighborhoodMarket() {
+        _uiState.update { it.copy(tab = MainTab.EXPLORE, exploreMode = ExploreMode.MARKET, notice = null) }
+        loadMarket()
+    }
+
+    fun updatePropertyQuery(value: String) {
+        _uiState.update { it.copy(propertyQuery = value.take(120), propertyError = null) }
+    }
+
+    fun setPropertyPurpose(value: String) {
+        if (value !in setOf("RENT", "SALE")) return
+        _uiState.update { it.copy(propertyPurpose = value, propertyError = null) }
+    }
+
+    fun setPropertyType(value: String) {
+        if (value !in setOf("APARTMENT", "VILLA", "LAND", "SHOP", "OFFICE", "GARAGE")) return
+        _uiState.update { it.copy(propertyType = value, propertyError = null) }
+    }
+
+    fun loadPropertyListings() {
+        val current = _uiState.value
+        if (!current.authenticated || current.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(propertyBusy = true, propertyError = null) }
+            try {
+                val page = repository.searchListings(
+                    query = current.propertyQuery.trim().ifBlank { null },
+                    purpose = current.propertyPurpose,
+                    propertyType = current.propertyType,
+                    page = 0,
+                    size = 20
+                )
+                _uiState.update { it.copy(propertyListings = page.content, propertyBusy = false, propertyError = null) }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(propertyBusy = false, propertyError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun updateDirectoryQuery(value: String) {
+        _uiState.update { it.copy(directoryQuery = value.take(120), directoryError = null) }
+    }
+
+    fun setDirectoryMinRating(value: Double?) {
+        if (value != null && value !in 1.0..5.0) return
+        _uiState.update { it.copy(directoryMinRating = value, directoryError = null) }
+    }
+
+    fun loadDirectoryListings() {
+        val current = _uiState.value
+        if (!current.authenticated || current.membership == null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(directoryBusy = true, directoryError = null) }
+            try {
+                val page = repository.searchListings(
+                    query = current.directoryQuery.trim().ifBlank { null },
+                    minRating = current.directoryMinRating,
+                    page = 0,
+                    size = 30
+                )
+                _uiState.update { it.copy(directoryListings = page.content, directoryBusy = false, directoryError = null) }
+            } catch (error: Throwable) {
+                _uiState.update { it.copy(directoryBusy = false, directoryError = failureMessage(error)) }
+            }
+        }
+    }
+
+    fun registerAccount(displayName: String, email: String, password: String) {
+        val name = displayName.trim()
+        val normalizedEmail = email.trim()
+        if (!normalizedEmail.contains("@") || !normalizedEmail.substringAfter("@").contains(".") ||
+            name.isBlank() || password.length !in 8..72) {
+            _uiState.update {
+                it.copy(authError = "تحقق من الاسم والبريد الإلكتروني وكلمة المرور (8 إلى 72 محرفًا).", authSuccess = null)
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(registrationBusy = true, authError = null, authSuccess = null) }
+            try {
+                repository.registerAccount(normalizedEmail, password, name)
+                _uiState.update {
+                    it.copy(
+                        registrationBusy = false,
+                        authError = null,
+                        authSuccess = "تم إنشاء الحساب. سجّل الدخول الآن باستخدام بريدك وكلمة المرور."
+                    )
+                }
+            } catch (error: Throwable) {
+                val message = when (error) {
+                    is HttpException -> when (error.code()) {
+                        400 -> "بيانات التسجيل غير صالحة. تحقق من البريد وكلمة المرور."
+                        409 -> "هذا البريد الإلكتروني مسجّل بالفعل."
+                        429 -> "محاولات التسجيل كثيرة مؤقتًا. حاول لاحقًا."
+                        else -> failureMessage(error)
+                    }
+                    else -> failureMessage(error)
+                }
+                _uiState.update { it.copy(registrationBusy = false, authError = message, authSuccess = null) }
+            }
         }
     }
 
@@ -271,7 +391,7 @@ class CommunityViewModel(
             it.copy(
                 composer = kind, postCategory = "GENERAL", postTitle = "", postBody = "",
                 marketCategory = "FREE", marketCondition = "GOOD", marketTitle = "",
-                marketPrice = "", marketCurrency = "EUR", marketPickup = "",
+                marketPrice = "", marketCurrency = "SYP", marketPickup = "",
                 eventCategory = "SOCIAL", eventTitle = "", eventDescription = "", eventStartsAt = "",
                 eventLocationLabel = "", eventOrganizerLabel = "", eventRegistration = "OPEN",
                 eventCapacity = "", pollQuestion = "", pollAuthorLabel = "", pollOptions = listOf("", ""),
@@ -299,6 +419,7 @@ class CommunityViewModel(
             ExploreMode.EVENTS -> loadEvents()
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
+            ExploreMode.MARKET -> loadMarket()
         }
     }
 
@@ -308,6 +429,7 @@ class CommunityViewModel(
             ExploreMode.EVENTS -> loadEvents()
             ExploreMode.GROUPS -> loadGroups()
             ExploreMode.POLLS -> loadPolls()
+            ExploreMode.MARKET -> loadMarket()
         }
     }
 
@@ -538,7 +660,7 @@ class CommunityViewModel(
             return
         }
         if (!isFree && (priceCents == null || priceCents <= 0 || current.marketCurrency.length != 3)) {
-            _uiState.update { it.copy(notice = "أدخل سعرًا موجبًا وعملة من ثلاثة أحرف، مثل EUR.") }
+            _uiState.update { it.copy(notice = "أدخل سعرًا موجبًا وعملة من ثلاثة أحرف، مثل SYP.") }
             return
         }
         viewModelScope.launch {
@@ -553,7 +675,7 @@ class CommunityViewModel(
                 _uiState.update {
                     it.copy(
                         composer = null, submitBusy = false, marketTitle = "", marketPickup = "",
-                        marketPrice = "", tab = MainTab.MARKET, notice = "أُضيف العرض إلى سوق الحي."
+                        marketPrice = "", tab = MainTab.EXPLORE, exploreMode = ExploreMode.MARKET, notice = "أُضيف العرض إلى حراج الحي."
                     )
                 }
                 loadMarket()

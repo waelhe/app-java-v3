@@ -97,6 +97,24 @@ data class NotificationDto(
     val updatedAt: String = ""
 )
 
+@JsonClass(generateAdapter = false)
+data class ListingSummaryDto(
+    val id: String = "",
+    val title: String = "",
+    val category: String = "",
+    val price: java.math.BigDecimal? = null,
+    val currency: String? = null,
+    val providerName: String? = null,
+    val providerRating: Double? = null,
+    val providerReviewCount: Long = 0
+)
+
+data class RegisterRequest(
+    val email: String,
+    val password: String,
+    val displayName: String
+)
+
 data class JoinNeighborhoodRequest(val locationId: String)
 data class CreatePostRequest(val locationId: String, val category: String, val title: String, val body: String)
 data class CreateCommentRequest(val body: String)

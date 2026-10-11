@@ -7,8 +7,22 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.Response
+import okhttp3.ResponseBody
 
 interface MarketplaceApi {
+    @POST("api/v1/auth/register")
+    suspend fun registerAccount(@Body request: RegisterRequest): Response<ResponseBody>
+
+    @GET("api/v1/search")
+    suspend fun searchListings(
+        @Query("q") query: String? = null,
+        @Query("purpose") purpose: String? = null,
+        @Query("propertyType") propertyType: String? = null,
+        @Query("minRating") minRating: Double? = null,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 20
+    ): ApiPage<ListingSummaryDto>
     @GET("api/v1/geo/suggest")
     suspend fun suggestLocations(@Query("q") query: String): List<GeoNodeDto>
 

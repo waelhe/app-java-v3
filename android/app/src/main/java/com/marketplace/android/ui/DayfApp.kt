@@ -34,7 +34,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +50,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.marketplace.android.core.network.GeoNodeDto
 import com.marketplace.android.feature.AppUiState
 import com.marketplace.android.feature.ComposerKind
@@ -81,6 +93,7 @@ fun DayfTheme(content: @Composable () -> Unit) {
 fun DayfApp(
     state: AppUiState,
     onSignIn: () -> Unit,
+    onRegisterAccount: (String, String, String) -> Unit,
     onRefresh: () -> Unit,
     onSelectTab: (MainTab) -> Unit,
     onLocationQuery: (String) -> Unit,
@@ -130,10 +143,24 @@ fun DayfApp(
     onMarkRead: (com.marketplace.android.core.network.NotificationDto) -> Unit,
     onRequestVerification: () -> Unit,
     onSignOutOnDevice: () -> Unit,
-    onDismissNotice: () -> Unit
+    onDismissNotice: () -> Unit,
+    onPropertyQuery: (String) -> Unit,
+    onPropertyPurpose: (String) -> Unit,
+    onPropertyType: (String) -> Unit,
+    onSearchProperties: () -> Unit,
+    onDirectoryQuery: (String) -> Unit,
+    onDirectoryMinRating: (Double?) -> Unit,
+    onSearchDirectory: () -> Unit,
+    onOpenNeighborhoodMarket: () -> Unit
 ) {
     when {
-        !state.authenticated -> SignInScreen(state.authError, onSignIn)
+        !state.authenticated -> SignInScreen(
+            error = state.authError,
+            success = state.authSuccess,
+            registrationBusy = state.registrationBusy,
+            onSignIn = onSignIn,
+            onRegister = onRegisterAccount
+        )
         state.loadingAccount -> CenterState(
             title = "نجهّز مساحتك المحلية",
             detail = "نتحقق من عضويتك ونحمّل البيانات من الخدمة.",
@@ -165,7 +192,15 @@ fun DayfApp(
             onWithdrawMarketItem = onWithdrawMarketItem,
             onMarkRead = onMarkRead,
             onRequestVerification = onRequestVerification,
-            onSignOutOnDevice = onSignOutOnDevice
+            onSignOutOnDevice = onSignOutOnDevice,
+            onPropertyQuery = onPropertyQuery,
+            onPropertyPurpose = onPropertyPurpose,
+            onPropertyType = onPropertyType,
+            onSearchProperties = onSearchProperties,
+            onDirectoryQuery = onDirectoryQuery,
+            onDirectoryMinRating = onDirectoryMinRating,
+            onSearchDirectory = onSearchDirectory,
+            onOpenNeighborhoodMarket = onOpenNeighborhoodMarket
         )
     }
 
@@ -225,7 +260,31 @@ fun DayfApp(
 }
 
 @Composable
-internal fun SignInScreen(error: String?, onSignIn: () -> Unit) {
+internal fun SignInScreen(
+    error: String?,
+    success: String?,
+    registrationBusy: Boolean,
+    onSignIn: () -> Unit,
+    onRegister: (String, String, String) -> Unit
+) {
+    var showRegistration by rememberSaveable { mutableStateOf(false) }
+    var displayName by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var formError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(success) {
+        if (!success.isNullOrBlank()) {
+            showRegistration = false
+            displayName = ""
+            email = ""
+            password = ""
+            confirmPassword = ""
+            formError = null
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(DeepForest, Forest, WarmCanvas)))
@@ -265,13 +324,14 @@ internal fun SignInScreen(error: String?, onSignIn: () -> Unit) {
                 shadowElevation = 8.dp
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("أهلًا بعودتك", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("أهلًا بك", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "سجّل دخولك بحسابك للانضمام إلى حيّك والوصول إلى المحتوى الحقيقي.",
+                        "سجّل الدخول أو أنشئ حسابًا للانضمام إلى حيّك والوصول إلى المحتوى الحقيقي.",
                         color = Muted,
                         lineHeight = 22.sp
                     )
                     if (!error.isNullOrBlank()) InfoBanner(error, isError = true)
+                    if (!success.isNullOrBlank()) InfoBanner(success, isError = false)
                     Button(
                         onClick = onSignIn,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
@@ -281,6 +341,11 @@ internal fun SignInScreen(error: String?, onSignIn: () -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         Icon(Icons.Filled.ArrowForward, contentDescription = null)
                     }
+                    OutlinedButton(
+                        onClick = { showRegistration = true; formError = null },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) { Text("إنشاء حساب جديد") }
                     Text(
                         "سيُفتح تسجيل الدخول عبر متصفح النظام. لا يطلب التطبيق كلمة مرورك داخله.",
                         fontSize = 12.sp,
@@ -292,6 +357,83 @@ internal fun SignInScreen(error: String?, onSignIn: () -> Unit) {
             Spacer(Modifier.height(20.dp))
             Text("هوية العضو، عضوية الحي، والتوثيق حالات منفصلة.", color = Color.White, fontSize = 12.sp)
         }
+    }
+
+    if (showRegistration) {
+        AlertDialog(
+            onDismissRequest = { if (!registrationBusy) showRegistration = false },
+            title = { Text("إنشاء حساب ضَيف") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("سيُنشأ حساب عادي. التوثيق وعضوية الحي خطوتان منفصلتان بعد الدخول.", color = Muted)
+                    OutlinedTextField(
+                        value = displayName,
+                        onValueChange = { displayName = it.take(100); formError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("الاسم الظاهر") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it.take(50); formError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("البريد الإلكتروني") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it.take(72); formError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("كلمة المرور (8 إلى 72 محرفًا)") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it.take(72); formError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("تأكيد كلمة المرور") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true
+                    )
+                    formError?.let { InfoBanner(it, isError = true) }
+                    if (registrationBusy) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text("يجري إنشاء الحساب…", color = Muted)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !registrationBusy,
+                    onClick = {
+                        val normalizedEmail = email.trim()
+                        when {
+                            displayName.isBlank() -> formError = "أدخل الاسم الظاهر."
+                            !normalizedEmail.contains("@") || !normalizedEmail.substringAfter("@").contains(".") ->
+                                formError = "أدخل بريدًا إلكترونيًا صحيحًا."
+                            password.length !in 8..72 -> formError = "كلمة المرور يجب أن تكون بين 8 و72 محرفًا."
+                            password != confirmPassword -> formError = "كلمتا المرور غير متطابقتين."
+                            else -> {
+                                formError = null
+                                onRegister(displayName.trim(), normalizedEmail, password)
+                            }
+                        }
+                    }
+                ) { Text("إنشاء الحساب") }
+            },
+            dismissButton = {
+                TextButton(enabled = !registrationBusy, onClick = { showRegistration = false }) { Text("إلغاء") }
+            }
+        )
     }
 }
 

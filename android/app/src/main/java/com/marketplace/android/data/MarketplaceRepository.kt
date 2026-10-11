@@ -5,12 +5,14 @@ import com.marketplace.android.core.network.CreateCommentRequest
 import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
 import com.marketplace.android.core.network.JoinNeighborhoodRequest
+import com.marketplace.android.core.network.RegisterRequest
 import com.marketplace.android.core.network.MarketplaceApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import retrofit2.Retrofit
+import retrofit2.HttpException
 import retrofit2.converter.moshi.MoshiConverterFactory
 
 /**
@@ -46,6 +48,21 @@ class MarketplaceRepository {
 
     fun setAccessToken(token: String) { accessToken = token }
     fun clearAccessToken() { accessToken = null }
+
+    suspend fun registerAccount(email: String, password: String, displayName: String) {
+        val response = api.registerAccount(RegisterRequest(email = email, password = password, displayName = displayName))
+        if (!response.isSuccessful) throw HttpException(response)
+        response.body()?.close()
+    }
+
+    suspend fun searchListings(
+        query: String? = null,
+        purpose: String? = null,
+        propertyType: String? = null,
+        minRating: Double? = null,
+        page: Int = 0,
+        size: Int = 20
+    ) = api.searchListings(query, purpose, propertyType, minRating, page, size)
 
     suspend fun suggestLocations(query: String) = api.suggestLocations(query)
     suspend fun getGeoTree() = api.getGeoTree()

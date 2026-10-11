@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     DayfApp(
                         state = state,
                         onSignIn = ::beginSignIn,
+                        onRegisterAccount = viewModel::registerAccount,
                         onRefresh = viewModel::refresh,
                         onSelectTab = viewModel::selectTab,
                         onLocationQuery = viewModel::setLocationQuery,
@@ -121,7 +122,15 @@ class MainActivity : ComponentActivity() {
                         onMarkRead = viewModel::markNotificationRead,
                         onRequestVerification = viewModel::requestVerification,
                         onSignOutOnDevice = viewModel::signOutOnDevice,
-                        onDismissNotice = viewModel::dismissNotice
+                        onDismissNotice = viewModel::dismissNotice,
+                        onPropertyQuery = viewModel::updatePropertyQuery,
+                        onPropertyPurpose = viewModel::setPropertyPurpose,
+                        onPropertyType = viewModel::setPropertyType,
+                        onSearchProperties = viewModel::loadPropertyListings,
+                        onDirectoryQuery = viewModel::updateDirectoryQuery,
+                        onDirectoryMinRating = viewModel::setDirectoryMinRating,
+                        onSearchDirectory = viewModel::loadDirectoryListings,
+                        onOpenNeighborhoodMarket = viewModel::openNeighborhoodMarket
                     )
                 }
             }

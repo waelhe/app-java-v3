@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
@@ -89,7 +90,15 @@ internal fun SignedInScaffold(
     onWithdrawMarketItem: (MarketItemDto) -> Unit,
     onMarkRead: (NotificationDto) -> Unit,
     onRequestVerification: () -> Unit,
-    onSignOutOnDevice: () -> Unit
+    onSignOutOnDevice: () -> Unit,
+    onPropertyQuery: (String) -> Unit,
+    onPropertyPurpose: (String) -> Unit,
+    onPropertyType: (String) -> Unit,
+    onSearchProperties: () -> Unit,
+    onDirectoryQuery: (String) -> Unit,
+    onDirectoryMinRating: (Double?) -> Unit,
+    onSearchDirectory: () -> Unit,
+    onOpenNeighborhoodMarket: () -> Unit
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -111,11 +120,14 @@ internal fun SignedInScaffold(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { onSelectTab(MainTab.EXPLORE) }) {
+                        Icon(Icons.Filled.Search, contentDescription = "استكشف المجتمع")
+                    }
                     IconButton(onClick = { onSelectTab(MainTab.NOTIFICATIONS) }) {
                         Icon(Icons.Filled.Notifications, contentDescription = "التنبيهات")
                     }
-                    IconButton(onClick = onRefresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "تحديث")
+                    IconButton(onClick = { onSelectTab(MainTab.PROFILE) }) {
+                        Icon(Icons.Filled.Person, contentDescription = "حسابي")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WarmCanvas, titleContentColor = Ink)
@@ -127,13 +139,7 @@ internal fun SignedInScaffold(
                     selected = state.tab == MainTab.HOME,
                     onClick = { onSelectTab(MainTab.HOME) },
                     icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                    label = { Text("الرئيسية") }
-                )
-                NavigationBarItem(
-                    selected = state.tab == MainTab.EXPLORE,
-                    onClick = { onSelectTab(MainTab.EXPLORE) },
-                    icon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    label = { Text("استكشف") }
+                    label = { Text("الحي") }
                 )
                 NavigationBarItem(
                     selected = state.tab == MainTab.MARKET,
@@ -142,38 +148,41 @@ internal fun SignedInScaffold(
                     label = { Text("السوق") }
                 )
                 NavigationBarItem(
-                    selected = state.tab == MainTab.NOTIFICATIONS,
-                    onClick = { onSelectTab(MainTab.NOTIFICATIONS) },
-                    icon = { Icon(Icons.Filled.Notifications, contentDescription = null) },
-                    label = { Text("النشاط") }
+                    selected = state.tab == MainTab.PROPERTY,
+                    onClick = { onSelectTab(MainTab.PROPERTY) },
+                    icon = { Icon(Icons.Filled.LocationOn, contentDescription = null) },
+                    label = { Text("العقار") }
                 )
                 NavigationBarItem(
-                    selected = state.tab == MainTab.PROFILE,
-                    onClick = { onSelectTab(MainTab.PROFILE) },
-                    icon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                    label = { Text("حسابي") }
+                    selected = state.tab == MainTab.DIRECTORY,
+                    onClick = { onSelectTab(MainTab.DIRECTORY) },
+                    icon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    label = { Text("دليل الأعمال") }
                 )
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    onBeginComposer(
-                        when (state.tab) {
-                            MainTab.MARKET -> ComposerKind.MARKET
-                            MainTab.EXPLORE -> when (state.exploreMode) {
-                                ExploreMode.EVENTS -> ComposerKind.EVENT
-                                ExploreMode.POLLS -> ComposerKind.POLL
+            if (state.tab == MainTab.HOME || state.tab == MainTab.EXPLORE) {
+                FloatingActionButton(
+                    onClick = {
+                        onBeginComposer(
+                            when (state.tab) {
+                                MainTab.MARKET -> ComposerKind.MARKET
+                                MainTab.EXPLORE -> when (state.exploreMode) {
+                                    ExploreMode.EVENTS -> ComposerKind.EVENT
+                                    ExploreMode.POLLS -> ComposerKind.POLL
+                                    ExploreMode.MARKET -> ComposerKind.MARKET
+                                    else -> ComposerKind.POST
+                                }
                                 else -> ComposerKind.POST
                             }
-                            else -> ComposerKind.POST
-                        }
-                    )
-                },
-                containerColor = Forest,
-                contentColor = androidx.compose.ui.graphics.Color.White,
-                shape = RoundedCornerShape(18.dp)
-            ) { Icon(Icons.Filled.Add, contentDescription = "إنشاء محتوى") }
+                        )
+                    },
+                    containerColor = Forest,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                    shape = RoundedCornerShape(18.dp)
+                ) { Icon(Icons.Filled.Add, contentDescription = "إنشاء محتوى") }
+            }
         },
         containerColor = WarmCanvas
     ) { padding ->
@@ -185,11 +194,15 @@ internal fun SignedInScaffold(
                 )
                 MainTab.EXPLORE -> ExploreScreen(
                     state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments,
-                    onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onBeginComposer, onRefresh
+                    onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
+                    onBeginComposer, onRefresh
                 )
-                MainTab.MARKET -> MarketScreen(
-                    state, onRefresh, onWithdrawMarketItem,
-                    onCreate = { onBeginComposer(ComposerKind.MARKET) }
+                MainTab.MARKET -> StorefrontScreen(onOpenNeighborhoodMarket = onOpenNeighborhoodMarket)
+                MainTab.PROPERTY -> PropertySearchScreen(
+                    state, onPropertyQuery, onPropertyPurpose, onPropertyType, onSearchProperties, onRefresh
+                )
+                MainTab.DIRECTORY -> BusinessDirectoryScreen(
+                    state, onDirectoryQuery, onDirectoryMinRating, onSearchDirectory, onRefresh
                 )
                 MainTab.NOTIFICATIONS -> NotificationsScreen(state, onRefresh, onMarkRead)
                 MainTab.PROFILE -> ProfileScreen(state, onRequestVerification, onSignOutOnDevice)
@@ -260,6 +273,7 @@ private fun ExploreScreen(
     onToggleGroup: (GroupDto) -> Unit,
     onVotePoll: (PollDto, String) -> Unit,
     onWithdrawPollVote: (PollDto) -> Unit,
+    onWithdrawMarketItem: (MarketItemDto) -> Unit,
     onBeginComposer: (ComposerKind) -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -277,7 +291,8 @@ private fun ExploreScreen(
                 ExploreMode.POSTS to "منشورات",
                 ExploreMode.EVENTS to "فعاليات",
                 ExploreMode.GROUPS to "مجموعات",
-                ExploreMode.POLLS to "استطلاعات"
+                ExploreMode.POLLS to "استطلاعات",
+                ExploreMode.MARKET to "حراج الحي"
             ).forEach { (mode, label) ->
                 AssistChip(
                     onClick = { onMode(mode) },
@@ -400,6 +415,13 @@ private fun ExploreScreen(
                     }
                 }
             }
+            ExploreMode.MARKET -> MarketScreen(
+                state = state,
+                onRefresh = onRefresh,
+                onWithdraw = onWithdrawMarketItem,
+                onCreate = { onBeginComposer(ComposerKind.MARKET) },
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -409,10 +431,11 @@ private fun MarketScreen(
     state: AppUiState,
     onRefresh: () -> Unit,
     onWithdraw: (MarketItemDto) -> Unit,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
