@@ -38,7 +38,10 @@ class MarketplaceRepository {
             }
             .build()
 
-        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        val moshi = Moshi.Builder()
+            .add(java.math.BigDecimal::class.java, com.marketplace.android.core.network.BigDecimalJsonAdapter().nullSafe())
+            .add(KotlinJsonAdapterFactory())
+            .build()
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)
             .client(client)
