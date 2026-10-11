@@ -177,7 +177,7 @@ internal fun BrandMark() {
             }
         }
         Column {
-            Text("ضَيف", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("المجتمع المحلي", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("مجتمع محلي موثوق", fontSize = 11.sp, color = Muted)
         }
     }
