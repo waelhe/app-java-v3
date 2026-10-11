@@ -124,6 +124,8 @@ class CommunityViewModel(
     private val repository: MarketplaceRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AppUiState())
+    private var idTokenHint: String? = null
+    private var silentReauthInFlight: Boolean = false
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
 
@@ -131,7 +133,9 @@ class CommunityViewModel(
         _uiState.update { it.copy(authError = message, authSuccess = null, loadingAccount = false) }
     }
 
-    fun authenticated(accessToken: String) {
+    fun authenticated(accessToken: String, idToken: String? = null) {
+        silentReauthInFlight = false
+        idTokenHint = idToken
         repository.setAccessToken(accessToken)
         _uiState.value = AppUiState(
             authenticated = true,
@@ -146,6 +150,7 @@ class CommunityViewModel(
             if (it.authenticated || it.sessionRestoreAttempted || it.sessionRestoring) {
                 it
             } else {
+                silentReauthInFlight = true
                 it.copy(
                     sessionRestoring = true,
                     sessionRestoreAttempted = true,
@@ -170,12 +175,18 @@ class CommunityViewModel(
         }
     }
 
-    fun signOutOnDevice() {
+    fun signOutOnDevice(): String? {
         repository.clearAccessToken()
+        silentReauthInFlight = true
+        val idToken = idTokenHint
+        idTokenHint = null
         _uiState.value = AppUiState(sessionRestoreAttempted = true)
+        return idToken
     }
 
     fun completeSignOut(errorMessage: String? = null) {
+        idTokenHint = null
+        silentReauthInFlight = true
         _uiState.update {
             it.copy(
                 authenticated = false,
@@ -898,12 +909,15 @@ class CommunityViewModel(
             return when (error.code()) {
                 401 -> {
                     repository.clearAccessToken()
-                    _uiState.value = AppUiState(
-                        sessionRestoring = true,
-                        sessionRestoreAttempted = true,
-                        silentReauthRequired = true,
-                        authError = "انتهت جلسة الدخول. نحاول استعادتها بأمان…"
-                    )
+                    if (!silentReauthInFlight) {
+                        silentReauthInFlight = true
+                        _uiState.value = AppUiState(
+                            sessionRestoring = true,
+                            sessionRestoreAttempted = true,
+                            silentReauthRequired = true,
+                            authError = "انتهت جلسة الدخول. نحاول استعادتها بأمان…"
+                        )
+                    }
                     "انتهت جلسة الدخول."
                 }
                 403 -> "لا تملك الصلاحية لهذا الإجراء أو أن عضويتك في الحي غير نشطة."
