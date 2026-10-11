@@ -224,7 +224,15 @@ private fun StatusChip(status: String) {
 }
 
 @Composable
-internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onComments: () -> Unit) {
+internal fun PostCard(
+    post: PostDto,
+    reacting: Boolean,
+    isOwnPost: Boolean,
+    lostFoundBusy: Boolean,
+    onUpdateLostFoundState: (String) -> Unit,
+    onReact: () -> Unit,
+    onComments: () -> Unit
+) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -273,6 +281,30 @@ internal fun PostCard(post: PostDto, reacting: Boolean, onReact: () -> Unit, onC
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip(post.status)
                 Text("المصدر: منشور حيّ", fontSize = 11.sp, color = Muted)
+            }
+            if (post.category.equals("LOST_FOUND", ignoreCase = true)) {
+                StatusChip(lostFoundStateLabel(post.lostFoundState))
+                if (isOwnPost && post.lostFoundState.equals("ACTIVE", ignoreCase = true)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { onUpdateLostFoundState("FOUND") },
+                            enabled = !lostFoundBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (lostFoundBusy) "جارٍ التحديث…" else "عُثر عليه")
+                        }
+                        OutlinedButton(
+                            onClick = { onUpdateLostFoundState("RESOLVED") },
+                            enabled = !lostFoundBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("إغلاق البلاغ")
+                        }
+                    }
+                }
             }
             Divider(color = Line)
             Row(
@@ -566,6 +598,14 @@ internal fun CommentsSheet(
             }
         }
     }
+}
+
+private fun lostFoundStateLabel(code: String?): String = when (code?.uppercase(Locale.ROOT)) {
+    "ACTIVE" -> "قيد البحث"
+    "FOUND" -> "تم العثور على المفقود"
+    "RESOLVED" -> "أُغلق البلاغ"
+    null, "" -> "حالة البلاغ غير متاحة"
+    else -> "حالة البلاغ: $code"
 }
 
 private fun categoryLabel(code: String): String = when (code.uppercase(Locale.ROOT)) {
