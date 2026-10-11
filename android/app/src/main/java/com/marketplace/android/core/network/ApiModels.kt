@@ -21,6 +21,7 @@ data class PostDto(
     val title: String = "",
     val body: String = "",
     val status: String = "VISIBLE",
+    val lostFoundState: String? = null,
     val reactionsCount: Long = 0,
     val reactedByMe: Boolean = false,
     val media: List<PostMediaDto> = emptyList(),
@@ -167,6 +168,8 @@ data class EventDto(
     val organizerLabel: String = "",
     val capacity: Int? = null,
     val registration: String = "OPEN",
+    // Empty means the server omitted its lifecycle state; UI actions fail closed.
+    val status: String = "",
     val featured: Boolean = false,
     val attending: Long = 0,
     val rsvpedByMe: Boolean = false,
@@ -208,3 +211,4 @@ data class CreateEventRequest(
 
 data class CreatePollRequest(val locationId: String, val question: String, val authorLabel: String, val options: List<String>)
 data class VoteRequest(val optionId: String)
+data class UpdateLostFoundStateRequest(val state: String)
