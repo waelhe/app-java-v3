@@ -155,6 +155,12 @@ fun DayfApp(
     onOpenNeighborhoodMarket: () -> Unit
 ) {
     when {
+        state.sessionRestoring -> CenterState(
+            title = "نستعيد جلستك",
+            detail = "نتحقق من جلسة الدخول الحالية دون طلب كلمة مرورك مجددًا.",
+            busy = true,
+            onRetry = onSignIn
+        )
         !state.authenticated -> SignInScreen(
             error = state.authError,
             success = state.authSuccess,
