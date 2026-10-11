@@ -14,9 +14,10 @@ import com.marketplace.android.core.network.MarketplaceApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 import java.io.IOException
@@ -27,6 +28,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
+import retrofit2.Response
+import retrofit2.http.Body
+import retrofit2.http.PUT
+import retrofit2.http.Url
 import retrofit2.HttpException
 import retrofit2.converter.moshi.MoshiConverterFactory
 
@@ -43,6 +48,16 @@ class MarketplaceRepository(context: Context) {
             .followRedirects(false)
             .followSslRedirects(false)
             .build()
+    }
+
+    // Separate Retrofit service: presigned storage requests must never receive API auth headers.
+    // Retrofit's suspend adapter also cancels the underlying OkHttp Call when the coroutine is cancelled.
+    private val storageUploadApi: PresignedStorageApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(storageUploadClient)
+            .build()
+            .create(PresignedStorageApi::class.java)
     }
 
     @Volatile
@@ -158,15 +173,17 @@ class MarketplaceRepository(context: Context) {
                 }
 
                 // Never send the bearer token to the third-party presigned storage URL.
-                val request = Request.Builder()
-                    .url(uploadUrl)
-                    .header("Content-Type", contentType)
-                    .put(file.asRequestBody(contentType.toMediaType()))
-                    .build()
-                storageUploadClient.newCall(request).execute().use { response ->
+                val response = storageUploadApi.upload(
+                    uploadUrl.toString(),
+                    file.asRequestBody(contentType.toMediaType())
+                )
+                try {
                     if (!response.isSuccessful) {
-                        throw IOException("رفض مخزن الصور الرفع (HTTP ${response.code}).")
+                        throw IOException("رفض مخزن الصور الرفع (HTTP ${response.code()}).")
                     }
+                } finally {
+                    response.body()?.close()
+                    response.errorBody()?.close()
                 }
                 api.confirmPostMediaUpload(upload.mediaId)
             } finally {
@@ -198,4 +215,14 @@ class MarketplaceRepository(context: Context) {
         api.voteOnPoll(pollId, com.marketplace.android.core.network.VoteRequest(optionId))
     suspend fun withdrawPollVote(pollId: String) = api.withdrawPollVote(pollId)
 
+}
+
+
+/** Cancellable PUT to an opaque presigned URL. This service intentionally has no auth interceptor. */
+private interface PresignedStorageApi {
+    @PUT
+    suspend fun upload(
+        @Url url: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
 }
