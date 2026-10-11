@@ -51,8 +51,12 @@ ALTER TABLE notifications ADD COLUMN source_event_id UUID NULL;
 
 ALTER TABLE notifications_aud ADD COLUMN source_event_id UUID NULL;
 
-CREATE UNIQUE INDEX uq_notifications_source_event_once
-    ON notifications (recipient_id, source_event_id) WHERE source_event_id IS NOT NULL;
+-- uq_notifications_source_event_once moved to V186 (CodeRabbit round on the
+-- #540 slice): the notifications table is POPULATED in production, and the
+-- house's own documented rule (V173/V168/V169) puts every index build over a
+-- populated table in its own CONCURRENTLY migration outside the transaction —
+-- a plain CREATE INDEX here would hold the table lock against the still-live
+-- previous instance's notification writes through the whole deploy window.
 
 ALTER TABLE notification_preferences DROP CONSTRAINT IF EXISTS notification_preferences_type_check;
 

@@ -317,6 +317,46 @@ class DiscoveryServiceTest {
     }
 
     @Test
+    void forYouTopicPageIsLastOnlyWhenEverySourcePageIsLast() {
+        // CodeRabbit round on the #540 slice: the FOR_YOU topic page's
+        // `last` is derived from the SOURCE pages, never from the current
+        // page's candidate count — page 0 with more candidates than `size`
+        // answered last=false only by accident before, and a later sparse
+        // page answered last=true while the sources still had rows.
+        callerHasMembership();
+        PagedRequest request = PagedRequest.of(0, 10);
+        when(followedSourcesPort.followedSources(USER_ID)).thenReturn(Set.of());
+        when(urgentAlertsPort.findActive(NEIGHBORHOOD_ID, now)).thenReturn(List.of());
+        // lost-found still has a second page; recommendations/events/jobs
+        // are done — the merged page is NOT last.
+        when(communityPort.findActiveLostFound(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(
+                        List.of(post(UUID.randomUUID(), UUID.randomUUID(), now)),
+                        0, 10, 15, 2, false));
+        when(communityPort.findRecommendations(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 10, 0, 0, true));
+        when(communityPort.findUpcomingEvents(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 10, 0, 0, true));
+        when(jobsPort.findOpenJobs(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 10, 0, 0, true));
+
+        PagedResponse<DiscoveryCardView> notLast =
+                service().rowPage(USER_ID, DiscoveryRowType.FOR_YOU, request);
+        assertThat(notLast.last()).isFalse();
+        assertThat(notLast.totalElements()).isEqualTo(15L);
+
+        // Every source page last => the merged page is last.
+        when(communityPort.findActiveLostFound(NEIGHBORHOOD_ID, request))
+                .thenReturn(new PagedResponse<>(
+                        List.of(post(UUID.randomUUID(), UUID.randomUUID(), now)),
+                        0, 10, 1, 1, true));
+        PagedResponse<DiscoveryCardView> last =
+                service().rowPage(USER_ID, DiscoveryRowType.FOR_YOU, request);
+        assertThat(last.last()).isTrue();
+        assertThat(last.totalElements()).isEqualTo(1L);
+    }
+
+    @Test
     void eventsAndOpportunitiesRowPageMergesItsSourcesByRecency() {
         callerHasMembership();
         PagedRequest request = PagedRequest.of(0, 50);

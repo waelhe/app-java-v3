@@ -46,7 +46,7 @@ class FollowServiceTest {
     @BeforeEach
     void setUp() {
         service = new FollowService(repository, providerFollowRepository,
-                userRepository, groupLookupPort);
+                userRepository, groupLookupPort, new FollowWriter(repository));
     }
 
     // ------------------------------------------------------------------
@@ -60,13 +60,13 @@ class FollowServiceTest {
         when(userRepository.existsById(targetId)).thenReturn(true);
         when(repository.findByUserIdAndFollowableTypeAndFollowableId(userId, FollowableType.USER, targetId))
                 .thenReturn(Optional.empty());
-        when(repository.save(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.saveAndFlush(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
 
         FollowService.FollowWriteResult result = service.followUser(userId, targetId);
 
         assertTrue(result.created());
         ArgumentCaptor<Follow> saved = ArgumentCaptor.forClass(Follow.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         assertEquals(userId, saved.getValue().getUserId());
         assertEquals(FollowableType.USER, saved.getValue().getFollowableType());
         assertEquals(targetId, saved.getValue().getFollowableId());
@@ -111,6 +111,48 @@ class FollowServiceTest {
         verify(repository, never()).save(any(Follow.class));
     }
 
+    @Test
+    void followUser_concurrentCreateRaceAnswersTheWinnersStandingRow() {
+        // The in-flight race (CodeRabbit round on the #540 slice): two
+        // concurrent same-triple POSTs both miss the lookup; the loser's
+        // INSERT takes the uq_follows_one_live violation on the writer's
+        // OWN REQUIRES_NEW transaction and answers the winner's committed
+        // row (created=false) — the documented idempotent 200, never a
+        // rollback-only 500.
+        UUID userId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        Follow winner = Follow.create(UUID.randomUUID(), userId, FollowableType.USER, targetId);
+        when(userRepository.existsById(targetId)).thenReturn(true);
+        when(repository.findByUserIdAndFollowableTypeAndFollowableId(userId, FollowableType.USER, targetId))
+                .thenReturn(Optional.empty())   // both racers miss the lookup
+                .thenReturn(Optional.of(winner)); // the re-read sees the winner
+        when(repository.saveAndFlush(any(Follow.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"uq_follows_one_live\""));
+
+        FollowService.FollowWriteResult result = service.followUser(userId, targetId);
+
+        assertFalse(result.created());
+        assertEquals(winner.getId(), result.view().id());
+    }
+
+    @Test
+    void followUser_aForeignIntegrityViolationPropagates() {
+        // The absorb is keyed on the constraint's own name: every OTHER
+        // integrity violation is an honest failure that must propagate.
+        UUID userId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        when(userRepository.existsById(targetId)).thenReturn(true);
+        when(repository.findByUserIdAndFollowableTypeAndFollowableId(userId, FollowableType.USER, targetId))
+                .thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(Follow.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"uq_notifications_source_event_once\""));
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> service.followUser(userId, targetId));
+    }
+
     // ------------------------------------------------------------------
     // unfollow — the idempotent withdraw and the freed triple
     // ------------------------------------------------------------------
@@ -152,7 +194,7 @@ class FollowServiceTest {
         when(repository.findByUserIdAndFollowableTypeAndFollowableId(userId, FollowableType.USER, targetId))
                 .thenReturn(Optional.of(withdrawn))
                 .thenReturn(Optional.empty());
-        when(repository.save(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.saveAndFlush(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.unfollowUser(userId, targetId);
         verify(repository).delete(withdrawn);
@@ -160,7 +202,7 @@ class FollowServiceTest {
         FollowService.FollowWriteResult refollow = service.followUser(userId, targetId);
         assertTrue(refollow.created());
         ArgumentCaptor<Follow> saved = ArgumentCaptor.forClass(Follow.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getId()).isNotEqualTo(withdrawn.getId());
     }
 
@@ -175,13 +217,13 @@ class FollowServiceTest {
         when(groupLookupPort.exists(groupId)).thenReturn(true);
         when(repository.findByUserIdAndFollowableTypeAndFollowableId(userId, FollowableType.GROUP, groupId))
                 .thenReturn(Optional.empty());
-        when(repository.save(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.saveAndFlush(any(Follow.class))).thenAnswer(inv -> inv.getArgument(0));
 
         FollowService.FollowWriteResult result = service.followGroup(userId, groupId);
 
         assertTrue(result.created());
         ArgumentCaptor<Follow> saved = ArgumentCaptor.forClass(Follow.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         assertEquals(FollowableType.GROUP, saved.getValue().getFollowableType());
         assertEquals(groupId, saved.getValue().getFollowableId());
     }

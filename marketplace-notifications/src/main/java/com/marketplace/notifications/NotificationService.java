@@ -36,6 +36,7 @@ public class NotificationService {
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final NotificationPreferenceService preferences;
     private final NotificationTextSource text;
+    private final DisputeDeliveryWriter disputeDeliveryWriter;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -44,7 +45,8 @@ public class NotificationService {
                                EmailNotificationService emailNotificationService,
                                Optional<SimpMessagingTemplate> messagingTemplate,
                                NotificationPreferenceService preferences,
-                               NotificationTextSource text) {
+                               NotificationTextSource text,
+                               DisputeDeliveryWriter disputeDeliveryWriter) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -53,6 +55,7 @@ public class NotificationService {
         this.messagingTemplate = messagingTemplate;
         this.preferences = preferences;
         this.text = text;
+        this.disputeDeliveryWriter = disputeDeliveryWriter;
     }
 
     public void onBookingCreated(UUID bookingId) {
@@ -609,12 +612,16 @@ public class NotificationService {
      * pre-insert {@code existsByRecipientIdAndSourceEventId} gate answers
      * the sequential re-delivery (the framework's resubmission of an
      * incomplete registry entry) with an early return; the
-     * {@code uq_notifications_source_event_once} partial unique index is
-     * the concurrent-insert backstop — the rare lost race surfaces as a
-     * {@code DataIntegrityViolationException}, which is THE WINNER'S
-     * PROOF here (the row exists — the delivery happened) and is absorbed
-     * quietly, the V150 messaging replay discipline's honest twin: never a
-     * duplicate row, never a failed listener poisoning the registry.
+     * {@code uq_notifications_source_event_once} partial unique index
+     * (V186) is the concurrent-insert backstop — the rare lost race
+     * surfaces as a {@code DataIntegrityViolationException} raised on the
+     * delivery writer's OWN {@code REQUIRES_NEW} transaction
+     * ({@link DisputeDeliveryWriter} — the MessageSendWriter pattern),
+     * which is THE WINNER'S PROOF here (the row exists — the delivery
+     * happened) and is absorbed quietly OUTSIDE that transaction: the
+     * inner transaction alone rolls back, the caller's context stays
+     * healthy, never a duplicate row, never a failed listener poisoning
+     * the registry — the V150 messaging replay discipline's honest twin.
      */
     public void onDisputeOpened(UUID disputeId, UUID openedBy) {
         if (repository.existsByRecipientIdAndSourceEventId(openedBy, disputeId)) {
@@ -622,15 +629,10 @@ public class NotificationService {
                     disputeId, openedBy);
             return;
         }
-        try {
-            deliverDisputeNotification(openedBy, NotificationType.DISPUTE_OPENED,
-                    text.compose("notification.DISPUTE_OPENED", NotificationTextSource.PLATFORM_LOCALE,
-                            disputeId),
-                    disputeId);
-        } catch (DataIntegrityViolationException concurrentDuplicate) {
-            log.info("Concurrent dispute-opened delivery lost the ledger race — the row exists: "
-                    + "disputeId={}, recipient={}", disputeId, openedBy);
-        }
+        deliverDisputeNotification(openedBy, NotificationType.DISPUTE_OPENED,
+                text.compose("notification.DISPUTE_OPENED", NotificationTextSource.PLATFORM_LOCALE,
+                        disputeId),
+                disputeId);
     }
 
     /**
@@ -657,19 +659,14 @@ public class NotificationService {
                     disputeId, openedBy);
             return;
         }
-        try {
-            Locale platform = NotificationTextSource.PLATFORM_LOCALE;
-            String resolutionWord = text.disputeResolutionWord(resolution, platform);
-            String message = refundedAmountCents != null
-                    ? text.compose("notification.DISPUTE_RESOLVED.refund", platform,
-                            resolutionWord, refundedAmountCents, disputeId)
-                    : text.compose("notification.DISPUTE_RESOLVED", platform, resolutionWord, disputeId);
-            deliverDisputeNotification(openedBy, NotificationType.DISPUTE_RESOLVED,
-                    message, sourceEventId);
-        } catch (DataIntegrityViolationException concurrentDuplicate) {
-            log.info("Concurrent dispute-resolved delivery lost the ledger race — the row exists: "
-                    + "disputeId={}, recipient={}", disputeId, openedBy);
-        }
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String resolutionWord = text.disputeResolutionWord(resolution, platform);
+        String message = refundedAmountCents != null
+                ? text.compose("notification.DISPUTE_RESOLVED.refund", platform,
+                        resolutionWord, refundedAmountCents, disputeId)
+                : text.compose("notification.DISPUTE_RESOLVED", platform, resolutionWord, disputeId);
+        deliverDisputeNotification(openedBy, NotificationType.DISPUTE_RESOLVED,
+                message, sourceEventId);
     }
 
     /**
@@ -678,10 +675,28 @@ public class NotificationService {
      * email ride their L22 per-type/channel preferences). The recipient is
      * the dispute's opener in the users.id space — the id IS the recipient,
      * the same seam every carried-fact delivery here uses.
+     *
+     * <p><b>The ledger INSERT rides its own REQUIRES_NEW transaction</b>
+     * ({@link DisputeDeliveryWriter}, the MessageSendWriter pattern — the
+     * CodeRabbit round on the #540 slice): the concurrent-duplicate loss
+     * is caught HERE, OUTSIDE the transaction that took the violation, so
+     * the absorb never poisons a surrounding transaction (a caught
+     * exception inside the violated transaction is rollback-only — no
+     * commit can follow it). Only the ledger's own constraint is
+     * absorbed; every other integrity violation rethrows.</p>
      */
     private void deliverDisputeNotification(UUID recipientId, NotificationType type,
                                             String message, UUID sourceEventId) {
-        repository.save(Notification.create(recipientId, type.name(), message, sourceEventId));
+        try {
+            disputeDeliveryWriter.persist(recipientId, type.name(), message, sourceEventId);
+        } catch (DataIntegrityViolationException duplicate) {
+            if (!isSourceEventLedgerDuplicate(duplicate)) {
+                throw duplicate;
+            }
+            log.info("Concurrent dispute delivery lost the ledger race — the row exists: "
+                    + "sourceEventId={}, recipient={}, type={}", sourceEventId, recipientId, type);
+            return;
+        }
         if (preferences.isChannelEnabled(recipientId, type, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email." + type.name() + ".subject", NotificationTextSource.PLATFORM_LOCALE),
@@ -689,6 +704,22 @@ public class NotificationService {
                     Map.of("message", message));
         }
         sendWebSocket(recipientId, type, message);
+    }
+
+    /**
+     * The ledger duplicate test: the violation's cause chain must name the
+     * delivery-dedup constraint itself ({@code uq_notifications_source_event_once},
+     * V186) — every OTHER integrity violation is an honest failure that
+     * must propagate.
+     */
+    private static boolean isSourceEventLedgerDuplicate(DataIntegrityViolationException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null
+                    && t.getMessage().contains("uq_notifications_source_event_once")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Transactional(readOnly = true)

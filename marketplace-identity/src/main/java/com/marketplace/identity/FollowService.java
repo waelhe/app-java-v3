@@ -7,6 +7,7 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,15 +71,18 @@ public class FollowService {
     private final ProviderFollowRepository providerFollowRepository;
     private final UserRepository userRepository;
     private final GroupLookupPort groupLookupPort;
+    private final FollowWriter followWriter;
 
     public FollowService(FollowRepository repository,
                          ProviderFollowRepository providerFollowRepository,
                          UserRepository userRepository,
-                         GroupLookupPort groupLookupPort) {
+                         GroupLookupPort groupLookupPort,
+                         FollowWriter followWriter) {
         this.repository = repository;
         this.providerFollowRepository = providerFollowRepository;
         this.userRepository = userRepository;
         this.groupLookupPort = groupLookupPort;
+        this.followWriter = followWriter;
     }
 
     /**
@@ -195,7 +199,16 @@ public class FollowService {
     // The shared mechanics
     // ------------------------------------------------------------------
 
-    /** The idempotent create: a live replay answers the standing row. */
+    /**
+     * The idempotent create: a live replay answers the standing row. The
+     * INSERT rides its own REQUIRES_NEW transaction
+     * ({@link FollowWriter}, the MessageSendWriter pattern — CodeRabbit
+     * round on the #540 slice): the concurrent same-triple race's loser
+     * absorbs the {@code uq_follows_one_live} violation OUTSIDE the
+     * transaction that took it and re-reads the winner's committed row —
+     * the documented idempotent 200, never a rollback-only 500. Every
+     * OTHER integrity violation propagates honestly.
+     */
     private FollowWriteResult viewOrSave(UUID userId, FollowableType type, UUID sourceId) {
         Follow existing = repository
                 .findByUserIdAndFollowableTypeAndFollowableId(userId, type, sourceId)
@@ -203,9 +216,33 @@ public class FollowService {
         if (existing != null) {
             return new FollowWriteResult(FollowView.of(existing), false);
         }
-        return new FollowWriteResult(
-                FollowView.of(repository.save(Follow.create(UUID.randomUUID(), userId, type, sourceId))),
-                true);
+        try {
+            Follow saved = followWriter.persist(
+                    Follow.create(UUID.randomUUID(), userId, type, sourceId));
+            return new FollowWriteResult(FollowView.of(saved), true);
+        } catch (DataIntegrityViolationException duplicate) {
+            if (!isOneLiveFollowDuplicate(duplicate)) {
+                throw duplicate;
+            }
+            log.info("Concurrent follow lost the create race — answering the winner's row: "
+                    + "userId={}, type={}, sourceId={}", userId, type, sourceId);
+            return new FollowWriteResult(
+                    FollowView.of(followWriter.replay(userId, type, sourceId)), false);
+        }
+    }
+
+    /**
+     * The one-live-follow duplicate test: the violation's cause chain must
+     * name {@code uq_follows_one_live} itself (V177) — every OTHER
+     * integrity violation is an honest failure that must propagate.
+     */
+    private static boolean isOneLiveFollowDuplicate(DataIntegrityViolationException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("uq_follows_one_live")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The idempotent withdraw: a pair you do not hold is a quiet no-op. */

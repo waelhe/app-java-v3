@@ -311,7 +311,22 @@ public class DiscoveryService {
         PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> jobs =
                 jobsPort.findOpenJobs(locationId, request);
         List<DiscoveryCardView> candidates = forYouCandidates(lostFound, recommendations, events, jobs, followed);
-        return mergedPage(recencyOrdered(candidates), request, candidates.size());
+        // CodeRabbit round on the #540 slice: the page is LAST only when
+        // EVERY source page is last — the current page's candidate count was
+        // never the eligible set's size (page 0 with more than `size`
+        // candidates answered last=false on a stale count; a later sparse
+        // page answered last=true while the sources still had rows). The
+        // envelope's total stays the sources' honest sum (mergedPage's own
+        // vocabulary — an upper bound over the followed-excluded pool, the
+        // exclusion happens per page and the sources' own totals are the
+        // honest derivation available at this seam).
+        boolean last = lostFound.last() && recommendations.last() && events.last() && jobs.last();
+        long totalElements = lostFound.totalElements() + recommendations.totalElements()
+                + events.totalElements() + jobs.totalElements();
+        List<DiscoveryCardView> window = candidates.size() <= request.size()
+                ? candidates : candidates.subList(0, request.size());
+        int totalPages = (int) Math.ceil(totalElements / (double) request.size());
+        return new PagedResponse<>(window, request.page(), request.size(), totalElements, totalPages, last);
     }
 
     /**

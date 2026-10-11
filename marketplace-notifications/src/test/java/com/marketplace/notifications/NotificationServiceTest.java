@@ -56,7 +56,7 @@ class NotificationServiceTest {
         // NotificationTextSourceTest).
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, emailNotificationService, messagingTemplate, preferences,
-                new NotificationTextSource());
+                new NotificationTextSource(), new DisputeDeliveryWriter(repository));
     }
 
     /**

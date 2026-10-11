@@ -1,52 +1,36 @@
 package com.marketplace.jobs.spi;
 
-import com.marketplace.jobs.EmploymentType;
-import com.marketplace.jobs.JobListing;
 import com.marketplace.jobs.JobListingRepository;
-import com.marketplace.jobs.JobStatus;
-import com.marketplace.jobs.WorkplaceType;
 import com.marketplace.shared.api.JobsDiscoveryPort;
 import com.marketplace.shared.api.PagedRequest;
 import com.marketplace.shared.api.PagedResponse;
-import com.marketplace.shared.api.SpringPagination;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * JT-20 — the jobs discovery adapter's honest contract, unit-pinned on
- * the {@code MediaLookupAdapterTest} delegation shape (plain Mockito, no
- * Spring):
+ * JT-20 — the jobs discovery adapter's honest contract (the CodeRabbit
+ * round on the #540 slice), unit-pinned on the {@code MediaLookupAdapterTest}
+ * shape (plain Mockito, no Spring):
  *
  * <ul>
- *   <li>the lifecycle gate is the board's own, verbatim: the status is
- *       pinned to ACTIVE with every optional filter dropped — a CLOSED
- *       job never surfaces as an open opportunity (soft-deleted rows are
- *       absent through the entity's {@code @SoftDelete} filter);</li>
- *   <li>THE GEOGRAPHIC SCOPE FACT: the module holds no neighborhood
- *       scoping (city/district are free text, V153) — the adapter applies
- *       NO geographic filter, and the delegation is byte-identical for
- *       every locationId (the documented decision, never a silent
- *       widening or narrowing);</li>
- *   <li>the page/size ride the shared SpringPagination conversion,
- *       unsorted — the board's declared JPQL order (created_at DESC,
- *       id DESC) governs.</li>
+ *   <li>THE PORT CONTRACT'S SECOND OPTION, TAKEN HONESTLY: the module
+ *       holds no neighborhood geo scoping (city/district are free text,
+ *       V153 — not geo_locations ids), so the records DO NOT ENTER this
+ *       query. The adapter answers the honest empty page for EVERY
+ *       locationId — never a silent national widening labelled with
+ *       neighborhood reasons ("فرصة قريبة" / "حديث في حيّك");</li>
+ *   <li>the repository is never consulted — the decision is structural
+ *       (no mapping exists), not a query-level filter;</li>
+ *   <li>the empty answer keeps the shared envelope's honest shape: the
+ *       caller's own page/size, zero totals, last=true — the §9.4
+ *       degraded-leg form (an empty leg, never a dead rail).</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -59,82 +43,49 @@ class JobsDiscoveryAdapterTest {
         return new JobsDiscoveryAdapter(jobRepository);
     }
 
-    private JobListing activeJob() {
-        return JobListing.create(UUID.randomUUID(), "Barista wanted",
-                "Morning shifts, friendly crew.", EmploymentType.PART_TIME,
-                WorkplaceType.ONSITE, "الرياض", "النرجس",
-                null, null, null, null);
+    @Test
+    void findOpenJobs_isTheHonestEmptyLeg_theContractSecondOption() {
+        PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> response =
+                adapter().findOpenJobs(UUID.randomUUID(), PagedRequest.of(0, 20));
+
+        assertThat(response.content()).isEmpty();
+        assertThat(response.totalElements()).isZero();
+        assertThat(response.totalPages()).isZero();
+        assertThat(response.last()).isTrue();
+        // The repository is never consulted — the records do not enter
+        // the query at all (the port's second option, its own honesty
+        // rule: "either it scopes or the record does not enter this
+        // query — no silent widening").
+        verifyNoInteractions(jobRepository);
     }
 
     @Test
-    void findOpenJobs_pinsTheLifecycleGate_openMeansActive() {
-        when(jobRepository.searchBoard(any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-
-        adapter().findOpenJobs(UUID.randomUUID(), PagedRequest.of(0, 20));
-
-        // The board's own read with the status PINNED — a CLOSED (or
-        // filled) job never enters the opportunities rail.
-        verify(jobRepository).searchBoard(eq(JobStatus.ACTIVE), eq(null), eq(null),
-                eq(null), any(Pageable.class));
-    }
-
-    @Test
-    void findOpenJobs_appliesNoGeographicFilter_theDocumentedDecision() {
-        when(jobRepository.searchBoard(any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-
+    void findOpenJobs_answersTheSameHonestEmpty_forEveryLocation() {
         UUID firstLocation = UUID.randomUUID();
         UUID secondLocation = UUID.randomUUID();
-        adapter().findOpenJobs(firstLocation, PagedRequest.of(0, 20));
-        adapter().findOpenJobs(secondLocation, PagedRequest.of(0, 20));
 
-        // Byte-identical delegation for every locationId — no silent
-        // text-match guess stands in for a product-level geo mapping.
-        org.mockito.Mockito.verify(jobRepository, org.mockito.Mockito.times(2))
-                .searchBoard(eq(JobStatus.ACTIVE), eq(null), eq(null), eq(null),
-                        any(Pageable.class));
+        PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> first =
+                adapter().findOpenJobs(firstLocation, PagedRequest.of(0, 20));
+        PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> second =
+                adapter().findOpenJobs(secondLocation, PagedRequest.of(0, 20));
+
+        // Location-independent honesty: no locationId can scope the
+        // free-text fields, so every caller sees the same empty leg —
+        // never a location-flavored widening.
+        assertThat(first.content()).isEmpty();
+        assertThat(second.content()).isEmpty();
+        verifyNoInteractions(jobRepository);
     }
 
     @Test
-    void findOpenJobs_mapsTheCard_withTheHonestLifecycleStatus() {
-        JobListing job = activeJob();
-        when(jobRepository.searchBoard(any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of(job), PageRequest.of(0, 5), 1));
-
+    void findOpenJobs_keepsTheCallersOwnEnvelopeShape() {
         PagedResponse<JobsDiscoveryPort.DiscoveryJobCard> response =
-                adapter().findOpenJobs(UUID.randomUUID(), PagedRequest.of(0, 5));
+                adapter().findOpenJobs(UUID.randomUUID(), PagedRequest.of(2, 5));
 
-        JobsDiscoveryPort.DiscoveryJobCard card = response.content().get(0);
-        assertThat(card.jobId()).isEqualTo(job.getId());
-        assertThat(card.title()).isEqualTo("Barista wanted");
-        assertThat(card.description()).isEqualTo("Morning shifts, friendly crew.");
-        assertThat(card.employmentType()).isEqualTo("PART_TIME");
-        assertThat(card.workplaceType()).isEqualTo("ONSITE");
-        assertThat(card.status()).isEqualTo("ACTIVE");
-        assertThat(response.pageNumber()).isZero();
+        // The caller's own page/size ride the honest empty envelope —
+        // the degraded-leg form the shared ports already speak.
+        assertThat(response.pageNumber()).isEqualTo(2);
         assertThat(response.pageSize()).isEqualTo(5);
-        assertThat(response.totalElements()).isEqualTo(1L);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void findOpenJobs_carriesThePageAndSize_unsorted() {
-        when(jobRepository.searchBoard(any(), any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-
-        adapter().findOpenJobs(UUID.randomUUID(), PagedRequest.of(0, 20));
-
-        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-        verify(jobRepository).searchBoard(any(), any(), any(), any(), pageable.capture());
-        // The conversion carries page/size only — the board's declared
-        // JPQL order (created_at DESC, id DESC) governs, unsorted input.
-        assertThat(pageable.getValue().getPageNumber()).isZero();
-        assertThat(pageable.getValue().getPageSize()).isEqualTo(20);
-        assertThat(pageable.getValue().getSort().isUnsorted()).isTrue();
-        // The shared interop corner is the one translator (round-trip
-        // fidelity's documented home).
-        assertThat(SpringPagination.toPageable(PagedRequest.of(0, 20)).getSort())
-                .isEqualTo(Sort.unsorted());
+        assertThat(response.last()).isTrue();
     }
 }

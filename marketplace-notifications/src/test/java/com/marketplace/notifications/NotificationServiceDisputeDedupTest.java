@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,9 +36,15 @@ import static org.mockito.Mockito.when;
  * no exception: re-delivery can never duplicate;</li>
  * <li>the concurrent-insert race (two listeners delivering the same event
  * past the pre-insert gate) loses quietly at the
- * {@code uq_notifications_source_event_once} partial unique index — the
- * loser absorbs the {@code DataIntegrityViolationException} because the
- * winner's row IS the delivery (the V150 replay discipline's twin).</li>
+ * {@code uq_notifications_source_event_once} partial unique index (V186):
+ * the loser absorbs the {@code DataIntegrityViolationException} OUTSIDE
+ * the delivery writer's own REQUIRES_NEW transaction (the
+ * MessageSendWriter pattern — a caught violation inside the violated
+ * transaction is rollback-only, no commit can follow it) because the
+ * winner's row IS the delivery (the V150 replay discipline's twin);</li>
+ * <li>every OTHER integrity violation propagates honestly — the absorb
+ * is keyed on the ledger constraint's own name, never on the exception
+ * type alone.</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -68,7 +75,7 @@ class NotificationServiceDisputeDedupTest {
         return new NotificationService(repository, bookingParticipantProvider,
                 paymentIntentLookupPort, currentUserProvider, emailNotificationService,
                 Optional.<SimpMessagingTemplate>empty(), preferences,
-                new NotificationTextSource());
+                new NotificationTextSource(), new DisputeDeliveryWriter(repository));
     }
 
     @Test
@@ -78,7 +85,7 @@ class NotificationServiceDisputeDedupTest {
         service().onDisputeOpened(DISPUTE_ID, OPENER_ID);
 
         ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         Notification row = saved.getValue();
         assertThat(row.getRecipientId()).isEqualTo(OPENER_ID);
         assertThat(row.getType()).isEqualTo(NotificationType.DISPUTE_OPENED.name());
@@ -92,17 +99,30 @@ class NotificationServiceDisputeDedupTest {
 
         service().onDisputeOpened(DISPUTE_ID, OPENER_ID);
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, never()).saveAndFlush(any(Notification.class));
     }
 
     @Test
     void onDisputeOpened_ledgerRaceIsAbsorbedAsTheWinnersProof() {
         when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(false);
-        when(repository.save(any(Notification.class)))
-                .thenThrow(new DataIntegrityViolationException("uq_notifications_source_event_once"));
+        when(repository.saveAndFlush(any(Notification.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint "
+                                + "\"uq_notifications_source_event_once\""));
 
         assertThatCode(() -> service().onDisputeOpened(DISPUTE_ID, OPENER_ID))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void onDisputeOpened_aForeignIntegrityViolationPropagates() {
+        when(repository.existsByRecipientIdAndSourceEventId(OPENER_ID, DISPUTE_ID)).thenReturn(false);
+        when(repository.saveAndFlush(any(Notification.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"uq_follows_one_live\""));
+
+        assertThatThrownBy(() -> service().onDisputeOpened(DISPUTE_ID, OPENER_ID))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -113,7 +133,7 @@ class NotificationServiceDisputeDedupTest {
         service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "REFUND_CONSUMER", 5000L);
 
         ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         Notification row = saved.getValue();
         assertThat(row.getRecipientId()).isEqualTo(OPENER_ID);
         assertThat(row.getType()).isEqualTo(NotificationType.DISPUTE_RESOLVED.name());
@@ -132,7 +152,7 @@ class NotificationServiceDisputeDedupTest {
 
         service().onDisputeResolved(DISPUTE_ID, OPENER_ID, "NO_ACTION", null);
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, never()).saveAndFlush(any(Notification.class));
     }
 
     private UUID deterministicKey() {
