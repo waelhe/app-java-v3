@@ -227,9 +227,13 @@ class CommunityViewModel(
         viewModelScope.launch {
             try {
                 val membership = repository.getMyNeighborhood()
-                val locationName = runCatching {
+                val locationName = try {
                     findNode(repository.getGeoTree(), membership.locationId)?.nameAr
-                }.getOrNull()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
                 _uiState.update {
                     it.copy(
                         authenticated = true, loadingAccount = false, membership = membership,
