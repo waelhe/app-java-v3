@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.marketplace.android.core.network.EventDto
+import com.marketplace.android.feature.canChangeEventRsvp
 import com.marketplace.android.core.network.GroupDto
 import com.marketplace.android.core.network.PollDto
 import java.time.Instant
@@ -53,12 +54,12 @@ internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
             Text(eventStatusLabel(event.status), color = if (active) Forest else Warning, fontSize = 12.sp)
             Text(if (event.capacity == null) "${event.attending} مشارك" else "${event.attending} / ${event.capacity}",
                 color = Muted, fontSize = 12.sp)
-            Button(onClick = onRsvp, enabled = !busy && active && (event.rsvpedByMe || !full),
+            Button(onClick = onRsvp, enabled = !busy && canChangeEventRsvp(event) && (event.rsvpedByMe || !full),
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 else Text(when {
-                    !active -> "التسجيل غير متاح"
                     event.rsvpedByMe -> "إلغاء تسجيل الحضور"
+                    !active -> "التسجيل غير متاح"
                     full -> "اكتملت السعة"
                     else -> "سأحضر"
                 })

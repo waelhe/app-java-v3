@@ -140,6 +140,14 @@ internal fun parsePriceCents(raw: String): Int? =
         ?.let { scaled -> runCatching { scaled.intValueExact() }.getOrNull() }
 
 /**
+ * Adding an RSVP requires an explicitly active event, but freeing an existing
+ * seat remains allowed when the event is later cancelled/postponed or its
+ * status is missing. This mirrors the backend's separate RSVP/un-RSVP gates.
+ */
+internal fun canChangeEventRsvp(event: EventDto): Boolean =
+    event.status.equals("ACTIVE", ignoreCase = true) || event.rsvpedByMe
+
+/**
  * Merge only the lifecycle field returned by the command endpoint.
  * Its write projection intentionally does not contain the feed's grouped
  * media/reaction aggregates, so replacing a feed row with it would lose
@@ -693,7 +701,7 @@ class CommunityViewModel(
     }
 
     fun toggleEventRsvp(event: EventDto) {
-        if (event.id in _uiState.value.pollActionIds || !event.status.equals("ACTIVE", ignoreCase = true)) return
+        if (event.id in _uiState.value.pollActionIds || !canChangeEventRsvp(event)) return
         viewModelScope.launch {
             _uiState.update { it.copy(pollActionIds = it.pollActionIds + event.id) }
             try {

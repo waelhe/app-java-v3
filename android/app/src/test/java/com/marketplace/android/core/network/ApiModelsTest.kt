@@ -1,5 +1,6 @@
 package com.marketplace.android.core.network
 
+import com.marketplace.android.feature.canChangeEventRsvp
 import com.marketplace.android.feature.mergeLostFoundLifecycleState
 import com.marketplace.android.feature.parsePriceCents
 import com.squareup.moshi.Moshi
@@ -159,6 +160,15 @@ class ApiModelsTest {
         assertTrue(merged.reactedByMe)
         assertEquals("asset-3", merged.media.single().mediaId)
         assertEquals("محفظة مفقودة", merged.title)
+    }
+
+    @Test
+    fun cancelledOrUnknownEventsMayOnlyFreeAnExistingRsvp() {
+        assertTrue(canChangeEventRsvp(EventDto(status = "ACTIVE", rsvpedByMe = false)))
+        assertTrue(canChangeEventRsvp(EventDto(status = "CANCELLED", rsvpedByMe = true)))
+        assertTrue(canChangeEventRsvp(EventDto(status = "POSTPONED", rsvpedByMe = true)))
+        assertFalse(canChangeEventRsvp(EventDto(status = "CANCELLED", rsvpedByMe = false)))
+        assertFalse(canChangeEventRsvp(EventDto(status = "", rsvpedByMe = false)))
     }
 
     @Test
