@@ -6,14 +6,19 @@ plugins {
 }
 
 val apiBaseUrl = providers.gradleProperty("apiBaseUrl")
-    .orElse("https://app-java-v3-staging-staging.up.railway.app/")
+    .orElse("https://app-java-v3-production-59bf.up.railway.app/")
     .get()
     .let { if (it.endsWith("/")) it else "$it/" }
 val oidcIssuer = providers.gradleProperty("oidcIssuer")
-    .orElse("https://app-java-v3-staging-staging.up.railway.app")
+    .orElse("https://app-java-v3-production-59bf.up.railway.app")
     .get()
     .removeSuffix("/")
-val oidcClientId = providers.gradleProperty("oidcClientId").orElse("").get()
+// Client IDs are public OAuth configuration, not secrets. Gradle property takes precedence;
+// the matching GitHub Actions repository variable can supply the same value to CI builds.
+val oidcClientId = providers.gradleProperty("oidcClientId")
+    .orElse(providers.environmentVariable("OAUTH_PUBLIC_CLIENT_ID"))
+    .orElse("")
+    .get()
 val oidcRedirectUri = providers.gradleProperty("oidcRedirectUri")
     .orElse("com.marketplace.android:/oauth2redirect")
     .get()
