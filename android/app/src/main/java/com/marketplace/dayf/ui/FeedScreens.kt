@@ -1,5 +1,15 @@
 package com.marketplace.dayf.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,12 +21,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Logout
@@ -35,6 +47,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -145,6 +158,8 @@ fun FeedScreen(state: DayfUiState, viewModel: PlatformViewModel, padding: Paddin
             items(state.posts, key = { it.id }) { post ->
                 PostCard(
                     post = post,
+                    currentUserId = state.myProfile?.id,
+                    currentUserDisplayName = state.myProfile?.displayName,
                     onOpen = { viewModel.openPost(post) },
                     onReact = { viewModel.toggleReaction(post) }
                 )
@@ -154,7 +169,13 @@ fun FeedScreen(state: DayfUiState, viewModel: PlatformViewModel, padding: Paddin
 }
 
 @Composable
-private fun PostCard(post: NeighborhoodPost, onOpen: () -> Unit, onReact: () -> Unit) {
+private fun PostCard(
+    post: NeighborhoodPost,
+    currentUserId: String?,
+    currentUserDisplayName: String?,
+    onOpen: () -> Unit,
+    onReact: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -164,7 +185,11 @@ private fun PostCard(post: NeighborhoodPost, onOpen: () -> Unit, onReact: () -> 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BrandAvatar()
                 Column(Modifier.weight(1f)) {
-                    Text("عضو من الحي", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (post.authorId == currentUserId) currentUserDisplayName?.takeIf { it.isNotBlank() } ?: "أنت"
+                        else "عضو من الحي",
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text(post.createdAt.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.Surface(
@@ -180,6 +205,21 @@ private fun PostCard(post: NeighborhoodPost, onOpen: () -> Unit, onReact: () -> 
             }
             Text(post.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(post.body, maxLines = 5, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            post.media.sortedBy { it.position }.firstOrNull()?.let { photo ->
+                AsyncImage(
+                    model = photo.thumbUrl ?: photo.url,
+                    contentDescription = "صورة مرفقة بالمنشور",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp))
+                )
+                if (post.media.size > 1) {
+                    Text(
+                        "صور إضافية: " + (post.media.size - 1),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Divider(color = MaterialTheme.colorScheme.surfaceVariant)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onOpen) {
@@ -209,6 +249,31 @@ fun PostDetailScreen(
     padding: PaddingValues
 ) {
     var commentText by remember(post.id) { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val imageData = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val contentType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: throw IllegalStateException("تعذّر قراءة الصورة المحددة.")
+                        contentType to bytes
+                    }
+                }
+                imageData.onSuccess { (contentType, bytes) ->
+                    if (contentType.startsWith("image/")) {
+                        viewModel.uploadPostPhoto(post.id, contentType, bytes)
+                    } else {
+                        viewModel.showError("اختر ملف صورة مدعومًا.")
+                    }
+                }.onFailure {
+                    viewModel.showError(it.message ?: "تعذّر قراءة الصورة المحددة.")
+                }
+            }
+        }
+    }
     Column(
         Modifier.fillMaxSize().padding(padding).imePadding().padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
@@ -216,7 +281,21 @@ fun PostDetailScreen(
             IconButton(onClick = viewModel::closePost) {
                 Icon(Icons.Outlined.ArrowBack, contentDescription = "العودة إلى الخلاصة")
             }
-            Text("تفاصيل المنشور", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("تفاصيل المنشور", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (viewModel.canUploadPhoto(post)) {
+                TextButton(
+                    onClick = { photoPicker.launch("image/*") },
+                    enabled = !state.isUploadingPhoto
+                ) {
+                    if (state.isUploadingPhoto) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null)
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (state.isUploadingPhoto) "جارٍ الرفع" else "إرفاق صورة")
+                }
+            }
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -229,6 +308,12 @@ fun PostDetailScreen(
                         Text(PostCategoryLabels.arabic(post.category), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
                         Text(post.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Text(post.body, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (post.authorId == state.myProfile?.id) state.myProfile?.displayName?.takeIf { it.isNotBlank() } ?: "أنت"
+                            else "عضو من الحي",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                         Text(post.createdAt.take(10), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { viewModel.toggleReaction(post) }) {
                             Icon(Icons.Outlined.ThumbUp, contentDescription = null)
@@ -236,6 +321,26 @@ fun PostDetailScreen(
                             Text(if (post.reactedByMe) "إزالة التفاعل (" + post.reactionsCount + ")" else "تفاعل (" + post.reactionsCount + ")")
                         }
                     }
+                }
+            }
+            if (post.media.isNotEmpty()) {
+                item {
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(post.media.sortedBy { it.position }, key = { it.mediaId }) { photo ->
+                            AsyncImage(
+                                model = photo.thumbUrl ?: photo.url,
+                                contentDescription = "صورة مرفقة بالمنشور",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.width(260.dp).height(200.dp).clip(RoundedCornerShape(18.dp))
+                            )
+                        }
+                    }
+                }
+            }
+            if (state.isUploadingPhoto) item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("جارٍ رفع الصورة والتحقق منها في الخادم.")
                 }
             }
             item { Text("التعليقات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
