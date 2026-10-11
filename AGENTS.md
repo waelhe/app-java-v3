@@ -1,4 +1,4 @@
-# Project-Specific Rules — Backend Java (V3)
+# Project-Specific Rules — Local Community Platform (app-java-v3)
 
 Follows the global AGENTS.md at `~/.config/opencode/AGENTS.md`.
 This file adds project-specific conventions.
@@ -19,7 +19,11 @@ This file adds project-specific conventions.
      - realestate systems     → docs/realestate-systems-plan.md
      - postgis integration     → docs/postgis-integration-plan.md
      - community layer        → docs/neighborhood-community-plan.md
-     - unified platform       → docs/unified-platform-plan.md
+     - platform product/experience/architecture → docs/product-platform-blueprint.md
+     - user journeys and acceptance criteria     → docs/community-platform-user-journeys.md
+     - visual UX and design system               → docs/community-platform-ux-design.md
+     - product decisions                         → docs/platform-product-decisions.md
+     - product delivery method                   → docs/community-platform-product-management.md
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
 ```
@@ -35,11 +39,23 @@ This file adds project-specific conventions.
 ```
 أي إجراء لا يحمل هذا الإعلان **يُتوقف تلقائياً** قبل التنفيذ.
 
-### 0.3 مبدأ «الباك اند مرساةً» — نطاق الحرية المنضبطة
-من خطة العملاء والاستضافة (§1): النواة (Boot/Modulith/SAS/Java) مغلقة على main؛ أي عميل مستقبلي = **إعداد + اختبار** عبر مسار `RegisteredClientRepository.save` (env→DB) + CORS env + اختبار S2/S3 للصف الفعلي — **صفر كود/وحدة/اعتماديات جديدة**. لا عودة عن D6 (مفاتيح prod fail-fast) ولا عن INV-2 (إعدادات صريحة كاملة).
+### 0.3 تحديث نطاق المنتج — المنتج والتجربة يقودان التنفيذ (توجيه المالك 2026-10-11)
 
-### 0.4 البوابات المفتوحة لا تبدأ بلا كلمة المستخدم
-- بوابة B (تقنية العميل ونمطه) → بوابة C (جهة الاستضافة)، بالترتيب (§6 خطة العملاء والاستضافة)، كلٌّ بكلمة صريحة. لا تفترض إجابة.
+القاعدة الأقدم التي تعاملت مع الباك إند باعتباره نطاقًا مغلقًا والعميل باعتباره إعدادًا فقط **لم تعد حاكمة لنطاق المنتج**. طلب المالك واضح: المطلوب منصة مجتمعية متكاملة، لا غلافًا ضعيفًا للواجهات الموجودة. يُستخدم الباك إند الحالي أساسًا لما يثبت أنه صالح، وتُستكمل الفجوات اللازمة في المجالات المالكة عندما تتطلبها رحلة مستخدم كاملة.
+
+- لا يبدأ العمل بواجهة أو endpoint منفرد. ابدأ بنتيجة مستخدم من مخطط المنتج والرحلات، ثم قِس الفجوة في الكود والبيانات والعقود والاختبارات.
+- الاتجاه المعتمد للعميل الأول هو Android أصلي بـKotlin وJetpack Compose؛ لا يُنشأ عميل موازٍ أو WebView بوصفه بديلًا.
+- لا تُنشأ مصادقة أو ملكية بيانات أو قناة إشعارات موازية إذا كانت القدرة الحالية مناسبة؛ تُمدد القدرة المالكة عندما يكشف القياس عن فجوة.
+- تظل ضوابط Spring Boot/Security وFlyway وModulith والسرية والبيئات ملزمة تقنيًا. توسيع نطاق المنتج لا يبرر تجاوز وثائق الإطار الرسمية أو إعادة كتابة السجلات المطبقة.
+- كل شريحة يجب أن تربط تجربة العميل بعقد حقيقي وقواعد مجال واستدامة بيانات واختبارات؛ لا بيانات وهمية أو نجاح متفائل.
+
+
+### 0.4 قرارات المنتج والعمل الجاري
+
+- قرار العميل الأصلي Android Kotlin/Jetpack Compose محسوم بتوجيه المالك السابق؛ تُراجع إصدارات الأدوات المستقرة والوثائق الرسمية عند التنفيذ.
+- لا يُعتبر أي PR من محاولات Android المتكررة مصدرًا حاكمًا أو تطبيقًا معتمدًا. راجع المخطط الجديد والرحلات قبل إعادة استخدام كود منه.
+- قبل كل تغيير، افحص PRs المفتوحة والفروع والتداخل في الترحيلات وملفات الحالة؛ لا تدمج تغييرات متنافسة لمجرد اخضرار CI.
+- لا دمج إلى main ولا إطلاق دون أمر صريح من المالك. يحفظ سجل التنظيف والأثر في docs/github-recovery-log.md.
 
 ## Additional Rules
 
