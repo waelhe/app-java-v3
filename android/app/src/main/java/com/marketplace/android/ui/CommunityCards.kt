@@ -40,6 +40,7 @@ import java.util.Locale
 internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
     // The current backend event view exposes RSVP/capacity facts, but no lifecycle status.
     // Availability is therefore determined from the exposed RSVP facts and enforced by the server.
+    val active = event.status.equals("ACTIVE", ignoreCase = true)
     val full = event.capacity != null && event.attending >= event.capacity && !event.rsvpedByMe
     ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White)) {
@@ -50,12 +51,14 @@ internal fun EventCard(event: EventDto, busy: Boolean, onRsvp: () -> Unit) {
             Text("الموعد: ${formatEventTime(event.startsAt)}", color = Muted, fontSize = 13.sp)
             Text("المكان: ${event.locationLabel}", color = Muted, fontSize = 13.sp)
             Text("المنظّم: ${event.organizerLabel}", color = Muted, fontSize = 13.sp)
+            Text(eventStatusLabel(event.status), color = if (active) Forest else Warning, fontSize = 12.sp)
             Text(if (event.capacity == null) "${event.attending} مشارك" else "${event.attending} / ${event.capacity}",
                 color = Muted, fontSize = 12.sp)
-            Button(onClick = onRsvp, enabled = !busy && (event.rsvpedByMe || !full),
+            Button(onClick = onRsvp, enabled = !busy && active && (event.rsvpedByMe || !full),
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 else Text(when {
+                    !active -> "التسجيل غير متاح"
                     event.rsvpedByMe -> "إلغاء تسجيل الحضور"
                     full -> "اكتملت السعة"
                     else -> "سأحضر"
@@ -107,6 +110,13 @@ internal fun PollCard(poll: PollDto, busy: Boolean, onVote: (String) -> Unit, on
             }
         }
     }
+}
+
+private fun eventStatusLabel(value: String) = when (value.uppercase(Locale.ROOT)) {
+    "ACTIVE" -> "فعالية نشطة"
+    "CANCELLED" -> "فعالية ملغاة"
+    "POSTPONED" -> "فعالية مؤجلة"
+    else -> "حالة الفعالية غير معروفة"
 }
 
 private fun eventCategoryLabel(value: String) = when (value.uppercase(Locale.ROOT)) {
