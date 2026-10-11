@@ -55,6 +55,12 @@ interface MarketplaceApi {
     @POST("api/v1/neighborhood/posts")
     suspend fun createPost(@Body request: CreatePostRequest): PostDto
 
+    @POST("api/v1/posts/{postId}/lost-found-state")
+    suspend fun updateLostFoundState(
+        @Path("postId") postId: String,
+        @Body request: UpdateLostFoundStateRequest
+    ): PostDto
+
     @POST("api/v1/media/uploads")
     suspend fun requestPostMediaUpload(@Body request: RequestPostMediaUpload): MediaUploadDto
 
