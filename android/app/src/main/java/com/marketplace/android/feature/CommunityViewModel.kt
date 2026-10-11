@@ -131,11 +131,6 @@ data class AppUiState(
 
 
 /**
- * Convert a user-entered major-unit amount into integer minor units exactly
- * within the API's Int range. BigDecimal.toInt() silently overflows, which
- * can otherwise turn a very large price into a small positive price.
- */
-/**
  * Enforce a Unicode-code-point limit without splitting UTF-16 surrogate pairs.
  * The posts-search API contract accepts at most 200 Unicode code points.
  */
@@ -146,6 +141,11 @@ internal fun takeCodePoints(value: String, maximum: Int): String {
     else value.substring(0, value.offsetByCodePoints(0, maximum))
 }
 
+/**
+ * Convert a user-entered major-unit amount into integer minor units exactly
+ * within the API's Int range. BigDecimal.toInt() silently overflows, which
+ * can otherwise turn a very large price into a small positive price.
+ */
 internal fun parsePriceCents(raw: String): Int? =
     raw.trim().replace(',', '.')
         .toBigDecimalOrNull()
@@ -184,6 +184,7 @@ class CommunityViewModel(
     val uiState = _uiState.asStateFlow()
     private var locationSearchJob: Job? = null
     private var searchJob: Job? = null
+    private var searchRequestId: Long = 0
 
     fun authenticationFailed(message: String) {
         _uiState.update { it.copy(authError = message, authSuccess = null, loadingAccount = false) }
@@ -554,6 +555,7 @@ class CommunityViewModel(
     fun updateSearchQuery(query: String) {
         val boundedQuery = takeCodePoints(query, 200)
         if (_uiState.value.searchQuery == boundedQuery) return
+        searchRequestId += 1
         searchJob?.cancel()
         _uiState.update {
             it.copy(searchQuery = boundedQuery, searchBusy = false, searchError = null)
@@ -578,6 +580,8 @@ class CommunityViewModel(
         }
 
         searchJob?.cancel()
+        searchRequestId += 1
+        val requestId = searchRequestId
         searchJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -592,8 +596,9 @@ class CommunityViewModel(
             try {
                 val page = repository.searchPosts(query, page = 0)
                 _uiState.update { state ->
-                    if (state.searchQuery.trim() != query || state.searchResultsQuery != query) {
-                        state.copy(searchBusy = false)
+                    if (requestId != searchRequestId ||
+                        state.searchQuery.trim() != query || state.searchResultsQuery != query) {
+                        state
                     } else {
                         state.copy(
                             searchResults = page.content,
@@ -609,7 +614,8 @@ class CommunityViewModel(
             } catch (error: Exception) {
                 val message = failureMessage(error)
                 _uiState.update { state ->
-                    if (state.searchResultsQuery == query && state.searchQuery.trim() == query) {
+                    if (requestId == searchRequestId &&
+                        state.searchResultsQuery == query && state.searchQuery.trim() == query) {
                         state.copy(searchBusy = false, searchError = message)
                     } else state
                 }
@@ -625,13 +631,16 @@ class CommunityViewModel(
         val requestedPage = current.searchPage + 1
 
         searchJob?.cancel()
+        searchRequestId += 1
+        val requestId = searchRequestId
         searchJob = viewModelScope.launch {
             _uiState.update { it.copy(searchBusy = true, searchError = null) }
             try {
                 val page = repository.searchPosts(query, page = requestedPage)
                 _uiState.update { state ->
-                    if (state.searchResultsQuery != query || state.searchQuery.trim() != query) {
-                        state.copy(searchBusy = false)
+                    if (requestId != searchRequestId ||
+                        state.searchResultsQuery != query || state.searchQuery.trim() != query) {
+                        state
                     } else {
                         state.copy(
                             searchResults = (state.searchResults + page.content).distinctBy { it.id },
@@ -647,7 +656,8 @@ class CommunityViewModel(
             } catch (error: Exception) {
                 val message = failureMessage(error)
                 _uiState.update { state ->
-                    if (state.searchResultsQuery == query && state.searchQuery.trim() == query) {
+                    if (requestId == searchRequestId &&
+                        state.searchResultsQuery == query && state.searchQuery.trim() == query) {
                         state.copy(searchBusy = false, searchError = message)
                     } else state
                 }
