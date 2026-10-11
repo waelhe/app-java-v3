@@ -14,8 +14,10 @@ import java.util.UUID;
  * terms on their storefront product (the plan's availability/offer
  * projection kept SEPARATE from the confirmed loans). One offer per
  * product (the UNIQUE key), the daily fee in minor units, the optional
- * deposit, and the soft-delete as the withdrawal. Audited (the V24
- * mirror in V174).
+ * deposit, the owner's optional per-day late surcharge (ADR-0009 — the
+ * late-fee rules opened: the terms are the owner's own, frozen on the loan
+ * at request time), and the soft-delete as the withdrawal. Audited (the
+ * V24 mirror in V174).
  */
 @Entity
 @Table(name = "lending_offers")
@@ -40,32 +42,41 @@ public class LendingOffer extends BaseEntity {
     @Column(name = "deposit_minor", nullable = false)
     private long depositMinor;
 
+    /** ADR-0009: the owner's per-day late surcharge (zero = no surcharge). */
+    @Column(name = "late_fee_per_day_minor", nullable = false)
+    private long lateFeePerDayMinor;
+
     protected LendingOffer() {
         // JPA
     }
 
     private LendingOffer(UUID id, UUID productId, UUID ownerId,
-                         long dailyFeeMinor, String currency, long depositMinor) {
+                         long dailyFeeMinor, String currency, long depositMinor,
+                         long lateFeePerDayMinor) {
         this.id = id;
         this.productId = productId;
         this.ownerId = ownerId;
         this.dailyFeeMinor = dailyFeeMinor;
         this.currency = currency;
         this.depositMinor = depositMinor;
+        this.lateFeePerDayMinor = lateFeePerDayMinor;
     }
 
     /** The publish write — the ownership gate lives on the service. */
     public static LendingOffer publish(UUID productId, UUID ownerId,
-                                       long dailyFeeMinor, String currency, long depositMinor) {
-        return new LendingOffer(UUID.randomUUID(), productId, ownerId, dailyFeeMinor, currency, depositMinor);
+                                       long dailyFeeMinor, String currency, long depositMinor,
+                                       long lateFeePerDayMinor) {
+        return new LendingOffer(UUID.randomUUID(), productId, ownerId, dailyFeeMinor, currency,
+                depositMinor, lateFeePerDayMinor);
     }
 
-    public void updateTerms(long dailyFeeMinor, long depositMinor) {
-        if (dailyFeeMinor < 0 || depositMinor < 0) {
+    public void updateTerms(long dailyFeeMinor, long depositMinor, long lateFeePerDayMinor) {
+        if (dailyFeeMinor < 0 || depositMinor < 0 || lateFeePerDayMinor < 0) {
             throw new IllegalArgumentException("Lending terms are non-negative minor-unit amounts");
         }
         this.dailyFeeMinor = dailyFeeMinor;
         this.depositMinor = depositMinor;
+        this.lateFeePerDayMinor = lateFeePerDayMinor;
     }
 
     /** The period fee: the ceiling of the days × the daily rate (a partial day rents the whole day). */
@@ -97,5 +108,9 @@ public class LendingOffer extends BaseEntity {
 
     public long getDepositMinor() {
         return depositMinor;
+    }
+
+    public long getLateFeePerDayMinor() {
+        return lateFeePerDayMinor;
     }
 }

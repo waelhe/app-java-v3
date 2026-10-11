@@ -3,6 +3,7 @@ package com.marketplace.lending;
 import com.marketplace.shared.api.ApiConstants;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -43,15 +44,17 @@ public class LendingController {
 
     @PostMapping("/offers/{productId}")
     @Operation(summary = "Publish (or update) the lending offer on your product",
-            description = "The owner's own daily fee and optional deposit, minor units. "
-                    + "The product must be ACTIVE and owned by the caller (a stranger's "
-                    + "product answers the honest 404).")
+            description = "The owner's own daily fee, optional deposit, and optional per-day "
+                    + "late surcharge (ADR-0009), minor units. The product must be ACTIVE and "
+                    + "owned by the caller (a stranger's product answers the honest 404).")
     public ResponseEntity<OfferResponse> publishOffer(@PathVariable UUID productId,
                                                       @Valid @RequestBody PublishOfferRequest request,
                                                       Authentication authentication) {
         return ResponseEntity.ok(OfferResponse.of(
                 lendingService.publishOffer(productId, request.dailyFeeMinor(),
-                        request.depositMinor(), authentication)));
+                        request.depositMinor(),
+                        request.lateFeePerDayMinor() == null ? 0L : request.lateFeePerDayMinor(),
+                        authentication)));
     }
 
     @DeleteMapping("/offers/{productId}")
@@ -150,7 +153,11 @@ public class LendingController {
 
     public record PublishOfferRequest(
             @NotNull @Positive Long dailyFeeMinor,
-            @NotNull @Positive Long depositMinor) {
+            @NotNull @Positive Long depositMinor,
+            @Schema(description = "ADR-0009: the owner's optional per-day late surcharge, minor "
+                    + "units (omitted = no surcharge). The terms are the owner's own — frozen on "
+                    + "each loan at request time, never caller-supplied afterwards.")
+            Long lateFeePerDayMinor) {
     }
 
     public record RequestLoanRequest(
@@ -162,21 +169,25 @@ public class LendingController {
     }
 
     public record OfferResponse(UUID id, UUID productId, UUID ownerId,
-                                long dailyFeeMinor, String currency, long depositMinor) {
+                                long dailyFeeMinor, String currency, long depositMinor,
+                                long lateFeePerDayMinor) {
         static OfferResponse of(LendingOffer offer) {
             return new OfferResponse(offer.getId(), offer.getProductId(), offer.getOwnerId(),
-                    offer.getDailyFeeMinor(), offer.getCurrency(), offer.getDepositMinor());
+                    offer.getDailyFeeMinor(), offer.getCurrency(), offer.getDepositMinor(),
+                    offer.getLateFeePerDayMinor());
         }
     }
 
     public record LoanResponse(UUID id, UUID productId, UUID ownerId, UUID borrowerId,
                                String status, String startAt, String endAt,
-                               long feeMinor, String currency, UUID paymentIntentId) {
+                               long feeMinor, String currency, UUID paymentIntentId,
+                               long lateFeePerDayMinor, int lateDays, long lateFeeMinor) {
         static LoanResponse of(Loan loan) {
             return new LoanResponse(loan.getId(), loan.getProductId(), loan.getOwnerId(),
                     loan.getBorrowerId(), loan.getStatus().name(),
                     loan.getStartAt().toString(), loan.getEndAt().toString(),
-                    loan.getFeeMinor(), loan.getCurrency(), loan.getPaymentIntentId());
+                    loan.getFeeMinor(), loan.getCurrency(), loan.getPaymentIntentId(),
+                    loan.getLateFeePerDayMinor(), loan.getLateDays(), loan.getLateFeeMinor());
         }
     }
 }

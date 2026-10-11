@@ -4,6 +4,12 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeResolution;
+import com.marketplace.shared.api.DisputeOpenedEvent;
+import com.marketplace.shared.api.DisputeResolvedEvent;
+import com.marketplace.shared.api.DisputeSubject;
+import com.marketplace.shared.api.LoanInfo;
+import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -40,6 +46,9 @@ class DisputeServiceTest {
     private BookingParticipantProvider bookingParticipantProvider;
 
     @Mock
+    private LoanPartyProvider loanPartyProvider;
+
+    @Mock
     private PaymentRefundPort paymentRefundPort;
 
     @Mock
@@ -72,7 +81,7 @@ class DisputeServiceTest {
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         BookingInfo info = new BookingInfo(UUID.randomUUID(), userId, "CONFIRMED", 5000L, "SAR", Instant.now(), Instant.now());
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(info);
-        Dispute dispute = Dispute.open(bookingId, userId, "noise");
+        Dispute dispute = Dispute.openBooking(bookingId, userId, "noise");
         when(repository.findByBookingId(bookingId)).thenReturn(List.of(dispute));
 
         List<Dispute> result = disputeService.listForBooking(bookingId, authentication);
@@ -87,7 +96,7 @@ class DisputeServiceTest {
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(mock(BookingInfo.class));
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "noise");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "noise");
         when(repository.findByBookingId(bookingId)).thenReturn(List.of(dispute));
 
         List<Dispute> result = disputeService.listForBooking(bookingId, authentication);
@@ -112,7 +121,7 @@ class DisputeServiceTest {
     @Test
     void resolve_noAction_succeeds_withoutTouchingTheRefundPath() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
 
         Dispute result = disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication);
@@ -127,7 +136,7 @@ class DisputeServiceTest {
     @Test
     void resolve_releaseProvider_succeeds_withoutTouchingTheRefundPath() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
 
         Dispute result = disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, authentication);
@@ -141,7 +150,7 @@ class DisputeServiceTest {
         UUID disputeId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
         when(paymentRefundPort.refundForBooking(bookingId, null))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));
@@ -158,7 +167,7 @@ class DisputeServiceTest {
     @Test
     void resolve_refundConsumer_refundFailure_propagates() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
         when(paymentRefundPort.refundForBooking(any(), any()))
                 .thenThrow(new ResourceNotFoundException("No payment intent for booking"));
@@ -172,7 +181,7 @@ class DisputeServiceTest {
         // L24 acceptance 1: a repeated resolve request is a conflict BEFORE
         // the refund path is invoked — no double debit is even attempted.
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
         dispute.resolve(DisputeResolution.REFUND_CONSUMER);
         dispute.recordRefund(UUID.randomUUID(), 5000L);
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
@@ -214,6 +223,67 @@ class DisputeServiceTest {
         assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
         assertThat(captor.getValue().openedBy()).isEqualTo(userId);
         assertThat(captor.getValue().disputeId()).isNotNull();
+        assertThat(captor.getValue().subjectType()).isEqualTo(DisputeSubject.BOOKING);
+    }
+
+    /**
+     * ADR-0009: the loan subject — the party gate rides the
+     * {@code LoanPartyProvider} contract and the published event carries
+     * the LOAN subject (the freeze listener's branching fact).
+     */
+    @Test
+    void openForLoan_publishesTheLoanSubjectEventBehindThePartyGate() {
+        UUID loanId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
+        when(loanPartyProvider.getLoanInfo(loanId)).thenReturn(new LoanInfo(loanId, userId, UUID.randomUUID()));
+        when(repository.save(any(Dispute.class))).thenAnswer(i -> i.getArgument(0));
+
+        Dispute dispute = disputeService.openForLoan(loanId, "item damaged", authentication);
+
+        assertThat(dispute.getLoanId()).isEqualTo(loanId);
+        assertThat(dispute.getBookingId()).isNull();
+        assertThat(dispute.getSubjectType()).isEqualTo(DisputeSubject.LOAN);
+        ArgumentCaptor<DisputeOpenedEvent> captor = ArgumentCaptor.forClass(DisputeOpenedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().subjectType()).isEqualTo(DisputeSubject.LOAN);
+        assertThat(captor.getValue().loanId()).isEqualTo(loanId);
+        assertThat(captor.getValue().bookingId()).isNull();
+    }
+
+    @Test
+    void openForLoan_nonParty_answersAccessDenied() {
+        UUID loanId = UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(UUID.randomUUID());
+        when(loanPartyProvider.getLoanInfo(loanId)).thenReturn(
+                new LoanInfo(loanId, UUID.randomUUID(), UUID.randomUUID()));
+
+        assertThrows(AccessDeniedException.class,
+                () -> disputeService.openForLoan(loanId, "stranger", authentication));
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * ADR-0009: the loan subject's REFUND_CONSUMER resolution moves NO
+     * money here — the lending module's cancellation chain owns the refund
+     * (the ONE refund contract; disputes never re-points the booking path).
+     */
+    @Test
+    void resolve_loanSubject_refundDecision_movesNoMoneyThroughTheBookingPath() {
+        UUID loanId = UUID.randomUUID();
+        Dispute dispute = Dispute.openLoan(loanId, UUID.randomUUID(), "damage");
+        when(repository.findById(dispute.getId())).thenReturn(Optional.of(dispute));
+
+        Dispute result = disputeService.resolve(dispute.getId(), DisputeResolution.REFUND_CONSUMER, authentication);
+
+        assertThat(result.getResolution()).isEqualTo(DisputeResolution.REFUND_CONSUMER);
+        assertThat(result.getRefundPaymentId()).isNull();
+        verify(paymentRefundPort, never()).refundForBooking(any(), any());
+        ArgumentCaptor<DisputeResolvedEvent> captor = ArgumentCaptor.forClass(DisputeResolvedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().subjectType()).isEqualTo(DisputeSubject.LOAN);
+        assertThat(captor.getValue().loanId()).isEqualTo(loanId);
+        assertThat(captor.getValue().refundedAmountCents()).isNull();
     }
 
     /**
@@ -227,7 +297,7 @@ class DisputeServiceTest {
         UUID disputeId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
         when(paymentRefundPort.refundForBooking(bookingId, 2500L))
                 .thenReturn(new RefundOutcome(paymentId, 2500L));
@@ -247,7 +317,7 @@ class DisputeServiceTest {
     @Test
     void resolve_amountOnNonRefundDecision_is400BeforeAnyMovement() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "damage");
 
         assertThrows(BadRequestException.class,
                 () -> disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, 2500L, authentication));
@@ -271,7 +341,7 @@ class DisputeServiceTest {
         UUID disputeId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
         when(paymentRefundPort.refundForBooking(bookingId, null))
                 .thenReturn(new RefundOutcome(paymentId, 5000L));
@@ -296,7 +366,7 @@ class DisputeServiceTest {
     void resolve_moneyLessDecision_publishesTheEventWithNullOutcome() {
         UUID disputeId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         when(repository.findById(disputeId)).thenReturn(Optional.of(dispute));
 
         disputeService.resolve(disputeId, DisputeResolution.RELEASE_PROVIDER, authentication);

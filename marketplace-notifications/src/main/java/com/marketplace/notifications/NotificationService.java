@@ -535,6 +535,58 @@ public class NotificationService {
         sendPush(borrowerId, NotificationType.LOAN_CANCELLED, message);
     }
 
+    /**
+     * ADR-0009 (the dispute cycle): the loan's freeze and release facts —
+     * both parties' receipts (the payload carries the truth, the listeners
+     * derive nothing); the channels ride the standing preference gates.
+     */
+    public void onLoanDisputed(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan disputed: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_DISPUTED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
+                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_DISPUTED, message);
+            sendPush(recipient, NotificationType.LOAN_DISPUTED, message);
+        }
+    }
+
+    public void onLoanDisputeResolved(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan dispute resolved: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_DISPUTE_RESOLVED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
+                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
+            sendPush(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
+        }
+    }
+
+    /**
+     * ADR-0009: the settlement's terminal receipt — both parties (the
+     * computed late-fee adjustment rides the loan's own record; the
+     * LoanClosedEvent listener was the A-03 gap the closure repairs).
+     */
+    public void onLoanClosed(UUID loanId, UUID borrowerId, UUID ownerId) {
+        String message = "Loan closed: " + loanId;
+        for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
+            repository.save(Notification.create(recipient,
+                    NotificationType.LOAN_CLOSED.name(), message));
+            if (preferences.isChannelEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
+                emailNotificationService.sendEmail(recipient, "Loan Closed", "email/notification",
+                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."));
+            }
+            sendWebSocket(recipient, NotificationType.LOAN_CLOSED, message);
+            sendPush(recipient, NotificationType.LOAN_CLOSED, message);
+        }
+    }
+
     private void sendWebSocket(UUID userId, NotificationType type, String message) {
         // L22: WS sends by default and honors an explicit opt-out — the
         // preference check is the single gate before the push.

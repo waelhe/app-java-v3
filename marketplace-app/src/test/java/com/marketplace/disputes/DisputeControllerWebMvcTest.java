@@ -1,5 +1,6 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.DisputeResolution;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;

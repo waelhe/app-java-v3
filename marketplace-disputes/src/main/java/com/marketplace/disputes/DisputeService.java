@@ -3,6 +3,10 @@ package com.marketplace.disputes;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.DisputeResolution;
+import com.marketplace.shared.api.DisputeSubject;
+import com.marketplace.shared.api.LoanInfo;
+import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
@@ -23,33 +27,56 @@ public class DisputeService {
     private final DisputeRepository repository;
     private final CurrentUserProvider currentUserProvider;
     private final BookingParticipantProvider bookingParticipantProvider;
+    private final LoanPartyProvider loanPartyProvider;
     private final PaymentRefundPort paymentRefundPort;
     private final ApplicationEventPublisher eventPublisher;
 
     public DisputeService(DisputeRepository repository, CurrentUserProvider currentUserProvider,
-                          BookingParticipantProvider bookingParticipantProvider, PaymentRefundPort paymentRefundPort,
+                          BookingParticipantProvider bookingParticipantProvider,
+                          LoanPartyProvider loanPartyProvider, PaymentRefundPort paymentRefundPort,
                           ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.currentUserProvider = currentUserProvider;
         this.bookingParticipantProvider = bookingParticipantProvider;
+        this.loanPartyProvider = loanPartyProvider;
         this.paymentRefundPort = paymentRefundPort;
         this.eventPublisher = eventPublisher;
     }
 
     /**
      * B-06 (compliance plan 0.7 — Modulith events.html): the dispute's
-     * entry into the pipeline now publishes {@link DisputeOpenedEvent} on
-     * the module's exposed API — the module had ZERO application events
-     * (the measured defect §3.4-5: the money was right, the product a
-     * text field, and nobody could subscribe to either).
+     * entry into the pipeline publishes {@link DisputeOpenedEvent} — the
+     * booking subject (the V20 original; ADR-0009 generalized the event
+     * into the shared vocabulary with its subject carried).
      */
     @Observed(name = "dispute.open")
     public Dispute open(UUID bookingId, String reason, Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         BookingInfo info = bookingParticipantProvider.getBookingInfo(bookingId);
         info.requireParticipant(userId);
-        Dispute saved = repository.save(Dispute.open(bookingId, userId, reason));
-        eventPublisher.publishEvent(new DisputeOpenedEvent(saved.getId(), bookingId, userId));
+        Dispute saved = repository.save(Dispute.openBooking(bookingId, userId, reason));
+        eventPublisher.publishEvent(new DisputeOpenedEvent(
+                saved.getId(), DisputeSubject.BOOKING, bookingId, null, userId));
+        return saved;
+    }
+
+    /**
+     * ADR-0009 (plan D-09 closure — the ADR-0004 deferral): the loan
+     * subject. The party gate is the {@link LoanPartyProvider} contract
+     * (the {@code BookingParticipantProvider} twin — the module-contract
+     * pair ADR-0004 named "the DisputeOpenPort seam"); the opened dispute
+     * publishes the shared event whose LOAN subject the lending module's
+     * freeze listener consumes (the loan's ACTIVE edges freeze through
+     * {@code Loan.markDisputed()}).
+     */
+    @Observed(name = "dispute.open.loan")
+    public Dispute openForLoan(UUID loanId, String reason, Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        LoanInfo info = loanPartyProvider.getLoanInfo(loanId);
+        info.requireParty(userId);
+        Dispute saved = repository.save(Dispute.openLoan(loanId, userId, reason));
+        eventPublisher.publishEvent(new DisputeOpenedEvent(
+                saved.getId(), DisputeSubject.LOAN, null, loanId, userId));
         return saved;
     }
 
@@ -61,6 +88,17 @@ public class DisputeService {
             info.requireParticipant(userId);
         }
         return repository.findByBookingId(bookingId);
+    }
+
+    /** ADR-0009: the loan subject's trail — the booking twin verbatim. */
+    @Transactional(readOnly = true)
+    public List<Dispute> listForLoan(UUID loanId, Authentication authentication) {
+        UUID userId = currentUserProvider.getCurrentUserId(authentication);
+        LoanInfo info = loanPartyProvider.getLoanInfo(loanId);
+        if (!currentUserProvider.isAdmin(authentication)) {
+            info.requireParty(userId);
+        }
+        return repository.findByLoanId(loanId);
     }
 
     /**
@@ -101,6 +139,14 @@ public class DisputeService {
      * REFUND_CONSUMER only (a 400 otherwise — money never moves
      * implicitly), and the decision now publishes
      * {@link DisputeResolvedEvent} with the EXECUTED outcome.
+     *
+     * <p>ADR-0009 (the loan subject): the refund branch is BOOKING-ONLY —
+     * a loan subject's REFUND_CONSUMER decision moves NO money here; the
+     * lending module's resolution listener terminates the loan through its
+     * own cancellation edge, whose {@code LoanCancelledEvent} drives the
+     * payments module's listener (the ONE refund contract — the
+     * refund-for-booking path is never re-pointed at loans, and disputes
+     * never reimplements a refund).
      */
     @Observed(name = "dispute.resolve")
     @PreAuthorize("hasRole('ADMIN')")
@@ -112,12 +158,13 @@ public class DisputeService {
         Dispute dispute = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Dispute not found: " + id));
         dispute.resolve(resolution);
         Long refundedAmountCents = null;
-        if (resolution == DisputeResolution.REFUND_CONSUMER) {
+        if (resolution == DisputeResolution.REFUND_CONSUMER && dispute.getSubjectType() == DisputeSubject.BOOKING) {
             RefundOutcome outcome = paymentRefundPort.refundForBooking(dispute.getBookingId(), refundAmountCents);
             dispute.recordRefund(outcome.paymentId(), outcome.refundedAmountCents());
             refundedAmountCents = outcome.refundedAmountCents();
         }
-        eventPublisher.publishEvent(new DisputeResolvedEvent(id, dispute.getBookingId(), resolution, refundedAmountCents));
+        eventPublisher.publishEvent(new DisputeResolvedEvent(id, dispute.getSubjectType(),
+                dispute.getBookingId(), dispute.getLoanId(), resolution, refundedAmountCents));
         return dispute;
     }
 }

@@ -23,7 +23,8 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
             where l.productId = :productId
               and l.status in (com.marketplace.lending.LoanStatus.APPROVED,
                                com.marketplace.lending.LoanStatus.ACTIVE,
-                               com.marketplace.lending.LoanStatus.RETURN_REQUESTED)
+                               com.marketplace.lending.LoanStatus.RETURN_REQUESTED,
+                               com.marketplace.lending.LoanStatus.DISPUTED)
               and l.startAt < :endAt
               and l.endAt > :startAt
             """)

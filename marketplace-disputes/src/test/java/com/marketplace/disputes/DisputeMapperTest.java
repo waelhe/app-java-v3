@@ -15,7 +15,7 @@ class DisputeMapperTest {
     void toResponse_mapsAllFields() {
         UUID bookingId = UUID.randomUUID();
         UUID openedBy = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, openedBy, "Test reason");
+        Dispute dispute = Dispute.openBooking(bookingId, openedBy, "Test reason");
 
         DisputeResponse response = mapper.toResponse(dispute);
 

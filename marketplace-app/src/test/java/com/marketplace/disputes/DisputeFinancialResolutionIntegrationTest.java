@@ -16,6 +16,7 @@ import com.marketplace.payments.PaymentsService;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeResolution;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -162,7 +163,7 @@ class DisputeFinancialResolutionIntegrationTest {
         intent.markProcessing();
         paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), PRICE_CENTS));
-        Dispute dispute = disputeRepository.save(Dispute.open(bookingId, consumerId, "l24 damage"));
+        Dispute dispute = disputeRepository.save(Dispute.openBooking(bookingId, consumerId, "l24 damage"));
 
         paymentsService.confirmIntent(intent.getId(), "evt_l24_confirm");
 
@@ -239,7 +240,7 @@ class DisputeFinancialResolutionIntegrationTest {
         intent.markProcessing();
         paymentIntentRepository.save(intent);
         Payment payment = paymentRepository.save(Payment.create(intent.getId(), PRICE_CENTS));
-        Dispute dispute = disputeRepository.save(Dispute.open(bookingId, consumerId, "l24 release"));
+        Dispute dispute = disputeRepository.save(Dispute.openBooking(bookingId, consumerId, "l24 release"));
 
         paymentsService.confirmIntent(intent.getId(), "evt_l24_release");
         awaitBalance(providerId, PRICE_CENTS - COMMISSION_CENTS);

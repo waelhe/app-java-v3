@@ -1,9 +1,12 @@
 package com.marketplace.lending;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.api.LoanApprovedEvent;
 import com.marketplace.shared.api.LoanCancelledEvent;
 import com.marketplace.shared.api.LoanClosedEvent;
+import com.marketplace.shared.api.LoanDisputedEvent;
+import com.marketplace.shared.api.LoanDisputeResolvedEvent;
 import com.marketplace.shared.api.LoanPaymentPort;
 import com.marketplace.shared.api.LoanRequestedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
@@ -83,7 +86,7 @@ public class LendingService {
     @Transactional
     @Observed(name = "lending.offer.publish")
     public LendingOffer publishOffer(UUID productId, long dailyFeeMinor, long depositMinor,
-                                     Authentication authentication) {
+                                     long lateFeePerDayMinor, Authentication authentication) {
         ProductPricingPort.ProductPrice product = productPricingPort.priceOf(productId);
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         if (!product.providerId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {
@@ -95,8 +98,8 @@ public class LendingService {
         }
         LendingOffer offer = offerRepository.findByProductId(productId)
                 .orElseGet(() -> LendingOffer.publish(productId, product.providerId(),
-                        dailyFeeMinor, product.currency(), depositMinor));
-        offer.updateTerms(dailyFeeMinor, depositMinor);
+                        dailyFeeMinor, product.currency(), depositMinor, lateFeePerDayMinor));
+        offer.updateTerms(dailyFeeMinor, depositMinor, lateFeePerDayMinor);
         return offerRepository.save(offer);
     }
 
@@ -149,7 +152,7 @@ public class LendingService {
         }
         long fee = offer.feeFor(startAt, endAt);
         Loan loan = loanRepository.save(Loan.request(productId, offer.getOwnerId(), borrower,
-                startAt, endAt, fee, offer.getCurrency()));
+                startAt, endAt, fee, offer.getCurrency(), offer.getLateFeePerDayMinor()));
         eventPublisher.publishEvent(new LoanRequestedEvent(loan.getId(), borrower, offer.getOwnerId()));
         return loan;
     }
@@ -263,6 +266,59 @@ public class LendingService {
         eventPublisher.publishEvent(new LoanClosedEvent(
                 loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
         return saved;
+    }
+
+    // ------------------------------------------------------------------
+    // The dispute cycle (ADR-0009 — the ADR-0004 deferral closed): the
+    // disputes module's shared events are the ONLY entry; the listener is
+    // the single writer (the machine's guard is the idempotency).
+    // ------------------------------------------------------------------
+
+    /**
+     * The freeze write — the dispute opened on the loan: ACTIVE edges
+     * frozen (the ADR-0004 gate verbatim), the freeze fact published to
+     * both parties (the event ADR-0004's javadoc promised, now real).
+     * Idempotent by the state guard: a redelivered DisputeOpenedEvent for
+     * an already-DISPUTED (or moved-past) loan is a silent no-op.
+     */
+    @Transactional
+    public void markDisputedFromDispute(UUID loanId) {
+        loanRepository.findById(loanId)
+                .filter(loan -> loan.getStatus() == LoanStatus.ACTIVE)
+                .ifPresent(loan -> {
+                    loan.markDisputed();
+                    loanRepository.save(loan);
+                    eventPublisher.publishEvent(new LoanDisputedEvent(
+                            loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
+                });
+    }
+
+    /**
+     * The resolution write — the disputes module's decision applied to the
+     * loan: REFUND_CONSUMER terminates the loan through the cancellation
+     * edge (the published {@code LoanCancelledEvent} drives the payments
+     * module's listener — the ONE refund contract; the money never moves
+     * here), any other decision releases the freeze and resumes the ACTIVE
+     * edge (the DisputeResolvedEvent outcome the notifications module
+     * writes receipts from). Idempotent by the state guard.
+     */
+    @Transactional
+    public void resolveDisputeFromDisputes(UUID loanId, DisputeResolution resolution) {
+        loanRepository.findById(loanId)
+                .filter(loan -> loan.getStatus() == LoanStatus.DISPUTED)
+                .ifPresent(loan -> {
+                    if (resolution == DisputeResolution.REFUND_CONSUMER) {
+                        loan.cancelFromDispute("dispute refund resolution", Instant.now());
+                        loanRepository.save(loan);
+                        eventPublisher.publishEvent(new LoanCancelledEvent(
+                                loan.getId(), loan.getBorrowerId()));
+                    } else {
+                        loan.resumeFromDispute();
+                        loanRepository.save(loan);
+                        eventPublisher.publishEvent(new LoanDisputeResolvedEvent(
+                                loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
+                    }
+                });
     }
 
     // ------------------------------------------------------------------

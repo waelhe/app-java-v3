@@ -39,7 +39,7 @@ class DisputeControllerTest {
     void open_returnsCreated() {
         UUID bookingId = UUID.randomUUID();
         String reason = "late arrival";
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), reason);
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), reason);
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
                 dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
@@ -55,7 +55,7 @@ class DisputeControllerTest {
     @Test
     void list_returnsOk() {
         UUID bookingId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(bookingId, UUID.randomUUID(), "damage");
+        Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
                 dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
@@ -71,7 +71,7 @@ class DisputeControllerTest {
     @Test
     void resolve_returnsOk() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "noise");
         dispute.resolve(DisputeResolution.NO_ACTION);
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
                 dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
@@ -96,7 +96,7 @@ class DisputeControllerTest {
     @Test
     void resolve_partialRefund_ridesTheAmountPath() {
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "noise");
         dispute.resolve(DisputeResolution.REFUND_CONSUMER);
         DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
                 dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
@@ -118,7 +118,7 @@ class DisputeControllerTest {
         // NO_ACTION — the endpoint's pre-L24 semantics, kept byte-compatible
         // for existing callers (the OpenAPI gate).
         UUID disputeId = UUID.randomUUID();
-        Dispute dispute = Dispute.open(UUID.randomUUID(), UUID.randomUUID(), "noise");
+        Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "noise");
         when(disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication)).thenReturn(dispute);
 
         ResponseEntity<DisputeResponse> result = disputeController.resolve(disputeId, null, authentication);

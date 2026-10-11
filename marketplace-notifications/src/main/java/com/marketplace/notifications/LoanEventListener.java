@@ -2,6 +2,9 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.LoanApprovedEvent;
 import com.marketplace.shared.api.LoanCancelledEvent;
+import com.marketplace.shared.api.LoanClosedEvent;
+import com.marketplace.shared.api.LoanDisputedEvent;
+import com.marketplace.shared.api.LoanDisputeResolvedEvent;
 import com.marketplace.shared.api.LoanRequestedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,5 +44,24 @@ public class LoanEventListener {
     public void onLoanCancelled(LoanCancelledEvent event) {
         notificationService.onLoanCancelled(event.loanId(), event.borrowerId());
         log.info("Notification sent for loan cancelled: {}", event.loanId());
+    }
+
+    /** ADR-0009 (the dispute cycle + the settlement receipt): the three late legs. */
+    @ApplicationModuleListener
+    public void onLoanDisputed(LoanDisputedEvent event) {
+        notificationService.onLoanDisputed(event.loanId(), event.borrowerId(), event.ownerId());
+        log.info("Notification sent for loan disputed: {}", event.loanId());
+    }
+
+    @ApplicationModuleListener
+    public void onLoanDisputeResolved(LoanDisputeResolvedEvent event) {
+        notificationService.onLoanDisputeResolved(event.loanId(), event.borrowerId(), event.ownerId());
+        log.info("Notification sent for loan dispute resolved: {}", event.loanId());
+    }
+
+    @ApplicationModuleListener
+    public void onLoanClosed(LoanClosedEvent event) {
+        notificationService.onLoanClosed(event.loanId(), event.borrowerId(), event.ownerId());
+        log.info("Notification sent for loan closed: {}", event.loanId());
     }
 }

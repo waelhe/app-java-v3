@@ -1,6 +1,8 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.DisputeResolution;
+import com.marketplace.shared.api.DisputeSubject;
 import com.marketplace.shared.jpa.BaseEntity;
 import jakarta.persistence.*;
 import org.hibernate.envers.Audited;
@@ -14,8 +16,22 @@ public class Dispute extends BaseEntity {
     @Id
     private UUID id;
 
-    @Column(name = "booking_id", nullable = false)
+    /**
+     * ADR-0009 (the subject generalization): nullable since the loan
+     * subjects exist — the V177 pairing constraint is the row-level twin
+     * (exactly one of booking_id/loan_id is set, matching the subject).
+     */
+    @Column(name = "booking_id")
     private UUID bookingId;
+
+    /** ADR-0009: the loan subject's id (null on the booking subjects). */
+    @Column(name = "loan_id")
+    private UUID loanId;
+
+    /** ADR-0009: which subject this dispute rides (V177's default: BOOKING). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subject_type", nullable = false, length = 20)
+    private DisputeSubject subjectType;
 
     @Column(name = "opened_by", nullable = false)
     private UUID openedBy;
@@ -35,7 +51,7 @@ public class Dispute extends BaseEntity {
     /**
      * L24 — the refunded payment the dispute links to (the dispute row IS
      * the dispute &lt;-&gt; refund linkage); null unless the decision was
-     * {@code REFUND_CONSUMER}.
+     * {@code REFUND_CONSUMER} on a BOOKING subject.
      */
     @Column(name = "refund_payment_id")
     private UUID refundPaymentId;
@@ -46,20 +62,33 @@ public class Dispute extends BaseEntity {
 
     protected Dispute() {}
 
-    private Dispute(UUID id, UUID bookingId, UUID openedBy, DisputeStatus status, String reason) {
+    private Dispute(UUID id, DisputeSubject subjectType, UUID bookingId, UUID loanId,
+                    UUID openedBy, DisputeStatus status, String reason) {
         this.id = id;
+        this.subjectType = subjectType;
         this.bookingId = bookingId;
+        this.loanId = loanId;
         this.openedBy = openedBy;
         this.status = status;
         this.reason = reason;
     }
 
-    public static Dispute open(UUID bookingId, UUID openedBy, String reason) {
-        return new Dispute(UUID.randomUUID(), bookingId, openedBy, DisputeStatus.OPEN, reason);
+    /** The V20 original — the booking subject. */
+    public static Dispute openBooking(UUID bookingId, UUID openedBy, String reason) {
+        return new Dispute(UUID.randomUUID(), DisputeSubject.BOOKING, bookingId, null,
+                openedBy, DisputeStatus.OPEN, reason);
+    }
+
+    /** ADR-0009 — the loan subject (the lending workflow's damage dispute). */
+    public static Dispute openLoan(UUID loanId, UUID openedBy, String reason) {
+        return new Dispute(UUID.randomUUID(), DisputeSubject.LOAN, null, loanId,
+                openedBy, DisputeStatus.OPEN, reason);
     }
 
     @Override public UUID getId() { return id; }
+    public DisputeSubject getSubjectType() { return subjectType; }
     public UUID getBookingId(){return bookingId;}
+    public UUID getLoanId() { return loanId; }
     public UUID getOpenedBy() { return openedBy; }
     public DisputeStatus getStatus() { return status; }
     public String getReason() { return reason; }
@@ -81,7 +110,8 @@ public class Dispute extends BaseEntity {
     /**
      * L24: records the executed refund movement on the dispute — the
      * linkage to the refunded payment and its cumulative refunded total
-     * at execution time.
+     * at execution time. A LOAN subject never records here: its money
+     * rides the lending module's own cancellation chain (ADR-0009).
      */
     public void recordRefund(UUID paymentId, long refundedAmountCents){
         if (this.resolution != DisputeResolution.REFUND_CONSUMER) {
