@@ -55,11 +55,18 @@ import java.util.UUID;
  * — no caller-supplied amount exists anywhere on the write path, the
  * boundary this unit itself documented); placement reserves the lines'
  * stock through {@link ProductStockPort} (the whole-map atomic write — a
- * failed reservation rolls the placement back), enforces the single-seller
- * cart invariant, and freezes the CURRENT authoritative price as the
- * buyer-agreement record; cancellation releases the reservation (and the
- * payment engine settles the money through {@code OrderCancelledEvent});
- * fulfillment commits the reservation into real deductions.
+ * failed reservation rolls the placement back) and freezes the CURRENT
+ * authoritative price as the buyer-agreement record; cancellation releases
+ * the reservation (and the payment engine settles the money through
+ * {@code OrderCancelledEvent}); fulfillment commits the reservation into
+ * real deductions.
+ *
+ * <p>Stage ADR-0010 (the ADR-0002 deferral opened): the placement SPLITS a
+ * mixed-seller cart into one order per seller — the {@code orders.seller_id}
+ * single-value invariant and the ledger's per-seller settlement stand
+ * UNCHANGED (one order carries one seller); the split is a cart-level
+ * fact. The whole-cart reservation stays all-or-nothing across ALL groups,
+ * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
 public class OrdersService {
@@ -162,26 +169,33 @@ public class OrdersService {
     // ------------------------------------------------------------------
 
     /**
-     * Cart to order: the placement transaction — the order row, every
+     * Cart to order(S): the placement transaction — the order row(S), every
      * snapshot line, and the cart's CHECKED_OUT tombstone commit together,
      * or nothing does. The total is derived (never caller-supplied): the
      * sum of the frozen lines.
      *
-     * <p><b>Stage 6 (ADR-0002):</b> placement also (1) re-resolves every
-     * line's authoritative price and state — a product that left the
-     * ACTIVE shelf or changed its price since the add re-prices the line
-     * here (the frozen record is the placement-instant agreement), (2)
-     * enforces the single-seller invariant (a mixed-seller cart answers
-     * 409 — the seller attribution the ledger's settlement needs; the
-     * multi-seller split is the documented deferral), and (3) reserves
-     * the lines' stock through {@link ProductStockPort} — the whole-map
-     * atomic write whose refusal rolls the whole placement back. Returns
-     * the view assembly (order + frozen lines) so the HTTP boundary
-     * chains without an entity local.
+     * <p><b>Stage 6 (ADR-0002):</b> placement (1) re-resolves every line's
+     * authoritative price and state — a product that left the ACTIVE shelf
+     * or changed its price since the add re-prices the line here (the
+     * frozen record is the placement-instant agreement), (2) reserves the
+     * lines' stock through {@link ProductStockPort} — the whole-map atomic
+     * write whose refusal rolls the whole placement back.
+     *
+     * <p><b>ADR-0010 (the ADR-0002 deferral opened — the multi-seller
+     * split):</b> the placement groups the cart by its sellers (first-seen
+     * order preserved) and creates ONE ORDER PER SELLER — each with its own
+     * derived total, its own single currency (a group carrying mixed
+     * currencies answers the honest 409), its own frozen lines, and its
+     * own payment/ledger settlement (the {@code orders.seller_id}
+     * single-value invariant stands per order). The reserve stays ONE
+     * all-or-nothing whole-cart call, the cart tombstones ONCE, and the
+     * machine's PLACED-no-event discipline is untouched. Returns the views
+     * in the groups' first-seen order (the first order is the placement's
+     * primary; the wire carries the rest in {@code additionalOrders}).
      */
     @Transactional
     @Observed(name = "order.place")
-    public OrderDetail place(UUID consumerId) {
+    public List<OrderDetail> place(UUID consumerId) {
         Cart cart = cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ConflictException(
                         "No active cart to place: the buyer's draft is empty"));
@@ -189,20 +203,12 @@ public class OrdersService {
         if (lines.isEmpty()) {
             throw new ConflictException("Cannot place an order from an empty cart");
         }
-        long total = 0;
-        UUID sellerId = null;
+        java.util.Map<UUID, List<CartItem>> groups = new java.util.LinkedHashMap<>();
         for (CartItem line : lines) {
             ProductPricingPort.ProductPrice price = productPricingPort.priceOf(line.getProductId());
             if (price.storefront() != ProductPricingPort.StorefrontState.ACTIVE) {
                 throw new ConflictException("Product " + line.getProductId() + " is "
                         + price.storefront() + " — the cart line is no longer purchasable");
-            }
-            if (sellerId == null) {
-                sellerId = price.providerId();
-            } else if (!sellerId.equals(price.providerId())) {
-                throw new ConflictException("Mixed-seller cart cannot be placed: the ADR-0002 "
-                        + "invariant is one seller per order (the multi-seller split is "
-                        + "the documented deferral)");
             }
             if (!line.getCurrency().equals(price.currency())) {
                 throw new ConflictException("Cart line " + line.getId() + " carries "
@@ -212,26 +218,48 @@ public class OrdersService {
             if (price.priceMinor() != line.getUnitAmountMinor()) {
                 line.updateUnitAmountMinor(price.priceMinor());
             }
-            total += line.lineTotalMinor();
+            groups.computeIfAbsent(price.providerId(), k -> new java.util.ArrayList<>()).add(line);
         }
-        // The whole-map atomic reservation — a zero row anywhere answers
-        // 409 and rolls the placement back (no order row, no partial hold).
+        // One currency per order: a seller group whose re-priced lines
+        // carry mixed currencies cannot freeze into one order — the honest
+        // 409 (the ADR-0002 stale-currency contract, per group).
+        for (java.util.Map.Entry<UUID, List<CartItem>> group : groups.entrySet()) {
+            String first = group.getValue().get(0).getCurrency();
+            boolean mixed = group.getValue().stream().anyMatch(line -> !first.equals(line.getCurrency()));
+            if (mixed) {
+                throw new ConflictException("Seller " + group.getKey() + " lines carry mixed currencies"
+                        + " — one currency per order (re-add the lines before placing)");
+            }
+        }
+        // The whole-cart atomic reservation — a zero row anywhere answers
+        // 409 and rolls the WHOLE placement back (no order row in ANY
+        // group, no partial hold).
         productStockPort.reserve(ProductStockPort.StockLine.asMap(lines.stream()
                 .map(line -> new ProductStockPort.StockLine(line.getProductId(), line.getQuantity()))
                 .toList()));
-        Order order = orderRepository.save(
-                Order.placed(consumerId, total, lines.get(0).getCurrency(), sellerId));
-        List<OrderItem> frozen = new java.util.ArrayList<>(lines.size());
-        for (CartItem line : lines) {
-            frozen.add(orderItemRepository.save(OrderItem.snapshotOf(order.getId(), line)));
+        List<OrderDetail> placed = new java.util.ArrayList<>(groups.size());
+        for (java.util.Map.Entry<UUID, List<CartItem>> group : groups.entrySet()) {
+            UUID sellerId = group.getKey();
+            List<CartItem> groupLines = group.getValue();
+            long total = 0;
+            for (CartItem line : groupLines) {
+                total += line.lineTotalMinor();
+            }
+            Order order = orderRepository.save(
+                    Order.placed(consumerId, total, groupLines.get(0).getCurrency(), sellerId));
+            List<OrderItem> frozen = new java.util.ArrayList<>(groupLines.size());
+            for (CartItem line : groupLines) {
+                frozen.add(orderItemRepository.save(OrderItem.snapshotOf(order.getId(), line)));
+            }
+            order.markStockReserved();
+            placed.add(new OrderDetail(order, List.copyOf(frozen)));
         }
-        order.markStockReserved();
         cart.checkOut(Instant.now());
         cartRepository.save(cart);
         // PLACED publishes nothing — the A-03 discipline (no event without a
         // listener); the machine's cross-boundary information begins at
         // CONFIRMED (and the cancellation edge's OrderCancelledEvent).
-        return new OrderDetail(order, List.copyOf(frozen));
+        return List.copyOf(placed);
     }
 
     /**

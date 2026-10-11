@@ -116,9 +116,10 @@ class OrdersServiceTest {
         when(cartRepository.save(any(Cart.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        OrderDetail detail = service.place(consumer);
-        Order order = detail.order();
+        java.util.List<OrderDetail> placed = service.place(consumer);
+        Order order = placed.get(0).order();
 
+        assertThat(placed).as("the single-seller cart places as one order").hasSize(1);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PLACED);
         // The derived total: 2 × 1500 + 1 × 9900 — never caller-supplied.
         assertThat(order.getTotalAmountMinor()).isEqualTo(12900L);
@@ -203,25 +204,88 @@ class OrdersServiceTest {
                 .hasMessageContaining("re-add the line");
     }
 
+    /**
+     * ADR-0010 (the ADR-0002 deferral opened): the mixed-seller cart SPLITS
+     * into one order per seller — each order carries its own seller, its
+     * own derived total and its own frozen lines; ONE whole-cart reserve
+     * (all-or-nothing across the groups), the cart tombstones once, and
+     * PLACED still publishes nothing.
+     */
     @Test
-    void placementRejectsAMixedSellerCart() {
+    void placementSplitsAMixedSellerCartIntoOneOrderPerSeller() {
         Cart cart = Cart.activeFor(consumer);
         java.util.UUID p1 = java.util.UUID.randomUUID();
         java.util.UUID p2 = java.util.UUID.randomUUID();
+        java.util.UUID sellerA = UUID.randomUUID();
+        java.util.UUID sellerB = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
+                CartItem.of(cart.getId(), p1, 2, 1500L, "SAR"),
+                CartItem.of(cart.getId(), p2, 1, 9900L, "SAR")));
+        when(productPricingPort.priceOf(p1)).thenReturn(
+                new ProductPricingPort.ProductPrice(p1, sellerA, 1500L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(productPricingPort.priceOf(p2)).thenReturn(
+                new ProductPricingPort.ProductPrice(p2, sellerB, 9900L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(cartRepository.save(any(Cart.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        List<OrderDetail> placed = service.place(consumer);
+
+        assertThat(placed).as("one order per seller").hasSize(2);
+        Order first = placed.get(0).order();
+        Order second = placed.get(1).order();
+        // First-seen group order: p1's seller owns the first order.
+        assertThat(first.getSellerId()).isEqualTo(sellerA);
+        assertThat(first.getTotalAmountMinor()).isEqualTo(3000L);
+        assertThat(second.getSellerId()).isEqualTo(sellerB);
+        assertThat(second.getTotalAmountMinor()).isEqualTo(9900L);
+        // ONE whole-cart reserve: all lines, all-or-nothing across groups.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<UUID, Integer>> reserved =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(productStockPort).reserve(reserved.capture());
+        assertThat(reserved.getValue()).containsEntry(p1, 2).containsEntry(p2, 1);
+        // The cart tombstones ONCE; PLACED still publishes nothing.
+        assertThat(cart.getStatus()).isEqualTo(CartStatus.CHECKED_OUT);
+        verify(eventPublisher, never()).publishEvent(any());
+        // Each order's frozen lines ride its own order id.
+        ArgumentCaptor<OrderItem> frozen = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemRepository, org.mockito.Mockito.times(2)).save(frozen.capture());
+        assertThat(frozen.getAllValues().get(0).getOrderId()).isEqualTo(first.getId());
+        assertThat(frozen.getAllValues().get(1).getOrderId()).isEqualTo(second.getId());
+    }
+
+    /** One currency per order: a seller group carrying mixed currencies answers the honest 409. */
+    @Test
+    void aSellerGroupWithMixedCurrenciesAnswersThe409() {
+        Cart cart = Cart.activeFor(consumer);
+        java.util.UUID p1 = java.util.UUID.randomUUID();
+        java.util.UUID p2 = java.util.UUID.randomUUID();
+        java.util.UUID sellerA = UUID.randomUUID();
         when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
                 .thenReturn(Optional.of(cart));
         when(cartItemRepository.findByCartId(cart.getId())).thenReturn(List.of(
                 CartItem.of(cart.getId(), p1, 1, 100L, "SAR"),
-                CartItem.of(cart.getId(), p2, 1, 100L, "SAR")));
-        priceActive(p1);
+                CartItem.of(cart.getId(), p2, 1, 100L, "USD")));
+        when(productPricingPort.priceOf(p1)).thenReturn(
+                new ProductPricingPort.ProductPrice(p1, sellerA, 100L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE));
         when(productPricingPort.priceOf(p2)).thenReturn(
-                new ProductPricingPort.ProductPrice(p2, UUID.randomUUID(), 100L, "SAR",
+                new ProductPricingPort.ProductPrice(p2, sellerA, 100L, "USD",
                         ProductPricingPort.StorefrontState.ACTIVE));
 
         assertThatThrownBy(() -> service.place(consumer))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Mixed-seller");
+                .hasMessageContaining("one currency per order");
         verify(productStockPort, never()).reserve(any());
+        verify(orderRepository, never()).save(any());
     }
 
     @Test
@@ -240,7 +304,7 @@ class OrdersServiceTest {
         when(cartRepository.save(any(Cart.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        OrderDetail detail = service.place(consumer);
+        OrderDetail detail = service.place(consumer).get(0);
 
         org.mockito.ArgumentCaptor<java.util.Map<java.util.UUID, Integer>> reserved =
                 org.mockito.ArgumentCaptor.forClass(java.util.Map.class);

@@ -41,20 +41,25 @@ public class OrdersController {
     }
 
     /**
-     * Cart to order: the placement transaction — no body (the cart IS the
-     * order's content; the total is derived, never caller-supplied). Chained
-     * through the service's view assembly: the HTTP boundary never declares
-     * an entity local (the controllersMustNotDependOnJpaEntities rule).
+     * Cart to order(S): the placement transaction — no body (the cart IS
+     * the order(S)' content; the totals are derived, never caller-supplied).
+     * Chained through the service's view assembly: the HTTP boundary never
+     * declares an entity local (the controllersMustNotDependOnJpaEntities
+     * rule). ADR-0010: the body is the first group's order; a mixed-seller
+     * placement's sibling orders ride the ADDITIVE {@code additionalOrders}
+     * list (additive-only — no client breaks, no gate entry).
      */
     @PostMapping
     @Operation(summary = "Place an order from the cart", description = "Freezes the caller's "
-            + "active cart lines into an order (PLACED) and tombstones the cart — one atomic "
-            + "transaction. The total is derived from the frozen lines; an empty or absent cart "
-            + "answers 409.")
+            + "active cart lines into order(s) (PLACED) — one order per seller (ADR-0010: a "
+            + "mixed-seller cart splits; the response body is the first order and its siblings "
+            + "ride additionalOrders) — and tombstones the cart, one atomic transaction. The "
+            + "totals are derived from the frozen lines; an empty or absent cart answers 409.")
     public ResponseEntity<OrderResponses.OrderResponse> place(Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        java.util.List<OrderDetail> placed = ordersService.place(caller);
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
-                .body(OrderResponses.OrderResponse.of(ordersService.place(caller)));
+                .body(OrderResponses.OrderResponse.ofPlacement(placed));
     }
 
     @GetMapping("/{id}")

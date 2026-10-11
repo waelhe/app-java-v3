@@ -62,9 +62,9 @@ class OrdersControllerTest {
     @Test
     void placeAnswersCreatedWithTheDerivedTotal() {
         Order order = Order.placed(caller, 17400L, "SAR", null);
-        when(ordersService.place(caller)).thenReturn(new OrderDetail(order, List.of(
+        when(ordersService.place(caller)).thenReturn(List.of(new OrderDetail(order, List.of(
                 OrderItem.snapshotOf(order.getId(),
-                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), 2, 8700L, "SAR")))));
+                        CartItem.of(Cart.activeFor(caller).getId(), UUID.randomUUID(), 2, 8700L, "SAR"))))));
 
         ResponseEntity<OrderResponses.OrderResponse> result = controller.place(authentication);
 
@@ -76,6 +76,8 @@ class OrdersControllerTest {
         assertThat(body.items()).hasSize(1);
         assertThat(body.items().get(0).lineTotalMinor()).isEqualTo(17400L);
         assertThat(body.confirmedAt()).isNull();
+        assertThat(body.additionalOrders())
+                .as("the single-seller placement carries no sibling orders").isEmpty();
     }
 
     @Test

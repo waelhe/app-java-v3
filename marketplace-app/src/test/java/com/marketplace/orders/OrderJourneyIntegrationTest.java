@@ -149,7 +149,7 @@ class OrderJourneyIntegrationTest {
                 .formatted(product));
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":1}"""
-                .formatted(product2));
+                .formatted(product));
         HttpResponse<String> unionAdd = postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":3}"""
                 .formatted(product));
@@ -250,6 +250,79 @@ class OrderJourneyIntegrationTest {
                 .as("stranger read: existence itself is private").isEqualTo(404);
     }
 
+    /**
+     * ADR-0010 (the ADR-0002 deferral opened): the mixed-seller cart SPLITS
+     * into one order per seller over the REAL chain — the placement answers
+     * 201 with the first group's order as the body and the sibling riding
+     * the ADDITIVE {@code additionalOrders} (no wire break), each order
+     * carries its own seller and derived total, the cart tombstones once,
+     * and each order opens its OWN payment intent independently (the
+     * per-seller settlement the ledger rides).
+     */
+    @Test
+    void theMixedSellerCartSplitsIntoOneOrderPerSeller() throws Exception {
+        // Two sellers provision first — the store's records precede any add.
+        String sellerAName = "it-split-seller-a-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerAName, "USER", "PROVIDER");
+        GateResult sellerAGate = loginGate(sellerAName, PASSWORD);
+        UUID productA = registerProduct(sellerAGate.accessToken(), 1500L);
+        setStock(sellerAGate.accessToken(), productA, 10);
+
+        String sellerBName = "it-split-seller-b-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerBName, "USER", "PROVIDER");
+        GateResult sellerBGate = loginGate(sellerBName, PASSWORD);
+        UUID productB = registerProduct(sellerBGate.accessToken(), 9900L);
+        setStock(sellerBGate.accessToken(), productB, 10);
+
+        String username = "it-split-buyer-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(username);
+        GateResult gate = loginGate(username, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", gate.accessToken()).statusCode())
+                .as("the buyer's /me provisioning sync").isEqualTo(200);
+
+        postJson("/api/v1/me/cart/items", gate.accessToken(), """
+                {"productId":"%s","quantity":2}""".formatted(productA));
+        postJson("/api/v1/me/cart/items", gate.accessToken(), """
+                {"productId":"%s","quantity":1}""".formatted(productB));
+
+        HttpResponse<String> placement = postJson("/api/v1/orders", gate.accessToken(), "");
+        assertThat(placement.statusCode()).as("place: %s", body(placement)).isEqualTo(201);
+        JsonNode placementBody = objectMapper.readTree(placement.body());
+        UUID primaryId = UUID.fromString(placementBody.path("id").asString());
+        assertThat(placementBody.path("status").asString()).isEqualTo("PLACED");
+        assertThat(placementBody.path("totalAmountMinor").asInt()).as("the first group's own total").isEqualTo(3000);
+        assertThat(placementBody.path("additionalOrders").size())
+                .as("the sibling order rides the additive field").isEqualTo(1);
+        JsonNode sibling = placementBody.path("additionalOrders").get(0);
+        UUID siblingId = UUID.fromString(sibling.path("id").asString());
+        assertThat(sibling.path("totalAmountMinor").asInt()).isEqualTo(9900);
+        assertThat(sibling.path("status").asString()).isEqualTo("PLACED");
+
+        // The rows: two orders, each single-seller, the cart tombstoned once.
+        Integer orderCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders WHERE consumer_id = ("
+                        + "SELECT id FROM users WHERE subject = ?)", Integer.class, username);
+        assertThat(orderCount).as("one order per seller").isEqualTo(2);
+        Integer sellerless = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders WHERE consumer_id = ("
+                        + "SELECT id FROM users WHERE subject = ?) AND seller_id IS NULL",
+                Integer.class, username);
+        assertThat(sellerless).as("every new placement sets its seller").isZero();
+        Integer reserved = jdbcTemplate.queryForObject(
+                "SELECT reserved_quantity FROM products WHERE id = ?", Integer.class, productA);
+        assertThat(reserved).as("the whole-cart reserve covered group A too").isEqualTo(2);
+
+        // Each order settles its own money: two intents, one per order.
+        HttpResponse<String> primaryIntent = postJson(
+                "/api/v1/orders/" + primaryId + "/payment-intent", gate.accessToken(), "");
+        assertThat(primaryIntent.statusCode()).as("primary intent: %s", body(primaryIntent)).isEqualTo(201);
+        HttpResponse<String> siblingIntent = postJson(
+                "/api/v1/orders/" + siblingId + "/payment-intent", gate.accessToken(), "");
+        assertThat(siblingIntent.statusCode()).as("sibling intent: %s", body(siblingIntent)).isEqualTo(201);
+        assertThat(objectMapper.readTree(primaryIntent.body()).path("id").asString())
+                .isNotEqualTo(objectMapper.readTree(siblingIntent.body()).path("id").asString());
+    }
+
     @Test
     void theCancellationBranchPublishesAndNotifies() throws Exception {
         String sellerName = "it-order-cancel-seller-" + UUID.randomUUID().toString().substring(0, 8);
@@ -271,7 +344,7 @@ class OrderJourneyIntegrationTest {
 
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":1}"""
-                .formatted(product2));
+                .formatted(product));
         HttpResponse<String> placement = postJson("/api/v1/orders", gate.accessToken(), "");
         assertThat(placement.statusCode()).isEqualTo(201);
         UUID orderId = UUID.fromString(objectMapper.readTree(placement.body()).path("id").asString());
