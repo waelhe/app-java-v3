@@ -1,6 +1,7 @@
 package com.marketplace.android.core.network
 
 import com.marketplace.android.feature.mergeLostFoundLifecycleState
+import com.marketplace.android.feature.parsePriceCents
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -114,6 +115,15 @@ class ApiModelsTest {
         assertEquals("ACTIVE", event.status)
         assertEquals(3L, event.attending)
         assertTrue(event.rsvpedByMe)
+    }
+
+    @Test
+    fun marketplacePriceConversionRejectsOverflowAndRoundsMinorUnits() {
+        assertEquals(1234, parsePriceCents("12.34"))
+        assertEquals(1234, parsePriceCents("12,34"))
+        assertEquals(556, parsePriceCents("5.555"))
+        assertEquals(null, parsePriceCents("42949672.97"))
+        assertEquals(null, parsePriceCents("not-a-price"))
     }
 
     @Test
