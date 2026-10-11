@@ -51,7 +51,7 @@
 
 لا تُختزل قيمة المنتج في عدد الميزات، أو عدد الشاشات، أو عدد endpoints.
 
-### 3.1 مرجع المقارنة مع Nextdoor: ما الذي كان ينبغي أن يدخل التصميم منذ البداية؟
+### 3.1 مرجع المقارنة مع Nextdoor: ما الذي ينبغي أن يدخل التصميم منذ البداية؟
 
 المرجع التفصيلي هو [تحليل المنتج والبنية المعلنة وغير المؤكدة لـNextdoor](community-platform-nextdoor-benchmark.md). يجب أن تظهر منه صراحة أربعة مبادئ في PRD والرحلات: (1) المكان له حدود وأهلية منفصلتان عن نطاق البحث أو المتابعة؛ (2) التغذية لها طرق عرض مفهومة ومصدر سبب الظهور؛ (3) الأخبار والرسائل الرسمية والتنبيهات ليست نوعًا واحدًا من الثقة أو التفويض، والخريطة سطح عرض مكاني لا مصدر حقيقة؛ (4) توصيات Ask/Faves تُربط بمصادر وسجل نشاط أصلي، ولا تُعامل كتوثيق أو مراجعة مكتملة.
 
@@ -307,8 +307,8 @@ D-15 مسألة امتثال قانوني تحتاج تحديد الأسواق �
 - OpenAPI Specification 3.1.1 — وصف مستقل عن لغة التنفيذ ويمكنه تغذية توليد العملاء والاختبار: https://spec.openapis.org/oas/v3.1.1.html
 - RFC 9457 — الصيغة الحالية لمشكلات HTTP، وتحل محل RFC 7807: https://www.rfc-editor.org/rfc/rfc9457.html
 - Spring Modulith — التحقق من حدود الوحدات والأحداث بين الوحدات وفق الإصدار الذي يديره المشروع: https://docs.spring.io/spring-modulith/reference/
-- Flutter — موازنة unit/widget/integration tests واختبار الرحلات: https://developer.android.com/topic/architecture/recommendations
-- Flutter — اختبارات الوصولية: https://developer.android.com/develop/ui/compose/accessibility/semantics
+- Android — موازنة unit/widget/integration tests واختبار الرحلات: https://developer.android.com/topic/architecture/recommendations
+- Android — اختبارات الوصولية: https://developer.android.com/develop/ui/compose/accessibility/semantics
 - OpenAPI Generator — Dart Dio generator: https://openapi-generator.tech/docs/generators/dart-dio
 - W3C WCAG 2.2 (Recommendation): https://www.w3.org/TR/WCAG22/
 - W3C Design Tokens Community Group Draft (مسودة مجتمعية، ليست Recommendation معيارية من W3C): https://tr.designtokens.org/
