@@ -18,6 +18,13 @@ import java.util.UUID;
  * and {@code rsvpedByMe} (the caller's own live seat, so the client
  * renders the joined state honestly — the projection's one per-reader
  * field).
+ *
+ * <p><b>JT-20 (the honest gathering state) widens the projection with
+ * the event's own {@code status}:</b> ACTIVE / CANCELLED / POSTPONED —
+ * the state travels on every row so the client renders it truthfully
+ * (the status-honest discovery contract: a cancelled or postponed
+ * gathering never masquerades as upcoming, and wherever the row IS
+ * served, its state is served with it).
  */
 public record NeighborhoodEventView(
         UUID id,
@@ -32,6 +39,7 @@ public record NeighborhoodEventView(
         String organizerLabel,
         Integer capacity,
         String registration,
+        String status,
         boolean featured,
         long attending,
         boolean rsvpedByMe,
@@ -57,6 +65,7 @@ public record NeighborhoodEventView(
                 event.getOrganizerLabel(),
                 event.getCapacity(),
                 event.getRegistration().name(),
+                event.getStatus().name(),
                 event.isFeatured(),
                 0L,
                 false,
@@ -83,6 +92,7 @@ public record NeighborhoodEventView(
                 event.getOrganizerLabel(),
                 event.getCapacity(),
                 event.getRegistration().name(),
+                event.getStatus().name(),
                 event.isFeatured(),
                 attending,
                 rsvpedByMe,

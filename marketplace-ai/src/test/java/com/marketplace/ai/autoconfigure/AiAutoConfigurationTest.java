@@ -58,7 +58,10 @@ class AiAutoConfigurationTest {
                 .withBean(SessionService.class, () -> mock(SessionService.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(AiChatGateway.class)
-                        .hasSingleBean(AiQueryUnderstanding.class));
+                        // Task 5-f: the orphan AiQueryUnderstanding bean is retired —
+                        // it had no consumer anywhere, so the auto-configuration no
+                        // longer registers it even on the fully-activated path.
+                        .doesNotHaveBean(AiQueryUnderstanding.class));
     }
 
     @Test
@@ -73,7 +76,7 @@ class AiAutoConfigurationTest {
                 .withBean(SessionService.class, () -> mock(SessionService.class))
                 .run(context -> assertThat(context)
                         .hasSingleBean(AiChatGateway.class)
-                        .hasSingleBean(AiQueryUnderstanding.class));
+                        .doesNotHaveBean(AiQueryUnderstanding.class));
     }
 
     @Test
@@ -138,16 +141,13 @@ class AiAutoConfigurationTest {
                         .hasSingleBean(MarketplaceSearchTools.class));
     }
 
-    @Test
-    void createsQueryUnderstandingFromSpringAiManagedBuilder() {
-        ChatModel chatModel = mock(ChatModel.class);
-        ChatClient.Builder builder = ChatClient.builder(chatModel);
-
-        AiQueryUnderstanding understanding =
-                new AiAutoConfiguration().aiQueryUnderstanding(builder);
-
-        assertThat(understanding).isNotNull();
-    }
+    /*
+     * Task 5-f: the former createsQueryUnderstandingFromSpringAiManagedBuilder
+     * pin is retired with the bean itself — it invoked the removed
+     * aiQueryUnderstanding(...) bean method, and an auto-configuration pin of
+     * an orphan bean would assert the exact dead weight this wave removes.
+     * The class's own mapping behavior stays pinned by AiQueryUnderstandingTest.
+     */
 
     @Test
     void knowledgeGatewayNeedsTheExactRecordStoreSoNeverDependsOnVectorRecall() {

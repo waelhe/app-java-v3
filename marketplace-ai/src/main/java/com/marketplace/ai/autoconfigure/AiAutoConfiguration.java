@@ -4,7 +4,6 @@ import com.marketplace.ai.AiChatGateway;
 import com.marketplace.ai.AiKnowledgeGateway;
 import com.marketplace.ai.AiWithdrawnSourceStore;
 import com.marketplace.ai.JevModelRouter;
-import com.marketplace.ai.AiQueryUnderstanding;
 import com.marketplace.ai.AiSessionExpirationCleanup;
 import com.marketplace.ai.MarketplaceSearchTools;
 import com.marketplace.shared.api.GeoLookupPort;
@@ -297,12 +296,17 @@ public class AiAutoConfiguration {
         return new AiSessionExpirationCleanup(sessionService);
     }
 
-    @Bean
-    @ConditionalOnBean(ChatClient.Builder.class)
-    @ConditionalOnMissingBean
-    AiQueryUnderstanding aiQueryUnderstanding(ChatClient.Builder builder) {
-        return new AiQueryUnderstanding(builder);
-    }
+    /*
+     * Task 5-f (the orphan-bean retirement): the AiQueryUnderstanding bean
+     * registration is REMOVED — the bean had no consumer anywhere in the
+     * repository (the measured grep: no production call site; no gateway,
+     * tool, or advisor wiring composes it), so its auto-registered instance
+     * was dead context weight that still built a ChatClient on every startup
+     * where a ChatClient.Builder was present. The class itself stays in the
+     * module (its unit test pins the Spring AI entity-mapping behavior) for
+     * the wave that actually wires query understanding; re-registration is
+     * that wave's bean-method decision, not an autoconfigure default.
+     */
 
     /**
      * The AI module's exact withdrawal records (V162). The knowledge gateway's

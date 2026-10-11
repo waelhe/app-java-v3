@@ -1,8 +1,7 @@
 package com.marketplace.ai;
 
-import com.marketplace.knowledge.KnowledgeCategory;
-import com.marketplace.knowledge.KnowledgeEntryPublishedEvent;
-import com.marketplace.knowledge.KnowledgeEntryWithdrawnEvent;
+import com.marketplace.shared.api.KnowledgeEntryPublishedEvent;
+import com.marketplace.shared.api.KnowledgeEntryWithdrawnEvent;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -26,7 +25,7 @@ class AiKnowledgeEntryEventListenerTest {
         listener.onKnowledgeEntryPublished(new KnowledgeEntryPublishedEvent(
                 entryId,
                 locationId,
-                KnowledgeCategory.PLACES,
+                "PLACES",
                 "Local landmarks",
                 "The neighborhood has a public garden.",
                 UUID.randomUUID()));

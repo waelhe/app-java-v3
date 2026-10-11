@@ -13,7 +13,6 @@
     <description>Provider-neutral AI capabilities using Spring AI auto-configuration</description>
     <dependencies>
         <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-shared</artifactId></dependency>
-        <dependency><groupId>com.marketplace</groupId><artifactId>marketplace-knowledge</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
         <dependency><groupId>org.springframework.modulith</groupId><artifactId>spring-modulith-api</artifactId></dependency>
         <!-- D.4's surviving half (union 2026-10-08): the annotation

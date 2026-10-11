@@ -52,6 +52,15 @@ import java.util.UUID;
  *       surface or an admin panel) is a documented product decision,
  *       never a silent one. The board's «مبادرة الأسبوع» takes the
  *       first featured row and renders nothing when none is.</li>
+ *   <li>{@code status} (JT-20, the V174 column) is {@code ACTIVE} from
+ *       birth — the honest gathering state. CANCELLED / POSTPONED are
+ *       the honest flips: a cancelled or postponed event never
+ *       masquerades as upcoming (the board's {@code upcoming} read
+ *       excludes it), while the row, its seats and its audit trail
+ *       stay. The flip surface is a documented reservation (the
+ *       {@code featured} precedent verbatim — see
+ *       {@link NeighborhoodEventStatus}); no code path writes anything
+ *       but ACTIVE this wave.</li>
  * </ul>
  *
  * <p>Every BaseEntity column present from day one (V25/V32 lesson);
@@ -109,6 +118,15 @@ public class NeighborhoodEvent extends BaseEntity {
     @Column(name = "featured", nullable = false)
     private boolean featured;
 
+    /**
+     * The honest gathering state (JT-20) — {@code ACTIVE} from birth;
+     * the V174 column is total (NOT NULL DEFAULT), there is no
+     * "unknown" gathering.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private NeighborhoodEventStatus status;
+
     protected NeighborhoodEvent() {
     }
 
@@ -143,6 +161,7 @@ public class NeighborhoodEvent extends BaseEntity {
         event.capacity = capacity;
         event.registration = registration;
         event.featured = false;
+        event.status = NeighborhoodEventStatus.ACTIVE;
         return event;
     }
 
@@ -160,4 +179,6 @@ public class NeighborhoodEvent extends BaseEntity {
     public Integer getCapacity() { return capacity; }
     public EventRegistration getRegistration() { return registration; }
     public boolean isFeatured() { return featured; }
+    /** {@code ACTIVE} from birth; the honest flips arrive with the organizer's lifecycle surface. */
+    public NeighborhoodEventStatus getStatus() { return status; }
 }

@@ -186,6 +186,28 @@ public class NeighborhoodPostController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/posts/{postId}/lost-found-state")
+    @Operation(summary = "Close my lost-and-found report",
+            description = "JT-20 — the lost-and-found lifecycle's owner command: the author of a "
+                    + "LOST_FOUND post moves its state to RESOLVED (closed by other means) or "
+                    + "FOUND (the item or being was recovered). The gate order is the delete's "
+                    + "ownership gate verbatim: an unknown post answers 404, a non-owner 403, and "
+                    + "a post that is not LOST_FOUND answers the honest 409 (it carries no "
+                    + "lost-and-found state to move). A report already in the requested state "
+                    + "answers 200 idempotently — no write. The response carries the state only "
+                    + "for LOST_FOUND posts (other categories never render one). Note: this "
+                    + "command rides no dedicated rate limiter — the named write limiters' "
+                    + "config lives in the app module; adding one is a config decision, not a "
+                    + "silent omission.")
+    public ResponseEntity<NeighborhoodPostView> lostFoundState(
+            @PathVariable UUID postId,
+            @Valid @RequestBody UpdateLostFoundStateRequest request,
+            Authentication authentication) {
+        UUID ownerId = currentUserProvider.getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                postService.updateLostFoundState(ownerId, postId, parseLostFoundState(request.state())));
+    }
+
     @PostMapping("/posts/{postId}/reactions")
     @RateLimiter(name = "postReact")
     @Operation(summary = "Thank a post (one voice per member)",
@@ -244,6 +266,21 @@ public class NeighborhoodPostController {
     }
 
     /**
+     * JT-20: the lost-and-found state type gate (the same discipline):
+     * the request body's vocabulary is the CLOSING states only — ACTIVE
+     * is the publish factory's own stamp, not a client command, so a
+     * body asking for it answers the house 400 listing the valid
+     * vocabulary, BEFORE any service call.
+     */
+    private static LostFoundState parseLostFoundState(String raw) {
+        if ("RESOLVED".equals(raw) || "FOUND".equals(raw)) {
+            return LostFoundState.valueOf(raw);
+        }
+        throw new BadRequestException(
+                "Invalid lost-found state '" + raw + "' — valid values: RESOLVED, FOUND");
+    }
+
+    /**
      * The publish body: the target neighborhood (the author's own — the
      * service gates the match), the category, and the two authored-text
      * fields with their documented bounds.
@@ -282,6 +319,20 @@ public class NeighborhoodPostController {
             @Schema(description = "The comment's body (max " + MAX_BODY_LENGTH + " characters).",
                     maxLength = MAX_BODY_LENGTH)
             String body
+    ) {
+    }
+
+    /**
+     * JT-20: the lost-and-found closing body — the one authored decision
+     * the owner makes about their report: how the story ended.
+     */
+    public record UpdateLostFoundStateRequest(
+            @NotBlank
+            @Schema(description = "The report's closing state: RESOLVED (closed by other means) "
+                    + "or FOUND (the lost item or being was recovered).",
+                    allowableValues = {"RESOLVED", "FOUND"},
+                    example = "FOUND")
+            String state
     ) {
     }
 }

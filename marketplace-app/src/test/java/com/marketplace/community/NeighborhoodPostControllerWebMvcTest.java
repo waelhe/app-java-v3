@@ -479,7 +479,7 @@ class NeighborhoodPostControllerWebMvcTest {
         UUID locationId = UUID.randomUUID();
         NeighborhoodPostView view = new NeighborhoodPostView(
                 UUID.randomUUID(), memberId, locationId,
-                "GENERAL", "Title", "Body", "VISIBLE",
+                "GENERAL", "Title", "Body", "VISIBLE", null,
                 3L, true,
                 List.of(new PostMediaView(UUID.randomUUID(), "https://orig", "https://thumb",
                         "image/jpeg", 1)),
