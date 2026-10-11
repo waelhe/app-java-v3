@@ -1,3 +1,15 @@
+# Platform Rebuild Recovery — 2026-10-11 (active on branch only)
+
+> **Scope:** this entry describes work on `rebuild/product-experience-foundation`, not a change already present on `main`. Re-measure the live repository before each later decision. No merge to `main` occurred as part of this recovery.
+
+- **Corrected product mandate:** the target is a coherent multi-role, multi-domain local community platform at country/city/neighborhood scale; the Spring backend is a foundation to reuse and extend, not a boundary that forces a thin Android wrapper. See `docs/product-platform-blueprint.md`.
+- **Journey/UX foundation preserved:** `docs/community-platform-user-journeys.md` now uses the latest specification with JT-01..JT-20; `docs/community-platform-ux-design.md` retains the detailed design system and screen catalog; `docs/platform-product-decisions.md` separates owner-confirmed decisions from unresolved gates; `docs/community-platform-product-management.md` and `docs/community-platform-nextdoor-benchmark.md` provide product-delivery and evidence context.
+- **Closed without merge after replacement material was preserved:** duplicate Android attempts #548/#549/#550 and the outdated documentation chain #532/#534/#536. Their PR branches were not deleted; the connected GitHub tool set only permitted closing PRs, not deleting remote refs.
+- **Open engineering PRs intentionally preserved:** #540/#541 discovery, #543/#546 identity/multi-role/trust, #544/#547 search, and #545 notifications. They require semantic and migration/dependency review rather than blind closure or automatic merge. At the last inspection, #541 and #545 shared 97 changed paths; treat that as a high-risk conflict indicator.
+- **Implementation state:** the documents are targets, not proof of feature availability. No backend implementation PR was merged, no Android client PR was merged, no migration was added by this recovery, and no new PR was opened.
+
+---
+
 # PROJECT_MAP — Marketplace Backend (app-java-v3)
 
 ## B-16 — موجة المتجر M2 (C.8): أسئلة/أجوبة المنتج + ملخص البائع العام — مدموجة ومنشورة، والخطة المتوازية (PR #505) مكتملة الطرفين (2026-10-10 — أمر المستخدم: «افحص pr 538 مفتوح. وادمج، واستند للوثائق الرسمية للاطار مايفين وغيرهم، وتفعيل مراجعات CodeRabbit, فعل البروتوكول وأقرأ ملف system وAGENTS... لا تغييرات ترقيع ولا ديون — التصميم الرسمي حسب الاطار والنظام وحقائق الكود»)
