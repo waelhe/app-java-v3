@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# Pinned Gradle bootstrap. The official Gradle 8.13 distribution checksum is verified
+# before extraction; this keeps the project runnable without committing a binary JAR.
+set -eu
+VERSION="8.13"
+SHA256="20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78"
+CACHE_ROOT="${GRADLE_USER_HOME:-$HOME/.gradle}/dayf-distributions"
+DIST_DIR="$CACHE_ROOT/gradle-$VERSION"
+if [ ! -x "$DIST_DIR/bin/gradle" ]; then
+  mkdir -p "$CACHE_ROOT"
+  ARCHIVE="$CACHE_ROOT/gradle-$VERSION-bin.zip"
+  if [ ! -f "$ARCHIVE" ]; then
+    command -v curl >/dev/null 2>&1 || { echo "curl is required to bootstrap Gradle $VERSION" >&2; exit 1; }
+    curl --fail --location --retry 3 "https://services.gradle.org/distributions/gradle-$VERSION-bin.zip" --output "$ARCHIVE"
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+  else
+    ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+  fi
+  if [ "$ACTUAL" != "$SHA256" ]; then
+    rm -f "$ARCHIVE"
+    echo "Gradle distribution checksum mismatch; refusing to execute." >&2
+    exit 1
+  fi
+  command -v unzip >/dev/null 2>&1 || { echo "unzip is required to bootstrap Gradle $VERSION" >&2; exit 1; }
+  TMP_DIR="$CACHE_ROOT/extract-$VERSION-$$"
+  mkdir -p "$TMP_DIR"
+  unzip -q "$ARCHIVE" -d "$TMP_DIR"
+  rm -rf "$DIST_DIR"
+  mv "$TMP_DIR/gradle-$VERSION" "$DIST_DIR"
+  rmdir "$TMP_DIR" 2>/dev/null || true
+fi
+exec "$DIST_DIR/bin/gradle" "$@"
