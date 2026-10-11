@@ -56,7 +56,10 @@ class NotificationServiceTest {
         // NotificationTextSourceTest).
         return new NotificationService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, emailNotificationService, messagingTemplate, preferences,
-                new NotificationTextSource());
+                new NotificationTextSource(),
+                new PushTokenService(mock(PushTokenRepository.class),
+                        mock(com.marketplace.notifications.push.PushNotificationPort.class),
+                        currentUserProvider));
     }
 
     /**

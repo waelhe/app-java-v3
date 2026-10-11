@@ -14,9 +14,16 @@ package com.marketplace.notifications;
  * opt-in ({@code enabled = true}) is accepted: it merely affirms the
  * default and keeps the channel set stable for future channels (push/SMS,
  * roadmap §7) to become single addition points.
+ *
+ * <p>Stage 7 (plan D-10, ADR-0003): {@code PUSH} joins as that future
+ * channel's single addition point — gated by the stored preference before
+ * every send (the EMAIL semantics verbatim) AND by the device-token
+ * registry (a user with no token answers nothing: the sparse-override
+ * default keeps every existing user's behavior unchanged).
  */
 public enum NotificationChannel {
     DB,
     EMAIL,
-    WS
+    WS,
+    PUSH
 }
