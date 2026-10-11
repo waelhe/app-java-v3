@@ -106,7 +106,7 @@ internal fun SignedInScaffold(
             TopAppBar(
                 title = {
                     Column {
-                        Text("ضَيف", fontWeight = FontWeight.Bold, fontSize = 21.sp)
+                        Text("المجتمع المحلي", fontWeight = FontWeight.Bold, fontSize = 21.sp)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.LocationOn, contentDescription = null, modifier = Modifier.size(14.dp), tint = Forest)
                             Text(
