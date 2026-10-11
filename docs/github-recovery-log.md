@@ -24,14 +24,17 @@ The new foundation retains and updates the later JT-01..JT-20 journey contract, 
 
 ### Other open backend PRs
 
-The review found active implementation PRs #540/#541 (discovery), #543/#546 (multi-role/trust), #544/#547 (unified search), and #545 (notification routing). They are not closed solely on filename overlap: their domain and migration impacts must be reviewed against main and each other before a close, retarget, or merge decision. #541 and #545 share many changed file paths, so they are a conflict-risk requiring explicit dependency review.
+The review found active implementation PRs #540/#541 (discovery), #543/#546 (multi-role/trust), #544/#547 (unified search), and #545 (notification routing). A patch-level diff showed that 93 of 97 paths shared between #541 and each of #543/#544/#545 carried identical patches. #543 and #546 also propose incompatible role tables at V182, while #544 and #547 overlap in UnifiedSearchService and its test. These findings motivated explicit dependency retargeting and closure of competing PRs rather than merge-as-is.
 
 ## Actions completed
 
 - **Closed without merge:** #548, #549, #550 — repeated Android client attempts. Each received a cleanup explanation and a link to the replacement foundation.
 - **Closed without merge:** #532, #534, #536 — superseded planning-document chain. The newer JT-01..JT-20 journey specification, UX design system, product-management guidance, and public-evidence benchmark were copied into the replacement branch before closure.
+- **Closed without merge:** #543 — competing V182 model `user_role_assignments` conflicts with the retained #546 `user_roles` model; its unique trust/verification work is preserved on the branch for selective future review.
+- **Closed without merge:** #544 — competing search implementation. Its unique Arabic reference corpus and D-07 gate are explicitly retained as work to port into #547 after remeasurement; the remote branch remains recoverable.
+- **Retargeted dependency bases:** #545 and #546 now target `discovery/wave-part1` (the #541 head); #547 remains stacked on #546; #540 remains stacked on #541. #545's changed-file count dropped from 183 to 93. #544 did not collapse its diff after a base change (still 149 files), so it was closed rather than falsely described as cleaned.
 - **No main merge, no code PR merge, and no new PR were created.** The replacement remains a reviewable branch, not a published implementation.
-- Branch comparison after the initial foundation update: this branch was 13 commits ahead of main and 0 commits behind at the time of measurement. Re-run comparison before any review/PR decision.
+- The latest measured comparison before these last cleanup updates was 19 commits ahead of main and 0 behind; re-run comparison before any review/PR decision.
 
 ## Outstanding limits and preservation
 
