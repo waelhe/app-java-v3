@@ -97,6 +97,45 @@ package com.marketplace.notifications;
  * {@code MessageReceivedEvent} precedent — the record's shared/api
  * placement, no pom change anywhere, and {@code NotificationEventListener}
  * delivers on every publication).
+ *
+ * <p>Task 5-f (the discovery waves' measured repairs — the events-without-
+ * consumers closure): three types join as the seventeenth, eighteenth and
+ * nineteenth — the same point additions (the V180 CHECK widens the DB-side
+ * membership guard to match, V181 validates it under SHARE UPDATE
+ * EXCLUSIVE alone — the V158/V159 and V164/V165 precedent verbatim):
+ * <ul>
+ * <li>{@code DISPUTE_OPENED} — the dispute opener's own acknowledgment:
+ * the dispute pipeline's entry fact finally reaches the party who opened
+ * the dispute (the B-06 events carried no listener at all — the measured
+ * defect this wave closes; the record moved to shared/api the same
+ * commit). The recipient is the dispute's OPENER — the event carries the
+ * complete party fact, and the delivery is ledgered on the dispute's own
+ * id (the notifications.source_event_id dedup: a re-delivered publication
+ * can never duplicate the acknowledgment).</li>
+ * <li>{@code DISPUTE_RESOLVED} — the opener's adjudication fact: every
+ * resolve outcome is the opener's journey's arrival ({@code
+ * REFUND_CONSUMER} with the executed refund, {@code RELEASE_PROVIDER},
+ * {@code NO_ACTION} — the carried stored name renders through the
+ * bundle's vocabulary channel). Ledgered on a deterministic derivation of
+ * the dispute's id ({@code disputeId + "-resolved"} through
+ * {@code UUID.nameUUIDFromBytes}) so the redelivered publication of the
+ * same resolve lands on the same ledger key — idempotency that survives
+ * re-delivery by construction.</li>
+ * <li>{@code URGENT_ALERT} — the CMP-46/JT-10 delegated urgent alert's
+ * REGISTERED type (structural readiness, not a dead letter): the live
+ * surface for the {@code UrgentAlertPublishedEvent} fact is the
+ * discovery row (the UrgentAlertsPort/CMP-46 banner — the alert's real
+ * time-critical channel), NOT a per-user notification fan-out. The
+ * per-neighborhood fan-out ("every ACTIVE member of the scoped
+ * neighborhood gets a row") requires a neighborhood-MEMBERS enumeration
+ * port (the existing CommunityMembershipPort answers one neighborhood
+ * per user — the reverse direction), which is the next wave's measured
+ * decision (the send-volume gate: an alert to every member of a large
+ * neighborhood is a bulk-send policy question, not a listener to write
+ * in passing). When that port lands, the type and the DB-side guard are
+ * already in place — the enum IS the single source of truth, this entry
+ * documents the honest boundary.</li>
+ * </ul>
  */
 public enum NotificationType {
     BOOKING_CREATED,
@@ -124,5 +163,8 @@ public enum NotificationType {
     ORDER_CANCELLED,
     MESSAGE_RECEIVED,
     MEMBERSHIP_VERIFIED,
-    REPORT_RESOLVED
+    REPORT_RESOLVED,
+    URGENT_ALERT,
+    DISPUTE_OPENED,
+    DISPUTE_RESOLVED
 }
