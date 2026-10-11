@@ -1,7 +1,6 @@
 package com.marketplace.notifications.routing;
 
 import com.marketplace.notifications.EmailNotificationService;
-import com.marketplace.notifications.Notification;
 import com.marketplace.notifications.NotificationPreferenceService;
 import com.marketplace.notifications.NotificationRepository;
 import com.marketplace.notifications.NotificationTextSource;
@@ -15,7 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -47,12 +45,16 @@ import static org.mockito.Mockito.when;
  *       subscribers — one decision per candidate, a member-subscriber
  *       deduplicated by the set;</li>
  *   <li>the inbox row carries the V180 ledger key (the alert id as the
- *       source event id) and the concurrent-insert race is absorbed as
- *       the winner's proof;</li>
+ *       source event id) and the concurrent-insert race is absorbed
+ *       inside the database itself (ON CONFLICT DO NOTHING — the
+ *       returned count IS the winner's proof, the V54/V199 shape);</li>
  *   <li><b>the retry contract: a re-delivered publication duplicates
- *       NOTHING</b> — the inbox pre-check answers, the channel ledger
- *       answers, no second row and no second send (the Phase 7 gate
- *       "إعادة المحاولة لا تضاعف الإشعارات أو التوزيع");</li>
+ *       NOTHING</b> — the idempotent inbox insert answers, the channel
+ *       ledger answers, no second row and no second send (the Phase 7 gate
+ *       "إعادة المحاولة لا تضاعف الإشعارات أو التوزيع") — and every
+ *       recipient is an independent commit boundary (the REQUIRES_NEW
+ *       delivery unit), so a later recipient's failure never rolls back
+ *       an earlier recipient's committed ledgers;</li>
  *   <li>the geo privacy: the port answers the alert's OWN scope only
  *       (verified by the exact argument) — a member of another
  *       neighborhood never enters the candidate set, and an engine GEO
@@ -107,10 +109,14 @@ class UrgentAlertNotificationRouterTest {
         NotificationRoutingEngine engine = new NotificationRoutingEngine(typePreferences,
                 topicPreferences, membershipPort, geoSubscriptions, Optional.empty(),
                 FIXED_CLOCK);
+        UrgentAlertDelivery delivery = new UrgentAlertDelivery(repository, deliveryLedger,
+                emailNotificationService, webSocketPush, Optional.empty(),
+                new NotificationTextSource());
         return new UrgentAlertNotificationRouter(engine, membersPort, scopedSubscriptions,
-                urgentAlertsPort, repository, emailNotificationService, webSocketPush,
-                deliveryLedger, Optional.empty(), new NotificationTextSource(), FIXED_CLOCK);
+                urgentAlertsPort, new NotificationTextSource(), FIXED_CLOCK, delivery);
     }
+
+    private final ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
     private static UrgentAlertPublishedEvent event() {
         return new UrgentAlertPublishedEvent(ALERT_ID, SOURCE_ID, "بلدية القديسة", LOCATION,
@@ -148,18 +154,14 @@ class UrgentAlertNotificationRouterTest {
         alertIsActive();
         membersAndSubscribers();
         admitMemberThroughMembership();
+        when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
+                anyString(), eq(ALERT_ID))).thenReturn(1);
 
         router().onUrgentAlertPublished(event());
 
-        ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getRecipientId()).isEqualTo(MEMBER);
-        assertThat(saved.getValue().getType()).isEqualTo(NotificationType.URGENT_ALERT.name());
-        assertThat(saved.getValue().getSourceEventId())
-                .as("the V180 ledger key IS the alert's id — a re-delivered publication "
-                        + "derives the same key")
-                .isEqualTo(ALERT_ID);
-        assertThat(saved.getValue().getMessage()).contains("بلدية القديسة");
+        verify(repository).insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
+                messageCaptor.capture(), eq(ALERT_ID));
+        assertThat(messageCaptor.getValue()).contains("بلدية القديسة");
         // The re-check read the alert's OWN scope — never another one.
         verify(urgentAlertsPort).findActive(eq(LOCATION), any());
         verify(membersPort).getActiveMemberIds(LOCATION);
@@ -171,7 +173,7 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any());
         verify(membersPort, never()).getActiveMemberIds(any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
@@ -189,10 +191,8 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
-        verify(repository, times(2)).save(saved.capture());
-        assertThat(saved.getAllValues()).extracting(Notification::getRecipientId)
-                .containsExactlyInAnyOrder(MEMBER, SUBSCRIBER);
+        verify(repository, times(2)).insertOnce(any(), any(UUID.class),
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
     }
 
     @Test
@@ -205,19 +205,22 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, times(1)).save(any(Notification.class));
+        verify(repository, times(1)).insertOnce(any(), any(UUID.class),
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
     }
 
     @Test
     void aRetriedPublicationDuplicatesNothing() {
         // The framework's resubmission re-runs this listener with the same
-        // event: the inbox pre-check answers (the row exists), the channel
-        // ledger answers (the delivery exists) — no second row, no second
-        // send, no exception (the registry entry completes cleanly).
+        // event: the idempotent inbox insert answers (ON CONFLICT DO NOTHING
+        // returns 0 — the row exists), the channel ledger answers (the
+        // delivery exists) — no second row, no second send, no exception
+        // (the registry entry completes cleanly).
         alertIsActive();
         membersAndSubscribers();
         admitMemberThroughMembership();
-        when(repository.existsByRecipientIdAndSourceEventId(MEMBER, ALERT_ID)).thenReturn(true);
+        when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
+                anyString(), eq(ALERT_ID))).thenReturn(0);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -225,7 +228,8 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
         verify(webSocketPush, never()).push(any(), any(), anyString());
     }
@@ -238,7 +242,8 @@ class UrgentAlertNotificationRouterTest {
         alertIsActive();
         membersAndSubscribers();
         admitMemberThroughMembership();
-        when(repository.existsByRecipientIdAndSourceEventId(MEMBER, ALERT_ID)).thenReturn(true);
+        when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
+                anyString(), eq(ALERT_ID))).thenReturn(0);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -246,25 +251,36 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
         verify(webSocketPush).push(eq(MEMBER), eq(NotificationType.URGENT_ALERT), anyString());
     }
 
     @Test
-    void theConcurrentInboxInsertRaceIsAbsorbedAsTheWinnersProof() {
+    void theConcurrentInboxInsertRaceIsAbsorbedInsideTheDatabaseItself() {
+        // CodeRabbit's round on the #545 slice: the concurrent same-key
+        // insert never raises — ON CONFLICT DO NOTHING absorbs it inside
+        // the database, the returned 0 IS the winner's proof (the V54/
+        // V199 discipline). The fan-out completes, the channels proceed
+        // per their own ledgers, the registry entry completes cleanly —
+        // the pre-check/flush/catch dance is retired because there is
+        // nothing left to catch.
         alertIsActive();
         membersAndSubscribers();
         admitMemberThroughMembership();
-        when(repository.existsByRecipientIdAndSourceEventId(MEMBER, ALERT_ID)).thenReturn(false);
-        when(repository.save(any(Notification.class)))
-                .thenThrow(new DataIntegrityViolationException(
-                        "uq_notifications_source_event_once"));
+        when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
+                anyString(), eq(ALERT_ID))).thenReturn(0);
+        when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
+                .thenReturn(true);
+        when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
+                .thenReturn(true);
 
         assertThatCode(() -> router().onUrgentAlertPublished(event()))
-                .as("the loser of the ledger race absorbs the violation — the row exists, "
-                        + "the delivery happened, the registry entry completes")
+                .as("the loser of the ledger race learns the row exists from the returned "
+                        + "count itself — no exception ever surfaces")
                 .doesNotThrowAnyException();
+        verify(emailNotificationService).sendEmail(eq(MEMBER), anyString(), anyString(), any());
     }
 
     @Test
@@ -282,6 +298,6 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).save(any(Notification.class));
+        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any());
     }
 }

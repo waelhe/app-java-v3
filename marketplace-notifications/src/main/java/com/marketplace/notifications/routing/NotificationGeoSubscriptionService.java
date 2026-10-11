@@ -6,6 +6,9 @@ import com.marketplace.shared.api.GeoLookupPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,19 +49,24 @@ import java.util.UUID;
 @Transactional
 public class NotificationGeoSubscriptionService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationGeoSubscriptionService.class);
+
     /** The level the subscription targets — the neighborhood scope (L42's). */
     private static final int NEIGHBORHOOD_LEVEL = 3;
 
     private final NotificationGeoSubscriptionRepository repository;
     private final GeoLookupPort geoLookupPort;
     private final CurrentUserProvider currentUserProvider;
+    private final NotificationGeoSubscriptionWriter writer;
 
     public NotificationGeoSubscriptionService(NotificationGeoSubscriptionRepository repository,
                                               GeoLookupPort geoLookupPort,
-                                              CurrentUserProvider currentUserProvider) {
+                                              CurrentUserProvider currentUserProvider,
+                                              NotificationGeoSubscriptionWriter writer) {
         this.repository = repository;
         this.geoLookupPort = geoLookupPort;
         this.currentUserProvider = currentUserProvider;
+        this.writer = writer;
     }
 
     /** The caller's own live subscriptions (D-N5 order, newest first). */
@@ -73,23 +81,38 @@ public class NotificationGeoSubscriptionService {
     /**
      * Subscribes the caller to one level-3 neighborhood — the explicit
      * geographic act (AC-02-02). Duplicate subscription is idempotent:
-     * the live pair already answers, the same view returns unchanged.
+     * the live pair already answers, the same view returns unchanged —
+     * including the in-flight race where two concurrent same-pair
+     * requests both miss the lookup (CodeRabbit's round on the #545
+     * slice, the FollowWriter house pattern): the INSERT rides its own
+     * REQUIRES_NEW transaction, the loser absorbs the
+     * {@code uq_notification_geo_subscriptions_live} violation OUTSIDE
+     * the transaction that took it and re-reads the winner's committed
+     * row — the documented idempotent 200, never a rollback-only 500.
+     * Every OTHER integrity violation propagates honestly.
      */
     @Observed(name = "notification.preferences.geo.subscribe")
     public NotificationGeoSubscriptionView subscribe(Authentication authentication,
                                                      UUID locationId) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         requireNeighborhood(locationId);
-        if (repository.existsByUserIdAndLocationId(userId, locationId)) {
-            return repository.findByUserIdAndLocationId(userId, locationId)
-                    .map(this::toView)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Live subscription vanished between the check and the read: "
-                                    + userId + " / " + locationId));
+        NotificationGeoSubscription existing = repository
+                .findByUserIdAndLocationId(userId, locationId).orElse(null);
+        if (existing != null) {
+            return toView(existing);
         }
-        NotificationGeoSubscription saved = repository.saveAndFlush(
-                NotificationGeoSubscription.subscribe(userId, locationId));
-        return toView(saved);
+        try {
+            NotificationGeoSubscription saved = writer.persist(
+                    NotificationGeoSubscription.subscribe(userId, locationId));
+            return toView(saved);
+        } catch (DataIntegrityViolationException duplicate) {
+            if (!isOneLiveSubscriptionDuplicate(duplicate)) {
+                throw duplicate;
+            }
+            log.info("Concurrent geo subscription lost the create race — answering the "
+                    + "winner's row: userId={}, locationId={}", userId, locationId);
+            return toView(writer.replay(userId, locationId));
+        }
     }
 
     /**
@@ -120,5 +143,21 @@ public class NotificationGeoSubscriptionService {
         return new NotificationGeoSubscriptionView(
                 subscription.getLocationId(),
                 subscription.subscribedAt());
+    }
+
+    /**
+     * The one-live-subscription duplicate test: the violation's cause
+     * chain must name {@code uq_notification_geo_subscriptions_live}
+     * itself (V198) — every OTHER integrity violation is an honest
+     * failure that must propagate (the FollowService twin verbatim).
+     */
+    private static boolean isOneLiveSubscriptionDuplicate(DataIntegrityViolationException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null
+                    && t.getMessage().contains("uq_notification_geo_subscriptions_live")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

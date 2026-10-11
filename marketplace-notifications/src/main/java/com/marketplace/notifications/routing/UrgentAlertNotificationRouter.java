@@ -1,8 +1,5 @@
 package com.marketplace.notifications.routing;
 
-import com.marketplace.notifications.EmailNotificationService;
-import com.marketplace.notifications.Notification;
-import com.marketplace.notifications.NotificationRepository;
 import com.marketplace.notifications.NotificationTextSource;
 import com.marketplace.notifications.NotificationType;
 import com.marketplace.shared.api.NeighborhoodMembersPort;
@@ -10,14 +7,11 @@ import com.marketplace.shared.api.UrgentAlertsPort;
 import com.marketplace.shared.api.UrgentAlertPublishedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -69,7 +63,6 @@ import java.util.UUID;
  * user — there is no self-mute to apply to an institutional alert.
  */
 @Service
-@Transactional
 public class UrgentAlertNotificationRouter {
 
     private static final Logger log = LoggerFactory.getLogger(UrgentAlertNotificationRouter.class);
@@ -78,36 +71,24 @@ public class UrgentAlertNotificationRouter {
     private final NeighborhoodMembersPort membersPort;
     private final NotificationGeoSubscriptionRepository geoSubscriptions;
     private final UrgentAlertsPort urgentAlertsPort;
-    private final NotificationRepository repository;
-    private final EmailNotificationService emailNotificationService;
-    private final UrgentAlertWebSocketPush webSocketPush;
-    private final NotificationDeliveryLedger deliveryLedger;
-    private final Optional<PushNotificationChannel> pushChannel;
     private final NotificationTextSource text;
     private final Clock clock;
+    private final UrgentAlertDelivery delivery;
 
     public UrgentAlertNotificationRouter(NotificationRoutingEngine engine,
                                          NeighborhoodMembersPort membersPort,
                                          NotificationGeoSubscriptionRepository geoSubscriptions,
                                          UrgentAlertsPort urgentAlertsPort,
-                                         NotificationRepository repository,
-                                         EmailNotificationService emailNotificationService,
-                                         UrgentAlertWebSocketPush webSocketPush,
-                                         NotificationDeliveryLedger deliveryLedger,
-                                         Optional<PushNotificationChannel> pushChannel,
                                          NotificationTextSource text,
-                                         Clock clock) {
+                                         Clock clock,
+                                         UrgentAlertDelivery delivery) {
         this.engine = engine;
         this.membersPort = membersPort;
         this.geoSubscriptions = geoSubscriptions;
         this.urgentAlertsPort = urgentAlertsPort;
-        this.repository = repository;
-        this.emailNotificationService = emailNotificationService;
-        this.webSocketPush = webSocketPush;
-        this.deliveryLedger = deliveryLedger;
-        this.pushChannel = pushChannel;
         this.text = text;
         this.clock = clock;
+        this.delivery = delivery;
     }
 
     /**
@@ -161,11 +142,17 @@ public class UrgentAlertNotificationRouter {
     }
 
     /**
-     * One recipient's delivery — the engine decides, the ledgers guard,
-     * the channels execute. The inbox row carries the V180 ledger key
-     * (the alert's own id as the source event id); its partial unique
-     * index is the concurrent backstop whose violation IS the winner's
-     * proof (the dispute-delivery discipline verbatim).
+     * One recipient's delivery — the engine decides (this read-side
+     * router carries no transaction of its own), then the WRITE+SEND
+     * unit runs in its own REQUIRES_NEW transaction
+     * ({@link UrgentAlertDelivery} — CodeRabbit's round on the #545
+     * slice): every recipient is an independent commit boundary, so a
+     * failure at a later recipient can never roll back an earlier
+     * recipient's committed ledger records after their external sends.
+     * The inbox row rides the V180 ledger key (the alert's own id as the
+     * source event id) through the idempotent
+     * {@code ON CONFLICT DO NOTHING} insert — the V54/V199 discipline,
+     * the concurrent duplicate is absorbed inside the database itself.
      */
     private void deliver(UrgentAlertPublishedEvent event, UUID recipient, String message) {
         NotificationRoutingPolicy policy = NotificationRoutingPolicy.forEvent(
@@ -183,37 +170,7 @@ public class UrgentAlertNotificationRouter {
         if (!decision.inbox()) {
             return;
         }
-        if (repository.existsByRecipientIdAndSourceEventId(recipient, event.alertId())) {
-            log.debug("Urgent-alert inbox row already delivered: alertId={}, recipient={}",
-                    event.alertId(), recipient);
-        } else {
-            try {
-                repository.save(Notification.create(recipient,
-                        NotificationType.URGENT_ALERT.name(), message, event.alertId()));
-            } catch (DataIntegrityViolationException concurrentDuplicate) {
-                log.info("Concurrent urgent-alert delivery lost the ledger race — the row "
-                        + "exists: alertId={}, recipient={}", event.alertId(), recipient);
-            }
-        }
-        if (decision.email()
-                && deliveryLedger.recordDelivery(event.alertId(), recipient,
-                        NotificationDeliveryChannel.EMAIL)) {
-            emailNotificationService.sendEmail(recipient,
-                    text.compose("email.URGENT_ALERT.subject",
-                            NotificationTextSource.PLATFORM_LOCALE, event.sourceName()),
-                    "email/notification",
-                    java.util.Map.of("message", message));
-        }
-        if (decision.webSocket()
-                && deliveryLedger.recordDelivery(event.alertId(), recipient,
-                        NotificationDeliveryChannel.WS)) {
-            webSocketPush.push(recipient, NotificationType.URGENT_ALERT, message);
-        }
-        if (decision.push()
-                && deliveryLedger.recordDelivery(event.alertId(), recipient,
-                        NotificationDeliveryChannel.PUSH)) {
-            pushChannel.ifPresent(channel ->
-                    channel.send(recipient, event.sourceName(), event.title()));
-        }
+        delivery.deliver(event.alertId(), recipient, decision, message,
+                event.sourceName(), event.title());
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.history.RevisionRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -58,3 +59,28 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      */
     boolean existsByRecipientIdAndSourceEventId(UUID recipientId, UUID sourceEventId);
 }
+
+    /**
+     * The urgent-alert inbox's idempotent insert — the V180 ledger key's
+     * own writer, in the V54 saved_search_matches / V199
+     * notification_deliveries shape (CodeRabbit's round on the #545
+     * slice): {@code INSERT ... ON CONFLICT DO NOTHING}, the returned
+     * count IS the duplicate answer — a 0, never a transaction-aborting
+     * 23505. The loser of a concurrent same-(recipient, source event)
+     * insert learns the row exists from the count itself; the
+     * pre-check/flush/catch dance is retired (the conflict is absorbed
+     * inside the database, exactly the discipline the delivery ledger
+     * already rides).
+     */
+    @Transactional
+    @Modifying
+    @Query(value = """
+            INSERT INTO notifications (id, recipient_id, type, message, is_read, source_event_id)
+            VALUES (:id, :recipientId, :type, :message, false, :sourceEventId)
+            ON CONFLICT DO NOTHING
+            """, nativeQuery = true)
+    int insertOnce(@Param("id") UUID id,
+                   @Param("recipientId") UUID recipientId,
+                   @Param("type") String type,
+                   @Param("message") String message,
+                   @Param("sourceEventId") UUID sourceEventId);
