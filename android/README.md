@@ -29,7 +29,7 @@ Use JDK 17 and Gradle 9.6.0, with compileSdk 37 and targetSdk 36. The pinned Com
 
     gradle -p android :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
 
-The Android client workflow installs Android SDK platform 36, runs JVM unit tests, builds the debug APK and uploads it as a workflow artifact. The CI artifact is a debug build, not a production-signed release.
+The Android client workflow installs Android SDK platform 37 (Build Tools 36.0.0), runs JVM unit tests, builds the debug APK and uploads it as a workflow artifact. The CI artifact is a debug build, not a production-signed release.
 
 Override environment-specific values without committing them:
 
@@ -49,5 +49,9 @@ Override environment-specific values without committing them:
 - Android Photo Picker (official multi-select flow): https://developer.android.com/training/data-storage/shared/photo-picker
 - Coil 3 Compose `AsyncImage` and network setup: https://github.com/coil-kt/coil/blob/main/docs/getting_started.md
 - Android SDK setup action: https://github.com/android-actions/setup-android
+- Kotlin releases and Compose compiler plugin: https://github.com/JetBrains/kotlin/releases
+- Retrofit: https://github.com/square/retrofit
+- OkHttp: https://github.com/square/okhttp
+- Kotlin coroutines (Android and tests): https://github.com/Kotlin/kotlinx.coroutines
 - Native OAuth 2.0 guidance: https://datatracker.ietf.org/doc/html/rfc8252
 - AppAuth Android: https://github.com/openid/AppAuth-Android
