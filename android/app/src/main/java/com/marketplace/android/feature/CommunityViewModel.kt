@@ -151,7 +151,13 @@ internal fun parsePriceCents(raw: String): Int? =
         .toBigDecimalOrNull()
         ?.multiply(BigDecimal(100))
         ?.setScale(0, RoundingMode.HALF_UP)
-        ?.let { scaled -> runCatching { scaled.intValueExact() }.getOrNull() }
+        ?.let { scaled ->
+            try {
+                scaled.intValueExact()
+            } catch (_: ArithmeticException) {
+                null
+            }
+        }
 
 /**
  * Adding an RSVP requires an explicitly active event, but freeing an existing
