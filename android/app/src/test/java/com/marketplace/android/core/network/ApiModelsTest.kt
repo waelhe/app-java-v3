@@ -93,6 +93,31 @@ class ApiModelsTest {
     }
 
     @Test
+    fun postPhotoUploadRequestAndSignedResponseMatchMediaControllerContract() {
+        val request = RequestPostMediaUpload(
+            postId = "post-1",
+            contentType = "image/jpeg",
+            sizeBytes = 418381L
+        )
+        val json = moshi.adapter(RequestPostMediaUpload::class.java).toJson(request)
+
+        assertTrue(json.contains("\"postId\":\"post-1\""))
+        assertTrue(json.contains("\"contentType\":\"image/jpeg\""))
+        assertTrue(json.contains("\"sizeBytes\":418381"))
+        assertFalse(json.contains("listingId"))
+        assertFalse(json.contains("productId"))
+
+        val signed = moshi.adapter(MediaUploadDto::class.java).fromJson(
+            """{"mediaId":"asset-1","objectKey":"posts/post-1/asset-1.jpg","uploadUrl":"https://storage.example.test/signed","urlLifetime":"PT15M"}"""
+        )!!
+
+        assertEquals("asset-1", signed.mediaId)
+        assertEquals("posts/post-1/asset-1.jpg", signed.objectKey)
+        assertEquals("https://storage.example.test/signed", signed.uploadUrl)
+        assertEquals("PT15M", signed.urlLifetime)
+    }
+
+    @Test
     fun listingSearchPageParsesPricesAndProviderReputation() {
         val type = Types.newParameterizedType(ApiPage::class.java, ListingSummaryDto::class.java)
         val json = """
