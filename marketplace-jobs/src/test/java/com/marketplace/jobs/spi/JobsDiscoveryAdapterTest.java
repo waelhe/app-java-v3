@@ -40,7 +40,9 @@ class JobsDiscoveryAdapterTest {
     private JobListingRepository jobRepository;
 
     private JobsDiscoveryAdapter adapter() {
-        return new JobsDiscoveryAdapter(jobRepository);
+        // No constructor arguments — the honest-empty contract consults
+        // nothing (the decision is structural, not a query).
+        return new JobsDiscoveryAdapter();
     }
 
     @Test
