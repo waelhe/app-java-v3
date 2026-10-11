@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.marketplace.shared.api.CacheInvalidationRequested;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

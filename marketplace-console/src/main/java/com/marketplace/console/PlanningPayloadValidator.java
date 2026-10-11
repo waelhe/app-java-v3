@@ -1,6 +1,6 @@
 package com.marketplace.console;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CategoryVocabularyPort;
 import org.springframework.stereotype.Component;
