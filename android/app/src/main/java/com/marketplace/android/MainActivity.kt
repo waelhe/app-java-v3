@@ -7,10 +7,12 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -26,12 +28,17 @@ import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import net.openid.appauth.ResponseTypeValues
 
 class MainActivity : ComponentActivity() {
     private val viewModel: CommunityViewModel by viewModels { CommunityViewModel.Factory() }
     private lateinit var authorizationService: AuthorizationService
     private lateinit var authorizationLauncher: ActivityResultLauncher<Intent>
+    private lateinit var silentAuthorizationLauncher: ActivityResultLauncher<Intent>
+    private lateinit var endSessionLauncher: ActivityResultLauncher<Intent>
+    private var currentIdToken: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,38 +47,36 @@ class MainActivity : ComponentActivity() {
         authorizationLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            val data = result.data ?: Intent()
-            val response = AuthorizationResponse.fromIntent(data)
-            val exception = AuthorizationException.fromIntent(data)
-            when {
-                response != null -> authorizationService.performTokenRequest(
-                    response.createTokenExchangeRequest()
-                ) { tokenResponse, tokenException ->
-                    runOnUiThread {
-                        val token = tokenResponse?.accessToken
-                        if (token.isNullOrBlank()) {
-                            viewModel.authenticationFailed(
-                                tokenException?.errorDescription ?: "تعذر إكمال تسجيل الدخول."
-                            )
-                        } else {
-                            viewModel.authenticated(token)
-                        }
-                    }
-                }
-                exception != null -> viewModel.authenticationFailed(
-                    exception.errorDescription ?: "أُلغي تسجيل الدخول أو تعذر إكماله."
-                )
-                else -> viewModel.authenticationFailed("لم يكتمل تسجيل الدخول.")
-            }
+            handleAuthorizationResult(result, silent = false)
+        }
+        silentAuthorizationLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            handleAuthorizationResult(result, silent = true)
+        }
+        endSessionLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            handleEndSessionResult(result)
+        }
+
+        if (BuildConfig.OIDC_CLIENT_ID.isNotBlank()) {
+            viewModel.requestSessionRestoreIfNeeded()
         }
 
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(state.silentReauthRequired) {
+                if (state.silentReauthRequired) {
+                    viewModel.consumeSilentReauthRequest()
+                    beginSignIn(silent = true)
+                }
+            }
             DayfTheme {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     DayfApp(
                         state = state,
-                        onSignIn = ::beginSignIn,
+                        onSignIn = { beginSignIn(silent = false) },
                         onRegisterAccount = viewModel::registerAccount,
                         onResendVerification = viewModel::resendVerificationEmail,
                         onRefresh = viewModel::refresh,
@@ -122,7 +127,7 @@ class MainActivity : ComponentActivity() {
                         onSendComment = viewModel::sendComment,
                         onMarkRead = viewModel::markNotificationRead,
                         onRequestVerification = viewModel::requestVerification,
-                        onSignOutOnDevice = viewModel::signOutOnDevice,
+                        onSignOutOnDevice = ::beginSignOut,
                         onDismissNotice = viewModel::dismissNotice,
                         onPropertyQuery = viewModel::updatePropertyQuery,
                         onPropertyPurpose = viewModel::setPropertyPurpose,
@@ -138,27 +143,83 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun beginSignIn() {
-        if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
-            viewModel.authenticationFailed(
-                "لم يُضبط معرّف عميل Android العام بعد. اضبط OAUTH_PUBLIC_CLIENT_ID على الخادم وابنِ التطبيق باستخدام -PoidcClientId."
+    private fun handleAuthorizationResult(result: ActivityResult, silent: Boolean) {
+        val data = result.data ?: Intent()
+        val response = AuthorizationResponse.fromIntent(data)
+        val exception = AuthorizationException.fromIntent(data)
+
+        when {
+            response != null -> authorizationService.performTokenRequest(
+                response.createTokenExchangeRequest()
+            ) { tokenResponse, tokenException ->
+                runOnUiThread {
+                    val token = tokenResponse?.accessToken
+                    if (token.isNullOrBlank()) {
+                        val message = tokenException?.errorDescription ?: "تعذر إكمال تسجيل الدخول."
+                        if (silent) viewModel.sessionRestorationFailed(message)
+                        else viewModel.authenticationFailed(message)
+                    } else {
+                        currentIdToken = tokenResponse?.idToken
+                        viewModel.authenticated(token)
+                    }
+                }
+            }
+            exception != null && silent -> {
+                val message = when (exception.error) {
+                    "login_required" -> null
+                    "consent_required", "interaction_required" ->
+                        "تحتاج الجلسة إلى تسجيل دخول تفاعلي. اضغط تسجيل الدخول للمتابعة."
+                    else -> exception.errorDescription ?: "تعذر استعادة جلسة الدخول تلقائيًا."
+                }
+                viewModel.sessionRestorationFailed(message)
+            }
+            exception != null -> viewModel.authenticationFailed(
+                exception.errorDescription ?: "أُلغي تسجيل الدخول أو تعذر إكماله."
             )
+            silent -> viewModel.sessionRestorationFailed()
+            else -> viewModel.authenticationFailed("لم يكتمل تسجيل الدخول.")
+        }
+    }
+
+    private fun handleEndSessionResult(result: ActivityResult) {
+        val data = result.data ?: Intent()
+        val response = EndSessionResponse.fromIntent(data)
+        val exception = AuthorizationException.fromIntent(data)
+
+        when {
+            response != null -> viewModel.completeSignOut()
+            exception != null -> viewModel.completeSignOut(
+                "سُجّل الخروج من هذا الجهاز، لكن لم يؤكّد مزوّد الهوية إنهاء الجلسة. تحقق من الاتصال ثم أعد المحاولة."
+            )
+            else -> viewModel.completeSignOut(
+                "سُجّل الخروج من هذا الجهاز، لكن لم يصل تأكيد إنهاء جلسة الخادم."
+            )
+        }
+    }
+
+    private fun beginSignIn(silent: Boolean = false) {
+        if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
+            val message = "لم يُضبط معرّف عميل Android العام بعد. اضبط OAUTH_PUBLIC_CLIENT_ID على الخادم وابنِ التطبيق باستخدام -PoidcClientId."
+            if (silent) viewModel.sessionRestorationFailed()
+            else viewModel.authenticationFailed(message)
             return
         }
+
         AuthorizationServiceConfiguration.fetchFromIssuer(Uri.parse(BuildConfig.OIDC_ISSUER)) { configuration, exception ->
             runOnUiThread {
                 if (configuration == null) {
-                    viewModel.authenticationFailed(
-                        exception?.errorDescription ?: "تعذر الوصول إلى إعدادات تسجيل الدخول."
-                    )
+                    val message = exception?.errorDescription ?: "تعذر الوصول إلى إعدادات تسجيل الدخول."
+                    if (silent) viewModel.sessionRestorationFailed(message)
+                    else viewModel.authenticationFailed(message)
                     return@runOnUiThread
                 }
+
                 val verifier = createCodeVerifier()
                 val challenge = Base64.encodeToString(
                     MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)),
                     Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
                 )
-                val request = AuthorizationRequest.Builder(
+                val requestBuilder = AuthorizationRequest.Builder(
                     configuration,
                     BuildConfig.OIDC_CLIENT_ID,
                     ResponseTypeValues.CODE,
@@ -166,8 +227,50 @@ class MainActivity : ComponentActivity() {
                 )
                     .setScope("openid profile")
                     .setCodeVerifier(verifier, challenge, "S256")
-                    .build()
-                authorizationLauncher.launch(authorizationService.getAuthorizationRequestIntent(request))
+
+                if (silent) requestBuilder.setPrompt("none")
+
+                val requestIntent = authorizationService.getAuthorizationRequestIntent(requestBuilder.build())
+                if (silent) silentAuthorizationLauncher.launch(requestIntent)
+                else authorizationLauncher.launch(requestIntent)
+            }
+        }
+    }
+
+    private fun beginSignOut() {
+        val idTokenHint = currentIdToken
+        currentIdToken = null
+        viewModel.signOutOnDevice()
+
+        if (BuildConfig.OIDC_CLIENT_ID.isBlank()) {
+            viewModel.completeSignOut(
+                "سُجّل الخروج من هذا الجهاز، لكن إعداد إنهاء جلسة الخادم غير مكتمل."
+            )
+            return
+        }
+
+        AuthorizationServiceConfiguration.fetchFromIssuer(Uri.parse(BuildConfig.OIDC_ISSUER)) { configuration, exception ->
+            runOnUiThread {
+                if (configuration == null) {
+                    viewModel.completeSignOut(
+                        "سُجّل الخروج من هذا الجهاز، لكن تعذر الوصول إلى مزوّد الهوية لإنهاء الجلسة."
+                    )
+                    return@runOnUiThread
+                }
+
+                val requestBuilder = EndSessionRequest.Builder(configuration)
+                    .setPostLogoutRedirectUri(Uri.parse(BuildConfig.OIDC_REDIRECT_URI))
+                    .setAdditionalParameters(mapOf("client_id" to BuildConfig.OIDC_CLIENT_ID))
+                if (!idTokenHint.isNullOrBlank()) requestBuilder.setIdTokenHint(idTokenHint)
+
+                try {
+                    val request = requestBuilder.build()
+                    endSessionLauncher.launch(authorizationService.getEndSessionRequestIntent(request))
+                } catch (error: Exception) {
+                    viewModel.completeSignOut(
+                        "سُجّل الخروج من هذا الجهاز، لكن تعذر بدء إنهاء جلسة الخادم."
+                    )
+                }
             }
         }
     }
