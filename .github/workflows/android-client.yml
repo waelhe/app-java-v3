@@ -64,12 +64,9 @@ jobs:
         working-directory: android
         env:
           # Public OAuth client ID only; never pass an OAuth client secret to an Android build.
-          OAUTH_PUBLIC_CLIENT_ID: ${{ vars.OAUTH_PUBLIC_CLIENT_ID }}
+          OAUTH_PUBLIC_CLIENT_ID: android-community-native
         run: |
-          if [[ -z "${OAUTH_PUBLIC_CLIENT_ID}" ]]; then
-            echo "::warning::OAUTH_PUBLIC_CLIENT_ID repository variable is not set; the APK will build, but sign-in will remain disabled until it is configured."
-          fi
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PoidcClientId="${OAUTH_PUBLIC_CLIENT_ID}"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
