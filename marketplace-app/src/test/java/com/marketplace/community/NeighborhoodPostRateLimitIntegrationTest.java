@@ -164,7 +164,7 @@ class NeighborhoodPostRateLimitIntegrationTest {
         // postCreate controller annotation entirely — only postComment's
         // window is under test here).
         var ownPost = postService.createPost(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
-                PostCategory.GENERAL, "T", "B");
+                PostCategory.GENERAL, "T", "B", false);
         String body = "{\"body\": \"c\"}";
 
         mockMvc.perform(post("/api/v1/posts/{id}/comments", ownPost.id())
@@ -191,7 +191,7 @@ class NeighborhoodPostRateLimitIntegrationTest {
         // Spend the comment window on the author's own post (self-comments
         // are honest events the listener skips — no notification noise).
         var ownPost = postService.createPost(authorId, UUID.fromString(QUDSAYYA_OLD_TOWN),
-                PostCategory.GENERAL, "T", "B");
+                PostCategory.GENERAL, "T", "B", false);
         String comment = "{\"body\": \"c\"}";
         mockMvc.perform(post("/api/v1/posts/{id}/comments", ownPost.id())
                         .with(jwt()).contentType(MediaType.APPLICATION_JSON).content(comment))

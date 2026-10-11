@@ -488,7 +488,7 @@ class SearchServiceTest {
 
     private static ListingSummary summaryOf(UUID id) {
         return new ListingSummary(id, "listing " + id, "realestate",
-                BigDecimal.valueOf(1000, 2), "SAR", "Provider", null, 0L);
+                BigDecimal.valueOf(1000, 2), "SAR", "Provider", null, 0L, false);
     }
 
     // ---- P1 (postgis plan): the radius flow --------------------------------

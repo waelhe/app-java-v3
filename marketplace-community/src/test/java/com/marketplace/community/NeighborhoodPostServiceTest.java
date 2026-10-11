@@ -106,7 +106,7 @@ class NeighborhoodPostServiceTest {
 
     private NeighborhoodPost visiblePost(UUID author, UUID location) {
         return NeighborhoodPost.post(author, location,
-                PostCategory.GENERAL, "Title", "Body", clock);
+                PostCategory.GENERAL, "Title", "Body", false, clock);
     }
 
     // ---------- createPost ----------
@@ -117,7 +117,7 @@ class NeighborhoodPostServiceTest {
                 .thenThrow(new ResourceNotFoundException("Location", locationId));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body"))
+                PostCategory.GENERAL, "Title", "Body", false))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(repository, never()).save(any());
     }
@@ -127,7 +127,7 @@ class NeighborhoodPostServiceTest {
         when(geoLookupPort.getLocation(locationId)).thenReturn(node(0));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body"))
+                PostCategory.GENERAL, "Title", "Body", false))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("level-3");
         verify(membershipRepository, never()).findByUserId(authorId);
@@ -135,7 +135,7 @@ class NeighborhoodPostServiceTest {
 
         when(geoLookupPort.getLocation(locationId)).thenReturn(node(2));
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body"))
+                PostCategory.GENERAL, "Title", "Body", false))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -146,7 +146,7 @@ class NeighborhoodPostServiceTest {
         when(membershipRepository.findByUserId(authorId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body"))
+                PostCategory.GENERAL, "Title", "Body", false))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("Join a neighborhood");
         verify(repository, never()).save(any());
@@ -160,7 +160,7 @@ class NeighborhoodPostServiceTest {
                 .thenReturn(Optional.of(membershipOf(authorId, otherLocation)));
 
         assertThatThrownBy(() -> service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body"))
+                PostCategory.GENERAL, "Title", "Body", false))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("own neighborhood");
         verify(repository, never()).save(any());
@@ -175,11 +175,32 @@ class NeighborhoodPostServiceTest {
         when(repository.save(any())).thenReturn(stored);
 
         var view = service.createPost(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body");
+                PostCategory.GENERAL, "Title", "Body", false);
 
         assertThat(view.authorId()).isEqualTo(authorId);
         assertThat(view.locationId()).isEqualTo(locationId);
         assertThat(view.status()).isEqualTo("VISIBLE");
+        // ADR-0011 (DSA Art. 26(2)): the undeclared post reads undeclared.
+        assertThat(view.declaredCommercial()).isFalse();
+    }
+
+    @Test
+    void createPost_declaredCommercial_ridesThePostOnEveryRead() {
+        // ADR-0011 (D-15 — DSA Art. 26(2)): the author's own declaration
+        // is the stored fact the view carries — other recipients identify
+        // the declared content in real time from the same read.
+        when(geoLookupPort.getLocation(locationId)).thenReturn(node(3));
+        when(membershipRepository.findByUserId(authorId))
+                .thenReturn(Optional.of(membershipOf(authorId, locationId)));
+        NeighborhoodPost stored = NeighborhoodPost.post(authorId, locationId,
+                PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.",
+                true, clock);
+        when(repository.save(any())).thenReturn(stored);
+
+        var view = service.createPost(authorId, locationId,
+                PostCategory.CLASSIFIED, "Selling my bike", "Barely used, message me.", true);
+
+        assertThat(view.declaredCommercial()).isTrue();
     }
 
     // ---------- getFeed ----------
@@ -234,7 +255,7 @@ class NeighborhoodPostServiceTest {
     @Test
     void comment_hiddenPost_is404() {
         NeighborhoodPost hidden = NeighborhoodPost.post(authorId, locationId,
-                PostCategory.GENERAL, "Title", "Body", clock);
+                PostCategory.GENERAL, "Title", "Body", false, clock);
         // The only writer of HIDDEN_BY_MODERATOR is L45's moderation flip —
         // the entity exposes no setter because this layer never writes it.
         // The unit pin: simulate the stored row's state through reflection,

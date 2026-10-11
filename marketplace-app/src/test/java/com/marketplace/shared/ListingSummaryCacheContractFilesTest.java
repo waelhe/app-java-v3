@@ -56,11 +56,11 @@ class ListingSummaryCacheContractFilesTest {
         String source = read("marketplace-catalog/src/main/java/com/marketplace/catalog/CatalogService.java");
         assertThat(cacheableNames(source))
                 .as("CatalogService's three ListingSummary caches are versioned namespaces")
-                .containsExactlyInAnyOrder("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3");
+                .containsExactlyInAnyOrder("catalog-active-v4", "catalog-by-category-v4", "catalog-search-v4");
 
         assertThat(source)
                 .as("the invalidation set must clear exactly the four versioned namespaces")
-                .contains("Set.of(\"catalog-active-v3\", \"catalog-by-category-v3\", \"catalog-search-v3\", \"search-results-v5\")");
+                .contains("Set.of(\"catalog-active-v4\", \"catalog-by-category-v4\", \"catalog-search-v4\", \"search-results-v6\")");
     }
 
     @Test
@@ -68,7 +68,7 @@ class ListingSummaryCacheContractFilesTest {
         String source = read("marketplace-search/src/main/java/com/marketplace/search/SearchService.java");
         assertThat(cacheableNames(source))
                 .as("SearchService's ListingSummary cache is part of the same versioned namespace")
-                .containsExactly("search-results-v5");
+                .containsExactly("search-results-v6");
     }
 
     @Test
@@ -80,13 +80,13 @@ class ListingSummaryCacheContractFilesTest {
         assertThat(namesLine)
                 .as("the yml cache-names list must declare the versioned namespaces "
                         + "in sync with the annotations")
-                .contains("catalog-active-v3", "catalog-by-category-v3", "catalog-search-v3", "search-results-v5")
+                .contains("catalog-active-v4", "catalog-by-category-v4", "catalog-search-v4", "search-results-v6")
                 .doesNotContain("catalog-active,", "search-results,", "catalog-search,");
     }
 
     /**
      * L27 (feature-expansion roadmap §5): the stay window rides the
-     * search-results-v5 cache key, and the freshness contract extends with
+     * search-results-v6 cache key, and the freshness contract extends with
      * it — availability writes must evict the search cache, exactly like
      * listing writes already do. Pinned at the source level (the house
      * files-guard pattern): the criteria path uses the dedicated injective
@@ -94,7 +94,7 @@ class ListingSummaryCacheContractFilesTest {
      * values unescaped and could collide across different criteria), and
      * the generator appends the window components as first-class segments.
      * A future refactor that drops the generator (or the window segments,
-     * or "search-results-v5" from the availability invalidation set) would
+     * or "search-results-v6" from the availability invalidation set) would
      * silently let different criteria share one cached entry — or let
      * window-filtered pages go stale after bookings — with no failing test
      * at the unit level.
@@ -120,17 +120,17 @@ class ListingSummaryCacheContractFilesTest {
 
         assertThat(availabilityService)
                 .as("L27 freshness contract: availability writes evict the window-filtered "
-                        + "search-results-v5 pages through the AFTER_COMMIT relay, the same way "
+                        + "search-results-v6 pages through the AFTER_COMMIT relay, the same way "
                         + "listing writes evict CATALOG_CACHE_NAMES")
-                .contains("Set.of(\"availability\", \"search-results-v5\")");
+                .contains("Set.of(\"availability\", \"search-results-v6\")");
     }
 
     /**
      * CR-1 (the Track-B developer's request, delivered by Track A per the
      * parallel plan §5.4 — B-02's drift guard): geo amendments and realestate
      * property writes must evict the LIVE search cache name
-     * {@code search-results-v5}. The drift class this pins: an eviction set
-     * carrying a dead, unregistered name (the pre-B-02 {@code -v4} literal)
+     * {@code search-results-v6}. The drift class this pins: an eviction set
+     * carrying a dead, unregistered name (the pre-ADR-0011 {@code search-results-v6} literal)
      * leaves stale search pages for the full TTL and nothing at runtime
      * rejects it — only a pinned test keeps the eviction names honest, the
      * same way the four ListingSummary namespaces above are pinned.
@@ -141,14 +141,14 @@ class ListingSummaryCacheContractFilesTest {
 
         assertThat(geoService)
                 .as("geo's invalidation set carries the LIVE search cache name (CR-1 / B-02)")
-                .contains("Set.of(\"geo-tree\", \"search-results-v5\")");
+                .contains("Set.of(\"geo-tree\", \"search-results-v6\")");
 
         String realestateService = read(
                 "marketplace-realestate/src/main/java/com/marketplace/realestate/RealestateService.java");
 
         assertThat(realestateService)
                 .as("realestate's eviction set carries the LIVE search cache name (CR-1 / B-02)")
-                .contains("Set.of(\"search-results-v5\")");
+                .contains("Set.of(\"search-results-v6\")");
     }
 
     private java.util.Set<String> cacheableNames(String source) {

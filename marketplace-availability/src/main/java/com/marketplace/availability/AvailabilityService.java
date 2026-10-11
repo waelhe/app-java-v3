@@ -56,7 +56,7 @@ public class AvailabilityService implements AvailabilityPort {
      * set for the daily generation writes.
      */
     static final Set<String> AVAILABILITY_DEPENDENT_CACHE_NAMES =
-            Set.of("availability", "search-results-v5");
+            Set.of("availability", "search-results-v6");
 
     public AvailabilityService(AvailabilitySlotRepository repository,
                                ProviderAvailabilityRuleRepository ruleRepository,

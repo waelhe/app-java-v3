@@ -36,7 +36,7 @@ class MarketplaceSearchToolsTest {
         MarketplaceSearchPort port = mock(MarketplaceSearchPort.class);
         GeoLookupPort geo = mock(GeoLookupPort.class);
         ListingSummary listing = new ListingSummary(
-                UUID.randomUUID(), "Laptop", "electronics", null, "EUR", "Provider", null, 0L);
+                UUID.randomUUID(), "Laptop", "electronics", null, "EUR", "Provider", null, 0L, false);
         when(port.search(any(SearchCriteria.class), any(PagedRequest.class)))
                 .thenReturn(new PagedResponse<>(List.of(listing), 0, 5, 1, 1, true));
 
@@ -71,7 +71,7 @@ class MarketplaceSearchToolsTest {
         MarketplaceSearchPort port = mock(MarketplaceSearchPort.class);
         GeoLookupPort geo = mock(GeoLookupPort.class);
         ListingSummary listing = new ListingSummary(
-                UUID.randomUUID(), "Apartment", "real-estate", null, "EUR", "Provider", null, 0L);
+                UUID.randomUUID(), "Apartment", "real-estate", null, "EUR", "Provider", null, 0L, false);
         when(port.search(any(SearchCriteria.class), any(PagedRequest.class)))
                 .thenReturn(new PagedResponse<>(List.of(listing), 0, 5, 1, 1, true));
 

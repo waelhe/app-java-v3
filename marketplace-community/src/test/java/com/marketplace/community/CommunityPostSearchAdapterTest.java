@@ -46,6 +46,7 @@ class CommunityPostSearchAdapterTest {
         NeighborhoodPostView view = new NeighborhoodPostView(
                 UUID.randomUUID(), UUID.randomUUID(), LOCATION_ID, "LOST_FOUND",
                 "Lost keys", "I lost my keys near the mosque yesterday", "PUBLISHED",
+                false,
                 3L, false, List.of(), Instant.parse("2026-10-10T10:15:00Z"), Instant.parse("2026-10-10T10:15:00Z"));
         when(postService.searchFeed(eq(CALLER_ID), eq("مفتاح"), isNull(), any()))
                 .thenReturn(new PageImpl<>(List.of(view)));

@@ -31,6 +31,16 @@ import java.util.UUID;
  * left the publish factory has none (the same zero-fresh stance the
  * reaction facts carry).
  *
+ * <p><b>ADR-0011 (D-15 — DSA (EU) 2022/2065 Art. 26(2)) widens the
+ * projection with the author's own commercial-communications
+ * declaration:</b> {@code declaredCommercial} — the self-declaration the
+ * publish surface accepts ("this post is or contains commercial
+ * communications") and every read carries back, so other recipients
+ * identify the declared content in real time (the article's own
+ * marking law). The declaration is the AUTHOR's statement — the
+ * moderation layer never flips it; the stored fact is audited
+ * (V182's _aud mirror).
+ *
  * <p>The compatibility constructor (the nine-argument shape every
  * pre-L47 call site rode) keeps compiling: it delegates with the fresh
  * post's own zero-false facts — a post that just left the publish
@@ -44,6 +54,7 @@ public record NeighborhoodPostView(
         String title,
         String body,
         String status,
+        boolean declaredCommercial,
         long reactionsCount,
         boolean reactedByMe,
         List<PostMediaView> media,
@@ -59,6 +70,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                post.isDeclaredCommercial(),
                 0L,
                 false,
                 List.of(),
@@ -82,6 +94,7 @@ public record NeighborhoodPostView(
                 post.getTitle(),
                 post.getBody(),
                 post.getStatus().name(),
+                post.isDeclaredCommercial(),
                 reactionsCount,
                 reactedByMe,
                 media.stream().map(PostMediaView::of).toList(),
@@ -100,6 +113,10 @@ public record NeighborhoodPostView(
                                 String category, String title, String body, String status,
                                 Instant createdAt, Instant updatedAt) {
         this(id, authorId, locationId, category, title, body, status,
+                // ADR-0011: the compatibility echo's declaration — a post
+                // this constructor echoes carries no declared fact (the
+                // write paths' own zero-false stance).
+                false,
                 0L, false, List.of(), createdAt, updatedAt);
     }
 }

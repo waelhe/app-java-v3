@@ -54,7 +54,7 @@ class UnifiedSearchDispatcherTest {
     @Test
     void listings_ridesTheStandingOrchestrationWithTheCommonSubsetCriteria() {
         ListingSummary listing = new ListingSummary(UUID.randomUUID(), "Oven — like new",
-                "APPLIANCES", new BigDecimal("250.00"), "SAR", "Abdullah", 4.6, 31);
+                "APPLIANCES", new BigDecimal("250.00"), "SAR", "Abdullah", 4.6, 31, false);
         PagedRequest request = PagedRequest.of(0, 20);
         when(marketplaceSearchPort.search(any(SearchCriteria.class), eq(request)))
                 .thenReturn(PagedResponse.of(new org.springframework.data.domain.PageImpl<>(List.of(listing))));

@@ -31,7 +31,7 @@ class MarketplaceSearchAdapterTest {
         SearchService service = mock(SearchService.class);
         SearchCriteria criteria = new SearchCriteria("laptop", "electronics", null, null);
         ListingSummary listing = new ListingSummary(
-                UUID.randomUUID(), "Laptop", "electronics", null, "EUR", "Provider", null, 0L);
+                UUID.randomUUID(), "Laptop", "electronics", null, "EUR", "Provider", null, 0L, false);
         when(service.search(any(SearchCriteria.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(listing), PageRequest.of(0, 5), 1));
 

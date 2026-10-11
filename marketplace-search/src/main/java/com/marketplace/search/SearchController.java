@@ -25,6 +25,26 @@ public class SearchController {
         this.searchService = searchService;
     }
 
+    /**
+     * ADR-0011 (D-15 — DSA Art. 27(1)): "the main parameters used in their
+     * recommender systems, as well as any options for the recipients of the
+     * service to modify or influence those main parameters" — the public
+     * machine truth the terms and conditions cite, in the categories-registry
+     * pattern (reference data, closed shape, no writes).
+     */
+    @GetMapping("/ranking-parameters")
+    @RateLimiter(name = "search")
+    @Operation(summary = "The ranking's main parameters and the recipient's options",
+            description = "ADR-0011 (DSA Art. 26(1)(d) + Art. 27(1)/(2)): the documented main "
+                    + "parameters of every ordering the platform presents (the labeled promoted "
+                    + "tier, the Arabic full-text relevance, the whitelisted sorts), the reasons "
+                    + "for their relative importance, what does not exist (no recipient-profile "
+                    + "targeting), and the options the recipient holds to modify or influence the "
+                    + "order. Reference data: no parameters, no writes.")
+    public ResponseEntity<RankingParametersView> rankingParameters() {
+        return ResponseEntity.ok(searchService.rankingParameters());
+    }
+
     @GetMapping
     @RateLimiter(name = "search")
     @Operation(summary = "Search listings",

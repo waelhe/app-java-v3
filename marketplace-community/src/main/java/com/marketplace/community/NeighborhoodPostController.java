@@ -135,7 +135,8 @@ public class NeighborhoodPostController {
                 request.locationId(),
                 parseCategory(request.category()),
                 request.title(),
-                request.body());
+                request.body(),
+                request.declaredCommercial());
         return ResponseEntity.status(201).body(view);
     }
 
@@ -271,7 +272,13 @@ public class NeighborhoodPostController {
             @Size(max = MAX_BODY_LENGTH)
             @Schema(description = "The post's body (max " + MAX_BODY_LENGTH + " characters).",
                     maxLength = MAX_BODY_LENGTH)
-            String body
+            String body,
+
+            @Schema(description = "ADR-0011 (DSA Art. 26(2)): the author's own declaration that the "
+                    + "post is or contains commercial communications. Other recipients read the "
+                    + "declaration on the post itself, in real time. Absent = not declared.",
+                    example = "false")
+            boolean declaredCommercial
     ) {
     }
 
