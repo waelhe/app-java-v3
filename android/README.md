@@ -25,7 +25,7 @@ The current backend does **not** expose the complete public storefront/cart/orde
 
 ## Build and test
 
-Use JDK 17 and Gradle 9.6.0:
+Use JDK 17 and Gradle 9.6.0, with compileSdk 37 and targetSdk 36. The pinned Compose BOM is the stable `2026.09.00` release:
 
     gradle -p android :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
 

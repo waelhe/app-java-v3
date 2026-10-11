@@ -859,6 +859,7 @@ class CommunityViewModel(
 
                 val selectedPhotos = current.postPhotoUris
                 val failedPhotos = mutableListOf<Uri>()
+                val failureDetails = mutableListOf<String>()
                 selectedPhotos.forEachIndexed { index, uri ->
                     _uiState.update {
                         it.copy(uploadProgress = "رفع الصورة ${index + 1} من ${selectedPhotos.size}…")
@@ -873,11 +874,18 @@ class CommunityViewModel(
                     } catch (error: HttpException) {
                         if (error.code() == 400) {
                             failedPhotos += uri
+                            failureDetails += "رفض الخادم الصورة؛ تحقق من الصيغة والحجم."
                         } else {
                             throw error
                         }
                     } catch (error: java.io.IOException) {
                         failedPhotos += uri
+                        failureDetails += when {
+                            error.message?.contains("حجم الصورة") == true -> error.message.orEmpty()
+                            error.message?.contains("صيغة الصورة") == true -> error.message.orEmpty()
+                            error.message?.contains("مخزن الصور") == true -> error.message.orEmpty()
+                            else -> "تعذر الاتصال بمخزن الصور أو تأكيد الرفع."
+                        }
                     }
                 }
 
@@ -908,7 +916,9 @@ class CommunityViewModel(
                             postPhotoUris = failedPhotos,
                             pendingPhotoPostId = targetPostId,
                             uploadProgress = null,
-                            notice = "نُشر النص، لكن تعذر رفع ${failedPhotos.size} من ${selectedPhotos.size} صور. أعد المحاولة أدناه؛ لن يُنشأ منشور جديد."
+                            notice = "نُشر النص، لكن تعذر رفع ${failedPhotos.size} من ${selectedPhotos.size} صور. " +
+                                (failureDetails.firstOrNull()?.let { "السبب: $it. " } ?: "") +
+                                "استبدل الصورة غير المدعومة أو الكبيرة، أو أعد المحاولة. لن يُنشأ منشور جديد."
                         )
                     }
                 }
