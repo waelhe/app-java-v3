@@ -220,12 +220,15 @@ class NotificationPreferencesIntegrationTest {
         // V158/V159 CHECK widening; the union's own wave added
         // BOOKING_CONFIRMED and A-11's three order types
         // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED backed by the
-        // V110-V115 CHECK widening — the 16-type membership V164/V165's
+        // V110-V115 CHECK widening; the discovery waves' V180 widened the
+        // CHECK once more for URGENT_ALERT (the CMP-46/JT-10 delegated
+        // alert) and the two dispute events DISPUTE_OPENED/DISPUTE_RESOLVED
+        // (the D-N7 structural registration) — the 19-type membership the
         // CHECK carries, the count DocumentationNumbersGuardTest pins).
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerId);
         List<NotificationPreferenceView> matrix = preferenceService.getMyPreferences(
                 SecurityContextHolder.getContext().getAuthentication());
-        assertThat(matrix).hasSize(48);
+        assertThat(matrix).hasSize(57);
         assertThat(matrix).allMatch(NotificationPreferenceView::enabled);
     }
 

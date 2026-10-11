@@ -8,6 +8,7 @@ import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -35,6 +36,7 @@ public class NotificationService {
     private final Optional<SimpMessagingTemplate> messagingTemplate;
     private final NotificationPreferenceService preferences;
     private final NotificationTextSource text;
+    private final DisputeDeliveryWriter disputeDeliveryWriter;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -43,7 +45,8 @@ public class NotificationService {
                                EmailNotificationService emailNotificationService,
                                Optional<SimpMessagingTemplate> messagingTemplate,
                                NotificationPreferenceService preferences,
-                               NotificationTextSource text) {
+                               NotificationTextSource text,
+                               DisputeDeliveryWriter disputeDeliveryWriter) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -52,6 +55,7 @@ public class NotificationService {
         this.messagingTemplate = messagingTemplate;
         this.preferences = preferences;
         this.text = text;
+        this.disputeDeliveryWriter = disputeDeliveryWriter;
     }
 
     public void onBookingCreated(UUID bookingId) {
@@ -586,6 +590,136 @@ public class NotificationService {
                     "email/notification", Map.of("message", message));
         }
         sendWebSocket(reporterId, NotificationType.REPORT_RESOLVED, message);
+    }
+
+    /**
+     * Task 5-f (the discovery waves' measured repairs — the
+     * events-without-consumers closure): the dispute opener's
+     * DISPUTE_OPENED acknowledgment — the B-06 events' first delivery.
+     *
+     * <p><b>The recipient is the dispute's OPENER</b> — the honest reading
+     * of the measured payload: {@code DisputeOpenedEvent} carries
+     * {@code openedBy} and no counterpart party (the "other side" of a
+     * dispute is the provider/consumer pair of the booking, resolvable
+     * only by a cross-module re-derivation the complete-fact discipline
+     * forbids). So the delivery is the OPENER's own acknowledgment: "your
+     * dispute was opened and is under review" — a real journey arrival
+     * (the pipeline's entry confirmed to the party who entered it), keyed
+     * on the dispute's own id so a re-delivered publication can never
+     * duplicate it.
+     *
+     * <p><b>The dedup ledger (this wave's measured mechanism):</b> the
+     * pre-insert {@code existsByRecipientIdAndSourceEventId} gate answers
+     * the sequential re-delivery (the framework's resubmission of an
+     * incomplete registry entry) with an early return; the
+     * {@code uq_notifications_source_event_once} partial unique index
+     * (V186) is the concurrent-insert backstop — the rare lost race
+     * surfaces as a {@code DataIntegrityViolationException} raised on the
+     * delivery writer's OWN {@code REQUIRES_NEW} transaction
+     * ({@link DisputeDeliveryWriter} — the MessageSendWriter pattern),
+     * which is THE WINNER'S PROOF here (the row exists — the delivery
+     * happened) and is absorbed quietly OUTSIDE that transaction: the
+     * inner transaction alone rolls back, the caller's context stays
+     * healthy, never a duplicate row, never a failed listener poisoning
+     * the registry — the V150 messaging replay discipline's honest twin.
+     */
+    public void onDisputeOpened(UUID disputeId, UUID openedBy) {
+        if (repository.existsByRecipientIdAndSourceEventId(openedBy, disputeId)) {
+            log.debug("Dispute-opened notification already delivered: disputeId={}, recipient={}",
+                    disputeId, openedBy);
+            return;
+        }
+        deliverDisputeNotification(openedBy, NotificationType.DISPUTE_OPENED,
+                text.compose("notification.DISPUTE_OPENED", NotificationTextSource.PLATFORM_LOCALE,
+                        disputeId),
+                disputeId);
+    }
+
+    /**
+     * Task 5-f: the dispute opener's DISPUTE_RESOLVED adjudication fact —
+     * the resolve decision's arrival (the {@code DisputeResolvedEvent}
+     * carries the whole outcome: the stored resolution name and the
+     * EXECUTED refunded total, the complete-fact discipline).
+     *
+     * <p><b>The ledger key is DETERMINISTIC</b> —
+     * {@code UUID.nameUUIDFromBytes(disputeId + "-resolved")}: a resolve
+     * publication re-delivered by the framework derives the SAME
+     * source_event_id every time, so the dedup ledger holds exactly-once
+     * across arbitrary re-delivery by construction (an
+     * open-then-resolve-then-...-re-resolve is impossible — the
+     * OPEN→RESOLVED transition is validated 409-once at the source; the
+     * derivation needs no per-attempt salt).
+     */
+    public void onDisputeResolved(UUID disputeId, UUID openedBy, String resolution,
+                                  Long refundedAmountCents) {
+        UUID sourceEventId = UUID.nameUUIDFromBytes(
+                (disputeId + "-resolved").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (repository.existsByRecipientIdAndSourceEventId(openedBy, sourceEventId)) {
+            log.debug("Dispute-resolved notification already delivered: disputeId={}, recipient={}",
+                    disputeId, openedBy);
+            return;
+        }
+        Locale platform = NotificationTextSource.PLATFORM_LOCALE;
+        String resolutionWord = text.disputeResolutionWord(resolution, platform);
+        String message = refundedAmountCents != null
+                ? text.compose("notification.DISPUTE_RESOLVED.refund", platform,
+                        resolutionWord, refundedAmountCents, disputeId)
+                : text.compose("notification.DISPUTE_RESOLVED", platform, resolutionWord, disputeId);
+        deliverDisputeNotification(openedBy, NotificationType.DISPUTE_RESOLVED,
+                message, sourceEventId);
+    }
+
+    /**
+     * Task 5-f: the shared dispute delivery shape — the same delivery shape
+     * as the event points above (in-app row always lands; WebSocket and
+     * email ride their L22 per-type/channel preferences). The recipient is
+     * the dispute's opener in the users.id space — the id IS the recipient,
+     * the same seam every carried-fact delivery here uses.
+     *
+     * <p><b>The ledger INSERT rides its own REQUIRES_NEW transaction</b>
+     * ({@link DisputeDeliveryWriter}, the MessageSendWriter pattern — the
+     * CodeRabbit round on the #540 slice): the concurrent-duplicate loss
+     * is caught HERE, OUTSIDE the transaction that took the violation, so
+     * the absorb never poisons a surrounding transaction (a caught
+     * exception inside the violated transaction is rollback-only — no
+     * commit can follow it). Only the ledger's own constraint is
+     * absorbed; every other integrity violation rethrows.</p>
+     */
+    private void deliverDisputeNotification(UUID recipientId, NotificationType type,
+                                            String message, UUID sourceEventId) {
+        try {
+            disputeDeliveryWriter.persist(recipientId, type.name(), message, sourceEventId);
+        } catch (DataIntegrityViolationException duplicate) {
+            if (!isSourceEventLedgerDuplicate(duplicate)) {
+                throw duplicate;
+            }
+            log.info("Concurrent dispute delivery lost the ledger race — the row exists: "
+                    + "sourceEventId={}, recipient={}, type={}", sourceEventId, recipientId, type);
+            return;
+        }
+        if (preferences.isChannelEnabled(recipientId, type, NotificationChannel.EMAIL)) {
+            emailNotificationService.sendEmail(recipientId,
+                    text.compose("email." + type.name() + ".subject", NotificationTextSource.PLATFORM_LOCALE),
+                    "email/notification",
+                    Map.of("message", message));
+        }
+        sendWebSocket(recipientId, type, message);
+    }
+
+    /**
+     * The ledger duplicate test: the violation's cause chain must name the
+     * delivery-dedup constraint itself ({@code uq_notifications_source_event_once},
+     * V186) — every OTHER integrity violation is an honest failure that
+     * must propagate.
+     */
+    private static boolean isSourceEventLedgerDuplicate(DataIntegrityViolationException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null
+                    && t.getMessage().contains("uq_notifications_source_event_once")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Transactional(readOnly = true)

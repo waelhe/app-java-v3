@@ -1,0 +1,23 @@
+-- CodeRabbit round on the #540 slice (the V180 review): the delivery-dedup
+-- ledger's partial unique index, built CONCURRENTLY in its own
+-- non-transactional migration — the house's populated-table discipline
+-- (V51/V67/V80/V81/V168/V169/V173 verbatim).
+--
+-- WHY IT MOVED OUT OF V180: the notifications table is POPULATED in
+-- production (it has carried the platform's deliveries since the early
+-- schema). A plain CREATE INDEX inside V180's transaction acquires the
+-- table lock and blocks ordinary writes for the whole build — including
+-- the still-live previous instance's notification writes during the
+-- deploy window (the blue/green overlap the Railway channel serves).
+-- PostgreSQL's own documented remedy is CREATE INDEX CONCURRENTLY, which
+-- cannot run inside a transaction block — hence this separate migration
+-- with its .conf (executeInTransaction=false, the V173 pattern).
+--
+-- Failure recovery (the PostgreSQL CREATE INDEX CONCURRENTLY docs — the
+-- V168/V169/V173 three-path protocol): an INVALID index is dropped and
+-- the migration retried; a VALID index with NO successful V186 row in
+-- flyway_schema_history is dropped too (a derived read-rail index riding
+-- no constraint — dropping it never loses table data); never use
+-- IF NOT EXISTS.
+CREATE UNIQUE INDEX CONCURRENTLY uq_notifications_source_event_once
+    ON notifications (recipient_id, source_event_id) WHERE source_event_id IS NOT NULL;

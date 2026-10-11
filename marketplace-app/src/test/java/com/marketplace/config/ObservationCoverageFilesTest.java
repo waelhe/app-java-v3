@@ -172,6 +172,10 @@ class ObservationCoverageFilesTest {
             Map.entry("marketplace-disputes", List.of("dispute.open", "dispute.resolve")),
             Map.entry("marketplace-identity", List.of(
                     "email.verification.complete", "email.verification.resend", "email.verification.send",
+                    // waves D1-D4: the generalized follows (USER/GROUP) ride
+                    // the same observation discipline as the provider follow pair.
+                    "follow.group.create", "follow.group.delete",
+                    "follow.user.create", "follow.user.delete",
                     "password.reset.complete", "password.reset.request",
                     "provider.follow.create", "provider.follow.delete",
                     "user.audit.purge", "user.content.purge", "user.pseudonymize", "user.role.update",

@@ -373,13 +373,15 @@ class ProviderFollowIntegrationTest {
         // ("داخل التطبيق دائمًا"). The PUT itself also proves V93's widened
         // CHECK accepts the ninth type on the real Flyway schema — the
         // row write is the DB-side half of the type addition's contract.
-        // The read-back matrix is sixteen types x three channels = 48 rows
+        // The read-back matrix is nineteen types x three channels = 57 rows
         // (B-11 added MESSAGE_RECEIVED via V151/V152; B-17 added
         // MEMBERSHIP_VERIFIED + REPORT_RESOLVED via V158/V159; the union's
         // own wave added BOOKING_CONFIRMED and A-11's three order types
-        // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED via V110-V115 —
-        // the 16-type membership V164/V165's CHECK now carries, the same
-        // count DocumentationNumbersGuardTest pins).
+        // ORDER_CONFIRMED/ORDER_FULFILLED/ORDER_CANCELLED via V110-V115;
+        // the discovery waves' V180 widened the CHECK for URGENT_ALERT and
+        // the dispute pair DISPUTE_OPENED/DISPUTE_RESOLVED — the 19-type
+        // membership V180's CHECK now carries, the same count
+        // DocumentationNumbersGuardTest pins).
         UUID listingId = seedDraftListing();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(consumerUserId);
         mockMvc.perform(put("/api/v1/notifications/preferences")
@@ -388,7 +390,7 @@ class ProviderFollowIntegrationTest {
                         .content("{\"preferences\": [{\"type\": \"FOLLOWED_PROVIDER_NEW_LISTING\", "
                                 + "\"channel\": \"WS\", \"enabled\": false}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(48));
+                .andExpect(jsonPath("$.length()").value(57));
 
         follow();
         activateListing(listingId);
