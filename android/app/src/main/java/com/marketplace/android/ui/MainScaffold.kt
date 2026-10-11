@@ -80,6 +80,7 @@ internal fun SignedInScaffold(
     onLoadMore: () -> Unit,
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
+    onUpdateLostFoundState: (PostDto, String) -> Unit,
     onSearchQuery: (String) -> Unit,
     onSearch: () -> Unit,
     onExploreMode: (ExploreMode) -> Unit,
@@ -189,11 +190,11 @@ internal fun SignedInScaffold(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (state.tab) {
                 MainTab.HOME -> FeedScreen(
-                    state, onRefresh, onLoadMore, onReact, onOpenComments,
+                    state, onRefresh, onLoadMore, onReact, onOpenComments, onUpdateLostFoundState,
                     onCreate = { onBeginComposer(ComposerKind.POST) }
                 )
                 MainTab.EXPLORE -> ExploreScreen(
-                    state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments,
+                    state, onSearchQuery, onSearch, onExploreMode, onReact, onOpenComments, onUpdateLostFoundState,
                     onRsvpEvent, onToggleGroup, onVotePoll, onWithdrawPollVote, onWithdrawMarketItem,
                     onBeginComposer, onRefresh
                 )
@@ -218,6 +219,7 @@ private fun FeedScreen(
     onLoadMore: () -> Unit,
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
+    onUpdateLostFoundState: (PostDto, String) -> Unit,
     onCreate: () -> Unit
 ) {
     LazyColumn(
@@ -244,6 +246,9 @@ private fun FeedScreen(
             items(state.posts, key = { it.id }) { post ->
                 PostCard(
                     post = post,
+                    isOwnPost = state.membership?.userId?.equals(post.authorId, ignoreCase = true) == true,
+                    lostFoundBusy = post.id in state.lostFoundActionIds,
+                    onUpdateLostFoundState = { targetState -> onUpdateLostFoundState(post, targetState) },
                     reacting = post.id in state.reactingPostIds,
                     onReact = { onReact(post) },
                     onComments = { onOpenComments(post) }
@@ -269,6 +274,7 @@ private fun ExploreScreen(
     onMode: (ExploreMode) -> Unit,
     onReact: (PostDto) -> Unit,
     onOpenComments: (PostDto) -> Unit,
+    onUpdateLostFoundState: (PostDto, String) -> Unit,
     onRsvpEvent: (EventDto) -> Unit,
     onToggleGroup: (GroupDto) -> Unit,
     onVotePoll: (PollDto, String) -> Unit,
@@ -334,6 +340,9 @@ private fun ExploreScreen(
                         items(state.searchResults, key = { it.id }) { post ->
                             PostCard(
                                 post = post,
+                                isOwnPost = state.membership?.userId?.equals(post.authorId, ignoreCase = true) == true,
+                                lostFoundBusy = post.id in state.lostFoundActionIds,
+                                onUpdateLostFoundState = { targetState -> onUpdateLostFoundState(post, targetState) },
                                 reacting = post.id in state.reactingPostIds,
                                 onReact = { onReact(post) },
                                 onComments = { onOpenComments(post) }
