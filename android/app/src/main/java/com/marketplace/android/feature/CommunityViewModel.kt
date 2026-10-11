@@ -128,6 +128,18 @@ data class AppUiState(
 
 
 /**
+ * Convert a user-entered major-unit amount into integer minor units exactly
+ * within the API's Int range. BigDecimal.toInt() silently overflows, which
+ * can otherwise turn a very large price into a small positive price.
+ */
+internal fun parsePriceCents(raw: String): Int? =
+    raw.trim().replace(',', '.')
+        .toBigDecimalOrNull()
+        ?.multiply(BigDecimal(100))
+        ?.setScale(0, RoundingMode.HALF_UP)
+        ?.let { scaled -> runCatching { scaled.intValueExact() }.getOrNull() }
+
+/**
  * Merge only the lifecycle field returned by the command endpoint.
  * Its write projection intentionally does not contain the feed's grouped
  * media/reaction aggregates, so replacing a feed row with it would lose
@@ -956,8 +968,7 @@ class CommunityViewModel(
         val title = current.marketTitle.trim()
         val pickup = current.marketPickup.trim()
         val isFree = current.marketCategory == "FREE"
-        val priceCents = if (isFree) null else current.marketPrice.trim().replace(',', '.')
-            .toBigDecimalOrNull()?.multiply(BigDecimal(100))?.setScale(0, RoundingMode.HALF_UP)?.toInt()
+        val priceCents = if (isFree) null else parsePriceCents(current.marketPrice)
 
         if (title.isEmpty() || pickup.isEmpty()) {
             _uiState.update { it.copy(notice = "أدخل اسم الغرض ومكان الاستلام داخل الحي.") }
