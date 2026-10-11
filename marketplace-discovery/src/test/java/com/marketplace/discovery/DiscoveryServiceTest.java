@@ -326,7 +326,6 @@ class DiscoveryServiceTest {
         callerHasMembership();
         PagedRequest request = PagedRequest.of(0, 10);
         when(followedSourcesPort.followedSources(USER_ID)).thenReturn(Set.of());
-        when(urgentAlertsPort.findActive(NEIGHBORHOOD_ID, now)).thenReturn(List.of());
         // lost-found still has a second page; recommendations/events/jobs
         // are done — the merged page is NOT last.
         when(communityPort.findActiveLostFound(NEIGHBORHOOD_ID, request))
