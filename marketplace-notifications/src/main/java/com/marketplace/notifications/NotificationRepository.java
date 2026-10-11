@@ -58,9 +58,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * attempted, the DB index remains the concurrent-insert backstop.
      */
     boolean existsByRecipientIdAndSourceEventId(UUID recipientId, UUID sourceEventId);
-}
 
-    /**
+
+/**
      * The urgent-alert inbox's idempotent insert — the V180 ledger key's
      * own writer, in the V54 saved_search_matches / V199
      * notification_deliveries shape (CodeRabbit's round on the #545
@@ -84,3 +84,4 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
                    @Param("type") String type,
                    @Param("message") String message,
                    @Param("sourceEventId") UUID sourceEventId);
+}
