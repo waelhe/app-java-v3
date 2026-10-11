@@ -24,6 +24,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -39,7 +40,10 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 /**
  * The UI's only data entry point. Access tokens stay volatile and memory-only.
  */
-class MarketplaceRepository(context: Context) {
+class MarketplaceRepository(
+    context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
     private val applicationContext: Context = context.applicationContext
     private val storageUploadClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -128,7 +132,7 @@ class MarketplaceRepository(context: Context) {
     suspend fun uploadPostMedia(postId: String, uri: Uri) {
         val context = applicationContext
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val resolver = context.contentResolver
             val allowedContentTypes = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
             val contentType = resolver.getType(uri)
