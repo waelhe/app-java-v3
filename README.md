@@ -25,11 +25,13 @@ This repository keeps a strict truth hierarchy — every claim in the code,
 docs and PRs is expected to carry its evidence (`file:line`, live measurement,
 or an archived official source):
 
-1. **`SYSTEM.md`** — how the system actually works (the living reference map).
-2. **`PROJECT_MAP.md`** — the state log: what merged, what is open, what is deferred.
-3. **`AGENTS.md`** — the binding work rules (mandatory load order before any action).
-4. Product/UX documents describe target behavior; they do not prove implementation. Re-measure code, CI, PR and deployment state before claiming a feature is complete.
-5. `docs/` — domain references, governance decisions, SLOs, runbooks and operating guides.
+1. **`AGENTS.md`** — mandatory work rules and reading order.
+2. **`SYSTEM.md`** — system-mechanics map, with dated observations distinguished from live facts.
+3. **`PROJECT_MAP.md`** — delivery history; remeasure PR, branch, migration and deployment state before relying on a snapshot.
+4. **`docs/product-platform-blueprint.md`** + **`docs/community-platform-user-journeys.md`** — target product/experience and JT-01..JT-20 acceptance contract.
+5. **`docs/community-platform-ux-design.md`** — visual design system, screen catalog, RTL and accessibility.
+6. **`docs/platform-product-decisions.md`** — accepted owner decisions and unresolved gates.
+7. Product/UX documents describe target behavior; they do not prove implementation. Re-measure code, CI, PR and deployment state before claiming a feature is complete.
 
 ## Build & verify
 
