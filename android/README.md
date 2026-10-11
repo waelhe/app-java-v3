@@ -25,15 +25,17 @@ The current backend does **not** expose the complete public storefront/cart/orde
 
 ## Build and test
 
-Use JDK 17 and Gradle 9.6.0, with compileSdk 37 and targetSdk 36. The pinned Compose BOM is the stable `2026.09.00` release:
+Use JDK 17. The checked-in Gradle Wrapper pins Gradle 9.6.0; AGP 9.4.0 is compatible with Gradle 9.6.0, Build Tools 36.0.0 and API 37. The pinned Compose BOM is stable `2026.09.00`. The wrapper automatically provisions the pinned Gradle distribution, keeping local and CI builds on the same Gradle version:
 
-    gradle -p android :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+    cd android
+    ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
 
 The Android client workflow installs Android SDK platform 37 (Build Tools 36.0.0), runs JVM unit tests, builds the debug APK and uploads it as a workflow artifact. The CI artifact is a debug build, not a production-signed release.
 
 Override environment-specific values without committing them:
 
-    gradle -p android :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
+    cd android
+    ./gradlew :app:testDebugUnitTest :app:assembleDebug -PapiBaseUrl=https://YOUR-API-HOST/ -PoidcIssuer=https://YOUR-ISSUER-HOST -PoidcClientId=YOUR_PUBLIC_CLIENT_ID -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
 ## Code boundaries
 
@@ -49,6 +51,7 @@ Override environment-specific values without committing them:
 - Android Photo Picker (official multi-select flow): https://developer.android.com/training/data-storage/shared/photo-picker
 - Coil 3 Compose `AsyncImage` and network setup: https://github.com/coil-kt/coil/blob/main/docs/getting_started.md
 - Android SDK setup action: https://github.com/android-actions/setup-android
+- Gradle Wrapper and build-version reproducibility: https://docs.gradle.org/current/userguide/gradle_wrapper.html
 - Kotlin releases and Compose compiler plugin: https://github.com/JetBrains/kotlin/releases
 - Retrofit: https://github.com/square/retrofit
 - OkHttp: https://github.com/square/okhttp

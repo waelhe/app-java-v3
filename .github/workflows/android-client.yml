@@ -33,8 +33,6 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: "9.6.0"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4.0.4
@@ -59,10 +57,12 @@ jobs:
           "$android_bin" --sdk="$ANDROID_SDK_ROOT" sdk install --canary platforms/android-37 build-tools/36.0.0
 
       - name: Run JVM tests
-        run: gradle -p android :app:testDebugUnitTest
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest
 
       - name: Build debug APK
-        run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest
+        working-directory: android
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
