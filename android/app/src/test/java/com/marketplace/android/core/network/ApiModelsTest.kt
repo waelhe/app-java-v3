@@ -1,5 +1,6 @@
 package com.marketplace.android.core.network
 
+import com.marketplace.android.feature.mergeLostFoundLifecycleState
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -113,6 +114,41 @@ class ApiModelsTest {
         assertEquals("ACTIVE", event.status)
         assertEquals(3L, event.attending)
         assertTrue(event.rsvpedByMe)
+    }
+
+    @Test
+    fun lifecycleResponseMergePreservesFeedAggregates() {
+        val feedPost = PostDto(
+            id = "post-3",
+            category = "LOST_FOUND",
+            title = "محفظة مفقودة",
+            lostFoundState = "ACTIVE",
+            reactionsCount = 7,
+            reactedByMe = true,
+            media = listOf(
+                PostMediaDto(
+                    mediaId = "asset-3",
+                    url = "https://media.example.test/wallet.jpg",
+                    contentType = "image/jpeg",
+                    position = 0
+                )
+            )
+        )
+        // The backend's command/write projection contains state but not the
+        // grouped feed aggregates; its absent fields map to their DTO defaults.
+        val commandResponse = PostDto(
+            id = "post-3",
+            category = "LOST_FOUND",
+            lostFoundState = "FOUND"
+        )
+
+        val merged = mergeLostFoundLifecycleState(feedPost, commandResponse)
+
+        assertEquals("FOUND", merged.lostFoundState)
+        assertEquals(7L, merged.reactionsCount)
+        assertTrue(merged.reactedByMe)
+        assertEquals("asset-3", merged.media.single().mediaId)
+        assertEquals("محفظة مفقودة", merged.title)
     }
 
     @Test
