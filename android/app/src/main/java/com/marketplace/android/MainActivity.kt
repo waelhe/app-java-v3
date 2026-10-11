@@ -3,7 +3,6 @@ package com.marketplace.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,8 +22,6 @@ import com.marketplace.android.feature.CommunityViewModel
 import com.marketplace.android.feature.ExploreMode
 import com.marketplace.android.ui.DayfApp
 import com.marketplace.android.ui.DayfTheme
-import java.security.MessageDigest
-import java.security.SecureRandom
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
@@ -233,11 +230,6 @@ class MainActivity : ComponentActivity() {
                     return@runOnUiThread
                 }
 
-                val verifier = createCodeVerifier()
-                val challenge = Base64.encodeToString(
-                    MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)),
-                    Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
-                )
                 val requestBuilder = AuthorizationRequest.Builder(
                     configuration,
                     BuildConfig.OIDC_CLIENT_ID,
@@ -245,7 +237,6 @@ class MainActivity : ComponentActivity() {
                     Uri.parse(BuildConfig.OIDC_REDIRECT_URI)
                 )
                     .setScope("openid profile")
-                    .setCodeVerifier(verifier, challenge, "S256")
 
                 if (silent) requestBuilder.setPrompt("none")
 
@@ -292,15 +283,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun createCodeVerifier(): String {
-        val random = ByteArray(32)
-        SecureRandom().nextBytes(random)
-        return Base64.encodeToString(
-            random,
-            Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
-        )
     }
 
     override fun onDestroy() {
