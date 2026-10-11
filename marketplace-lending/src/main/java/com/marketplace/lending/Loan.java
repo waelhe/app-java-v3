@@ -310,6 +310,10 @@ public class Loan extends BaseEntity {
         return lateFeeMinor;
     }
 
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
     public String getCurrency() {
         return currency;
     }

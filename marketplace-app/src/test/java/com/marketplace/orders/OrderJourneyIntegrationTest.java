@@ -143,13 +143,12 @@ class OrderJourneyIntegrationTest {
 
         // (1) The cart fills over HTTP — two lines, the union semantics on
         // the third add (the duplicate product raises the quantity).
-        UUID product = UUID.randomUUID();
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":2}"""
                 .formatted(product));
         postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":1}"""
-                .formatted(product));
+                .formatted(product2));
         HttpResponse<String> unionAdd = postJson("/api/v1/me/cart/items", gate.accessToken(), """
                 {"productId":"%s","quantity":3}"""
                 .formatted(product));
@@ -401,7 +400,7 @@ class OrderJourneyIntegrationTest {
     private UUID registerProduct(String sellerToken, long priceMinor) throws Exception {
         HttpResponse<String> created = postJson("/api/v1/store/products", sellerToken, """
                 {"storeCategoryCode":"journey-appliances","title":"Journey product",
-                 "description":"Stage-6 journey stock","priceMinor":%d,"currency":"SAR"}""
+                 "description":"Stage-6 journey stock","priceMinor":%d,"currency":"SAR"}"""
                 .formatted(priceMinor));
         assertThat(created.statusCode()).as("product register: %s", body(created)).isEqualTo(201);
         return java.util.UUID.fromString(objectMapper.readTree(created.body()).path("id").asString());

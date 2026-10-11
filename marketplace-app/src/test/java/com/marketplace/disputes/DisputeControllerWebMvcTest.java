@@ -123,6 +123,6 @@ class DisputeControllerWebMvcTest {
     }
 
     private static DisputeResponse mockResponse() {
-        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null, null, null, null);
+        return new DisputeResponse(UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null);
     }
 }

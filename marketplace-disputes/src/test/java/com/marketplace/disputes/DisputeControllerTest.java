@@ -1,5 +1,7 @@
 package com.marketplace.disputes;
 
+import com.marketplace.shared.api.DisputeResolution;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -40,8 +42,8 @@ class DisputeControllerTest {
         UUID bookingId = UUID.randomUUID();
         String reason = "late arrival";
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), reason);
-        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getSubjectType(), dispute.getBookingId(),
+                dispute.getLoanId(), dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.open(bookingId, reason, authentication)).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
@@ -56,8 +58,8 @@ class DisputeControllerTest {
     void list_returnsOk() {
         UUID bookingId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(bookingId, UUID.randomUUID(), "damage");
-        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getSubjectType(), dispute.getBookingId(),
+                dispute.getLoanId(), dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.listForBooking(bookingId, authentication)).thenReturn(List.of(dispute));
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
@@ -73,8 +75,8 @@ class DisputeControllerTest {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "noise");
         dispute.resolve(DisputeResolution.NO_ACTION);
-        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getSubjectType(), dispute.getBookingId(),
+                dispute.getLoanId(), dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.resolve(disputeId, DisputeResolution.NO_ACTION, authentication)).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);
@@ -98,8 +100,8 @@ class DisputeControllerTest {
         UUID disputeId = UUID.randomUUID();
         Dispute dispute = Dispute.openBooking(UUID.randomUUID(), UUID.randomUUID(), "noise");
         dispute.resolve(DisputeResolution.REFUND_CONSUMER);
-        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getBookingId(),
-                dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
+        DisputeResponse response = new DisputeResponse(dispute.getId(), dispute.getSubjectType(), dispute.getBookingId(),
+                dispute.getLoanId(), dispute.getOpenedBy(), dispute.getStatus(), dispute.getResolution(),
                 dispute.getRefundPaymentId(), dispute.getRefundedAmountCents(), dispute.getReason(), null, null);
         when(disputeService.resolve(disputeId, DisputeResolution.REFUND_CONSUMER, 2500L, authentication)).thenReturn(dispute);
         when(disputeMapper.toResponse(dispute)).thenReturn(response);

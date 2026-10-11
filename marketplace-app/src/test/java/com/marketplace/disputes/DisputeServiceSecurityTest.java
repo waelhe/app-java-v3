@@ -1,6 +1,8 @@
 package com.marketplace.disputes;
 
 import com.marketplace.shared.api.BookingParticipantProvider;
+import com.marketplace.shared.api.DisputeResolution;
+import com.marketplace.shared.api.LoanPartyProvider;
 import com.marketplace.shared.api.PaymentRefundPort;
 import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -41,6 +43,9 @@ class DisputeServiceSecurityTest {
 
     @MockitoBean
     private BookingParticipantProvider bookingParticipantProvider;
+
+    @MockitoBean
+    private LoanPartyProvider loanPartyProvider;
 
     @MockitoBean
     private PaymentRefundPort paymentRefundPort;
