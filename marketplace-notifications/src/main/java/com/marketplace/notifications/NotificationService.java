@@ -37,6 +37,7 @@ public class NotificationService {
     private final NotificationPreferenceService preferences;
     private final NotificationTextSource text;
     private final DisputeDeliveryWriter disputeDeliveryWriter;
+    private final DisputeChannelDelivery disputeChannelDelivery;
 
     public NotificationService(NotificationRepository repository,
                                BookingParticipantProvider bookingParticipantProvider,
@@ -46,7 +47,8 @@ public class NotificationService {
                                Optional<SimpMessagingTemplate> messagingTemplate,
                                NotificationPreferenceService preferences,
                                NotificationTextSource text,
-                               DisputeDeliveryWriter disputeDeliveryWriter) {
+                               DisputeDeliveryWriter disputeDeliveryWriter,
+                               DisputeChannelDelivery disputeChannelDelivery) {
         this.repository = repository;
         this.bookingParticipantProvider = bookingParticipantProvider;
         this.paymentIntentLookupPort = paymentIntentLookupPort;
@@ -56,6 +58,7 @@ public class NotificationService {
         this.preferences = preferences;
         this.text = text;
         this.disputeDeliveryWriter = disputeDeliveryWriter;
+        this.disputeChannelDelivery = disputeChannelDelivery;
     }
 
     public void onBookingCreated(UUID bookingId) {
@@ -624,11 +627,6 @@ public class NotificationService {
      * the registry — the V150 messaging replay discipline's honest twin.
      */
     public void onDisputeOpened(UUID disputeId, UUID openedBy) {
-        if (repository.existsByRecipientIdAndSourceEventId(openedBy, disputeId)) {
-            log.debug("Dispute-opened notification already delivered: disputeId={}, recipient={}",
-                    disputeId, openedBy);
-            return;
-        }
         deliverDisputeNotification(openedBy, NotificationType.DISPUTE_OPENED,
                 text.compose("notification.DISPUTE_OPENED", NotificationTextSource.PLATFORM_LOCALE,
                         disputeId),
@@ -654,11 +652,6 @@ public class NotificationService {
                                   Long refundedAmountCents) {
         UUID sourceEventId = UUID.nameUUIDFromBytes(
                 (disputeId + "-resolved").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        if (repository.existsByRecipientIdAndSourceEventId(openedBy, sourceEventId)) {
-            log.debug("Dispute-resolved notification already delivered: disputeId={}, recipient={}",
-                    disputeId, openedBy);
-            return;
-        }
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
         String resolutionWord = text.disputeResolutionWord(resolution, platform);
         String message = refundedAmountCents != null
@@ -693,17 +686,18 @@ public class NotificationService {
             if (!isSourceEventLedgerDuplicate(duplicate)) {
                 throw duplicate;
             }
-            log.info("Concurrent dispute delivery lost the ledger race — the row exists: "
-                    + "sourceEventId={}, recipient={}, type={}", sourceEventId, recipientId, type);
-            return;
+            // CodeRabbit's final round on the #544 slice (fixed where the
+            // V199 per-channel ledger lives): the duplicate loser no longer
+            // RETURNS — the inbox row's existence never again strands the
+            // channel legs. Every delivery (fresh, redelivered, or the
+            // race's loser) consults the per-channel ledger below: what
+            // was already sent stays silent, what a prior attempt failed
+            // to send completes now.
+            log.info("Concurrent dispute delivery lost the inbox race — the channel legs "
+                    + "consult their own per-channel ledger: sourceEventId={}, recipient={}, type={}",
+                    sourceEventId, recipientId, type);
         }
-        if (preferences.isChannelEnabled(recipientId, type, NotificationChannel.EMAIL)) {
-            emailNotificationService.sendEmail(recipientId,
-                    text.compose("email." + type.name() + ".subject", NotificationTextSource.PLATFORM_LOCALE),
-                    "email/notification",
-                    Map.of("message", message));
-        }
-        sendWebSocket(recipientId, type, message);
+        disputeChannelDelivery.deliver(recipientId, type, message, sourceEventId);
     }
 
     /**

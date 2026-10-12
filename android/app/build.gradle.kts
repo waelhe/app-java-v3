@@ -28,6 +28,10 @@ val mediaMaxUploadBytes = providers.gradleProperty("mediaMaxUploadBytes")
     .get()
 require(mediaMaxUploadBytes > 0L) { "mediaMaxUploadBytes must be a positive number of bytes." }
 val redirectScheme = oidcRedirectUri.substringBefore(":")
+val releaseKeystorePath = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PATH").orNull
+val releaseKeystorePassword = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_RELEASE_KEY_PASSWORD").orNull
 
 fun String.asBuildConfigString(): String = listOf('"', this, '"').joinToString("")
 
@@ -35,12 +39,21 @@ extensions.configure<ApplicationExtension> {
     namespace = "com.marketplace.android"
     compileSdk = 37
 
+    signingConfigs {
+        create("release") {
+            releaseKeystorePath?.takeIf(String::isNotBlank)?.let { storeFile = file(it) }
+            releaseKeystorePassword?.let { storePassword = it }
+            releaseKeyAlias?.let { keyAlias = it }
+            releaseKeyPassword?.let { keyPassword = it }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.marketplace.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
         buildConfigField("String", "API_BASE_URL", apiBaseUrl.asBuildConfigString())
@@ -48,6 +61,14 @@ extensions.configure<ApplicationExtension> {
         buildConfigField("String", "OIDC_CLIENT_ID", oidcClientId.asBuildConfigString())
         buildConfigField("String", "OIDC_REDIRECT_URI", oidcRedirectUri.asBuildConfigString())
         buildConfigField("long", "MEDIA_MAX_UPLOAD_BYTES", "${mediaMaxUploadBytes}L")
+    }
+
+    buildTypes {
+        getByName("release") {
+            // Release builds are signed only with the explicitly supplied release key.
+            // The preflight task below refuses missing credentials; no debug-key fallback.
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {
@@ -99,4 +120,31 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+}
+
+
+val releaseSigningValues = mapOf(
+    "ANDROID_RELEASE_KEYSTORE_PATH" to releaseKeystorePath,
+    "ANDROID_RELEASE_KEYSTORE_PASSWORD" to releaseKeystorePassword,
+    "ANDROID_RELEASE_KEY_ALIAS" to releaseKeyAlias,
+    "ANDROID_RELEASE_KEY_PASSWORD" to releaseKeyPassword
+)
+
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast {
+        val missing = releaseSigningValues.filterValues { it.isNullOrBlank() }.keys
+        check(missing.isEmpty()) {
+            "Release signing is disabled. Configure the required GitHub Actions release-signing secrets; missing: ${missing.joinToString()}."
+        }
+        check(java.io.File(releaseKeystorePath!!).isFile) {
+            "ANDROID_RELEASE_KEYSTORE_PATH does not point to an existing release keystore."
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease" ||
+        name.startsWith("packageRelease")) {
+        dependsOn(verifyReleaseSigning)
+    }
 }

@@ -56,6 +56,43 @@ class NotificationsModuleIntegrationTest {
     @MockitoBean
     UserLookupPort userLookupPort;
 
+    // Phase 7 (the single routing engine + the geo preferences + the urgent
+    // router): the module's new services lean on four more cross-module
+    // ports whose adapters live OUTSIDE this slice — the geo lookup
+    // (marketplace-geo), the community membership and neighborhood members
+    // (marketplace-community), and the urgent alerts (marketplace-
+    // institutions). The house @MockitoBean pattern for outside-slice ports
+    // (the ReviewsModuleIntegrationTest/PricingModuleIntegrationTest
+    // convention, the GroupLookupPort round of 28c75d49 the same shape):
+    // without the mocks the context boot fails on the constructors.
+    @MockitoBean
+    com.marketplace.shared.api.GeoLookupPort geoLookupPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.CommunityMembershipPort communityMembershipPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.NeighborhoodMembersPort neighborhoodMembersPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.UrgentAlertsPort urgentAlertsPort;
+
+    /**
+     * Phase 7: the routing engine's injectable clock — the production bean
+     * lives in platform-infra's ClockConfig, which this slice does not scan
+     * (the catalog slice's exact pattern, CatalogModuleIntegrationTest's
+     * nested ClockBean — one Clock per context, never two; the CI-measured
+     * round: NotificationRoutingEngine's constructor parameter 5 stops the
+     * context boot without it).
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
     @Autowired
     private NotificationService notificationService;
 
@@ -71,8 +108,11 @@ class NotificationsModuleIntegrationTest {
         assertThat(notificationService).isNotNull();
     }
 
-    // ---- Plan item 2.6 guards: the paginated feed + the unread badge, on the
-    // REAL migration schema (the module slice boots Flyway with ddl-auto=none) ----
+    // ---- Plan item 2.6 guards: the paginated feed + the unread badge, on
+    // the entity-produced schema (the module slice rides the test profile's
+    // ddl-auto=create-drop — these contracts live in the entity mapping;
+    // the migration-owned ledger contract has its own Flyway-schema class,
+    // NotificationInboxLedgerInsertOnceIntegrationTest) ----
 
     @Test
     void getMyNotifications_isAPagedReadOfOnlyTheCallersRows() {
@@ -142,4 +182,5 @@ class NotificationsModuleIntegrationTest {
         assertThat(response.updatedAt()).isNotNull();
         assertThat(notificationRepository.findById(unread.getId()).orElseThrow().isRead()).isTrue();
     }
+
 }

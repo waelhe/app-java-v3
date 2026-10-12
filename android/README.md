@@ -44,6 +44,23 @@ From the `android/` directory, override environment-specific values without comm
 
     ./gradlew :app:testDebugUnitTest :app:assembleDebug -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect -PmediaMaxUploadBytes=10485760
 
+## Native authentication acceptance and release signing
+
+The Android CI now runs JVM tests, builds the debug APK and Android test APK, then executes the authentication-entry instrumentation test on an Android emulator. That test proves the installed app opens its unauthenticated UI and presents both Credential Manager passkey sign-in and the AppAuth Authorization Code + PKCE fallback; it does **not** prove that a real passkey was created or authenticated against a server.
+
+A release-signed APK/AAB is an explicit, manual workflow-dispatch option. Before selecting `buildSignedRelease=true`, add these GitHub Actions repository secrets:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`: base64 of the actual release keystore (never commit it).
+- `ANDROID_RELEASE_KEYSTORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+The release Gradle tasks fail closed if any signing setting is missing. The workflow outputs the signing certificate SHA-256 fingerprint and its `android:apk-key-hash:` origin in the job summary; it does not publish the certificate or modify Railway. If Google Play App Signing is enabled, the upload-key certificate is **not** the certificate installed on users' devices: configure Digital Asset Links with the Play Console **App signing key certificate** fingerprint. Do not use a debug key as a production identity.
+
+For the backend environment that serves this app, the operator must verify/set the exact public OAuth redirect URI `com.marketplace.android:/oauth2redirect`, the RP ID matching the sign-in host, and matching `WEBAUTHN_ALLOWED_ORIGINS` / `ANDROID_APP_SHA256_CERT_FINGERPRINTS` derived from the actual distribution signing certificate. The server must return HTTP 200 and `Content-Type: application/json` from `/.well-known/assetlinks.json`. No production environment is changed by this workflow.
+
+Full device E2E still requires installing the actual release-signed build on a supported Android device with a credential provider, registering a passkey, signing out, authenticating with that passkey, and successfully calling a protected API with the returned access token. Build success and emulator UI tests are not substitutes for this acceptance test.
+
 ## Code boundaries
 
 - core/network: typed DTOs and API contracts for existing backend endpoints.
