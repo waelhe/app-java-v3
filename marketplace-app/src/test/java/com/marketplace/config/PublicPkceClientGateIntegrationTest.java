@@ -170,7 +170,7 @@ class PublicPkceClientGateIntegrationTest {
         assertThat(publicClient.getClientAuthenticationMethods())
                 .containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(publicClient.getAuthorizationGrantTypes())
-                .as("authorization_code only — public clients get no refresh grant (gh-297)")
+                .as("authorization_code and native passkey only — public clients get no refresh grant (gh-297)")
                 .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
                         com.marketplace.shared.security.NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(publicClient.getScopes()).containsExactlyInAnyOrder("openid", "profile");
