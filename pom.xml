@@ -158,21 +158,20 @@
              11.0.25 ("2026-08-18 Fixed in Apache Tomcat 11.0.25", official
              security-11.html — saved copy: scripts/cve-gate-docs/
              tomcat-security-changelog.html), and 11.0.25 exists on Maven Central.
-             11.0.25 → 11.0.26 (same-line patch, measured on Maven Central 2026-10-07):
+             11.0.25 → 11.0.26 → 11.0.27 (latest same-line patch, released 2026-10-12):
              three IMPORTANT CVEs fixed in 11.0.26 affect the 11.0.25 pin —
              CVE-2026-86350 (HTTP/2 request header mix-up via regression in the
              CVE-2026-41293 fix, affects 11.0.22-11.0.25), CVE-2026-78383 (AJP DoS
              via missing request body, pins an AJP thread), CVE-2026-77791 (DoS via
              busy wait during WebSocket close — this platform runs WebSocket), plus
              moderate/low fixes (87022, 86248, 79677, 78437) from the same official
-             page. No Boot 4.1.x stable manages 11.0.26 yet (latest stable = 4.1.1),
+             page. No Boot 4.1.x stable manages 11.0.27 yet (latest stable = 4.1.1),
              so the official version-property override is the only path;
              tomcat.version governs the whole Tomcat family
              (embed-core/el/websocket, annotations-api — spring-boot-dependencies
-             4.1.1 BOM), keeping dependencyConvergence green. Remove this override
-             when the Boot parent manages >= 11.0.26 (the weekly Dependabot BOM PR
+             4.1.1 BOM), keeping dependencyConvergence green. Remove this override when the Boot parent manages >= 11.0.27 (the weekly Dependabot BOM PR
              will surface it). -->
-        <tomcat.version>11.0.26</tomcat.version>
+        <tomcat.version>11.0.27</tomcat.version>
         <!-- Override: Netty — Boot 4.1.1 manages 4.2.17.Final, which the public
              Snyk DB carries as HIGH findings fixed only in 4.2.18.Final
              (batch scan of the resolved runtime tree, 2026-10-09): HTTP Request
@@ -181,14 +180,13 @@
              netty-codec-http3/netty-codec-http/netty-codec-classes-quic
              (ranges [4.2.0.Final,4.2.18.Final) and [4.2.2.Final,4.2.18.Final);
              codec-http3 alone measures 5H+1M on the security.snyk.io version
-             table). 4.2.18.Final exists on Maven Central (published 9 Sep 2026).
+             table). 4.2.18.Final is fixed and the pin is advanced to 4.2.19.Final (official release 6 Oct 2026).
              The official version-property override path — spring-boot-
              dependencies 4.1.1's <netty.version> governs the whole Netty
              family pulled by reactor-netty 1.3.7 — keeping
-             dependencyConvergence green. Remove this override when the Boot
-             parent manages >= 4.2.18.Final (the weekly Dependabot BOM PR will
+             dependencyConvergence green. Remove this override when the Boot parent manages >= 4.2.19.Final (the weekly Dependabot BOM PR will
              surface it). -->
-        <netty.version>4.2.18.Final</netty.version>
+        <netty.version>4.2.19.Final</netty.version>
         <!-- Override: PostgreSQL JDBC driver — Boot 4.1.1 manages 42.7.13,
              which the same 2026-10-09 Snyk scan carries as: Not Failing
              Securely ('Failing Open') CVE-2026-107314 (HIGH,
@@ -199,7 +197,7 @@
              patch. Remove this override when the Boot parent manages
              >= 42.7.14. -->
         <postgresql.version>42.7.14</postgresql.version>
-        <awssdk.version>2.54.20</awssdk.version>
+        <awssdk.version>2.55.14</awssdk.version>
         <stripe.version>33.4.2</stripe.version>
         <project.build.outputTimestamp>2026-06-14T08:00:00Z</project.build.outputTimestamp>
     </properties>
@@ -326,11 +324,11 @@
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>
             </dependency>
-            <!-- Exception: commons-lang3 — springdoc pulls 3.20.0, Boot BOM pins 3.19.0 -->
+            <!-- Exception: commons-lang3 — upgrade the explicit compatibility pin to the latest stable 3.21.1; Boot 4.1.1 BOM remains at 3.19.0 -->
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
-                <version>3.20.0</version>
+                <version>3.21.1</version>
             </dependency>
             <!-- Override: Jackson BOM — spring-security-oauth2-authorization-server 7.1.1 requires jackson-databind 3.2.0, Boot 4.1.1 manages 3.1.5 -->
             <dependency>
@@ -345,15 +343,15 @@
                  (google-http-client 30.1.1-android, opencensus 29.0-android,
                  google-auth 33.4.0-android, api-common 33.4.0-jre):
                  DependencyConvergence + RequireUpperBoundDeps fail without a
-                 single pin (measured 2026-09-17). The 33.4.x-jre line is the
+                 single pin (measured 2026-09-17). The 33.x-jre line is the
                  upper bound (above every -android requirement) and the -jre
                  flavor is the correct one for a server JVM (the -android
-                 flavor strips server-side implementation); 33.4.0-jre →
-                 33.4.8-jre is the same-line patch (Maven Central, 2026-10-07). -->
+                 flavor strips server-side implementation); 33.4.8-jre →
+                 33.7.1-jre is the latest stable Guava release (official upstream, 2026-08-18). -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.4.8-jre</version>
+                <version>33.7.1-jre</version>
             </dependency>
             <!-- Override: lz4-java — kafka-clients (spring-kafka, the A-14
                  dependency set) manages 1.10.1; the container gate measured
@@ -393,7 +391,7 @@
                 <version>2.41.0</version>
             </dependency>
             <!-- Override: checker-qual — annotations-only artifact; postgresql
-                 42.7.13 requires 3.55.1 while guava 33.4.x-jre (override
+                 42.7.14 requires 3.55.1 while guava 33.7.x-jre (override
                  above, exception #13) requires 3.43.0 (DependencyConvergence,
                  measured 2026-09-17). Pin the max; zero behavioral surface. -->
             <dependency>
