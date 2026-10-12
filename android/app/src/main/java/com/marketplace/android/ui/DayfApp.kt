@@ -218,6 +218,7 @@ fun DayfApp(
             onRequestVerification = onRequestVerification,
             onSignOutOnDevice = onSignOutOnDevice,
             onRegisterPasskey = onRegisterPasskey,
+            passkeysAvailable = passkeysAvailable,
             onPropertyQuery = onPropertyQuery,
             onPropertyPurpose = onPropertyPurpose,
             onPropertyType = onPropertyType,
