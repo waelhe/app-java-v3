@@ -85,8 +85,8 @@ class UserRoleMigrationBackfillIT {
 
     private static final Instant OLD = Instant.parse("2024-03-01T10:00:00Z");
 
-    private static void insertUser(UUID id, String subject, String role, Instant createdAt,
-                                   boolean deleted) {
+    private void insertUser(UUID id, String subject, String role, Instant createdAt,
+                            boolean deleted) {
         jdbcTemplate.update(
                 "insert into users (id, subject, email, display_name, role, is_deleted, created_at) "
                         + "values (?, ?, ?, ?, ?, ?, ?)",
