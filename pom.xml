@@ -382,13 +382,12 @@
                 <version>${zstd-jni.version}</version>
             </dependency>
             <!-- Override: error_prone_annotations — annotations-only artifact;
-                 gson 2.13.2 (managed) requires 2.41.0 while the rest of the
-                 Google tree requires 2.36.0 (RequireUpperBoundDeps, measured
-                 2026-09-17). Pin the max; zero behavioral surface. -->
+                 Guava 33.7.1-jre brings 2.50.0 into the Google GenAI tree;
+                 pin the highest resolved requirement so RequireUpperBoundDeps stays satisfied. -->
             <dependency>
                 <groupId>com.google.errorprone</groupId>
                 <artifactId>error_prone_annotations</artifactId>
-                <version>2.41.0</version>
+                <version>2.50.0</version>
             </dependency>
             <!-- Override: checker-qual — annotations-only artifact; postgresql
                  42.7.14 requires 3.55.1 while guava 33.7.x-jre (override
