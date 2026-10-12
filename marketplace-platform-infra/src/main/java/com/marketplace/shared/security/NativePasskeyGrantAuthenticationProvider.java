@@ -119,7 +119,7 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
                 .principalName(userAuthentication.getName())
                 .authorizationGrantType(grant.getGrantType())
                 .authorizedScopes(authorizedScopes)
-                .attribute(Authentication.class.getName(), userAuthentication);
+                .attribute(java.security.Principal.class.getName(), userAuthentication);
 
         if (generatedToken instanceof ClaimAccessor claimAccessor) {
             authorizationBuilder.token(accessToken, metadata -> metadata.put(
@@ -129,7 +129,7 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
         }
         this.authorizationService.save(authorizationBuilder.build());
 
-        return new OAuth2AccessTokenAuthenticationToken(registeredClient, clientPrincipal, accessToken, Map.of());
+        return new OAuth2AccessTokenAuthenticationToken(registeredClient, clientPrincipal, accessToken);
     }
 
     @Override
