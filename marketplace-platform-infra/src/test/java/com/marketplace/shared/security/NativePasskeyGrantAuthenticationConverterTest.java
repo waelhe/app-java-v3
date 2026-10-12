@@ -43,10 +43,38 @@ class NativePasskeyGrantAuthenticationConverterTest {
         assertThat(grant.getGrantType()).isEqualTo(NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(grant.getChallengeId()).isEqualTo("47fc1bd0-4b40-4b0b-a35b-eebc05b6f920");
         assertThat(grant.getCredentialJson()).contains("\"type\":\"public-key\"");
+        assertThat(grant.getRequestedScopes()).isEmpty();
         assertThat(grant.getPrincipal()).isSameAs(clientPrincipal);
     }
 
     @Test
+    void parsesSpaceSeparatedOAuthScopes() {
+        MockHttpServletRequest request = validRequest();
+        request.setParameter(OAuth2ParameterNames.SCOPE, "profile openid");
+
+        NativePasskeyGrantAuthenticationToken grant =
+                (NativePasskeyGrantAuthenticationToken) this.converter.convert(request);
+
+        assertThat(grant.getRequestedScopes()).containsExactlyInAnyOrder("profile", "openid");
+    }
+
+    @Test
+    void rejectsRepeatedGrantTypeAndScopeParameters() {
+        MockHttpServletRequest repeatedGrant = validRequest();
+        repeatedGrant.addParameter(OAuth2ParameterNames.GRANT_TYPE,
+                NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue());
+        assertThatThrownBy(() -> this.converter.convert(repeatedGrant))
+                .isInstanceOf(OAuth2AuthenticationException.class);
+
+        MockHttpServletRequest repeatedScope = validRequest();
+        repeatedScope.addParameter(OAuth2ParameterNames.SCOPE, "profile");
+        repeatedScope.addParameter(OAuth2ParameterNames.SCOPE, "openid");
+        assertThatThrownBy(() -> this.converter.convert(repeatedScope))
+                .isInstanceOf(OAuth2AuthenticationException.class);
+    }
+
+    @Test
+    void rejectsMissingAndRepeatedSecurityParameters() {    @Test
     void rejectsMissingAndRepeatedSecurityParameters() {
         MockHttpServletRequest missing = new MockHttpServletRequest();
         missing.setParameter(OAuth2ParameterNames.GRANT_TYPE,
