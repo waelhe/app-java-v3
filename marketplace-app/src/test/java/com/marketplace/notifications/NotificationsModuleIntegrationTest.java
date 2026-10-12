@@ -233,5 +233,22 @@ class NotificationsModuleIntegrationTest {
                 java.sql.Timestamp.class, recipient);
         assertThat(createdStamp.toInstant()).isEqualTo(createdAt);
         assertThat(updatedStamp.toInstant()).isEqualTo(updatedAt);
+
+        // The 23502 closure's complete form: is_deleted and version are
+        // BOUND too — their NOT NULL shape comes from the entity mapping
+        // (BaseEntity's @SoftDelete and @Version), and the database
+        // default exists only on the Flyway chain (V25), not on the
+        // Hibernate-generated schema this slice runs against. The pre-fix
+        // statement relied on V25's default and failed HERE with
+        // "null value in column is_deleted violates not-null constraint"
+        // — the measured CI failure this assertion pins shut.
+        assertThat(jdbc.queryForObject(
+                "SELECT is_deleted FROM notifications WHERE recipient_id = ?",
+                Boolean.class, recipient)).as("the soft-delete column is born FALSE")
+                .isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT version FROM notifications WHERE recipient_id = ?",
+                Long.class, recipient)).as("the optimistic-lock column is born 0")
+                .isZero();
     }
 }
