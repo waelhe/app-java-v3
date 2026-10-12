@@ -21,7 +21,12 @@ on:
     # CodeRabbit free-plan 100-file review limit's documented remedy). Both
     # slices have since merged, so the entry retired with its wave (the
     # same inertness the precedent documents above).
-    branches: [ main ]
+    # The #544/#545/#543 stacked wave rides the same §4.1 mechanism:
+    # The stacked bases are listed while the wave is in flight and
+    # retire with it in the post-merge truth-sync (the documented
+    # #540/#541 precedent's own inertness rule).
+    branches: [ main, feat/phase5-unified-search-arabic ]
+
 
 
 # One test round per ref: a newer push supersedes the older round and
