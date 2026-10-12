@@ -201,7 +201,7 @@ class PublicPkceClientGateIntegrationTest {
         assertThat(publicClient.getClientAuthenticationMethods())
                 .containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(publicClient.getAuthorizationGrantTypes())
-                .as("authorization_code and native passkey only — public clients get no refresh grant (gh-297)")
+                .as("the public client registers authorization_code and passkey, but not refresh_token")
                 .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
                         com.marketplace.shared.security.NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(publicClient.getScopes()).containsExactlyInAnyOrder("openid", "profile");
@@ -222,7 +222,8 @@ class PublicPkceClientGateIntegrationTest {
     /**
      * The full public-client gate: PKCE + custom-scheme redirect + consent, then a token
      * exchange that carries the client_id as a form parameter and <b>no</b> client
-     * authentication. Asserts the gh-297 behavior live: no refresh_token in the response.
+     * authentication. The registered-client grant set excludes refresh_token, so the
+     * framework must not return one in the token response.
      */
     @Test
     void publicClientExchangesCodeWithoutAuthenticationAndMintsNoRefreshToken() throws Exception {
@@ -231,7 +232,7 @@ class PublicPkceClientGateIntegrationTest {
         assertThat(gate.accessToken()).isNotBlank();
         assertThat(gate.tokenType()).isEqualToIgnoringCase("Bearer");
         assertThat(gate.refreshToken())
-                .as("SAS will not issue refresh tokens for a public client (how-to-pkce, gh-297)")
+                .as("refresh_token is not an enabled grant for this registered client")
                 .isBlank();
         assertThat(gate.idToken())
                 .as("the openid scope must yield an id_token")
@@ -268,7 +269,7 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     /**
-     * PKCE downgrade protection (RFC 9700 §2.1.1 / SAS how-to): an authenticated
+     * PKCE downgrade protection (RFC 9700 §2.1.1 and Spring Security ClientSettings): an authenticated
      * authorization request without code_challenge for a requireProofKey client is
      * rejected with an error redirect to the client instead of a code.
      */
@@ -307,7 +308,7 @@ class PublicPkceClientGateIntegrationTest {
     }
 
     /**
-     * No refresh grant exists for the public client — SAS 7.1.1 rejects the request
+     * No refresh grant exists for the public client. Spring Security Authorization Server checks
      * <em>before</em> the grant is even evaluated, through the official client
      * authentication path: {@code PublicClientAuthenticationConverter} only matches a
      * PKCE token request ({@code grant_type=authorization_code} + {@code code} +
