@@ -262,6 +262,9 @@ class PublicPkceClientGateIntegrationTest {
         assertThat(response.statusCode())
                 .as("Digital Asset Links is a public metadata resource but must not publish an unverified identity")
                 .isEqualTo(404);
+        assertThat(response.headers().firstValue("Location"))
+                .as("the anonymous metadata request must not be redirected to an interactive login page")
+                .isEmpty();
     }
 
     @Test
