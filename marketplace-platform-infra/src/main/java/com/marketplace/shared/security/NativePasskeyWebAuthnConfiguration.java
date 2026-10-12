@@ -1,16 +1,26 @@
 package com.marketplace.shared.security;
 
+import java.util.Set;
+
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.security.web.webauthn.api.PublicKeyCredentialRpEntity;
 import org.springframework.security.web.webauthn.management.JdbcPublicKeyCredentialUserEntityRepository;
 import org.springframework.security.web.webauthn.management.JdbcUserCredentialRepository;
+import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
+import org.springframework.security.web.webauthn.management.Webauthn4JRelyingPartyOperations;
+import org.springframework.util.StringUtils;
 
 /**
- * Uses Spring Security's documented JDBC-backed WebAuthn repositories so
- * credentials and sign-counter updates survive process restarts and replicas.
+ * Uses Spring Security's JDBC WebAuthn repositories and its official WebAuthn4J
+ * relying-party operations. The same operations bean is shared by all passkey
+ * ceremonies, so registration options, assertion validation, and credential
+ * persistence use one set of relying-party settings.
  */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(NativePasskeyProperties.class)
 public class NativePasskeyWebAuthnConfiguration {
 
     @Bean
@@ -22,5 +32,18 @@ public class NativePasskeyWebAuthnConfiguration {
     @Bean
     JdbcUserCredentialRepository userCredentialRepository(JdbcOperations jdbcOperations) {
         return new JdbcUserCredentialRepository(jdbcOperations);
+    }
+
+    @Bean
+    WebAuthnRelyingPartyOperations webAuthnRelyingPartyOperations(
+            JdbcPublicKeyCredentialUserEntityRepository userEntities,
+            JdbcUserCredentialRepository userCredentials,
+            NativePasskeyProperties properties) {
+        String rpId = StringUtils.hasText(properties.rpId()) ? properties.rpId() : "localhost";
+        return new Webauthn4JRelyingPartyOperations(
+                userEntities,
+                userCredentials,
+                PublicKeyCredentialRpEntity.builder().id(rpId).name(properties.rpName()).build(),
+                Set.copyOf(properties.allowedOrigins()));
     }
 }
