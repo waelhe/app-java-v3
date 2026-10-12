@@ -1,79 +1,63 @@
-# Public Client Authentication — PKCE, No API Keys (L29)
+# Public Client Authentication — PKCE and Native Passkeys (L29)
 
-> **Scope of this document:** it pins the standing security decision for the
-> *public* API client class (native mobile / SPA), as required by the
-> feature-expansion roadmap §5 L29(ج) and closing debt **D5** (roadmap §8).
-> It is a decision record, not a tutorial: every claim below carries its
-> evidence from the code or the official sources already cached in this
-> repository.
+## The decision
 
-## The decision (pinned)
+The Android/SPA client remains a public client: it never contains a client secret and receives no refresh token. The current implementation supports two user-authentication paths:
 
-**The public client authenticates end users with Authorization Code + PKCE,
-carries no client secret, receives no refresh tokens, and there are no API
-keys for machine clients.** Any future client that needs secret-less,
-key-less access joins this exact class through configuration — not new code
-(`docs/security/client-hosting-strategy-plan.md` §4).
+1. **Authorization Code + PKCE** at `/oauth2/authorize` for the existing OAuth/OIDC flow. Native apps use the system browser/Custom Tab per [RFC 8252](https://datatracker.ietf.org/doc/html/rfc8252), not a WebView.
+2. **Native passkey assertion** through the project extension grant `urn:marketplace:params:oauth:grant-type:passkey`. Android uses Credential Manager; the server verifies the signed WebAuthn assertion through Spring Security's `spring-security-webauthn`, then Spring Authorization Server issues and persists a normal API access token through its configured `OAuth2TokenGenerator` and `OAuth2AuthorizationService`.
 
-## What this means, concretely
+The second grant is an application-specific OAuth extension, implemented at the standard token endpoint through Spring Authorization Server's documented `AuthenticationConverter` + `AuthenticationProvider` extension points. It is not a new standardized OAuth grant and does not bypass the authorization server.
 
-| Property | Value | Evidence |
-|---|---|---|
-| Client authentication | `none` — the client proves nothing to the token endpoint | `OAuth2PublicClientInitializer.java:157` (`ClientAuthenticationMethod.NONE`) |
-| Grant type | `authorization_code` **only** | `OAuth2PublicClientInitializer.java:158` |
-| PKCE | mandatory (`requireProofKey(true)`) — RFC 9700 §2.1.1, protects against code interception and the PKCE downgrade attack | `OAuth2PublicClientInitializer.java:175` + SAS how-to |
-| Refresh tokens | **never issued** — SAS "will not issue refresh tokens for a public client" (gh-297) | `OAuth2PublicClientInitializer.java:180-190` (no refresh-token settings by design) |
-| Access token TTL | 900 seconds | `OAuth2PublicClientInitializer.java:187` |
-| Authorization code TTL | 300 seconds | `OAuth2PublicClientInitializer.java:188` |
-| Consent | required | `OAuth2PublicClientInitializer.java:176` |
-| Redirect URIs | environment-driven (`OAUTH_PUBLIC_CLIENT_REDIRECT_URIS`, comma-separated). Native apps register a **custom-scheme** redirect (RFC 8252 §7.1); SPAs register an exact **`https`** redirect (app link). Both forms are valid values of the same variable — the client class is one, only the app form differs. | `OAuth2PublicClientInitializer.java:45-48` (bootstrap javadoc: "custom scheme per RFC 8252 or an https app link") |
+## Native passkey flow
 
-## Why no API keys
+1. The app calls `POST /api/v1/auth/passkeys/assertion/options`. The server generates WebAuthn request options with a random challenge, the configured RP ID and required user verification.
+2. The app passes those options to Android Credential Manager's `GetPublicKeyCredentialOption` and receives the platform-generated assertion.
+3. The app posts a form-encoded request to `POST /oauth2/token`:
+   - `grant_type=urn:marketplace:params:oauth:grant-type:passkey`
+   - `client_id=android-community-native` (the value must match `OAUTH_PUBLIC_CLIENT_ID`)
+   - `challenge_id=<server-issued UUID>`
+   - `credential=<Credential Manager authenticationResponseJson>`
+4. Spring Security validates the WebAuthn challenge, RP ID, origin, credential and signature. The account must also remain enabled, unlocked, and unexpired. The server then creates a standard JWT access token, carrying the existing issuer, audience, subject, email and role contracts.
+5. The token is a short-lived bearer token with the registered public-client lifetime (900 seconds). The native grant issues **no refresh token and no ID token**; its authorized API scope is `profile`. On expiry, the client reauthenticates with a passkey or the existing Authorization Code + PKCE fallback.
 
-1. **The one real consuming client class is the public app** — a
-   person-interacting native/SPA client. PKCE + short-lived access tokens is
-   the official recommendation for exactly this class; a long-lived static
-   API key would be a strictly weaker credential (bearer, no user context,
-   no expiry).
-2. **A machine client, if one is ever needed, is a different class** — the
-   confidential pattern (`client_credentials`, `client_secret_basic`) already
-   exists in the same codebase (`OAuth2ClientSecretInitializer`) and is
-   provisioned through the standard `RegisteredClientRepository.save` path
-   (env → DB). That path is an operator decision, not a code change.
-3. **The verification cost of API keys is real** — key issuance, rotation,
-   scoping and revocation would each need new surface area; today the system
-   has zero of that surface, and the roadmap keeps it that way until a
-   documented need appears.
+The server stores challenges in PostgreSQL, expires them after five minutes, and consumes each challenge atomically with `DELETE ... RETURNING`; expired, unknown and replayed challenges fail as `invalid_grant`. The WebAuthn credential records use Spring Security's JDBC repositories and their documented `user_entities` / `user_credentials` table contracts.
 
-**Closing point (D5):** the first real automated client that needs
-machine-to-machine access reopens this decision with its documented
-requirement — until then, the pinned pattern above is the contract.
+## Enrollment
 
-## How a client uses this (the flow, in brief)
+Passkey enrollment is allowed only after the existing authenticated flow, for an account that is enabled and eligible to sign in:
 
-1. Open the authorize endpoint with `response_type=code`,
-   `client_id` = the public client id, a `code_challenge` (S256), and the
-   registered redirect URI.
-2. The user authenticates (form login) and consents.
-3. Exchange the returned code at the token endpoint with
-   `code_verifier` — **no client authentication** (no secret header).
-4. The access token (JWT, 900s) is sent as `Authorization: Bearer …` to the
-   resource APIs. When it expires, the user re-authenticates through the
-   same flow; there is no refresh grant to fall back to.
+- `POST /api/v1/auth/passkeys/registration/options` — authenticated bearer token required.
+- `POST /api/v1/auth/passkeys/registration` — authenticated bearer token plus the server challenge ID and Credential Manager's registration response.
 
-The full end-to-end proof of this flow — including the negatives
-(no `code_challenge` ⇒ 302 error, Basic auth ⇒ 401 `invalid_client`,
-refresh grant ⇒ 401) — is pinned in
-`PublicPkceClientGateIntegrationTest`.
+An enrollment challenge is bound to the current account and consumed once. The server does not accept credentials, usernames or roles supplied as trusted identity claims by the app; WebAuthn and the existing account store determine the identity and authorities.
 
-## Related documents
+## Required operator configuration — deliberately fail closed
 
-- `docs/security/client-hosting-strategy-plan.md` §4 — the client pattern
-  matrix (public vs confidential) and what each costs the backend.
-- `docs/security/oauth2-client-bootstrap-spec.md` — the bootstrap mechanics
-  (env → DB) both client initializers follow.
-- `docs/api/error-contract.md` — the RFC 7807 problem contract every
-  protected endpoint answers with on auth failures (401/403).
-- Rate limiting of public write endpoints (this layer, L29):
-  `application.yml` → `resilience4j.ratelimiter.instances` — 429 answers
-  carry the same problem contract (`RL-001`).
+Passkey endpoints return `503` until the relying-party configuration is present. Do not invent or use a runner-generated debug signing identity for production.
+
+- `WEBAUTHN_RP_ID`: the host used by the Android app to reach the authorization server, without scheme or path (for the current production API host: `app-java-v3-production-59bf.up.railway.app`).
+- `WEBAUTHN_RP_NAME`: human-readable relying-party name; defaults to `Marketplace`.
+- `WEBAUTHN_ALLOWED_ORIGINS`: exact comma-separated WebAuthn origins, including the Android origin derived from the actual release signing certificate (Android form: `android:apk-key-hash:<base64url-certificate-hash>`).
+- `ANDROID_APP_PACKAGE_NAME`: defaults to `com.marketplace.android`.
+- `ANDROID_APP_SHA256_CERT_FINGERPRINTS`: comma-separated SHA-256 certificate fingerprints in the colon-delimited hexadecimal form expected by Digital Asset Links. These must derive from the same release-signing certificate as the allowed Android origin.
+
+The server serves `/.well-known/assetlinks.json` only when the actual SHA-256 fingerprints are configured; otherwise it returns 404. The passkey APIs remain unavailable while the allowed origin is unset. This is intentional: Credential Manager's Digital Asset Links association and the server-side WebAuthn origin allowlist must agree before native sign-in is enabled. Production Railway variables have not been changed by this code change.
+
+## Security constraints
+
+- No direct password-login endpoint, Resource Owner Password Credentials grant, token signing code outside Spring Authorization Server, API key, or secret in the APK.
+- WebAuthn validation, challenge generation, credential persistence and authenticator-counter handling use Spring Security's official implementation.
+- OAuth token creation, claims customization, token lifetime, revocation persistence and issuer/audience contract remain owned by Spring Authorization Server and the existing resource-server setup.
+- Only the assertion-options POST is anonymous. Credential enrollment endpoints remain authenticated. Email verification and account lifecycle gates remain authoritative.
+
+## Official implementation references
+
+- [RFC 8252 — OAuth 2.0 for Native Apps](https://datatracker.ietf.org/doc/html/rfc8252)
+- [RFC 9700 — OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/html/rfc9700)
+- [Spring Authorization Server — How-to: Implement an Extension Authorization Grant Type](https://docs.spring.io/spring-authorization-server/reference/guides/how-to-ext-grant-type.html)
+- [Spring Authorization Server — Protocol Endpoints](https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html)
+- [Spring Security — Passkeys](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
+- [Android Developers — Sign in with a passkey](https://developer.android.com/identity/passkeys/sign-in-with-passkeys)
+- [Android Developers — Create passkeys](https://developer.android.com/identity/passkeys/create-passkeys)
+- [Android Identity Samples — official Credential Manager / Shrine app](https://github.com/android/identity-samples)
