@@ -22,59 +22,28 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Bootstraps the public (secret-less) registered client — gate B, pattern (3) "native
- * application" of the client hosting strategy plan (§4: classified by secret location,
- * not by technology) — from external configuration into {@code oauth2_registered_client}
- * at startup, through the same single official mutation path as
- * {@link OAuth2ClientSecretInitializer}: {@link RegisteredClientRepository#save(RegisteredClient)}
- * (Spring Authorization Server — core-model-components, "RegisteredClientRepository").
+ * Registers and converges the public native-app client through Spring Security's
+ * {@link RegisteredClientRepository} API. The client is derived from external
+ * configuration and the current security contract, then persisted by the framework
+ * repository; no credentials or client definition are embedded in the Android APK.
  *
- * <p><b>Public client definition (official constraints):</b> a public client "cannot
- * securely store credentials" (SAS how-to how-to-pkce) so this registration carries
- * <ul>
- *   <li>{@code clientAuthenticationMethod: none} and no client secret (the column is
- *       nullable in the application's own {@code V13__authorization_security.sql});</li>
- *   <li>{@code requireProofKey(true)} — public clients MUST use PKCE (RFC 9700 §2.1.1;
- *       the SAS how-to: "The requireProofKey setting is important to prevent the PKCE
- *       Downgrade Attack");</li>
- *   <li>{@code authorization_code} grant only — "Spring Authorization Server will not
- *       issue refresh tokens for a public client" (SAS how-to how-to-pkce, gh-297), so
- *       neither the refresh grant nor refresh {@link TokenSettings} are set: the access
- *       token is the only bearer credential, and re-authentication goes through the
- *       authorization-server session (short access TTL, honest trade-off documented in
- *       the plan §4);</li>
- *   <li>redirect URIs are <em>environment-driven</em> ({@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS},
- *       comma-separated; custom scheme per RFC 8252 or an https app link) — unlike the
- *       web client's constant, because the redirect belongs to the client application's
- *       identity and changes per deployment.</li>
- * </ul>
+ * <p>The client uses {@code ClientAuthenticationMethod.NONE}; a native application
+ * cannot keep a client secret confidential. Its standard sign-in path remains
+ * Authorization Code with PKCE as required by RFC 8252 and RFC 9700. The native
+ * passkey sign-in path is an additional OAuth extension grant wired through the
+ * documented Spring Security Authorization Server token-endpoint extension points.
+ * It receives no refresh-token grant and uses a self-contained JWT access token
+ * with the same short lifetime as the public client.</p>
  *
- * <p><b>Bootstrap (row absent):</b> created through the official
- * {@link RegisteredClient.Builder} with a fixed id (see below). When not configured and
- * the {@code prod} profile is not active, startup is a deliberate no-op — same contract
- * as the confidential client initializer.
+ * <p>Redirect URIs are externally configured because they identify the client
+ * application and differ between deployment targets. On each startup, the complete
+ * definition is derived again from configuration; {@code save()} is invoked only
+ * when the persisted definition differs. The existing database row identity is
+ * preserved to keep authorization foreign keys valid.</p>
  *
- * <p><b>Converge-on-boot (row present):</b> the full definition is re-derived from
- * configuration and code constants and rebuilt with {@code RegisteredClient.withId(existing.getId())}
- * — the identity-preserving equivalent of the spec's {@code RegisteredClient.from(existing)}
- * "identity only" prescription (§4.1 تثبيت ب), chosen because this definition is
- * environment-driven: nothing from the stored row (grants, redirect URIs, settings maps)
- * is carried over, so an environment change (e.g. a new redirect URI) converges at the
- * next boot without legacy drift.
- *
- * <p><b>Idempotence guard:</b> {@code save()} runs only when the derived definition
- * differs from the stored row — client id, client name, redirect URIs, authentication
- * methods, grant types, scopes, secret null-ness, or the settings maps. Matching rows are
- * a no-op, so concurrent instances converge without rewriting identical rows.
- *
- * <p><b>Fail-fast by profile:</b> {@code application-prod.yml} binds both values from
- * mandatory environment variables ({@code OAUTH_PUBLIC_CLIENT_ID} /
- * {@code OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}); production must not silently run without
- * the first (public) client. The nested {@code marketplace.security.oauth2.public-client}
- * section is bound non-null by an empty {@code @DefaultValue}.
- *
- * @see <a href="https://docs.spring.io/spring-authorization-server/reference/guides/how-to-pkce.html">Spring Authorization Server — How-to: PKCE</a>
- * @see <a href="https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1">RFC 9700 §2.1.1 — Public clients MUST use PKCE</a>
+ * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/core-model-components.html">Spring Security Authorization Server — Core Model / Components</a>
+ * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/protocol-endpoints.html">Spring Security Authorization Server — Protocol Endpoints</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1">RFC 9700 §2.1.1 — PKCE for public clients</a>
  * @see <a href="https://datatracker.ietf.org/doc/html/rfc8252">RFC 8252 — OAuth 2.0 for Native Apps</a>
  */
 @Component
