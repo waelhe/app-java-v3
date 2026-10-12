@@ -42,7 +42,10 @@ import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.EndSessionRequest
 import net.openid.appauth.EndSessionResponse
 import net.openid.appauth.ResponseTypeValues
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val repository: MarketplaceRepository by lazy { MarketplaceRepository(applicationContext) }
@@ -280,6 +283,11 @@ class MainActivity : ComponentActivity() {
                 viewModel.passkeySignInFailed(
                     "تعذر استخدام مفتاح المرور. جرّب الدخول بالطريقة التقليدية أو أعد المحاولة لاحقًا."
                 )
+            } catch (cancelled: CancellationException) {
+                // Coroutine cancellation is not a sign-in failure: rethrow so the
+                // cancelled scope ends quietly instead of clearing the session
+                // (kotlinx.coroutines guidance for catching Exception broadly).
+                throw cancelled
             } catch (failure: Exception) {
                 viewModel.passkeySignInFailed(
                     passkeyBackendFailureMessage(
@@ -307,15 +315,24 @@ class MainActivity : ComponentActivity() {
                     CreatePublicKeyCredentialRequest(ceremony.optionsJson)
                 ) as? CreatePublicKeyCredentialResponse
                     ?: throw IllegalStateException("لم يُرجع مدير بيانات الاعتماد نتيجة تسجيل مفتاح مرور.")
-                repository.registerPasskey(
-                    challengeId = ceremony.challengeId,
-                    credentialJson = response.registrationResponseJson
-                )
+                // The credential now exists on the device; complete the server-side
+                // registration even if the activity's scope is cancelled mid-flight,
+                // otherwise the device keeps an orphaned passkey the server never saw.
+                withContext(NonCancellable) {
+                    repository.registerPasskey(
+                        challengeId = ceremony.challengeId,
+                        credentialJson = response.registrationResponseJson
+                    )
+                }
                 viewModel.passkeyRegistrationCompleted()
             } catch (failure: CreateCredentialException) {
                 viewModel.passkeyRegistrationFailed(
                     "تعذر إعداد مفتاح المرور. تأكد من إعدادات بيانات الاعتماد ثم أعد المحاولة."
                 )
+            } catch (cancelled: CancellationException) {
+                // Cancellation is not a registration failure — rethrow (the device-side
+                // creation, when it happened, was completed by the NonCancellable block).
+                throw cancelled
             } catch (failure: Exception) {
                 viewModel.passkeyRegistrationFailed(
                     passkeyBackendFailureMessage(

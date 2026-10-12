@@ -83,19 +83,24 @@ extensions.configure<ApplicationExtension> {
 }
 
 dependencies {
-    implementation(platform("com.squareup.okhttp3:okhttp-bom:5.5.0"))
+    implementation(platform("com.squareup.okhttp3:okhttp-bom:5.4.0"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
-    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    // Compose BOM pinned to the newest release whose artifacts accept compileSdk 36
+    // (2026.06.01 -> Compose 1.11.4, minCompileSdk 35). The 2026.09.00 BOM's Compose
+    // 1.12.1 artifacts require compileSdk 37, and the android-37 platform is not
+    // published in the SDK channels (CI measured: "Failed to find package
+    // 'platforms;android-37'") — the same stable-36 alignment applied to Coil 3.5.0.
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.19.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

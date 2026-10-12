@@ -192,8 +192,10 @@ internal fun ComposerSheet(
                     if (state.pendingPhotoPostId != null) {
                         TextButton(
                             onClick = onSkipPendingPhotoUpload,
-                            enabled = !state.submitBusy &&
-                    (state.composer != ComposerKind.POST || state.pendingPhotoPostId == null || state.postPhotoUris.isNotEmpty()),
+                            // Skip stays available whenever the sheet is idle: with every
+                            // photo removed there is nothing left to retry, and disabling
+                            // skip would leave dismissal as the only way out.
+                            enabled = !state.submitBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("متابعة دون الصور المتبقية") }
                     }
