@@ -145,7 +145,8 @@ class OAuth2PublicClientInitializerTest {
         assertThat(saved.getClientSecret()).isNull();
         assertThat(saved.getClientAuthenticationMethods()).containsExactly(ClientAuthenticationMethod.NONE);
         assertThat(saved.getAuthorizationGrantTypes())
-                .containsExactly(AuthorizationGrantType.AUTHORIZATION_CODE);
+                .containsExactlyInAnyOrder(AuthorizationGrantType.AUTHORIZATION_CODE,
+                        NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(saved.getClientSettings().isRequireProofKey()).isTrue();
     }
 
