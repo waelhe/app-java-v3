@@ -501,6 +501,18 @@ resilience4j:
       # and intentionally conservative until real traffic exists (debt D2).
       # Per-instance state is in-memory: at N replicas the effective limit
       # is N x the value below (documented multi-replica behavior).
+      # Credential ceremonies allocate short-lived server state and perform
+      # cryptographic validation. Fail fast under bursts; do not queue auth requests.
+      passkeyAssertionOptions:
+        base-config: default
+        limit-for-period: 10
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      passkeyRegistration:
+        base-config: default
+        limit-for-period: 5
+        limit-refresh-period: 1m
+        timeout-duration: 0
       bookingCreate:
         base-config: default
         limit-for-period: 10
