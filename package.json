@@ -3,6 +3,6 @@
   "private": true,
   "description": "Railway IaC SDK dependency for .railway/railway.ts evaluation (official CLI requirement)",
   "devDependencies": {
-    "railway": "^3.11.0"
+    "railway": "^3.13.1"
   }
 }
