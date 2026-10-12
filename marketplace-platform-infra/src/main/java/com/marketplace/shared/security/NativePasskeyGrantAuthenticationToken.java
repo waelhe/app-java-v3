@@ -1,6 +1,7 @@
 package com.marketplace.shared.security;
 
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -20,14 +21,17 @@ public final class NativePasskeyGrantAuthenticationToken extends OAuth2Authoriza
 
     private final String challengeId;
     private final String credentialJson;
+    private final Set<String> requestedScopes;
 
     public NativePasskeyGrantAuthenticationToken(
             Authentication clientPrincipal,
             String challengeId,
-            String credentialJson) {
+            String credentialJson,
+            Set<String> requestedScopes) {
         super(GRANT_TYPE, clientPrincipal, Map.of());
         this.challengeId = challengeId;
         this.credentialJson = credentialJson;
+        this.requestedScopes = Set.copyOf(requestedScopes);
     }
 
     public String getChallengeId() {
@@ -36,5 +40,9 @@ public final class NativePasskeyGrantAuthenticationToken extends OAuth2Authoriza
 
     public String getCredentialJson() {
         return credentialJson;
+    }
+
+    public Set<String> getRequestedScopes() {
+        return requestedScopes;
     }
 }
