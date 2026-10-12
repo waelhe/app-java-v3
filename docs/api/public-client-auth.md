@@ -5,9 +5,9 @@
 The Android/SPA client remains a public client: it never contains a client secret and receives no refresh token. The current implementation supports two user-authentication paths:
 
 1. **Authorization Code + PKCE** at `/oauth2/authorize` for the existing OAuth/OIDC flow. Native apps use the system browser/Custom Tab per [RFC 8252](https://datatracker.ietf.org/doc/html/rfc8252), not a WebView.
-2. **Native passkey assertion** through the project extension grant `urn:marketplace:params:oauth:grant-type:passkey`. Android uses Credential Manager; the server verifies the signed WebAuthn assertion through Spring Security's `spring-security-webauthn`, then Spring Authorization Server issues and persists a normal API access token through its configured `OAuth2TokenGenerator` and `OAuth2AuthorizationService`.
+2. **Native passkey assertion** through the project extension grant `urn:marketplace:params:oauth:grant-type:passkey`. Android uses Credential Manager; the server verifies the signed WebAuthn assertion through Spring Security's `spring-security-webauthn`, then Spring Security’s current Authorization Server extension points validate the grant; the native-only adapter delegates JWT encoding to Spring Security’s `JwtGenerator` using the application’s managed JWK source and claim customizer, then persists the authorization through `OAuth2AuthorizationService`. Standard authorization-code and other built-in grants continue to use Spring Security’s internally configured token generator and default customizers.
 
-The second grant is an application-specific OAuth extension, implemented at the standard token endpoint through Spring Authorization Server's documented `AuthenticationConverter` + `AuthenticationProvider` extension points. It is not a new standardized OAuth grant and does not bypass the authorization server.
+The second grant is an application-specific OAuth extension, implemented at the standard token endpoint through Spring Security 7.1.1’s documented `OAuth2TokenEndpointConfigurer` `AuthenticationConverter` and `AuthenticationProvider` extension points. It is not a new standardized OAuth grant and does not bypass the authorization server.
 
 ## Native passkey flow
 
@@ -55,9 +55,12 @@ The server serves `/.well-known/assetlinks.json` only when the actual SHA-256 fi
 
 - [RFC 8252 — OAuth 2.0 for Native Apps](https://datatracker.ietf.org/doc/html/rfc8252)
 - [RFC 9700 — OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/html/rfc9700)
-- [Spring Authorization Server — How-to: Implement an Extension Authorization Grant Type](https://docs.spring.io/spring-authorization-server/reference/guides/how-to-ext-grant-type.html)
-- [Spring Authorization Server — Protocol Endpoints](https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html)
-- [Spring Security — Passkeys](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
+- [Spring Security 7.1.1 — OAuth 2.1 Authorization Server](https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/)
+- [Spring Security 7.1.1 — Protocol Endpoints and token-endpoint extension points](https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/protocol-endpoints.html)
+- [Spring Security 7.1.1 — `OAuth2AuthorizationServerConfigurer` API](https://docs.spring.io/spring-security/reference/api/java/org/springframework/security/config/annotation/web/configurers/oauth2/server/authorization/OAuth2AuthorizationServerConfigurer.html)
+- [Spring Boot 4 — Security starter migration names](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
+- [Spring Security 7.1.1 — Passkeys](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
+- [Spring Boot — managed Spring Security dependency versions](https://docs.spring.io/spring-boot/appendix/dependency-versions/coordinates.html)
 - [Android Developers — Sign in with a passkey](https://developer.android.com/identity/passkeys/sign-in-with-passkeys)
 - [Android Developers — Create passkeys](https://developer.android.com/identity/passkeys/create-passkeys)
 - [Android Identity Samples — official Credential Manager / Shrine app](https://github.com/android/identity-samples)
