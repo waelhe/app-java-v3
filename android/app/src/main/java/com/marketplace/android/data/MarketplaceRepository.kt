@@ -7,6 +7,7 @@ import com.marketplace.android.core.network.CreateCommentRequest
 import com.marketplace.android.core.network.CreateMarketItemRequest
 import com.marketplace.android.core.network.CreatePostRequest
 import com.marketplace.android.core.network.EmailOnlyRequest
+import com.marketplace.android.core.network.PasskeyRegistrationRequest
 import com.marketplace.android.core.network.JoinNeighborhoodRequest
 import com.marketplace.android.core.network.RegisterRequest
 import com.marketplace.android.core.network.RequestPostMediaUpload
@@ -75,7 +76,9 @@ class MarketplaceRepository(
                 val original: Request = chain.request()
                 val tokenSnapshot = accessToken
                 val request = original.newBuilder().apply {
-                    if (!tokenSnapshot.isNullOrBlank()) {
+                    // OAuth protocol requests (notably the public passkey grant) do not
+                    // receive a stale resource-server bearer token.
+                    if (!tokenSnapshot.isNullOrBlank() && original.url.encodedPath.startsWith("/api/")) {
                         header("Authorization", "Bearer $tokenSnapshot")
                     }
                     header("Accept", "application/json")
@@ -107,6 +110,38 @@ class MarketplaceRepository(
 
     suspend fun resendVerificationEmail(email: String) {
         val response = api.resendVerificationEmail(EmailOnlyRequest(email = email))
+        if (!response.isSuccessful) throw HttpException(response)
+        response.body()?.close()
+    }
+
+    suspend fun createPasskeyAssertionOptions() = api.createPasskeyAssertionOptions()
+
+    suspend fun signInWithPasskey(challengeId: String, credentialJson: String): String {
+        check(BuildConfig.OIDC_CLIENT_ID.isNotBlank()) {
+            "The public Android OAuth client ID is not configured in this build."
+        }
+        val response = api.exchangePasskeyGrant(
+            grantType = "urn:marketplace:params:oauth:grant-type:passkey",
+            clientId = BuildConfig.OIDC_CLIENT_ID,
+            challengeId = challengeId,
+            credentialJson = credentialJson
+        )
+        if (!response.isSuccessful) throw HttpException(response)
+        val body = response.body() ?: throw IOException("The token endpoint returned an empty response.")
+        return body.accessToken.takeIf(String::isNotBlank)
+            ?: throw IOException("The token endpoint did not return an access token.")
+    }
+
+    suspend fun createPasskeyRegistrationOptions() = api.createPasskeyRegistrationOptions()
+
+    suspend fun registerPasskey(challengeId: String, credentialJson: String, label: String = "Android device") {
+        val response = api.registerPasskey(
+            PasskeyRegistrationRequest(
+                challengeId = challengeId,
+                credentialJson = credentialJson,
+                label = label
+            )
+        )
         if (!response.isSuccessful) throw HttpException(response)
         response.body()?.close()
     }
