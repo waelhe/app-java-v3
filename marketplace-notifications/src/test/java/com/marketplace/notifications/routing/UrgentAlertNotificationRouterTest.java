@@ -111,7 +111,7 @@ class UrgentAlertNotificationRouterTest {
                 FIXED_CLOCK);
         UrgentAlertDelivery delivery = new UrgentAlertDelivery(repository, deliveryLedger,
                 emailNotificationService, webSocketPush, Optional.empty(),
-                new NotificationTextSource());
+                new NotificationTextSource(), FIXED_CLOCK);
         return new UrgentAlertNotificationRouter(engine, membersPort, scopedSubscriptions,
                 urgentAlertsPort, new NotificationTextSource(), FIXED_CLOCK, delivery);
     }
@@ -155,12 +155,13 @@ class UrgentAlertNotificationRouterTest {
         membersAndSubscribers();
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
-                anyString(), eq(ALERT_ID))).thenReturn(1);
+                anyString(), eq(ALERT_ID), any(), any())).thenReturn(1);
 
         router().onUrgentAlertPublished(event());
 
         verify(repository).insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
-                messageCaptor.capture(), eq(ALERT_ID));
+                messageCaptor.capture(), eq(ALERT_ID), eq(FIXED_CLOCK.instant()),
+                eq(FIXED_CLOCK.instant()));
         assertThat(messageCaptor.getValue()).contains("بلدية القديسة");
         // The re-check read the alert's OWN scope — never another one.
         verify(urgentAlertsPort).findActive(eq(LOCATION), any());
@@ -173,7 +174,7 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any());
+        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any(), any(), any());
         verify(membersPort, never()).getActiveMemberIds(any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
     }
@@ -192,7 +193,7 @@ class UrgentAlertNotificationRouterTest {
         router().onUrgentAlertPublished(event());
 
         verify(repository, times(2)).insertOnce(any(), any(UUID.class),
-                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
     }
 
     @Test
@@ -206,7 +207,7 @@ class UrgentAlertNotificationRouterTest {
         router().onUrgentAlertPublished(event());
 
         verify(repository, times(1)).insertOnce(any(), any(UUID.class),
-                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
     }
 
     @Test
@@ -220,7 +221,7 @@ class UrgentAlertNotificationRouterTest {
         membersAndSubscribers();
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
-                anyString(), eq(ALERT_ID))).thenReturn(0);
+                anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -229,7 +230,7 @@ class UrgentAlertNotificationRouterTest {
         router().onUrgentAlertPublished(event());
 
         verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
-                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
         verify(webSocketPush, never()).push(any(), any(), anyString());
     }
@@ -243,7 +244,7 @@ class UrgentAlertNotificationRouterTest {
         membersAndSubscribers();
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
-                anyString(), eq(ALERT_ID))).thenReturn(0);
+                anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(false);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -252,7 +253,7 @@ class UrgentAlertNotificationRouterTest {
         router().onUrgentAlertPublished(event());
 
         verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
-                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID));
+                eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
         verify(webSocketPush).push(eq(MEMBER), eq(NotificationType.URGENT_ALERT), anyString());
     }
@@ -270,7 +271,7 @@ class UrgentAlertNotificationRouterTest {
         membersAndSubscribers();
         admitMemberThroughMembership();
         when(repository.insertOnce(any(), eq(MEMBER), eq(NotificationType.URGENT_ALERT.name()),
-                anyString(), eq(ALERT_ID))).thenReturn(0);
+                anyString(), eq(ALERT_ID), any(), any())).thenReturn(0);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.EMAIL))
                 .thenReturn(true);
         when(deliveryLedger.recordDelivery(ALERT_ID, MEMBER, NotificationDeliveryChannel.WS))
@@ -298,6 +299,6 @@ class UrgentAlertNotificationRouterTest {
 
         router().onUrgentAlertPublished(event());
 
-        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any());
+        verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any(), any(), any());
     }
 }
