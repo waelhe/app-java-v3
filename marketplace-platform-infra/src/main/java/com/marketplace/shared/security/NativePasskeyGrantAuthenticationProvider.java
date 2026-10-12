@@ -77,13 +77,20 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
         if (registeredClient.getClientSecret() != null
-                || !registeredClient.getClientAuthenticationMethods().contains(ClientAuthenticationMethod.NONE)
-                || registeredClient.getAuthorizationGrantTypes().contains(AuthorizationGrantType.REFRESH_TOKEN)
+                || !registeredClient.getClientAuthenticationMethods().equals(Set.of(ClientAuthenticationMethod.NONE))
+                || !registeredClient.getAuthorizationGrantTypes().equals(Set.of(
+                        AuthorizationGrantType.AUTHORIZATION_CODE,
+                        NativePasskeyGrantAuthenticationToken.GRANT_TYPE))
+                || !registeredClient.getClientSettings().isRequireProofKey()
+                || !registeredClient.getClientSettings().isRequireAuthorizationConsent()
+                || !registeredClient.getScopes().equals(Set.of("openid", "profile"))
                 || !OAuth2TokenFormat.SELF_CONTAINED.equals(
                         registeredClient.getTokenSettings().getAccessTokenFormat())) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
-        if (!registeredClient.getScopes().contains("profile")) {
+        Set<String> requestedScopes = grant.getRequestedScopes().isEmpty()
+                ? Set.of("profile") : grant.getRequestedScopes();
+        if (!Set.of("profile").containsAll(requestedScopes)) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_SCOPE);
         }
 
@@ -116,7 +123,7 @@ public final class NativePasskeyGrantAuthenticationProvider implements Authentic
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
         }
 
-        Set<String> authorizedScopes = Set.of("profile");
+        Set<String> authorizedScopes = Set.copyOf(requestedScopes);
         OAuth2TokenContext tokenContext = DefaultOAuth2TokenContext.builder()
                 .registeredClient(registeredClient)
                 .principal(userAuthentication)
