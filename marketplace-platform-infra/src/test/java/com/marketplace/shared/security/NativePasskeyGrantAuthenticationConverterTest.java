@@ -3,11 +3,11 @@ package com.marketplace.shared.security;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
-import org.springframework.security.authentication.TestingAuthenticationToken;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,23 +23,22 @@ class NativePasskeyGrantAuthenticationConverterTest {
     }
 
     @Test
-    void leavesOtherGrantTypesForSpringAuthorizationServerConverters() {
+    void leavesOtherGrantTypesForSpringSecurityConverters() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+
         assertThat(this.converter.convert(request)).isNull();
     }
 
     @Test
-    void convertsOnlyTheSingleChallengeAndAssertionParameters() {
+    void convertsSingleChallengeAndAssertionParameters() {
         Authentication clientPrincipal =
                 new TestingAuthenticationToken("native-client", "not-a-secret", "ROLE_CLIENT");
         SecurityContextHolder.getContext().setAuthentication(clientPrincipal);
 
-        MockHttpServletRequest request = validRequest();
-        Authentication result = this.converter.convert(request);
+        NativePasskeyGrantAuthenticationToken grant =
+                (NativePasskeyGrantAuthenticationToken) this.converter.convert(validRequest());
 
-        assertThat(result).isInstanceOf(NativePasskeyGrantAuthenticationToken.class);
-        NativePasskeyGrantAuthenticationToken grant = (NativePasskeyGrantAuthenticationToken) result;
         assertThat(grant.getGrantType()).isEqualTo(NativePasskeyGrantAuthenticationToken.GRANT_TYPE);
         assertThat(grant.getChallengeId()).isEqualTo("47fc1bd0-4b40-4b0b-a35b-eebc05b6f920");
         assertThat(grant.getCredentialJson()).contains("\"type\":\"public-key\"");
@@ -48,7 +47,7 @@ class NativePasskeyGrantAuthenticationConverterTest {
     }
 
     @Test
-    void parsesSpaceSeparatedOAuthScopes() {
+    void parsesOAuthScopesSeparatedBySpaces() {
         MockHttpServletRequest request = validRequest();
         request.setParameter(OAuth2ParameterNames.SCOPE, "profile openid");
 
@@ -59,22 +58,6 @@ class NativePasskeyGrantAuthenticationConverterTest {
     }
 
     @Test
-    void rejectsRepeatedGrantTypeAndScopeParameters() {
-        MockHttpServletRequest repeatedGrant = validRequest();
-        repeatedGrant.addParameter(OAuth2ParameterNames.GRANT_TYPE,
-                NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue());
-        assertThatThrownBy(() -> this.converter.convert(repeatedGrant))
-                .isInstanceOf(OAuth2AuthenticationException.class);
-
-        MockHttpServletRequest repeatedScope = validRequest();
-        repeatedScope.addParameter(OAuth2ParameterNames.SCOPE, "profile");
-        repeatedScope.addParameter(OAuth2ParameterNames.SCOPE, "openid");
-        assertThatThrownBy(() -> this.converter.convert(repeatedScope))
-                .isInstanceOf(OAuth2AuthenticationException.class);
-    }
-
-    @Test
-    void rejectsMissingAndRepeatedSecurityParameters() {    @Test
     void rejectsMissingAndRepeatedSecurityParameters() {
         MockHttpServletRequest missing = new MockHttpServletRequest();
         missing.setParameter(OAuth2ParameterNames.GRANT_TYPE,
@@ -83,9 +66,21 @@ class NativePasskeyGrantAuthenticationConverterTest {
         assertThatThrownBy(() -> this.converter.convert(missing))
                 .isInstanceOf(OAuth2AuthenticationException.class);
 
-        MockHttpServletRequest duplicate = validRequest();
-        duplicate.addParameter("challenge_id", "second-value");
-        assertThatThrownBy(() -> this.converter.convert(duplicate))
+        MockHttpServletRequest duplicateChallenge = validRequest();
+        duplicateChallenge.addParameter("challenge_id", "second-value");
+        assertThatThrownBy(() -> this.converter.convert(duplicateChallenge))
+                .isInstanceOf(OAuth2AuthenticationException.class);
+
+        MockHttpServletRequest duplicateGrant = validRequest();
+        duplicateGrant.addParameter(OAuth2ParameterNames.GRANT_TYPE,
+                NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue());
+        assertThatThrownBy(() -> this.converter.convert(duplicateGrant))
+                .isInstanceOf(OAuth2AuthenticationException.class);
+
+        MockHttpServletRequest duplicateScope = validRequest();
+        duplicateScope.addParameter(OAuth2ParameterNames.SCOPE, "profile");
+        duplicateScope.addParameter(OAuth2ParameterNames.SCOPE, "openid");
+        assertThatThrownBy(() -> this.converter.convert(duplicateScope))
                 .isInstanceOf(OAuth2AuthenticationException.class);
     }
 
