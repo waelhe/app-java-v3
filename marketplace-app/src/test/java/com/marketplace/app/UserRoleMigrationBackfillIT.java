@@ -1,15 +1,21 @@
 package com.marketplace.app;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
+import test.config.IntegrationContainers;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -22,53 +28,62 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Phase 1 (the unified plan §10 — D-03 multi-role) — the V187 backfill's
  * own acceptance proof, run against the REAL migration chain on an
- * isolated PostgreSQL (the {@code AuthorizedClientPersistenceIT}
- * programmatic-Flyway shape, applied to the app's own {@code db/migration}
- * tree): the backfill must give every LIVE account exactly ONE active
- * assignment mirroring its OWN {@code users.role} — preserving the
- * account's access without expanding it («الحسابات القائمة تحفظ وصولها
- * بلا توسيع صلاحيات», the Phase-1 gate) — and nothing for the withdrawn
- * (soft-deleted) memberships. The gateway's other legs — the effective
- * authorities view and the closed vocabularies on the booted chain — are
- * the {@code UserRoleMigrationIntegrationTest}'s subject; this class
- * proves the WRITE the migration itself performs, so the backfill is
- * exercised exactly as production will experience it: rows inserted by
- * V187 over a pre-existing users population.
+ * isolated PostgreSQL: the backfill must give every LIVE account exactly
+ * ONE active assignment mirroring its OWN {@code users.role} —
+ * preserving the account's access without expanding it («الحسابات
+ * القائمة تحفظ وصولها بلا توسيع صلاحيات», the Phase-1 gate) — and
+ * nothing for the withdrawn (soft-deleted) memberships. The gateway's
+ * other legs — the effective authorities view and the closed
+ * vocabularies on the booted chain — are the {@code
+ * UserRoleMigrationIntegrationTest}'s subject; this class proves the
+ * WRITE the migration itself performs, so the backfill is exercised
+ * exactly as production will experience it: the migration's own
+ * statement over a pre-existing users population.
  *
- * <p>The two-phase migrate is the official Flyway API doing exactly what
- * the plan's Phase-0 checklist prescribes for an upgrade-path check: apply
- * the chain UP TO V181 (the pre-wave head), populate the pre-existing
- * accounts, then apply the wave (V187..V189) on top — the same order the
- * live production database will replay.
+ * <p><b>The chain rides Spring Boot's Flyway; the statement rides the
+ * migration file itself</b> (the measured restructure, 2026-10-12): the
+ * class's original shape ran the chain PROGRAMMATICALLY
+ * (Flyway.configure()...target(181/latest)) — and hung deterministically
+ * inside V51's {@code CREATE INDEX CONCURRENTLY} on two measured CI runs
+ * (07:34Z and 13:38Z: the migration chain never advanced past "Migrating
+ * schema public to version 51 [non-transactional]" while the runner sat
+ * until its 6-hour ceiling). The SAME full chain — V51 and every other
+ * CONCURRENTLY migration included — is proven green under Spring Boot's
+ * autoconfigured Flyway on every CI run of this repository (the {@code
+ * CatalogSearchFullTextIntegrationTest}/{@code
+ * UserRoleMigrationIntegrationTest} house pattern: {@code
+ * spring.flyway.enabled=true + ddl-auto=none}), so this class now rides
+ * that mechanism for the schema. The backfill transition itself stays
+ * honest: the test inserts the pre-wave accounts (no assignment rows —
+ * the exact pre-V187 shape a live production database presents), then
+ * executes V187's backfill statement <b>verbatim, read from the
+ * migration file on the classpath</b> — the same INSERT..SELECT
+ * production will run, not a re-implementation — and asserts the
+ * no-expansion invariant over the result.</p>
  */
+@SpringBootTest(properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=none",
+})
+@ActiveProfiles("test")
+@TestPropertySource(properties = {
+        // The migration tests hold pristine-database contracts — the
+        // trial-zone content stays out (the application-test.yml override
+        // already binds this; restated on the class for its own reader).
+        "spring.flyway.placeholders.seedContent=false"
+})
 @Testcontainers(disabledWithoutDocker = true)
 class UserRoleMigrationBackfillIT {
 
     @Container
-    @SuppressWarnings({"resource", "rawtypes"}) // Lifecycle managed by @Testcontainers; raw type matches the established container pattern.
-    static PostgreSQLContainer postgres = new PostgreSQLContainer(
-            DockerImageName.parse("postgis/postgis:18-3.6-alpine")
-                    .asCompatibleSubstituteFor("postgres"));
+    @ServiceConnection
+    @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; the established IntegrationContainers factory shape.
+    static PostgreSQLContainer postgres = IntegrationContainers.postgres();
 
-    private static JdbcTemplate jdbcTemplate;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private static final Instant OLD = Instant.parse("2024-03-01T10:00:00Z");
-
-    private void migrateTo(String target) {
-        Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-                .locations("classpath:db/migration")
-                // The application-test.yml posture for the content seed —
-                // the trial-zone content stays out of every test database.
-                .placeholders(java.util.Map.of("seedContent", "false"))
-                .target(target)
-                .load()
-                .migrate();
-        if (jdbcTemplate == null) {
-            jdbcTemplate = new JdbcTemplate(new DriverManagerDataSource(
-                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()));
-        }
-    }
 
     private static void insertUser(UUID id, String subject, String role, Instant createdAt,
                                    boolean deleted) {
@@ -79,19 +94,48 @@ class UserRoleMigrationBackfillIT {
                 Timestamp.from(createdAt));
     }
 
+    /**
+     * V187's backfill statement, VERBATIM from the migration file on the
+     * classpath — the exact INSERT..SELECT production runs, not a
+     * re-implementation. Line comments are stripped; the statement is
+     * located by its INSERT keyword and cut at its terminating
+     * semicolon (the migration file carries exactly one such statement).
+     */
+    private static String backfillStatement() {
+        String path = "/db/migration/V187__user_role_assignments.sql";
+        try (InputStream in = UserRoleMigrationBackfillIT.class.getResourceAsStream(path)) {
+            assertThat(in).as("the migration file rides the classpath: %s", path).isNotNull();
+            String sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            String stripped = String.join("\n",
+                    sql.lines().filter(line -> !line.trim().startsWith("--")).toList());
+            int start = stripped.indexOf("INSERT INTO user_role_assignments");
+            assertThat(start).as("the backfill statement is present in the migration file")
+                    .isNotNegative();
+            int end = stripped.indexOf(';', start);
+            assertThat(end).as("the backfill statement terminates").isGreaterThan(start);
+            return stripped.substring(start, end + 1);
+        } catch (IOException failure) {
+            throw new IllegalStateException("Cannot read the V187 migration file", failure);
+        }
+    }
+
     @Test
     void backfillMirrorsEveryLiveAccountsOwnRole_withoutAnyExpansion() {
         UUID consumerId = UUID.randomUUID();
         UUID providerId = UUID.randomUUID();
         UUID adminId = UUID.randomUUID();
         UUID deletedId = UUID.randomUUID();
-        migrateTo("181");
+        // The pre-wave population: live accounts carrying their own
+        // users.role and NO assignment rows — exactly the state a live
+        // production database presents to V187 (the booted chain's own
+        // backfill pass found an empty users table: seedContent=false).
         insertUser(consumerId, "backfill-consumer@example.com", "CONSUMER", OLD, false);
         insertUser(providerId, "backfill-provider@example.com", "PROVIDER", OLD.plusSeconds(60), false);
         insertUser(adminId, "backfill-admin@example.com", "ADMIN", OLD.plusSeconds(120), false);
         insertUser(deletedId, "backfill-deleted@example.com", "PROVIDER", OLD.plusSeconds(180), true);
 
-        migrateTo("latest");
+        // The backfill itself — the migration's own statement, verbatim.
+        jdbcTemplate.update(backfillStatement());
 
         // Exactly ONE active assignment per live account, and it mirrors
         // its OWN users.role — the no-expansion invariant is a JOIN: no
@@ -140,7 +184,6 @@ class UserRoleMigrationBackfillIT {
     @Test
     void theClosedVocabularyAndTheOneActivePairAreEnforcedOnTheRealTable() {
         UUID userId = UUID.randomUUID();
-        migrateTo("latest");
         insertUser(userId, "constraint-account@example.com", "CONSUMER", OLD, false);
 
         // The role CHECK carries exactly the closed V1 vocabulary — the
