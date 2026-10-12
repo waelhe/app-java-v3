@@ -1,13 +1,3 @@
-marketplace:
-  security:
-    passkeys:
-      # Passkeys remain disabled until the actual Android release signing identity is configured.
-      rp-id: ${WEBAUTHN_RP_ID:}
-      rp-name: ${WEBAUTHN_RP_NAME:Marketplace}
-      allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS:}
-      android-package-name: ${ANDROID_APP_PACKAGE_NAME:com.marketplace.android}
-      android-sha256-cert-fingerprints: ${ANDROID_APP_SHA256_CERT_FINGERPRINTS:}
-
 spring:
   application:
     name: marketplace
@@ -837,3 +827,14 @@ marketplace:
       # a key containing a comma cannot be expressed in this channel
       # (base64/hex secrets never do).
       subject-hmac-previous-keys: ${PSEUDONYMIZATION_HMAC_PREVIOUS_KEYS:}
+    # Native Android passkey authentication (#555): WebAuthn relying-party
+    # settings for Spring Security's webauthn module. Passkeys stay disabled
+    # (fail closed) until the actual Android release signing identity is
+    # configured — the same env-channel pattern as every security credential
+    # above (blank = capability OFF, never a guessed value in production).
+    passkeys:
+      rp-id: ${WEBAUTHN_RP_ID:}
+      rp-name: ${WEBAUTHN_RP_NAME:Marketplace}
+      allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS:}
+      android-package-name: ${ANDROID_APP_PACKAGE_NAME:com.marketplace.android}
+      android-sha256-cert-fingerprints: ${ANDROID_APP_SHA256_CERT_FINGERPRINTS:}
