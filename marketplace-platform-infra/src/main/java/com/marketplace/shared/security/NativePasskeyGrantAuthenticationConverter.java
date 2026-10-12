@@ -1,5 +1,8 @@
 package com.marketplace.shared.security;
 
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -12,13 +15,9 @@ import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Arrays;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 /**
  * Parses only the native passkey extension grant. Other grant types are left to
- * Spring Authorization Server's own converters.
+ * Spring Security Authorization Server's own converters.
  */
 @Component
 public final class NativePasskeyGrantAuthenticationConverter implements AuthenticationConverter {
@@ -26,6 +25,7 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
     private static final String CHALLENGE_ID = "challenge_id";
     private static final String CREDENTIAL = "credential";
     private static final int MAX_CREDENTIAL_JSON_CHARS = 32_768;
+    private static final int MAX_SCOPE_CHARS = 256;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -44,8 +44,8 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
         String credentialJson = singleParameter(request, CREDENTIAL);
         Set<String> requestedScopes = requestedScopes(request);
         if (!StringUtils.hasText(challengeId)
-                || !StringUtils.hasText(credentialJson)
                 || challengeId.length() > 64
+                || !StringUtils.hasText(credentialJson)
                 || credentialJson.length() > MAX_CREDENTIAL_JSON_CHARS) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
         }
@@ -60,7 +60,7 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
         if (values == null) {
             return Set.of();
         }
-        if (values.length != 1 || values[0].length() > 256) {
+        if (values.length != 1 || values[0].length() > MAX_SCOPE_CHARS) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
         }
         String value = values[0].trim();
