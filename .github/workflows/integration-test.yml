@@ -25,7 +25,13 @@ on:
     # The stacked bases are listed while the wave is in flight and
     # retire with it in the post-merge truth-sync (the documented
     # #540/#541 precedent's own inertness rule).
-    branches: [ main, feat/phase7-notification-routing ]
+    # The #544/#545/#543 stacked wave rides the same §4.1 mechanism:
+    # BOTH stacked bases are listed while the wave is in flight —
+    # feat/phase5-unified-search-arabic gates #545 (phase7's own PR
+    # against its base), feat/phase7-notification-routing gates #543
+    # (this branch's PR against its base). Both retire with the wave
+    # in the post-merge truth-sync (the precedent's inertness rule).
+    branches: [ main, feat/phase5-unified-search-arabic, feat/phase7-notification-routing ]
 
 
 
