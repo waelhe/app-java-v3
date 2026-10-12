@@ -22,8 +22,8 @@ public final class NativePasskeyAssetLinksController {
     private final List<String> fingerprints;
 
     public NativePasskeyAssetLinksController(
-            @Value("\${ANDROID_APP_PACKAGE_NAME:com.marketplace.android}") String packageName,
-            @Value("\${ANDROID_APP_SHA256_CERT_FINGERPRINTS:}") String fingerprints) {
+            @Value("$" + "{ANDROID_APP_PACKAGE_NAME:com.marketplace.android}") String packageName,
+            @Value("$" + "{ANDROID_APP_SHA256_CERT_FINGERPRINTS:}") String fingerprints) {
         this.packageName = packageName.trim();
         this.fingerprints = StringUtils.hasText(fingerprints)
                 ? Arrays.stream(fingerprints.split(",")).map(String::trim)
