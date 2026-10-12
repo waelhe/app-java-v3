@@ -94,6 +94,7 @@ internal fun SignedInScaffold(
     onRequestVerification: () -> Unit,
     onSignOutOnDevice: () -> Unit,
     onRegisterPasskey: () -> Unit,
+    passkeysAvailable: Boolean,
     onPropertyQuery: (String) -> Unit,
     onPropertyPurpose: (String) -> Unit,
     onPropertyType: (String) -> Unit,
@@ -208,7 +209,9 @@ internal fun SignedInScaffold(
                     state, onDirectoryQuery, onDirectoryMinRating, onSearchDirectory, onRefresh
                 )
                 MainTab.NOTIFICATIONS -> NotificationsScreen(state, onRefresh, onMarkRead)
-                MainTab.PROFILE -> ProfileScreen(state, onRequestVerification, onSignOutOnDevice, onRegisterPasskey)
+                MainTab.PROFILE -> ProfileScreen(
+                    state, onRequestVerification, onSignOutOnDevice, onRegisterPasskey, passkeysAvailable
+                )
             }
         }
     }
@@ -525,7 +528,8 @@ private fun ProfileScreen(
     state: AppUiState,
     onRequestVerification: () -> Unit,
     onSignOut: () -> Unit,
-    onRegisterPasskey: () -> Unit
+    onRegisterPasskey: () -> Unit,
+    passkeysAvailable: Boolean
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -577,7 +581,10 @@ private fun ProfileScreen(
                 }
             }
         }
-        ElevatedCard(shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+        if (passkeysAvailable) ElevatedCard(
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = androidx.compose.ui.graphics.Color.White)
+        ) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
