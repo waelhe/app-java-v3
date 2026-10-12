@@ -41,6 +41,8 @@ data class AppUiState(
     val silentReauthRequired: Boolean = false,
     val loadingAccount: Boolean = false,
     val authError: String? = null,
+    val passkeySignInBusy: Boolean = false,
+    val passkeyRegistrationBusy: Boolean = false,
     val membership: MembershipDto? = null,
     val scopeName: String? = null,
     val membershipRequired: Boolean = false,
@@ -193,7 +195,41 @@ class CommunityViewModel(
     private var searchRequestId: Long = 0
 
     fun authenticationFailed(message: String) {
-        _uiState.update { it.copy(authError = message, authSuccess = null, loadingAccount = false) }
+        _uiState.update {
+            it.copy(
+                authError = message,
+                authSuccess = null,
+                loadingAccount = false,
+                passkeySignInBusy = false
+            )
+        }
+    }
+
+    fun passkeySignInStarted() {
+        _uiState.update { it.copy(passkeySignInBusy = true, authError = null, authSuccess = null) }
+    }
+
+    fun passkeySignInFailed(message: String) {
+        _uiState.update {
+            it.copy(passkeySignInBusy = false, authError = message, authSuccess = null, loadingAccount = false)
+        }
+    }
+
+    fun passkeyRegistrationStarted() {
+        _uiState.update { it.copy(passkeyRegistrationBusy = true, notice = null) }
+    }
+
+    fun passkeyRegistrationCompleted() {
+        _uiState.update {
+            it.copy(
+                passkeyRegistrationBusy = false,
+                notice = "تم إعداد مفتاح المرور. يمكنك استخدامه لتسجيل الدخول من هذا الجهاز."
+            )
+        }
+    }
+
+    fun passkeyRegistrationFailed(message: String) {
+        _uiState.update { it.copy(passkeyRegistrationBusy = false, notice = message) }
     }
 
     fun authenticated(accessToken: String, idToken: String? = null) {
@@ -210,6 +246,8 @@ class CommunityViewModel(
             loadingAccount = true,
             authError = null,
             authSuccess = null,
+            passkeySignInBusy = false,
+            passkeyRegistrationBusy = false,
             submitBusy = false,
             uploadProgress = null,
             notice = if (savedState?.pendingPhotoPostId != null) {
@@ -259,6 +297,16 @@ class CommunityViewModel(
         idTokenHint = null
         _uiState.value = AppUiState(sessionRestoreAttempted = true)
         return idToken
+    }
+
+    fun completeLocalSignOut() {
+        idTokenHint = null
+        silentReauthInFlight = true
+        stateBeforeSessionRecovery = null
+        _uiState.value = AppUiState(
+            sessionRestoreAttempted = true,
+            authSuccess = "تم تسجيل الخروج من هذا الجهاز. تنتهي صلاحية رمز الوصول تلقائيًا خلال 15 دقيقة."
+        )
     }
 
     fun completeSignOut(errorMessage: String? = null) {
