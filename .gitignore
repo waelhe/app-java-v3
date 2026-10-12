@@ -37,3 +37,6 @@ cp.txt
 # Node — Railway IaC SDK (needed only to evaluate .railway/railway.ts via the
 # Railway CLI; the app itself is Java/Maven and has no Node runtime)
 node_modules/
+
+# jqwik engine-private run database (jqwik user guide: "The database file in which to store data of previous runs") — never source
+.jqwik-database

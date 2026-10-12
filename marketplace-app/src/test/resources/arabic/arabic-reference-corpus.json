@@ -1,0 +1,463 @@
+{
+  "corpus": "arabic-search-reference-corpus",
+  "version": "1.0.0",
+  "measuredAgainst": "PostgreSQL 18.2 (the postgis/postgis:18-3.6-alpine image family the integration containers run)",
+  "measuredAt": "2026-10-10",
+  "purpose": "الخطة §5.2-1: المجموعة العربية المرجعية الممثلة الموسومة — أساس قياس قابل للمراجعة لسلوك المحرك المعجمي/الترائيجرام (D-06/D-07). كل توصيق أدناه نتيجة قياس فعلي على PostgreSQL 18 بنفس شكلي الاستعلام الإنتاجيين (FTS العربية + pg_trgm). القياس الكامل يجري في CI/Testcontainers (ArabicReferenceCorpusIntegrationTest) — الإدخالات صادقات مقيسة لا رغبات.",
+  "sqlShapes": {
+    "fts": "to_tsvector('arabic', coalesce(title,'') || ' ' || coalesce(body,'')) @@ websearch_to_tsquery('arabic', :q) — the exact predicate NeighborhoodPostRepository.searchVisibleFullText runs",
+    "trigram": ":q <% (coalesce(title,'') || ' ' || coalesce(body,'')) ordered by word_similarity(:q, ...) — the exact predicate NeighborhoodPostRepository.searchVisibleSimilar runs, with pg_trgm.word_similarity_threshold at its 0.6 default (the repository deliberately does not override it)"
+  },
+  "domainsNote": "المجالان المبحوثان نصياً في المنصة اليوم: LISTING (قوائم المزودين عبر /api/v1/search) و COMMUNITY_POST (منشورات الحي عبر بحث FTS العربي). مصادر الاكتشاف غير النصية (فعاليات/وظائف/تنبيهات) تُقرأ عبر منافذها فلا تدخل هذه المجموعة — §5.1: لا حقول بلا معنى لكل مجال.",
+  "documents": [
+    {
+      "id": "D01",
+      "domain": "LISTING",
+      "variant": "MIXED_ARABIC_LATIN",
+      "title": "مقهى Coffee Corner للدراسات",
+      "body": "قهوة مختصة وواي فاي مجاني وأجواء هادئة",
+      "queries": [
+        {
+          "q": "coffee",
+          "fts": true,
+          "trigram": true,
+          "note": "الرموز اللاتينية تمر عبر تكوين arabic بحروف صغيرة — لا تُدرع ولا تُفلتر"
+        },
+        {
+          "q": "مقهى",
+          "fts": true,
+          "trigram": true,
+          "note": "تطابق مباشر"
+        },
+        {
+          "q": "مقهي",
+          "fts": false,
+          "trigram": true,
+          "note": "فجوة مقيسة: ى/ي لا تُطوى معجمياً — ترائيجرام يسترجعها على حد 0.600 (ws مقيسة = 0.600)"
+        },
+        {
+          "q": "واي فاي",
+          "fts": false,
+          "trigram": true,
+          "note": "فجوة مقيسة: النص يحوي 'وواي' (الواو العاطفة ملتصقة) فلا يتحقق AND — ترائيجرام يسترجع (ws 0.714)"
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "domain": "COMMUNITY_POST",
+      "variant": "MIXED_ARABIC_LATIN",
+      "title": "دورات English في المركز الثقافي",
+      "body": "تعلم اللغة الانجليزية مع مدرسة معتمدة",
+      "queries": [
+        {
+          "q": "English",
+          "fts": true,
+          "trigram": true,
+          "note": "الكلمة اللاتينية كاملة داخل عنوان عربي"
+        },
+        {
+          "q": "انجليزية",
+          "fts": true,
+          "trigram": true,
+          "note": "بدون همزة/ألف التعريف يطابق 'الانجليزية' — القاموس يطوي السابقات"
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "domain": "COMMUNITY_POST",
+      "variant": "DIALECT",
+      "title": "شو أحسن محل حلويات بالحي",
+      "body": "جربت كنافة المحل الجديد ولذيذة كتير",
+      "queries": [
+        {
+          "q": "حلويات",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "كتير",
+          "fts": true,
+          "trigram": true,
+          "note": "الرمز اللهجي يطابق نفسه معجمياً — التطابق الحرفي لا الترادف"
+        },
+        {
+          "q": "لذيذة",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "جدا",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: مرادف الفصحى لا يطابق الرمز اللهجي — الترادف عبر اللهجات ليس ميزة محرك معجمي"
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "domain": "LISTING",
+      "variant": "DIALECT",
+      "title": "فطور شعبي أصيل",
+      "body": "منسف وفتة ومقلوبة على أصولها",
+      "queries": [
+        {
+          "q": "منسف",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "أطباق تقليدية",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: وصف فصحي لا يطابق أسماء أطباق لهجية"
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "domain": "COMMUNITY_POST",
+      "variant": "HAMZA_ALEF_YA_VARIANTS",
+      "title": "أجمل إطلالة على الوادي",
+      "body": "منزل الإحسان يستقبل الزوار أيام السبت",
+      "queries": [
+        {
+          "q": "إطلالة",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "اجمل",
+          "fts": true,
+          "trigram": false,
+          "note": "القاموس يطوي الهمزة (أ→ا) — ترائيجرام لا يطوي (ws 0.400)"
+        },
+        {
+          "q": "اطلالة",
+          "fts": true,
+          "trigram": false,
+          "note": "إسقاط الهمزة من الاستعلام يطابق — الطي معجمي لا ترائي"
+        },
+        {
+          "q": "الإحسان",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "الاحسان",
+          "fts": true,
+          "trigram": false,
+          "note": "همزة الاستعلام المسقطة تُطوى — ترائيجرام لا يطوي (0.250)"
+        },
+        {
+          "q": "علي الوادي",
+          "fts": false,
+          "trigram": true,
+          "note": "فجوة مقيسة: على (ألف مقصورة) ليست علي (ياء) معجمياً — ترائيجرام يسترجع (0.692)"
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "domain": "LISTING",
+      "variant": "HAMZA_ALEF_YA_VARIANTS",
+      "title": "شقة مفروشة للإيجار في الأمل",
+      "body": "إطلالة بحرية وآمنة للعائلات",
+      "queries": [
+        {
+          "q": "إيجار",
+          "fts": true,
+          "trigram": true,
+          "note": "للإيجار في النص تُطوى سابقة اللام والهمزة"
+        },
+        {
+          "q": "ايجار",
+          "fts": true,
+          "trigram": false,
+          "note": "بدون همزة يطابق — ترائيجرام لا يطوي (0.500)"
+        },
+        {
+          "q": "امنة",
+          "fts": true,
+          "trigram": false,
+          "note": "آمنة تُطوى إلى نفس الرمز"
+        },
+        {
+          "q": "شقه",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: خطأ إملائي بكلمة ثلاثية دون عتبة 0.6 الافتراضية — حد موثق"
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "domain": "COMMUNITY_POST",
+      "variant": "DIACRITICS_TATWEEL",
+      "title": "مكتبة الحي الشاملة",
+      "body": "نوفر كتبا دراسية وروايات مترجمة",
+      "queries": [
+        {
+          "q": "مُكْتَبَة",
+          "fts": true,
+          "trigram": false,
+          "note": "التشكيل يُشرَح في مقدّمة القاموس — ترائيجرام يحسب الحركات حروفاً (ws 0.100)"
+        },
+        {
+          "q": "مكــــتبة",
+          "fts": true,
+          "trigram": false,
+          "note": "التطويل يُشرَح معجمياً — ترائيجرام لا يشرحه (0.222)"
+        },
+        {
+          "q": "روايات",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "كتبا",
+          "fts": true,
+          "trigram": true,
+          "note": "تنوين الفتح مكتوب ألفاً يطابق نفسه"
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "domain": "LISTING",
+      "variant": "DIACRITICS_TATWEEL",
+      "title": "صالون حلاقة رجالي",
+      "body": "حلاقة وقص وتصفيف باحترافية",
+      "queries": [
+        {
+          "q": "صالُون",
+          "fts": true,
+          "trigram": false,
+          "note": "الفَتحة الاضطرارية على الواو تُغيّر سلاسل الثلاثيات حين يطلب المستخدم الصيغة المتحركة وحدها مقابل نص غير متحرك — عتبة 0.6 الافتراضية لا تتحقق؛ ذراع FTS تُطوي الحركات فتجيب (فجوة مقيسة لذراع الترائيجرام لا صمتاً)"
+        },
+        {
+          "q": "حلـــــاقة",
+          "fts": true,
+          "trigram": false,
+          "note": "التطويل يُشرَح والنص يحوي حلاقة/وقص مفصولتين بالواو"
+        },
+        {
+          "q": "صالون",
+          "fts": true,
+          "trigram": true
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "domain": "COMMUNITY_POST",
+      "variant": "COMMON_TYPOS",
+      "title": "مدرسة الأمل الأساسية",
+      "body": "تسجيل الطلاب للعام الدراسي الجديد",
+      "queries": [
+        {
+          "q": "مدرسه",
+          "fts": true,
+          "trigram": true,
+          "note": "تاء مربوطة↔هاء: الصورة المجردة تُطوى معجمياً (مدرس) — قياس مباشر"
+        },
+        {
+          "q": "مدرسة",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "الاساسية",
+          "fts": true,
+          "trigram": false,
+          "note": "همزة القطع المسقطة تُطوى — ترائيجرام لا يطوي (0.500)"
+        },
+        {
+          "q": "الطلاب",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "المدارس",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: جمع بألف مع التعريف يشتق رمزاً مختلفاً (مدارس ≠ مدرس) — الجمع المكسور ليس ميزة القاموس"
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "domain": "LISTING",
+      "variant": "BUSINESS_AND_PLACES",
+      "title": "مطعم برج الشام",
+      "body": "مشاوي ومقبلات شامية أصيلة",
+      "queries": [
+        {
+          "q": "مطعم",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "\"برج الشام\"",
+          "fts": true,
+          "trigram": true,
+          "note": "عبارة مقتبسة بصيغة websearch — مطابقة متتابعة"
+        },
+        {
+          "q": "برك",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: خطأ بكلمة قصيرة (برج) دون عتبة الترائيجرام — الحد الموثق للكلمات القصيرة"
+        },
+        {
+          "q": "الشام",
+          "fts": true,
+          "trigram": true
+        }
+      ]
+    },
+    {
+      "id": "D11",
+      "domain": "COMMUNITY_POST",
+      "variant": "BUSINESS_AND_PLACES",
+      "title": "افتتاح صيدلية قدسيا الجديدة",
+      "body": "قرب مستشفى قدسيا التخصصي في الشارع العام",
+      "queries": [
+        {
+          "q": "قدسيا",
+          "fts": true,
+          "trigram": true,
+          "note": "اسم مكان محلي (قدسيا — عقدة شجرة الجغرافيا المزروعة)"
+        },
+        {
+          "q": "صيدلية",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "مستشفى قدسيا",
+          "fts": true,
+          "trigram": true,
+          "note": "AND برمزين كليهما موجود"
+        },
+        {
+          "q": "صيدليا",
+          "fts": false,
+          "trigram": true,
+          "note": "خطأ حذف التاء المربوطة: FTS يفشل، ترائيجرام يسترجع (0.714)"
+        },
+        {
+          "q": "قديسيا",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: إبدال حرف داخل كلمة طويلة دون عتبة 0.6 — حد موثق لا وعد"
+        }
+      ]
+    },
+    {
+      "id": "D12",
+      "domain": "LISTING",
+      "variant": "BUSINESS_AND_PLACES",
+      "title": "مكتب توصيل من قدسيا إلى دمشق",
+      "body": "خدمة توصيل يومية للمغتربين",
+      "queries": [
+        {
+          "q": "دمشق",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "توصيل",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "خدمة",
+          "fts": true,
+          "trigram": true
+        },
+        {
+          "q": "خدمات",
+          "fts": false,
+          "trigram": false,
+          "note": "فجوة مقيسة: الجمع لا يُشتق إلى المفرد (خدمات ≠ خدم)"
+        }
+      ]
+    }
+  ],
+  "normalizationEvidence": [
+    {
+      "id": "N01",
+      "input": "أحمد",
+      "lexemes": [
+        "احمد"
+      ],
+      "note": "طي الهمزات أ/إ/آ إلى الألف"
+    },
+    {
+      "id": "N02",
+      "input": "مُكْتَبَة",
+      "lexemes": [
+        "مكتب"
+      ],
+      "note": "شرح التشكيل في مقدّمة القاموس"
+    },
+    {
+      "id": "N03",
+      "input": "مكـــتبة",
+      "lexemes": [
+        "مكتب"
+      ],
+      "note": "شرح التطويل"
+    },
+    {
+      "id": "N04",
+      "input": "المكتبة",
+      "lexemes": [
+        "مكتب"
+      ],
+      "note": "ألف التعريف تُشرَح"
+    },
+    {
+      "id": "N05",
+      "input": "على",
+      "lexemes": [
+        "علي"
+      ],
+      "note": "المقصورة تُشتق هنا — لكن علي (ياء) تُشتق إلى 'عل' — الاثنتان لا تلتقيان (فجوة ى/ي الموثقة)"
+    },
+    {
+      "id": "N06",
+      "input": "مدرسة",
+      "lexemes": [
+        "مدرس"
+      ],
+      "note": "تاء مربوطة تُشرَح"
+    },
+    {
+      "id": "N07",
+      "input": "مدرسه",
+      "lexemes": [
+        "مدرس"
+      ],
+      "note": "هاء تُشرَح إلى نفس رمز تاء مربوطة — الصورة المجردة"
+    },
+    {
+      "id": "N08",
+      "input": "المدارس",
+      "lexemes": [
+        "مدارس"
+      ],
+      "note": "الجمع بألف + التعريف لا يُشتق إلى جذبه"
+    },
+    {
+      "id": "N09",
+      "input": "مكتبات",
+      "lexemes": [
+        "مكتبا"
+      ],
+      "note": "جمع مذكر سالم لا يُشتق إلى المفرد"
+    }
+  ]
+}

@@ -46,4 +46,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying
     @Query("UPDATE Notification n SET n.read = true WHERE n.recipientId = :recipientId AND n.read = false")
     int markAllAsReadByRecipientId(@Param("recipientId") UUID recipientId);
+
+    /**
+     * Task 5-f (the delivery-dedup ledger): the replay gate — has THIS
+     * recipient already received a notification born from THIS source
+     * event? The pre-insert check of the
+     * {@code uq_notifications_source_event_once} partial unique index (the
+     * V93 provider_follow_alerts ledger discipline): the derived query
+     * answers the common sequential re-delivery before any write is
+     * attempted, the DB index remains the concurrent-insert backstop.
+     */
+    boolean existsByRecipientIdAndSourceEventId(UUID recipientId, UUID sourceEventId);
 }

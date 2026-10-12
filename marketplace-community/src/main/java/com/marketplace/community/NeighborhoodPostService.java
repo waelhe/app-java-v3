@@ -279,6 +279,57 @@ public class NeighborhoodPostService {
     }
 
     /**
+     * JT-20: the lost-and-found lifecycle command — the report's owner
+     * closes their own {@code LOST_FOUND} report (RESOLVED: found by
+     * other means, withdrawn, no longer relevant; FOUND: the item or
+     * being was recovered). The gate order is the {@link #deleteByAuthor}
+     * ownership gate cloned verbatim: the row is found by id (an unknown
+     * or soft-deleted post answers the honest 404 — Hibernate's
+     * {@code @SoftDelete} hides the deleted from {@code findById}
+     * itself), then the owner equality check answers 403 for anyone else
+     * — resolving a neighbor's report is the owner's story to close, not
+     * the community's vote. The category guard follows: a non-
+     * {@code LOST_FOUND} post answers the honest 409 — the operation
+     * conflicts with what the post IS (it carries no lost-and-found
+     * state to move; the V171 column is null for it by construction).
+     *
+     * <p>The idempotent read of the same state: a report already in the
+     * requested state answers 200 with its view and NO write — the
+     * double-tap and the retried request land on the same fact (the
+     * house's idempotent-command stance; the state flip itself rides the
+     * entity's package-private {@code applyLostFoundState}, the
+     * {@code hideByModerator} precedent verbatim).
+     *
+     * <p>Like the delete, the command is the owner's OWN management
+     * write — it does not run the {@code visiblePost} gate (an owner may
+     * resolve a report the moderation hid; the feed's read floor is a
+     * read concern). The Envers trail keeps the flip as a revision (the
+     * V24 convention).
+     */
+    @Observed(name = "community.post.lostFoundState")
+    public NeighborhoodPostView updateLostFoundState(UUID ownerId, UUID postId,
+                                                     LostFoundState state) {
+        NeighborhoodPost post = repository.findById(postId)
+                .orElseThrow(() -> new ResourceNotFoundException("Post", postId));
+        if (!post.getAuthorId().equals(ownerId)) {
+            throw new AccessDeniedException(
+                    "Only the post's author can update its lost-and-found state");
+        }
+        if (post.getCategory() != PostCategory.LOST_FOUND) {
+            throw new ConflictException(
+                    "Only LOST_FOUND posts carry a lost-and-found state — this post is a "
+                            + post.getCategory());
+        }
+        if (post.getLostFoundState() == state) {
+            // Idempotent: the fact is already stored — answer honestly,
+            // write nothing (a retried RESOLVED never re-stamps the row).
+            return NeighborhoodPostView.of(post);
+        }
+        post.applyLostFoundState(state);
+        return NeighborhoodPostView.of(repository.save(post));
+    }
+
+    /**
      * L47 (the Nextdoor-2026 completeness wave — gap #1): thank a VISIBLE
      * post — the feed's lightest write and Nextdoor's own first
      * signature. The gate order is the comment's own verbatim: the post

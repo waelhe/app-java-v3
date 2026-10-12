@@ -26,6 +26,20 @@ public interface ProviderListingRepository extends JpaRepository<ProviderListing
     Page<ProviderListing> findByStatus(ListingStatus status, Pageable pageable);
 
     /**
+     * JT-20 (#536 discovery waves D1-D4): the followed-sources rail's
+     * read — the {@code ProviderListingsPort} implementation's
+     * eligibility floor (ACTIVE only; soft-deleted rows are excluded
+     * automatically through the entity's @SoftDelete). Derived, so the
+     * storefront's own state semantics ride the repository mechanism —
+     * the adapter stamps the rail's complete deterministic order through
+     * the Pageable (createdAt DESC, id DESC — the D-N5 discipline), the
+     * same shape {@code findByStatus} answers to today.
+     */
+    Page<ProviderListing> findByProviderIdInAndStatus(Collection<UUID> providerIds,
+                                                      ListingStatus status,
+                                                      Pageable pageable);
+
+    /**
      * L33: the expiry job's scan — ACTIVE listings whose publication
      * window passed (strictly before: the boundary instant stays ACTIVE
      * until the next tick). Deterministic id order for stable paging.

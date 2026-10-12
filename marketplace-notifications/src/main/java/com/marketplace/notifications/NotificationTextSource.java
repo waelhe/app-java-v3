@@ -111,6 +111,21 @@ public class NotificationTextSource {
         return vocabularyWord("reportoutcome." + outcome, outcome, locale);
     }
 
+    /**
+     * Task 5-f: the disputes domain's stored RESOLUTION name
+     * ("REFUND_CONSUMER"/"RELEASE_PROVIDER"/"NO_ACTION" — the
+     * {@code DisputeResolution} vocabulary, carried by the relocated
+     * {@code DisputeResolvedEvent} as the stored name, the
+     * ContentReportResolvedEvent String precedent) rendered as the
+     * resolution word at the locale:
+     * {@code disputeresolution.REFUND_CONSUMER=refund to the consumer} …
+     * An unknown name rides through as the raw value — the honest
+     * degradation (the targettype/reportoutcome discipline).
+     */
+    public String disputeResolutionWord(String resolution, Locale locale) {
+        return vocabularyWord("disputeresolution." + resolution, resolution, locale);
+    }
+
     private String vocabularyWord(String key, String raw, Locale locale) {
         return source.getMessage(key, null, raw, locale);
     }

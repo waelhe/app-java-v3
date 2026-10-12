@@ -34,6 +34,13 @@ import java.util.UUID;
  *   <li>{@code status} is {@code VISIBLE} from this layer and flipped by
  *       L45's moderation alone ({@link PostStatus} documents the
  *       reservation); the feed reads VISIBLE only.</li>
+ *   <li>{@code lostFoundState} (JT-20, the V171 column) is filled ONLY
+ *       for {@code LOST_FOUND} posts — {@link LostFoundState#ACTIVE} at
+ *       publish, flipped by the owner's resolve command alone; every
+ *       other category carries NULL (a CHECK forcing a value would lie
+ *       about the five other categories). The discovery rail reads
+ *       ACTIVE only (AC-20: a resolved or recovered report never
+ *       masquerades as an active one).</li>
  * </ul>
  *
  * <p>Every BaseEntity column present from day one (the V25/V32 lesson);
@@ -71,6 +78,15 @@ public class NeighborhoodPost extends BaseEntity {
     @Column(name = "status", nullable = false, length = 30)
     private PostStatus status;
 
+    /**
+     * The lost-and-found lifecycle state (JT-20) — present ONLY when
+     * {@code category} is {@code LOST_FOUND} (null otherwise, the V171
+     * column's own documented shape).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lost_found_state", length = 20)
+    private LostFoundState lostFoundState;
+
     protected NeighborhoodPost() {
     }
 
@@ -98,6 +114,11 @@ public class NeighborhoodPost extends BaseEntity {
         post.title = title;
         post.body = body;
         post.status = PostStatus.VISIBLE;
+        // JT-20: the lost-and-found lifecycle starts the moment the
+        // report is published — ACTIVE only for LOST_FOUND, NULL for
+        // every other category (the V171 column's own documented shape).
+        post.lostFoundState =
+                category == PostCategory.LOST_FOUND ? LostFoundState.ACTIVE : null;
         return post;
     }
 
@@ -116,6 +137,20 @@ public class NeighborhoodPost extends BaseEntity {
         this.status = PostStatus.HIDDEN_BY_MODERATOR;
     }
 
+    /**
+     * JT-20: the lost-and-found lifecycle flip — the ONE write to
+     * {@code lostFoundState} outside the publish factory's own ACTIVE.
+     * The owner-gate (the {@code deleteByAuthor} equality check) and the
+     * LOST_FOUND-category guard live in the service, before this write;
+     * the idempotent same-state request never reaches here (the service
+     * answers 200 without any write). Package-private by design: the
+     * flip is the community domain's own — no surface outside this
+     * package resolves a neighbor's report.
+     */
+    void applyLostFoundState(LostFoundState state) {
+        this.lostFoundState = state;
+    }
+
     @Override
     public UUID getId() { return id; }
     public UUID getAuthorId() { return authorId; }
@@ -124,4 +159,7 @@ public class NeighborhoodPost extends BaseEntity {
     public String getTitle() { return title; }
     public String getBody() { return body; }
     public PostStatus getStatus() { return status; }
+
+    /** Null unless {@code category} is {@code LOST_FOUND} (the V171 shape). */
+    public LostFoundState getLostFoundState() { return lostFoundState; }
 }
