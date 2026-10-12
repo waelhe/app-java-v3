@@ -9,11 +9,13 @@ This is the acceptance procedure for the Android Credential Manager client and t
 3. If Google Play App Signing is enabled, use the **App signing key certificate** fingerprint shown in Play Console—not the upload-key fingerprint emitted by a local upload build. If the Play signing certificate is different, derive the Android origin from that Play signing certificate too.
 4. Never substitute a generated/debug key or an assumed fingerprint for a release identity.
 
-## 2. Configure a non-production relying party first
+## 2. Configure the designated Railway acceptance environment
 
-Use a dedicated Railway staging environment and its own sign-in hostname. The relying-party ID must be the bare hostname (no scheme, path, port, or trailing slash). The Railway project inspected on 2026-10-12 exposes a `production` environment only; no staging environment exists yet. Do not use production as staging or turn Passkeys on at `app-java-v3-production-59bf.up.railway.app` before a separate staging environment has been provisioned and the staging acceptance gate passes.
+For this project, the operator explicitly designates the existing Railway `production` environment as the staging/acceptance environment. Use its current sign-in hostname `app-java-v3-production-59bf.up.railway.app`; do not create a separate Railway environment. The relying-party ID must be that bare hostname (no scheme, path, port, or trailing slash).
 
-Set the following service variables in the target environment, using the actual release/distribution certificate and matching hostname:
+For temporary device acceptance, the configured signing identity must match the exact debug APK being installed. This permits validation against the designated test service but is **not** a production release identity. Before distributing a release APK/AAB, replace the debug certificate fingerprint and origin with the permanent release/App Signing certificate, then verify that Digital Asset Links and the WebAuthn origin allowlist match that release certificate.
+
+Set the following service variables on the `app-java-v3` Railway service in the existing `production` environment. While testing a debug APK, use the fingerprint/origin derived from that exact APK; before distribution, change both to the permanent release/distribution certificate:
 
 | Variable | Required value |
 | --- | --- |
@@ -29,11 +31,11 @@ The backend is deliberately fail-closed: the origin allowlist must exactly match
 
 ## 3. Verify Digital Asset Links over HTTPS
 
-From a terminal, replace `HOST` with the staging sign-in hostname:
+From a terminal, use the designated Railway acceptance hostname:
 
 ```bash
 set -euo pipefail
-HOST='staging-host.example'
+HOST='app-java-v3-production-59bf.up.railway.app'
 curl --fail --silent --show-error --max-redirs 0 \
   --dump-header /tmp/assetlinks.headers \
   "https://${HOST}/.well-known/assetlinks.json" \
@@ -75,10 +77,10 @@ Do not mark this feature E2E-complete until all of the following are recorded ag
 - A human completes passkey registration and subsequent sign-in on a physical Android device.
 - The app obtains a server-issued access token and calls a protected API successfully.
 
-No deployment to production is authorized by this runbook. Promote the configuration only after staging acceptance and explicit deployment approval.
+The existing Railway `production` environment is the authorized staging/acceptance target for this task, by explicit operator instruction. Apply the passkey configuration there and run the endpoint checks and real-device acceptance sequence. The debug certificate is temporary test trust only and must be replaced by the permanent release/App Signing identity before distributing a release.
 ## 6. Current deployment boundary (inspection snapshot: 2026-10-12)
 
 - The companion pull requests are still open: Android client [#548](https://github.com/waelhe/app-java-v3/pull/548) and backend [#555](https://github.com/waelhe/app-java-v3/pull/555). The backend PR must be integrated and deployed to the chosen staging environment before server passkey ceremonies can be tested.
-- The connected Railway production service has the public OAuth client configuration, but none of the WebAuthn relying-party/origin/certificate variables is present: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ALLOWED_ORIGINS`, `ANDROID_APP_PACKAGE_NAME`, and `ANDROID_APP_SHA256_CERT_FINGERPRINTS`. Consequently, the deployed service has not been configured to serve an active passkey relying party.
-- The actual release/distribution signing certificate fingerprint is not yet established in this inspection. Do not invent it, use a debug fingerprint, or enable the feature with an incomplete allowlist. Derive the identity from the certificate that will sign the APK installed on users' devices, then set the fingerprint and its exact Android origin together.
-- Production variables and deployments were not changed by this runbook update. Production promotion remains gated on a successful physical-device ceremony and explicit deployment approval.
+- At initial inspection the connected Railway service had the public OAuth client configuration, but none of the WebAuthn relying-party/origin/certificate variables was present. Recheck those variables and the active deployment after configuration.
+- The permanent release/distribution signing certificate is not provisioned in GitHub Actions yet; the four release keystore secrets were absent during inspection. A one-off debug identity may be used only for the exact staging APK used in acceptance, never as the permanent release identity.
+- The Railway `production` environment is the designated acceptance environment. Configure and deploy this feature there as requested; the permanent release identity must replace the test identity before a release is distributed.
