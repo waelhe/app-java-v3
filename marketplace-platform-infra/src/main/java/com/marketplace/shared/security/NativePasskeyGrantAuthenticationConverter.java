@@ -33,11 +33,19 @@ public final class NativePasskeyGrantAuthenticationConverter implements Authenti
         if (grantTypes == null) {
             return null;
         }
-        if (grantTypes.length != 1) {
-            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
+        boolean passkeyGrantPresent = false;
+        for (String grantType : grantTypes) {
+            if (NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue().equals(grantType)) {
+                passkeyGrantPresent = true;
+                break;
+            }
         }
-        if (!NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue().equals(grantTypes[0])) {
+        if (!passkeyGrantPresent) {
             return null;
+        }
+        if (grantTypes.length != 1
+                || !NativePasskeyGrantAuthenticationToken.GRANT_TYPE.getValue().equals(grantTypes[0])) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
         }
 
         String challengeId = singleParameter(request, CHALLENGE_ID);
