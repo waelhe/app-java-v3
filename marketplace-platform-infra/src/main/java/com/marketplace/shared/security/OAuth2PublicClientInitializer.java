@@ -137,9 +137,11 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
     }
 
     /**
-     * {@code requireProofKey(true)} is mandatory for a public client (RFC 9700 §2.1.1)
-     * and protects against the PKCE downgrade attack (SAS how-to). Consent is required,
-     * matching the confidential client's explicit setting (INV-2).
+     * {@code requireProofKey(true)} enforces PKCE for this public client (RFC 9700 §2.1.1).
+     * Spring Security Authorization Server exposes this through the documented
+     * {@code ClientSettings} API. Consent is also required for this registered client.
+     *
+     * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/core-model-components.html">Spring Security Authorization Server — Core Model / Components</a>
      */
     private static ClientSettings buildClientSettings() {
         return ClientSettings.builder()
@@ -149,9 +151,13 @@ public class OAuth2PublicClientInitializer implements ApplicationRunner {
     }
 
     /**
-     * No refresh-token settings on purpose: the refresh grant is absent and SAS "will not
-     * issue refresh tokens for a public client" (gh-297) — the access token (900s) plus
-     * the authorization-server session is the official pattern for this client class.
+     * This client intentionally does not register {@code refresh_token} as an
+     * authorization grant. Spring Security Authorization Server's authorization-code
+     * provider creates a refresh token only when the registered client permits the
+     * {@code refresh_token} grant; this client therefore receives no refresh token.
+     *
+     * @see <a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/core-model-components.html">Spring Security Authorization Server — Core Model / Components</a>
+     * @see <a href="https://github.com/spring-projects/spring-security/blob/7.1.1/oauth2/oauth2-authorization-server/src/main/java/org/springframework/security/oauth2/server/authorization/authentication/OAuth2AuthorizationCodeAuthenticationProvider.java">Spring Security 7.1.1 authorization-code provider</a>
      */
     private static TokenSettings buildTokenSettings() {
         return TokenSettings.builder()
