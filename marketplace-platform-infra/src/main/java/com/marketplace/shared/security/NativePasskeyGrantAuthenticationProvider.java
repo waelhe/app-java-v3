@@ -33,11 +33,10 @@ import com.marketplace.shared.config.MarketplaceProperties;
 import org.springframework.util.StringUtils;
 
 /**
- * Applies Spring Security's WebAuthn verifier, then delegates JWT encoding to
- * Spring Security's {@link JwtGenerator} adapter using the configured JWK source
- * and application claims customizer. Authorization persistence remains owned by
- * Spring Security's {@link OAuth2AuthorizationService}. The built-in grant
- * providers keep their framework-managed generator and default customizers.
+ * Applies Spring Security's WebAuthn verifier and delegates token creation to the
+ * same configured {@link OAuth2TokenGenerator} used by the built-in authorization
+ * server grants. Authorization persistence remains owned by Spring Security's
+ * {@link OAuth2AuthorizationService}; no second token-signing path is maintained.
  */
 @Component
 public final class NativePasskeyGrantAuthenticationProvider implements AuthenticationProvider {
