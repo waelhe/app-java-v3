@@ -69,16 +69,16 @@ public final class NativePasskeyService {
     public NativePasskeyService(
             JdbcTemplate jdbcTemplate,
             WebAuthnRelyingPartyOperations relyingPartyOperations,
+            WebAuthnAuthenticationProvider webAuthnAuthenticationProvider,
             UserDetailsService userDetailsService,
             NativePasskeyProperties properties,
             JsonMapper webAuthnMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.relyingPartyOperations = relyingPartyOperations;
+        this.webAuthnAuthenticationProvider = webAuthnAuthenticationProvider;
         this.userDetailsService = userDetailsService;
         this.properties = properties;
         this.webAuthnMapper = webAuthnMapper;
-        this.webAuthnAuthenticationProvider =
-                new WebAuthnAuthenticationProvider(relyingPartyOperations, userDetailsService);
     }
 
     public NativePasskeyChallengeResponse createAuthenticationOptions() {
