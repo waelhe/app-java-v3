@@ -67,8 +67,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            cd android
-            ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
+            cd android && ./gradlew :app:connectedDebugAndroidTest -PoidcClientId=android-community-native -PoidcRedirectUri=com.marketplace.android:/oauth2redirect
 
       - name: Upload debug APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
