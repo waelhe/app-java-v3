@@ -141,13 +141,20 @@ class UserRoleMigrationBackfillIT {
         // its OWN users.role — the no-expansion invariant is a JOIN: no
         // assignment may claim a role the account's row does not carry
         // (scoped to this test's own pre-migration population, the same
-        // shape the production replay would present).
+        // shape the production replay would present). Soft-deleted
+        // accounts are OUTSIDE the invariant's own letter («every LIVE
+        // account») — their empty answer is the SEPARATE assertion below
+        // (the withdrawn membership carries nothing to preserve); without
+        // this filter the deleted account's legit emptiness would read as
+        // a mismatch (the latent defect this line closes — the test's
+        // original programmatic-Flyway shape never got far enough to run).
         List<Map<String, Object>> mismatches = jdbcTemplate.queryForList(
                 "select u.id, u.role as user_role, ra.role as assigned_role "
                         + "from users u "
                         + "left join user_role_assignments ra "
                         + "  on ra.user_id = u.id and ra.revoked_at is null "
                         + "where u.id in (?, ?, ?, ?) "
+                        + "  and u.is_deleted = FALSE "
                         + "  and (ra.id is null or ra.role <> u.role)",
                 consumerId, providerId, adminId, deletedId);
         assertThat(mismatches).as("every live account holds exactly its own role").isEmpty();
