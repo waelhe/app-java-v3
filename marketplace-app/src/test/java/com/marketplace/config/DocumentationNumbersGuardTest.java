@@ -109,23 +109,39 @@ class DocumentationNumbersGuardTest {
         return m.group(1).trim();
     }
 
-    private record MigrationInventory(int versionedCount, int maxVersion, int repeatableCount) {
+    private record MigrationInventory(int versionedCount, String maxVersion, int repeatableCount) {
         int totalFiles() {
             return versionedCount + repeatableCount;
         }
     }
 
+    private static int compareVersions(String left, String right) {
+        List<Integer> leftParts = Stream.of(left.split("[._]")).map(Integer::parseInt).toList();
+        List<Integer> rightParts = Stream.of(right.split("[._]")).map(Integer::parseInt).toList();
+        for (int i = 0; i < Math.max(leftParts.size(), rightParts.size()); i++) {
+            int leftPart = i < leftParts.size() ? leftParts.get(i) : 0;
+            int rightPart = i < rightParts.size() ? rightParts.get(i) : 0;
+            if (leftPart != rightPart) {
+                return Integer.compare(leftPart, rightPart);
+            }
+        }
+        return 0;
+    }
+
     private static MigrationInventory migrations(Path folder) throws IOException {
         int versioned = 0;
-        int maxV = 0;
+        String maxVersion = "0";
         int repeatable = 0;
         try (Stream<Path> files = Files.list(folder)) {
             for (Path f : files.sorted().toList()) {
                 String name = f.getFileName().toString();
-                Matcher v = Pattern.compile("^V(\\d+)__.*\\.sql$").matcher(name);
+                Matcher v = Pattern.compile("^V(\\d+(?:[._]\\d+)*)__.*\\.sql$").matcher(name);
                 if (v.matches()) {
                     versioned++;
-                    maxV = Math.max(maxV, Integer.parseInt(v.group(1)));
+                    String candidate = v.group(1);
+                    if (compareVersions(candidate, maxVersion) > 0) {
+                        maxVersion = candidate;
+                    }
                     continue;
                 }
                 if (name.matches("^R__.*\\.sql$")) {
@@ -133,7 +149,7 @@ class DocumentationNumbersGuardTest {
                 }
             }
         }
-        return new MigrationInventory(versioned, maxV, repeatable);
+        return new MigrationInventory(versioned, maxVersion, repeatable);
     }
 
     private static List<String> cacheNames(String applicationYml) {
